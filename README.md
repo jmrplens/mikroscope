@@ -112,7 +112,7 @@ against the release's `checksums.txt` (every asset is in there, and the
 checksum file itself is signed with cosign):
 
 ```sh
-tar xzf mikroscope_1.0.0_linux_amd64.tar.gz
+tar xzf mikroscope_1.0.1_linux_amd64.tar.gz
 sha256sum --check --ignore-missing checksums.txt
 ```
 
@@ -131,7 +131,7 @@ Pick one; the documentation walks through each:
 |---|---|---|
 | Build it yourself | `mikroscope install` | Go 1.27 and a checkout — the CLI cross-compiles the agent |
 | The published tar | `mikroscope install --agent-tar mikroscope-agent-arm64.tar` | Only the release assets; the CLI checks the tar's architecture before it uploads it |
-| Let the router pull it | `mikroscope install --remote-image jmrplens/mikroscope-agent:1.0.0` | The router reaching Docker Hub, which `/container/config registry-url` points at out of the box. The image is on GHCR too, and that one needs the registry repointed — a global RouterOS setting mikroscope reads and never writes |
+| Let the router pull it | `mikroscope install --remote-image jmrplens/mikroscope-agent:1.0.1` | The router reaching Docker Hub, which `/container/config registry-url` points at out of the box. The image is on GHCR too, and that one needs the registry repointed — a global RouterOS setting mikroscope reads and never writes |
 | On the router, no CLI | `mikroscope plan --rsc --remote-image … --out install.rsc`, then paste or `/import` it | Nothing but the router; the script carries the same commands and the same ownership tags |
 
 Every route ends with the same container, tagged the same way, so `status`,
@@ -148,7 +148,7 @@ bin/mikroscope status                   # ownership counts and the agent's healt
 bin/mikroscope upgrade                  # new image, container only; network objects stay
 bin/mikroscope uninstall                # removes and verifies
 bin/mikroscope image --arch arm64       # build the tar yourself, for side-loading by hand
-bin/mikroscope plan --rsc --remote-image ghcr.io/jmrplens/mikroscope-agent:1.0.0 --out install.rsc  # install from the router
+bin/mikroscope plan --rsc --remote-image ghcr.io/jmrplens/mikroscope-agent:1.0.1 --out install.rsc  # install from the router
 bin/mikroscope record --for 5m --out cap   # cap.jsonl, cap.csv, cap.markers.csv; type lines to mark
 bin/mikroscope mark --out cap "queue tree applied"   # a marker from another shell
 bin/mikroscope mark --out cap --log-markers          # the router's own log lines, over the API
