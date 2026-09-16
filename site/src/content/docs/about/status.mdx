@@ -30,7 +30,13 @@ run against the reference RB5009 (RouterOS 7.24.2), not only against fakes:
   it happens and every removal verified by ownership counts. On 2026-09-12,
   `doctor` → `install` → `status` → `upgrade` → `uninstall` left the router's
   `/export` byte-identical, compared by hash in memory and never written to
-  disk. The agent answered 3 s after install, at a 5–7 ms round trip.
+  disk. The agent answered 3 s after install, at a 5–7 ms round trip. On
+  2026-09-17 all four install routes were run against the same device, one
+  after another and each removed before the next: the checkout build, the
+  published agent tar, the router's own pull from Docker Hub, and the
+  `plan --rsc` script imported on the router with no CLI in the install itself.
+  The agent answered in every one, and the `/export` after the four was
+  byte-identical to the one before them.
 - **`record`, `mark` and `plot`** work end to end. A 60 s recording at 10 Hz on
   2026-09-12 yielded exactly 600 samples, 0 gaps and −7 ms of clock skew.
 - **`forward`**, the collector, merges the kernel tier with the RouterOS API

@@ -34,7 +34,13 @@ no solo contra simulaciones:
   2026-09-12, `doctor` → `install` → `status` → `upgrade` → `uninstall` dejó el
   `/export` del router idéntico byte a byte, comparado por hash en memoria y sin
   escribirlo nunca a disco. El agente respondió 3 s después de la instalación,
-  con un tiempo de ida y vuelta de 5–7 ms.
+  con un tiempo de ida y vuelta de 5–7 ms. El 2026-09-17 se ejecutaron las
+  cuatro rutas de instalación contra el mismo equipo, una tras otra y cada una
+  retirada antes de la siguiente: la compilación desde el checkout, el tar del
+  agente publicado, la descarga que el propio router hizo desde Docker Hub y el
+  script de `plan --rsc` importado en el router sin CLI ninguna en la
+  instalación misma. El agente respondió en todas, y el `/export` posterior a
+  las cuatro era idéntico byte a byte al anterior a ellas.
 - **`record`, `mark` y `plot`** funcionan de extremo a extremo. Una grabación de
   60 s a 10 Hz el 2026-09-12 dio exactamente 600 muestras, 0 huecos y −7 ms de
   desfase de reloj.

@@ -201,12 +201,26 @@ qué chocarían los objetos que crea, ni confirmación: escribe. Ejecuta
 [Lo que necesita el router](/mikroscope/es/install/prerequisites/) y comprueba
 a mano los tres requisitos, antes de pegarlo.
 
+Las cuatro rutas se ejecutaron de extremo a extremo contra el RB5009UG+S+ de
+referencia (RouterOS 7.24.2, arm64) el 2026-09-17, una tras otra, cada una
+instalando bajo su propio nombre, veth y `/30` para no tocar nada de lo que ya
+había en el equipo, y cada una retirada antes de la siguiente. En todas ellas
+el agente respondió a `/healthz` desde el equipo del colector: la compilación
+desde el checkout y el `mikroscope-agent-arm64.tar` publicado con 2 ms de ida y
+vuelta, la descarga que el propio router hizo de
+`jmrplens/mikroscope-agent:1.0.1` desde Docker Hub con 2 ms, y el script de
+`plan --rsc` — subido e importado con `/import`, sin CLI ninguna en la
+instalación misma — con 15 ms en sus primeras muestras. `uninstall` verificó
+después por recuento de propiedad en cada caso, y el `/export` del router tras
+las cuatro era idéntico byte a byte al tomado antes de ellas.
+
 <NotClaimed variant="untested">
-	Tres de las cuatro rutas no se han ejecutado en ningún equipo. La ruta del checkout es desde la
-	que ha instalado el RB5009UG+S+ con RouterOS 7.24.2. `--agent-tar` está cubierta por un ciclo de
-	escribir y volver a leer el tar, y `--remote-image` y `plan --rsc` por el texto de las órdenes de
-	RouterOS que producen; no por un router que se bajara una imagen de un registro ni que importara
-	un script. Ninguna ruta se ha ejecutado en hardware arm ni x86_64.
+	`--remote-image` contra **GHCR**. `/container/config registry-url` es un único ajuste global de
+	RouterOS que mikroscope lee y nunca escribe, y el router de referencia apunta a Docker Hub;
+	apuntarlo a ghcr.io para probar ese camino cambiaría el registro para todos los demás
+	contenedores del equipo. La imagen se publica en los dos registros y la CI la arranca desde GHCR
+	en las tres arquitecturas, pero ningún router se la ha bajado de allí. Tampoco se ha ejecutado
+	ninguna ruta en hardware arm ni x86_64.
 </NotClaimed>
 
 <SeeAlso>
