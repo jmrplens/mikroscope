@@ -1680,3 +1680,137 @@ produces in one sample comes near 2^63.
   Graphite, Elasticsearch, Telegraf.
 - [Import and check](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/): the dashboards that query these
   measurements.
+
+## How the project tests itself
+
+The three layers of test — the bytes each sink puts on the wire, whether a real store accepts them, and whether the dashboards' own queries answer — what each one proves, what none of them prove, and the command for each.
+
+Source: <https://jmrp.io/docs/mikroscope/reference/testing/>
+
+A sink can be wrong in three places, and each one needs a different test. It
+can encode the wrong bytes. It can encode bytes a store refuses — which a
+capture server never notices, because a capture server says 204 to everything.
+And it can write something a store keeps but no dashboard can read back.
+
+The project therefore has three layers, and they are three commands.
+
+| Layer               | Command                | Docker | What it proves                                                    |
+| ------------------- | ---------------------- | ------ | ----------------------------------------------------------------- |
+| 1, the contract     | `make test-e2e`        | no     | the exact bytes each sink puts on the wire                        |
+| 2, the stores       | `make test-e2e-docker` | yes    | a real store accepts those bytes, and hands them back unchanged   |
+| 3, the dashboards   | the same target        | yes    | every panel's own query answers against what the sinks just wrote |
+
+None of the three touches a router. Layers 1 and 2 drive the collector against
+a fake agent that serves canned samples, and layer 1 also drives the real agent
+binary against `testdata/proc/rb5009`, a captured `/proc` and `/sys` tree of
+the reference device. That is what makes a run reproducible on any machine, and
+what keeps the router out of the loop.
+
+### Layer 1 — the contract
+
+`make test-e2e` builds both binaries and points every sink at a receiver inside
+the test binary: HTTP capture servers for InfluxDB, Loki, OTLP, Elasticsearch
+and Telegraf, TCP and UDP listeners for Graphite and Telegraf's socket modes,
+real files for the file and SQL sinks, the process's own stdout, and a scrape
+of the collector's own `/metrics` for Prometheus. Each receiver asserts what
+arrived, byte for byte.
+
+It needs no router, no Grafana, no database, no container and no network: every
+address it binds or dials is on loopback. `make test-e2e-offline` proves that
+rather than asserting it, by running the whole suite inside a network namespace
+that has nothing but `lo`.
+
+### Layer 2 — the stores
+
+`make test-e2e-docker` starts nine stores with docker compose, runs the same
+collector against the same fake agent with every sink pointed at them, and then
+asks each store its own question with its own API. The file sink's JSONL is the
+oracle each store is compared against — value by value, not only by count.
+
+| Store                   | The question it is asked                                              |
+| ----------------------- | --------------------------------------------------------------------- |
+| InfluxDB 3 Core         | SQL over HTTP: the tables, a row count per table, every `ctxt` value   |
+| PostgreSQL 18           | the SQL sink's script through `psql`, then counts and the `ctxt` range |
+| Elasticsearch 9         | `_search` with an aggregation by kind, and one whole document          |
+| Loki 3                  | `query_range` for this run's labels, and the text of each record       |
+| Graphite                | `metrics/find` for the tree, `render` for the points and their order   |
+| OpenTelemetry Collector | what it decoded, written back out as OTLP/JSON                         |
+| Telegraf 1.39           | the line protocol it parsed: measurements, tags, field types, timestamps |
+| Prometheus 3            | a scrape of the exporter, against the exposition it served             |
+
+Each of those is there because that product refuses something a capture server
+accepts:
+
+- **InfluxDB 3** fixes a column as a tag or a field the first time it sees the
+  table and refuses a later write that disagrees.
+- **Carbon** answers nothing at all: a point older than its longest archive, or
+  a name whisper cannot make a path of, is dropped in silence.
+- **Loki** answers 204 for a push that is not queryable until the chunk
+  flushes, and rejects out-of-order entries per stream, in the body.
+- **Elasticsearch** infers a mapping from the first document it sees for a
+  field and then rejects a later one that does not fit it — per document,
+  inside a bulk request that still answers 200.
+- **Telegraf** is a real line-protocol parser: an unescaped space in a tag
+  value, or a field with no type, is dropped and the batch is still 204.
+- **PostgreSQL** is the only thing that can say whether the SQL sink's script
+  is valid SQL, whether the types it chose hold the values it emits, and
+  whether its primary keys collide on a real run.
+
+### Layer 3 — the dashboards
+
+The same target then imports both dashboards into a real Grafana, pointed at
+the store the run just filled, and runs every panel's query through Grafana's
+own `/api/ds/query`. That is where a panel fails for reasons no unit test
+reaches: a type an aggregate returns that the datasource plugin cannot decode,
+a macro the plugin escapes, a column the store does not have.
+
+The first full run, on 2026-09-16, found one: the port-event table names
+`label` and `role`, which the sink writes onto a kernel-log row only from the
+API tier's inventory. A column that is not in the table is not an empty column
+on InfluxDB 3 — it is `Schema error: No field named label` and a panel that
+cannot render at all.
+
+### Running it
+
+```sh
+make test-e2e-docker   # the whole thing; the stack comes up and goes down with it
+make e2e-docker-up     # keep the stack up, for a targeted run
+go test -v -tags dockere2e -run TestLoki ./test/e2e/docker/
+make e2e-docker-down
+```
+
+The package is behind the `dockere2e` build tag, so `make test` and every
+default CI job compile none of it — the tag is how you ask for nine containers.
+`make lint` type-checks it so it cannot rot, and the weekly E2E workflow and
+the release gate run it.
+
+Measured on the development machine on 2026-09-16: the stack comes up in 55 to
+81 s with the images already pulled, and the whole suite takes 75 to 100 s from
+nothing.
+
+> **Linux, for two of the nine**
+>
+> Prometheus and Grafana run on the host's network stack, because Prometheus is
+> the one sink that is scraped rather than pushed to and it has to reach the
+> collector's exporter on the host. A container on a bridge network reaches the
+> host through the bridge's gateway, and that path goes through the host's
+> INPUT chain, which a default-deny firewall drops. The other seven services
+> are ordinary bridge-network containers.
+
+### What the three layers still leave to a human
+
+> **What none of these prove**
+>
+> That a sink works from the router. The samples in all three layers come from a
+> fake agent or a captured `/proc` tree, never from a live device, and the
+> container stack runs on the development machine rather than across the
+> router's veth. File, Prometheus and InfluxDB 3 have carried real RB5009
+> samples end to end; the other seven have not.
+
+### See also
+
+- [Where the project stands](https://jmrp.io/docs/mikroscope/about/status/): what has run against
+  the reference device and what has not.
+- [The collector and its sinks](https://jmrp.io/docs/mikroscope/sinks/): what each sink writes.
+- [Importing and checking the dashboards](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/):
+  the same `dashboards check` the third layer runs, against your own store.

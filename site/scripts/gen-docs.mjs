@@ -185,6 +185,7 @@ const MANIFEST = [
 			"reference/http",
 			"reference/metrics",
 			"reference/measurements",
+			"reference/testing",
 		],
 	},
 	// Where the project stands, what the mark is, and what it was built from.
