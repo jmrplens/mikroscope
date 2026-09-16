@@ -68,5 +68,8 @@ make e2e-docker-down
   to, so it has to reach the collector's exporter on the host, and the bridge
   path goes through the host's INPUT chain — which a default-deny firewall
   drops. That makes those two Linux-only.
+- The stores hold one run of test data on loopback and are deleted with the
+  stack, so PostgreSQL runs with `trust` and Grafana's admin password is a
+  literal the compose file reads from `MIKROSCOPE_E2E_GRAFANA_PASSWORD`.
 - `WaitUntil` is how every read waits: in none of these stores does "accepted"
   mean "readable".

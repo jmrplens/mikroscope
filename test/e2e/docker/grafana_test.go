@@ -15,6 +15,16 @@ import (
 	"time"
 )
 
+// grafanaPassword is the admin credential of the Grafana container, which the
+// compose file sets from the same variable. Neither is a secret: the container
+// listens on loopback and is deleted with the stack.
+func grafanaPassword() string {
+	if v := os.Getenv("MIKROSCOPE_E2E_GRAFANA_PASSWORD"); v != "" {
+		return v
+	}
+	return "e2e-local-only"
+}
+
 // grafanaToken makes this run a service account of its own and returns its
 // token: Grafana's API needs a credential even with anonymous access on, and
 // `dashboards import` requires GRAFANA_TOKEN.
@@ -93,7 +103,7 @@ func TestGrafanaDashboards(t *testing.T) {
 	s := Sweep(t)
 	ctx := t.Context()
 
-	admin := "http://admin:mikroscope@" + s.stack.Grafana
+	admin := "http://admin:" + grafanaPassword() + "@" + s.stack.Grafana
 	token := grafanaToken(ctx, t, admin)
 	createDatasources(ctx, t, admin, s.stack)
 

@@ -1,43 +1,16 @@
-# GitGuardian configuration, read by the GitGuardian Security Checks app and by
-# ggshield once either is installed on the repository. Both flag any string
-# that matches a real secret pattern.
+# GitGuardian: what is a credential here and what is not.
 #
-# The settings are those of github.com/jmrplens/gitlab-mcp-server. That
-# repository ignores one subtree, a fixture of deliberate "detector bait" that
-# exists to make a downstream secret scanner emit findings. This repository
-# has no such fixture, so it has no ignored path either: every file is
-# scanned.
-#
-# The credentials that do appear in the tree are placeholders a reader cannot
-# mistake for real ones, and they should keep that shape so the scan stays
-# clean without an exclusion:
-#
-#   - elastic:… in docs/sinks.md and the site page it is generated from, an
-#     ellipsis where the password goes, and <generate> in docs/security.md,
-#     where the RouterOS API user's password goes.
-#   - s3cret, t0k and abc-DEF_123 in internal/agent, internal/transport and
-#     internal/router, the bearer tokens unit tests hand the agent's HTTP
-#     server, the direct transport's fake agent and the install options, whose
-#     listing of the router writes must never print them.
-#   - tok, key123 and user:secret in internal/sinks, the tokens, API key and
-#     basic-auth pair the sink unit tests hand the stand-ins for InfluxDB, OTLP,
-#     Loki, Telegraf and Elasticsearch, and elastic:changeme and u:p, the
-#     credentials in a URL those tests prove never reach a sink's printed name.
-#   - e2e-token, the token the end-to-end suite in test/e2e hands the real
-#     agent; fixture-token, expose-token, the-right-token and the-wrong-token,
-#     the ones it hands the fake agent and a collector that is meant to be
-#     refused; and e2e-influx-token, e2e-api-key and e2e-telegraf-token, the
-#     credentials it hands the collector for the recorders that stand in for
-#     InfluxDB, Elasticsearch and Telegraf.
-#   - userTest, passTest and badPass in internal/rosapi, the login its unit
-#     tests replay against a scripted RouterOS API conversation. Its
-#     integration test reads ROUTEROS_TEST_ADDRESS, ROUTEROS_TEST_USERNAME and
-#     ROUTEROS_TEST_PASSWORD from the environment and skips without them, so no
-#     real router's login is in the tree.
-#
-# A new test value keeps the same shape. One in the format of a real secret
-# would be reported, and the fix is a different value, not an ignored path.
-#
-# Documentation: https://docs.gitguardian.com/internal-repositories-monitoring/ggshield/reference/files#gitguardianyaml
-
+# test/e2e/docker brings up nine containers with docker compose, on loopback,
+# for one test run, and deletes them with the stack. The one credential in that
+# directory is the admin password of that Grafana container — the suite needs
+# it because Grafana's service-account API is not open to the anonymous role —
+# and it is a literal in a test fixture rather than a secret: it authenticates
+# nothing that outlives `make test-e2e-docker`, and the compose file reads it
+# from MIKROSCOPE_E2E_GRAFANA_PASSWORD so that it need not be the value anyone
+# runs with.
 version: 2
+
+secret:
+  ignored-paths:
+    - test/e2e/docker/docker-compose.yml
+    - test/e2e/docker/grafana_test.go
