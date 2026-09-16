@@ -14,6 +14,7 @@ SHELL := /bin/bash
 	build build-agent build-agent-all agent-size agent-tars agent-smoke install clean \
 	test test-race test-e2e e2e-offline-warm test-e2e-offline \
 	test-e2e-docker test-e2e-docker-race e2e-docker-up e2e-docker-down e2e-docker-build \
+	docs check-docs site-check \
 	cover cover-check \
 	fmt fmt-check vet tidy lint golangci-lint govulncheck actionlint analyze analyze-fix sonar \
 	mdlint mdlint-fix check-doc-links \
@@ -272,6 +273,24 @@ e2e-docker-down: ## Stop the store stack and delete its volumes
 e2e-docker-build: ## Type-check the docker suite without starting anything
 	go vet -tags dockere2e ./test/e2e/docker/
 	go test -c -o /dev/null -tags dockere2e ./test/e2e/docker/
+
+##@ Documentation
+
+# docs/ is generated from the English pages of the site, and a page changed
+# without regenerating it is a docs/ that disagrees with the site. These two
+# are the same commands the site's own scripts run; they are here so that the
+# Go side of the project has one place to look, as `pnpm run docs` is not
+# something a Go developer has any reason to know about.
+docs: ## Regenerate docs/ from the site's English pages
+	cd site && pnpm install --frozen-lockfile --silent && pnpm run docs
+
+check-docs: ## Fail if docs/ is stale against the site
+	cd site && pnpm install --frozen-lockfile --silent && pnpm run docs:check
+
+site-check: ## Build the site and run every static gate over it
+	cd site && pnpm install --frozen-lockfile --silent && pnpm run build && pnpm run lint
+
+##@ Coverage
 
 cover: ## Write a coverage profile over cmd/ and internal/ and print its total
 	go test -count=1 -coverpkg=$(COVERAGE_COVERPKG) -coverprofile=coverage.out $(COVERAGE_PKGS)

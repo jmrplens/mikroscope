@@ -66,4 +66,5 @@ RB5009 at `MIKROSCOPE_ROUTER` is the owner's live router:
   in `site/`. `pnpm run docs:check` fails when `docs/` is stale and runs in
   `lint` and in `.github/workflows/docs.yml`. A page added to the site fails
   that check until it is claimed by an entry of `MANIFEST` or named in
-  `NOT_IN_DOCS` with a reason.
+  `NOT_IN_DOCS` with a reason. `make docs`, `make check-docs` and
+  `make site-check` are the same commands from the repository root.
