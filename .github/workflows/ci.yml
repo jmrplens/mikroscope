@@ -558,6 +558,16 @@ jobs:
         run: pnpm install --frozen-lockfile
         working-directory: site
 
+      # `pnpm run lint` includes the gates that read the built output —
+      # html-validate, htmlhint, a11y:check, schema:check, directives:check and
+      # both twins checks all walk dist/ — so the site has to be built first.
+      # Without this the job fails on the first of them with "Run pnpm build
+      # first", which is what it did until 2026-09-16: the job only runs on a
+      # pull request, and the repository's first pull request was its first run.
+      - name: Build the site
+        run: pnpm run build
+        working-directory: site
+
       - name: Static site gates
         run: pnpm run lint
         working-directory: site
