@@ -1,0 +1,32 @@
+/* Last sheet loaded, because a focus ring that loses to another rule is not a
+ * focus ring. */
+
+:where(a, button, input, select, summary, [tabindex]):focus-visible {
+	outline: 2px solid var(--ms-accent);
+	outline-offset: 2px;
+	border-radius: 0.2rem;
+}
+
+.skip-link,
+a[href="#_top"] {
+	z-index: var(--ms-z-skip-link);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+		scroll-behavior: auto !important;
+	}
+}
+
+@media print {
+	.sl-markdown-content a[href^="http"]::after {
+		content: " (" attr(href) ")";
+		font-size: 0.85em;
+		word-break: break-all;
+	}
+}

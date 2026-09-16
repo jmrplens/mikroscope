@@ -1,0 +1,101 @@
+# No image is built from this directory. The agent image GoReleaser publishes
+# comes from Dockerfile.agent, FROM scratch and one COPY of a prebuilt
+# ${TARGETPLATFORM}/mikroscope-agent, and dockers_v2 builds it in a context
+# GoReleaser assembles itself: a temporary directory holding that Dockerfile
+# and each platform's binary, and nothing from the working tree (GoReleaser
+# v2.18.1, internal/pipe/docker/v2). The side-loadable agent tars are written
+# without Docker at all, by internal/image. So this file is read only by a
+# build pointed at the root, `docker build -f Dockerfile.agent .` by hand or a
+# Dockerfile added later. Without it that context is the whole working tree,
+# 489 MB measured on 2026-09-15; with it, 1.65 MB, of which a build from source
+# would read go.mod, go.sum, version.go with the VERSION file it embeds, cmd/
+# and internal/, 1.58 MB.
+#
+# Deliberately a denylist. An allowlist would be tighter, but it silently drops
+# whatever is added at the root later that a build does need, and a build from
+# source does read the root.
+#
+# The denylist of ghchronicle's .dockerignore, the owner's decision, adapted to
+# this tree. It keeps out .env and *.token, so a router's API password, an
+# agent's bearer token or a sink credential never reaches a layer of an image,
+# and site/, the host's own binaries and the scanner's working directory, so
+# the context stays near the megabyte and a half a build reads instead of
+# hundreds of them.
+
+# Working notes: not part of the published tool.
+plan/
+
+# History and CI definitions: a build reads neither, and .git alone is 26 MB of
+# the tree.
+.git
+.github
+
+# Local configuration and credentials must never reach an image layer. `.env`
+# holds the router's address and API user password, the agent token and the
+# InfluxDB and Grafana tokens; `.env.*` is the variant a second environment gets
+# (.env.local, .env.production), and it holds the same kind of secret as the
+# file it copies. .claude/ is a coding agent's local settings for this
+# checkout.
+.env
+.env.*
+*.token
+.claude/
+
+# Build output from the host: bin/ is `make build` and `make build-agent-all`,
+# build/ is the agent image tars `make agent-tars` and `make agent-smoke`
+# write, dist/ is GoReleaser, and the loose files are what `go build
+# ./cmd/<name>`, `go test` and `make cover-check` leave in the working
+# directory: coverage.out and coverage.html. The three command names are
+# spelled out because none of them carries an extension, and an image build
+# would upload them and then ignore them. *.tar is an agent image tar saved at
+# the root, and captures/ and lab/ are where device captures and disk images
+# land, as .gitignore has them. golangci-report*.txt is a lint run saved to a
+# file for reading later, which a build has no use for either.
+#
+# Unlike .gitignore, a pattern here is matched against the whole path, so
+# "mikroscope" names the file at the root and cannot reach cmd/mikroscope.
+bin/
+build/
+dist/
+gen_brand
+mikroscope
+mikroscope-agent
+*.exe
+*.test
+*.out
+*.tar
+coverage*
+captures/
+lab/
+golangci-report*.txt
+
+# The scanner's configuration, and the working directory `make sonar` leaves at
+# the root: sonar-project.properties sets no sonar.working.directory, so
+# sonar-scanner uses its default. A build reads neither.
+sonar-project.properties
+.scannerwork/
+
+# The documentation site: node_modules alone is 358 MB, and nothing in an image
+# reads a line of it. This one entry is most of the difference between the
+# 489 MB context and the 1.65 MB one.
+site/
+
+# Prose, images and generated dashboards. None of it is embedded: the module's
+# only go:embed is in version.go, which reads the VERSION file beside it at the
+# root, and neither of those two is excluded here. So copying these in would
+# only invalidate the compile layer every time a document is edited.
+#
+# Before excluding anything else at the root, check it is not what version.go
+# embeds: a build that cannot see VERSION fails to compile, because a go:embed
+# pattern that matches no file is an error.
+docs/
+brand/
+dashboards/
+*.md
+
+# The end-to-end suite builds both binaries itself and drives them against a
+# fake agent and recorders that stand in for the sinks, and testdata/ is the
+# reference device's captured /proc that the unit tests read. A build never
+# compiles the one or reads the other.
+test/
+testdata/

@@ -1,0 +1,115 @@
+---
+title: Las dos trampas del cortafuegos
+description: Las dos reglas raw del cortafuegos por defecto de MikroTik que descartan en silencio cada paquete que envía un contenedor, lo que añade `install` para que no lo hagan y qué pasar cuando tus listas tienen otros nombres.
+---
+
+import NotClaimed from "../../../../components/NotClaimed.astro";
+import ScrollTable from "../../../../components/ScrollTable.astro";
+import SeeAlso from "../../../../components/SeeAlso.astro";
+import Verified from "../../../../components/Verified.astro";
+
+Esta página responde a por qué un agente que está en marcha puede seguir siendo
+inalcanzable en un router con el cortafuegos por defecto de MikroTik, y qué
+cambia `install` en ese cortafuegos para que no lo sea. Añade dos pertenencias
+a listas y nada más; sin `--expose` no escribe ninguna regla de cortafuegos.
+
+## Dos reglas que descartan todo lo que envía un contenedor
+
+El cortafuegos por defecto de MikroTik lleva dos reglas raw que descartan en
+silencio cada paquete que envía un contenedor:
+
+- `drop the rest (in-interface-list=!LAN)` casa con un paquete que entra por una
+  interfaz fuera de la lista de interfaces `LAN`, y una veth nueva está fuera
+  de ella.
+- `drop local if not from default IP range (src-address-list=!LANs)` casa con
+  una dirección de origen fuera de la address-list `LANs`, y la /30 del
+  contenedor está fuera de ella.
+
+El descarte es silencioso. Desde tu máquina el agente no responde, y eso se ve
+igual que un contenedor que no está en marcha — por eso el sondeo tras
+`install` pregunta al router si el contenedor está en marcha antes de sugerir
+nada más.
+
+## Lo que añade install
+
+`install` añade la veth a tu lista de interfaces `LAN` y la /30 del contenedor
+a tu address-list `LANs`. Las dos son añadidos a listas que ya existen, las dos
+llevan la etiqueta, y `uninstall` quita las dos por esa etiqueta más la lista y
+el miembro. Con los valores por defecto, las dos escrituras son:
+
+<ScrollTable label="Las dos pertenencias a listas que escribe install">
+
+| Paso                         | Orden                                                                                                                       |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| pertenencia a interface-list | `/interface/list/member/add list="LAN" interface="veth-mikroscope" comment="mikroscope:mikroscope (managed by mikroscope)"` |
+| pertenencia a address-list   | `/ip/firewall/address-list/add list="LANs" address=172.30.10.0/30 comment="mikroscope:mikroscope (managed by mikroscope)"`  |
+
+</ScrollTable>
+
+En <Verified of="direct-lists" /> estas dos pertenencias bastaron para
+que una máquina de la LAN llegara al agente directamente a través del router.
+
+Una pertenencia no se limita a mikroscope. Cualquier otra regla de tu router
+que case con la lista de interfaces `LAN` o con la address-list `LANs` casa
+también con el tráfico del contenedor, mientras esté instalado. Lee tus propias
+reglas teniéndolo en cuenta.
+
+## Cuando tus listas tienen otros nombres
+
+Pasa los nombres que usan tus reglas:
+
+- `--iface-list` (`MIKROSCOPE_IFACE_LIST`): la lista que usa tu regla de
+  descarte `in-interface-list=!…`.
+- `--addr-list` (`MIKROSCOPE_ADDR_LIST`): la lista que usa tu regla
+  `drop local if not from default IP range`.
+
+`doctor` comprueba las dos antes de que `install` escriba nada. Una lista de
+interfaces que no existe se informa con la solución
+`/interface/list/add name=…`, o la opción. Una address-list sin entradas también
+se informa; el texto de su solución dice que una lista vacía vale solo si no
+existe esa regla, pero la comprobación sigue contando como ausente, y solo
+`--no-doctor` la supera, saltándose con ella todas las demás comprobaciones.
+`uninstall`, `status` y `upgrade` necesitan otra vez las mismas dos opciones,
+porque los selectores se construyen a partir de ellas; con otros nombres,
+`upgrade` no encuentra las pertenencias y se niega con
+`nothing to upgrade: run install first`.
+
+## Cuando la pertenencia ya existe
+
+Si la veth ya está en la lista de interfaces, o la /30 ya está en la
+address-list, y esa entrada no lleva la etiqueta de mikroscope, `install` se
+detiene en ese paso y lo nombra: el efecto existe, pero mikroscope no lo creó y
+no lo quitará después. Elige otro `--veth` u otro `--subnet`, o quita tu entrada
+a mano si es tuya. `uninstall` nunca la toca.
+
+## Las reglas que añade `--expose`
+
+Solo `--expose` escribe reglas de cortafuegos: un dst-nat en la dirección LAN del
+router y un accept en forward colocado antes del primer drop de forward, las dos
+etiquetadas y las dos quitadas por
+`uninstall --expose --lan-address <la misma dirección> --token …`: el selector
+del dst-nat casa con la dirección LAN, y `--expose` se rechaza sin token aunque
+ningún selector lo use. Qué abre eso y por qué
+el token pasa a ser obligatorio está en
+[Lo que abre --expose](/mikroscope/es/security/expose/); cómo usarlo está en
+[Llegar al agente](/mikroscope/es/install/reaching-the-agent/).
+
+<NotClaimed variant="device-specific">
+	Se midió un único cortafuegos: el del RB5009, el 2026-09-11, donde las dos pertenencias bastaron.
+	Un cortafuegos con otras reglas de descarte en `raw`, `input` o `forward` puede descartar el
+	tráfico del contenedor en otro punto, e `install` no añade nada para ese caso más allá de las dos
+	pertenencias.
+</NotClaimed>
+
+<SeeAlso>
+
+## Véase también
+
+- [Llegar al agente](/mikroscope/es/install/reaching-the-agent/): qué hacer cuando las pertenencias
+  no bastan.
+- [Lo que necesita el router](/mikroscope/es/install/prerequisites/): las comprobaciones de `doctor`
+  para las dos listas.
+- [Lo que abre --expose](/mikroscope/es/security/expose/): las dos reglas, y quién llega al agente
+  después.
+
+</SeeAlso>

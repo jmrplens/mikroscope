@@ -1,0 +1,134 @@
+---
+title: El flujo de datos del equipo
+description: Lo que el agente establece sobre la placa sin la API de RouterOS — identidad, techos, cadencias — y cómo el colector lo entrega a cada destino como hechos y no como muestras.
+---
+
+import CadenceReasons from "../../../../components/CadenceReasons.astro";
+import ScrollTable from "../../../../components/ScrollTable.astro";
+import SeeAlso from "../../../../components/SeeAlso.astro";
+
+Al arrancar, el agente averigua lo que puede sobre la placa en la que corre, sin la API de
+RouterOS y sin ninguna credencial, y lo sirve en `/capabilities`. El colector lo entrega a
+cada destino como registro propio. Esta página responde a qué guarda el registro, cuándo se
+envía y dónde lo pone cada destino.
+
+## Lo que lleva
+
+- **Identidad**: la cadena de modelo del device tree (la placa), el kernel, el número de
+  núcleos, si el contenedor es privilegiado y si tiene cgroup2, las fuentes activas, la
+  procedencia de la tabla de puertos, y un hash del kernel, el número de núcleos y las
+  fuentes activas.
+- **Los techos propios del equipo**, leídos una vez al arrancar el agente: el punto de
+  disparo crítico y el retardo de sondeo de cada zona térmica; el rango cpufreq, la escalera
+  de frecuencias, el governor y el cluster de cada núcleo; el techo de conntrack del kernel;
+  el `memory.max` del propio contenedor.
+- **Cadencias**: la cadencia a la que se lee y guarda cada fuente de nivel, y el motivo con
+  nombre por el que no es la cadencia del muestreador.
+
+Un techo que la placa no publica se omite, nunca se rellena con un número sacado de otro
+sitio — el techo de conntrack de 966 656 y el límite de 64 MiB del contenedor son los de
+la propia placa.
+
+### Los motivos que da una cadencia
+
+<CadenceReasons />
+
+Los contadores nunca tienen suelo; solo las fuentes de nivel llevan cadencia. Los suelos en
+sí y cómo se midieron están en [cada fuente a su propio
+suelo](/mikroscope/es/limits/source-floors/).
+
+## Cuándo se envía
+
+Una vez cuando arranca `forward`, y de nuevo cada vez que cambia el hash de capacidades del
+agente — un agente reiniciado con otro conjunto de fuentes, por ejemplo. El colector
+comprueba el hash en la lectura de estado que hace cada minuto para volver a medir el
+desfase de reloj, así que un cambio llega a los destinos en más o menos un minuto. Tanto el
+transporte directo como el relay pueden obtener `/capabilities`; cuando la obtención falla,
+el colector lo registra, no envía nada y lo vuelve a intentar en la siguiente lectura de
+estado. Que no se envíe nada es ausencia, no una placa sin datos.
+
+El hash solo cubre la cadena del kernel, el número de núcleos y los nombres de las fuentes
+activas; quedan fuera la placa, `privileged`, cgroup, la procedencia de la tabla de puertos,
+cada techo y cada cadencia. Un agente reiniciado cuyo único cambio es un techo o una cadencia
+— un `--memory-max` nuevo, o un `FLOOR_HZ` con el mismo conjunto de fuentes — conserva su
+hash, y el colector no vuelve a enviar el registro del equipo hasta que se reinicia el propio
+`forward`. Esto está leído en el código (`capsHash` en `internal/agent/source.go`), no
+observado.
+
+Son hechos, no muestras. No tienen reloj propio, así que los destinos que ponen marca de
+tiempo a sus registros los marcan con el reloj del colector en el momento en que se
+enviaron; las líneas del fichero y de stdout `json` no llevan marca de tiempo, y Prometheus
+los genera al hacer el scrape. Nunca se mezclan en una fila de muestra.
+
+## Dónde lo pone cada destino
+
+<ScrollTable label="Dónde cae el flujo de datos del equipo en cada destino">
+
+| Destino                         | Forma                                                                                                                                              |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| InfluxDB, Telegraf, stdout `lp` | `mikroscope_device{board,kernel}`, `mikroscope_device_thermal{zone}`, `mikroscope_device_cpufreq{cpu}`, `mikroscope_device_cadence{source,reason}` |
+| SQL                             | las tablas `mikroscope_device`, `mikroscope_device_thermal`, `mikroscope_device_cpufreq`, `mikroscope_device_cadence`                              |
+| file, stdout `json`             | una línea `{"device":…}` con las capacidades tal como se obtuvieron                                                                                |
+| Elasticsearch                   | un documento con `kind: device`                                                                                                                    |
+| Graphite                        | los datos numéricos bajo `device.*`; placa, kernel y governor no tienen forma en Graphite                                                          |
+| OTLP                            | gauges: `mikroscope.device.cores` con placa, kernel y hash como atributos, los techos térmicos y de cpufreq, `mikroscope.device.source_cadence`    |
+| Loki                            | una línea `source="device"`, `level="info"`: board, kernel, cores, privileged, cgroup, sources, hash                                               |
+| Prometheus                      | las mismas familias de datos del equipo que lleva el propio `/metrics` del agente                                                                  |
+
+</ScrollTable>
+
+### InfluxDB y SQL
+
+<ScrollTable label="Medidas y tablas de datos del equipo">
+
+| Medida o tabla              | Identificada por   | Guarda                                                                                                                            |
+| --------------------------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| `mikroscope_device`         | `board`, `kernel`  | `cores`, `privileged`, `cgroup`, `sources` (unidas por comas, ordenadas), `hash`, `conntrack_max`, `cgroup_mem_max`, `ports_from` |
+| `mikroscope_device_thermal` | `zone`             | `critical_celsius`, `polling_ms`                                                                                                  |
+| `mikroscope_device_cpufreq` | `cpu`              | `cluster` (el núcleo de número más bajo que cambia de frecuencia con este), `min_khz`, `max_khz`, `governor`, `steps`             |
+| `mikroscope_device_cadence` | `source`, `reason` | `hz`                                                                                                                              |
+
+</ScrollTable>
+
+En InfluxDB `board` y `kernel` son tags, `unknown` cuando están vacíos; en SQL son columnas,
+NULL cuando están vacías, y un techo que no se publicó es NULL. `steps` es la escalera de
+frecuencias como lista de kHz separada por espacios.
+
+### Prometheus
+
+<ScrollTable label="Familias de datos del equipo en Prometheus">
+
+| Familia                                                                        | Lleva                                                 |
+| ------------------------------------------------------------------------------ | ----------------------------------------------------- |
+| `mikroscope_device_info{board,kernel,cores,privileged,cgroup,ports_from,hash}` | siempre 1                                             |
+| `mikroscope_thermal_critical_celsius{zone}`                                    | el disparo crítico más bajo de la zona                |
+| `mikroscope_thermal_polling_seconds{zone}`                                     | el retardo de sondeo de la zona                       |
+| `mikroscope_cpu_frequency_limit_hertz{cpu,bound}`                              | el rango del reloj hardware, `min` y `max`            |
+| `mikroscope_cpu_frequency_step_hertz{cpu,step}`                                | cada frecuencia que usará el driver                   |
+| `mikroscope_cpu_frequency_governor_info{cpu,governor}`                         | siempre 1                                             |
+| `mikroscope_cpu_frequency_cluster{cpu}`                                        | el cluster, nombrado por su núcleo de número más bajo |
+| `mikroscope_self_cgroup_memory_max_bytes`                                      | el `memory.max` del propio contenedor                 |
+| `mikroscope_source_cadence_hz{source,reason}`                                  | la cadencia de cada fuente de nivel                   |
+
+</ScrollTable>
+
+En el RB5009 de referencia, leídos de `related_cpus` y `affected_cpus` dentro del
+contenedor el 2026-09-14 (RouterOS 7.24.2), los clusters de cpufreq son `{0,1}` y `{2,3}`,
+así que un panel de frecuencia por núcleo son en realidad dos series. Esa es la topología de
+esta placa y de ninguna otra: el agente lee los clusters por equipo, y no se ha medido
+ninguna otra placa. El techo de conntrack llega a Prometheus
+como `mikroscope_slab_limit_objects` de la caché `nf_conntrack` y no como una familia de
+datos del equipo.
+
+<SeeAlso>
+
+## Véase también
+
+- [Los endpoints HTTP del agente](/mikroscope/es/reference/http/): `/capabilities`, de donde sale
+  este registro.
+- [Cada fuente a su propio suelo](/mikroscope/es/limits/source-floors/): las cadencias y las medidas
+  que hay detrás.
+- [InfluxDB 3](/mikroscope/es/sinks/influxdb/): las demás medidas junto a las que están los
+  registros del equipo.
+
+</SeeAlso>

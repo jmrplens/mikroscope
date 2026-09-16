@@ -1,0 +1,317 @@
+---
+title: Captura por disparo
+description: Cómo guarda el agente las muestras a cadencia completa alrededor de una condición que configuraste, qué dispara, cómo traer una captura y por qué el conjunto de capturas es una muestra de los eventos y no un censo.
+---
+
+import { Aside } from "@astrojs/starlight/components";
+import Measured from "../../../../components/Measured.astro";
+import NotClaimed from "../../../../components/NotClaimed.astro";
+import ScrollTable from "../../../../components/ScrollTable.astro";
+import SeeAlso from "../../../../components/SeeAlso.astro";
+
+Todo lo que hay en `/metrics` es un resumen con pérdidas, y una grabación solo
+existe si alguien la empezó antes del momento. Esta página responde qué hace el
+agente en su lugar: qué condiciones le hacen guardar a cadencia completa las
+muestras alrededor de un momento, cómo configurarlas, cómo traer lo que guardó,
+qué hace el colector con el aviso y qué no te puede decir una captura.
+
+## Qué es una captura, y qué no es
+
+Lo único sin pérdidas que el agente puede hacer por su cuenta es guardar las
+muestras que ya existen, a cadencia completa, alrededor del momento en que
+importan — y solo el agente puede, porque solo el agente tiene todas las
+muestras. El anillo ya guarda los últimos 300 s por defecto, así que conservar
+los segundos anteriores a un disparo no cuesta nada; los posteriores solo
+cuestan la espera.
+
+No decide nada sobre el significado. Una condición es una comparación que
+configuraste tú. El campo que comparó y el valor que la hizo saltar viajan en la
+cabecera de la captura, así que puedes ver qué se comparó. La captura son las
+mismas líneas de deltas crudos que envía `/snapshot`. Nada se convierte en un
+porcentaje ni en un veredicto.
+
+Una captura no copia esas líneas. El anillo guarda cada muestra como una línea
+precodificada e inmutable, y una captura fija las líneas que necesita, así que
+disparar cuesta una copia de las cabeceras de las entradas una vez por disparo y
+nada por tick. El diseño lo estima en unos 3 µs para una ventana de 10 s a
+10 Hz; no se ha medido en el equipo.
+
+Las condiciones se evalúan en el propio bucle del muestreador, entre leer una
+muestra y meterla en el anillo, nunca en una segunda goroutine. No hay lenguaje
+de expresiones, a propósito: un analizador es una dependencia y una superficie
+de ataque, y una expresión que el operador puede escribir en el camino caliente
+del muestreador es una forma de volver lento el router.
+
+## Configurarla
+
+El agente lee seis variables de la envlist de su contenedor. Dos de ellas tienen
+una opción de `install`.
+
+<ScrollTable label="Ajustes de la captura por disparo">
+
+| Variable del agente    | Opción de `install` | Por defecto                                        | Valores aceptados                             | Qué ajusta                                                                                 |
+| ---------------------- | ------------------- | -------------------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `TRIGGERS`             | `--triggers`        | `softnet-drop,oom,kmsg<=3,reset,irq-err,flash-bad` | las condiciones de abajo, separadas por comas | Qué condiciones arman una captura.                                                         |
+| `CAPTURE_MB`           | `--capture-mb`      | `4`                                                | `0`–`256`                                     | El presupuesto de bytes fijados del anillo, en MiB. `0` desactiva la función.              |
+| `CAPTURE_PRE_S`        | ninguna             | `5`                                                | `1`–`60`                                      | Segundos que se guardan antes de la muestra que disparó.                                   |
+| `CAPTURE_POST_S`       | ninguna             | `5`                                                | `1`–`60`                                      | Segundos que se guardan después.                                                           |
+| `CAPTURE_POLICY`       | ninguna             | `first`                                            | `first`, `last`                               | Con el presupuesto lleno: `first` rechaza la captura nueva, `last` expulsa la más antigua. |
+| `TRIGGER_REFRACTORY_S` | ninguna             | `10`                                               | `0`–`3600`                                    | Tiempo de silencio por condición después de disparar.                                      |
+
+</ScrollTable>
+
+`install` siempre escribe `CAPTURE_MB`, y escribe `TRIGGERS` solo cuando se da
+`--triggers`; sin ella el agente usa su conjunto por defecto. No escribe ninguna
+de las otras cuatro, así que un agente instalado funciona con sus valores por
+defecto. `mikroscope plan` muestra las entradas de la envlist antes de escribir
+nada.
+
+`--triggers` pasa por el propio analizador del agente antes de la primera
+conexión: `Finish` se la pasa a `agent.ParseTriggers`, así que una condición
+desconocida, un umbral fuera de rango, una comilla o un punto y coma hacen
+fallar la orden con código de salida 2 sin escribir nada. El agente vuelve a
+analizar la lista al arrancar, porque una envlist se puede editar a mano en el
+router; un valor que rechace allí hace que se niegue a funcionar, con una línea
+en su salida estándar, que RouterOS lleva a su log.
+
+## Las condiciones
+
+El conjunto por defecto son las condiciones sin umbral salvo `squeeze` —
+`softnet-drop`, `oom`, `reset`, `irq-err`, `flash-bad`, cada una de las cuales
+dispara cuando el kernel cuenta algo que normalmente no cuenta — más `kmsg<=3`.
+Las condiciones de nivel no están en él: sus umbrales los eliges tú.
+
+<ScrollTable label="Condiciones de disparo">
+
+| Condición      | Dispara cuando                                                                            | `field` en la cabecera       | Umbral       | En el conjunto por defecto |
+| -------------- | ----------------------------------------------------------------------------------------- | ---------------------------- | ------------ | -------------------------- |
+| `softnet-drop` | alguna cola softnet descartó un paquete en la muestra                                     | `softnet[N].dropped`         | ninguno      | sí                         |
+| `squeeze`      | alguna cola softnet se quedó sin presupuesto (`time_squeeze`) en la muestra               | `softnet[N].time_squeeze`    | ninguno      | no                         |
+| `oom`          | el kernel mató algo por falta de memoria (`vm.oom_kill` se movió)                         | `vm.oom_kill`                | ninguno      | sí                         |
+| `reset`        | un contador retrocedió de una forma que no es un desbordamiento de 32 bits                | `resets`                     | ninguno      | sí                         |
+| `irq-err`      | la fila `Err` de `/proc/interrupts` se movió                                              | `irq_err`                    | ninguno      | sí                         |
+| `flash-bad`    | el recuento de bloques defectuosos de una partición YAFFS subió desde la muestra anterior | `flash[<device>].bad_blocks` | ninguno      | sí                         |
+| `kmsg<=N`      | un registro del log del kernel de severidad N o más grave (0 es emergencia, 3 error)      | `events.level`               | `0`–`7`      | `kmsg<=3`                  |
+| `busy>=X`      | la proporción de ocupación de algún núcleo está en X o por encima                         | `cpu[N].busy_ratio`          | `0.05`–`1`   | no                         |
+| `slip>=X`      | el intervalo de la muestra fue de al menos X periodos del muestreador                     | `dt_ns/period`               | `1.1`–`100`  | no                         |
+| `memfall>=N`   | `MemAvailable` cayó N o más en un tick                                                    | `mem.MemAvailable fall (MB)` | `1`–`100000` | no                         |
+
+</ScrollTable>
+
+Cuando una condición abarca varios núcleos, colas o particiones, la cabecera
+nombra el primero que coincidió. `memfall` compara los kB de `/proc/meminfo`
+divididos entre 1 024, así que su N está en MiB aunque el campo diga MB.
+`kmsg<=N` necesita el log del kernel, que el agente solo puede leer en un
+contenedor privilegiado ([lo que aporta
+privileged](/mikroscope/es/limits/privileged/)); `flash-bad` necesita una
+partición YAFFS. Una condición cuya fuente no existe nunca dispara.
+
+`squeeze` está disponible pero no es de las de por defecto. En el RB5009 de
+referencia los time squeezes son ruido de fondo: una regla que salte ante
+cualquier squeeze salta allí 92 veces en veinte minutos (RouterOS 7.24.2,
+2026-09-15). Por eso la regla de microrráfagas del colector exige un episodio de
+tres desviaciones.
+
+Una captura también se puede armar a mano, con `POST /capture` (abajo). Su causa
+es `manual` y su `field` es el motivo que diste.
+
+## Cómo un disparo se convierte en captura
+
+1. Una condición es cierta en la muestra S. Si esa condición disparó hace menos
+   de `TRIGGER_REFRACTORY_S` × cadencia muestras (esos segundos a la cadencia
+   nominal), el disparo se **suprime** (motivo `refractory`). Si otra captura aún está recogiendo su ventana, el disparo se
+   **suprime** (motivo `pending`): se recoge una captura cada vez, sea cual sea
+   la condición que la armó.
+2. Si no, se arma una captura para la ventana desde S − `CAPTURE_PRE_S` ×
+   cadencia hasta S + `CAPTURE_POST_S` × cadencia, y se pone en cola una línea
+   `{"trigger":{…}}` para el flujo.
+3. Cuando la muestra del final de la ventana está en el anillo, la captura fija
+   las líneas del anillo de esa ventana. Si el anillo ya no guarda ninguna de
+   ellas, la captura se **rechaza** (`empty`).
+4. Si los bytes de la ventana por sí solos superan el presupuesto, se
+   **rechaza** (`budget`). Si el presupuesto está lleno, `first` la rechaza
+   (`budget`) y `last` expulsa las capturas más antiguas hasta que quepa.
+
+Una captura cuya ventana tiene menos de `(pre + post) × rate + 1` muestras se
+conserva con `complete: false` en vez de quedarse corta en silencio. Eso ocurre
+cuando el anillo no guardaba la ventana entera: un disparo dentro de los
+`CAPTURE_PRE_S` primeros segundos tras arrancar el agente, o un anillo
+(`BUFFER_S`) más corto que la ventana. Cuando el agente se detiene, recoge una
+captura pendiente con lo que guarda el anillo, pero no puede servirla: las
+capturas están en memoria, y el servidor HTTP se detiene con el agente.
+
+Las capturas viven en la memoria del agente. Nada las escribe a disco, así que un
+reinicio del contenedor, un `upgrade` o un reinicio del router pierde las que aún
+no se han descargado.
+
+### Lo que pesa una captura
+
+El tamaño de una captura es el número de muestras de su ventana por el tamaño de
+línea. La línea media medida en el RB5009 (RouterOS 7.24.2, 10 Hz, todas las fuentes de esa fecha, 2026-09-12) fue de <Measured id="ring.lineBytes" />;
+las líneas con los suelos por defecto no se han medido. Eso da, por aritmética y
+no midiendo capturas:
+
+<ScrollTable label="Tamaño de captura por cadencia">
+
+| Cadencia | Ventana por defecto (5 s + 5 s) | Capturas en los 4 MiB por defecto |
+| -------- | ------------------------------- | --------------------------------- |
+| 10 Hz    | 101 muestras, unos 250 kB       | 17                                |
+| 50 Hz    | 501 muestras, unos 1,2 MB       | 3                                 |
+| 100 Hz   | 1 001 muestras, unos 2,4 MB     | 1                                 |
+
+</ScrollTable>
+
+Una placa mayor — más núcleos, más líneas de interrupción — tiene líneas más
+largas. El campo `bytes` de cada captura es la cifra real.
+
+El presupuesto es memoria que el agente retiene además de su anillo: una línea
+fijada sigue viva cuando el anillo ya la ha dejado atrás. Por eso el agente la
+cuenta al arrancar en la misma comprobación que el anillo. Cuando el agente
+puede leer el `memory.max` del contenedor y unos `rate × buffer × 2.56 kB` más
+`CAPTURE_MB` lo superan, se niega a arrancar, nombrando los tres ajustes que
+bajar o `--memory-max` para subir. Cuando `MEM_LIMIT_MB` es mayor que 0, avisa
+si el doble de eso supera su límite blando de memoria de Go; el valor por
+defecto del propio agente para `MEM_LIMIT_MB` es 14, e `install` escribe 40.
+[El coste del observador](/mikroscope/es/cost/) explica por qué importa esa
+segunda proporción.
+
+## Leer capturas por HTTP
+
+Cuatro endpoints en el agente. Cada uno necesita el token bearer cuando el
+agente lo tiene, y cada uno responde `404` con
+`captures disabled (CAPTURE_MB=0)` cuando la función está desactivada.
+
+<ScrollTable label="Endpoints de capturas">
+
+| Petición                 | Respuesta                                                                                                                                                                                                      |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /captures`          | El índice, en JSON.                                                                                                                                                                                            |
+| `GET /captures/<id>`     | Una línea de cabecera `{"capture":{…}}`, y después las líneas de muestra tal cual, como NDJSON.                                                                                                                |
+| `DELETE /captures/<id>`  | Libera la parte del presupuesto de esa captura; `204`.                                                                                                                                                         |
+| `POST /capture?reason=…` | Arma una captura manual en la muestra más reciente: `{"id":N,"armed":true}`, o `409` cuando hay una captura pendiente o el disparo manual está en su ventana refractaria. El motivo por defecto es `operator`. |
+
+</ScrollTable>
+
+```sh
+curl -s -H "Authorization: Bearer $MIKROSCOPE_TOKEN" http://172.30.10.2:9123/captures
+curl -s -H "Authorization: Bearer $MIKROSCOPE_TOKEN" http://172.30.10.2:9123/captures/3 > cap3.jsonl
+mikroscope plot --in cap3.jsonl
+curl -s -X DELETE -H "Authorization: Bearer $MIKROSCOPE_TOKEN" http://172.30.10.2:9123/captures/3
+```
+
+El índice lleva la `policy`, `budget_bytes`, los `bytes` retenidos, la captura
+aún `pending` si la hay, los `triggers` configurados y una entrada por captura:
+`id`, `cause`, `condition`, `field`, `value`, `threshold`, `fire_seq`,
+`fire_mono_ns`, `fire_wall_ns`, `first_seq`, `last_seq`, `samples`, `bytes` y
+`complete`.
+
+Las líneas de muestra de `GET /captures/<id>` son idénticas byte a byte a lo que
+sirve `/snapshot` para las mismas muestras, así que una herramienta que lee un
+snapshot no necesita un analizador nuevo; `plot` salta la línea de cabecera. La
+CLI no tiene verbo para las capturas: usa cualquier cliente HTTP.
+
+<Aside type="note" title="Las capturas necesitan el camino directo">
+
+El transporte relay tira a través de `/tool fetch`, que devuelve como mucho <Measured id="relay.replyMaxBytes" /> y no envía token. Una captura con los valores por defecto ocupa unos 250 kB. Trae las capturas
+desde un equipo que llegue al agente directamente, o a través de `--expose`: [llegar al
+agente](/mikroscope/es/install/reaching-the-agent/) cubre ambos.
+
+</Aside>
+
+## La línea de disparo, y qué hace con ella el colector
+
+Cuando se arma una captura, el agente coloca una línea antes de la muestra en la
+que disparó, en `/stream` y en `/snapshot?since=` (no en `/snapshot?seconds=`):
+
+```text
+{"trigger":{"id":3,"cause":"busy>=0.95","field":"cpu[2].busy_ratio","value":1,"threshold":0.95,"seq":48213,"wall_ns":1789000000000000000}}
+```
+
+Los valores de arriba son ilustrativos. La línea es de un tipo propio, como la
+línea `{"gap":…}`, no un campo de la muestra, así que el esquema de la muestra no
+cambia. El agente guarda las últimas 64 para quien tire de él, así que quien va
+más de 64 disparos por detrás nunca ve las más antiguas; un disparo suprimido no
+produce ninguna. Una captura manual dispara sobre la muestra más reciente que ya
+está en el anillo, así que quien ya ha recibido esa muestra no recibe línea de
+disparo para ella; lee `/captures` en su lugar.
+
+`forward` reconoce la línea, nunca la confunde con una muestra, la cuenta y se
+la entrega a cada destino como anotación: la medida `mikroscope_trigger` en
+InfluxDB y la tabla en SQL, `mikroscope_collector_triggers_total{cause}` en la
+exposición Prometheus del colector, y la propia línea en el destino de fichero.
+Los dos paneles de Grafana llevan una anotación `triggers`, desactivada por
+defecto en la barra de conmutadores: en InfluxDB lee las filas de
+`mikroscope_trigger`, en Prometheus el `mikroscope_trigger_fired_total` del
+agente. La captura en sí se queda en el agente, en `/captures/<id>`.
+
+`record` aún no reconoce la línea — [Grabar, marcar,
+dibujar](/mikroscope/es/record/#disparadores-durante-una-grabación) dice qué hace
+con ella.
+
+## Contar lo que no se capturó
+
+El `/metrics` del agente lleva las familias que dicen cuánto no vieron las
+capturas. Cada par de condición y motivo se expone desde el principio, a 0 hasta
+que ocurre, así que un panel puede mostrar «0 hasta ahora».
+
+<ScrollTable label="Familias de métricas de disparo y captura">
+
+| Familia                                                 | Tipo    | Significado                                                                                                     |
+| ------------------------------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------- |
+| `mikroscope_trigger_fired_total{condition}`             | counter | Veces que cada condición armó una captura; `condition="manual"` aparece cuando se ha armado una captura manual. |
+| `mikroscope_trigger_suppressed_total{condition,reason}` | counter | Veces que una condición fue cierta y no se armó nada: `refractory` o `pending`.                                 |
+| `mikroscope_capture_refused_total{reason}`              | counter | Capturas recogidas y después no conservadas: `budget` o `empty`.                                                |
+| `mikroscope_captures_held`                              | gauge   | Capturas retenidas en este momento.                                                                             |
+| `mikroscope_capture_bytes`                              | gauge   | Bytes del anillo que fijan las capturas retenidas.                                                              |
+| `mikroscope_capture_budget_bytes`                       | gauge   | El presupuesto, a partir de `CAPTURE_MB`.                                                                       |
+| `mikroscope_capture_bytes_served_total`                 | counter | Bytes entregados por `/captures/<id>`.                                                                          |
+
+</ScrollTable>
+
+El colector no puede recalcularlas a partir de las muestras, así que el panel de
+Prometheus espera un trabajo de scrape sobre el propio agente que conserve solo
+las familias exclusivas del agente; [Prometheus](/mikroscope/es/sinks/prometheus/)
+tiene el trabajo.
+
+## Lo que no puede hacer
+
+Dicho porque cada una de estas cosas va a ocurrir:
+
+- **El conjunto de capturas es una muestra de los eventos, nunca un censo.** La
+  ventana refractaria y el presupuesto de bytes acotan una tormenta de disparos,
+  y se recoge una captura cada vez. `mikroscope_trigger_suppressed_total` y
+  `mikroscope_capture_refused_total` son cuánto no se vio.
+- **Cadencia completa no es detalle completo.** Una captura guarda muestras a la
+  cadencia del muestreador: a 10 Hz nada más corto que 100 ms es visible con
+  fiabilidad, y una proporción de ocupación sigue moviéndose en los escalones de
+  tick del kernel. [El suelo de resolución](/mikroscope/es/limits/) fija ese
+  límite, no la captura.
+- **Una ventana puede quedarse corta.** Una que el anillo no guardaba entera se
+  sirve con `complete: false`. Una cortada porque el agente se detuvo se recoge
+  pero nunca se sirve, porque las capturas se detienen con el agente.
+- **Descargar le cuesta al router.** Una descarga corre en el mismo núcleo que el
+  muestreador, y se contabiliza en `mikroscope_capture_bytes_served_total` igual
+  que se le carga a cualquiera que tire del agente.
+
+<NotClaimed>
+	El coste de un disparo en el equipo — 3 µs es la estimación del diseño. Cómo se comporta el agente
+	bajo una tormenta sostenida de disparos. Cualquier captura a 50 Hz o 100 Hz. Los tamaños de
+	captura de la tabla de arriba, que son aritmética a partir del tamaño de línea, no tamaños de
+	capturas tomadas en el RB5009.
+</NotClaimed>
+
+<SeeAlso>
+
+## Véase también
+
+- [Grabar, marcar, dibujar](/mikroscope/es/record/): una grabación que empiezas
+  tú, con marcadores, y el gráfico que `plot` dibuja también a partir de una
+  captura.
+- [Los endpoints HTTP del agente](/mikroscope/es/reference/http/): `/captures`,
+  `/stream` y `/snapshot` junto al resto.
+- [Familias de métricas de Prometheus](/mikroscope/es/reference/metrics/): las
+  familias de disparo y captura con todas las demás que expone el agente.
+- [El suelo de resolución es del kernel](/mikroscope/es/limits/): lo que la
+  cadencia completa puede y no puede resolver.
+
+</SeeAlso>

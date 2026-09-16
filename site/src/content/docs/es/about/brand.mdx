@@ -1,0 +1,224 @@
+---
+title: La marca
+description: Nueve barras de muestra y la línea de su propia media, por qué nada de ello se dibuja con opacidad parcial, y el contraste que mide cada tono contra su página.
+---
+
+import Mark from "../../../../assets/mark-inline.svg";
+import ScrollTable from "../../../../components/ScrollTable.astro";
+import SeeAlso from "../../../../components/SeeAlso.astro";
+
+Esta página responde qué dice la marca de mikroscope, cómo está hecha y por qué
+sus colores son los que son — con el contraste de cada tono medido contra el
+fondo sobre el que se dibuja, y el coste de esa decisión dicho a su lado.
+
+<p style="color: var(--ms-accent)">
+	<Mark
+		width={96}
+		role="img"
+		height={96}
+		aria-label="La marca de mikroscope: nueve barras de muestra, tres de ellas por encima de la línea plana de su propia media"
+	/>
+</p>
+
+## Un pico por encima de su propia media
+
+La marca es geometría, no un dibujo: nueve barras de muestra cuya envolvente es
+una ráfaga, cruzadas por la línea plana de su propia media. Esa es toda la
+tesis del proyecto en una forma — una media de un segundo informa de la línea,
+y el muestreo por debajo del segundo es lo que resuelve el pico que se alza
+sobre ella.
+
+La ráfaga es asimétrica como lo es una real: tres muestras tranquilas, una
+subida rápida, el pico, una bajada más lenta y otras tres tranquilas. El pico
+queda en el centro de un número impar de barras, así que la marca se equilibra
+sobre su propio centro.
+
+## La línea es la media, y se calcula
+
+El generador dibuja la línea en la media aritmética de las alturas que recibe,
+no en un número elegido para que quede bien, y una barra toma el tono fuerte
+exactamente cuando está por encima de esa media. Así, la frase que dice la
+marca es una que el código hace cumplir: tres de las nueve muestras están por
+encima de su propia media, y son las tres a las que va el ojo.
+`TestTheLineSitsAtTheMeanOfTheBars` hace fallar la compilación si el dibujo y la
+aritmética se separan.
+
+## Cuatro tonos, dos por tema, y ninguna opacidad
+
+Medidos contra el fondo sobre el que se dibuja cada uno, con el contraste tal
+como lo define WCAG 2.2:
+
+<ScrollTable label="Los tonos de la marca y su contraste medido" nowrap>
+
+| Tema   | Fondo     | Por encima de la media | En la media o por debajo, y la línea | Separación |
+| ------ | --------- | ---------------------- | ------------------------------------ | ---------- |
+| Oscuro | `#0e1316` | `#fbbf24` **11,20:1**  | `#c2740a` **5,16:1**                 | 2,17:1     |
+| Claro  | `#ffffff` | `#633009` **10,73:1**  | `#b45309` **5,02:1**                 | 2,14:1     |
+
+</ScrollTable>
+
+Una paleta por tema no es un refinamiento; es la única forma de que la marca se
+lea en ambos. Un ámbar lo bastante claro para leerse sobre la página casi negra
+da 1,67:1 sobre blanco (`#fbbf24`), y uno lo bastante oscuro para el blanco
+desaparece en la página oscura. Sobre blanco, la muestra que está por encima de
+la media es el tono más oscuro, así que la marca se lee en el mismo sentido en
+los dos temas.
+
+`TestEveryToneClearsAAInItsOwnTheme` vuelve a calcular los contrastes a partir
+del hexadecimal en cada ejecución y hace fallar la compilación si algún tono da
+menos de 4,5:1 sobre su propio fondo, o si los dos tonos de un tema están a
+menos de 2,0:1 entre sí. Un tono editado sin comprobarlo rompe la compilación
+en vez de publicarse. `TestNothingInTheMarkDependsOnOpacity` vigila la otra
+mitad de la decisión.
+
+## Por qué las barras tranquilas no son opacidad
+
+Una barra tranquila dibujada con el color fuerte a una opacidad baja se ve bien
+y falla. Compuesto sobre la página, un 0,28 de
+`#f59e0b` da **1,73:1** sobre el fondo oscuro y un 0,42 de `#a16207` da
+**1,80:1** sobre blanco, donde AA pide 4,5:1. Llegar a 4,5 subiendo el alfa
+exige 0,68 en el tema oscuro y 0,96 en el claro — y entonces una barra
+tranquila es una barra fuerte y la única distinción que la marca existe para
+hacer desaparece. Así que la separación son dos tonos sólidos.
+
+Eso cuesta fuerza. Sólido contra sólido da unos **2,1:1** entre los dos grupos;
+dibujar la barra tranquila a 0,28 (0,42 sobre blanco) los separa unos 5:1 en el
+tema oscuro y 2,7:1 en el claro, con alfas que dan 1,73:1 y 1,80:1 contra su
+propia página y por tanto no llegan a AA. Lo que se gana es que nada en la marca
+se compone contra un fondo que este repositorio no controla — un README en
+GitHub, un `og:image` en un cliente de chat, un favicon sobre la interfaz del
+navegador — de modo que cada número de la tabla es el número que de verdad
+recibe el lector.
+
+## Una norma de la casa, más estricta que el estándar
+
+WCAG 1.4.11 pide **3:1** a un objeto gráfico, y 1.4.3 exime a los logotipos de
+cualquier mínimo. 4,5:1 en cada barra es una norma de la casa más estricta que
+el estándar, elegida por el propietario el 2026-09-15 frente al cambio menor de
+subir los alfas hasta 3:1.
+
+## El ámbar también significa umbral
+
+El ámbar también significa _umbral_ en los paneles de este proyecto, donde un
+panel se pone naranja antes de ponerse rojo. Los dos no chocan literalmente —
+los paneles usan los colores con nombre propios de Grafana y nunca estos
+hexadecimales — pero a un lector que ha aprendido en un panel que "ámbar
+significa mira esto" se le pide leer el mismo tono en la marca del proyecto.
+Ese es el coste de la elección, hecha a sabiendas (propietario, 2026-09-15).
+
+## Las barras son proporciones, no paquetes
+
+Las alturas de las barras no son una captura real. La
+ráfaga medida en el RB5009 de referencia el 2026-09-15 tuvo un pico de 736
+paquetes en una muestra de 20 ms frente a una mediana de 28, y 26× es un rango
+que ningún cuadrado por sí solo puede representar: las muestras tranquilas se
+reducen a puntos, o una escala logarítmica aplana precisamente el pico que la
+marca existe para mostrar. Las alturas de la marca son proporciones de la
+altura dibujada.
+
+## El favicon es otro dibujo
+
+Nueve barras a dieciséis píxeles son un borrón, así que el favicon baja a cinco
+y conserva el pico por encima de la línea, que es la parte que lleva el
+significado.
+
+El `favicon.svg` del sitio es el único icono sin fondo propio. Lleva las dos
+paletas y cambia según el `prefers-color-scheme` del propio lector, la señal
+que sigue la propia interfaz del navegador, así que dibuja `#fbbf24`/`#c2740a`
+sobre una interfaz oscura y `#633009`/`#b45309` sobre una clara. Cada imagen
+rasterizada lleva en cambio su propio fondo `#0e1316`, porque un `.ico` no
+tiene forma de preguntar.
+
+## Un generador, tres familias de ficheros
+
+La marca vive como un generador, `cmd/gen_brand`, y no como una carpeta de
+ficheros dibujados a mano, porque así cambiar la paleta o el número de barras
+es una edición en vez de nueve en cada uno de una docena de ficheros. Es una
+herramienta de tiempo de compilación y no es uno de los dos binarios
+publicados. Desde la raíz del repositorio:
+
+```sh
+go run ./cmd/gen_brand mark -out brand          # la marca y el favicon, por tema
+go run ./cmd/gen_brand compose -out brand       # el banner, la imagen social y el og:image
+go run ./cmd/gen_brand icons -out site/public   # el favicon y los iconos táctiles
+```
+
+`mark` es texto puro. `compose` lee los tres fondos `bg-*.png` del directorio
+en el que escribe y llama a `rsvg-convert` para los PNG que se publican.
+`icons` llama a `rsvg-convert` y a ImageMagick para el `.ico`, y es el único
+que escribe fuera de `brand/`. Cada coordenada se escribe con dos decimales,
+redondeada al más cercano y, en caso de empate, al par, así que los ficheros
+están pensados para reproducirse byte a byte en cualquier máquina;
+`TestMarkIsByteForByteReproducible` comprueba que dos ejecuciones en el mismo
+equipo dan los mismos cuatro ficheros de marca y de favicon.
+
+<ScrollTable label="Los ficheros de la marca, dónde está cada uno y la suborden que lo escribe">
+
+| Fichero                                                | Dónde          | Suborden  | Qué es                                                                                                     |
+| ------------------------------------------------------ | -------------- | --------- | ---------------------------------------------------------------------------------------------------------- |
+| `mark-dark.svg`, `mark-light.svg`                      | `brand/`       | `mark`    | La marca, una por tema                                                                                     |
+| `favicon-dark.svg`, `favicon-light.svg`                | `brand/`       | `mark`    | La variante de cinco barras, una por tema                                                                  |
+| `mark-inline.svg`                                      | `brand/`       | `mark`    | La marca para una página que la incrusta: el tono fuerte es `currentColor`, el tranquilo `--ms-mark-quiet` |
+| `banner.svg` y `.png`                                  | `brand/`       | `compose` | 1280×320, para el README                                                                                   |
+| `social.svg` y `.png`                                  | `brand/`       | `compose` | 1280×640, la vista previa social del repositorio                                                           |
+| `og.svg` y `.png`                                      | `brand/`       | `compose` | 1200×630, el `og:image` de la documentación                                                                |
+| `background.png`                                       | `brand/`       | ninguna   | El campo generado del que se recortan las tres composiciones                                               |
+| `bg-banner.png`, `bg-social.png`, `bg-og.png`          | `brand/`       | ninguna   | Esos recortes, que lee `compose`                                                                           |
+| `favicon.svg`                                          | `site/public/` | `icons`   | Las dos paletas, cambiando según `prefers-color-scheme`                                                    |
+| `favicon-32x32.png`                                    | `site/public/` | `icons`   | 32 px, sobre su propio fondo                                                                               |
+| `favicon.ico`                                          | `site/public/` | `icons`   | Tres dibujos, a 16, 32 y 48 px, en vez de uno escalado de tres formas                                      |
+| `apple-touch-icon.png`, `icon-192.png`, `icon-512.png` | `site/public/` | `icons`   | 180, 192 y 512 px, cada uno dibujado a su propio tamaño                                                    |
+| `icon-maskable-512.png`                                | `site/public/` | `icons`   | Con más margen, para quedar dentro del 80 % central al que un lanzador puede recortar                      |
+
+</ScrollTable>
+
+Las cuatro últimas filas están escritas para un manifiesto de aplicación web. Este sitio no declara
+ninguno y solo enlaza `favicon.svg`, `favicon.ico` y `apple-touch-icon.png`, así que
+`favicon-32x32.png`, `icon-192.png`, `icon-512.png` e `icon-maskable-512.png` se publican sin
+consumidor: ningún lanzador lee el margen de la versión enmascarable.
+
+La marca de la cabecera de este sitio es `mark-inline.svg`, pintada con la
+paleta propia del sitio, así que el dibujo de la interfaz es el dibujo de
+`brand/`.
+
+## El fondo
+
+No lo escribe el generador: `background.png` se generó una vez con
+inference.sh (`openai/gpt-image-2`, 1536×1024, `quality: high`, 0,16 $) y se
+conserva como imagen rasterizada. Todo lo que se dibuja encima es vectorial,
+así que el texto se mantiene nítido al tamaño al que se produzca la imagen. El
+prompt pedía un campo casi negro de barras de muestra verticales y tenues, cada
+vez más densas y cálidas hacia la derecha, y que el tercio izquierdo quedara
+vacío — que es donde van la marca y el texto, así que la composición nunca
+pelea con su propio fondo.
+
+Los tres recortes conservan todo el degradado de izquierda a derecha en vez de
+tomar una ventana del centro:
+
+```sh
+magick background.png -resize 1280x -gravity center -crop 1280x320+0+0 +repage bg-banner.png
+magick background.png -resize 1280x -gravity center -crop 1280x640+0+0 +repage bg-social.png
+magick background.png -resize 1200x -gravity center -crop 1200x630+0+0 +repage bg-og.png
+```
+
+Las composiciones son claras sobre oscuro de principio a fin, así que toman los
+dos tonos del tema oscuro y no necesitan pareja de temas. Medidos sobre el
+fondo más oscuro del propio campo (`#020608`, muestreado del borde izquierdo),
+el título `#f6f3ee` da 18,38:1, el lema `#cfc6b8` 12,04:1, y los dos tonos de
+la marca 12,19:1 y 5,62:1 — más que en la página, porque el campo es más oscuro
+que ella. El lema es "Sub-second kernel telemetry from inside the router".
+
+## Configurar la vista previa social
+
+A mano: Settings, luego Social preview, y subir `social.png`. GitHub no ofrece
+ninguna API para ello.
+
+<SeeAlso>
+
+## Véase también
+
+- [Dos paneles, una sola lista](/mikroscope/es/dashboards/): donde el ámbar significa un umbral.
+- [Qué es](/mikroscope/es/start/): la tesis que dibuja la marca, en palabras.
+- [Linaje y licencia](/mikroscope/es/about/lineage/): de dónde vino el resto del código.
+
+</SeeAlso>

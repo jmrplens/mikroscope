@@ -1,0 +1,41 @@
+---
+/**
+ * GitHub Pages serves ONE 404 document for a whole site, so a missing address
+ * under /es/ lands on the English page. The Spanish twin at /es/404/ exists
+ * and is what a reader reaches by following a link, but nothing routes a
+ * missing /es/ address to it.
+ *
+ * So the English page carries this: when the address that failed was a Spanish
+ * one, it rewrites the three strings and the two links in place. The text is
+ * the same text the Spanish twin carries, and when scripting is off the reader
+ * gets the English page, which still links to both home pages.
+ */
+const es = {
+	title: "Página no encontrada | mikroscope",
+	tagline:
+		"No hay ninguna página en esta dirección. Puede que se haya movido o que el enlace esté mal escrito; la documentación empieza en cualquiera de estas dos.",
+	actions: [
+		["Qué es", "/mikroscope/es/start/"],
+		["La página de inicio", "/mikroscope/es/"],
+	],
+};
+---
+
+<script is:inline set:html={`
+(() => {
+	if (!location.pathname.startsWith("/mikroscope/es/")) return;
+	const es = ${JSON.stringify(es)};
+	document.documentElement.lang = "es";
+	document.title = es.title;
+	const tagline = document.querySelector(".tagline");
+	if (tagline) tagline.textContent = es.tagline;
+	document.querySelectorAll(".actions a").forEach((a, i) => {
+		const next = es.actions[i];
+		if (!next) return;
+		const icon = a.querySelector("svg");
+		a.textContent = next[0];
+		if (icon) a.append(icon);
+		a.setAttribute("href", next[1]);
+	});
+})();
+`} />

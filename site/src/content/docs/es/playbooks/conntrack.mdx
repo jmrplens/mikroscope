@@ -1,0 +1,131 @@
+---
+title: Conntrack sin la API
+description: El namespace del propio contenedor informa de cero conexiones rastreadas, pero el asignador slab global no — cómo leer desde ficheros la población real de conntrack del router y su techo, y por qué no se provocó ninguna tormenta para mostrarlo.
+---
+
+import FaultSignature from "../../../../components/FaultSignature.astro";
+import Measured from "../../../../components/Measured.astro";
+import NotClaimed from "../../../../components/NotClaimed.astro";
+import Provenance from "../../../../components/Provenance.astro";
+import SeeAlso from "../../../../components/SeeAlso.astro";
+
+Esta página responde a cuántas conexiones está rastreando el router, sin recorrer
+una tabla por una sesión de la API. El techo y los timeouts se leyeron los dos el 2026-09-14.
+
+<Provenance of="playbooks-2026-09-12" />
+
+## El namespace informa de cero
+
+El namespace de red del propio contenedor informa de `nf_conntrack_count` = 0 por
+muy ocupado que esté el router.
+
+<Provenance of="netns-2026-09-12" />
+
+## El asignador slab no
+
+El asignador slab es global. Con `privileged=yes` el agente lee `/proc/slabinfo`
+e informa del número de objetos activos de la caché `nf_conntrack`, que **es** la
+población real de conntrack del router:
+
+```text
+slab: {'nf_conntrack': 6240, 'skbuff_head_cache': 1008, 'skbuff_fclone_cache': 400,
+       'TCP': 327, 'UDP': 180, 'TCPv6': 117, 'UDPv6': 125,
+       'sock_inode_cache': 645, 'kmalloc-1k': 1152, 'kmalloc-2k': 905}
+```
+
+En una muestra es el mapa `slab`; en `/metrics` es
+`mikroscope_slab_active_objects{cache="nf_conntrack"}`. La familia no aparece sin
+`privileged=yes`, porque `/proc/slabinfo` solo lo puede leer root. Una caché que
+el kernel no tiene se omite, no se informa como un 0 permanente — el agente
+también pide `dst_cache` e `ip_dst_cache`, que no aparecen en la salida de arriba.
+
+`/proc/slabinfo` es el fichero más caro que analiza el agente, así que se lee con
+un suelo de presupuesto de 6 Hz, redondeado a ticks enteros: uno de cada 2 ticks
+(5 Hz) a los 10 Hz por defecto, uno de cada 17 a 100 Hz. 6 Hz es también más o
+menos la tasa a la que se midió que cambia `nf_conntrack`. Se guarda cuando
+cambia, más un latido cada 60 s.
+
+## Compruébalo una vez
+
+Compruébalo contra la API una vez, para fiarte de él a partir de entonces:
+
+```text
+/ip/firewall/connection/print count-only     # 6 212 el día anterior; slab decía 6 287
+```
+
+Ese día se registraron dos lecturas del slab frente a él, 6 582 y <Measured id="conntrack.slab" />; el
+fragmento de arriba es un tercer momento (6 240).
+
+Los dos no coincidirán exactamente — se muestrean en instantes distintos, y el
+slab cuenta objetos que el asignador aún retiene —, pero se siguen. La diferencia
+de coste es lo que importa: la lectura de un fichero varias veces por segundo
+frente a recorrer una tabla por una sesión de la API.
+
+## El techo también se puede leer
+
+Junto a `nf_conntrack_count` en `/proc/sys/net/netfilter`, `nf_conntrack_max` no
+va por namespace. Marca **966 656** desde dentro del contenedor — el mismo número
+que un `/ip/firewall/connection/tracking/print` de solo lectura da como
+`max-entries` en el router de referencia (2026-09-14). Así que "cómo de llena está
+la tabla de conexiones" se puede responder sin la API: la población del slab
+sobre ese techo.
+
+El agente lee el techo una vez al arrancar, porque es un sysctl que edita una
+persona y no un contador, y lo envía junto a la población que acota:
+`mikroscope_slab_limit_objects` en `/metrics`, `limit` en la fila slab de
+InfluxDB.
+
+El colector ejecuta dos detecciones sobre la población y su techo:
+`conntrack-cliff`, cuando `nf_conntrack` cae por debajo de la mitad de su valor
+guardado anterior, y `conntrack-high`, cuando la ocupación supera el 80 % de
+`nf_conntrack_max` **y** sube en los últimos 60 s, sin estimación de tiempo hasta
+llenarse.
+
+El mismo subárbol tiene una trampa. Los _timeouts_ de conntrack que hay ahí
+marcan los valores por defecto de Linux (`tcp_timeout_established` 432 000 s,
+frente al `1d` de RouterOS; leído el 2026-09-14), así que nunca deben presentarse
+como la configuración del router.
+
+## Las cachés vecinas
+
+Merece la pena vigilarlas por sí mismas:
+
+- `skbuff_head_cache` / `skbuff_fclone_cache` — búferes de paquetes en tránsito. Un
+  pico aquí durante un suceso de tráfico es presión de memoria que viene del
+  camino de red, no de algo que hayas instalado.
+- `TCP` / `UDP` / `sock_inode_cache` — sockets que mantiene el propio router.
+- `kmalloc-1k` / `kmalloc-2k` — donde se ven las tormentas de asignaciones
+  grandes.
+
+## La firma
+
+<FaultSignature origin="unprovoked" date="2026-09-12">
+
+- `nf_conntrack` subiendo hacia `nf_conntrack_max` mientras el recuento del propio
+  namespace se queda en 0.
+- `nf_conntrack` cayendo por debajo de la mitad de su valor guardado anterior, que
+  es lo que marca `conntrack-cliff`; la detección dice dónde mirar, no por qué
+  cayó.
+- `skbuff_*` subiendo con un suceso de tráfico, lo que sitúa la presión de memoria
+  en el camino de red.
+
+</FaultSignature>
+
+<NotClaimed variant="not-provoked">
+	Una tormenta de conntrack. Generar miles de conexiones contra un router de producción arriesga
+	disparar su propio cortafuegos o un bouncer al estilo de CrowdSec y dejarte fuera del mismo camino
+	por el que estás trabajando. La comprobación cruzada de arriba da la misma confianza en el
+	contador sin ese riesgo, pero no se observó qué aspecto tiene una tormenta en estas cachés.
+</NotClaimed>
+
+<SeeAlso>
+
+## Véase también
+
+- [La CPU del router, la red del contenedor](/mikroscope/es/limits/namespaces/): qué contadores oculta
+  el namespace de red, y la excepción del slab.
+- [Lo que aporta privileged](/mikroscope/es/limits/privileged/): los ficheros que solo lee root,
+  `/proc/slabinfo` entre ellos.
+- [Detecciones](/mikroscope/es/sinks/detections/): `conntrack-cliff` y `conntrack-high` completas.
+
+</SeeAlso>

@@ -1,0 +1,162 @@
+---
+title: What runs where
+description: Which piece of mikroscope runs on the router and which on your host, what each one reaches, and where every credential lives.
+---
+
+import EnvlistKeys from "../../../components/EnvlistKeys.astro";
+import NotClaimed from "../../../components/NotClaimed.astro";
+import ScrollTable from "../../../components/ScrollTable.astro";
+import SeeAlso from "../../../components/SeeAlso.astro";
+import Verified from "../../../components/Verified.astro";
+
+This page answers the question to ask before putting anything on a production router: what
+mikroscope runs on it, what it runs on your own machine, what each piece can reach, and which
+credential sits where. The short form is that the router holds an agent that listens and never
+connects out, and every credential that opens something other than the agent stays on your host.
+
+## What runs where
+
+<ScrollTable label="What runs where, what it reaches and which credential it holds">
+
+| Piece                                                            | Runs                                 | Reaches                                                                                                               | Credentials                                                     |
+| ---------------------------------------------------------------- | ------------------------------------ | --------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| `mikroscope-agent`                                               | in a scratch container on the router | serves HTTP on the veth address only; **no outbound connection**                                                      | none it presents; an optional bearer token it _requires_        |
+| `mikroscope doctor`, `install`, `upgrade`, `uninstall`, `status` | your host, when you run them         | the router over your own admin ssh; `install`, `upgrade` and `status` also probe the agent's `/healthz`               | your ssh key                                                    |
+| `mikroscope plan`, `install --dry-run`                           | your host                            | nothing: they build the image and print the listing without connecting to the router                                  | none, unless `plan --rsc` is given a token (below)              |
+| `mikroscope record`, `forward`                                   | your host                            | the agent over HTTP; the router's binary API for `forward`'s API tier, the relay transport and `record --log-markers` | the agent's token if one is set; a dedicated read-only API user |
+| `mikroscope mark`                                                | your host                            | the recording's local files; the router's binary API only with `--log-markers`; never the agent                       | the API user, only with `--log-markers`                         |
+| sinks                                                            | your host, inside `forward`          | serve `/metrics` for your Prometheus; push to InfluxDB and the other destinations you name                            | their tokens, in your environment                               |
+| `mikroscope dashboards import`, `check`                          | your host                            | your Grafana                                                                                                          | `GRAFANA_TOKEN`, in your environment                            |
+
+</ScrollTable>
+
+`plan` and `install --dry-run` never reach the router, so they do not run the ownership checks
+either; those run only on a real `install`.
+
+Nothing about the tool is reported anywhere. There is no update check. In the code, the agent's
+only network code is its HTTP server. The outbound connections all live in the CLI — the sinks
+(HTTP, TCP or UDP), the Grafana client, the RouterOS API client, the direct transport and the
+`/healthz` probe — and each goes only to an address you gave it or, for the agent, to the `.2` of
+`--subnet` (`172.30.10.2` unless you change it).
+
+The collector's own Prometheus exposition, `forward --prom <address>`, listens on the address you
+pass and serves `/metrics` with no authentication. Bind it to an address only your Prometheus
+reaches.
+
+## Credentials stay off the router
+
+**Over the binary API, `/container/print` returned every property of every container, `cmd` and
+`envlist` included, to a user with only `read,api`** (<Verified of="read-user-envlist" />; only the
+property names were printed). Reading the envlist entries' values, in `/container/envs`, as such a
+user was not checked separately. The design assumes they are readable too: whatever is in an
+envlist is treated as readable by every `read` user on that router, not only by administrators.
+
+That is why the agent has no push sink: a sink token on the router would be readable by every
+`read` user. If push ever comes, it will be agent → collector with the same NDJSON, never
+agent → InfluxDB.
+
+What `install` does put in the envlist `<name>-env` is configuration, and nothing that opens
+anything else:
+
+<EnvlistKeys />
+
+The last row is the one secret that does live on the router. It is written whenever `--token` or
+`MIKROSCOPE_TOKEN` is set, with or without `--expose`, and like the rest of the envlist it is
+treated as readable by every `read` user. It opens the agent's own HTTP paths and nothing else. `plan` and
+`--dry-run` print it as `value="(token)"`, the options line as `token=(set)`, and the agent's start
+line in the router log as `token=true`.
+
+`plan --rsc` is the exception to that masking. It writes the install as a RouterOS script to run on
+the router itself, so the envlist line has to carry the real token; the script says so in its own
+header. A generated `.rsc` with a token in it is a credential — [what the installer
+refuses](/mikroscope/security/installer/) has how to handle it.
+
+## Where the collector's credentials live
+
+On your host, the credentials that open something other than the agent are read from the
+environment only, never from a flag. The code gives the reason: a flag is visible in `ps` and in a
+shell history.
+
+- The API user's password: `MIKROSCOPE_API_PASSWORD`. The address and user come from `--api` and
+  `--api-user`, or `MIKROSCOPE_API_ADDR` and `MIKROSCOPE_API_USER`.
+- Sink credentials: `MIKROSCOPE_INFLUX_TOKEN`, `MIKROSCOPE_LOKI_TOKEN`, `MIKROSCOPE_OTLP_TOKEN`,
+  `MIKROSCOPE_ELASTIC_AUTH`, `MIKROSCOPE_TELEGRAF_TOKEN`.
+- Grafana: `GRAFANA_TOKEN`.
+
+The agent's token is the exception: it has a `--token` flag as well as `MIKROSCOPE_TOKEN`. The
+same reasoning applies to it, so prefer the variable.
+
+The CLI does not read `.env` itself. Export the variables into the shell that runs it, for example
+with `set -a; . ./.env; set +a`.
+
+## Where the agent image comes from
+
+The container runs an image, and which route puts it there decides what you are trusting.
+
+- `install` with a Go toolchain and a checkout builds the image on your host from the source in
+  front of you and uploads it over your own ssh session. You trust your own tree.
+- `install --agent-tar <file>` uploads the tar the release publishes, over the same ssh session. The
+  CLI checks that the tar is a mikroscope agent image of the architecture `--arch` names before it
+  sends it; checking that it is the file the release published is yours to do, against
+  `checksums.txt`.
+- `install --remote-image <reference>` uploads nothing: the router itself fetches the image from the
+  registry its global `/container/config registry-url` names. You trust that registry and the
+  router's path to it, and mikroscope verifies nothing about what arrives.
+- `plan --rsc` writes the same commands as a RouterOS script for you to paste or `/import`; the
+  image still has to come from one of the two routes above that need no upload from the CLI.
+
+## The container
+
+`install` creates one container with these settings, all printed by `plan` before anything is
+written:
+
+- **`privileged=yes` by default**, `--privileged=false` to opt out. The setting needs RouterOS 7.24 or later. It drops the container's user namespace (verified on <Verified of="privileged-namespaces" />), which is what makes the kernel log, `/proc/slabinfo`,
+  `/proc/pagetypeinfo` and the MTD ECC counters readable. It does **not** drop the network or PID
+  namespace: no interface counters, no router conntrack table, no view of RouterOS's processes.
+  [What privileged buys](/mikroscope/limits/privileged/) has the measurements.
+- **`memory-max=64M`** (`--memory-max`), enforced as the container's cgroup limit, with the agent's
+  Go soft limit at 40 MiB (`--mem-limit-mb`) inside it.
+- **`restart-policy=on-failure`**, bounded to five retries ten seconds apart, so a broken image
+  cannot loop at boot.
+- **`start-on-boot=yes`**, or `no` with `--ephemeral`, whose root lives on the tmpfs disk and does
+  not survive a reboot.
+- **`logging=yes`**, so the agent's lifecycle lines reach the router log.
+- **`ignore-remote-image-change=yes`**: with the default, RouterOS watches the image and, once the
+  tar is removed, stops and removes the container and re-extracts it minutes later
+  (<Verified of="remote-image-change" />). `install` removes the tar right after extraction, which is why it
+  sets this.
+- Root and image on the disk you chose with `--disk`: the internal flash by default.
+- **No bind mount.** `install` mounts no host path into the container.
+
+The agent reads `/proc`, `/sys` (`/sys/fs/cgroup` for its own accounting, `/sys/class/thermal` and
+`/sys/class/mtd` for the device), and — privileged — `/dev/kmsg` and the hardware performance
+counters. It writes nothing to its root at runtime: the ring and the triggered captures are held
+in memory. It catches SIGTERM, because RouterOS kills a container that does not, at once.
+
+The last setting in the list is deliberate. On 2026-09-15 a privileged container on the reference
+RB5009 was given host `/proc`, `/sys` and `/` as bind mounts, to see whether a mount buys more
+access. Host `/proc` mounted but read zero PIDs, and host `/sys` had no `class/net`: the namespaces
+held. Host `/` did work, and it exposes the RouterOS flash filesystem — configuration and files,
+including secrets. mikroscope does not do this, and a container you build yourself should not
+either.
+
+<NotClaimed variant="untested">
+	Reboot survival of the persistent install is untested: the reference router is production and is
+	not rebooted for tests. The container settings above were verified on one RB5009 running RouterOS
+	7.24.2; no other board or RouterOS version was tried.
+</NotClaimed>
+
+<SeeAlso>
+
+## See also
+
+- [The API user](/mikroscope/security/api-user/): the RouterOS user the collector needs, and the
+  policy it gets.
+- [What --expose opens](/mikroscope/security/expose/): the two firewall rules, and why the token
+  becomes mandatory.
+- [What the installer refuses](/mikroscope/security/installer/): the objects it will not build on,
+  and the values it will not put in a command.
+- [What privileged buys](/mikroscope/limits/privileged/): what the default privilege grant reads,
+  and what it does not.
+
+</SeeAlso>

@@ -1,0 +1,133 @@
+---
+title: Una inundación de paquetes
+description: Diez segundos de inundación ICMP contra la propia dirección del RB5009 de referencia — la interrupción del switch que hace las veces de contador de interfaz, el único núcleo que pagó y el contador time_squeeze que merece la pena vigilar.
+---
+
+import FaultSignature from "../../../../components/FaultSignature.astro";
+import Measured from "../../../../components/Measured.astro";
+import NotClaimed from "../../../../components/NotClaimed.astro";
+import Provenance from "../../../../components/Provenance.astro";
+import SeeAlso from "../../../../components/SeeAlso.astro";
+
+Esta página responde a qué aspecto tiene el tráfico que la CPU del router tiene
+que atender, visto desde dentro de un contenedor que no puede ver las interfaces
+del router. La inundación se provocó a propósito.
+
+<Provenance of="playbooks-2026-09-12" />
+
+## Cómo se provocó
+
+ICMP contra la propia dirección LAN del router, desde un host de la LAN, limitado
+a 10 s. Es tráfico que la CPU del router tiene que atender, a diferencia del
+tráfico de LAN a LAN, que el chip del switch reenvía sin que la CPU llegue a
+verlo:
+
+```sh
+ping -f -w 10 192.168.0.1     # 67 793 paquetes, ~6.8 kpps, 0 % de pérdida
+```
+
+`192.168.0.1` es la dirección LAN del router de referencia; usa la de tu router.
+
+## Lo que registró el agente
+
+En tramos de 5 segundos, antes y durante:
+
+```text
+   t  busy%  per-core busy%           sirq  squeeze  top IRQ
+   2    4.8   3.8   8.0   3.0   4.2     51       50  switch0=5337
+   3    5.5   3.9  10.4   3.9   3.9     50       45  switch0=5567
+   4    9.6  23.3   2.8   3.3   8.8    149      138  switch0=34922
+   5   14.3  24.9  19.6   3.5   9.2    153      136  switch0=33832
+```
+
+## Qué leer
+
+- **Las interrupciones de `switch0` pasaron de 5,5 k a 34 k por tramo**, una
+  subida de 6×. Es lo más parecido a un contador por interfaz que existe dentro
+  del contenedor: el namespace de red oculta `/proc/net/dev`, pero la interrupción
+  que levanta la NIC es global. No te dará bytes; te dará el inicio, el final y
+  qué núcleo pagó.
+- **El coste cayó en un solo núcleo** (el núcleo 0, al 23–25 %) porque esa IRQ
+  está fijada. Una inundación que satura un núcleo mientras tres están ociosos es
+  una forma habitual y confusa — el total dice 14 %, y el router parece
+  bloqueado.
+- **Los softirqs se triplicaron (de 50 a 150)**, y `time_squeeze` subió con ellos.
+  `time_squeeze` es el que hay que vigilar: cuenta las veces que el manejador de
+  softirq agotó su presupuesto con trabajo aún en cola. Un squeeze que sube con un
+  caudal plano es la firma de un router en su techo de paquetes por segundo.
+- **El tiempo de IRQ hardware no aparece en la columna `irq` de `/proc/stat`** en
+  este kernel — siempre es 0 (sin `IRQ_TIME_ACCOUNTING`). Ese trabajo está dentro
+  de `system`. No leas el campo `irq` para concluir que el router no tiene carga
+  de interrupciones.
+
+## Dónde viven estas señales
+
+- Las líneas de interrupción son `mikroscope_irq_total{irq,name,cpu}` en
+  `/metrics`, por núcleo, para las fuentes que aparecieron en el top-K de alguna
+  muestra; `mikroscope_irq_delivered_total` es la suma de todas las fuentes, el
+  denominador para saber qué parte cubre el top-K. En InfluxDB, el reparto por
+  núcleo es `mikroscope_irq_cpu`, con una etiqueta `cpu`. Qué línea levanta una NIC
+  y cómo se llama dependen de la placa y de su driver: compara con la etiqueta
+  `name` o con la tasa, no con `switch0` escrito en una consulta.
+- El squeeze es `mikroscope_softnet_total{cpu,kind="time_squeeze"}`, junto a
+  `kind="processed"` y `kind="dropped"`; los softirqs son
+  `mikroscope_softirq_total{cpu,kind}`.
+- El squeeze no tiene un presupuesto entre el que dividirlo: `/proc/sys/net/core/*`
+  (`netdev_budget`, `netdev_max_backlog`) no existe en el namespace del
+  contenedor.
+
+El colector marca una muestra como `burst` cuando una cola softnet descartó un
+paquete o hizo más squeezes de los que esa CPU suele hacer (por encima de su
+percentil 90 móvil y al menos 3), en una muestra cuyo
+número de paquetes estuvo en su mediana móvil o por debajo — la evidencia del
+kernel de una ráfaga más corta que el intervalo de muestreo. Lee [la forma en
+reposo](/mikroscope/es/playbooks/idle/) para saber por qué la regla no es
+"cualquier squeeze".
+
+## Tu instrumento forma parte del sistema
+
+Un inciso que lo demuestra: ejecutar
+`/system/routerboard/settings/print` por SSH produjo sucesos del kernel propios —
+
+```text
+[4] rb_ioctl, cmd: 0x5212, arg: 0x0
+[4] rb: RB_GET_CF_INFO
+```
+
+Leer la configuración de RouterOS deja rastro en el log del kernel. Cuando estés
+correlacionando sucesos con tus propias acciones, recuerda que tu instrumento
+forma parte del sistema. En este equipo, cada conexión SSH cuesta además
+un <Measured id="ssh.connectCpu" /> de CPU mientras dura.
+
+## La firma
+
+<FaultSignature origin="provoked" date="2026-09-12">
+
+- Una línea de interrupción que se multiplica varias veces, con un inicio y un
+  final bruscos.
+- El coste en el único núcleo al que está fijada esa línea, mientras el total del
+  equipo se mantiene modesto.
+- Los softirqs y `time_squeeze` subiendo juntos, frente a un squeeze que nunca es
+  cero en reposo.
+
+</FaultSignature>
+
+<NotClaimed variant="not-provoked">
+	Una inundación que llegara al techo de paquetes por segundo del router: esta entregó ~6,8 kpps con
+	un 0 % de pérdida. "Un squeeze que sube con un caudal plano" es como se espera que se lea el
+	techo, y aquí no se observó. Tampoco el tráfico que el chip del switch reenvía entre puertos LAN,
+	que la CPU nunca ve.
+</NotClaimed>
+
+<SeeAlso>
+
+## Véase también
+
+- [La forma de un router en reposo](/mikroscope/es/playbooks/idle/): la línea base de squeeze e
+  interrupciones desde la que subió esta inundación.
+- [La CPU del router, la red del contenedor](/mikroscope/es/limits/namespaces/): por qué la
+  interrupción es visible y los contadores de las interfaces no.
+- [Lo que deriva el colector](/mikroscope/es/sinks/derive/): la marca `burst` y los costes por
+  paquete.
+
+</SeeAlso>

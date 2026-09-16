@@ -1,0 +1,30 @@
+---
+title: mikroscope
+description: Sub-second kernel telemetry from inside a MikroTik router, with the cost of the observer measured rather than claimed.
+template: splash
+head:
+  - tag: title
+    content: mikroscope — sub-second kernel telemetry for MikroTik RouterOS
+hero:
+  tagline: "The RouterOS API reports CPU load once a second. mikroscope runs on the router, in a container, and reads the kernel's own counters at 1 to 100 Hz — for whoever has to say what a MikroTik device did inside that second. Two MIT-licensed binaries, and what the observer costs the router measured rather than promised, first thing below."
+  actions:
+    - text: What it is
+      link: /mikroscope/start/
+      icon: right-arrow
+    - text: What it costs
+      link: /mikroscope/cost/
+      variant: secondary
+    - text: Download
+      link: https://github.com/jmrplens/mikroscope/releases/latest
+      icon: external
+      variant: secondary
+    - text: On GitHub
+      link: https://github.com/jmrplens/mikroscope
+      icon: external
+      variant: minimal
+---
+
+import { en } from "../../data/home";
+import Home from "../../components/home/Home.astro";
+
+<Home content={en} />

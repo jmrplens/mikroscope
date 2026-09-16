@@ -1,0 +1,269 @@
+---
+title: Detections
+description: The eleven rules the collector’s derive stage runs, each with its exact condition, the evidence it needs from the deployment, and what it may not claim.
+---
+
+import { Aside } from "@astrojs/starlight/components";
+import Measured from "../../../components/Measured.astro";
+import NotClaimed from "../../../components/NotClaimed.astro";
+import PrivilegedOnly from "../../../components/PrivilegedOnly.astro";
+import ScrollTable from "../../../components/ScrollTable.astro";
+import SeeAlso from "../../../components/SeeAlso.astro";
+
+A detection is a discrete event the collector puts on the timeline: a "look here", never a
+continuous series and never a verdict. This page answers, for each of the eleven rules,
+exactly when it fires, what the deployment has to provide for it to fire at all, and what
+it cannot tell you. The derived values some rules build on are on [what the collector
+derives](/mikroscope/sinks/derive/).
+
+## What a detection carries
+
+Every detection has the same fields: `rule`; `key` — the CPU, core, zone or port it is
+about, empty for a device-wide rule; `seq` and `wall_ns` of the sample that raised it;
+`value`, the quantity the rule compared; `threshold`, what it compared against; and a
+`message` in words. The thresholds are the rules' own and are written into every event.
+
+**Once per rule and key per 10 s.** After a rule fires for a key, the same rule and key are
+suppressed for 10 s of the samples' wall clock, so a condition that persists fires every
+10 s rather than on every sample. The stage counts what it suppressed, but no sink exports
+that count.
+
+The rules run in the collector process and their history lives there. A collector that
+restarts starts every trailing window, bin and previous value from nothing.
+
+## Where detections land
+
+<ScrollTable label="Where each sink writes detections">
+
+| Sink                            | Form                                                                                 |
+| ------------------------------- | ------------------------------------------------------------------------------------ |
+| InfluxDB, Telegraf, stdout `lp` | `mikroscope_detection{rule,key}` with `value`, `threshold`, `seq`, `message`         |
+| SQL                             | a `mikroscope_detection` row                                                         |
+| file, stdout `json`             | a `{"detection":…}` line                                                             |
+| Prometheus                      | `mikroscope_collector_detections_total{rule}`, every rule at 0 from the first scrape |
+| Loki                            | a line in the `source="detection"`, `level="warn"` stream                            |
+| OTLP                            | a `mikroscope.detection{rule}` delta sum of 1                                        |
+| Graphite                        | `detection.<rule>` = 1 at the event's second                                         |
+| Elasticsearch                   | a document with `kind: detection`                                                    |
+
+</ScrollTable>
+
+The dashboards draw every detection as an annotation, and one of the [alert
+rules](/mikroscope/dashboards/alerts/) fires on any detection.
+
+## The rules
+
+<ScrollTable label="The eleven rules at a glance">
+
+| Rule              | Key       | Fires when                                                                                          | Needs                               |
+| ----------------- | --------- | --------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| `counter-reset`   | —         | the sample reports a counter that went backwards without a 32-bit wrap                              | any deployment                      |
+| `agent-restart`   | —         | the sequence number went backwards                                                                  | any deployment                      |
+| `agent-oom`       | —         | the container's own cgroup recorded an OOM kill                                                     | cgroup2 in the container            |
+| `microburst`      | `cpu<N>`  | three `burst` samples on one CPU within 60 s                                                        | softnet                             |
+| `reboot`          | —         | a kernel-log record's since-boot clock is lower than the previous record's                          | <PrivilegedOnly />                  |
+| `link-flap`       | port      | two or more link up/down records on one port within 60 s                                            | <PrivilegedOnly />                  |
+| `conntrack-cliff` | —         | `nf_conntrack` fell below half its previous stored value                                            | <PrivilegedOnly />                  |
+| `conntrack-high`  | —         | occupancy above 80 % of `nf_conntrack_max` **and** rising over the last 60 s                        | <PrivilegedOnly />                  |
+| `thermal-high`    | zone      | a zone within 15 % of its own declared critical trip                                                | a thermal zone that declares a trip |
+| `thermal-rising`  | zone      | three consecutive one-minute rises of more than 1 °C each                                           | a thermal zone                      |
+| `ipc-collapse`    | `core<N>` | a core's one-second IPC below half its trailing median **while** its cycle rate is above its median | the PMU                             |
+
+</ScrollTable>
+
+### `counter-reset`
+
+**Fires when** the kernel sample's `resets` is above 0: the agent found a counter lower
+than its previous read without a 32-bit wrap to explain it, and used the counter's
+post-reset value as that tick's delta, a lower bound. `value` is the number of such
+counters, `threshold` 0.
+
+**Needs** nothing beyond a sample. The same condition marks the sample `suspect`, and the
+per-packet derived values are withheld for it.
+
+**May not claim** which counter reset, or why. Every delta in that sample is a lower bound.
+
+### `agent-restart`
+
+**Fires when** a sample's sequence number is lower than the previous sample's. `value` is
+the new sequence number, `threshold` the previous one.
+
+**Needs** the collector to have seen at least one sample before the restart. The agent's
+sequence starts again from 1 on every launch, so this is what a restart looks like from the
+outside.
+
+<Aside type="caution" title="A running forward does not see this today">
+	From reading the code, not from a run: `forward` keeps its pull cursor, the last sequence number
+	it received, and never resets it. A restarted agent's ring answers
+	`/snapshot?since=<old sequence>` with nothing, and no gap, until its new sequence passes the old cursor; by then every
+	sample it returns has a sequence number above the previous one. So a `forward` that keeps running
+	across an agent restart receives nothing from the new agent for as long as the old one had been
+	running — a day at 10 Hz for an agent that ran a day — and this rule cannot fire in it. The rule is
+	exercised only by the derive stage's unit tests; no forward or end-to-end test covers it.
+	Restarting `forward` after the agent restarts resumes the data, but then there is no previous
+	sequence number and the rule does not fire either.
+</Aside>
+
+**May not claim** why the agent restarted. A collector restarted at the same time has no
+previous sequence number and sees nothing.
+
+### `agent-oom`
+
+**Fires when** the container's own cgroup records an OOM kill in the sample — a process
+inside mikroscope's container was killed by the kernel. `value` is the number of kills.
+
+**Needs** cgroup2 readable in the container; without it the agent reports no cgroup
+events and this rule cannot fire.
+
+**May not claim** anything about the numbers around it: every number in that window is
+suspect. Sizing the container's memory to the agent's ring is on [the cost of the
+observer](/mikroscope/cost/).
+
+### `microburst`
+
+**Fires when** a CPU's sample carries the [`burst`](/mikroscope/sinks/derive/#burst) flag —
+a drop, or squeezes above that CPU's trailing 90th percentile and at least 3, while its
+packet count was at or below its trailing median — and that CPU now has at least three
+flagged samples within the last 60 s. `value` is the number of flagged samples in the
+window, `threshold` 3; the message carries the latest sample's squeezes, drops, packets
+and the trailing median.
+
+**Needs** `/proc/net/softnet_stat`, which every deployment reads, and ten samples of
+history per CPU before its first flag. The baselines span ten seconds of wall clock at any
+sampler rate.
+
+**False positives, measured.** Squeezing is this device's background, not an event. On the
+reference RB5009 `time_squeeze` is 0 in 87.3 % of per-CPU samples, 1 in <Measured id="squeeze.backgroundOne" />,
+2 in <Measured id="squeeze.backgroundTwo" /> and 3 in <Measured id="squeeze.atLeastThree" />, while softnet dropped nothing at all
+in those same 24 h. A trailing window of a distribution that is seven-eighths zeroes has a
+90th percentile of 1, so "above p90" is satisfied by any 2 — which is why the floor, and not
+the percentile, is what the rule runs on. Replayed over 6 h of stored samples, a floor of 2
+fires <Measured id="microburst.firesPerHourAtTwo" /> and a floor of 3 fires <Measured id="microburst.firesPerHourAtThree" />, still flagging 88
+samples for the burst counter and for `derived.burst`. A drop flags on its own, at any
+squeeze count.
+
+**May not claim** the size of the burst, the flow or the interface that caused it. It says
+the kernel ran out of budget more than it usually does while carrying fewer packets than
+usual — evidence of something shorter than the sample interval.
+
+### `reboot`
+
+**Fires when** a kernel-log record's timestamp, microseconds since boot, is lower than the
+previous record's. `value` and `threshold` are the new and previous timestamps in seconds.
+
+**Needs** `privileged=yes`, which the kernel log requires, and a collector that keeps
+running across the reboot while the agent comes back. It needs no RouterOS API
+credentials. A collector that keeps running is not enough on its own: the agent that comes
+back after the reboot is a new process, and its samples reach `forward` only once their
+sequence passes the old cursor (see [`agent-restart`](#agent-restart)). The rule can then
+fire only on a kernel-log record whose since-boot time is still below the last one seen
+before the reboot. This is read from the code, not observed.
+
+**May not claim** that every reboot is seen. The agent reads the kernel log from the end at
+start, so the first record after a reboot is one logged after the agent came up; if that
+record's since-boot time is later than the last record before the reboot, the clock did
+not go backwards and nothing fires.
+
+### `link-flap`
+
+**Fires when** a kernel-log record that names an interface is classified `link-up` or
+`link-down` — the same classifier that puts a `kind` on every port record — and that port
+now has two or more such records within the last 60 s. `key` is the port's current
+RouterOS name where the API tier's interface inventory supplies one, the board's default
+name where the agent's port table maps the kernel name, and the kernel name otherwise.
+`value` is the number of records in the window, `threshold` 2.
+
+**Needs** `privileged=yes`. A RouterOS name needs the board to be in the agent's port
+table, and the current name needs the API tier as well; see [RouterOS ports and kernel
+names](/mikroscope/playbooks/port-names/).
+
+**May not claim** a fault. A cable pulled and reseated within a minute is a down and an up
+record, and fires. No provoked flap has been captured with this rule running; the flaps
+measured for the port table on 2026-09-15 were not.
+
+### `conntrack-cliff`
+
+**Fires when** the `nf_conntrack` slab cache's active-object count is below half its
+previous stored value. `value` is the new count, `threshold` the previous one.
+
+**Needs** `privileged=yes`, for `/proc/slabinfo`. The slab is read at about 6 Hz and stored
+on change, so "previous" is the previous stored sample, not the previous tick.
+
+**May not claim** a fault either: the message says "a flush or a reset", and a deliberate
+flush of the connection table fires it.
+
+### `conntrack-high`
+
+**Fires when** `nf_conntrack` active objects are above 0.8 of the kernel's
+`nf_conntrack_max`, **and** the count is higher than the oldest stored value in the last
+60 s. `value` is the occupancy as a fraction, `threshold` 0.8.
+
+**Needs** `privileged=yes`, the ceiling published by the kernel, and at least two stored
+samples within the last 60 s.
+
+**May not claim** when the table will be full: no time-to-full is attached, on purpose. For
+scale, the reference router's table sat at 0.63 % of its 966 656 ceiling on 2026-09-12.
+
+### `thermal-high`
+
+**Fires when** a zone's reading is at or above 0.85 of that zone's own lowest declared
+critical trip point. `value` is the reading in °C, `threshold` 0.85 × the trip.
+
+**Needs** a thermal zone that declares a critical trip. A zone that declares none never
+fires; nothing is compared against a compiled number.
+
+**May not claim** that cooling has failed, or anything about a zone the board does not
+report.
+
+### `thermal-rising`
+
+**Fires when** a zone's last four completed one-minute means each exceed the one before by
+more than 1 °C — three consecutive rises. `value` is the rise from the first of the four
+means to the last, `threshold` 3. A one-minute bin closes on the first sample at least 60 s
+after it opened, and the rule is checked each time one closes, so the earliest it can fire
+is after about four minutes of readings.
+
+**Needs** a thermal zone. The means are over the readings the samples carried; temperature
+is read at the zone's declared polling cadence, 1 Hz on the reference device.
+
+**Resolution.** The reference device's sensor quantises to about <Measured id="thermal.quantumC" />, so 1 °C per
+minute is 2.4 steps and resolvable.
+
+**May not claim** a cause, or a rise slower than 1 °C per minute.
+
+### `ipc-collapse`
+
+**Fires when**, on one core, a one-second bin closes with instructions per cycle below half
+the median of that core's trailing bins **while** its cycle rate is above the median of its
+trailing rates. `key` is `core<N>`, `value` the bin's IPC, `threshold` half the median.
+
+**Needs** the PMU's `cycles` and `instructions` per CPU (under `privileged=yes`), and twenty
+completed one-second bins of history for that core before it can fire; the trailing
+history holds up to sixty.
+
+**May not claim** idleness, or anything pooled: the conjunction with the cycle rate is what
+separates a memory-stall regime from a core going quiet, and the rule is per core, never
+across cores.
+
+<NotClaimed variant="not-provoked">
+	Of the eleven rules, only `microburst` has a recorded behaviour on the reference device. The
+	others are exercised by the derive stage's unit tests against constructed samples. None of an OOM
+	kill inside the container, a reboot, a link flap, a conntrack flush or storm, a thermal excursion
+	or an IPC collapse has been provoked on the RB5009 with these rules running: it is the owner's
+	production router, reboots wait for a maintenance window, and a provoked conntrack storm risks
+	locking out the path being worked through.
+</NotClaimed>
+
+<SeeAlso>
+
+## See also
+
+- [What the collector derives](/mikroscope/sinks/derive/): the `burst` flag and the other values
+  written beside the samples.
+- [Alert rules](/mikroscope/dashboards/alerts/): the Grafana rules built on the detections and the
+  fault counters.
+- [A loop only the kernel could see](/mikroscope/playbooks/loop/): what the kernel log caught on the
+  production router.
+- [What privileged buys](/mikroscope/limits/privileged/): the sources half of these rules depend on.
+
+</SeeAlso>

@@ -1,0 +1,131 @@
+---
+title: What privileged buys
+description: Why the agent’s container runs with privileged=yes by default, the sources that setting makes readable, and the network, processes and sensors it still does not reach.
+---
+
+import { Aside } from "@astrojs/starlight/components";
+import Measured from "../../../components/Measured.astro";
+import NotClaimed from "../../../components/NotClaimed.astro";
+import Provenance from "../../../components/Provenance.astro";
+import ScrollTable from "../../../components/ScrollTable.astro";
+import SeeAlso from "../../../components/SeeAlso.astro";
+
+`install` creates the agent's container with `privileged=yes`. This page answers what that
+setting changes on the router, which of the agent's sources depend on it, what it does not
+open however it is configured, and what you give up by turning it off.
+
+## The default, and why
+
+The container runs `privileged=yes` unless you pass `--privileged=false` to `install` or
+`upgrade`, which recreates the container. It is a boolean flag, so it takes `=false`; a
+separate `false` argument is not read as its value. The setting exists on RouterOS 7.24 and
+later.
+
+Reading the device's internal state is what mikroscope is for, and privileged is what makes
+the root-only kernel files readable. An ordinary RouterOS container is placed in a user
+namespace where its root maps to host uid 32768, so `/proc/slabinfo` and `/dev/kmsg` come
+back `EACCES`. `privileged=yes` drops that user namespace.
+
+It is still a real grant of privilege, which is why `plan` and `install --dry-run` print it
+with the rest of the container's settings before anything is written.
+
+## What it adds
+
+Found readable on the RB5009 (RouterOS 7.24.2, kernel 5.6.3) on 2026-09-12, and read by the
+agent except where the table says otherwise:
+
+<ScrollTable label="Sources privileged=yes makes readable">
+
+| Source                         | What it gives                                                                                                                    | Where it shows                                                                 |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `/dev/kmsg`                    | the kernel ring buffer as timestamped events, naming the router's real interfaces                                                | `mikroscope_kmsg_records_total{level}`, and Loki                               |
+| `/proc/slabinfo`               | the global slab caches: `nf_conntrack` (the router's real connection count), `skbuff_*`, `TCP`/`UDP` sockets, `kmalloc-1k`/`-2k` | `mikroscope_slab_active_objects{cache}`                                        |
+| `/sys/class/mtd` ECC counters  | `corrected_bits` and `ecc_failures` per NAND partition                                                                           | `mikroscope_mtd_ecc_corrected_bits_total`, `mikroscope_mtd_ecc_failures_total` |
+| the PMU, via `perf_event_open` | cycles, instructions, cache references and misses, branch misses, bus cycles, per core, system-wide                              | `mikroscope_perf_events_total{counter,cpu}`                                    |
+| `/proc/pagetypeinfo`           | readable, but the agent does not read it                                                                                         | nowhere                                                                        |
+
+</ScrollTable>
+
+The PMU needs privileged for a different reason from the files: its counters are opened
+system-wide (`pid = -1`), which takes `CAP_PERFMON` or `CAP_SYS_ADMIN` against the host.
+`perf_event_paranoid` reads 2 on the reference device and does not block a privileged
+container. What the PMU shows that no tick counter can is on
+[the resolution floor](/mikroscope/limits/).
+
+The kernel log is read without blocking and capped at 64 records per tick. It is opened at
+the end of the buffer, so a boot-time backlog is never replayed as if it had just happened.
+`mikroscope_kmsg_dropped_total` counts loss events, not records: one per tick that hit the
+64-record cap (that tick's one extra read is discarded, and the rest of the backlog is read on
+later ticks), and one per kernel ring overrun, which can stand for many records. While it is
+non-zero, the per-severity count under-counts.
+
+Whether this deployment got them is not left to inference. `/capabilities` carries
+`"privileged": true` only when both `/proc/slabinfo` and `/dev/kmsg` opened, and
+`mikroscope_device_info{privileged="true"}` says the same on `/metrics` and in every sink's
+device-info stream. Without privileged, the slab, PMU and MTD families are absent, not zero.
+The kernel-log family appears only once a record has been seen, so its absence alone cannot
+tell an unprivileged deployment from a quiet kernel; the `privileged` flag can.
+
+## What it does not add
+
+It adds **no** network access and **no** view of RouterOS's processes. Privileged drops the
+user namespace and leaves the network and PID namespaces in place:
+
+<Provenance of="netns-2026-09-12" />
+
+So per-interface counters still come from the RouterOS API, and per-process CPU is out of
+reach even with the host's `/proc` mounted into the container. Both are measured on
+[the router's CPU, the container's network](/mikroscope/limits/namespaces/).
+
+It adds no extra capabilities either: an unprivileged container already holds all 38. What
+changes is the user namespace those capabilities are confined to, not the set.
+
+And it cannot give you more sensors than the board has. On the RB5009, `/sys/class/hwmon`
+is empty even privileged. The two thermal zones, `cpu-thermal` and `soc-thermal`, are the
+entire sensor set of the base model, and both are readable without privileged: there is no
+voltage, current or fan reading to be had. RouterOS's own `/system/health` on that board
+reports exactly one sensor, `cpu-temperature`, which is the `soc-thermal` zone truncated to
+whole degrees: a mean offset of +0.55 °C over the 8 minutes where both series existed
+(2026-09-14). On a board that does have voltage, current or fan sensors the API still adds
+them.
+
+<NotClaimed variant="device-specific">
+	The sensor set, the capability count and the uid mapping were read on one RB5009 on RouterOS
+	7.24.2. A board with hwmon sensors, or a later RouterOS that builds containers differently, has
+	not been checked.
+</NotClaimed>
+
+## Running without it
+
+`--privileged=false` keeps everything that is readable from an ordinary container: every
+global `/proc` file in the samples, the thermal zones, `scaling_cur_freq`, `/proc/yaffs`,
+`/proc/buddyinfo`, `/proc/diskstats`, and the agent's own cost. What goes:
+
+- The kernel log. The [layer-2 loop](/mikroscope/playbooks/loop/) this project found on its
+  own reference router was visible only there.
+- The router's connection count from the slab cache. The RouterOS API's `count-only` table
+  scan is the remaining source, which the collector runs only when `--conntrack-every` is
+  set.
+- The NAND ECC counters. The YAFFS wear counters remain.
+- The PMU, and with it everything beneath the <Measured id="tick.ms" /> tick.
+
+<Aside type="caution" title="Privileged is not a mount">
+	A privileged container with the host's `/` mounted reads the whole RouterOS configuration, secrets
+	included (tested on the RB5009 on 2026-09-15). The installer does not mount any host path into the
+	agent's container, and nothing here needs one.
+</Aside>
+
+<SeeAlso>
+
+## See also
+
+- [The router's CPU, the container's network](/mikroscope/limits/namespaces/): the two
+  namespaces privileged leaves in place, file by file.
+- [What runs where](/mikroscope/security/): the agent's container and what it can reach, from
+  the security side.
+- [Conntrack without the API](/mikroscope/playbooks/conntrack/): the slab count privileged
+  makes readable, and how to check it.
+- [Flash wear](/mikroscope/playbooks/flash-wear/): the YAFFS counters that need no privilege
+  and the ECC counters that do.
+
+</SeeAlso>

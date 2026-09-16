@@ -1,0 +1,233 @@
+---
+title: Variables de entorno
+description: Las variables MIKROSCOPE_* que lee la CLI, las credenciales que solo existen como variables y las variables de la envlist que lee el agente en el router.
+---
+
+import { Aside } from "@astrojs/starlight/components";
+import EnvlistKeys from "../../../../components/EnvlistKeys.astro";
+import Measured from "../../../../components/Measured.astro";
+import ScrollTable from "../../../../components/ScrollTable.astro";
+import SeeAlso from "../../../../components/SeeAlso.astro";
+import Verified from "../../../../components/Verified.astro";
+
+Dos programas leen variables de entorno, y leen variables distintas. La
+**CLI** en tu máquina lee variables `MIKROSCOPE_*` como valores por defecto de
+las opciones, además de un puñado de credenciales que no tienen opción, además
+de `GRAFANA_URL` y `GRAFANA_TOKEN`. El **agente** en el router lee variables
+sin prefijo (`RATE_HZ`, `TOKEN` …) de la envlist de su contenedor, que escribe
+`install`. Esta página enumera ambas, a partir de `cmd/mikroscope/*.go` y
+`internal/agent/config.go`.
+
+## Cómo las lee la CLI
+
+- Una variable fija el **valor por defecto** de una opción; la opción en la
+  línea de órdenes gana.
+- Una variable con la cadena vacía se trata como no definida.
+- La CLI nunca lee un fichero `.env`. Expórtalo antes a la shell:
+
+  ```sh
+  set -a; . ./.env; set +a
+  ```
+
+- Entrecomilla una URL que contenga `&` cuando vive en un fichero que cargas
+  con `source`: sin comillas, `&` es un operador de la shell. `.env.example`
+  entrecomilla `MIKROSCOPE_INFLUX_URL` por eso.
+
+La mayoría de las opciones de despliegue **no** tienen variable. `--rate`,
+`--buffer`, `--port`, `--memory-max`, `--mem-limit-mb`, `--capture-mb`,
+`--triggers`, `--floor-hz`, `--privileged`, `--ephemeral` y `--expose` se fijan
+en la línea de órdenes o no se fijan. [Órdenes y
+opciones](/mikroscope/es/reference/cli/) tiene todas las opciones.
+
+## Router y despliegue
+
+<ScrollTable label="Variables MIKROSCOPE_* del router y del despliegue">
+
+| Variable                  | Opción           | La leen                                               | Por defecto en el código        | Valor en `.env.example` |
+| ------------------------- | ---------------- | ----------------------------------------------------- | ------------------------------- | ----------------------- |
+| `MIKROSCOPE_ROUTER`       | `--router`       | `doctor`, `install`, `upgrade`, `uninstall`, `status` | ninguno (obligatoria)           | vacío                   |
+| `MIKROSCOPE_SSH_PORT`     | `--ssh-port`     | los mismos                                            | configuración de ssh            | `22`                    |
+| `MIKROSCOPE_SSH_KEY`      | `--ssh-key`      | los mismos                                            | agente o configuración de ssh   | vacío                   |
+| `MIKROSCOPE_ARCH`         | `--arch`         | los verbos de despliegue                              | `arm64`                         | `arm64`                 |
+| `MIKROSCOPE_AGENT_TAR`    | `--agent-tar`    | `plan`, `install`, `upgrade`, `image`                 | vacío (compilar el agente aquí) | no está en el fichero   |
+| `MIKROSCOPE_REMOTE_IMAGE` | `--remote-image` | `plan`, `install`, `upgrade`                          | vacío (subir un tar)            | no está en el fichero   |
+| `MIKROSCOPE_NAME`         | `--name`         | los verbos de despliegue                              | `mikroscope`                    | comentada               |
+| `MIKROSCOPE_VETH`         | `--veth`         | los verbos de despliegue                              | `veth-mikroscope`               | `veth-mikroscope`       |
+| `MIKROSCOPE_SUBNET`       | `--subnet`       | los verbos de despliegue, `record`, `forward`         | `172.30.10.0/30`                | `172.30.10.0/30`        |
+| `MIKROSCOPE_IFACE_LIST`   | `--iface-list`   | los verbos de despliegue                              | `LAN`                           | `LAN`                   |
+| `MIKROSCOPE_ADDR_LIST`    | `--addr-list`    | los verbos de despliegue                              | `LANs`                          | `LANs`                  |
+| `MIKROSCOPE_DISK`         | `--disk`         | los verbos de despliegue                              | vacío (flash interna)           | comentada, `tmpfs`      |
+| `MIKROSCOPE_LAN_ADDRESS`  | `--lan-address`  | los verbos de despliegue                              | vacío                           | comentada               |
+| `MIKROSCOPE_TOKEN`        | `--token`        | los verbos de despliegue, `record`, `forward`         | vacío                           | comentada               |
+
+</ScrollTable>
+
+`MIKROSCOPE_TOKEN` es dos cosas a la vez. Para `install` es el token que se
+escribe en la envlist del agente, y que el agente pasa entonces a exigir. Para
+`record` y `forward` es el token que envía el transporte directo. La envlist no
+es un almacén de secretos: cualquier usuario de RouterOS con la política `read`
+puede listar la envlist de todos los contenedores por la API (verificado
+en <Verified of="read-user-envlist" />), y por eso el token es la única credencial que va ahí.
+
+## Llegar al agente y a la API de RouterOS
+
+<ScrollTable label="Variables MIKROSCOPE_* de la capa de la API y del relay">
+
+| Variable                  | Opción         | La leen                     | Significado                                                                                           |
+| ------------------------- | -------------- | --------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `MIKROSCOPE_API_ADDR`     | `--api`        | `record`, `mark`, `forward` | `host:port` de la API binaria de RouterOS; `.env.example` tiene `192.168.88.1:8728`                   |
+| `MIKROSCOPE_API_USER`     | `--api-user`   | `record`, `mark`, `forward` | el usuario dedicado de la API                                                                         |
+| `MIKROSCOPE_API_PASSWORD` | ninguna        | `record`, `mark`, `forward` | la contraseña de ese usuario; a propósito no hay opción                                               |
+| `MIKROSCOPE_INTERFACES`   | `--interfaces` | `forward`                   | interfaces separadas por comas para `monitor-traffic`; `.env.example` tiene `bridge,ether1` comentada |
+
+</ScrollTable>
+
+El relay, `--log-markers` y la capa de la API fallan, o en el caso de `forward`
+se desactivan con un aviso, salvo que estén definidas las tres: `--api`,
+`--api-user` y `MIKROSCOPE_API_PASSWORD`. [El usuario de la
+API](/mikroscope/es/security/api-user/) tiene la política que necesita ese
+usuario.
+
+## Destinos
+
+<ScrollTable label="Variables MIKROSCOPE_* de los destinos de forward">
+
+| Variable                   | Opción          | Por defecto en el código | Significado                                                                             |
+| -------------------------- | --------------- | ------------------------ | --------------------------------------------------------------------------------------- |
+| `MIKROSCOPE_INFLUX_URL`    | `--influx`      | vacío                    | URL de escritura de InfluxDB 3                                                          |
+| `MIKROSCOPE_LOKI_URL`      | `--loki`        | vacío                    | URL de push de Loki                                                                     |
+| `MIKROSCOPE_LOKI_TENANT`   | `--loki-tenant` | vacío                    | `X-Scope-OrgID`                                                                         |
+| `MIKROSCOPE_OTLP_URL`      | `--otlp`        | vacío                    | endpoint de métricas OTLP/HTTP                                                          |
+| `MIKROSCOPE_GRAPHITE_ADDR` | `--graphite`    | vacío                    | `host:port` de texto plano de carbon                                                    |
+| `MIKROSCOPE_ELASTIC_URL`   | `--elastic`     | vacío                    | URL base de Elasticsearch u OpenSearch                                                  |
+| `MIKROSCOPE_TELEGRAF_URL`  | `--telegraf`    | vacío                    | URL del receptor de Telegraf (`http://`, `tcp://` o `udp://`)                           |
+| `MIKROSCOPE_HOST_TAG`      | `--host-tag`    | `router`                 | etiqueta de host en cada punto de cada destino; `.env.example` tiene `rb5009` comentada |
+
+</ScrollTable>
+
+Basta con definir la variable de URL de un destino para activarlo: `forward`
+construye todos los destinos cuya opción acaba no vacía, venga de la línea de
+órdenes o de la variable. Todos estos nombres llevan el prefijo `MIKROSCOPE_`:
+un `LOKI_URL` a secas no lo lee nada, y `.env.example` lo dice junto a
+`MIKROSCOPE_LOKI_URL`.
+
+## Credenciales que no tienen opción
+
+Una opción se ve en `ps` y en el historial de la shell, así que todos los
+secretos que usa la CLI se leen solo del entorno.
+
+<ScrollTable label="Credenciales que solo se leen del entorno">
+
+| Variable                    | Se usa para                                            |
+| --------------------------- | ------------------------------------------------------ |
+| `MIKROSCOPE_API_PASSWORD`   | el usuario de la API de RouterOS                       |
+| `MIKROSCOPE_INFLUX_TOKEN`   | InfluxDB, enviado como `Authorization: Bearer <token>` |
+| `MIKROSCOPE_LOKI_TOKEN`     | Loki                                                   |
+| `MIKROSCOPE_OTLP_TOKEN`     | el endpoint OTLP                                       |
+| `MIKROSCOPE_ELASTIC_AUTH`   | Elasticsearch u OpenSearch                             |
+| `MIKROSCOPE_TELEGRAF_TOKEN` | el receptor HTTP de Telegraf                           |
+| `GRAFANA_TOKEN`             | `dashboards import` y `dashboards check`               |
+
+</ScrollTable>
+
+## Grafana
+
+`dashboards import` y `dashboards check` leen `GRAFANA_URL` (el valor por
+defecto de `--grafana`) y `GRAFANA_TOKEN`. Ninguna de las dos lleva el prefijo
+`MIKROSCOPE_`. `.env.example` define `GRAFANA_URL` dos veces, una vacía en su
+bloque de servicios de la LAN y otra comentada en el bloque de Grafana, y dice
+que el token nunca va en el fichero.
+
+## La envlist del agente
+
+El agente lee estas variables del entorno de su contenedor al arrancar. Un
+valor no válido le hace imprimir una línea que empieza por
+`mikroscope-agent: bad configuration:`, que RouterOS guarda en su log bajo el
+tema `container`, y salir con estado 2.
+
+<ScrollTable label="Variables que el agente lee de su envlist">
+
+| Variable               | Por defecto en el agente                           | Acepta                           | Significado                                                                                                                                                                        |
+| ---------------------- | -------------------------------------------------- | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RATE_HZ`              | `10`                                               | 1–100                            | cadencia del muestreador                                                                                                                                                           |
+| `BUFFER_S`             | `300`                                              | 10–3600                          | longitud del anillo en segundos                                                                                                                                                    |
+| `PORT`                 | `9123`                                             | 1–65535                          | puerto HTTP                                                                                                                                                                        |
+| `ADDR`                 | vacío                                              | una dirección                    | dirección de escucha. Vacía escucha en `:PORT`, todas las direcciones del espacio de nombres de red del contenedor; `install` siempre la fija a la dirección de la veth del agente |
+| `TOKEN`                | vacío                                              |                                  | cuando está definida, todas las rutas salvo `/healthz` exigen `Authorization: Bearer <token>`                                                                                      |
+| `IRQ_TOP_K`            | `8`                                                | 0–64                             | líneas de interrupción que se guardan por muestra, las más ocupadas primero; `0` no envía líneas de interrupción ni `irq_total`                                                    |
+| `MEM_LIMIT_MB`         | `14`                                               | 8–1024                           | límite blando de memoria de Go en MiB                                                                                                                                              |
+| `FLOOR_HZ`             | `0`                                                | 0–1000                           | `0` mantiene los suelos por fuente; N pone todas las fuentes de nivel a N Hz y desactiva la emisión solo al cambiar                                                                |
+| `SOURCES`              | vacío (todas las fuentes detectadas)               | nombres separados por comas      | restringe las fuentes opcionales a esta lista; `/proc/stat` se lee siempre                                                                                                         |
+| `TRIGGERS`             | `softnet-drop,oom,kmsg<=3,reset,irq-err,flash-bad` | condiciones, separadas por comas | condiciones de disparo de captura                                                                                                                                                  |
+| `CAPTURE_MB`           | `4`                                                | 0–256                            | presupuesto de bytes retenidos para capturas; `0` las desactiva                                                                                                                    |
+| `CAPTURE_PRE_S`        | `5`                                                | 1–60                             | segundos que se guardan antes de la muestra en la que salta un disparo                                                                                                             |
+| `CAPTURE_POST_S`       | `5`                                                | 1–60                             | segundos que se guardan después                                                                                                                                                    |
+| `CAPTURE_POLICY`       | `first`                                            | `first` o `last`                 | con el presupuesto lleno: `first` rechaza la captura nueva, `last` expulsa la más antigua                                                                                          |
+| `TRIGGER_REFRACTORY_S` | `10`                                               | 0–3600                           | tiempo de silencio por condición después de saltar                                                                                                                                 |
+| `PROC_ROOT`            | `/proc`                                            | una ruta                         | de dónde se lee `/proc`; el log del kernel es `/dev/kmsg` solo cuando esto es `/proc`, y si no `dev/kmsg` junto al directorio dado                                                 |
+| `SYS_ROOT`             | `/sys`                                             | una ruta                         | de dónde se lee `/sys`                                                                                                                                                             |
+
+</ScrollTable>
+
+Los nombres que acepta `SOURCES` son las fuentes opcionales que informa
+`/capabilities`: `meminfo`, `loadavg`, `softnet`, `softirqs`, `interrupts`,
+`vmstat`, `psi`, `schedstat`, `self`, `buddyinfo`, `yaffs`, `diskstats`,
+`slabinfo`, `kmsg`, `thermal`, `cpufreq`, `mtd` y `perf`. Las condiciones de
+disparo y qué compara cada una están en [captura por
+disparo](/mikroscope/es/record/triggers/).
+
+Antes de escuchar, el agente compara el anillo con el propio `memory.max` del
+contenedor: `RATE_HZ × BUFFER_S × 2 560 B` más `CAPTURE_MB` tiene que caber, o
+se niega a arrancar y nombra las tres variables y `--memory-max`. Si esa cifra
+supera la mitad de `MEM_LIMIT_MB`, arranca y registra un aviso con el límite al
+que subir. 2 560 B no es una medida en sí: es la línea media medida en el
+RB5009 con todas las fuentes de esa fecha (<Measured id="ring.lineBytes" />, 4 núcleos, `IRQ_TOP_K` 8,
+RouterOS 7.24.2, 2026-09-12) redondeada hacia arriba. Una placa con más núcleos
+o más líneas de interrupción escribe líneas más largas, así que la comprobación
+peca de permisiva. Cuando el agente no puede leer su `memory.max`, la
+comprobación que lo niega no se ejecuta.
+
+### Lo que escribe install en ella
+
+`install` y `upgrade` escriben la envlist `<name>-env` con estas entradas, en
+este orden, y nada más:
+
+<EnvlistKeys />
+
+<Aside type="note" title="Los valores por defecto del agente y los de install no son los mismos">
+
+Un agente arrancado sin ninguna entrada en la envlist usa un límite blando de memoria de 14 MiB.
+`install` siempre escribe `MEM_LIMIT_MB=40`, y el `memory-max` del contenedor es `64M`, porque un
+anillo de 300 s a 10 Hz ocupa unos 7,3 MB y un límite de 14 MiB mantenía al recolector de basura
+funcionando sin parar en el RB5009: <Measured id="gc.tight.cpu" /> de un núcleo frente a <Measured id="gc.roomy.cpu" /> con margen, ambos con el anillo lleno, medidos con RouterOS 7.24.2 el 2026-09-12. `IRQ_TOP_K`,
+`CAPTURE_PRE_S`, `CAPTURE_POST_S`, `CAPTURE_POLICY`, `TRIGGER_REFRACTORY_S`, `SOURCES`, `PROC_ROOT`
+y `SYS_ROOT` no tienen opción, así que un agente instalado funciona con sus valores por defecto.
+
+</Aside>
+
+## En .env.example pero sin que el código las lea
+
+`.env.example` es también la plantilla de desarrollo para los equipos del
+propio proyecto, así que lleva nombres que ningún binario lee. Definirlos no
+cambia nada:
+
+- `MIKROSCOPE_ROUTEROS`, la versión de RouterOS del equipo de referencia.
+- `OPERATOR_HOST_IP`, el equipo del operador para las pruebas de destinos push
+  y de sondeo.
+- El bloque `HEXS_*` (`HEXS_ROUTER`, `HEXS_SSH_PORT`, `HEXS_SSH_KEY`,
+  `HEXS_ARCH`, `HEXS_API_ADDR`, `HEXS_API_USER`, `HEXS_API_PASSWORD`), guardado
+  para un hEX S que todavía no ha llegado.
+
+<SeeAlso>
+
+## Véase también
+
+- [Órdenes y opciones](/mikroscope/es/reference/cli/): todas las opciones, incluidas las que no fija
+  ninguna variable.
+- [El usuario de la API](/mikroscope/es/security/api-user/): el usuario de RouterOS detrás de
+  `MIKROSCOPE_API_USER`.
+- [Cada fuente a su propio suelo](/mikroscope/es/limits/source-floors/): lo que anula `FLOOR_HZ`.
+- [El coste del observador](/mikroscope/es/cost/): por qué el límite de memoria se dimensiona según
+  el anillo.
+
+</SeeAlso>

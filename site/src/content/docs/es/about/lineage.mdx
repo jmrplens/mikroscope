@@ -1,0 +1,135 @@
+---
+title: Linaje y licencia
+description: Qué partes de mikroscope vienen de cs-routeros-bouncer y de go-routeros, qué cambió por el camino y la licencia MIT con la que llegan ambas.
+---
+
+import ScrollTable from "../../../../components/ScrollTable.astro";
+import SeeAlso from "../../../../components/SeeAlso.astro";
+
+Esta página responde de dónde viene el código de mikroscope: qué paquetes
+empezaron siendo de otro, qué se cambió al traerlos y bajo qué licencia. La
+atribución está también en el código, de modo que sobrevive a que se lea sin
+este sitio: en el comentario de documentación del paquete de `internal/router`,
+`internal/image`, `internal/chart` e `internal/dashboards`, en el `README.md` y
+el `LICENSE` de `internal/rosapi`, y en la cabecera de `.golangci.yml`.
+
+## De dónde vino el muestreador
+
+El muestreador que demostró que esto funciona es `cmd/perfmon` en
+[cs-routeros-bouncer](https://github.com/jmrplens/cs-routeros-bouncer),
+construido para una prueba de rendimiento y conservado allí como instrumento de
+desarrollo. Los pasos de despliegue, el constructor de imágenes sin Docker, el
+gráfico determinista y el cliente de la API de RouterOS incorporado vienen de
+ese repositorio, bajo su licencia MIT.
+
+## Qué se tomó, paquete a paquete
+
+<ScrollTable label="Paquetes tomados de otros repositorios y qué cambió">
+
+| mikroscope                   | Tomado de                                                                  | Qué cambió por el camino                                                                                                                                                                                     |
+| ---------------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `internal/router`            | cs-routeros-bouncer `cmd/perfmon`, los pasos de despliegue tras el PR #123 | Ampliado con puertos entrecomillados en cada `find`, el par opcional de reglas de cortafuegos de `--expose`, los ajustes de contenedor propios de mikroscope y un listado de cada escritura antes de hacerla |
+| Pruebas de `internal/router` | cs-routeros-bouncer `cmd/perfmon`, las pruebas de contención               | Adaptadas a los nombres de opción de mikroscope y a dos reglas propias: puertos entrecomillados, y el par de `--expose` como parte del plan                                                                  |
+| `internal/image`             | cs-routeros-bouncer `cmd/perfmon/image.go`                                 | Rehecho para el nombre del agente, la variante ARM (las imágenes arm declaran `v7`) y una compilación que goreleaser pueda reutilizar                                                                        |
+| `internal/chart`             | cs-routeros-bouncer `cmd/perfmon/chart.go`                                 | El original tomaba su paleta de un tema de documentación; este lleva la suya propia, validada para la superficie clara (ΔE CVD entre pares adyacentes 9,1, visión normal 22,9)                               |
+| `internal/rosapi`            | cs-routeros-bouncer `internal/rosapi`, tomado el 2026-09-11                | Solo la ruta de importación                                                                                                                                                                                  |
+| `.golangci.yml`              | cs-routeros-bouncer, basado a su vez en `maratori/golangci-lint-config`    | La ruta del módulo                                                                                                                                                                                           |
+
+</ScrollTable>
+
+Lo que trajo el PR #123, y lo que el instalador de mikroscope conserva de él, es
+la regla de contención: cada objeto creado lleva una única etiqueta exacta en
+el comentario, cada retirada selecciona por esa etiqueta más la identidad del
+objeto — nunca por patrón — y `uninstall` verifica por recuento de propiedad
+antes de dar el éxito por bueno. No se escribe nada sin haberlo listado antes.
+
+La salida del gráfico es determinista: la misma entrada da siempre los mismos
+bytes.
+
+## Lo que se tomó como modelo, no como código
+
+`internal/dashboards` toma la forma de exportación de Grafana del
+`cmd/gen_dashboards` de ghchronicle, del propietario — "the shape, not the
+code", como dice su comentario de paquete — y `dashboards check` comprueba cada
+panel en un Grafana real igual que lo hace ghchronicle. Otras dos piezas están
+modeladas igual, a partir de un proyecto de referencia que esta documentación
+no nombra: las secciones con nombre de los paneles siguen el `sections.go` de
+ese proyecto, y la batería de extremo a extremo de `test/e2e/` sigue la suya.
+
+## El cliente de la API de RouterOS
+
+`internal/rosapi` tiene dos generaciones de linaje. La copia de mikroscope es
+la de cs-routeros-bouncer, sin nada modificado para mikroscope; mikroscope la
+usa para las lecturas de la capa de la API, para `mark --log-markers` y para el
+relevo de `/tool fetch`.
+La copia del bouncer es a su vez una incorporación recortada de
+[`github.com/go-routeros/routeros/v3`](https://github.com/go-routeros/routeros)
+en **v3.0.1** (commit de upstream del 2025-02-16), MIT, copyright 2016 André
+Luiz dos Santos, cuyo fichero `LICENSE` sigue en el paquete.
+
+### Por qué está incorporado
+
+Upstream está en la práctica sin mantener: su último commit es dieciocho meses
+anterior a la copia, y las pull requests e issues abiertas contra el modo
+asíncrono a mediados de 2026 (#31–#34) no han tenido respuesta de ningún
+mantenedor. No existe una alternativa mantenida — `swoga/go-routeros` es una
+copia que solo recibe actualizaciones de dependabot para sus GitHub Actions, y
+`jda/routeros-api-go` se detuvo en 2016. Incorporarlo mantiene el código
+compilable y permite a la copia corregir y recortar lo que usa.
+
+### Qué difiere de upstream v3.0.1
+
+Estos cambios se hicieron en cs-routeros-bouncer y llegan sin tocar:
+
+1. **Se elimina el modo async/listen**, con sus pruebas y la rama asíncrona de
+   `RunArgsContext`. Nada en el bouncer llamaba a `Async()`, `Listen()` ni a
+   las variantes de ejecución que cancelan por contexto. Las constantes de tipo
+   de sentencia pasaron a `reply.go`, que es quien las consume.
+2. **El lector y el escritor del protocolo leen y escriben directamente**, en
+   vez de despachar cada llamada a una goroutine nueva con un canal y un búfer
+   de copia; solo el modo asíncrono eliminado cancelaba alguna vez una lectura
+   en curso. A la escala de producción del bouncer — 22k entradas de
+   address-list obtenidas en cada ciclo — esa capa costaba ~294 000 goroutines
+   lanzadas, ~62 MB de basura y ~76 % de todas las asignaciones por ciclo de
+   reconciliación. La reescritura se comprobó contra upstream intacto con una
+   prueba diferencial: la huella SHA-256 sobre las 22 037 sentencias analizadas
+   idéntica, las formas de error idénticas (`io.ErrUnexpectedEOF` al truncar,
+   `*DeviceError` en `!trap`), y la batería de upstream en verde con
+   `go test -race`. `proto/reader_shape_test.go` fija ese comportamiento. Esas
+   cuatro cifras son de cs-routeros-bouncer, medidas en su propia máquina y contra
+   su propia carga, no en un router y no por este proyecto; `internal/rosapi/README.md`,
+   de donde salen, no registra ni fecha ni equipo, así que aquí no se puede dar
+   ninguno de los dos.
+3. **Se elimina el inicio de sesión MD5 por desafío anterior a 6.43.** Ese
+   inicio de sesión solo existe antes de RouterOS 6.43 (2018), y responderlo
+   supone hacer un hash MD5 de la contraseña. Un router que envía un desafío
+   `ret` recibe `ErrLegacyLoginUnsupported` en su lugar.
+4. **Se eliminan las pruebas del modo asíncrono y del modo listen** junto con
+   el modo; las pruebas del inicio de sesión anterior a 6.43 comprueban el
+   rechazo en vez del intercambio. El resto de la batería de upstream se
+   conserva y pasa.
+
+Compara con la etiqueta `v3.0.1` de upstream, no con su rama master.
+
+## Licencia
+
+mikroscope tiene licencia MIT, copyright 2026 jmrplens; el texto completo está
+en `LICENSE`, en la raíz del repositorio. El código tomado de
+cs-routeros-bouncer llega bajo la licencia MIT de ese repositorio, e
+`internal/rosapi` conserva el `LICENSE` MIT de go-routeros junto al código que
+cubre.
+
+<SeeAlso>
+
+## Véase también
+
+- [Lo que el instalador rechaza](/mikroscope/es/security/installer/): las reglas de contención que
+  heredó el código de despliegue, tal como están ahora.
+- [La capa de la API de RouterOS](/mikroscope/es/sinks/api-tier/): lo que lee el cliente
+  incorporado.
+- [Grabar, marcar, dibujar](/mikroscope/es/record/): el gráfico determinista que dibuja
+  `internal/chart`.
+- [En qué punto está](/mikroscope/es/about/status/): qué funciona hoy, y qué publica la versión
+  actual.
+
+</SeeAlso>

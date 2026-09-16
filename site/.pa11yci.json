@@ -1,0 +1,36 @@
+{
+  "defaults": {
+    "standard": "WCAG2AA",
+    "timeout": 15000,
+    "wait": 2000,
+    "chromeLaunchConfig": {
+      "args": ["--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage"]
+    }
+  },
+  "urls": [
+    "http://localhost:4321/mikroscope/",
+    "http://localhost:4321/mikroscope/start/walkthrough/",
+    "http://localhost:4321/mikroscope/cost/rate-ceiling/",
+    "http://localhost:4321/mikroscope/install/firewall/",
+    "http://localhost:4321/mikroscope/record/triggers/",
+    "http://localhost:4321/mikroscope/sinks/prometheus/",
+    "http://localhost:4321/mikroscope/dashboards/alerts/",
+    "http://localhost:4321/mikroscope/playbooks/loop/",
+    "http://localhost:4321/mikroscope/limits/source-floors/",
+    "http://localhost:4321/mikroscope/security/expose/",
+    "http://localhost:4321/mikroscope/reference/measurements/",
+    "http://localhost:4321/mikroscope/about/status/",
+    "http://localhost:4321/mikroscope/es/",
+    "http://localhost:4321/mikroscope/es/start/walkthrough/",
+    "http://localhost:4321/mikroscope/es/cost/rate-ceiling/",
+    "http://localhost:4321/mikroscope/es/install/firewall/",
+    "http://localhost:4321/mikroscope/es/record/triggers/",
+    "http://localhost:4321/mikroscope/es/sinks/prometheus/",
+    "http://localhost:4321/mikroscope/es/dashboards/alerts/",
+    "http://localhost:4321/mikroscope/es/playbooks/loop/",
+    "http://localhost:4321/mikroscope/es/limits/source-floors/",
+    "http://localhost:4321/mikroscope/es/security/expose/",
+    "http://localhost:4321/mikroscope/es/reference/measurements/",
+    "http://localhost:4321/mikroscope/es/about/status/"
+  ]
+}

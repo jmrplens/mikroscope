@@ -1,0 +1,45 @@
+---
+/**
+ * The "how to recognise it" list of a playbook, with how the fault came about.
+ *
+ * Every fault page reads differently depending on whether the data is a real
+ * fault found in production, a fault provoked on purpose, or something the
+ * router does on its own. The page says so in its first paragraph; by the
+ * signature, a reader who jumped straight to it has lost that. So the block
+ * carries it again, as a legend word and a date, and `data-origin` makes the
+ * three kinds countable, as `data-claim` does for NotClaimed.
+ *
+ * The "## The signature" heading stays authored in the page, above this block,
+ * so it keeps its table-of-contents line and its anchor.
+ */
+const ORIGINS = {
+	real: "ms.fault.real",
+	provoked: "ms.fault.provoked",
+	unprovoked: "ms.fault.unprovoked",
+} as const;
+
+interface Props {
+	origin: keyof typeof ORIGINS;
+	/** ISO date the data was taken. */
+	date: string;
+}
+
+const { origin, date } = Astro.props;
+if (!Object.hasOwn(ORIGINS, origin)) {
+	throw new Error(
+		`FaultSignature: unknown origin "${origin}"; use ${Object.keys(ORIGINS)
+			.map((o) => `"${o}"`)
+			.join(", ")}`,
+	);
+}
+if (!/^\d{4}-\d{2}-\d{2}$/.test(date ?? "")) {
+	throw new Error(`FaultSignature: date must be an ISO date (YYYY-MM-DD), got "${date}"`);
+}
+---
+
+<div class="ms-fault" data-origin={origin}>
+	<p class="ms-fault-legend">
+		{Astro.locals.t(ORIGINS[origin])} · <time datetime={date}>{date}</time>
+	</p>
+	<slot />
+</div>

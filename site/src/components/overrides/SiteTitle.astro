@@ -1,0 +1,51 @@
+---
+/**
+ * The mark inlined beside the title, rather than handed to Starlight's `logo`.
+ *
+ * `logo` renders an `<img>`, and an external stylesheet cannot reach inside
+ * one. This mark is two tones — a sample above its own mean and one at or below
+ * it — and the two swap round between themes, so an `<img>` would mean a light
+ * file and a dark file with four hexes kept in step by hand. Inlined, the loud
+ * tone is `currentColor` and the quiet one `--ms-mark-quiet`, and theme.css
+ * paints both: one asset, and the palette gate measures what the reader gets.
+ *
+ * It also arrives with the document, so the header paints once instead of
+ * reflowing when an image lands.
+ */
+// The five-bar drawing, not the nine-bar mark: the header renders it at
+// 1.5rem, and nine bars at 24 px are mush (brand/README.md).
+import mark from "../../assets/favicon-inline.svg?raw";
+
+const { siteTitle, siteTitleHref } = Astro.locals.starlightRoute;
+---
+
+<a href={siteTitleHref} class="site-title sl-flex">
+	<span class="ms-mark" aria-hidden="true" set:html={mark} />
+	<span class="ms-site-name">{siteTitle}</span>
+</a>
+
+<style>
+	@layer starlight.core {
+		.site-title {
+			align-items: center;
+			gap: 0.55rem;
+			color: var(--sl-color-text-accent);
+			text-decoration: none;
+			min-width: 0;
+		}
+		/* One number sets the mark's whole presence: at this size it reads as a
+		 * favicon beside a word rather than a picture with a caption. */
+		.ms-mark :global(svg) {
+			display: block;
+			width: 1.5rem;
+			height: 1.5rem;
+			color: var(--ms-accent);
+		}
+		.ms-site-name {
+			font-weight: 600;
+			white-space: nowrap;
+			overflow: hidden;
+			text-overflow: ellipsis;
+		}
+	}
+</style>

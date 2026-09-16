@@ -1,0 +1,98 @@
+---
+title: The cost of the observer
+description: What the agent costs on an RB5009, measured from its own cgroup, and how to measure it on a device that is not this one.
+---
+
+import { Aside } from "@astrojs/starlight/components";
+import Measured from "../../../components/Measured.astro";
+import Provenance from "../../../components/Provenance.astro";
+import SeeAlso from "../../../components/SeeAlso.astro";
+
+An observer that costs 20 % of the thing it observes is not measuring the
+router, it is measuring itself. So this number is a first-class result here, not
+a footnote: it is reported by the agent on every sample and exposed on `/metrics`, and the image-size budget is asserted in CI.
+
+## The budget, and what it actually costs
+
+The budget is **≤ <Measured id="budget.cpu" /> of one core, ≤ <Measured id="budget.rss" /> RSS,
+≤ <Measured id="budget.image" /> image**. The image is <Measured id="image.size" />. The other two
+depend on the rate and on how much you ask it to read, and the honest answer is a table rather than
+a number.
+
+At the install default — 10 Hz, default per-source floors, a 300 s ring — the agent costs
+**<Measured id="run.10hz.cpu" /> of one core and <Measured id="run.10hz.rss" /> RSS**, from its own
+cgroup:
+
+<Provenance of="rates-2026-09-15" />
+
+That is above the <Measured id="budget.cpu" /> the budget asks for, with every source read — the
+perf timings, buddyinfo, the MTD ECC counters, the cgroup events and the port counters among them.
+
+### What the alternative costs
+
+The budget says what the agent is allowed to cost. The other comparison, the
+one a reader usually wants, is against doing it the obvious way: a busybox shell
+loop reading the same file set at the same rate. On the same router that costs
+**<Measured id="busybox.cpu" /> of one core**, while the reads themselves are
+about <Measured id="procread.ms" /> per sample.
+
+<Provenance of="busybox-2026-09-11" />
+
+So most of the shell loop's cost is not the reading. It pays a fork per
+iteration and the agent pays none: one process starts, opens its files once and
+keeps them open. That is the whole of the difference, and it is why the agent is
+a binary rather than a script.
+
+<Aside type="note" title="Where the number comes from">
+	Not from `top`, and not from a snapshot. The agent counts its own CPU microseconds and RSS out of
+	its cgroup and publishes them as `mikroscope_self_cpu_usec_total` and `mikroscope_self_rss_bytes`.
+	Two reads of `/metrics` 60 s apart, at steady state with the ring already full, is the
+	measurement. RouterOS `/tool profile` shows the same process as `mikroscope-agent`.
+</Aside>
+
+## Size the memory limit to the data
+
+The single most expensive mistake available here is giving the process less
+memory than its ring needs. The Go garbage collector responds to a tight soft
+limit by running more often, and the CPU cost jumps for a reason that has
+nothing to do with the sampling rate.
+
+The ring holds pre-encoded lines rather than structs for the same reason. If you
+raise `--buffer` or the rate, raise `--mem-limit-mb` and the container's
+`--memory-max` with it; the numbers used for each row of the measurements are
+listed beside them on [the rate ceiling](/mikroscope/cost/rate-ceiling/).
+
+The parse is not where the time goes. Parsing the seven global `/proc` files plus one delta took
+27 µs and 239 allocations per sample on the amd64 development host (Go 1.27.1, three runs,
+26.7–27.5 µs, 2026-09-11). On the RB5009's Cortex-A72 a whole tick — timers, JSON and the
+garbage collector included — costs <Measured id="run.10hz.usPerSample" /> at 10 Hz with the default
+floors, and [the five runs](/mikroscope/cost/rate-ceiling/) give it at every rate. The parse was not
+measured on the A72 on its own.
+
+## Measuring it on your own device
+
+Nothing here transfers to a board that is not an RB5009 — a different core
+count, a different clock, a different kernel and a different flash all move it.
+The procedure is three commands and takes a minute:
+
+```sh
+curl -s http://172.30.10.2:9123/metrics | grep -E 'self_cpu_usec_total|self_rss_bytes'
+sleep 60
+curl -s http://172.30.10.2:9123/metrics | grep -E 'self_cpu_usec_total|self_rss_bytes'
+```
+
+The difference in `self_cpu_usec_total` divided by 60 000 000 is the share of
+one core. Take it at steady state, with the ring full: a freshly started agent
+is still filling it and will read low.
+
+<SeeAlso>
+
+## See also
+
+- [The rate ceiling](/mikroscope/cost/rate-ceiling/): the five runs, the memory flags each one used,
+  and what sampling faster buys.
+- [What the numbers do not say](/mikroscope/cost/limits/): what these figures cannot tell you about
+  another device or another load.
+- [What it is](/mikroscope/start/): the agent, the CLI and the four limits stated first.
+
+</SeeAlso>

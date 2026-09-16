@@ -1,0 +1,141 @@
+---
+title: El suelo de resolución es del kernel
+description: Por qué una lectura de CPU no puede ser más fina que el tick de 10 ms del kernel, la única fuente que lee por debajo de él y hasta dónde puede recordar el agente.
+---
+
+import Measured from "../../../../components/Measured.astro";
+import NotClaimed from "../../../../components/NotClaimed.astro";
+import Provenance from "../../../../components/Provenance.astro";
+import SeeAlso from "../../../../components/SeeAlso.astro";
+
+Esta página responde a la pregunta que decide cómo leer cada número de CPU que produce
+mikroscope: cuál es el cambio más pequeño que puede mostrar, y por qué ese límite lo pone el
+kernel y no el agente. También dice qué fuente sí ve por debajo de ese límite, qué no tiene el
+kernel de referencia y cuánto sobrevive una muestra en el agente antes de desaparecer.
+
+## Ticks, no tiempo
+
+Un tick dura <Measured id="tick.ms" />. `/proc/stat` no cuenta tiempo, cuenta ticks de `USER_HZ`,
+100 por segundo. Una muestra de 100 ms puede contener por tanto 10 ticks por núcleo, así que la
+fracción de ocupación de un núcleo se resuelve en escalones del <Measured id="tick.stepOneCore" />,
+y la media de cuatro núcleos en escalones del <Measured id="tick.stepFourCores" />. Sobre 1 s, la resolución de un núcleo es del <Measured id="tick.stepOneSecond" />.
+
+Eso es aritmética del tick, no una propiedad del agente, y ninguna cadencia ni ajuste lo cambia.
+Lo que el agente hace al respecto es negarse a esconderlo: envía los ticks en bruto y el
+intervalo real de cada muestra (`dt_ns`), nunca un porcentaje, de modo que la ventana sobre la
+que divides la eliges tú.
+
+La contabilidad de ticks también está cuantizada en los bordes. Un intervalo de 100,3 ms puede
+llevar 11 ticks (visto en el equipo de desarrollo amd64, 2026-09-11/12), lo que
+daría una fracción de ocupación por encima de 1. La fracción que deriva el agente está limitada a
+1; los ticks en sí siguen en bruto.
+
+Muestrear más rápido no afina esto. A 100 Hz una muestra contiene 0 o 1 tick ocupado, así que la
+fracción de ocupación por muestra tiene dos valores posibles; por encima de unos 20 Hz los
+contadores de ticks son un indicador de ocupación más que un porcentaje. Lo que sí compra una
+cadencia mayor está en [el techo de muestreo](/mikroscope/es/cost/rate-ceiling/).
+
+## La única fuente por debajo: los contadores de la propia CPU
+
+Una fuente lee por debajo del tick: la unidad de monitorización del rendimiento de la CPU (PMU),
+a través de `perf_event_open`, que el agente recoge como la fuente `perf` cuando el contenedor
+es privilegiado. Es la única fuente de mikroscope que no viene de un fichero.
+
+Medido en el RB5009 y registrado el 2026-09-12: en una muestra de 100,4 ms en la que `/proc/stat`
+informó de **cero ticks ocupados en los cuatro núcleos**, la PMU contó entre 2,2 y 4,6 millones
+de ciclos y entre 0,8 y 2,1 millones de instrucciones ejecutadas, con una tasa de fallos de caché
+del 3,8–5,7 %. El jiffie redondea ese trabajo hasta hacerlo desaparecer; el contador no.
+
+El número que merece la pena vigilar es el de instrucciones por ciclo, y el agente no lo calcula:
+envía las cuentas en bruto y la división la haces tú. La división compensa porque
+distingue un núcleo que trabaja de un núcleo parado esperando a la memoria, algo que ningún
+contador de ticks puede expresar. Medido durante 2 s en el mismo equipo y el mismo día, fue de
+0,381 en cpu0 a 0,992 en cpu1.
+
+Qué es la fuente en el equipo de referencia (RB5009, RouterOS 7.24.2, kernel 5.6.3, Cortex-A72
+r0p1, 2026-09-12, desde dentro de un contenedor privilegiado):
+
+- El agente pide siete contadores: `cycles`, `instructions`, `cache-references`,
+  `cache-misses`, `branch-instructions`, `branch-misses` y `bus-cycles`. La prueba del
+  2026-09-12 abrió `cycles`, `instructions`, `cache-misses`, `branch-misses` y `bus-cycles` a
+  nivel de sistema en 4 de 4 CPU. En los datos del propio agente de las 24 h que terminaron el
+  2026-09-12, seis informaron en 4 de 4 núcleos, `cache-references` entre ellos, y
+  `branch-instructions` no produjo ninguna fila.
+- Los eventos genéricos `stalled-frontend` y `stalled-backend` devuelven `ENOENT` en el A72.
+  Harían falta códigos de evento de PMU en bruto, así que el agente no los pide.
+- Un contador que no se puede abrir está ausente, nunca a cero. Qué contadores se abren depende
+  de la CPU, así que lee la etiqueta `counter` de `mikroscope_perf_events_total{counter,cpu}`
+  en vez de dar por hecho un conjunto.
+- Sin `privileged=yes` falta la familia entera: los contadores se abren a nivel de sistema, y
+  eso un contenedor sin privilegios no puede hacerlo. Consulta
+  [lo que aporta privileged](/mikroscope/es/limits/privileged/).
+
+El colector usa esos mismos dos contadores para una de sus detecciones, `ipc-collapse`: por
+núcleo, una vez que hay al menos 20 s de historia, que las instrucciones por ciclo de un segundo caigan por debajo de la mitad de su mediana de los 60 s
+anteriores mientras la tasa de ciclos está por encima de su propia mediana. Se describe junto
+con las demás reglas en [detecciones](/mikroscope/es/sinks/detections/).
+
+## Ningún reloj más fino desde el kernel
+
+No esperes un reloj más fino de PSI ni de `schedstat`. El kernel de RouterOS 7.24.2 del RB5009
+(Linux 5.6.3) no tiene ni `/proc/pressure` ni `/proc/schedstat`, y la columna `irq` de su
+`/proc/stat` vale siempre 0, así que el tiempo de IRQ hardware se cuenta dentro de `system`:
+
+<Provenance of="kernel-2026-09-11" />
+
+Tampoco hay un camino de trazado. Un contenedor privilegiado de descubrimiento en el mismo equipo,
+el 2026-09-12, no encontró ni eBPF, ni kprobes, ni ftrace: ni BTF, ni debugfs, ni tracefs, y los
+puntos de montaje no existen. Una nueva comprobación, el 2026-09-14, encontró `/sys/fs/bpf`
+presente y vacío, y `/proc/modules` con 238 módulos cargados, pero ni `/lib/modules`, ni
+cabeceras del kernel, ni compilador en el equipo: una función del kernel que falta no se puede
+añadir desde un contenedor.
+
+El agente detecta al arrancar lo que tiene el kernel y lo publica en `/capabilities`: el mapa
+`sources` dice qué fuentes lee realmente este despliegue. Los campos de una fuente ausente faltan
+en cada muestra y en cada destino, nunca valen cero. El agente sí lee PSI y `schedstat` donde el
+kernel los tiene.
+
+<NotClaimed variant="untested">
+	Los caminos de PSI y `schedstat` nunca se han ejecutado en el RB5009, porque su kernel carece de
+	ambos. El camino de `schedstat` solo se ejecutó en el equipo de desarrollo amd64 (kernel 6.12.107,
+	2026-09-12); el analizador de PSI solo se ha probado con entradas sintéticas. La PMU se abrió en
+	ese equipo de desarrollo (2026-09-12), pero no se registró qué contadores abrió; en ninguna CPU
+	salvo el Cortex-A72 del RB5009 se conoce el conjunto de contadores. El hEX S, una compilación de
+	RouterOS de 32 bits sobre un chip ARM64, no se ha medido en absoluto.
+</NotClaimed>
+
+## Hasta dónde recuerda el agente
+
+El otro límite duro es la profundidad, no la resolución. El agente guarda sus muestras en un
+anillo de `--buffer` segundos, 300 s por defecto y entre 10 y 3600 s permitidos, que contiene
+cadencia × búfer muestras. Nada más antiguo existe en ningún sitio del router.
+
+Un corte del colector o del grabador más corto que el anillo se rellena al reconectar: pide
+`since=<seq>` y recibe todas las muestras que se perdió. Un corte más largo que el anillo se
+informa como un hueco de longitud conocida, nunca se tapa. El agente responde con una línea
+`{"gap":{"from":…,"to":…}}` que nombra los números de secuencia perdidos, antes de las muestras
+que aún conserva; `record` lo escribe como un marcador que dice `samples N..M lost`, y `forward`
+lo cuenta en `mikroscope_collector_gaps_total` y se lo pasa a cada destino.
+
+Un anillo más largo cuesta memoria en el agente, y el agente rechaza uno que no quepa. Al arrancar
+estima el anillo a 2 560 bytes por línea (la línea media se midió en <Measured id="ring.lineBytes" /> en el RB5009 el 2026-09-12, sin las fuentes de PMU, buddyinfo y MTD; una placa con más núcleos o
+líneas de interrupción, o más fuentes, cuesta más), suma el
+presupuesto de la captura por disparo, y sale con un error si el total supera el `memory.max` del
+contenedor. Si el total es más de la mitad del límite blando de memoria de Go, arranca pero
+registra un aviso, porque un heap tan justo mantiene al recolector de basura trabajando sin parar.
+Cómo dimensionar ambos límites está en [el coste del observador](/mikroscope/es/cost/).
+
+<SeeAlso>
+
+## Véase también
+
+- [Cada fuente a su propio suelo](/mikroscope/es/limits/source-floors/): las fuentes que no se
+  leen en cada tick, y el motivo con nombre de cada una.
+- [Lo que aporta privileged](/mikroscope/es/limits/privileged/): la PMU, el log del kernel y las
+  cachés slab, y lo que el contenedor sigue sin ver.
+- [El techo de muestreo](/mikroscope/es/cost/rate-ceiling/): lo que compra muestrear más rápido
+  cuando el tick ya ha dejado de ser un porcentaje.
+- [Lo que los números no dicen](/mikroscope/es/cost/limits/): lo que `/metrics` puede y no puede
+  recuperar de estas muestras.
+
+</SeeAlso>

@@ -1,0 +1,108 @@
+name: Bug report
+description: The agent or the collector measured the wrong thing, wrote the wrong thing, or nothing at all.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before opening this, two pages answer most of what lands here:
+        [limits](https://jmrp.io/docs/mikroscope/limits/), which says what the
+        kernel and RouterOS will not give a container and what was measured
+        where, and [install](https://jmrp.io/docs/mikroscope/install/), which
+        lists the prerequisites the tool cannot remove.
+
+        **Never paste a credential.** Not the API user's password, not a sink
+        token, not the agent's bearer token, and not `/container/print detail`
+        or `/export` output, which can carry other containers' secrets in their
+        `cmd=` lines. Replace router addresses and names you consider private
+        with placeholders; the report is just as useful.
+
+        A security vulnerability does not go here. See SECURITY.md.
+  - type: input
+    id: version
+    attributes:
+      label: mikroscope version
+      description: The output of `mikroscope version`, and of `mikroscope-agent -version` if the agent was built separately.
+      placeholder: mikroscope 1.0.0 (commit abc1234, built 2026-09-15T10:00:00Z)
+    validations:
+      required: true
+  - type: input
+    id: routeros
+    attributes:
+      label: RouterOS version and board
+      description: "From `/system/resource/print`: `version` and `board-name`. For example 7.24.2 on an RB5009UG+S+IN."
+      placeholder: 7.24.2, RB5009UG+S+IN
+    validations:
+      required: true
+  - type: dropdown
+    id: arch
+    attributes:
+      label: Agent architecture
+      options:
+        - arm64
+        - arm (32-bit RouterOS)
+        - amd64 (x86 or CHR)
+        - Not installed yet
+    validations:
+      required: true
+  - type: dropdown
+    id: part
+    attributes:
+      label: Where it went wrong
+      multiple: true
+      options:
+        - doctor, plan or install
+        - upgrade or uninstall
+        - The agent (sampling, /metrics, captures)
+        - record, mark or plot
+        - forward (the collector)
+        - A sink
+        - The Grafana dashboards or alert rules
+        - The documentation
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected instead
+      description: >
+        The command you ran, with its flags (the router target and any token
+        replaced), and what it printed.
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: The output of `mikroscope doctor`
+      description: >
+        It is read-only: it writes nothing to the router. Paste it whole, with
+        addresses and names you consider private replaced.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: sinks
+    attributes:
+      label: Sinks
+      description: >
+        Which of `--file`, `--prom`, `--influx`, `--loki`, `--otlp`,
+        `--graphite`, `--elastic`, `--sql`, `--telegraf` and `--stdout` were in
+        use, and the store and its version behind each. The URLs without their
+        tokens.
+  - type: textarea
+    id: logs
+    attributes:
+      label: The log
+      description: >
+        The lines around the problem: the collector's stderr, or the agent's
+        lines from `/log/print where topics~"container"`. The agent's start-up
+        line names its rate, buffer and enabled sources, which is often the
+        whole answer.
+      render: text
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: >
+        Whether the container is privileged, the rate and buffer, and the
+        panel or series that looks wrong.

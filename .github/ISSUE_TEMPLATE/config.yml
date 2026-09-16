@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation
+    url: https://jmrp.io/docs/mikroscope/
+    about: Install, record, sinks, dashboards, limits and security, in English and Spanish.
+  - name: Security vulnerability
+    url: https://github.com/jmrplens/mikroscope/security/advisories/new
+    about: Report it privately. It does not go in a public issue.

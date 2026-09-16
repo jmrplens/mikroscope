@@ -1,0 +1,27 @@
+---
+/**
+ * The memory flags one measured run used, inline, from src/data/measurements.ts.
+ *
+ * `<RunFlags run="50hz" />` renders `--buffer 120 --mem-limit-mb 64
+ * --memory-max 96M` as code. The flags are the run's, not prose, so they are
+ * the same in both locales and live beside the figures they produced: a
+ * repeated run with other limits changes the table and this sentence together.
+ * `run` is a structural attribute to the parity gate, like `<Measured id>`.
+ */
+import { isRunKey, runs } from "../data/measurements";
+import InlineCode from "./InlineCode.astro";
+
+interface Props {
+	run: string;
+}
+
+const { run } = Astro.props;
+const r = isRunKey(run) ? runs.find((x) => x.key === run) : undefined;
+if (r === undefined) {
+	throw new Error(
+		`RunFlags: unknown run "${run}"; use ${runs.map((x) => `"${x.key}"`).join(", ")} (src/data/measurements.ts)`,
+	);
+}
+---
+
+<InlineCode class="ms-run-flags" text={r.flags} />

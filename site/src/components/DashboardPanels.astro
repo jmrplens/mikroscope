@@ -1,0 +1,45 @@
+---
+/**
+ * One dashboard section's panel titles, read from the committed dashboards in
+ * `dashboards/` by src/data/dashboards.ts.
+ *
+ * The list is the union of both stores in dashboard order. A panel only one
+ * store carries says which, but only in a section both stores ship: where one
+ * store has no row at all, every panel would repeat the same words, and the
+ * count table says it once. Titles are Grafana UI strings and stay English on
+ * the Spanish page, marked `lang="en"` so a screen reader pronounces them as
+ * such.
+ */
+import { isSection, panelsOf, sectionNames } from "../data/dashboards";
+import { langOf } from "../lib/lang";
+
+interface Props {
+	/** The row title, as the dashboard shows it. */
+	section: string;
+}
+
+const { section } = Astro.props;
+if (!isSection(section)) {
+	throw new Error(
+		`DashboardPanels: no section "${section}" in dashboards/; the sections are ${sectionNames
+			.map((s) => `"${s}"`)
+			.join(", ")}`,
+	);
+}
+const { entries, stores } = panelsOf(section);
+const lang = langOf(Astro.locals.starlightRoute);
+const t = Astro.locals.t;
+const ONLY = { influxdb: "ms.dash.influxOnly", prometheus: "ms.dash.promOnly" } as const;
+const titleLang = lang === "en" ? undefined : "en";
+---
+
+<ul class="ms-panels" data-section={section}>
+	{
+		entries.map((e) => (
+			<li>
+				<span lang={titleLang}>{e.title}</span>
+				{e.only !== null && stores.length === 2 && <span class="ms-panel-only">{` — ${t(ONLY[e.only])}`}</span>}
+			</li>
+		))
+	}
+</ul>

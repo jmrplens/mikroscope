@@ -1,0 +1,123 @@
+---
+title: How to read what it shows
+description: Seven readings of kernel data from one RB5009 — a production fault found by accident, three events provoked on purpose, two that needed no provoking, and the idle shape they are read against.
+---
+
+import { Aside } from "@astrojs/starlight/components";
+import Measured from "../../../components/Measured.astro";
+import Provenance from "../../../components/Provenance.astro";
+import ScrollTable from "../../../components/ScrollTable.astro";
+import SeeAlso from "../../../components/SeeAlso.astro";
+
+This section answers the question that comes after installing the agent: _the
+numbers are arriving — what does a fault look like in them?_ Each page is one
+shape, read from data the agent collected on the reference router, with the
+commands that produced it so you can reproduce it on your own device.
+
+Every number in these pages comes from one campaign on the reference router, an
+aarch64 kernel on a board with 1 GB of RAM:
+
+<Provenance of="playbooks-2026-09-12" />
+
+Where a later page adds a
+figure from another date, it says so beside the figure. Where a fault was
+provoked deliberately, the page says exactly how.
+
+## Before you provoke anything
+
+The scenarios were chosen so that nothing they do can break the router's uplink
+or cut an administrator's own path to it. Keep that property on your own device:
+find out which port you are connected through first,
+
+```text
+/interface/bridge/host/print where mac-address="<your machine's MAC>"
+```
+
+and leave that port, the WAN port and anything carrying a service alone.
+
+## The seven readings
+
+Read the idle shape first. Without it, every other page looks like an anomaly.
+
+<ScrollTable label="The seven readings and their signatures">
+
+| Page                                                                 | How it came about                                | Where it shows                                 | Signature                                                                                                                 |
+| -------------------------------------------------------------------- | ------------------------------------------------ | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| [The shape of an idle router](/mikroscope/playbooks/idle/)           | 60 s at idle                                     | per-core busy, `time_squeeze`, `events`        | 6–8 % busy across four cores, squeeze never zero, zero kernel events                                                      |
+| [A loop only the kernel could see](/mikroscope/playbooks/loop/)      | real, found by accident on the production router | `events` (the `kmsg` source)                   | `events` at <Measured id="loop.eventsBefore" />, <Measured id="loop.helloGap" /> apart; the API reported a healthy device |
+| [RouterOS ports and kernel names](/mikroscope/playbooks/port-names/) | a dead port toggled off and on                   | `events`                                       | the kernel prints `eth5` where RouterOS says `ether6`                                                                     |
+| [A CPU-bound workload](/mikroscope/playbooks/cpu/)                   | a console loop that ends by itself               | per-core busy, temperature, frequency          | ~29 % total, one core at 99.8 %, ~20 s of migration before it settles                                                     |
+| [A packet flood](/mikroscope/playbooks/packet-flood/)                | `ping -f` at the router's own LAN address, 10 s  | `switch0` interrupts, softirqs, `time_squeeze` | `switch0` 5.5 k → 34 k per 5 s bucket, all on the one core the IRQ is pinned to                                           |
+| [Flash wear](/mikroscope/playbooks/flash-wear/)                      | nothing provoked; the router writes on its own   | the `yaffs` source, MTD ECC counters           | 2 page writes per 30 s at idle, traced to the `dns` topic logging to disk                                                 |
+| [Conntrack without the API](/mikroscope/playbooks/conntrack/)        | a cross-check against the API, no storm          | the `nf_conntrack` slab cache                  | the router's real connection count where the container's own namespace reports 0                                          |
+
+</ScrollTable>
+
+## Two checks before you trust a reading
+
+**The sampler was not starved.** `mikroscope_slipped_total` should be 0 over the
+window you are reading. A slipped tick is one whose read finished after the
+next tick was due, and the sampler's own accounting is then the first thing to
+distrust.
+
+**The kernel log was kept whole.** `mikroscope_kmsg_dropped_total` counts loss events, not records: one per tick that hit the agent's cap of 64 records, and one per kernel ring overrun, which can stand for many records. While it is non-zero, the per-level counts in `mikroscope_kmsg_records_total` are a lower bound, and so is an event rate taken from them.
+
+<Aside type="note" title="The commands on these pages carry no token">
+	The `curl` examples talk to the agent at `http://172.30.10.2:9123` without credentials, which is
+	how a default install answers. An agent started with a token — mandatory with `--expose` —
+	returns 401 on every path but `/healthz` until each request carries the header
+	`Authorization: Bearer <token>`.
+</Aside>
+
+## What the agent costs while you do this
+
+Measure the observer, and measure it honestly — including the part where
+measuring changes the answer.
+
+Pulling a 60-second `/snapshot` is not free: the agent has to hand over ~600
+pre-encoded lines, about 1.5 MB, and `self.cpu_us` inside those samples
+_includes the cost of serving them_. Reading the agent's cost out of a large
+snapshot therefore overstates it, and doing it repeatedly overstates it more.
+
+Use `/metrics` instead. It is small, its counters are cumulative, and it is
+independent of who scrapes it and when — scrape it twice and divide:
+
+```sh
+U=http://172.30.10.2:9123/metrics
+get() { curl -s "$U" | awk -v k="$1" '$1==k{print $2}'; }
+c0=$(get mikroscope_self_cpu_usec_total); t0=$(date +%s)
+sleep 180
+c1=$(get mikroscope_self_cpu_usec_total); t1=$(date +%s)
+echo "$c0 $c1 $t0 $t1" | awk '{printf "%.2f %% of one core\n", 100*($2-$1)/1e6/($4-$3)}'
+```
+
+Two things to expect:
+
+- **Cost and memory rise until the ring fills.** With the default 300 s ring at
+  10 Hz the agent holds 3 000 pre-encoded samples; a figure taken in the first
+  minute after install is measured on a nearly empty heap and will be
+  optimistic. Wait out `BUFFER_S` before quoting a steady-state number.
+- **`mikroscope_slipped_total` is the number that actually matters.** A sampler
+  that costs a little more but never slips is telling you the truth; one that
+  slips is not.
+
+For scale: at the install default the agent costs <Measured id="run.10hz.cpu" /> of one
+core and <Measured id="run.10hz.rss" /> RSS. That figure was measured on 2026-09-15
+with the full source set and three sinks at once, not during the campaign these
+readings come from:
+
+<Provenance of="rates-2026-09-15" />
+
+<SeeAlso>
+
+## See also
+
+- [The cost of the observer](/mikroscope/cost/): the budget, the measured cost and the procedure
+  above in full.
+- [The resolution floor is the kernel's](/mikroscope/limits/): why one core's busy percentage in a
+  100 ms sample moves in <Measured id="tick.stepOneCore" /> steps, and what reads beneath that.
+- [Detections](/mikroscope/sinks/detections/): the rules the collector runs over these same signals.
+- [Five minutes with a router](/mikroscope/start/walkthrough/): a recording with markers, the other
+  way to read a transient.
+
+</SeeAlso>

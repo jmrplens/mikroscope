@@ -1,0 +1,209 @@
+---
+title: InfluxDB 3
+description: The InfluxDB 3 line-protocol sink — the write URL and token, how batches are delivered and dropped, every measurement it writes, and what InfluxDB 3 Core refuses.
+---
+
+import { Aside } from "@astrojs/starlight/components";
+import NotClaimed from "../../../components/NotClaimed.astro";
+import ScrollTable from "../../../components/ScrollTable.astro";
+import SeeAlso from "../../../components/SeeAlso.astro";
+
+`--influx URL` writes the merged timeline as InfluxDB line protocol to InfluxDB 3's
+`/api/v3/write_lp`. It is the sink that keeps every sample at the agent's rate, and the
+one the InfluxDB dashboard reads. This page answers how to point it at a database,
+what it does when the database is slow or refusing, and which measurements land there.
+
+## The write URL and the token
+
+```sh
+export MIKROSCOPE_INFLUX_URL="http://host:8181/api/v3/write_lp?db=mikroscope&precision=nanosecond"
+export MIKROSCOPE_INFLUX_TOKEN=…
+mikroscope forward --influx "$MIKROSCOPE_INFLUX_URL" --host-tag rb5009
+```
+
+The flag reads its default from `MIKROSCOPE_INFLUX_URL`. The token is read from
+`MIKROSCOPE_INFLUX_TOKEN` only, never from a flag, and sent as
+`Authorization: Bearer <token>`.
+
+<Aside type="caution" title="Quote the URL">
+	When the URL lives in a file you `source`, quote it: `&` is a shell operator, and an unquoted
+	`…?db=mikroscope&precision=nanosecond` is cut at the `&`.
+</Aside>
+
+## Delivery
+
+- **One batch per second.** Every event is rendered into the current batch as it
+  arrives; a goroutine moves it to the queue and posts it once a second, with a 10 s
+  timeout per post.
+- **A bounded queue.** `--queue-seconds` (default 60) × 64 KiB. Past it the oldest
+  batch is dropped and counted; the newest is never dropped.
+- **Backoff.** A failed post backs off 2 s, doubling to 60 s, and logs at most one line
+  per minute. A reply that is not 2xx is an error, with the first 512 bytes of the
+  body in that line.
+- **No silent resend.** A request whose pooled connection turns out dead is reported as
+  an error and retried by the sink, rather than re-sent by the HTTP client on its own.
+  That automatic resend of a batch the server had already committed is the leading,
+  unverified explanation for the duplicate rows of the 2026-09-13 overnight run: a
+  50 Hz run that wrote duplicated sequence numbers into InfluxDB. Whether the sink's own
+  retry avoids them has not been measured.
+
+A 10 Hz kernel sample renders to about 1.2 KiB of line protocol, measured on the
+RB5009 (RouterOS 7.24.2, kernel 5.6.3, 2026-09-12). So one second of budget holds
+about 50 samples — about 5 s of a 10 Hz backlog — and the default 60 s holds about
+5 minutes. Not measured above 10 Hz, and not re-measured against the current source
+set.
+
+Counters are in batches: `written` one batch InfluxDB accepted, `dropped` one batch
+evicted, `errors` one failed attempt.
+
+## Measurements
+
+Every measurement is named `mikroscope_<subject>` and carries `host=<--host-tag>`.
+Kernel-tier rows are stamped with the agent's wall clock in nanoseconds; the table
+names the exceptions. Field lists are on [InfluxDB and SQL
+measurements](/mikroscope/reference/measurements/).
+
+### The kernel tier
+
+<ScrollTable label="Kernel-tier measurements in InfluxDB">
+
+| Measurement           | Tags                                     | Carries                                                                                                                                                    |
+| --------------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mikroscope_cpu`      | `cpu`                                    | the tick deltas per mode, `busy_ratio`, and the sample's real interval `dt_ns`                                                                             |
+| `mikroscope_cpufreq`  | `cpu`                                    | `khz`, with the core's `max_khz` on the same row where it is published                                                                                     |
+| `mikroscope_softnet`  | `cpu`                                    | `processed`, `dropped`, `time_squeeze` deltas                                                                                                              |
+| `mikroscope_irq`      | `irq`, `name`                            | the interrupt count summed over CPUs, for the top-K sources                                                                                                |
+| `mikroscope_irq_cpu`  | `irq`, `name`, `cpu`                     | the same count per CPU, rows with a non-zero delta only                                                                                                    |
+| `mikroscope_softirq`  | `kind`, `cpu`                            | softirq deltas per vector and CPU, non-zero only                                                                                                           |
+| `mikroscope_sample`   | —                                        | `seq`, `dt_ns`, `mono_ns`                                                                                                                                  |
+| `mikroscope_stat`     | —                                        | `/proc/stat`'s deltas: `ctxt`, `intr`, `forks`, `irq_total`, `irq_err`                                                                                     |
+| `mikroscope_mem`      | —                                        | `/proc/meminfo` levels, in `_kb`                                                                                                                           |
+| `mikroscope_load`     | —                                        | load averages, `running`, `threads`, `procs_blocked`                                                                                                       |
+| `mikroscope_vm`       | —                                        | `/proc/vmstat` counter deltas: faults, reclaim scans and steals, stalls, `oom_kill`, swap                                                                  |
+| `mikroscope_vm_level` | —                                        | `/proc/vmstat` levels: `nr_free_pages`, `nr_dirty`, `nr_writeback`, slab pages                                                                             |
+| `mikroscope_buddy`    | `node`, `zone`                           | free blocks per order and `free_pages`, on the samples the free lists changed                                                                              |
+| `mikroscope_self`     | —                                        | the agent's own CPU, RSS, cgroup memory and `memory.max`; its cgroup events where cgroup2 was read; `resets`; `kmsg_dropped`                               |
+| `mikroscope_psi`      | —                                        | stall microseconds, only where the kernel has PSI — not on the RB5009                                                                                      |
+| `mikroscope_thermal`  | `zone`                                   | `celsius`, with the zone's `critical_celsius` where it declares one                                                                                        |
+| `mikroscope_slab`     | `cache`                                  | active objects, with `limit` where the kernel publishes one (`nf_conntrack`)                                                                               |
+| `mikroscope_mtd`      | `device`, `partition`                    | flash ECC counters as read, with the partition's thresholds where published                                                                                |
+| `mikroscope_flash`    | `device`                                 | YAFFS page writes, reads, erasures, GC; `bad_blocks` and `free_chunks` levels                                                                              |
+| `mikroscope_disk`     | `device`                                 | block-device read and write deltas, `io_s`, `inflight`                                                                                                     |
+| `mikroscope_perf`     | `counter`, `cpu`                         | PMU count, with `enabled_ns` and `running_ns` on the same row                                                                                              |
+| `mikroscope_kmsg`     | `level`, `port`, `kind`, `label`, `role` | a count of kernel-log records per level, not the text; a record naming a port is counted per level, port and kind, with its `label` and `role` where known |
+| `mikroscope_derived`  | —                                        | the derive stage's values beside the sample                                                                                                                |
+
+</ScrollTable>
+
+Counters are written as unsigned deltas; levels as the absolute value the kernel
+reported. They are separate measurements where one source has both (`mikroscope_vm`
+against `mikroscope_vm_level`), because a delta is an event rate and a level is a
+depth, and one measurement invites a dashboard to sum a level or rate a gauge.
+
+A source the deployment cannot read writes no row, never a zero row: PSI is absent on
+the reference kernel, and slab, kernel-log, MTD and PMU rows need `privileged=yes`. The
+level sources the agent stores on change appear only on the samples that carry them;
+see [each source at its own floor](/mikroscope/limits/source-floors/).
+
+`running_ns` below `enabled_ns` on a `mikroscope_perf` row means that count is a
+multiplexed, scaled-down estimate. Kernel-log text belongs in
+[Loki](/mikroscope/sinks/other/#loki); what a metrics store can answer is when the
+router started producing warnings, on which port, and of what kind. `kind` is the
+classification of a record that names a port: `link-up`, `link-down`, `stp-blocking`
+and its siblings (`listening`, `learning`, `forwarding`, `disabled`), `own-address` —
+the bridge received a frame with its own MAC as source address, the layer-2 loop
+signature — or `other`. A record that names no port keeps the tagless shape and carries
+`level` alone. A normal link-up is followed by `stp-blocking`, `stp-learning` and
+`stp-forwarding` on its bridge port: four records, not four faults.
+
+### The API tier, and what the collector adds
+
+<ScrollTable label="API-tier and collector measurements in InfluxDB">
+
+| Measurement                 | Tags                                           | Carries                                                                                      | Clock                     |
+| --------------------------- | ---------------------------------------------- | -------------------------------------------------------------------------------------------- | ------------------------- |
+| `mikroscope_api_system`     | —                                              | `cpu_load`, `free_memory`, `total_memory`, `free_hdd`, `uptime_s`                            | collector + skew          |
+| `mikroscope_api_core`       | `cpu`                                          | RouterOS's per-core `load`, `irq`, `disk` percent                                            | collector + skew          |
+| `mikroscope_api_health`     | `name`                                         | each `/system/health` value                                                                  | collector + skew          |
+| `mikroscope_api_iface`      | `interface`, `label`, `type`, `role`, `bridge` | `monitor-traffic` rates, and each loss rate the router returned                              | collector + skew          |
+| `mikroscope_api_ifcounters` | `interface`, `label`, `type`, `role`, `bridge` | every per-port cumulative counter the router returned, `-` folded to `_`                     | collector + skew          |
+| `mikroscope_api_ifinfo`     | `interface`, `label`, `type`, `role`, `bridge` | `default_name` and `mtu`: what each interface is, at start and every `--labels-every`        | collector + skew          |
+| `mikroscope_api_conntrack`  | —                                              | `entries`, when `--conntrack-every` asks                                                     | collector + skew          |
+| `mikroscope_derived_iface`  | `interface`                                    | the fast-path share of what the interface hands the CPU, beside the byte deltas it came from | collector + skew          |
+| `mikroscope_gap`            | —                                              | `from`, `to`: the sequence range that never arrived                                          | collector, when noticed   |
+| `mikroscope_detection`      | `rule`, `key`                                  | `value`, `threshold`, `seq`, `message`                                                       | the sample that raised it |
+| `mikroscope_trigger`        | `cause`                                        | `id`, `seq`, `value`, `threshold`, `field`: the capture is on the agent                      | the agent, at the fire    |
+| `mikroscope_device`         | `board`, `kernel`                              | `cores`, `privileged`, `cgroup`, `sources`, `hash`, and the ceilings the board publishes     | collector                 |
+| `mikroscope_device_thermal` | `zone`                                         | `critical_celsius`, `polling_ms`                                                             | collector                 |
+| `mikroscope_device_cpufreq` | `cpu`                                          | `cluster`, `min_khz`, `max_khz`, `governor`, `steps`                                         | collector                 |
+| `mikroscope_device_cadence` | `source`, `reason`                             | `hz`                                                                                         | collector                 |
+
+</ScrollTable>
+
+Every interface row carries what that interface is: `label` is its RouterOS comment,
+`type` is RouterOS's own type (`ether`, `bridge`, `vlan`, `pppoe-out`, `wg`, `veth`,
+`loopback`), `role` is its interface lists sorted and comma-joined (`WAN`, `LAN,VPN` —
+a bridge member in no list of its own takes its bridge's lists, which is how RouterOS
+firewall rules match it), and `bridge` is the bridge it is a port of. Each is omitted
+rather than sent empty, so the series key of an interface without one stays stable, and
+a panel can group the wire ports (`type=ether`) apart from the bridge's CPU side
+(`type=bridge`), or WAN apart from LAN. A loss field is written only when the router
+returned that key.
+
+`mikroscope_api_ifinfo` carries those five tags for every interface the collector read,
+in the `--interfaces` list or not, with `default_name` (the factory name of a physical
+port, an empty string for a bridge, VLAN or tunnel) as a string field and `mtu` where
+the router reports one above zero. It is written once before the first kernel pull and
+again on every `--labels-every` re-read, 5 minutes by default, and it is the table a
+panel joins to say what an interface is. `mikroscope_api_ifcounters` carries counters
+only: `mtu`, `l2mtu`, `max-l2mtu` and `sfp-shutdown-temperature` parse as integers but
+are sizes and configuration, not counts, so they are not fields there; the MTU is in
+`mikroscope_api_ifinfo`.
+
+`mikroscope_derived_iface`'s `fp_rx_share` is the fast-path share of the traffic an
+interface hands the CPU: `fp-rx-byte` over `driver-rx-byte` on a switch port, whose
+`rx-byte` is the wire total, and over `rx-byte` on a software interface. It is not a
+share of the wire — frames the switch chip forwards in hardware are in neither number.
+`fp_tx_share` is withheld, and the `tx_bytes` denominator beside it written as 0, while
+the cumulative `fp-tx-byte` is 0, which it was on every interface of the reference
+RB5009 on 2026-09-16 after hundreds of GB transmitted.
+
+## InfluxDB 3 Core refuses things
+
+Learned the hard way, against InfluxDB 3 Core:
+
+- **A node holds at most five databases.** A sixth write fails with 422 — the first real
+  target, on 2026-09-12, answered `422: would exceed limit of 5 databases`. The sink
+  backs off and keeps trying, so the symptom is a rising `errors` count, not a failed
+  run. The measured runs used an InfluxDB 3 Core instance of their own.
+- **Every query must be time-bounded.**
+- **A column's type is immutable once written.**
+- **A column exists only once a row has carried it.** `mikroscope_kmsg` has no `kind`
+  column until the first kernel-log record naming a port is written, and a query that
+  filters on it before then fails at planning time — which is why the layer-2 loop alert
+  rule's SQL form needs a store that has already held one classified port record.
+
+The Grafana datasource for InfluxDB 3 needs two secure fields, not one; see [import and
+check](/mikroscope/dashboards/import-and-check/).
+
+<NotClaimed>
+	Every recorded run wrote to InfluxDB 3 Core; no write to InfluxDB 2's `/api/v2/write` or to
+	InfluxDB 3 Enterprise is recorded. The duplicate rows of 2026-09-13 have an explanation that is
+	leading and unverified, and disabling the HTTP client's own resend has not been measured against a
+	repeat of that run.
+</NotClaimed>
+
+<SeeAlso>
+
+## See also
+
+- [InfluxDB and SQL measurements](/mikroscope/reference/measurements/): every field of every
+  measurement, with its unit.
+- [Import and check](/mikroscope/dashboards/import-and-check/): the InfluxDB dashboard, its
+  datasource and the store probe.
+- [The collector](/mikroscope/sinks/): the queue, the backoff and the counters every queued sink
+  shares.
+- [The device-info stream](/mikroscope/sinks/device-info/): what the four `mikroscope_device*`
+  measurements hold.
+
+</SeeAlso>

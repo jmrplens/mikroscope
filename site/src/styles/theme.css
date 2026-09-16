@@ -1,0 +1,190 @@
+/* The palette, and nothing else.
+ *
+ * Three conventions this sheet depends on, all of them load-bearing:
+ *
+ * 1. It is registered FIRST in `customCss` and it is unlayered, so its `:root`
+ *    beats the tokens Starlight declares inside `@layer starlight.base`, and
+ *    every sheet after it can read what it declares.
+ * 2. `:root` carries DARK. That is Starlight's default, and its inline theme
+ *    script only ever ADDS `data-theme`, so a `:root[data-theme="dark"]` block
+ *    would not apply in the moment before that script runs.
+ * 3. Every colour token is restated in the light block. A token declared in one
+ *    block only keeps its other theme's value on the wrong background, which is
+ *    the failure that is invisible in review and obvious to a reader;
+ *    `scripts/check-contrast.mjs` fails the build on it.
+ *
+ * `--sl-*` only ever RECEIVES a value here. `--ms-*` is this project's own
+ * namespace and is what the other sheets read.
+ *
+ * Two rules about meaning, not colour:
+ *
+ * - **The accent is never a status.** `--ms-accent` means "you can act on
+ *   this": a link, a control, the mark. It never means good or bad.
+ * - **Status colour is always redundant.** Every tint sits behind a glyph or a
+ *   word, because this project's own subject matter is a reader staring at a
+ *   dashboard deciding whether amber means anything.
+ *
+ * That second rule carries a known cost here. The accent IS amber, and amber
+ * also means "threshold" on this project's Grafana dashboards. The two never
+ * collide literally — the panels use Grafana's own named colours and never
+ * these hexes — but a reader arrives having learnt one of them. The choice was
+ * made knowingly (owner, 2026-09-15) and is written down in brand/README.md.
+ *
+ * Every ratio in the comments below is that token against its own theme's
+ * page, computed rather than estimated. They are a reading aid and nothing
+ * rests on them: `pnpm contrast:check` recomputes every gated pair from this
+ * file on each run, and it is that run, not these comments, that fails a
+ * build.
+ */
+
+:root {
+	--ms-page: #0e1316;
+	--ms-surface: #151c20;
+	--ms-surface-raised: #1b2429;
+	--ms-border: #2a333a;
+	--ms-border-strong: #3c474f;
+
+	--ms-heading: #f2f6f8; /* 17.19:1 on the page */
+	--ms-body: #c3ccd2; /* 11.47:1 */
+	--ms-muted: #8b969d; /*  6.18:1 */
+
+	/* The mark's two tones, and the accent is the loud one: a header that
+	 * inlines mark-inline.svg paints it with `currentColor` plus the quiet
+	 * property, so the drawing in the chrome is the drawing in brand/. */
+	--ms-accent: #fbbf24; /* 11.20:1 */
+	--ms-accent-strong: #fcd34d; /* 12.96:1 */
+	--ms-accent-soft: #2a1f05;
+	--ms-mark-quiet: #c2740a; /*  5.16:1 */
+
+	--ms-status-bad: #e0605c; /*  5.34:1 */
+	--ms-status-bad-soft: #2b1618;
+	--ms-status-good: #57b96a; /*  7.61:1 */
+	--ms-status-good-soft: #14261a;
+	--ms-status-warn: #d8a657; /*  8.47:1 */
+	--ms-status-warn-soft: #2d2311;
+	--ms-info: #6cb6f2; /*  8.56:1 */
+	--ms-info-soft: #10222f;
+	--ms-note: #b79bea; /*  7.91:1 */
+	--ms-note-soft: #1e1732;
+
+	--ms-mark-highlight: #3b3413;
+	--ms-shadow: rgb(0 0 0 / 0.45);
+
+	--ms-radius: 0.5rem;
+	/* The width of a rule that carries meaning: NotClaimed's dashed edge and
+	 * RouterWrites' leading border. Not a colour, so it is declared once. */
+	--ms-rule: 3px;
+	--ms-z-skip-link: 9999;
+
+	--sl-color-white: var(--ms-heading);
+	--sl-color-gray-1: color-mix(in srgb, var(--ms-heading) 65%, var(--ms-body));
+	--sl-color-gray-2: var(--ms-body);
+	--sl-color-gray-3: var(--ms-muted);
+	--sl-color-gray-4: color-mix(in srgb, var(--ms-muted) 55%, var(--ms-border));
+	--sl-color-gray-5: var(--ms-border);
+	--sl-color-gray-6: var(--ms-surface);
+	--sl-color-gray-7: color-mix(in srgb, var(--ms-surface) 55%, var(--ms-page));
+	--sl-color-black: var(--ms-page);
+
+	--sl-color-accent-low: var(--ms-accent-soft);
+	--sl-color-accent: var(--ms-accent);
+	--sl-color-accent-high: var(--ms-accent-strong);
+	--sl-color-text-accent: var(--ms-accent);
+
+	--sl-color-red-low: var(--ms-status-bad-soft);
+	--sl-color-red: var(--ms-status-bad);
+	--sl-color-red-high: var(--ms-status-bad);
+	--sl-color-green-low: var(--ms-status-good-soft);
+	--sl-color-green: var(--ms-status-good);
+	--sl-color-green-high: var(--ms-status-good);
+	--sl-color-orange-low: var(--ms-status-warn-soft);
+	--sl-color-orange: var(--ms-status-warn);
+	--sl-color-orange-high: var(--ms-status-warn);
+	--sl-color-blue-low: var(--ms-info-soft);
+	--sl-color-blue: var(--ms-info);
+	--sl-color-blue-high: var(--ms-info);
+	--sl-color-purple-low: var(--ms-note-soft);
+	--sl-color-purple: var(--ms-note);
+	--sl-color-purple-high: var(--ms-note);
+}
+
+:root[data-theme="light"] {
+	--ms-page: #ffffff;
+	--ms-surface: #f5f7f8;
+	--ms-surface-raised: #ffffff;
+	--ms-border: #dde3e6;
+	--ms-border-strong: #c2ccd1;
+
+	--ms-heading: #14191d; /* 17.70:1 on white */
+	--ms-body: #333d45; /* 11.09:1 */
+	--ms-muted: #556069; /*  6.44:1 */
+
+	/* Inverted, and it has to be: on white the sample standing above the mean
+	 * is the DARKER tone. The accent is that one, so the inlined mark reads the
+	 * same way round in both themes. */
+	--ms-accent: #633009; /* 10.73:1 */
+	--ms-accent-strong: #3f1e05; /* 15.01:1 */
+	--ms-accent-soft: #fbf1e4;
+	--ms-mark-quiet: #b45309; /*  5.02:1 */
+
+	--ms-status-bad: #b3352f; /*  6.06:1 */
+	--ms-status-bad-soft: #fbe7e6;
+	--ms-status-good: #257a38; /*  5.36:1 */
+	--ms-status-good-soft: #eef9f0;
+	--ms-status-warn: #7a5300; /*  6.85:1 */
+	--ms-status-warn-soft: #fdf0d8;
+	--ms-info: #17558f; /*  7.69:1 */
+	--ms-info-soft: #e4f0fb;
+	--ms-note: #4a2f9c; /*  9.64:1 */
+	--ms-note-soft: #ece6fa;
+
+	--ms-mark-highlight: #fff0c9;
+	--ms-shadow: rgb(14 19 22 / 0.14);
+
+	--sl-color-white: var(--ms-heading);
+	--sl-color-gray-1: color-mix(in srgb, var(--ms-heading) 65%, var(--ms-body));
+	--sl-color-gray-2: var(--ms-body);
+	--sl-color-gray-3: var(--ms-muted);
+	--sl-color-gray-4: color-mix(in srgb, var(--ms-muted) 55%, var(--ms-border));
+	--sl-color-gray-5: var(--ms-border);
+	--sl-color-gray-6: var(--ms-surface);
+	--sl-color-gray-7: color-mix(in srgb, var(--ms-surface) 55%, var(--ms-page));
+	--sl-color-black: var(--ms-page);
+
+	--sl-color-accent-low: var(--ms-accent-soft);
+	--sl-color-accent: var(--ms-accent);
+	--sl-color-accent-high: var(--ms-accent-strong);
+	--sl-color-text-accent: var(--ms-accent);
+
+	--sl-color-red-low: var(--ms-status-bad-soft);
+	--sl-color-red: var(--ms-status-bad);
+	--sl-color-red-high: var(--ms-status-bad);
+	--sl-color-green-low: var(--ms-status-good-soft);
+	--sl-color-green: var(--ms-status-good);
+	--sl-color-green-high: var(--ms-status-good);
+	--sl-color-orange-low: var(--ms-status-warn-soft);
+	--sl-color-orange: var(--ms-status-warn);
+	--sl-color-orange-high: var(--ms-status-warn);
+	--sl-color-blue-low: var(--ms-info-soft);
+	--sl-color-blue: var(--ms-info);
+	--sl-color-blue-high: var(--ms-info);
+	--sl-color-purple-low: var(--ms-note-soft);
+	--sl-color-purple: var(--ms-note);
+	--sl-color-purple-high: var(--ms-note);
+}
+
+/* Scoped per theme rather than written onto a bare `:root`, which would put
+ * light values on the dark page. */
+@media (prefers-contrast: more) {
+	:root {
+		--ms-muted: #b6c0c6;
+		--ms-border: #55636c;
+		--ms-border-strong: #7d8b93;
+	}
+
+	:root[data-theme="light"] {
+		--ms-muted: #3b444c;
+		--ms-border: #a9b6bc;
+		--ms-border-strong: #7d8b93;
+	}
+}

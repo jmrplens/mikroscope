@@ -1,0 +1,111 @@
+---
+/**
+ * The measured runs as a table, from src/data/measurements.ts.
+ *
+ * The landing shows three rows and `cost/rate-ceiling` all five; both read the
+ * same array, so the "2.85 %" on one page is the "2.85 %" on the other by
+ * construction. Every number goes through src/lib/format.ts, which is what
+ * gives the Spanish twin "2,85 %" and "2 856" without a second table.
+ */
+import { isRunKey, runs, type Run, type RunKey } from "../data/measurements";
+import { formatNumber, formatQuantity } from "../lib/format";
+import { langOf } from "../lib/lang";
+import { nextId } from "../lib/ids";
+import ScrollTable from "./ScrollTable.astro";
+
+interface Props {
+	only?: RunKey[];
+}
+
+const { only } = Astro.props;
+for (const key of only ?? []) {
+	if (!isRunKey(key)) {
+		throw new Error(
+			`RunsTable: unknown run "${key}"; use ${runs.map((r) => `"${r.key}"`).join(", ")} (src/data/measurements.ts)`,
+		);
+	}
+}
+// Data order, whatever order `only` lists them in: the table reads as a ladder.
+const rows = only ? runs.filter((r) => only.includes(r.key)) : runs;
+const lang = langOf(Astro.locals.starlightRoute);
+const t = Astro.locals.t;
+// The columns, with the numeric ones aligned to their end like their cells.
+const columns = [
+	{ key: "ms.runs.rate", num: false },
+	{ key: "ms.runs.floors", num: false },
+	{ key: "ms.runs.cpu", num: true },
+	{ key: "ms.runs.usPerSample", num: true },
+	{ key: "ms.runs.rss", num: true },
+	{ key: "ms.runs.slipped", num: true },
+	{ key: "ms.runs.gapsDrops", num: true },
+] as const;
+const rate = (r: Run) => formatQuantity({ value: r.rateHz, unit: "Hz", digits: 0 }, lang);
+// Generated rather than a literal: `only` exists so a page can show a subset,
+// which invites a second table on one page, and two literals would collide.
+const captionId = nextId(Astro.locals, "ms-runs");
+---
+
+<ScrollTable labelledby={captionId} nowrap>
+	<table>
+		{/* The region's name is the scroll box's; table navigation (NVDA and JAWS
+		 * T, the VoiceOver rotor) lists tables by their own name, which only a
+		 * caption gives. Visually hidden, because the section heading says it. */}
+		<caption class="sr-only" id={captionId}>{t("ms.runs.label")}</caption>
+		<thead>
+			<tr>
+				{/* A header such as "µs/muestra" is one word to the browser, and its
+				 * width set the column's; a break opportunity after the slash lets it
+				 * wrap there instead. */}
+				{
+					columns.map((c) => (
+						<th scope="col" class={c.num ? "ms-num" : undefined}>
+							{t(c.key)
+								.split("/")
+								.map((part, i) => (
+									<Fragment>
+										{i > 0 && (
+											<Fragment>
+												/<wbr />
+											</Fragment>
+										)}
+										{part}
+									</Fragment>
+								))}
+						</th>
+					))
+				}
+			</tr>
+		</thead>
+		<tbody>
+			{
+				rows.map((r) => (
+					<tr id={`run-${r.key}`}>
+						{/* The default marker may drop under the rate: the row name is the one
+						 * cell allowed to wrap, which is what let seven columns fit the 616 px
+						 * column in Spanish, where "10 Hz (por defecto)" is the widest cell. */}
+						<th scope="row">
+							{rate(r)}
+							{r.installDefault && [" ", <span class="ms-run-default">({t("ms.runs.default")})</span>]}
+						</th>
+						<td>{r.floorHz === 0 ? t("ms.runs.default") : <code>FLOOR_HZ={r.floorHz}</code>}</td>
+						<td class="ms-num">
+							<strong>{formatQuantity({ value: r.cpuPct, unit: "%", digits: 2 }, lang)}</strong>
+						</td>
+						<td class="ms-num">{formatNumber(r.usPerSample, lang, 0)}</td>
+						<td class="ms-num">{formatQuantity({ value: r.rssMiB, unit: "MiB", digits: 1 }, lang)}</td>
+						<td class="ms-num">
+							{r.slipped === 0 ? (
+								<strong>0</strong>
+							) : (
+								`${formatNumber(r.slipped, lang, 0)} (${formatQuantity({ value: r.slippedPct, unit: "%", digits: 2 }, lang)})`
+							)}
+						</td>
+						<td class="ms-num">
+							{formatNumber(r.gaps, lang, 0)} / {formatNumber(r.drops, lang, 0)}
+						</td>
+					</tr>
+				))
+			}
+		</tbody>
+	</table>
+</ScrollTable>

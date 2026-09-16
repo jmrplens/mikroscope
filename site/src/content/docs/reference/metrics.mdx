@@ -1,0 +1,502 @@
+---
+title: Prometheus metric families
+description: Every family on the agent’s /metrics and on the collector’s --prom exposition, grouped by source, with its type, its labels and when it is absent.
+---
+
+import { Aside } from "@astrojs/starlight/components";
+import NotClaimed from "../../../components/NotClaimed.astro";
+import Provenance from "../../../components/Provenance.astro";
+import ScrollTable from "../../../components/ScrollTable.astro";
+import SeeAlso from "../../../components/SeeAlso.astro";
+
+This page lists every metric family mikroscope exposes in Prometheus text
+format: its name, its type, its labels, what it counts, and when it is not
+there. It is read from `internal/agent/metrics.go`, `internal/agent/capture.go`
+and `internal/sinks/prometheus.go`. A family is listed under the source it
+comes from, because that is what decides whether a given board has it.
+
+## Two expositions, one renderer
+
+The agent serves `/metrics` on the router, and `forward --prom :9124` serves
+one on the collector host. Both are written by the same `Totals` code: the
+collector feeds it the samples it pulled, so a deployment reached only through
+the relay still gets scrape-independent families. They are not identical.
+
+<ScrollTable label="Which exposition carries what">
+
+| Families                                                                                                                               | Agent `:9123/metrics`              | Collector `--prom`                                  |
+| -------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- | --------------------------------------------------- |
+| everything recomputed from samples: CPU, windows, runs, receive path, memory, PMU, sensors, flash, disk, kernel log, observer counters | yes                                | yes                                                 |
+| device facts (`mikroscope_device_info`, ceilings, cadences)                                                                            | yes                                | yes, once the collector has fetched `/capabilities` |
+| the sampler's timing histograms and `mikroscope_slipped_total`                                                                         | yes                                | no                                                  |
+| trigger and capture families                                                                                                           | yes, while `CAPTURE_MB` is above 0 | no                                                  |
+| `mikroscope_collector_*`, `mikroscope_derived_*`                                                                                       | no                                 | yes                                                 |
+| `mikroscope_api_*`                                                                                                                     | no                                 | yes, once the API tier has delivered a sample       |
+
+</ScrollTable>
+
+The collector leaves `mikroscope_slipped_total` out rather than writing 0,
+because a 0 there would be a claim about a sampler it never ran. To have both
+sets in one Prometheus, scrape the collector for everything and the agent only
+for what the collector cannot produce. Scraping the agent without the keep
+list doubles every counter the collector also exposes:
+
+```yaml
+- job_name: "mikroscope"
+  scrape_interval: 5s
+  static_configs: [{ targets: ["<collector host>:9124"] }]
+- job_name: "mikroscope-agent"
+  scrape_interval: 5s
+  static_configs: [{ targets: ["172.30.10.2:9123"] }]
+  metric_relabel_configs:
+    - source_labels: [__name__]
+      regex: "mikroscope_(tick_.*|trigger_.*|capture.*|captures_held|slipped_total)"
+      action: keep
+```
+
+### What the collector's copy does differently
+
+The collector's sink is built for a nominal 10 Hz whatever rate the agent runs
+at (`promHistogramRateHz` in `cmd/mikroscope/sinkflags.go`), so that its
+bucket layout does not change when it reconnects to a differently configured
+agent. Five things follow from that constant, read from the code:
+
+- `mikroscope_info{rate_hz}` on the collector reads `10`, not the agent's rate.
+  `/healthz` has the agent's.
+- `mikroscope_cpu_busy_ticks` has the buckets `le="0"` to `le="11"`, sized for
+  a 100 ms sample. An agent below 10 Hz puts its busier samples in `+Inf`.
+- The ring behind the trailing windows holds 60 s of the connected agent's
+  samples: the collector reads the agent's rate from its health check and sizes
+  the ring from it, so `window="60s"` is 60 s at any rate.
+- The trailing mean behind `mikroscope_softnet_burst_samples_total` has a
+  weight of 1/600, which is a 60 s memory at 10 Hz and shorter above it.
+- An interrupt line leaves `mikroscope_irq_total` after 36 000 samples out of
+  every top-K, which is one hour only at 10 Hz: 12 min at 50 Hz, 6 min at
+  100 Hz. The check runs every 1 000 samples, so a line can stay up to that
+  much longer.
+
+The counters on the collector count from the collector's start, and
+`mikroscope_uptime_seconds` and `mikroscope_info{version}` describe the
+collector. `mikroscope_self_*` still describe the agent: they come from the
+agent's samples.
+
+<NotClaimed variant="untested">
+	The consequences listed above for an agent running at a rate other than 10 Hz are arithmetic from
+	`internal/sinks/prometheus.go`. None of them was compared against the agent's own exposition at 50
+	or 100 Hz.
+</NotClaimed>
+
+## Conventions
+
+- **Counters count since the exporter started and never reset on a scrape.**
+  The ring carries deltas; `/metrics` accumulates them. `rate()` over any
+  range is then correct, and two scrapers see the same values.
+- **Gauges are the newest sample.** A floored source (thermal, cpufreq, slab,
+  buddyinfo, MTD) is absent from most samples by design, so its gauge holds
+  the last reading between emissions, and `mikroscope_source_age_seconds`
+  says how old that reading is.
+- **Absent is not zero, with five exceptions.** Most families for a source the kernel does
+  not have, or the deployment cannot read, are not rendered at all. The
+  exceptions are `mikroscope_meminfo_kbytes`, `mikroscope_load`,
+  `mikroscope_threads`, `mikroscope_self_rss_bytes` and
+  `mikroscope_irq_errors_total`: they are written from the first sample and
+  read 0 when their file cannot be read or `SOURCES` leaves it out.
+  `mikroscope_irq_errors_total` also reads 0 on a kernel whose
+  `/proc/interrupts` has no `Err` row.
+- **One dimension, one name.** A processor is the label `cpu` everywhere.
+  Which cores, zones, interrupt lines, caches and counters exist is a property
+  of the board; read the label, never assume a set.
+- **No ratio in the samples.** The busy-ratio gauges are window statistics
+  computed at scrape, and the collector's `mikroscope_derived_*` gauges are
+  divisions it made beside their inputs. Every other ratio is yours to divide.
+
+## CPU ticks and `/proc/stat`
+
+<ScrollTable label="Families from /proc/stat">
+
+| Family                                 | Type      | Labels                                                                               | Meaning                                                                                                                                                                                                    |
+| -------------------------------------- | --------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mikroscope_cpu_ticks_total`           | counter   | `cpu`, `mode`: `user`, `nice`, `system`, `idle`, `iowait`, `irq`, `softirq`, `steal` | `USER_HZ` ticks per core and mode                                                                                                                                                                          |
+| `mikroscope_cpu_aggregate_ticks_total` | counter   | `mode`                                                                               | the same, from `/proc/stat`'s own `cpu` summary line; a separate name so summing the per-core series cannot double-count it                                                                                |
+| `mikroscope_cpu_busy_ticks`            | histogram | `cpu`, `le`                                                                          | busy ticks per sample, one bucket per achievable integer, 0 up to one more than a period holds, plus `+Inf`. `_sum` is the exact busy total. Recovers time above a threshold to one sample, not contiguity |
+| `mikroscope_context_switches_total`    | counter   | none                                                                                 | `ctxt`                                                                                                                                                                                                     |
+| `mikroscope_interrupts_total`          | counter   | none                                                                                 | `intr`, every source                                                                                                                                                                                       |
+| `mikroscope_forks_total`               | counter   | none                                                                                 | the `processes` line: RouterOS spawning scripts, fetches and containers, although the PID namespace hides the processes                                                                                    |
+| `mikroscope_procs_blocked`             | gauge     | none                                                                                 | tasks in uninterruptible sleep; on a kernel without PSI the only direct stall signal                                                                                                                       |
+
+</ScrollTable>
+
+A tick is busy when it is `user`, `nice`, `system`, `irq`, `softirq` or
+`steal`. On the RB5009 with RouterOS 7.24.2 the `irq` column is always 0
+(measured 2026-09-11), so hard-IRQ time is inside `system`: read the `irq` mode
+as absent there, not as a router with no interrupt load.
+
+## Trailing windows and busy runs
+
+Computed at scrape from the ring over fixed wall-clock windows, so a scraper at
+any interval up to 60 s sees a transient's peak whoever scraped last.
+
+<ScrollTable label="Window and run families">
+
+| Family                                 | Type      | Labels                                                                             | Meaning                                                                                                                                    |
+| -------------------------------------- | --------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `mikroscope_cpu_busy_ratio_window`     | gauge     | `cpu`, `window`: `1s`, `10s`, `60s`; `stat`: `max`, `min`, `p95`                   | busy ratio statistics over the trailing window                                                                                             |
+| `mikroscope_sample_interval_seconds`   | gauge     | `window`, `stat`                                                                   | the sampler's measured interval over the trailing window; its `max` says whether the rate was delivered                                    |
+| `mikroscope_cpu_busy_run_seconds`      | histogram | `cpu`, `threshold`: `0.5`, `0.9`; `le`: 0.1, 0.2, 0.5, 1, 2, 5, 10, 30, 60, `+Inf` | length of each run of consecutive samples at or above the busy ratio, in seconds of the samples' own intervals, observed when the run ends |
+| `mikroscope_cpu_busy_run_open_seconds` | gauge     | `cpu`, `threshold`                                                                 | how long the run in progress has lasted; 0 below the threshold                                                                             |
+
+</ScrollTable>
+
+A 2 s plateau is one observation of 2 in `mikroscope_cpu_busy_run_seconds` and
+twenty scattered 100 ms spikes are twenty of 0.1; the busy-tick histogram
+cannot tell those apart.
+
+## The sampler's own timing
+
+Agent only. A sample is read over a stretch of time, not at an instant, and
+these families measure that stretch.
+
+<ScrollTable label="Sampler timing families">
+
+| Family                                 | Type      | Labels | Meaning                                                                                                                          |
+| -------------------------------------- | --------- | ------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| `mikroscope_tick_interval_seconds`     | histogram | `le`   | measured interval between samples; buckets at 0.5, 0.9, 0.95, 0.99, 1.01, 1.05, 1.1, 1.25, 1.5, 2 and 5 times the nominal period |
+| `mikroscope_tick_wake_latency_seconds` | histogram | `le`   | how late the loop ran after its ticker fired; buckets 0.1 ms, 0.25, 0.5, 1, 2, 5, 10, 20, 50, 100 ms                             |
+| `mikroscope_tick_read_seconds`         | histogram | `le`   | how long reading every due source took; same buckets                                                                             |
+| `mikroscope_slipped_total`             | counter   | none   | ticks whose read finished after the next tick was due                                                                            |
+
+</ScrollTable>
+
+A slipped tick is not a lost sample: the sample is still produced with its real
+`dt_ns`. If `mikroscope_slipped_total` moves, distrust the sampler's own
+accounting before the router's.
+
+## Receive path and interrupts
+
+`/proc/net/softnet_stat`, `/proc/softirqs` and `/proc/interrupts` are global
+inside the container, unlike `/proc/net/dev`.
+
+<ScrollTable label="Receive path and interrupt families">
+
+| Family                                      | Type    | Labels                                                | Meaning                                                                                                                                                                                      |
+| ------------------------------------------- | ------- | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mikroscope_softnet_total`                  | counter | `cpu`, `kind`: `processed`, `dropped`, `time_squeeze` | per-CPU softnet counters                                                                                                                                                                     |
+| `mikroscope_softnet_squeezed_samples_total` | counter | `cpu`                                                 | samples in which that CPU had any squeeze or drop; its rate is a duty cycle                                                                                                                  |
+| `mikroscope_softnet_burst_samples_total`    | counter | `cpu`                                                 | the squeezed samples whose packet count was at or below that CPU's trailing mean (EWMA with a one-minute memory); evidence of bursts shorter than a sample, not a count of them              |
+| `mikroscope_softirq_total`                  | counter | `cpu`, `kind`                                         | softirq counts; which kinds exist is the kernel's list. `NET_RX` carries a router's forwarding load                                                                                          |
+| `mikroscope_irq_total`                      | counter | `irq`, `name`, `cpu`                                  | lines that appeared in any sample's top-K. A line out of every top-K for an hour leaves the family, and restarts from 0 if it returns; on the collector the hour holds only at 10 Hz (above) |
+| `mikroscope_irq_delivered_total`            | counter | none                                                  | every interrupt line summed, including those outside the top-K: the denominator for `mikroscope_irq_total`                                                                                   |
+| `mikroscope_irq_errors_total`               | counter | none                                                  | the `Err` row of `/proc/interrupts`, which the top-K never shows while it sits at zero                                                                                                       |
+
+</ScrollTable>
+
+Match an interrupt on its `name` label or on its rate, never on a hardcoded
+name: which lines a NIC raises is a property of the board and its driver.
+
+## Scheduler, load and PSI
+
+<ScrollTable label="Scheduler, load and PSI families">
+
+| Family                                | Type    | Labels                                                                                       | Absent when                         | Meaning                                 |
+| ------------------------------------- | ------- | -------------------------------------------------------------------------------------------- | ----------------------------------- | --------------------------------------- |
+| `mikroscope_load`                     | gauge   | `period`: `1m`, `5m`, `15m`                                                                  | no sample yet                       | load averages                           |
+| `mikroscope_threads`                  | gauge   | `state`: `running`, `total`                                                                  | no sample yet                       | from `/proc/loadavg`                    |
+| `mikroscope_psi_stall_usec_total`     | counter | `resource`, `kind`: `cpu`/`some`, `memory`/`some`, `memory`/`full`, `io`/`some`, `io`/`full` | the kernel has no `/proc/pressure`  | PSI stall microseconds                  |
+| `mikroscope_sched_run_seconds_total`  | counter | `cpu`                                                                                        | the kernel has no `/proc/schedstat` | time tasks spent on each CPU            |
+| `mikroscope_sched_wait_seconds_total` | counter | `cpu`                                                                                        | the same                            | time runnable tasks waited for each CPU |
+
+</ScrollTable>
+
+Both PSI and schedstat families are absent on the RB5009, whose RouterOS
+7.24.2 kernel has neither file:
+
+<Provenance of="kernel-2026-09-11" />
+
+## Memory
+
+<ScrollTable label="Memory families">
+
+| Family                         | Type    | Labels                  | Meaning                                                                                                                                                                                                                                                         |
+| ------------------------------ | ------- | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mikroscope_meminfo_kbytes`    | gauge   | `field`                 | `/proc/meminfo` in kB: `MemTotal`, `MemFree`, `MemAvailable`, `Buffers`, `Cached`, `Dirty`, `Writeback`, `Shmem`, `Slab`, `SReclaimable`, `SUnreclaim`, `AnonPages`, `Mapped`, `KernelStack`, `PageTables`, `Active`, `Inactive`, `Committed_AS`, `CommitLimit` |
+| `mikroscope_vm_events_total`   | counter | `event`                 | `/proc/vmstat` events: `pgfault`, `pgmajfault`, `pgscan_kswapd`, `pgscan_direct`, `pgsteal_kswapd`, `pgsteal_direct`, `pgalloc`, `pgfree`, `allocstall`, `compact_stall`, `oom_kill`, `pswpin`, `pswpout`. `pgalloc` and `allocstall` are summed over zones     |
+| `mikroscope_vm_pages`          | gauge   | `field`                 | `/proc/vmstat` levels in pages: `nr_free_pages`, `nr_dirty`, `nr_writeback`, `nr_slab_reclaimable`, `nr_slab_unreclaimable`                                                                                                                                     |
+| `mikroscope_buddy_free_blocks` | gauge   | `node`, `zone`, `order` | free blocks of 2^order pages from `/proc/buddyinfo`: fragmentation that `MemFree` cannot show                                                                                                                                                                   |
+
+</ScrollTable>
+
+The events and the levels are separate families on purpose: `nr_dirty` falling
+is pages being written back, not a negative event count. `MemFree` in kB
+divided by `nr_free_pages` gives the page size from the data rather than from
+an assumption. The vmstat families are absent until a sample shows a fault or
+a free-page level, because an unreadable `/proc/vmstat` and a quiet tick both
+arrive as zeros.
+
+## PMU and CPU frequency
+
+<ScrollTable label="PMU and CPU frequency families">
+
+| Family                                       | Type    | Labels           | Absent when                         | Meaning                                                                                                                                                           |
+| -------------------------------------------- | ------- | ---------------- | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mikroscope_perf_events_total`               | counter | `counter`, `cpu` | not privileged, or no reachable PMU | hardware counter events from `perf_event_open`; a counter the CPU does not implement is absent                                                                    |
+| `mikroscope_perf_time_enabled_seconds_total` | counter | `counter`, `cpu` | the same                            | seconds each counter was enabled                                                                                                                                  |
+| `mikroscope_perf_time_running_seconds_total` | counter | `counter`, `cpu` | the same                            | seconds it was actually counting; below `enabled` the PMU is multiplexed and the counts are scaled down by running over enabled                                   |
+| `mikroscope_cpu_clock_cycles_total`          | counter | `cpu`            | no cpufreq                          | the governor's frequency integrated over each sample's interval: nominal cycles offered, not cycles retired. `rate()` of it is the mean frequency over any window |
+| `mikroscope_cpu_frequency_hertz`             | gauge   | `cpu`            | no cpufreq                          | the governor's frequency at the newest emission                                                                                                                   |
+
+</ScrollTable>
+
+Instructions per cycle is `rate(mikroscope_perf_events_total{counter="instructions"})`
+over `rate(…{counter="cycles"})`; the agent ships the counts and never the
+ratio.
+
+## Temperature and slab caches
+
+<ScrollTable label="Thermal and slab families">
+
+| Family                           | Type  | Labels  | Absent when                             | Meaning                                                                                                                              |
+| -------------------------------- | ----- | ------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `mikroscope_thermal_celsius`     | gauge | `zone`  | no thermal zone                         | temperature under the kernel's own zone name, for example `cpu-thermal`, `soc-thermal` on the RB5009                                 |
+| `mikroscope_slab_active_objects` | gauge | `cache` | not privileged                          | active objects per slab cache; `nf_conntrack` is the router's real connection count, although the container's namespace reports zero |
+| `mikroscope_slab_limit_objects`  | gauge | `cache` | not privileged, or no ceiling published | the ceiling for caches that have one, today `nf_conntrack` from `nf_conntrack_max`; read once at agent start                         |
+
+</ScrollTable>
+
+Connection-table occupancy is
+`mikroscope_slab_active_objects{cache="nf_conntrack"} / ignoring(cache) mikroscope_slab_limit_objects{cache="nf_conntrack"}`.
+A change to `nf_conntrack_max` shows after the agent restarts.
+
+## Flash and block devices
+
+<ScrollTable label="Flash, MTD and block-device families">
+
+| Family                                    | Type    | Labels                                                                        | Absent when                                                                                                                                    | Meaning                                                                                                         |
+| ----------------------------------------- | ------- | ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `mikroscope_flash_operations_total`       | counter | `device`, `kind`: `page_writes`, `page_reads`, `erasures`, `gc_copies`, `gcs` | no `/proc/yaffs`                                                                                                                               | YAFFS NAND operations; `erasures` maps to flash lifetime, `gc_copies` over `page_writes` is write amplification |
+| `mikroscope_flash_bad_blocks`             | gauge   | `device`                                                                      | no `/proc/yaffs`, and on any scrape whose newest sample carried no flash row (no operation, free chunks unchanged); not held between emissions | blocks the NAND has retired; a rise is the flash wearing out                                                    |
+| `mikroscope_flash_free_chunks`            | gauge   | `device`                                                                      | the same as `mikroscope_flash_bad_blocks`                                                                                                      | chunks still free                                                                                               |
+| `mikroscope_mtd_ecc_corrected_bits_total` | counter | `device`, `partition`                                                         | not privileged                                                                                                                                 | bits the ECC corrected since boot, the kernel's own count; climbs before a block is retired                     |
+| `mikroscope_mtd_ecc_failures_total`       | counter | `device`, `partition`                                                         | not privileged                                                                                                                                 | reads the ECC could not correct since boot: data loss                                                           |
+| `mikroscope_mtd_blocks`                   | gauge   | `device`, `partition`, `kind`: `bad`, `bbt`                                   | not privileged                                                                                                                                 | bad blocks, and blocks the bad-block table occupies                                                             |
+| `mikroscope_mtd_bitflip_threshold`        | gauge   | `device`, `partition`                                                         | not published                                                                                                                                  | corrected bits per ECC step at which the kernel moves a block's data                                            |
+| `mikroscope_mtd_ecc_strength`             | gauge   | `device`, `partition`                                                         | not published                                                                                                                                  | most bits per ECC step the code can correct                                                                     |
+| `mikroscope_disk_operations_total`        | counter | `device`, `op`: `read`, `write`                                               | no device has done I/O                                                                                                                         | requests completed                                                                                              |
+| `mikroscope_disk_sectors_total`           | counter | `device`, `op`                                                                | the same                                                                                                                                       | sectors transferred; the conversion to bytes is left to the reader                                              |
+| `mikroscope_disk_io_seconds_total`        | counter | `device`                                                                      | the same                                                                                                                                       | time the device had I/O in flight                                                                               |
+| `mikroscope_disk_inflight`                | gauge   | `device`                                                                      | no I/O on that device in the newest sample; not held between emissions                                                                         | requests in flight                                                                                              |
+
+</ScrollTable>
+
+A block device that did nothing is not in the sample and so not here either;
+a comment in `internal/agent/metrics.go`, undated and with no RouterOS
+version, says the RB5009 lists sixteen idle `nbd` devices. Unlike the floored
+sources in the conventions above, the flash levels and `mikroscope_disk_inflight`
+are not carried forward, so they are missing from most scrapes of a quiet
+board.
+
+## Kernel log
+
+`/dev/kmsg` is root-only, so these families need a privileged container. The
+record text is never a label.
+
+<ScrollTable label="Kernel-log families">
+
+| Family                               | Type    | Labels                                                                      | Meaning                                                                                                                                                                                             |
+| ------------------------------------ | ------- | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mikroscope_kmsg_records_total`      | counter | `level`: `emerg`, `alert`, `crit`, `err`, `warn`, `notice`, `info`, `debug` | records per syslog severity                                                                                                                                                                         |
+| `mikroscope_kmsg_dropped_total`      | counter | none                                                                        | loss events, not records: one per tick that hit the cap of 64 records, one per kernel ring overrun (which can stand for many records); while it moves, the per-level counts above are a lower bound |
+| `mikroscope_kmsg_port_records_total` | counter | `port`, `kind`, `level`                                                     | records whose text named a port: a subset of the family above. `kind` is `link-up`, `link-down`, `stp-<state>` (`blocking`, `listening`, `learning`, `forwarding`, `disabled`), `own-address` — the bridge received a frame carrying its own MAC as source address, the layer-2 loop signature — or `other`; only non-zero triples are written |
+
+</ScrollTable>
+
+Both `mikroscope_kmsg_records_total` and `mikroscope_kmsg_dropped_total` are
+rendered from the start, at 0, on both expositions when the capabilities list
+`kmsg` as a source, so a quiet router reads as silent and not as unreadable.
+Without that, they appear with the first record. The port family appears with
+the first record that names a port.
+
+On the agent, `port` is the RouterOS default name on a board in the port table
+and the kernel name otherwise. On the collector's copy the API tier's interface
+inventory puts the port's current RouterOS name there, so a port renamed from
+`ether5` to `WAN` is counted under `WAN`; without an API tier the record keeps
+the board's default name. The collector classifies any record that reaches it
+without a `kind` of its own, so its exposition carries the label even when the
+agent's does not — which is how the reference RB5009 stands on 2026-09-16, with
+an agent whose `/metrics` has no `kind`.
+
+A port coming up writes four records on a bridge, not four faults: `link-up`,
+then `stp-blocking`, `stp-learning` and `stp-forwarding` on its bridge port.
+`own-address` is the one kind that is a fault on its own.
+
+## The observer itself
+
+<ScrollTable label="Families about the agent and the exporter">
+
+| Family                                    | Type    | Labels               | Meaning                                                                                                                                                  |
+| ----------------------------------------- | ------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mikroscope_self_cpu_usec_total`          | counter | none                 | CPU microseconds the agent's container used: from cgroup2 when mounted, else `/proc/self/stat` ticks                                                     |
+| `mikroscope_self_rss_bytes`               | gauge   | none                 | the agent's resident set                                                                                                                                 |
+| `mikroscope_self_cgroup_memory_bytes`     | gauge   | none                 | the container cgroup's `memory.current`, RSS plus page cache charged to it; absent without cgroup2                                                       |
+| `mikroscope_self_throttled_periods_total` | counter | none                 | periods the container's `cpu.max` quota stopped it; absent without cgroup2                                                                               |
+| `mikroscope_self_throttled_seconds_total` | counter | none                 | seconds it spent stopped; absent without cgroup2                                                                                                         |
+| `mikroscope_self_oom_kills_total`         | counter | none                 | processes OOM-killed inside the agent's own cgroup; not the router's, which is `mikroscope_vm_events_total{event="oom_kill"}`                            |
+| `mikroscope_samples_total`                | counter | none                 | samples folded into these counters                                                                                                                       |
+| `mikroscope_sample_seq_total`             | counter | none                 | sequence number of the newest sample; `increase()` of it against `increase(mikroscope_samples_total)` is exactly the ticks produced and not folded in    |
+| `mikroscope_sampled_seconds_total`        | counter | none                 | the samples' own intervals summed; `rate()` of it is the wall-clock time covered per second, 1 while no tick slipped. The denominator for derived ratios |
+| `mikroscope_counter_resets_total`         | counter | none                 | monotonic counters that went backwards without a 32-bit wrap; a rate across such a tick is a lower bound                                                 |
+| `mikroscope_info`                         | gauge   | `version`, `rate_hz` | always 1                                                                                                                                                 |
+| `mikroscope_uptime_seconds`               | gauge   | none                 | seconds since this exporter started                                                                                                                      |
+
+</ScrollTable>
+
+The agent's cost is two reads of `mikroscope_self_cpu_usec_total` 60 s apart at
+steady state, divided by 60 000 000. [The cost of the
+observer](/mikroscope/cost/) has the procedure and the measured figures.
+
+## Device facts
+
+What the agent established about the board at start, with no RouterOS API.
+Each family is absent when the device does not publish that fact.
+
+<ScrollTable label="Device identity, ceiling and cadence families">
+
+| Family                                    | Type  | Labels                                                                   | Meaning                                                                                                                   |
+| ----------------------------------------- | ----- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| `mikroscope_device_info`                  | gauge | `board`, `kernel`, `cores`, `privileged`, `cgroup`, `ports_from`, `hash` | always 1; `hash` changes when the source set does                                                                         |
+| `mikroscope_thermal_critical_celsius`     | gauge | `zone`                                                                   | the lowest critical trip point the zone declares; passive and active trips are not included                               |
+| `mikroscope_thermal_polling_seconds`      | gauge | `zone`                                                                   | the zone's `polling_delay`: reads faster than this see the same value                                                     |
+| `mikroscope_cpu_frequency_limit_hertz`    | gauge | `cpu`, `bound`: `min`, `max`                                             | the hardware clock range                                                                                                  |
+| `mikroscope_cpu_frequency_step_hertz`     | gauge | `cpu`, `step`                                                            | every frequency the driver uses; `step` counts from the slowest                                                           |
+| `mikroscope_cpu_frequency_governor_info`  | gauge | `cpu`, `governor`                                                        | always 1; `userspace` is a pinned clock, `ondemand` or `schedutil` one that scales                                        |
+| `mikroscope_cpu_frequency_cluster`        | gauge | `cpu`                                                                    | the lowest-numbered core that changes frequency with this one; `{0,1}` and `{2,3}` on the RB5009                          |
+| `mikroscope_self_cgroup_memory_max_bytes` | gauge | none                                                                     | the container's own `memory.max`, as the operator set it                                                                  |
+| `mikroscope_source_cadence_hz`            | gauge | `source`, `reason`                                                       | the rate each level source is read and stored at, and why: `declared`, `policy`, `budget`, `change`, `override` or `rate` |
+| `mikroscope_source_age_seconds`           | gauge | `source`                                                                 | seconds since each floored source (`thermal`, `cpufreq`, `slabinfo`, `buddyinfo`, `mtd`) was last actually read           |
+
+</ScrollTable>
+
+All but the last are read once at agent start; a ceiling changed while the
+agent runs shows after it restarts.
+
+## Triggers and captures
+
+Agent only, and only while `CAPTURE_MB` is above 0. Every
+condition-and-reason pair is written from the start at 0.
+
+<ScrollTable label="Trigger and capture families">
+
+| Family                                  | Type    | Labels                                         | Meaning                                                                                                       |
+| --------------------------------------- | ------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `mikroscope_trigger_fired_total`        | counter | `condition`                                    | times each configured condition armed a capture; `condition="manual"` appears after the first `POST /capture` |
+| `mikroscope_trigger_suppressed_total`   | counter | `condition`, `reason`: `refractory`, `pending` | times a condition was true and nothing was armed: how much of a burst was not seen                            |
+| `mikroscope_capture_refused_total`      | counter | `reason`: `budget`, `empty`                    | captures collected and not kept: the budget was full, or the ring no longer held the window                   |
+| `mikroscope_captures_held`              | gauge   | none                                           | captures retained                                                                                             |
+| `mikroscope_capture_bytes`              | gauge   | none                                           | ring bytes the retained captures pin                                                                          |
+| `mikroscope_capture_budget_bytes`       | gauge   | none                                           | the budget                                                                                                    |
+| `mikroscope_capture_bytes_served_total` | counter | none                                           | bytes handed out over `/captures/{id}`, which runs on the sampler's core                                      |
+
+</ScrollTable>
+
+## Collector only: the derive stage
+
+<ScrollTable label="Derive-stage and collector families">
+
+| Family                                       | Type    | Labels                               | Meaning                                                                                                                                                                                                                                     |
+| -------------------------------------------- | ------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mikroscope_collector_gaps_total`            | counter | none                                 | ring gaps the collector saw: samples lost between pulls                                                                                                                                                                                     |
+| `mikroscope_collector_triggers_total`        | counter | `cause`                              | capture triggers the collector saw the agent fire; absent until the first. The windows stay on the agent under `/captures`                                                                                                                  |
+| `mikroscope_collector_detections_total`      | counter | `rule`                               | detection events per rule, every rule at 0 from the first scrape: `counter-reset`, `agent-restart`, `agent-oom`, `microburst`, `reboot`, `link-flap`, `conntrack-cliff`, `conntrack-high`, `thermal-high`, `thermal-rising`, `ipc-collapse` |
+| `mikroscope_collector_bursts_total`          | counter | none                                 | samples flagged as a sub-sample burst                                                                                                                                                                                                       |
+| `mikroscope_derived_memory_pressure`         | gauge   | none                                 | the allocator's ladder at the newest sample: 0 none, 1 kswapd scanned, 2 direct reclaim, 3 an allocation stalled or a page swapped out, 4 the OOM killer ran                                                                                |
+| `mikroscope_derived_cycles_per_packet`       | gauge   | none                                 | PMU cycles per packet, summed over cores; absent without a PMU, in a sample with no packets, and in one with a counter reset                                                                                                                |
+| `mikroscope_derived_instructions_per_packet` | gauge   | none                                 | the same, instructions                                                                                                                                                                                                                      |
+| `mikroscope_derived_cache_misses_per_packet` | gauge   | none                                 | the same, cache misses                                                                                                                                                                                                                      |
+| `mikroscope_derived_packets_per_interrupt`   | gauge   | none                                 | packets per device interrupt, the NAPI coalescing depth; absent when the timer row was not in the sample's top-K                                                                                                                            |
+| `mikroscope_derived_fastpath_share`          | gauge   | `interface`, `direction`: `rx`, `tx` | the fast-path share of the traffic the interface hands the CPU, between the last two counter polls: `fp-rx-byte` over `driver-rx-byte` on a switch port, over `rx-byte` on a software interface. Absent for a direction that moved no bytes |
+
+</ScrollTable>
+
+The fast-path share is not a share of the wire: a frame the switch chip
+forwards in hardware is in neither of its two numbers. On a switch port the two
+are close together — measured 2026-09-16 on the reference RB5009, `fp-rx-byte`
+equals `driver-rx-byte` within a few kB, so every port reads about 100 %. The
+software interfaces are where the number moves: the bridge fast-pathed 211.9 GB
+of the 663.0 GB it took to the CPU since boot (32 %), `PPPoE_DIGI` 99.97 %.
+`fp-tx-byte` reads 0 on every interface of that router after hundreds of GB
+transmitted, so `direction="tx"` is withheld while the cumulative `fp-tx-byte`
+is 0 rather than published as a fabricated 0 %.
+
+The rules and what each may not claim are on
+[detections](/mikroscope/sinks/detections/); the derived values on [what the
+collector derives](/mikroscope/sinks/derive/).
+
+## Collector only: the RouterOS API tier
+
+Absent until the API tier has delivered a sample, and absent entirely with
+`--api-mode off` unless `--api-every` is also given explicitly.
+
+<ScrollTable label="API-tier families">
+
+| Family                                   | Type    | Labels                                                                                                                                                                 | Meaning                                                                                                                              |
+| ---------------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `mikroscope_api_up`                      | gauge   | none                                                                                                                                                                   | 1 once the API tier has delivered a sample. It does not go back to 0 if the tier stops later, although its HELP line says "while"    |
+| `mikroscope_api_cpu_load`                | gauge   | none                                                                                                                                                                   | `cpu-load` as `/system/resource` reports it, a one-second average                                                                    |
+| `mikroscope_api_memory_bytes`            | gauge   | `kind`: `free`, `total`                                                                                                                                                | from `/system/resource`                                                                                                              |
+| `mikroscope_api_uptime_seconds`          | gauge   | none                                                                                                                                                                   | the router's uptime                                                                                                                  |
+| `mikroscope_api_core_percent`            | gauge   | `cpu`, `kind`: `load`, `irq`, `disk`                                                                                                                                   | `/system/resource/cpu`                                                                                                               |
+| `mikroscope_api_health`                  | gauge   | `name`                                                                                                                                                                 | `/system/health` readings, by RouterOS's name                                                                                        |
+| `mikroscope_api_interface`               | gauge   | `interface`, `kind`: `rx_bps`, `tx_bps`, `rx_pps`, `tx_pps`, and `rx_drops`, `tx_drops`, `tx_queue_drops`, `rx_errors`, `tx_errors` only when the router returned them | instantaneous rates from `monitor-traffic`                                                                                           |
+| `mikroscope_api_interface_info`          | gauge   | `interface`, `label`, `type`, `role`, `bridge`, `default_name`                                                                                                          | always 1, one series per interface: `label` is its RouterOS comment, `type` RouterOS's own interface type, `role` its interface lists, `bridge` the bridge it is a port of, `default_name` the factory name of a physical port. An empty value is how the exposition spells "none" |
+| `mikroscope_api_interface_counter_total` | counter | `interface`, `counter`                                                                                                                                                 | every numeric per-port counter RouterOS keeps, under its own name (`rx-overflow`, `fp-rx-byte`, `link-downs` …), for every interface                                                                                                                                              |
+| `mikroscope_api_conntrack_entries`       | gauge   | none                                                                                                                                                                   | `/ip/firewall/connection` count, held between polls; only with `--conntrack-every`                                                   |
+
+</ScrollTable>
+
+What each interface is — comment, type, interface lists, bridge — is an info
+family and not a set of labels on every rate and counter, because a human edits
+those and a changed label starts a new series. The collector reads the
+configuration once at start and again every `--labels-every` (5 minutes by
+default), and the family holds one series per interface, with or without a
+comment. Join it in a query:
+
+```text
+mikroscope_api_interface_counter_total * on(interface) group_left(label, type, role) mikroscope_api_interface_info
+```
+
+The join is worth making because RouterOS counts different things on different
+types, and `type` is what says which: an `ether` port in a bridge counts its
+wire, including the frames the switch chip forwarded in hardware, while the
+`bridge` counts its CPU side. Measured 2026-09-16 on the reference RB5009,
+`ether1` had received 255.8 GB on the wire and 29.7 GB at the driver. The two
+are different planes and neither is a subset of the other: never sum a port and
+its bridge.
+
+Sizes and configuration that happen to parse as integers — `mtu`, `actual-mtu`,
+`l2mtu`, `max-l2mtu` and `sfp-shutdown-temperature` — are not in
+`mikroscope_api_interface_counter_total`, because a `rate()` of an MTU counts
+nothing. The MTU travels with the interface inventory instead, which the row
+sinks write as a field.
+
+On the RB5009 with RouterOS 7.24.2, `monitor-traffic` returned `rx-drops`,
+`tx-drops` and `tx-queue-drops` per second and no error keys at all
+(2026-09-15), so the `rx_errors` and `tx_errors` kinds are absent there;
+`mikroscope_api_interface_counter_total` carries the port's typed errors
+instead.
+
+<Aside type="note" title="Help text that says otherwise">
+	The HELP line of `mikroscope_kmsg_records_total` still says the family appears only once a record
+	has been seen. The code also renders it at 0 from the start when the capabilities list `kmsg`;
+	this page follows the code.
+</Aside>
+
+<SeeAlso>
+
+## See also
+
+- [Prometheus](/mikroscope/sinks/prometheus/): running the collector's exposition and scraping it.
+- [InfluxDB and SQL measurements](/mikroscope/reference/measurements/): the same data as rows.
+- [The agent's HTTP endpoints](/mikroscope/reference/http/): `/metrics` and the paths beside it.
+- [What the numbers do not say](/mikroscope/cost/limits/): what these families can and cannot
+  recover.
+
+</SeeAlso>

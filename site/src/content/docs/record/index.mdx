@@ -1,0 +1,299 @@
+---
+title: Record, mark, plot
+description: How to pull a window of full-rate samples to your machine, mark the moments in it, add the router’s own log, and draw it as a deterministic SVG.
+---
+
+import { Aside } from "@astrojs/starlight/components";
+import Measured from "../../../components/Measured.astro";
+import NotClaimed from "../../../components/NotClaimed.astro";
+import Provenance from "../../../components/Provenance.astro";
+import ScrollTable from "../../../components/ScrollTable.astro";
+import SeeAlso from "../../../components/SeeAlso.astro";
+
+The collector keeps a router under watch; `record` is for the other question —
+_I am about to change something, what does it actually do?_ This page answers
+how to take a recording from your machine, what the four files it writes hold,
+how markers get into it and in whose clock, how the router's log becomes part of
+it, and what `plot` draws.
+
+## Three verbs
+
+```sh
+mikroscope record --for 5m --out cap                  # cap.jsonl, cap.csv, cap.markers.csv, cap.meta.json; type lines to mark
+mikroscope mark --out cap "queue tree applied"        # a note stamped with the current time (see below)
+mikroscope mark --out cap --log-markers               # the router's own log lines, over the API
+mikroscope plot --in cap                              # cap.svg, deterministic
+```
+
+All three verbs share one flag set, so every flag below is accepted by each of
+them; the notes say which verb acts on it.
+
+<ScrollTable label="Flags of record, mark and plot">
+
+| Flag            | Default                                    | What it does                                                                                                                                            |
+| --------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--out`         | `capture-<UTC time>`                       | Output prefix: `<out>.jsonl`, `.csv`, `.markers.csv`, `.meta.json`. `mark` needs the prefix of an existing recording.                                   |
+| `--for`         | `0`                                        | `record`: stop after this long. `0` records until Ctrl-C.                                                                                               |
+| `--from-start`  | off                                        | `record`: backfill everything the agent's ring holds before going live.                                                                                 |
+| `--poll`        | `500ms`                                    | How often to pull the agent's ring.                                                                                                                     |
+| `--batch`       | `0`                                        | Samples per pull. `0` is twice what one `--poll` interval produces at the agent's rate, at least 20; the relay caps a pull at 18.                       |
+| `--transport`   | `auto`                                     | `auto`, `direct` (HTTP to the veth) or `relay` (`/tool fetch` over the RouterOS API).                                                                   |
+| `--log-markers` | off                                        | `record`: adds the router log lines of the window once the recording stops. `mark`: adds the log lines of the recording's window.                       |
+| `--topics`      | `system,interface,container`               | Log topics kept as markers; add `firewall` or `script` when their lines are the story.                                                                  |
+| `--router-tz`   | `Local`                                    | IANA zone the router's clock shows. RouterOS log times carry no zone.                                                                                   |
+| `--api`         | `MIKROSCOPE_API_ADDR`                      | RouterOS API `host:port`, for the relay and for `--log-markers`.                                                                                        |
+| `--api-user`    | `MIKROSCOPE_API_USER`                      | The API user. The password is read only from `MIKROSCOPE_API_PASSWORD`; there is no flag for it.                                                        |
+| `--token`       | `MIKROSCOPE_TOKEN`                         | The agent's bearer token.                                                                                                                               |
+| `--port`        | `9123`                                     | The agent's HTTP port.                                                                                                                                  |
+| `--subnet`      | `MIKROSCOPE_SUBNET`, else `172.30.10.0/30` | The agent's /30; its address is `.2`.                                                                                                                   |
+| `--in`          | none                                       | `plot`: a recording prefix, or the path of a `.jsonl` file.                                                                                             |
+| `--svg`         | `<in>.svg`                                 | `plot`: the output file.                                                                                                                                |
+| `--title`       | the prefix                                 | `plot`: the chart's title.                                                                                                                              |
+
+</ScrollTable>
+
+## What a recording has been measured to deliver
+
+<Provenance of="record-2026-09-12" />
+
+That recording yielded exactly 600 samples, 0 gaps and a clock skew of −7 ms. In
+it, a scripted RouterOS loop (`:for … 400 000`) showed as
+one core's worth of load at 100 % from t = 21.0 to 25.8 s, with the sample at 25.8 s reading about 60 %, onset and offset resolved to 100 ms, and the router's log markers explained a 2 s plateau at 15–17 s that
+nobody had caused: the `ensure-ipv6-nd-prefix` scheduler.
+[Five minutes with a router](/mikroscope/start/walkthrough/) runs `record` and
+`plot` end to end on a different capture: 70 s at 10 Hz with the router
+otherwise at rest, with three notes typed into `record`'s terminal.
+
+<NotClaimed>
+	A recording above 10 Hz. The lossless 50 Hz and 100 Hz runs on [the rate
+	ceiling](/mikroscope/cost/rate-ceiling/) were the collector's, not `record`'s. Both use the same
+	batch sizing, but a recording at those rates has not been measured on its own. Nor has a recording
+	through the relay at any rate.
+</NotClaimed>
+
+## How `record` reaches the agent
+
+`--transport auto` tries the direct path first: a `GET /healthz` to
+`http://<.2 of --subnet>:<--port>`. If that does not answer, it opens the
+RouterOS API and asks the router to fetch from the agent itself. If `--api` or
+`--api-user` is missing, it stops with an error that names `--api`, `--api-user`
+and `MIKROSCOPE_API_PASSWORD` and suggests `install --expose`; a missing password
+surfaces instead as a login error, `api <host:port>: …`. The `--expose` hint helps
+other HTTP clients, not `record`: `record` always dials the `.2` of `--subnet`,
+and has no flag for the router's LAN address. `direct` and `relay` force one path
+and fail rather than fall back.
+
+- **direct** is plain HTTP from your machine to the veth. It sends `--token` as a
+  bearer token.
+- **relay** runs `/tool fetch output=user` on the router over the binary API, so
+  the API user needs the `read,api,test` policies. Each relayed call takes either
+  about 3 ms or about 1 s. A reply is capped at <Measured id="relay.replyMaxBytes" />, so a relayed pull
+  asks for at most 18 samples, and a reply that reaches the cap is refused rather
+  than parsed truncated. The router-side fetch carries no header: an agent
+  installed with a token can only be recorded over the direct path.
+
+<Aside type="caution" title="A full relayed pull can still reach the cap">
+	By arithmetic, read from the code on 2026-09-15 and not measured. The cap of 18 samples comes from
+	the <Measured id="relay.replyMaxBytes" /> fetch limit, a mean line of 2 560 B, and 134 % headroom;
+	the mean is the <Measured id="ring.lineBytes" /> measured on the RB5009 (RouterOS 7.24.2,
+	2026-09-12), rounded up. A full pull of mean lines is about 46 kB. A full pull whose lines average
+	more than 134 % of that mean would still reach the limit and be refused, and how long lines run at
+	today's default per-source floors was not measured. At 18 samples a pull and the default 500 ms
+	`--poll` the relay carries 36 samples a second; above that, use the direct path.
+</Aside>
+
+[Reaching the agent](/mikroscope/install/reaching-the-agent/) covers which path a
+network allows. The API user is described on [its own
+page](/mikroscope/security/api-user/).
+
+Once connected, `record` reads `/healthz`. The agent's wall clock minus your
+machine's is the **clock skew**, printed on stderr with the agent's version,
+rate, newest sequence number, the oldest one the ring still holds, and the
+transport. The recording then starts live from the newest sample, or from the
+oldest the ring holds with `--from-start`.
+
+Every `--poll` it pulls `/snapshot?since=<last seq>&max=<batch>`. While a pull
+comes back full it asks again, up to 100 times per poll, so a ring that got ahead
+is drained rather than followed at a fixed pace. A pull that fails is logged as
+`pull: …` and the recording carries on; the next pull asks from the same
+sequence number. When `--for` elapses or you press Ctrl-C, one last pull drains
+what arrived meanwhile, and `record` prints how many samples it kept, their
+sequence range, the gaps, the markers, the transport and the files.
+
+## The four files
+
+Every file is created with mode `0600`, and an existing file with the same prefix
+is overwritten.
+
+- **`<out>.jsonl`** — each sample line exactly as the agent sent it: raw tick and
+  counter deltas, with every source the agent has. This is the recording; the
+  other files are views of it.
+- **`<out>.csv`** — one wide row per sample, for a spreadsheet. The column set is
+  sized from the first sample: one group per core and one per softnet queue.
+- **`<out>.markers.csv`** — `wall_ns,wall_utc,seq,kind,label`, one row per
+  marker.
+- **`<out>.meta.json`** — written at the start, so that `mark` and `plot` can run
+  later: `started_utc`, `skew_ns` (agent wall minus host wall), `agent` (its
+  version), `rate_hz`, `transport`, and `capabilities` — what the agent
+  established about the board — when the transport could fetch it.
+
+The CSV holds a fixed subset of each sample. Everything else a sample carries —
+kernel-log events, PMU counters, temperatures, interrupts per line and the rest —
+is in the `.jsonl` only.
+
+<ScrollTable label="Columns of the CSV file">
+
+| Columns                                                                                                      | Content                                                                                                       |
+| ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| `seq`, `wall_ns`, `wall_utc`, `dt_ns`                                                                        | The sample's sequence number, agent wall clock, and real interval.                                            |
+| `busy_total`                                                                                                 | The mean of the per-core busy ratios, three decimals, computed by the CLI from the ticks.                     |
+| `c<N>_busy`, `c<N>_user`, `c<N>_nice`, `c<N>_system`, `c<N>_idle`, `c<N>_iowait`, `c<N>_irq`, `c<N>_softirq` | Per core: the busy ratio, then the raw tick deltas.                                                           |
+| `ctxt`, `intr`, `irq_total`                                                                                  | Context switches and interrupts from `/proc/stat`, and the delta summed over every row of `/proc/interrupts`. |
+| `softnet<N>_processed`, `softnet<N>_dropped`, `softnet<N>_time_squeeze`                                      | Per softnet queue, the receive path's deltas.                                                                 |
+| `mem_free_kb`, `mem_available_kb`, `mem_cached_kb`, `mem_slab_kb`                                            | Memory levels, in kB.                                                                                         |
+| `load1`, `threads_running`, `threads_total`                                                                  | Load average and thread counts.                                                                               |
+| `pgfault`, `pgmajfault`                                                                                      | Page-fault deltas.                                                                                            |
+| `self_cpu_us`, `self_rss_bytes`                                                                              | The agent's own CPU time during the sample, in µs, and its resident memory at that moment, in bytes.          |
+
+</ScrollTable>
+
+The busy ratio in the CSV is the one number the CLI computes, and it inherits
+the kernel's floor: a tick is <Measured id="tick.ms" />, so one core in a 100 ms
+sample resolves to <Measured id="tick.stepOneCore" /> steps. [The resolution floor](/mikroscope/limits/) explains
+why, and why the ratio is capped at 1.
+
+## Markers, and whose clock they are in
+
+A marker is a row in `<out>.markers.csv` of one of three kinds:
+
+- **`note`** — a line of text you added. While `record` runs in a terminal it
+  prints `type a line and press Enter to add a marker; Ctrl-C stops`, and every
+  non-empty line you type becomes a note. When standard input is not a terminal,
+  nothing is read from it.
+- **`gap`** — written when the agent reports that samples were no longer in its
+  ring, labelled `samples <from>..<to> lost`. The same gaps are listed in the
+  summary `record` prints at the end.
+- **`log`** — a line of the router's own log, added with `--log-markers` (below).
+
+Notes and gaps are stamped with your machine's clock plus the skew measured at the
+start, so they sit on the agent's time axis, not your machine's. `mark --out cap
+"text"` does the same with the skew stored in `cap.meta.json`: it stamps the
+current time in the agent's clock, and no flag sets another. On a finished
+recording the note therefore falls after the last sample, and `plot` does not
+draw it. `mark` needs that file and an existing `cap.markers.csv`, and its row
+carries `seq` 0.
+
+<Aside type="caution" title="Mark while the recording runs, not after">
+	`record` holds `<out>.markers.csv` open in append mode, so `mark --out <prefix> "text"` from a
+	second shell appends its row safely while the recording is still running, and the recorder's next
+	write — a typed note or a gap — lands after it rather than on top of it. What a text `mark`
+	cannot do is mark a moment in a recording that has already stopped: it stamps the current time,
+	which falls after the last sample, and `plot` draws nothing there.
+</Aside>
+
+## The router's own log as markers
+
+The log often explains a transient you did not cause: scheduler runs, errors,
+interface events. `--log-markers` turns the log lines of the recording's window
+into `log` markers, labelled `<topics>: <message>`.
+
+```sh
+export MIKROSCOPE_API_ADDR=192.168.88.1:8728 MIKROSCOPE_API_USER=mikroscope MIKROSCOPE_API_PASSWORD=…
+mikroscope record --for 60s --out burst
+mikroscope mark --out burst --log-markers --router-tz Europe/Madrid
+```
+
+- `mark --log-markers` uses the window from `started_utc` in the meta file,
+  shifted by its `skew_ns` into the agent's clock, to the last sample in the
+  `.jsonl`, and prints how many lines it added, the window and the topics.
+  `started_utc` is stored to the second. It appends without checking what is
+  already there: running it twice adds the same lines again.
+- `record --log-markers` asks for the log once the recording has stopped, for the
+  window from its start to its end in the agent's clock, and appends the lines
+  through the same path `mark` uses, so they land in `<out>.markers.csv` and the
+  summary's marker total counts what the file holds. If the log request itself
+  fails, `record` prints `log markers: …` and keeps the recording.
+
+The CLI asks the router only for the window, with a `?>time=` query starting one
+second before it, and only for the `time`, `topics` and `message` fields: the
+RB5009 held 66 217 log rows, because its `dns` topic logs to disk. It then keeps
+the lines inside the window whose topics include one of `--topics`.
+
+A router with several logging actions on one topic carries each event once per
+action, prefixed with the action's name (`[INFO]: …`, `[SYSTEM]: …`); the prefix
+is stripped and the duplicates are kept once.
+
+RouterOS log times carry no zone. RouterOS 7.24.2 prints a full date over the
+API; the parser also accepts the shorter forms without a year or without a date,
+and fills them in from the end of the window. They are read in `--router-tz` and stamped as the agent's wall clock
+— the router's own clock — so no skew is applied to them. The default `Local` is
+your machine's zone: if the router's differs, pass it, or every log marker lands
+off by the difference. Log times have one-second resolution, so a log marker
+places its event to the second, not to the sample.
+
+## The chart
+
+`plot --in cap` reads `cap.jsonl`, and `cap.markers.csv` when it exists, and
+writes `cap.svg` (or `--svg`). It prints the file name with its sample and marker
+counts. The same input always produces the same bytes.
+
+The chart is 1 200 units wide, with a title (`--title`, or the prefix) and a line
+giving the sample count, the duration and the core count. Three panels share one
+time axis, in seconds since the recording started:
+
+1. **CPU busy per core, %** — 0 to 100, one line per core, each labelled at its
+   end. The palette has eight colours, so the first eight cores are drawn.
+2. **softnet per second, all CPUs** — `dropped` and `time_squeeze`, summed over
+   every queue and bucketed into whole seconds. Drops are drawn in red.
+3. **memory available, MiB** — `MemAvailable` per sample, with the y-axis bounded
+   to the data.
+
+Every marker is a dashed vertical line across all three panels, grey for notes and
+log lines and red for gaps, with a label chip above the first panel. Chips are
+laid out in up to six rows to keep them apart; a label longer than 40
+characters is shortened. Consecutive log markers, in time order, that fall in the same second
+are folded into one chip, `<count>× <topics>: <first message>`, so a chatty
+scheduler does not bury the chart; a note or gap between them breaks the fold,
+and notes and gaps are never folded. Markers outside the recording's time span
+are not drawn. With a single sample the SVG says `not enough samples to draw`;
+with none, `plot` stops with `record: no samples` and writes no SVG.
+
+The palette is the chart's own, validated for its light background:
+adjacent-pair colour-vision-deficiency ΔE 9.1, normal-vision ΔE 22.9. There is no
+dark variant.
+
+`plot` also reads a capture the agent kept on a trigger: save
+`GET /captures/<id>` to a `.jsonl` file and pass it to `--in`. The capture's
+header line carries no sequence number and is skipped.
+
+## Triggers during a recording
+
+When a trigger fires on the agent, a `{"trigger":{…}}` line rides in the same
+pull as the samples, just before the sample it fired on. The collector recognises
+it; `record` does not.
+
+<Aside type="caution" title="A trigger line in a recording">
+	`record` reads a trigger line as if it were a sample with sequence number 0. The line is written
+	verbatim to the `.jsonl`, where `plot` skips it, and as a row of zeros with `seq` 0 to the `.csv`;
+	it is counted once in the number of samples `record` reports. If it is the first line of the
+	recording, the CSV header is sized for zero cores. `record` does not add it as a marker. To see
+	what fired during a window, read `/captures` on the agent.
+</Aside>
+
+[Triggered capture](/mikroscope/record/triggers/) explains what fires, and how to
+fetch the full-rate window the agent kept around it.
+
+<SeeAlso>
+
+## See also
+
+- [Five minutes with a router](/mikroscope/start/walkthrough/): a real recording
+  from the RB5009, its markers and its chart, step by step.
+- [Triggered capture](/mikroscope/record/triggers/): the samples around a
+  condition, kept at full rate by the agent without a recording running.
+- [Reaching the agent](/mikroscope/install/reaching-the-agent/): which of the
+  direct and relay paths your network allows.
+- [The API user](/mikroscope/security/api-user/): the RouterOS user the relay and
+  `--log-markers` need.
+
+</SeeAlso>

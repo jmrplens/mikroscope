@@ -1,0 +1,151 @@
+---
+title: Where things go
+description: Where each object `install` creates lives on the router, which disk holds the image and the root, what the envlist carries, and the container settings install writes.
+---
+
+import EnvlistKeys from "../../../components/EnvlistKeys.astro";
+import Measured from "../../../components/Measured.astro";
+import NotClaimed from "../../../components/NotClaimed.astro";
+import RunFlags from "../../../components/RunFlags.astro";
+import ScrollTable from "../../../components/ScrollTable.astro";
+import SeeAlso from "../../../components/SeeAlso.astro";
+import Verified from "../../../components/Verified.astro";
+
+This page answers where `install` puts things: the addresses, the disk that
+holds the image and the container root, what goes into the envlist and nothing
+else, and the settings the container is created with. Every value here is what
+`mikroscope plan` prints for your flags, so the plan is the way to check it for
+your router before anything is written.
+
+## The objects and their defaults
+
+<ScrollTable label="Where each object goes, with its default and flag">
+
+| Object         | Default                                                                                                              | Flag                                         |
+| -------------- | -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| veth + /30     | `veth-mikroscope`, `172.30.10.0/30` (router `.1`, agent `.2`)                                                        | `--veth`, `--subnet`                         |
+| router address | `172.30.10.1/30` on the veth                                                                                         | derived from `--subnet`                      |
+| image tar      | `<name>.tar`, uploaded with `scp`, **deleted right after extraction**; none at all with `--remote-image`             | `--disk`, `--ephemeral`, `--remote-image`    |
+| container root | `mikroscope/<name>` on the internal flash                                                                            | `--disk tmpfs` for a RAM disk, `--ephemeral` |
+| envlist        | `<name>-env`                                                                                                         | `--rate`, `--buffer`, `--port`, `--token`, … |
+| tag            | `mikroscope:<name> (managed by mikroscope)` on every object that takes a comment; as `MIKROSCOPE_TAG` in the envlist | `--name`, default `mikroscope`               |
+
+</ScrollTable>
+
+`--subnet` must be an IPv4 /30 given at its network address; the router takes
+`.1` and the agent `.2`. `--name` is up to 32 characters and `--veth` up to 64,
+letters, digits, `_`, `.` and `-`, starting with a letter or digit. The default
+/30 and veth name were chosen not to collide with a hand-installed sampler on the
+reference device; if `172.30.10.0/30` is in use on yours, pick another.
+
+With `--disk`, the image and the root move together: `<disk>/<name>.tar` and
+`<disk>/mikroscope/<name>`. The value is a RouterOS disk slot: empty for the
+internal flash, `tmpfs`, `disk1`, `usb1` and so on.
+
+## Persistent or ephemeral
+
+**Persistent is the default**: the root on the internal flash,
+`start-on-boot=yes`, and `restart-policy=on-failure` bounded to five retries
+ten seconds apart, so a broken image cannot loop at boot.
+
+**`--ephemeral`** puts the tar and the root on the router's tmpfs disk, if it has
+one — the RB5009 does — with `start-on-boot=no`: zero flash writes, and nothing
+survives a reboot. Verified on <Verified of="tmpfs-zero-writes" />:
+`write-sect-since-reboot` read 58 279 before the install and 58 279 after the
+removal — the same value, not a small increase. With `--ephemeral` on a router that has no tmpfs disk, `doctor`
+reports it missing and names the command that adds one.
+
+`--disk tmpfs` without `--ephemeral` also puts both on the tmpfs disk, but keeps
+`start-on-boot=yes`; only `--ephemeral` changes the boot setting.
+
+<NotClaimed variant="untested">
+	Reboot survival, in either mode: the reference router is production and is not rebooted for tests.
+</NotClaimed>
+
+## Why the tar is deleted at install
+
+RouterOS extracts the image when the container is added, so once the container
+exists the tar has no further use. A tar left on the device is what `uninstall`
+would later have to find in a `/file` index that lagged for minutes after a
+container removal. So `install` waits up to 15 s for the container to appear,
+then 3 s more, deletes the tar, and only then starts the container. It does not
+check that the extraction finished; on the RB5009 a 1.8 MiB tar was extracted
+within the same second as the add (RouterOS 7.24.2, 2026-09-11).
+
+The container is created with `ignore-remote-image-change=yes`. With the
+default `no`, RouterOS watched the image and, once the tar was removed, stopped
+and removed the container and re-extracted it minutes later (<Verified of="remote-image-change" />).
+
+Until the tar is deleted, it and the root extracted from it share the disk,
+which is why `doctor` asks for twice the image plus 4 MiB of free flash.
+
+With `--remote-image` none of this happens. RouterOS pulls the layers itself,
+no tar lands on the device, there is nothing to wait for and nothing to delete,
+`doctor` asks for the 4 MiB alone, and `uninstall` has no file to account for —
+the container's ownership count is the container and the envlist. The container
+root still goes where `--disk` and `--ephemeral` say.
+
+## What the envlist carries
+
+The envlist holds the agent's configuration and the ownership marker, and
+nothing else:
+
+<EnvlistKeys />
+
+No sink address, no sink token and no API credential goes into it. Any RouterOS
+user with `read` can list every container's envlist over the API (verified
+on <Verified of="read-user-envlist" />), so what is written here is readable by all of them — the token
+included, when you set one. The plan prints the envlist with the token masked as
+`(token)`. [What runs where](/mikroscope/security/) says which credential lives
+where; the agent reads more variables than `install` writes, and
+[Environment variables](/mikroscope/reference/environment/) lists them.
+
+## The container settings
+
+The container is added with:
+
+- `file=` the uploaded tar, or `remote-image=` the reference without its
+  registry host when the router pulls it;
+- `interface=` the veth, `root-dir=` the root, `envlist=` the envlist, and the tag
+  as its comment;
+- `logging=yes`, so what the agent prints reaches the router log;
+- `start-on-boot=yes`, or `no` with `--ephemeral`;
+- `restart-policy=on-failure restart-max-count=5 restart-interval=10s`;
+- `memory-max=64M`, enforced as the container's cgroup limit (`--memory-max`);
+- `privileged=yes` (`--privileged=false` to opt out), which drops the
+  container's user namespace so the kernel log, `/proc/slabinfo` and the MTD ECC
+  counters are readable, and does not widen its network or PID namespace —
+  [What privileged buys](/mikroscope/limits/privileged/) has the detail;
+- `ignore-remote-image-change=yes`, for the reason above.
+
+The agent catches SIGTERM: RouterOS kills a container that does not,
+immediately. It honours the default stop time of 10 s.
+
+## Size the memory to the ring
+
+`--memory-max` and `--mem-limit-mb` have to move with `--rate` and `--buffer`.
+The ring holds `rate × buffer` lines of about <Measured id="ring.lineKB" /> each; the Go soft limit
+wants about twice that and has to sit comfortably under `memory-max`. The
+agent's startup check counts 2 560 bytes a line plus `--capture-mb`: above
+`memory-max` it refuses to start, and above half of `--mem-limit-mb` it warns. The defaults, 40 MiB under
+`64M`, are sized for 10 Hz and a 300 s ring. The triggered-capture budget
+counts against both limits in that check, as the ring does.
+
+The measured runs used <RunFlags run="10hz" /> at 10 Hz, <RunFlags run="50hz" />
+at 50 Hz and <RunFlags run="100hz" /> at 100 Hz. What a tight limit costs is on
+[The cost of the observer](/mikroscope/cost/); the runs themselves are on
+[The rate ceiling](/mikroscope/cost/rate-ceiling/).
+
+<SeeAlso>
+
+## See also
+
+- [Installing the agent](/mikroscope/install/): the order these objects are created in, and how
+  they are removed.
+- [The rate ceiling](/mikroscope/cost/rate-ceiling/): what each rate costs with the memory flags
+  above.
+- [What privileged buys](/mikroscope/limits/privileged/): the one container setting that is a real
+  privilege grant.
+- [What runs where](/mikroscope/security/): what else can read the envlist.
+
+</SeeAlso>

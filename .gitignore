@@ -1,0 +1,45 @@
+# Binaries. `go build ./cmd/<name>` run from the repository root writes a
+# binary named <name> into the root, so each main package is listed.
+/mikroscope
+/mikroscope-agent
+/gen_brand
+*.exe
+*.test
+
+# Build output
+/dist/
+/bin/
+/build/
+
+# The documentation site's own build and dependencies
+/site/node_modules/
+/site/dist/
+/site/.astro/
+
+# Go coverage
+*.out
+coverage.html
+
+# Editors / OS
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
+
+# Environment
+.env
+*.env.local
+
+# Device artefacts and captures
+/lab/*.img
+/lab/*.qcow2
+/captures/
+/*.tar
+/mikroscope-agent-*.tar
+
+# Planning documents stay local (owner's working notes, not part of the release)
+/plan/
+
+# Claude Code local permissions
+/.claude/settings.local.json

@@ -1,0 +1,19 @@
+---
+/**
+ * A data string with `backtick` code spans, rendered as text and real `<code>`.
+ *
+ * The data files keep a flag or a path in backticks so that one string serves
+ * both a table cell and a sentence; this turns it into markup without
+ * `set:html`, which the MDX pipeline here mangles (astro.config.mjs).
+ */
+import { codeSpans } from "../lib/format";
+import InlineCode from "./InlineCode.astro";
+
+interface Props {
+	text: string;
+}
+
+const { text } = Astro.props;
+---
+
+{codeSpans(text).map((p) => (p.code ? <InlineCode text={p.text} /> : p.text))}

@@ -1,0 +1,115 @@
+---
+/**
+ * The Grafana alert rules generated beside the dashboards, read from the
+ * committed `dashboards/mikroscope-alerts-*.yaml` (src/data/dashboards.ts).
+ *
+ * `show="table"`: uid, what it fires on, the threshold, severity, pending
+ * period, no-data state and the stores that carry it. Only "fires when" is
+ * authored, and a rule without it fails the build.
+ * The rules' titles and summaries are not rendered here: the Spanish page
+ * translates each summary, and a verbatim English list would take that away.
+ * `show="queries"` with `store`: the A query of every rule in that file, as
+ * one code block, each under a comment with its uid and threshold.
+ *
+ * A regenerated alert file changes this page in both locales at once.
+ */
+import { Code } from "@astrojs/starlight/components";
+import { alertFiresWhen, alertRules, alertUids, STORES, type Store } from "../data/dashboards";
+import { formatNumber } from "../lib/format";
+import { nextId } from "../lib/ids";
+import { langOf } from "../lib/lang";
+import CodeText from "./CodeText.astro";
+import ScrollTable from "./ScrollTable.astro";
+import InlineCode from "./InlineCode.astro";
+
+interface Props {
+	show: "table" | "queries";
+	store?: Store;
+}
+
+const { show, store } = Astro.props;
+if (show !== "table" && show !== "queries") {
+	throw new Error(`AlertRules: show must be "table" or "queries", got "${show}"`);
+}
+if (show === "queries" && (store === undefined || !STORES.includes(store))) {
+	throw new Error(`AlertRules: show="queries" needs store="influxdb" or store="prometheus"`);
+}
+const lang = langOf(Astro.locals.starlightRoute);
+const t = Astro.locals.t;
+
+const find = (s: Store, uid: string) => alertRules[s].find((r) => r.uid === uid);
+// One row per uid; the pending period, severity and threshold are taken from
+// whichever file carries it, and a rule both files carry with different values
+// fails the build rather than showing one of them.
+const rows = alertUids.map((uid) => {
+	const inStores = STORES.filter((s) => find(s, uid) !== undefined);
+	const [first, ...rest] = inStores.map((s) => find(s, uid)!);
+	for (const other of rest) {
+		for (const key of ["for", "noDataState", "severity", "op", "value"] as const) {
+			if (other[key] !== first[key]) {
+				throw new Error(`AlertRules: ${uid} has a different ${key} in the two alert files`);
+			}
+		}
+	}
+	return { rule: first, inStores };
+});
+const storesText = (s: Store[]) =>
+	s.length === 2 ? t("ms.alerts.both") : t(s[0] === "influxdb" ? "ms.dash.influxOnly" : "ms.dash.promOnly");
+const threshold = (op: string, value: number) =>
+	`${op} ${formatNumber(value, lang, String(value).split(".")[1]?.length ?? 0)}`;
+
+const captionId = show === "table" ? nextId(Astro.locals, "ms-alerts") : "";
+const queries =
+	show === "queries" && store !== undefined
+		? alertRules[store]
+				.map((r) => {
+					const mark = store === "prometheus" ? "#" : "--";
+					// The threshold in the comment is the file's own, unlocalised, as in code.
+					return `${mark} ${r.uid.padEnd(34)} (${r.op} ${r.value})\n${r.query}`;
+				})
+				.join("\n")
+		: "";
+---
+
+{
+	show === "table" && (
+		<ScrollTable labelledby={captionId}>
+			<table>
+				<caption class="sr-only" id={captionId}>
+					{t("ms.alerts.label")}
+				</caption>
+				<thead>
+					<tr>
+						<th scope="col">{t("ms.alerts.rule")}</th>
+						<th scope="col">{t("ms.alerts.firesWhen")}</th>
+						<th scope="col">{t("ms.alerts.threshold")}</th>
+						<th scope="col">{t("ms.alerts.severity")}</th>
+						<th scope="col">
+							<code>{t("ms.alerts.for")}</code>
+						</th>
+						<th scope="col">{t("ms.alerts.noData")}</th>
+						<th scope="col">{t("ms.alerts.stores")}</th>
+					</tr>
+				</thead>
+				<tbody>
+					{rows.map(({ rule, inStores }) => (
+						<tr>
+							<th scope="row">
+								<InlineCode text={rule.uid} />
+							</th>
+							<td>
+								<CodeText text={alertFiresWhen[rule.uid][lang]} />
+							</td>
+							<td class="ms-num">{threshold(rule.op, rule.value)}</td>
+							<td>{rule.severity}</td>
+							<td>{rule.for}</td>
+							<td>{rule.noDataState}</td>
+							<td>{storesText(inStores)}</td>
+						</tr>
+					))}
+				</tbody>
+			</table>
+		</ScrollTable>
+	)
+}
+{show === "queries" && <Code code={queries} lang={store === "prometheus" ? "text" : "sql"} />}

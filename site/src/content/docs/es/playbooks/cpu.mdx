@@ -1,0 +1,102 @@
+---
+title: Una carga limitada por CPU
+description: Un bucle de consola que satura un núcleo del RB5009 de referencia durante un minuto — por qué el total del equipo marca un 29 %, cómo se ve la migración del planificador a 10 Hz y qué hicieron la temperatura y la frecuencia.
+---
+
+import FaultSignature from "../../../../components/FaultSignature.astro";
+import Measured from "../../../../components/Measured.astro";
+import NotClaimed from "../../../../components/NotClaimed.astro";
+import Provenance from "../../../../components/Provenance.astro";
+import SeeAlso from "../../../../components/SeeAlso.astro";
+
+Esta página responde a qué aspecto tiene un cuello de botella de un solo hilo en
+los datos por núcleo, y por qué el total del equipo lo esconde. La carga se provocó a propósito.
+
+<Provenance of="playbooks-2026-09-12" />
+
+## Cómo se provocó
+
+Sin ningún cambio de configuración y sin dependencias externas — un bucle de
+consola que quema un núcleo y termina por sí solo:
+
+```text
+:local i 0; :while ($i < 4000000) do={ :set i ($i + 1) }
+```
+
+Duró 58,8 s.
+
+## Lo que registró el agente
+
+En tramos de 5 segundos. El agente envía deltas de ticks en bruto; los
+porcentajes de abajo se calcularon a partir de ellos después.
+
+```text
+   t  busy%   per-core busy%          ctxt/s  temp   MHz
+   0   22.3   31.8   7.4  40.4   9.6    9192  36.5  1400
+   1   30.9   11.7  11.4  89.7  10.6   11325  37.0  1400
+   2   29.9   14.3   9.4  19.6  76.0    9476  37.0  1400
+   3   29.1    7.4   9.4  17.6  81.6   10805  37.0  1400
+   4   29.3    3.1   9.4   4.9  99.8    9257  37.2  1400
+   8   28.4    2.2   7.0   4.6  99.8   11947  37.2  1400
+  11   33.0   11.8  11.2   9.0  99.7   12222  37.3  1400
+```
+
+## Qué leer
+
+- **Un total de ~29 % es un núcleo de cuatro.** El total del equipo es una trampa;
+  mira siempre la fila por núcleo. "29 % de CPU" significa aquí "un núcleo está
+  saturado y tres están ociosos", lo que para un cuello de botella de un solo hilo
+  es toda la historia.
+- **El planificador tardó ~20 s en asentarse.** Los tramos 0–3 muestran el trabajo
+  moviéndose entre núcleos (40 % → 90 % → 76 % → 82 %) antes de fijarse en el
+  núcleo 3 al 99,8 %. Si muestreas cada 1 s o más despacio ves una meseta difusa;
+  a 10 Hz ves la migración. Aquí es donde la resolución se gana lo que cuesta.
+- **La temperatura lo siguió: de 36,5 a 37,3 °C.** Un núcleo saturado vale ~0,8 °C
+  en esta placa con refrigeración pasiva. Poco, pero sigue la carga, y se lee de
+  `/sys/class/thermal` sin ninguna llamada a la API.
+- **La frecuencia se quedó plana en 1400 MHz.** En este equipo eso es una
+  _configuración_, no una observación: el propietario ha fijado el reloj al
+  máximo, lo que `/system/routerboard/settings` indica como
+  `Warning: cpu not running at default frequency`. En un equipo que escala, el
+  campo `freq_khz` es donde verías un tick ocupado que se ganó despacio. El
+  agente lee la frecuencia en cada tick y guarda `freq_khz` solo cuando cambia,
+  más un latido cada 60 s, así que con un reloj fijo tienes una fila por minuto,
+  y con un reloj que escala tienes cada escalón que dure al menos un tick.
+
+## Comprueba el muestreador antes que la CPU
+
+Antes de concluir nada de un número de CPU, confirma que
+`mikroscope_slipped_total` es 0. Un tick perdido es uno cuya lectura terminó
+después de que tocara el siguiente tick, y entonces la propia contabilidad del
+muestreador es lo primero de lo que deberías desconfiar.
+
+## La firma
+
+<FaultSignature origin="provoked" date="2026-09-12">
+
+- Un total del equipo cercano al 100 % dividido entre el número de núcleos — aquí
+  ~29 % con cuatro núcleos — con una columna por núcleo al 99,7–99,8 %.
+- Antes de asentarse, la carga saltando visiblemente entre núcleos durante
+  decenas de segundos.
+- Una subida de temperatura de menos de un grado que sigue a la carga.
+
+</FaultSignature>
+
+<NotClaimed>
+	Una carga multihilo, una carga lo bastante larga como para llegar al equilibrio térmico y
+	cualquier cambio de frecuencia del reloj: el reloj del equipo de referencia está fijado, así que
+	no se observó qué hace un governor que escala bajo este bucle.
+</NotClaimed>
+
+<SeeAlso>
+
+## Véase también
+
+- [El suelo de resolución es del kernel](/mikroscope/es/limits/): por qué una muestra de 100 ms
+  resuelve un núcleo en escalones del <Measured id="tick.stepOneCore" />, y los contadores de la PMU que leen por debajo.
+- [Cinco minutos con un router](/mikroscope/es/start/walkthrough/): un bucle de script grabado que fija
+  un núcleo, con marcadores que dicen qué más estaba haciendo el router.
+- [Cada fuente a su propio suelo](/mikroscope/es/limits/source-floors/): por qué la temperatura se lee al
+  1 Hz que declara la zona y la frecuencia solo se guarda cuando cambia.
+
+</SeeAlso>

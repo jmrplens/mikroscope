@@ -1,0 +1,140 @@
+---
+title: The resolution floor is the kernel’s
+description: Why a CPU reading cannot be finer than the kernel’s 10 ms tick, the one source that reads beneath it, and how far back the agent can remember.
+---
+
+import Measured from "../../../components/Measured.astro";
+import NotClaimed from "../../../components/NotClaimed.astro";
+import Provenance from "../../../components/Provenance.astro";
+import SeeAlso from "../../../components/SeeAlso.astro";
+
+This page answers the question that decides how to read every CPU number mikroscope
+produces: what is the smallest change it can show, and why is that limit set by the
+kernel rather than by the agent. It also says which source does see beneath that limit,
+what the reference kernel does not have, and how long a sample survives in the agent
+before it is gone.
+
+## Ticks, not time
+
+A tick lasts <Measured id="tick.ms" />. `/proc/stat` does not count time, it counts `USER_HZ`
+ticks, 100 per second. A 100 ms sample can therefore hold 10 ticks per core, so the busy ratio of
+one core resolves to <Measured id="tick.stepOneCore" /> steps, and the average of four cores to <Measured id="tick.stepFourCores" />. Over 1 s the resolution of one core is <Measured id="tick.stepOneSecond" />.
+
+That is arithmetic from the tick, not a property of the agent, and no rate or setting
+changes it. What the agent does about it is refuse to hide it: it ships the raw ticks and
+the real interval of every sample (`dt_ns`), never a percentage, so the window you divide
+over is yours to choose.
+
+Tick accounting is also quantised at the edges. A 100.3 ms interval can carry 11 ticks
+(seen on the amd64 development host, 2026-09-11/12), which would make a
+busy ratio above 1. The ratio the agent derives is capped at 1; the ticks themselves stay
+raw.
+
+Sampling faster does not refine this. At 100 Hz a sample holds 0 or 1 busy tick, so the
+per-sample busy ratio has two possible values; above roughly 20 Hz the tick counters are an
+occupancy indicator rather than a percentage. What a higher rate does buy is on
+[the rate ceiling](/mikroscope/cost/rate-ceiling/).
+
+## The one source beneath it: the CPU's own counters
+
+One source reads below the tick: the CPU's performance monitoring unit, through
+`perf_event_open`, which the agent collects as the `perf` source when the container is
+privileged. It is the only source in mikroscope that does not come from a file.
+
+Measured on the RB5009 and recorded on 2026-09-12: in a 100.4 ms sample where `/proc/stat`
+reported **zero busy ticks on all four cores**, the PMU counted 2.2–4.6 million cycles and
+0.8–2.1 million instructions retired, at a 3.8–5.7 % cache-miss rate. The jiffie rounds
+that work away; the counter does not.
+
+The number worth watching is instructions per cycle, and the agent does not compute it:
+it ships the raw counts and you divide. It is worth the division because it
+separates a core doing work from a core stalled on memory, which no tick counter can
+express. Measured over 2 s on the same device, the same day, it ranged from 0.381 on
+cpu0 to 0.992 on cpu1.
+
+What the source is, on the reference device (RB5009, RouterOS 7.24.2, kernel 5.6.3,
+Cortex-A72 r0p1, 2026-09-12, from inside a privileged container):
+
+- The agent asks for seven counters: `cycles`, `instructions`, `cache-references`,
+  `cache-misses`, `branch-instructions`, `branch-misses` and `bus-cycles`. The probe of
+  2026-09-12 opened `cycles`, `instructions`, `cache-misses`, `branch-misses` and
+  `bus-cycles` system-wide on 4 of 4 CPUs. In the agent's own data over the 24 h ending
+  2026-09-12, six reported on 4 of 4 cores, `cache-references` among them, and
+  `branch-instructions` produced no rows at all.
+- The generic `stalled-frontend` and `stalled-backend` events return `ENOENT` on the A72.
+  They would need raw PMU event codes, so the agent does not ask for them.
+- A counter that cannot be opened is absent, never zero. Which counters open depends on
+  the CPU, so read the `counter` label of `mikroscope_perf_events_total{counter,cpu}`
+  rather than assuming a set.
+- Without `privileged=yes` the whole family is absent: the counters are opened
+  system-wide, which the unprivileged container cannot do. See
+  [what privileged buys](/mikroscope/limits/privileged/).
+
+The collector uses the same two counters for one of its detections, `ipc-collapse`: per core,
+once at least 20 s of history exists, the one-second instructions-per-cycle falling below
+half its trailing 60 s median while the cycle rate is above its own median. That is described with the other rules on
+[detections](/mikroscope/sinks/detections/).
+
+## No finer clock from the kernel
+
+Do not expect a finer clock from PSI or `schedstat`. The RB5009's RouterOS 7.24.2 kernel
+(Linux 5.6.3) has neither `/proc/pressure` nor `/proc/schedstat`, and its `/proc/stat`
+`irq` column is always 0, so hard-IRQ time is counted inside `system`:
+
+<Provenance of="kernel-2026-09-11" />
+
+Nor is there a tracing path. A privileged discovery container on the same device on
+2026-09-12 found no eBPF, kprobes or ftrace: no BTF, no debugfs, no tracefs, and the mount
+points do not exist. A re-probe on 2026-09-14 found `/sys/fs/bpf` present and empty,
+and `/proc/modules` listing 238 loaded modules, but no `/lib/modules`, no kernel headers and
+no compiler on the device: a kernel feature that is missing cannot be added from a
+container.
+
+The agent detects what a kernel has at start and reports it on `/capabilities`: the
+`sources` map says which sources this deployment actually reads. Fields for an absent
+source are absent from every sample and every sink, never zero. The agent does read PSI
+and `schedstat` where a kernel has them.
+
+<NotClaimed variant="untested">
+	The PSI and `schedstat` paths have never run on the RB5009, because its kernel lacks both. The
+	`schedstat` path ran only on the amd64 development host (kernel 6.12.107, 2026-09-12); the PSI
+	parser has been tested only against synthetic input. The PMU opened on that development host
+	(2026-09-12), but which counters it opened was not recorded; on no CPU but the RB5009's Cortex-A72
+	is the counter set known. The hEX S, a 32-bit RouterOS build on an ARM64 chip, has not been
+	measured at all.
+</NotClaimed>
+
+## How far back the agent remembers
+
+The other hard bound is depth, not resolution. The agent keeps its samples in a ring of
+`--buffer` seconds, 300 s by default and 10–3600 s allowed, which holds rate × buffer
+samples. Nothing older exists anywhere on the router.
+
+A collector or recorder outage shorter than the ring is backfilled on reconnect: it asks
+for `since=<seq>` and receives every sample it missed. An outage longer than the ring is
+reported as a gap of known length, never papered over. The agent answers with a
+`{"gap":{"from":…,"to":…}}` line naming the sequence numbers that are gone, before the
+samples it still holds; `record` writes it as a marker reading `samples N..M lost`, and
+`forward` counts it in `mikroscope_collector_gaps_total` and hands it to every sink.
+
+A longer ring costs memory in the agent, and the agent refuses one that cannot fit. At
+start it estimates the ring at 2 560 bytes a line (the mean line was measured at <Measured id="ring.lineBytes" /> on the RB5009 on 2026-09-12, without the PMU, buddyinfo and MTD sources; a board
+with more cores or interrupt lines, or more sources, costs more), adds the triggered-capture budget, and exits with an error if the total exceeds the
+container's `memory.max`. If the total is more than half the Go soft memory limit it starts
+but logs a warning, because a heap that tight keeps the garbage collector running. How to
+size both limits is on [the cost of the observer](/mikroscope/cost/).
+
+<SeeAlso>
+
+## See also
+
+- [Each source at its own floor](/mikroscope/limits/source-floors/): the sources that are not
+  read on every tick, and the named reason for each.
+- [What privileged buys](/mikroscope/limits/privileged/): the PMU, the kernel log and the slab
+  caches, and what the container still cannot see.
+- [The rate ceiling](/mikroscope/cost/rate-ceiling/): what sampling faster buys once the tick
+  has stopped being a percentage.
+- [What the numbers do not say](/mikroscope/cost/limits/): what `/metrics` can and cannot
+  recover from these samples.
+
+</SeeAlso>

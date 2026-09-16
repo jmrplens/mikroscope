@@ -1,0 +1,27 @@
+---
+/**
+ * How many panels a committed dashboard has, or how many rules its alert file
+ * has, inline, counted from `dashboards/` (src/data/dashboards.ts). The number
+ * changes when `dashboards gen` does. Output on one line, like Measured.
+ */
+import { alertRules, panelTotal, STORES, type Store } from "../data/dashboards";
+import { formatNumber } from "../lib/format";
+import { langOf } from "../lib/lang";
+
+interface Props {
+	store: Store;
+	of: "panels" | "rules";
+}
+
+const { store, of } = Astro.props;
+if (!STORES.includes(store)) {
+	throw new Error(`DashboardCount: unknown store "${store}"; use "influxdb" or "prometheus"`);
+}
+if (of !== "panels" && of !== "rules") {
+	throw new Error(`DashboardCount: of must be "panels" or "rules", got "${of}"`);
+}
+const n = of === "panels" ? panelTotal(store) : alertRules[store].length;
+const lang = langOf(Astro.locals.starlightRoute);
+---
+
+<data class="ms-measured" value={n}>{formatNumber(n, lang, 0)}</data>

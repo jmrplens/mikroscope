@@ -1,0 +1,25 @@
+---
+/**
+ * Where and when a yes-or-no RouterOS fact was checked, inline, from
+ * src/data/verifications.ts: "RB5009UG+S+, RouterOS 7.24.2, 2026-09-11".
+ *
+ * The verb stays in the page's sentence ("verified on …", "verificado en …"),
+ * which is where the fact itself is said. Each segment is a nowrap span, as in
+ * Provenance, so a phone wraps between them and never inside "RouterOS 7.24.2".
+ * Everything is on one line of output: a break inside an inline element is a
+ * space before the punctuation that follows it.
+ */
+import { isVerificationId, verifications } from "../data/verifications";
+
+interface Props {
+	of: string;
+}
+
+const { of } = Astro.props;
+if (!isVerificationId(of)) {
+	throw new Error(`Verified: unknown fact "${of}"; facts live in src/data/verifications.ts`);
+}
+const v = verifications[of];
+---
+
+<span class="ms-verified" data-verified={of}><span class="ms-verified-fact">{v.device}</span>, <span class="ms-verified-fact">RouterOS {v.routeros}</span>, <time class="ms-verified-fact" datetime={v.date}>{v.date}</time></span>

@@ -1,0 +1,110 @@
+Multi-version YAFFS
+
+
+Device 0 "RouterBoard NAND 1 Main"
+start_block.......... 0
+end_block............ 8127
+total_bytes_per_chunk 2048
+use_nand_ecc......... 1
+no_tags_ecc.......... 0
+is_yaffs2............ 1
+inband_tags.......... 1
+empty_lost_n_found... 1
+disable_lazy_load.... 0
+disable_bad_block_mrk 0
+refresh_period....... 500
+n_caches............. 10
+n_reserved_blocks.... 5
+n_bad_blocks......... 0
+always_check_erased.. 0
+
+block count by state
+0:0 1:0 2:0 3:3508 4:0
+5:4620 6:0 7:0 8:0 9:0
+max file size....... 545460844560
+data_bytes_per_chunk. 2032
+chunk_grp_bits....... 0
+chunk_grp_size....... 1
+n_erased_blocks...... 3508
+blocks_in_checkpt.... 0
+
+n_tnodes............. 6824
+n_obj................ 4612
+n_free_chunks........ 448979
+
+n_page_writes........ 83812
+n_page_reads......... 44308
+n_erasures........... 1579
+n_gc_copies.......... 7529
+all_gcs.............. 2779
+passive_gc_count..... 2779
+oldest_dirty_gc_count 166
+n_gc_blocks.......... 1434
+bg_gcs............... 1434
+n_retried_writes..... 0
+n_retired_blocks..... 0
+n_ecc_fixed.......... 0
+n_ecc_unfixed........ 0
+n_tags_ecc_fixed..... 0
+n_tags_ecc_unfixed... 0
+cache_hits........... 266752
+n_deleted_files...... 0
+n_unlinked_files..... 25012
+refresh_count........ 139
+n_bg_deletions....... 0
+tags_used............ 0
+summary_used......... 0
+
+Device 2 "RouterBoard NAND 1 Boot"
+start_block.......... 0
+end_block............ 63
+total_bytes_per_chunk 2048
+use_nand_ecc......... 1
+no_tags_ecc.......... 0
+is_yaffs2............ 1
+inband_tags.......... 1
+empty_lost_n_found... 1
+disable_lazy_load.... 0
+disable_bad_block_mrk 0
+refresh_period....... 500
+n_caches............. 10
+n_reserved_blocks.... 5
+n_bad_blocks......... 0
+always_check_erased.. 0
+
+block count by state
+0:0 1:0 2:0 3:24 4:1
+5:39 6:0 7:0 8:0 9:0
+max file size....... 545460844560
+data_bytes_per_chunk. 2032
+chunk_grp_bits....... 0
+chunk_grp_size....... 1
+n_erased_blocks...... 24
+blocks_in_checkpt.... 0
+
+n_tnodes............. 133
+n_obj................ 6
+n_free_chunks........ 2233
+
+n_page_writes........ 6
+n_page_reads......... 9
+n_erasures........... 16
+n_gc_copies.......... 1
+all_gcs.............. 16
+passive_gc_count..... 16
+oldest_dirty_gc_count 0
+n_gc_blocks.......... 10
+bg_gcs............... 10
+n_retried_writes..... 0
+n_retired_blocks..... 0
+n_ecc_fixed.......... 0
+n_ecc_unfixed........ 0
+n_tags_ecc_fixed..... 0
+n_tags_ecc_unfixed... 0
+cache_hits........... 1
+n_deleted_files...... 0
+n_unlinked_files..... 0
+refresh_count........ 6
+n_bg_deletions....... 0
+tags_used............ 64
+summary_used......... 3402

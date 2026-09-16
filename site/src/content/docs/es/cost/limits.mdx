@@ -1,0 +1,65 @@
+---
+title: Lo que los números no dicen
+description: Las preguntas que las medidas de este sitio no pueden responder, y a qué métrica acudir en vez de adivinar.
+---
+
+import Measured from "../../../../components/Measured.astro";
+import NotClaimed from "../../../../components/NotClaimed.astro";
+import SeeAlso from "../../../../components/SeeAlso.astro";
+
+Todas las medidas de este sitio se tomaron en un equipo, un día y bajo una
+carga. Esta página es la lista de lo que por tanto no te dicen — guardada aquí,
+en la documentación, en vez de dejarla para que un lector la descubra
+equivocándose.
+
+## Lo que `/metrics` puede recuperar y lo que no
+
+El histograma `mikroscope_cpu_busy_ticks` (ticks ocupados enteros por muestra y núcleo, lo que
+mantiene la fluctuación de temporización fuera de la elección de bucket) recupera el **tiempo por encima de un umbral** con resolución de una muestra. Lo que no puede recuperar es la
+**continuidad**: una meseta de 2 s al 30 % y veinte picos sueltos de 100 ms al
+30 % se ven idénticos en él.
+
+Para eso está `mikroscope_cpu_busy_run_seconds{threshold="0.5"|"0.9"}` — la
+duración de cada racha de muestras consecutivas en el umbral o por encima,
+observada cuando la racha termina, con la racha aún en curso en
+`…_run_open_seconds`.
+
+Los medidores de ventana móvil (`window="1s"|"10s"|"60s"`,
+`stat="max"|"min"|"p95"`) muestran el pico sea cual sea tu intervalo de scrape,
+porque el agente los calcula sobre su propio reloj y no sobre el tuyo. Para ver
+la _forma_ de un transitorio en vez de su envolvente, grábalo con `record`, o
+deja que un disparador lo capture.
+
+## El emborronamiento del muestreador se publica, no se esconde
+
+Cuánto tardó el muestreador en despertar tras su temporizador y cuánto tardó la
+lectura son `mikroscope_tick_wake_latency_seconds` y
+`mikroscope_tick_read_seconds`, con el intervalo realmente conseguido en
+`mikroscope_tick_interval_seconds`. Si sospechas del muestreador y no del
+router, esos tres son el primer sitio donde mirar.
+
+## Los huecos se informan, nunca se tapan
+
+El agente guarda 300 s por defecto. Un corte del colector más corto que eso se
+rellena al reconectar mediante `since=<seq>`; uno más largo se informa como un
+hueco de longitud conocida — un marcador en una grabación, un contador en el
+colector. Un gráfico con un agujero es un gráfico diciendo la verdad.
+
+<NotClaimed>
+	Cualquier placa que no sea el RB5009 [del techo de muestreo](/mikroscope/es/cost/rate-ceiling/).
+	Tráfico por encima de unos <Measured id="load.evening" />. Una compilación de RouterOS de 32 bits,
+	que llegará con un hEX S pero todavía no ha llegado. Funcionamiento sostenido más allá de las
+	ventanas indicadas. Ninguna de estas es una afirmación de este proyecto, y ninguna debería
+	deducirse de las que sí lo son.
+</NotClaimed>
+
+<SeeAlso>
+
+## Véase también
+
+- [El techo de muestreo](/mikroscope/es/cost/rate-ceiling/): las cinco ejecuciones y las condiciones
+  en que se tomaron.
+- [El coste del observador](/mikroscope/es/cost/): el presupuesto, y cómo medir el coste en un
+  equipo que no sea este.
+
+</SeeAlso>

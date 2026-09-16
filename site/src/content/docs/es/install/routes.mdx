@@ -1,0 +1,212 @@
+---
+title: Cuatro formas de instalar
+description: Las cuatro rutas por las que la imagen del agente llega al router — un checkout con Go, el tar publicado, un registro del que tira el router, o un script de RouterOS que pegas — qué necesita cada una, qué escribe cada una, y cómo verificar una descarga de la release.
+---
+
+import { Aside, Steps } from "@astrojs/starlight/components";
+import NotClaimed from "../../../../components/NotClaimed.astro";
+import ScrollTable from "../../../../components/ScrollTable.astro";
+import SeeAlso from "../../../../components/SeeAlso.astro";
+
+El agente es una imagen de contenedor, y las cuatro rutas de abajo se
+diferencian en una sola cosa: cómo llega esa imagen al router. Todo lo demás
+que escribe `install` —la veth, la dirección, las dos pertenencias a listas, la
+envlist, el contenedor y su etiqueta— es igual tomes la ruta que tomes, y
+también lo son los requisitos previos:
+[Lo que necesita el router](/mikroscope/es/install/prerequisites/) va primero en
+las cuatro, porque `device-mode container=yes` exige una mano en el equipo y
+ninguna ruta lo esquiva.
+
+## Cuál elegir
+
+<ScrollTable label="Las cuatro rutas de instalación, con lo que necesita cada una">
+
+| Ruta                                                   | Necesita                                                            | Prefiérela cuando                                                     |
+| ------------------------------------------------------ | ------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| [Un checkout, con Go](#un-checkout-con-go)             | Go 1.27 y el repositorio; ssh al router                             | trabajas en mikroscope y quieres el agente de tu propio árbol          |
+| [El tar publicado](#el-tar-publicado)                  | los artefactos de la release; ssh al router                         | instalas una release y prefieres subir el tar a que el router tire     |
+| [Un pull del registro](#un-pull-del-registro)          | que el router llegue al registro; que cuadre el `registry-url` global | instalas una release y no quieres que nada aterrice en la flash        |
+| [Un script de RouterOS](#un-script-de-routeros)        | una terminal en el router; `--remote-image`                         | solo llegas al router por WinBox o WebFig                              |
+
+</ScrollTable>
+
+Para una release, el tar y el pull del registro son las dos entre las que
+elegir; el checkout es la ruta de quien contribuye, y el script es para un
+router al que llegas sin ssh.
+
+## Un checkout, con Go
+
+```sh
+git clone https://github.com/jmrplens/mikroscope
+cd mikroscope
+make build
+bin/mikroscope install --router usuario@192.168.88.1
+```
+
+`plan`, `install`, `upgrade` e `image` compilan el agente ellos mismos:
+`go build ./cmd/mikroscope-agent` para `linux/<arch>` (`--arch`, por defecto
+`arm64`) con `CGO_ENABLED=0`, empaquetado en un tar de imagen sin Docker. La
+ruta de compilación es relativa, así que ejecuta la CLI desde el checkout. Es la
+única ruta que instala un agente compilado de tu propio árbol, y por eso es la
+que se usa mientras se cambia el agente.
+
+`make build` deja la CLI en `bin/mikroscope`. Sin una toolchain de Go en
+`PATH`, el verbo se detiene antes de escribir nada y nombra las otras dos rutas
+y la versión de Go que quería.
+
+## El tar publicado
+
+Dos artefactos, desde la página de la release: el archivo de la CLI para la
+máquina desde la que la ejecutas, y `mikroscope-agent-<arch>.tar` para la
+arquitectura del router. Sin toolchain de Go y sin checkout.
+
+<Steps>
+
+1. Descarga `mikroscope_1.0.0_<so>_<arch>.tar.gz` (`.zip` en Windows) y el tar
+   de la imagen del agente para el router —`mikroscope-agent-arm64.tar`,
+   `mikroscope-agent-arm.tar` o `mikroscope-agent-amd64.tar`— junto con
+   `checksums.txt` y `checksums.txt.sigstore.json`.
+
+2. Verifícalos, más abajo, antes de desempaquetar nada.
+
+3. Desempaqueta la CLI e instala:
+
+   ```sh
+   tar xzf mikroscope_1.0.0_linux_x86_64.tar.gz
+   ./mikroscope install --router usuario@192.168.88.1 \
+     --arch arm64 --agent-tar mikroscope-agent-arm64.tar
+   ```
+
+</Steps>
+
+La CLI lee el tar antes de subirlo. Quiere un `manifest.json` de una sola
+imagen, la configuración que ese manifiesto nombra, una capa y
+`/mikroscope-agent` como entrypoint; cualquier otra cosa falla con
+`this is not a mikroscope agent image`. Después, la arquitectura de la imagen
+tiene que ser la que dice `--arch`, o el verbo falla nombrando el artefacto que
+hay que descargar en su lugar: una imagen `amd64` en una placa arm64 se
+instalaría, arrancaría y moriría con `exec format error` en el log del
+contenedor. De un tar que acepta imprime lo que ha leído, así:
+`using mikroscope-agent-arm64.tar: linux/arm64, agent <tamaño> KiB`.
+
+`--agent-tar` toma su valor por defecto de `MIKROSCOPE_AGENT_TAR`, y `upgrade`
+e `image` también lo aceptan. De ahí en adelante la instalación es la ruta de
+subida: el tar sube con `scp`, RouterOS lo extrae al añadir el contenedor, e
+`install` lo borra.
+
+<Aside type="tip" title="Dos artefactos con nombres parecidos">
+	`mikroscope-agent-arm64.tar` es la imagen de contenedor para cargar de lado, la que quiere
+	`--agent-tar`. `mikroscope-agent_1.0.0_linux_arm64.tar.gz` es un archivo con el binario del agente
+	a secas, para leerlo o ejecutarlo fuera de un contenedor; `--agent-tar` lo rechaza.
+</Aside>
+
+### Verificar la descarga
+
+`checksums.txt` cubre todos los archivos y todos los tar de imagen del agente, y
+es el único fichero por el que responde la firma. La firma es sin claves: la
+identidad es la ejecución del workflow que la produjo, registrada en un registro
+público de transparencia, así que no hay ninguna clave que buscar.
+
+```sh
+cosign verify-blob \
+  --certificate-identity-regexp 'https://github.com/jmrplens/mikroscope/.github/workflows/release.yml@refs/tags/.*' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --bundle checksums.txt.sigstore.json \
+  checksums.txt
+sha256sum --ignore-missing -c checksums.txt
+```
+
+`--ignore-missing` es lo que permite comprobar los dos ficheros que has
+descargado contra una lista que cubre toda la release. Cada archivo lleva además
+un SBOM en SPDX (`<archivo>.spdx.json`) con su propio paquete de firma, que se
+verifica igual.
+
+## Un pull del registro
+
+```sh
+mikroscope install --router usuario@192.168.88.1 \
+  --remote-image ghcr.io/jmrplens/mikroscope-agent:1.0.0
+```
+
+No se sube nada, ningún tar aterriza en el equipo, y `uninstall` no tiene
+ningún fichero del que dar cuenta: el paso del contenedor pasa a ser
+`/container/add remote-image="jmrplens/mikroscope-agent:1.0.0" …` y el plan
+imprime `the router pulls … (nothing is uploaded)` donde iría la línea de
+subida. La imagen se publica para `linux/amd64`, `linux/arm64` y `linux/arm/v7`,
+y RouterOS toma la que necesita su arquitectura.
+
+Necesita dos cosas que las otras rutas no: que el router llegue al registro, y
+que tenga sitio en RAM para las capas mientras las extrae.
+
+<Aside type="caution" title="El host del registro es un ajuste global del router">
+	RouterOS toma el host del registro de `/container/config registry-url`, que es global al equipo y
+	compartido con cualquier otro contenedor que tenga, y solo el resto de la referencia va a
+	`remote-image=`. mikroscope nunca escribe ese ajuste: apuntar el registro de tu router a otro
+	sitio para instalar una sonda sería cambiar los contenedores de otra persona. `doctor` lo lee en
+	su lugar y, cuando no cuadra, nombra la única orden que hay que ejecutar:
+	`/container/config/set registry-url=https://ghcr.io`. Instala con `--agent-tar` si prefieres no
+	tocarlo.
+</Aside>
+
+Una referencia sin host —`jmrplens/mikroscope-agent:1.0.0`— deja el registro a
+lo que el router ya tenga configurado, y entonces `doctor` no comprueba nada al
+respecto. `--remote-image` toma su valor por defecto de
+`MIKROSCOPE_REMOTE_IMAGE`, y `upgrade` también lo acepta; `image` lo rechaza,
+porque no hay ningún tar que escribir.
+
+## Un script de RouterOS
+
+Para un router al que llegas por WinBox o WebFig, o donde no quieres ssh desde
+otra máquina en absoluto:
+
+```sh
+mikroscope plan --rsc \
+  --remote-image ghcr.io/jmrplens/mikroscope-agent:1.0.0 \
+  --out install.rsc
+```
+
+El fichero lleva las mismas órdenes que ejecuta `install`, en el mismo orden y
+con cada objeto etiquetado igual, así que `status` y `uninstall` desde la CLI
+los reconocen después. Léelo, y luego pégalo en la terminal del router, o súbelo
+y hazle `/import`. Sin `--out` sale por la salida estándar. Lleva su propia
+cabecera: la etiqueta que escribe, qué comprobar antes de ejecutarlo y, al
+final, `/container/print where name~"mikroscope"` y la URL `/healthz` en la que
+responde el agente.
+
+Dos advertencias, ambas escritas en el propio script:
+
+- **No puede subir nada.** Un script que se ejecuta en el router no tiene forma
+  de poner la imagen ahí, así que acompáñalo de `--remote-image`. Sin él, la
+  cabecera dice en su lugar qué nombre de fichero hay que dejar antes en el
+  equipo —el nombre que espera el paso del contenedor— y cómo regenerar el
+  script para un pull del registro.
+- **Con `--token`, el fichero es una credencial.** La línea de la envlist lleva
+  el token en claro, porque el router lo necesita en claro. La CLI escribe el
+  fichero con permisos `0600`; lo que hagas con él después es la exposición.
+
+Nada dentro del script comprueba nada. No hay `doctor`, ni pregunta sobre con
+qué chocarían los objetos que crea, ni confirmación: escribe. Ejecuta
+`mikroscope doctor` desde una máquina que pueda, o lee
+[Lo que necesita el router](/mikroscope/es/install/prerequisites/) y comprueba
+a mano los tres requisitos, antes de pegarlo.
+
+<NotClaimed variant="untested">
+	Tres de las cuatro rutas no se han ejecutado en ningún equipo. La ruta del checkout es desde la
+	que ha instalado el RB5009UG+S+ con RouterOS 7.24.2. `--agent-tar` está cubierta por un ciclo de
+	escribir y volver a leer el tar, y `--remote-image` y `plan --rsc` por el texto de las órdenes de
+	RouterOS que producen; no por un router que se bajara una imagen de un registro ni que importara
+	un script. Ninguna ruta se ha ejecutado en hardware arm ni x86_64.
+</NotClaimed>
+
+<SeeAlso>
+
+## Véase también
+
+- [Lo que necesita el router](/mikroscope/es/install/prerequisites/): los tres requisitos que
+  comparten todas las rutas, y lo que comprueba `doctor`.
+- [Instalar el agente](/mikroscope/es/install/): lo que hace `install` una vez decidida la imagen.
+- [Dónde va cada cosa](/mikroscope/es/install/layout/): el disco que usan el tar y la raíz del
+  contenedor, y lo que `--remote-image` deja de poner en él.
+- [Llegar al agente](/mikroscope/es/install/reaching-the-agent/): la sonda que se ejecuta después.
+
+</SeeAlso>

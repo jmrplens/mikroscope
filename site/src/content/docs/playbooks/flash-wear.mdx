@@ -1,0 +1,128 @@
+---
+title: Flash wear
+description: The reference RB5009 writes to its NAND at idle without being asked — how to see it in the YAFFS counters, trace it to a logging rule, and read the ECC counters that warn before a block is lost.
+---
+
+import FaultSignature from "../../../components/FaultSignature.astro";
+import NotClaimed from "../../../components/NotClaimed.astro";
+import Provenance from "../../../components/Provenance.astro";
+import ScrollTable from "../../../components/ScrollTable.astro";
+import SeeAlso from "../../../components/SeeAlso.astro";
+
+This page answers what is writing to the router's flash, and whether the flash is
+wearing. Nothing needed provoking: the RB5009 writes to NAND on its own, and the
+agent's `yaffs` source shows it. The MTD figures are from 2026-09-14.
+
+<Provenance of="playbooks-2026-09-12" />
+
+## What the router writes at idle
+
+Over one 30-second window at idle, the Main partition took **2 page writes and
+14 page reads**; over another, zero.
+
+The cause is findable:
+
+```text
+/system/logging/print where action="disk"
+#  TOPICS  ACTION
+30 dns     disk
+```
+
+The `dns` topic logs to disk, which is also why this device's log holds tens of
+thousands of rows. If the `pw` (page writes) or `er` (erasures) deltas climb, ask
+what started writing.
+
+## What the fields mean
+
+<ScrollTable label="YAFFS fields in a sample and how to read them">
+
+| Field       | Meaning             | Read it as                                                                                     |
+| ----------- | ------------------- | ---------------------------------------------------------------------------------------------- |
+| `er`        | erasures            | the counter that maps to flash _lifetime_                                                      |
+| `pw` / `pr` | page writes / reads | the workload                                                                                   |
+| `gcc`       | GC copies           | write amplification: `gcc` ≫ `pw` means the filesystem is working hard for each byte you store |
+| `gc`        | garbage collections | how often the filesystem collected at all                                                      |
+| `bad`       | bad blocks          | a level, and it must stay 0                                                                    |
+| `free`      | free chunks         | headroom                                                                                       |
+
+</ScrollTable>
+
+On `/metrics` the counters are `mikroscope_flash_operations_total{device,kind}`
+with `kind` one of `page_writes`, `page_reads`, `erasures`, `gc_copies` and
+`gcs`; the levels are `mikroscope_flash_bad_blocks` and
+`mikroscope_flash_free_chunks`.
+
+At the default per-source floors the counters are read every tick and stored
+only when a counter moved or the free-chunk level changed, which on the reference
+device is about 0.04 times a second (a few times a minute). A missing `flash` row
+in a sample means neither happened, not that the source is absent.
+
+## Boot and Main
+
+Both YAFFS devices are reported. The split is instructive: after two weeks, the
+**Main** partition showed 83 812 page writes and 1 579 erasures, while the
+**Boot** partition showed **6** page writes and 16 erasures for the device's
+whole life — Boot is written only by a firmware upgrade.
+
+## The ECC counters: the warning before the loss
+
+Under `privileged=yes` the MTD ECC counters are readable too, from
+`/sys/class/mtd`: `corrected_bits`, `ecc_failures` and `bad_blocks`. All are zero
+on a healthy device. `corrected_bits` climbing is aging NAND; `ecc_failures` is
+data loss.
+
+The YAFFS bad-block count is the post-mortem — a block is retired only after the
+ECC has failed on it. The corrected-bit count is the leading indicator, because it
+climbs as the cells weaken. The kernel publishes the ceiling as well:
+`bitflip_threshold` is the corrected bits per ECC step at which it moves the data
+off a block, and `ecc_strength` is the most bits per step the code can correct at
+all.
+
+On the reference RB5009 on 2026-09-14 there were three partitions —
+`RouterBoard NAND 1 Boot` (8 MiB), `RouterBoard NAND 1 Main` (1 GiB) and
+`RouterBoot` (1 MiB SPI) — with `corrected_bits`, `ecc_failures`, `bad_blocks` and
+`bbt_blocks` all 0, and `bitflip_threshold` 12 and `ecc_strength` 16 on the NAND.
+
+In a sample they are `mtd` rows (`corr`, `fail`, `bad`, `bbt`,
+`bitflip_threshold`, `ecc_strength`); on `/metrics`,
+`mikroscope_mtd_ecc_corrected_bits_total{device,partition}`,
+`mikroscope_mtd_ecc_failures_total`, `mikroscope_mtd_blocks{kind="bad"|"bbt"}`,
+`mikroscope_mtd_bitflip_threshold` and `mikroscope_mtd_ecc_strength`. They are cumulative since boot and shipped as read,
+never differenced, because they move on the scale of a device's lifetime. The
+agent reads them every 10 s — an arbitrary, generous cadence, not a measured
+floor.
+
+## Why `--ephemeral` exists
+
+This is the source that justifies `--ephemeral`: a deployment with its root and
+image on tmpfs adds nothing to these counters at all.
+
+## The signature
+
+<FaultSignature origin="unprovoked" date="2026-09-12">
+
+- `pw` and `er` deltas at idle that you did not cause: something is configured to
+  write. Look at `/system/logging` actions set to `disk` first.
+- `gcc` far above `pw`: the filesystem is paying write amplification.
+- `corrected_bits` rising, or any `ecc_failures` or new `bad` blocks: the flash
+  itself, not the workload.
+
+</FaultSignature>
+
+<NotClaimed>
+	A wearing flash. Every MTD ECC counter on the reference device read 0 on 2026-09-14, so what a
+	rising `corrected_bits` looks like over time, and how far ahead of a retired block it warns, were
+	not observed on this project's hardware.
+</NotClaimed>
+
+<SeeAlso>
+
+## See also
+
+- [What privileged buys](/mikroscope/limits/privileged/): why the ECC counters need
+  `privileged=yes`.
+- [Where things go](/mikroscope/install/layout/): what `--ephemeral` puts on tmpfs and what it gives
+  up.
+- [Alert rules](/mikroscope/dashboards/alerts/): the uncorrectable ECC failure alert.
+
+</SeeAlso>

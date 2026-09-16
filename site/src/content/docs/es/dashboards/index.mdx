@@ -1,0 +1,456 @@
+---
+title: Dos paneles, una sola lista
+description: Qué contienen los dashboards de InfluxDB 3 y de Prometheus, sección a sección y en el orden en que se leen, y por qué los dos almacenes no llevan los mismos paneles.
+---
+
+import { FileTree } from "@astrojs/starlight/components";
+import DashboardCount from "../../../../components/DashboardCount.astro";
+import DashboardCounts from "../../../../components/DashboardCounts.astro";
+import DashboardPanels from "../../../../components/DashboardPanels.astro";
+import Measured from "../../../../components/Measured.astro";
+import NotClaimed from "../../../../components/NotClaimed.astro";
+import SeeAlso from "../../../../components/SeeAlso.astro";
+
+`dashboards/` contiene un dashboard de Grafana por almacén, los dos generados por
+`mikroscope dashboards gen` a partir de una única lista de paneles en `internal/dashboards`. Esta
+página responde a qué hay en ellos: qué secciones, qué paneles en cada una, qué muestra el Overview
+antes de desplegar nada y qué paneles existen solo en uno de los dos almacenes. Importarlos y
+comprobarlos contra un Grafana en marcha está en
+[Importar y comprobar](/mikroscope/es/dashboards/import-and-check/); las reglas de alerta que se
+generan a su lado, en [Reglas de alerta](/mikroscope/es/dashboards/alerts/).
+
+Los dashboards están en inglés. Los títulos de filas y paneles se citan aquí tal como los muestra
+Grafana, sin traducir, para que puedas encontrarlos.
+
+## Lo que escribe `gen`
+
+<FileTree>
+
+- dashboards/
+  - mikroscope-influxdb.json <DashboardCount store="influxdb" of="panels" /> paneles, InfluxDB 3 (SQL)
+  - mikroscope-prometheus.json <DashboardCount store="prometheus" of="panels" /> paneles, Prometheus
+  - mikroscope-alerts-influxdb.yaml <DashboardCount store="influxdb" of="rules" /> reglas
+  - mikroscope-alerts-prometheus.yaml <DashboardCount store="prometheus" of="rules" /> reglas
+
+</FileTree>
+
+```sh
+mikroscope dashboards gen                    # escribe los cuatro ficheros en ./dashboards
+mikroscope dashboards gen --out /tmp/dash    # o en otro directorio
+```
+
+Los dos dashboards están en el formato de exportación compartible de Grafana: la fuente de datos es
+un marcador `${DS_MIKROSCOPE}` declarado en `__inputs`, no hay `id` y el `uid` es fijo —
+`mikroscope-influxdb` y `mikroscope-prometheus` —, así que una reimportación actualiza el mismo
+dashboard en su sitio en vez de crear un segundo. Un test comprueba que dos generaciones del
+dashboard de InfluxDB son idénticas, y regenerar el 2026-09-15 reprodujo byte a byte los cuatro
+ficheros del repositorio.
+
+El dashboard de InfluxDB consulta InfluxDB 3 en SQL, y toda consulta está acotada por
+`$__timeFilter`, porque InfluxDB 3 Core rechaza los recorridos sin límite; donde una columna se llama
+`cluster` el SQL la entrecomilla, porque `cluster` es una palabra reservada en DataFusion. El
+dashboard de Prometheus consulta un Prometheus que hace scrape del `/metrics` del colector — que
+lleva todo lo que lleva el del agente, recalculado a partir de las muestras, más las familias
+derivadas y de detección propias del colector — y del propio agente para las pocas familias que solo
+produce el muestreador. Prometheus 3 representa el borde del bucket cero de un histograma como
+`le="0.0"`, así que una consulta que lee ese bucket casa con `le=~"0|0.0"`. Los dos trabajos de
+scrape están en
+[Importar y comprobar](/mikroscope/es/dashboards/import-and-check/#prometheus-dos-trabajos-de-scrape).
+
+## Una lista, dos almacenes
+
+Cada panel se declara una sola vez, con su SQL y su PromQL uno al lado del otro, de modo que un
+panel añadido a un almacén queda añadido al otro. Cuando un panel no tiene consulta para un almacén,
+el generador **lo quita del dashboard de ese almacén** en vez de publicarlo para que muestre "No
+data" para siempre. Una sección a la que se le quitan todos los paneles no emite ninguna fila.
+
+Por eso difieren los recuentos, y difieren en los dos sentidos. Casi toda la familia térmica y de
+reloj, la sección de desgaste de la flash, el censo de slab y varios paneles de memoria tienen SQL y
+no PromQL, así que solo existen en InfluxDB. Los histogramas de temporización del muestreador, las
+supresiones de disparadores y el presupuesto de capturas viven solo en el `/metrics` del agente. La
+racha de ocupación aún en curso y la antigüedad de cada lectura retenida son familias de la
+exposición de Prometheus, también en el `/metrics` del colector, sin campo en InfluxDB. Ninguno de
+los dos grupos se escribe en InfluxDB, así que los paneles que los leen solo existen en Prometheus. Cada panel de abajo que está en un solo
+almacén dice en cuál.
+
+<DashboardCounts />
+
+Los recuentos son los de los ficheros del repositorio, que llevan los valores compilados por defecto.
+`import` y `check` preguntan primero a la fuente de datos qué contiene y pueden meter paneles en la
+última fila o sacarlos de ella; consulta [No disponible en este equipo](#no-disponible-en-este-equipo)
+más abajo.
+
+## Orden de lectura
+
+Las secciones están ordenadas por la frecuencia con que se abren, no por taxonomía (propietario,
+2026-09-13: "normalmente lo primero que se quiere ver es cpu, RAM, conexiones y cosas así"). Primero
+las cuatro preguntas con las que llega un operador — cuánto trabaja, cuánta memoria le queda, cuántas
+conexiones mantiene, cuánto tráfico mueve —, después lo que marcaron el colector y el agente, después
+las familias que explican las cuatro primeras cuando una tiene mala pinta, después los niveles
+profundos a los que un lector va a propósito, y al final lo que mikroscope le cuesta al router que
+está midiendo.
+
+Todas las secciones salvo el Overview se publican **plegadas**. Grafana guarda los paneles de una fila
+plegada dentro del objeto de la fila y no ejecuta ninguna de sus consultas hasta que alguien la
+despliega, así que el primer renderizado pide al almacén los doce paneles del Overview y no los <DashboardCount store="influxdb" of="panels" />.
+
+Los valores por defecto son un rango de 3 horas (`now-3h`) y un refresco de 5 minutos. El refresco de
+5 minutos se mantiene para cuando alguien despliega una sección: el censo de slab y los mapas de calor
+de la PMU y del coste por muestra devuelven una fila por muestra, y `maxDataPoints` no se aplica al
+SQL en bruto. El rango de 3 horas se mantiene porque `now-15m` abría 108 paneles vacíos con el agente
+parado, y con el agente en marcha una ventana de 15 minutos de muestras de 100 ms dibujaba muros de
+ruido ilegibles. Una investigación en vivo fija su propio rango y su propio refresco.
+
+## El Overview
+
+La única sección abierta. Responde a "¿está sano este router ahora mismo?" y, antes de eso, a "¿puedo
+creerme estos números?". Ningún panel de ella es un mapa de calor ni una combinación de varias
+medidas, y todos devuelven un agregado; tres paneles ("Reboots in the window", "Sample continuity" y
+"Ticks never delivered, this window") lo calculan con una función de ventana sobre las muestras en
+bruto de la ventana. La mayoría son copias de paneles que también viven en una sección posterior,
+porque un panel de Grafana pertenece exactamente a una fila. "Connections tracked right now", "Load
+average (1 min) against the core count", "Reboots in the window" y "Detections in the window" viven
+solo aquí, igual que "OOM kills in the window" en Prometheus, donde la copia de la sección de
+recuperación de memoria no tiene PromQL y se quita. Las copias comparten su SQL; en Prometheus, el
+"OOM kills in the window" del Overview y el "Ticks never delivered, this window" del observador
+difieren de sus homólogos (el del observador lleva una tercera consulta, los ticks perdidos por
+retraso del muestreador).
+
+1. **CPU busy per core**, **Memory in use, against the kernel's own total** (un indicador de
+   `(MemTotal − MemAvailable) / MemTotal`, naranja al 75 %, rojo al 90 %) y **Connections tracked
+   right now** (los objetos activos del slab `nf_conntrack`; en blanco en un contenedor sin
+   privilegios, y el panel lo dice).
+2. **Interface throughput — rx above, tx below** (capa de la API; en blanco con `--api-mode off`, y
+   el panel nombra la opción), **Die temperature by zone** y **Load average (1 min) against the core
+   count**, donde el número de núcleos se mide en el almacén en vez de suponerse.
+3. **Sample continuity**, a todo lo ancho: cada intervalo, nunca más estrecho que un minuto,
+   clasificado como continuo, con ticks perdidos o con el agente reiniciado, a partir de la primera
+   diferencia del número de secuencia de las muestras. En Prometheus, que no tiene número de
+   secuencia, la franja lo aproxima a partir del contador de huecos del colector y de los reinicios
+   del contador de muestras del agente, y su descripción lo dice. Todos los demás paneles del
+   dashboard deben leerse contra esta franja.
+4. **Packets dropped in the kernel RX path (window total)**, **OOM kills in the window**, **Reboots
+   in the window** y **Detections in the window** — cada uno a cero en un equipo sano y coloreado
+   según sus propios umbrales.
+5. **Ticks never delivered, this window**, junto al recuento de reinicios del agente.
+
+<NotClaimed variant="not-measured" title="Una pantalla, medida una vez">
+	El 2026-09-14 un Overview de once paneles midió 1 052 px de alto en una ventana de navegador de
+	1 080 px — una pantalla de escritorio sin nada cortado. El Overview tiene doce paneles y la
+	cuadrícula pasa "Ticks never delivered" a su propia línea a todo lo ancho; esa altura no se ha
+	medido en un navegador, aunque el JSON de los dos paneles del repositorio le da 31 unidades de
+	cuadrícula, cabecera de fila incluida. En un móvil no es una pantalla: Grafana apila una fila de
+	24 columnas en una sola columna por debajo de unos 768 px, y un Overview de ocho paneles se
+	renderizó con 2 188 px de alto en una ventana de 844 px el 2026-09-12.
+</NotClaimed>
+
+## Las cuatro preguntas de todos los días
+
+### CPU y planificador
+
+Ticks de `/proc/stat` y la cadencia del propio muestreador. Cada serie por núcleo sale de los datos
+(`GROUP BY cpu`, `by (cpu)`), así que una placa de 2 núcleos y una de 8 dibujan cada una sus propias
+líneas.
+
+<DashboardPanels section="CPU and scheduler" />
+
+### Memoria y carga
+
+Los niveles de `/proc/meminfo` y `/proc/loadavg`, promediados o con el máximo sobre un intervalo y
+nunca sumados. Todo "porcentaje de RAM" divide por el total que emite el propio kernel.
+
+<DashboardPanels section="Memory and load" />
+
+### Conexiones
+
+La tabla de conexiones del router, sacada del asignador de slab global (`/proc/slabinfo`, solo con
+privilegios), junto al recuento de la capa de la API cuando se consulta. Una sección vacía aquí
+significa un agente sin privilegios, no un router en reposo; el panel "Slab caches reporting" existe
+para decir cuál de los dos es.
+
+<DashboardPanels section="Connections" />
+
+### Tráfico por interfaz
+
+`/interface/monitor-traffic`, los contadores por puerto del MAC y `/system/health` desde la API de
+RouterOS — los únicos contadores por interfaz que tiene mikroscope, porque el `/proc/net/dev` del
+contenedor describe su propio veth — junto a la configuración que la capa de la API lee al arrancar
+y cada `--labels-every`: qué es cada interfaz. Las tasas llegan ya por segundo y nunca se suman, y
+los contadores por puerto tampoco, porque RouterOS cuenta una cosa distinta en cada tipo. Un puerto
+del switch cuenta su cable, tramas reenviadas por hardware incluidas; el bridge cuenta su lado de
+CPU; una VLAN o un PPPoE cuentan lo que la CPU envió y recibió. En el RB5009 de referencia
+(RouterOS 7.24.2, 2026-09-16) ether1 había recibido 255,8 GB por el cable y 29,7 GB de ellos habían
+llegado a la CPU: ether1 y bridge son planos distintos, y ninguno es un subconjunto del otro. El
+conjunto de interfaces de los paneles de tasas es el que seleccionó `--interfaces`, así que una
+interfaz que falta en uno puede estar en reposo, sin configurar o sin seleccionar, y las tres cosas
+se ven igual.
+
+<DashboardPanels section="Interface traffic" />
+
+"What each interface is: type, role, bridge and label" es la tabla que hay que leer antes de comparar
+dos series de interfaz: una fila por interfaz que tiene el router — el tipo de RouterOS, sus listas
+de interfaces, el bridge del que es puerto, su comentario, su nombre de fábrica y su MTU — a partir
+de tres lecturas de configuración, nunca por consulta. "Frame size mix over the window, per Ethernet
+port" es una fila por puerto y no lleva total: cada contador `tx-rx-*` guarda los dos sentidos de su
+propio puerto, así que una trama conmutada de ether1 a ether8 se cuenta en los dos, y una suma por
+puertos cuenta dos veces cada trama conmutada. "Interface inventory and window summary" no lleva
+columnas de errores, porque `monitor-traffic` en RouterOS 7.24.2 no devuelve ninguna tasa de error;
+los contadores de error tipificados del MAC tienen su propio panel.
+
+## Lo que se marcó
+
+### Detecciones y capturas
+
+Sucesos, no niveles: lo que la [etapa de derivación](/mikroscope/es/sinks/derive/) del colector y la
+[captura por disparo](/mikroscope/es/record/triggers/) del agente dijeron de la ventana. Vacío es el
+estado sano, y los paneles de sucesos están marcados como vacíos conocidos para que `check` no falle
+por ello.
+
+<DashboardPanels section="Detections and captures" />
+
+En "Trigger fires and suppressions per bin", las supresiones solo están en Prometheus: viven en el
+`/metrics` del agente.
+
+Cada detección, y cada marcador de disparo, es también una anotación del dashboard. La anotación
+**detections** (roja) está activada por defecto; la anotación **triggers** (naranja) está desactivada
+por defecto, para que un dashboard tranquilo siga tranquilo. En InfluxDB cada anotación es una fila de
+suceso con su mensaje; en Prometheus es `increase(…[1m]) > 0` con un paso de 1 minuto, así que allí
+una anotación marca el minuto, no el instante.
+
+## Por qué una de las cuatro tiene el aspecto que tiene
+
+### Ruta de recepción de red
+
+`/proc/net/softnet_stat`, que es global incluso dentro del espacio de nombres de red del contenedor.
+Aquí no sobrevive ninguna banda absoluta de tasa de paquetes: el régimen de squeeze se clasifica como
+un múltiplo de la mediana de la propia ventana.
+
+<DashboardPanels section="Network receive path" />
+
+### Coste de reenvío (derivado)
+
+Los cocientes por paquete y la proporción de ruta rápida que el colector deriva cruzando subsistemas
+— la PMU contra softnet, softnet contra las interrupciones, los contadores de puerto de RouterOS
+entre sí.
+
+La proporción de ruta rápida es la proporción del tráfico que una interfaz le entrega a la CPU, no
+una proporción del cable: `fp-rx-byte` sobre `driver-rx-byte` en un puerto del switch, sobre
+`rx-byte` en una interfaz software, con las tramas conmutadas por hardware fuera de los dos números.
+Ese reparto lo enseña el panel "Where a port's receive bytes went", a partir de los contadores en
+bruto. En el RB5009 de referencia (RouterOS 7.24.2, 2026-09-16) los puertos del switch leen en torno
+al 100 % — allí `fp-rx-byte` iguala a `driver-rx-byte` con unos pocos kB de diferencia —, mientras
+que bridge había llevado por la ruta rápida 211,9 GB de 663,0 GB desde el arranque (32 %) y
+PPPoE_DIGI el 99,97 %. La línea de tx suele estar ausente: `fp-tx-byte` se quedó en 0 en todas las
+interfaces de ese router después de cientos de GB transmitidos, así que el colector retiene la
+proporción de tx mientras el contador acumulado sea 0 en vez de dibujar un 0 % que no ha medido. Por
+intervalo, la proporción está ponderada por bytes — los bytes de ruta rápida del intervalo sobre los
+bytes del intervalo — porque una interfaz que mueve unos pocos paquetes por consulta oscila entre 0 y
+100 % de una consulta a otra, como mostró ese mismo router el 2026-09-15. La forma de Prometheus es
+el medidor por consulta del colector y conserva ese ruido.
+
+<DashboardPanels section="Forwarding cost (derived)" />
+
+### Interrupciones y softirqs
+
+Deltas de `/proc/interrupts` y `/proc/softirqs`. El nombre del dispositivo se recupera en la consulta
+a partir del texto en bruto de `/proc/interrupts`, no comparándolo con un nombre de driver.
+
+<DashboardPanels section="Interrupts and softirqs" />
+
+### Temperatura y reloj
+
+`/sys/class/thermal` y cpufreq. Todo umbral térmico se mide desde el punto de disparo crítico de la
+propia zona, leído de la placa: los umbrales del panel de margen están a 10 °C y 5 °C de margen por
+debajo de él. Ningún panel lleva una temperatura que la placa no haya publicado.
+
+<DashboardPanels section="Temperature and clock" />
+
+### Log del kernel
+
+`/dev/kmsg`, solo con privilegios. Cuando el log está vacío no está ausente, está en silencio, y el
+silencio es el estado sano.
+
+<DashboardPanels section="Kernel log" />
+
+Dos de ellos leen los registros que nombran un puerto de red. Cada registro así lleva una clase —
+link-up, link-down, `stp-<estado>`, own-address (el bridge recibiendo una trama con su propia MAC
+como origen, la firma de un bucle de capa 2) u otra —, clasificada por el agente mientras lee
+`/dev/kmsg`, y por el colector para los registros de un agente que no la clasifica. El colector
+sustituye después el nombre de fábrica del puerto por el nombre actual de la interfaz en RouterOS y
+le añade su comentario y sus listas de interfaces desde el inventario de la capa de la API; sin la
+capa de la API el registro conserva el nombre de fábrica y no lleva etiqueta. "Port events from the
+kernel log, per port and kind" los cuenta por intervalo, una serie por puerto y clase, y "Port events
+in the window, per port" es el censo que va a su lado: una fila por puerto, con la etiqueta, el rol y
+una columna por clase. Esta es la vista por puerto que el contenedor tiene gratis — el log del kernel
+no le cuesta nada al router y fecha cada transición al microsegundo, mientras que los contadores por
+puerto de RouterOS necesitan una lectura de la API en cada consulta — y es ciega a todo lo que el
+kernel nunca llega a oír, las tramas conmutadas por hardware incluidas. A un link-up le siguen
+stp-blocking, stp-learning y stp-forwarding en su puerto del bridge: cuatro registros, no cuatro
+fallos. Los dos paneles están marcados como vacíos conocidos, porque un conjunto de puertos tranquilo
+es el estado sano. La forma de Prometheus lee el `/metrics` del colector, donde todo registro de
+puerto lleva un `kind` porque el colector clasifica lo que le llega sin clasificar; la exposición del
+propio agente lleva la etiqueta solo cuando es el agente quien clasifica, cosa que el del router de
+referencia no hace a fecha del 2026-09-16.
+
+En InfluxDB la tabla `mikroscope_kmsg` se crea con el primer registro del kernel que se escribe, y su
+columna `kind` con el primer registro de puerto que se escribe ya clasificado. En un router cuyo
+kernel no ha dicho nada desde que arrancó el colector, la tabla no existe e InfluxDB 3 rechaza la
+consulta al planificarla; la sección plegada impide que esa consulta se ejecute hasta que alguien la
+abre. El código lo llama una mitigación, no un arreglo. `import` con el sondeo lleva esos paneles a
+la fila de no disponibles.
+
+## Los niveles profundos
+
+### CPU: cuánto tiempo siguió ocupado un núcleo
+
+La contigüidad, que ningún histograma por muestra puede recuperar: una meseta de 2 s y veinte picos
+sueltos caen en los mismos intervalos. En InfluxDB las longitudes de racha son una consulta sobre las
+muestras en bruto; en Prometheus son el borde superior del bucket poblado más alto de
+`mikroscope_cpu_busy_run_seconds`, recortado a 60 s, así que 60 se lee como "más de un minuto", no
+como una medida.
+
+<DashboardPanels section="CPU: how long a core stayed busy" />
+
+### Memoria: fragmentación
+
+`/proc/buddyinfo`, el único número de memoria que `/proc/meminfo` no puede dar.
+
+<DashboardPanels section="Memory: fragmentation" />
+
+### Memoria: recuperación y fallos de página
+
+Los deltas de `/proc/vmstat`, sumados o convertidos en tasa sobre un intervalo y nunca promediados —
+en una sección separada de los niveles para que los dos tipos de reductor no puedan mezclarse.
+
+<DashboardPanels section="Memory: reclaim and page faults" />
+
+### Memoria: detalle y comprobaciones cruzadas
+
+La escritura diferida, la LRU, los niveles pequeños y dos paneles que validan el propio instrumento.
+Se leen una vez por equipo nuevo, no durante un incidente.
+
+<DashboardPanels section="Memory: detail and cross-checks" />
+
+### Contadores hardware (PMU)
+
+`perf_event_open` desde el contenedor privilegiado. Cada panel divide dos recuentos en bruto; los
+normalizados por reloj dividen por la frecuencia que el kernel informó para ese núcleo en esa
+muestra.
+
+<DashboardPanels section="Hardware counters (PMU)" />
+
+### Desgaste de la flash
+
+`/proc/yaffs`, la única señal de desgaste de la NAND en una RouterBOARD. Solo InfluxDB: la sección no
+tiene fila en el dashboard de Prometheus. Ningún panel puede mostrar una proporción de la partición,
+porque el agente no analiza el rango de bloques de la partición, así que no hay denominador para ello.
+
+<DashboardPanels section="Flash wear" />
+
+### Salud de la NAND (ECC)
+
+Los contadores ECC de MTD bajo `/sys/class/mtd`, solo con privilegios — el indicador adelantado de la
+flash, mientras que el recuento de bloques defectuosos de YAFFS es la autopsia.
+
+<DashboardPanels section="NAND health (ECC)" />
+
+### Comprobaciones cruzadas con la API de RouterOS — CPU y memoria
+
+`/system/resource` y `/system/resource/cpu`: la capa independiente contra la que se comprueban las
+cifras del kernel. RouterOS las recalcula una vez por segundo, así que cada campo es de 1 Hz como
+mucho y está cuantizado en enteros; ningún panel de aquí pretende una lectura por debajo del segundo.
+
+<DashboardPanels section="RouterOS API cross-checks — CPU and memory" />
+
+## Lo que cuesta observar, y si llegó a funcionar
+
+### El observador
+
+Lo que mikroscope le cuesta al router que está midiendo, y si estaba funcionando. En InfluxDB, la
+continuidad se deriva del número de secuencia de cada muestra (Prometheus la aproxima, como en el
+Overview), lo que encontró 4 493 ticks perdidos y un reinicio en
+la captura del 2026-09-11/12 de los que el registro de huecos del colector no decía nada.
+
+<DashboardPanels section="The observer" />
+
+### El observador: temporización del muestreador y sucesos propios
+
+El emborronamiento del propio muestreador — con cuánto retraso despertó y cuánto tardó la lectura — y
+los sucesos de cgroup que el agente registra sobre sí mismo. Los tres mapas de calor leen los
+histogramas del agente, que nunca se envían como muestras, así que solo existen en Prometheus.
+
+<DashboardPanels section="The observer: sampler timing and self events" />
+
+### Este equipo
+
+El [flujo de datos del equipo](/mikroscope/es/sinks/device-info/): lo que el agente estableció sobre
+la placa al arrancar sin la API de RouterOS — identidad, techos, la escalera de frecuencias.
+
+<DashboardPanels section="This device" />
+
+## No disponible en este equipo
+
+La última fila se titula "Not available on this device — measurements this kernel or board does not
+produce (open to read why)" y está plegada. Un panel cuya medida no está en el almacén se saca de su
+sección y se lleva a esta fila, donde su descripción dice qué está esperando.
+
+En los ficheros del repositorio — los valores compilados por defecto, que son lo que escribe `gen` a
+secas y lo que recibe una subida manual a Grafana — la fila contiene los cinco paneles que el RB5009
+de referencia (RouterOS 7.24.2, kernel 5.6.3 arm64) no puede producir:
+
+<DashboardPanels section="Not available on this device" />
+
+El panel de PSI está vacío allí porque ese kernel no tiene `/proc/pressure`. Los paneles de dispositivos de bloques están vacíos allí porque el agente descarta un dispositivo de
+bloques cuyas lecturas, escrituras y peticiones en curso son todas cero en un tick, y en ese router
+todos los dispositivos listados se quedan a cero, así que ningún destino llega a crear la tabla.
+
+Para estos paneles hay declaradas dos secciones, **Pressure stall (PSI)** y **Block devices**, que no
+emiten fila mientras todos sus paneles estén ausentes. En un kernel compilado con PSI, o en una placa
+con almacenamiento USB o eMMC que se mueva, `import` encuentra la medida y la sección aparece en su
+sitio sin tocar el generador. `import` también funciona en el otro sentido: en un almacén al que le
+falta una medida que sí tenía el equipo de referencia — o un campo añadido después de que ese almacén
+se escribiera por primera vez — el panel pasa a esta fila con su consulta eliminada, así que muestra
+su explicación y no una insignia roja de error. Cómo decide el sondeo está en
+[Importar y comprobar](/mikroscope/es/dashboards/import-and-check/#el-sondeo).
+
+## Cómo tratan los dashboards los cocientes, los huecos y las cifras
+
+- **Los cocientes nunca son del agente.** El agente solo envía contadores en bruto, nunca
+  porcentajes. Un cociente de estos dashboards se calcula o bien en la consulta del propio
+  panel o bien en la etapa de derivación del colector (la sección de coste de reenvío y las familias
+  `mikroscope_derived*`). Las tasas de interfaz de la capa de la API son la excepción: llegan de
+  RouterOS ya calculadas.
+- **No dibujan los huecos cortos.** Una línea se corta donde dos puntos vecinos están separados más de
+  5 minutos. El umbral tiene que superar el intervalo más ancho que seleccione un lector — con un
+  rango de 2 días el intervalo de un panel de 12 columnas es de unos 4 minutos —, así que un hueco de
+  menos de 5 minutos se sigue dibujando como una línea interpolada. Lee los huecos en Sample
+  continuity, no en la forma de una línea.
+- **Sus cifras son las de un router.** Las descripciones que citan una cifra la atribuyen al RB5009 de
+  referencia con la fecha en que se midió y dicen que las tuyas serán distintas. Ningún título,
+  consulta ni umbral nombra un equipo, su número de núcleos, sus interfaces o su tamaño de memoria;
+  los únicos números fijos son los objetivos de presupuesto propios de mikroscope
+  (<Measured id="budget.cpu" /> de un núcleo, <Measured id="budget.rss" />).
+
+<NotClaimed variant="untested" title="Versiones de Grafana">
+	Los dashboards se comprobaron en Grafana 12.3.2 (2026-09-12) y Grafana 13.2.1 (pasadas en el
+	navegador el 2026-09-12 y el 2026-09-14, `check` y renderizado el 2026-09-15, y `check` otra vez el
+	2026-09-16). Las opciones de los
+	paneles están escritas según el esquema que espera Grafana 13.2.1 — la marca del xychart, por
+	ejemplo, cambió de sitio entre Grafana 11 y 13 — y `__requires` declara Grafana 11.0.0. No se ha
+	probado ninguna versión aparte de esas dos.
+</NotClaimed>
+
+<SeeAlso>
+
+## Véase también
+
+- [Importar y comprobar](/mikroscope/es/dashboards/import-and-check/): la fuente de datos, los dos
+  trabajos de scrape de Prometheus y lo que `check` verifica y lo que no.
+- [Reglas de alerta](/mikroscope/es/dashboards/alerts/): las reglas que se generan junto a los
+  dashboards, y de dónde sale cada umbral.
+- [Detecciones](/mikroscope/es/sinks/detections/): los sucesos detrás de la sección de detecciones y
+  de las anotaciones.
+- [Familias de métricas de Prometheus](/mikroscope/es/reference/metrics/): lo que lee cada panel de
+  Prometheus.
+
+</SeeAlso>

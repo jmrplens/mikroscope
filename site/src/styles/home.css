@@ -1,0 +1,187 @@
+/* The landing's blocks, from src/components/home/. No other page renders them.
+ *
+ * Spacing is `gap` only. Starlight spaces markdown siblings with a top margin,
+ * which inside a grid offsets the first cell of every row but the first; one
+ * `:where` rule clears it for everything the landing renders, instead of a
+ * list of grids that grows with each block. */
+
+:where(.sl-markdown-content .ms-home *) {
+	margin-top: 0;
+}
+
+.ms-home {
+	max-width: 60rem;
+	margin-inline: auto;
+	display: grid;
+	gap: 3rem;
+}
+
+.ms-home > section {
+	display: grid;
+	gap: 1rem;
+	/* A grid item's min-width is its content's by default, so one code block
+	 * or wide table would widen the whole column past the phone. */
+	min-width: 0;
+}
+
+.ms-home > section > * {
+	min-width: 0;
+}
+
+@media (max-width: 49.99rem) {
+	.ms-home {
+		gap: 2rem;
+	}
+}
+
+/* -------------------------------------------------------------- readout */
+
+/* Fixed at two columns below md, not auto-fit: an auto-fit track leaves the
+ * longest label alone on a row of its own. */
+.ms-readout {
+	display: grid;
+	grid-template-columns: repeat(2, 1fr);
+	gap: 0.75rem;
+}
+
+@media (min-width: 50rem) {
+	.ms-readout {
+		grid-template-columns: repeat(4, 1fr);
+	}
+}
+
+.sl-markdown-content .ms-readout-item {
+	display: flex;
+	flex-direction: column;
+	gap: 0.25rem;
+	min-width: 0;
+	padding: 0.75rem 1rem;
+	background: var(--ms-surface);
+	border: 1px solid var(--ms-border);
+	border-radius: var(--ms-radius);
+	text-decoration: none;
+}
+
+.sl-markdown-content .ms-readout-item:hover {
+	border-color: var(--ms-muted);
+}
+
+.ms-readout-value {
+	font-size: var(--sl-text-3xl);
+	font-weight: 600;
+	line-height: 1.1;
+	color: var(--ms-heading);
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+}
+
+.ms-readout-label {
+	color: var(--ms-body);
+	font-size: var(--sl-text-sm);
+}
+
+.ms-readout-claim {
+	color: var(--ms-muted);
+	font-size: var(--sl-text-sm);
+}
+
+/* A code chip inside the claim sits on the chip's own background, which is
+ * lighter than the page: the muted colour the sentence uses measures 4.25:1
+ * there in dark mode against the 4.5:1 AA needs at 13px, while it measures
+ * 6.2:1 on the page itself. The chip takes the body colour instead, as every
+ * other chip on the site does. */
+.ms-readout-claim code {
+	color: var(--sl-color-text);
+}
+
+/* ---------------------------------------------------------------- tiers */
+
+.ms-tiers {
+	display: grid;
+	gap: 1rem;
+}
+
+@media (min-width: 50rem) {
+	.ms-tiers {
+		grid-template-columns: repeat(2, 1fr);
+	}
+}
+
+.ms-tier {
+	display: grid;
+	align-content: start;
+	gap: 0.5rem;
+	min-width: 0;
+	padding: 1rem;
+	background: var(--ms-surface);
+	border: 1px solid var(--ms-border);
+	border-radius: var(--ms-radius);
+}
+
+.sl-markdown-content .ms-tier h3 {
+	font-size: var(--sl-text-lg);
+}
+
+/* ---------------------------------------------------------------- steps */
+
+.sl-markdown-content .ms-steps {
+	display: grid;
+	gap: 0.75rem;
+	padding-inline-start: 1.5rem;
+}
+
+/* Not a grid: `display: grid` on an <li> drops its list-item marker, and the
+ * step numbers are the point of an ordered list. */
+.ms-steps > li {
+	min-width: 0;
+}
+
+.sl-markdown-content .ms-steps > li > p {
+	margin-top: 0.25rem;
+	color: var(--ms-body);
+}
+
+/* ------------------------------------------------------------ next cards */
+
+.sl-markdown-content .ms-next {
+	display: grid;
+	gap: 0.75rem;
+	padding: 0;
+	list-style: none;
+}
+
+@media (min-width: 50rem) {
+	.sl-markdown-content .ms-next {
+		grid-template-columns: repeat(2, 1fr);
+	}
+}
+
+.ms-next > li {
+	min-width: 0;
+}
+
+.sl-markdown-content .ms-next-card {
+	display: flex;
+	flex-direction: column;
+	gap: 0.25rem;
+	height: 100%;
+	padding: 0.75rem 1rem;
+	background: var(--ms-surface);
+	border: 1px solid var(--ms-border);
+	border-radius: var(--ms-radius);
+	text-decoration: none;
+}
+
+.sl-markdown-content .ms-next-card:hover {
+	border-color: var(--ms-muted);
+}
+
+.ms-next-title {
+	color: var(--ms-accent);
+	font-weight: 600;
+}
+
+.ms-next-note {
+	color: var(--ms-muted);
+	font-size: var(--sl-text-sm);
+}

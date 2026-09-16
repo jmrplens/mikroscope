@@ -1,0 +1,19 @@
+---
+/**
+ * The closing "See also" block of a page, as one box around the authored
+ * heading and its list.
+ *
+ * The heading stays markdown inside the slot, not a prop, because a heading
+ * rendered by a component never reaches Starlight's table of contents, which
+ * is collected from the MDX tree: authored, `## See also` keeps its TOC line
+ * and its `#see-also` / `#véase-también` anchor.
+ *
+ * The landmark is named from the i18n dictionary rather than by
+ * `aria-labelledby` on the heading's slug, which would break silently the day
+ * the heading is reworded.
+ */
+---
+
+<nav class="ms-see-also" aria-label={Astro.locals.t("ms.seeAlso.label")}>
+	<slot />
+</nav>

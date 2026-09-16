@@ -1,0 +1,63 @@
+---
+/**
+ * The entries `install` and `upgrade` write into the agent's envlist, from
+ * src/data/envlist.ts.
+ *
+ * Three pages show this table for three reasons — where things go, the
+ * environment reference, and the security argument that only configuration
+ * and one token sit on the router, readable by any `read` user — and all three
+ * read this one list, in one column layout. The table names itself with a
+ * visually hidden caption, as RunsTable does, so table navigation lists it by
+ * name and the region is not announced twice.
+ */
+import { envlist } from "../data/envlist";
+import { nextId } from "../lib/ids";
+import { langOf } from "../lib/lang";
+import CodeText from "./CodeText.astro";
+import ScrollTable from "./ScrollTable.astro";
+import InlineCode from "./InlineCode.astro";
+
+const lang = langOf(Astro.locals.starlightRoute);
+const t = Astro.locals.t;
+const captionId = nextId(Astro.locals, "ms-envlist");
+const WRITTEN = {
+	always: "ms.envlist.always",
+	aboveZero: "ms.envlist.aboveZero",
+	whenSet: "ms.envlist.whenSet",
+} as const;
+---
+
+<ScrollTable labelledby={captionId}>
+	<table>
+		<caption class="sr-only" id={captionId}>{t("ms.envlist.label")}</caption>
+		<thead>
+			<tr>
+				<th scope="col">{t("ms.envlist.key")}</th>
+				<th scope="col">{t("ms.envlist.written")}</th>
+				<th scope="col">{t("ms.envlist.from")}</th>
+				<th scope="col">{t("ms.envlist.holds")}</th>
+			</tr>
+		</thead>
+		<tbody>
+			{
+				envlist.map((e) => (
+					<tr>
+						<th scope="row">
+							<InlineCode text={e.key} />
+						</th>
+						<td>{t(WRITTEN[e.written])}</td>
+						<td>
+							{e.flag !== null && <InlineCode text={e.flag} />}
+							{/* Separators as strings: Astro drops the whitespace a line break leaves. */}
+							{e.default !== null && [`, ${t("ms.envlist.default")} `, <InlineCode text={e.default} />]}
+							{e.range !== null && `, ${e.range}`}
+						</td>
+						<td>
+							<CodeText text={e.holds[lang]} />
+						</td>
+					</tr>
+				))
+			}
+		</tbody>
+	</table>
+</ScrollTable>

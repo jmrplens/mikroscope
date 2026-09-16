@@ -1,0 +1,37 @@
+---
+/**
+ * The landing's first block: four measured figures, each a link to the page
+ * that explains it, and the one paragraph that says where they came from.
+ *
+ * The numbers are the headline, so the provenance is not a footnote: it sits
+ * directly under them, in the same section, including the fact that the
+ * 10 Hz figures are over budget.
+ */
+import { measurements } from "../../data/measurements";
+import { gapsDrops, type HomeContent } from "../../data/home";
+import { formatQuantity } from "../../lib/format";
+import { langOf } from "../../lib/lang";
+
+interface Props {
+	readout: HomeContent["readout"];
+	headingId: string;
+}
+
+const { readout, headingId } = Astro.props;
+const lang = langOf(Astro.locals.starlightRoute);
+const value = (id: HomeContent["readout"]["items"][number]["id"]) =>
+	id === "run.gapsDrops" ? gapsDrops(lang) : formatQuantity(measurements[id], lang);
+---
+
+<h2 id={headingId}>{readout.title}</h2>
+<div class="ms-readout">
+	{
+		readout.items.map((item) => (
+			<a class="ms-readout-item" href={item.href}>
+				<span class="ms-readout-value">{value(item.id)}</span>
+				<span class="ms-readout-label">{item.label}</span>
+			</a>
+		))
+	}
+</div>
+<p class="ms-readout-claim" set:html={readout.claim} />

@@ -1,0 +1,127 @@
+---
+title: Lineage and licence
+description: Which parts of mikroscope came from cs-routeros-bouncer and from go-routeros, what changed on the way, and the MIT licence both arrive under.
+---
+
+import ScrollTable from "../../../components/ScrollTable.astro";
+import SeeAlso from "../../../components/SeeAlso.astro";
+
+This page answers where mikroscope's code came from: which packages started
+as someone else's, what was changed when they arrived, and under what licence.
+The attribution is also in the code, so it survives being read without this
+site: in the package doc comment of `internal/router`, `internal/image`,
+`internal/chart` and `internal/dashboards`, in `internal/rosapi`'s `README.md`
+and `LICENSE`, and in the header of `.golangci.yml`.
+
+## Where the sampler came from
+
+The sampler that proved this works is `cmd/perfmon` in
+[cs-routeros-bouncer](https://github.com/jmrplens/cs-routeros-bouncer), built
+for one benchmark and kept there as a developer instrument. The deployment steps, the
+dockerless image builder, the deterministic chart and the vendored RouterOS
+API client come from that repository, under its MIT licence.
+
+## What was taken, package by package
+
+<ScrollTable label="Packages taken from other repositories and what changed">
+
+| mikroscope              | Taken from                                                            | What changed on the way                                                                                                                                                |
+| ----------------------- | --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `internal/router`       | cs-routeros-bouncer `cmd/perfmon`, the deployment steps after PR #123 | Extended with quoted ports in every `find`, the optional `--expose` firewall pair, mikroscope's own container settings, and a listing of every write before it happens |
+| `internal/router` tests | cs-routeros-bouncer `cmd/perfmon`, the containment tests              | Adapted to mikroscope's option names and to two rules of its own: quoted ports, and the `--expose` pair as part of the plan                                            |
+| `internal/image`        | cs-routeros-bouncer `cmd/perfmon/image.go`                            | Reworked for the agent's name, the ARM variant (arm images declare `v7`) and a build goreleaser can reuse                                                              |
+| `internal/chart`        | cs-routeros-bouncer `cmd/perfmon/chart.go`                            | The original drew its palette from a docs theme; this one carries its own, validated for the light surface (adjacent-pair CVD ΔE 9.1, normal-vision 22.9)              |
+| `internal/rosapi`       | cs-routeros-bouncer `internal/rosapi`, taken 2026-09-11               | Only the import path                                                                                                                                                   |
+| `.golangci.yml`         | cs-routeros-bouncer, itself based on `maratori/golangci-lint-config`  | The module path                                                                                                                                                        |
+
+</ScrollTable>
+
+What PR #123 brought, and what mikroscope's installer keeps from it, is the
+containment rule: every object created carries one exact comment tag, every
+removal selects by that tag plus the object's identity — never by pattern —
+and `uninstall` verifies by ownership counts before it reports success.
+Nothing is written without being listed first.
+
+The chart's output is deterministic: the same input always yields the same
+bytes.
+
+## What was modelled, not taken
+
+`internal/dashboards` takes its Grafana export shape from `cmd/gen_dashboards`
+in the owner's ghchronicle — "the shape, not the code", as its package comment
+says — and `dashboards check` checks every panel on a real Grafana the way
+ghchronicle does. Two more pieces are modelled the same way, after a reference
+project this documentation does not name: the dashboards' named sections follow
+that project's `sections.go`, and the end-to-end suite under `test/e2e/`
+follows its suite.
+
+## The RouterOS API client
+
+`internal/rosapi` has two generations of lineage. mikroscope's copy is
+cs-routeros-bouncer's, with nothing modified for mikroscope; mikroscope uses it
+for the API tier's reads, for `mark --log-markers`, and for the `/tool fetch`
+relay. The bouncer's copy is
+itself a pruned vendoring of
+[`github.com/go-routeros/routeros/v3`](https://github.com/go-routeros/routeros)
+at **v3.0.1** (upstream commit of 2025-02-16), MIT, copyright 2016 André Luiz dos
+Santos, whose `LICENSE` file stays in the package.
+
+### Why it is vendored
+
+Upstream is effectively unmaintained: its last commit predates the copy by
+eighteen months, and the pull requests and issues filed against the async mode
+in mid-2026 (#31–#34) have had no maintainer response. No maintained
+alternative exists — `swoga/go-routeros` is a copy that only receives
+dependabot bumps for its GitHub Actions, and `jda/routeros-api-go` stopped in 2016. Vendoring keeps the code buildable and lets the copy fix and prune what it
+uses.
+
+### What differs from upstream v3.0.1
+
+These changes were made in cs-routeros-bouncer and arrive unchanged:
+
+1. **The async/listen mode is removed**, with its tests and the async branch of
+   `RunArgsContext`. Nothing in the bouncer called `Async()`, `Listen()` or the
+   context-cancelling run variants. The sentence-kind constants moved to
+   `reply.go`, which consumes them.
+2. **The protocol reader and writer read and write directly**, instead of
+   dispatching every call to a fresh goroutine with a channel and a copy
+   buffer; only the removed async mode ever cancelled an in-flight read. At the
+   bouncer's production scale — 22k address-list entries fetched every cycle —
+   that layer cost ~294 000 goroutine spawns, ~62 MB of garbage and ~76 % of
+   all allocations per reconcile cycle. The rewrite was checked against pristine
+   upstream with a differential test: the SHA-256 fingerprint over all 22 037
+   parsed sentences identical, error shapes identical (`io.ErrUnexpectedEOF` on
+   truncation, `*DeviceError` on `!trap`), and upstream's suite green under
+   `go test -race`. `proto/reader_shape_test.go` pins that behaviour. Those four
+   figures are cs-routeros-bouncer's own, measured on its own host against its own
+   workload, not on a router and not by this project; `internal/rosapi/README.md`,
+   where they come from, records no date and no host, so none can be given here.
+3. **The pre-6.43 MD5 challenge login is removed.** That login exists only
+   before RouterOS 6.43 (2018), and answering it means hashing the password with
+   MD5. A router that sends a `ret` challenge gets `ErrLegacyLoginUnsupported`
+   instead.
+4. **The async and listen-mode tests are removed** with the mode; the pre-6.43
+   login tests assert the rejection instead of the handshake. The rest of
+   upstream's suite is kept and passing.
+
+Compare against upstream's `v3.0.1` tag, not its master branch.
+
+## Licence
+
+mikroscope is MIT-licensed, copyright 2026 jmrplens; the full text is
+`LICENSE` at the root of the repository. The code taken from cs-routeros-bouncer arrives under that
+repository's MIT licence, and `internal/rosapi` keeps go-routeros's MIT
+`LICENSE` beside the code it covers.
+
+<SeeAlso>
+
+## See also
+
+- [What the installer refuses](/mikroscope/security/installer/): the containment rules the
+  deployment code inherited, as they stand now.
+- [The RouterOS API tier](/mikroscope/sinks/api-tier/): what the vendored client reads.
+- [Record, mark, plot](/mikroscope/record/): the deterministic chart `internal/chart` draws.
+- [Where the project stands](/mikroscope/about/status/): what works today, and what the release
+  publishes.
+
+</SeeAlso>

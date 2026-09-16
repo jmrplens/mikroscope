@@ -1,0 +1,428 @@
+---
+title: Medidas de InfluxDB y SQL
+description: Cada medida que escribe el codificador de line protocol de InfluxDB y cada tabla que crea el destino SQL, con etiquetas, campos, columnas, claves, unidades y si cada valor es un delta o un nivel.
+---
+
+import { Aside } from "@astrojs/starlight/components";
+import NotClaimed from "../../../../components/NotClaimed.astro";
+import PrivilegedOnly from "../../../../components/PrivilegedOnly.astro";
+import ScrollTable from "../../../../components/ScrollTable.astro";
+import SeeAlso from "../../../../components/SeeAlso.astro";
+
+Esta página responde qué contiene una fila en el almacén: qué medida o tabla,
+qué etiquetas o columnas de clave la identifican, qué campos lleva, en qué
+unidad, y si un valor es un delta sobre el intervalo de la muestra o un nivel.
+Está leída de `internal/sinks/influx.go`, `device.go` y `sql.go`. Los dos
+almacenes no guardan el mismo conjunto; [dónde
+difieren](#dónde-difieren-los-dos-almacenes) es la última sección.
+
+## Qué destinos escriben esto
+
+- `forward --influx` envía el line protocol de InfluxDB de abajo.
+- `forward --stdout lp` y `forward --telegraf` renderizan con el mismo
+  codificador, así que escriben las mismas medidas y líneas. El orden de las
+  líneas de `mikroscope_api_health`, `mikroscope_softirq` y `mikroscope_slab`
+  dentro de un lote no es estable: el codificador recorre mapas de Go para
+  ellas, e `internal/sinks/telegraf.go` registra 12 renderizados de un mapa de
+  8 nombres que dieron 7 órdenes distintos (2026-09-12).
+- `forward --sql` escribe sus propias tablas de PostgreSQL, que se enumeran más
+  abajo.
+
+Loki, OTLP, Graphite y Elasticsearch dan otra forma a la misma línea de tiempo;
+están en [el fichero y los demás destinos](/mikroscope/es/sinks/other/).
+
+## Convenciones
+
+- **Cada fila lleva `host`**, el valor de `--host-tag` (`router` por defecto),
+  como etiqueta en InfluxDB y como columna `host` en SQL.
+- **Las marcas de tiempo son el reloj de pared del agente**, en ns para
+  InfluxDB y como `TIMESTAMPTZ` para SQL. Una fila de la capa de la API se
+  sella con el reloj del colector corregido por el desfase medido, así que las
+  dos capas comparten la hora del agente. Los huecos y las filas de datos del
+  equipo no tienen reloj propio y llevan el del colector en el momento en que
+  los procesó.
+- **Los contadores son deltas desde la muestra anterior**, no totales
+  acumulados, y los niveles son el valor tal como se leyó. Las tablas de abajo
+  dicen cuál es cuál; nunca sumes un nivel.
+- **Ausente es ausente, en las medidas por fuente.** `psi`, `thermal`, `slab`,
+  `flash`, `mtd`, `disk`, `perf`, `kmsg`, `buddy` e `irq` no escriben ninguna
+  fila para una fuente que el kernel no tiene o que el despliegue no puede
+  leer. Un techo que el equipo no publica es un campo que falta en InfluxDB y
+  `NULL` en SQL, nunca 0. La excepción: en InfluxDB `mikroscope_mem`,
+  `mikroscope_load`, `mikroscope_vm`, `mikroscope_vm_level`,
+  `mikroscope_stat`, `mikroscope_sample` y `mikroscope_self`, y en SQL
+  `mikroscope_mem`, `mikroscope_load`, `mikroscope_stat` y `mikroscope_self`,
+  se escriben en cada muestra y marcan 0 para una fuente que no se pudo
+  leer.
+- **Una dimensión, un nombre.** Un procesador es `cpu` en todas las etiquetas y
+  columnas.
+- **La unidad va en el nombre del campo**: `_kb`, `_khz`, `_ns`, `_us`, `_s`,
+  `_ms`, `_bps`, `_pps`. Las temperaturas son `celsius` junto a
+  `critical_celsius`; el tiempo ocupado de un dispositivo de bloques es `io_s`,
+  convertido una sola vez desde los milisegundos del kernel.
+
+En line protocol, una `u` final es un entero sin signo, `i` uno con signo, un
+número a secas un float, `true`/`false` un booleano, y un valor entre comillas
+una cadena.
+
+## InfluxDB: la capa del kernel
+
+Un juego de filas por muestra del kernel, todas en el `wall_ns` de esa muestra.
+
+### CPU, interrupciones y la propia muestra
+
+<ScrollTable label="Medidas de InfluxDB de la capa del kernel: CPU, interrupciones, muestra">
+
+| Medida               | Etiquetas            | Campos                                                                                                                                        | Tipo                                                                              |
+| -------------------- | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `mikroscope_cpu`     | `cpu`                | `user`, `nice`, `system`, `idle`, `iowait`, `irq`, `softirq`, `steal` (u, ticks de `USER_HZ`); `busy_ratio` (float, 4 decimales); `dt_ns` (i) | los ticks son deltas; `busy_ratio` es ticks ocupados sobre `dt_ns`, con tope en 1 |
+| `mikroscope_cpufreq` | `cpu`                | `khz` (u); `max_khz` (u) donde el núcleo publica un techo                                                                                     | nivel, en las muestras que lo llevan: al cambiar o en el latido de 60 s           |
+| `mikroscope_stat`    | ninguna              | `ctxt`, `intr`, `forks`, `irq_total`, `irq_err` (u)                                                                                           | deltas                                                                            |
+| `mikroscope_softnet` | `cpu`                | `processed`, `dropped`, `time_squeeze` (u)                                                                                                    | deltas                                                                            |
+| `mikroscope_softirq` | `kind`, `cpu`        | `count` (u)                                                                                                                                   | delta; solo los pares (kind, cpu) distintos de cero                               |
+| `mikroscope_irq`     | `irq`, `name`        | `count` (u), sumado sobre las CPU                                                                                                             | delta; solo las líneas del top-K de la muestra                                    |
+| `mikroscope_irq_cpu` | `irq`, `name`, `cpu` | `count` (u)                                                                                                                                   | delta; solo las CPU distintas de cero                                             |
+| `mikroscope_sample`  | ninguna              | `seq` (u), `dt_ns` (i), `mono_ns` (i)                                                                                                         | una fila por muestra                                                              |
+| `mikroscope_psi`     | ninguna              | `cpu_some_us`, `mem_some_us`, `mem_full_us`, `io_some_us`, `io_full_us` (u)                                                                   | deltas; solo en un kernel con PSI                                                 |
+
+</ScrollTable>
+
+`busy_ratio` es la única proporción de la capa del kernel, y la calcula el
+destino, no la envía el agente. Los ticks que tiene al lado son lo que hay que
+dividir cuando importa la ventana: suma `user + nice + system + irq + softirq + steal`
+y divide entre `dt_ns / 1e9 × 100`.
+
+### Memoria y carga
+
+<ScrollTable label="Medidas de InfluxDB de la capa del kernel: memoria y carga">
+
+| Medida                | Etiquetas      | Campos                                                                                                                                                                                                                                                                                  | Tipo                               |
+| --------------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| `mikroscope_mem`      | ninguna        | `total_kb`, `free_kb`, `available_kb`, `cached_kb`, `buffers_kb`, `slab_kb`, `sreclaimable_kb`, `sunreclaim_kb`, `anon_kb`, `mapped_kb`, `dirty_kb`, `writeback_kb`, `kernel_stack_kb`, `page_tables_kb`, `committed_kb`, `commit_limit_kb`, `shmem_kb`, `active_kb`, `inactive_kb` (u) | niveles                            |
+| `mikroscope_load`     | ninguna        | `load1`, `load5`, `load15` (float, 2 decimales); `running`, `threads`, `procs_blocked` (u)                                                                                                                                                                                              | niveles                            |
+| `mikroscope_vm`       | ninguna        | `pgfault`, `pgmajfault`, `pgscan_kswapd`, `pgscan_direct`, `pgsteal_kswapd`, `pgsteal_direct`, `pgalloc`, `pgfree`, `allocstall`, `compact_stall`, `oom_kill`, `pswpin`, `pswpout` (u)                                                                                                  | deltas                             |
+| `mikroscope_vm_level` | ninguna        | `nr_free_pages`, `nr_dirty`, `nr_writeback`, `nr_slab_reclaimable`, `nr_slab_unreclaimable` (u, páginas)                                                                                                                                                                                | niveles                            |
+| `mikroscope_buddy`    | `node`, `zone` | `free_pages` (u, la suma sobre los órdenes en páginas); `order_0` … `order_N` (u, bloques libres de 2^N páginas)                                                                                                                                                                        | niveles, al cambiar o en el latido |
+
+</ScrollTable>
+
+`mikroscope_vm` y `mikroscope_vm_level` son medidas separadas porque un delta
+de `pgscan` es una tasa de eventos y `nr_dirty` es una profundidad.
+
+### Sensores, cachés slab y flash
+
+<ScrollTable label="Medidas de InfluxDB de la capa del kernel: sensores, slab, flash, discos">
+
+| Medida               | Etiquetas             | Campos                                                                                                                      | Tipo                                                                                                          |
+| -------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `mikroscope_thermal` | `zone`                | `celsius` (float, 3 decimales); `critical_celsius` (float) donde la zona declara un disparo crítico                         | nivel, a la cadencia declarada de la zona                                                                     |
+| `mikroscope_slab`    | `cache`               | `active` (u, objetos); `limit` (u) para las cachés con un techo publicado, hoy `nf_conntrack`                               | nivel; <PrivilegedOnly />; se guarda al cambiar con un suelo de presupuesto                                   |
+| `mikroscope_flash`   | `device`              | `page_writes`, `page_reads`, `erasures`, `gc_copies`, `gcs` (u); `bad_blocks`, `free_chunks` (u)                            | los cinco primeros deltas, los dos últimos niveles; solo cuando algo cambió                                   |
+| `mikroscope_mtd`     | `device`, `partition` | `corrected_bits`, `ecc_failures`, `bad_blocks`, `bbt_blocks` (u); `bitflip_threshold`, `ecc_strength` (u) donde se publican | niveles: los recuentos del kernel desde el arranque tal como se leen, nunca diferenciados; <PrivilegedOnly /> |
+| `mikroscope_disk`    | `device`              | `reads`, `read_sectors`, `writes`, `write_sectors` (u); `io_s` (float, 3 decimales); `inflight` (u)                         | `inflight` es un nivel, el resto deltas; un dispositivo inactivo no escribe ninguna fila                      |
+
+</ScrollTable>
+
+`limit` es una palabra reservada de SQL, así que una consulta SQL de InfluxDB 3
+la pone entre comillas dobles, como hace el panel de la tabla de conexiones
+que se distribuye: `max("limit")`. El panel de frecuencia de CPU
+que se distribuye pone igual entre comillas dobles el campo `cluster` de
+`mikroscope_device_cpufreq` (`internal/dashboards/panels_p5.go`); ninguna
+fuente del repositorio dice por qué.
+
+<Aside type="caution" title="La alerta generada para InfluxDB pide el nombre de columna de SQL">
+	`mikroscope dashboards gen` escribe en `mikroscope-alerts-influxdb.yaml` una alerta de conntrack
+	cuya consulta lee `limit_objs` de `mikroscope_slab`. Esa es la columna del destino SQL; el campo
+	de InfluxDB es `limit`. Leído de `internal/dashboards/alerts.go` y de `internal/sinks/influx.go`;
+	la regla no se ejecutó contra ningún almacén para esta página.
+</Aside>
+
+### Observador, PMU y log del kernel
+
+<ScrollTable label="Medidas de InfluxDB de la capa del kernel: observador, PMU, log del kernel">
+
+| Medida            | Etiquetas                                | Campos                                                                                                                                                                                         | Tipo                                                                                                                                                                                                                   |
+| ----------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mikroscope_self` | ninguna                                  | `cpu_us` (u); `rss`, `cgroup_mem` (u, bytes); `cgroup_mem_max` (u) en las muestras que lo llevan; `throttled`, `throttled_us`, `oom_kill` (u) con cgroup2; `resets`, `kmsg_dropped`, `seq` (u) | `cpu_us`, `throttled`, `throttled_us`, `oom_kill`, `resets`, `kmsg_dropped` son deltas; `rss`, `cgroup_mem`, `cgroup_mem_max` niveles                                                                                  |
+| `mikroscope_perf` | `counter`, `cpu`                         | `count` (u); `enabled_ns`, `running_ns` (u) cuando el kernel los informó                                                                                                                       | deltas; <PrivilegedOnly />; `running_ns` por debajo de `enabled_ns` significa que el recuento está multiplexado                                                                                                        |
+| `mikroscope_kmsg` | `level`, `port`, `kind`, `label`, `role` | `count` (u), registros en esta muestra                                                                                                                                                         | por (level, port, kind); un registro que no nombra ningún puerto no lleva ninguna de `port`, `kind`, `label` ni `role`; `label` y `role` solo donde el inventario los conoce; solo las combinaciones distintas de cero |
+
+</ScrollTable>
+
+`resets` cuenta los contadores monotónicos que retrocedieron en este tick sin
+un desbordamiento de 32 bits, y `kmsg_dropped` los episodios de pérdida del log del kernel, no registros: uno por un tick que llegó al tope de 64 registros, uno por cada desbordamiento del búfer circular del kernel, que puede suponer muchos registros. Los dos suelen ser 0; cualquiera de ellos
+distinto de cero significa que no hay que fiarse del tick como tasa. El texto
+de los registros del log del kernel no está en InfluxDB; `port` es el nombre
+actual de la interfaz en RouterOS cuando el colector tiene el inventario de la
+capa de la API, y si no el nombre de fábrica de la placa, o el nombre del
+kernel en una placa sin tabla de puertos.
+
+`kind` dice qué le pasó a ese puerto: `link-up`, `link-down`, `stp-blocking`,
+`stp-listening`, `stp-learning`, `stp-forwarding`, `stp-disabled`,
+`own-address` —el puente recibió una trama con su propia MAC como dirección de
+origen, la firma del bucle de capa 2— u `other`. Un enlace que sube escribe
+cuatro registros, no cuatro fallos: el link-up y las tres transiciones de STP
+de su puerto del puente. `label` y `role` son el comentario de RouterOS del
+puerto y sus listas de interfaces, y se etiquetan solo donde el inventario los
+tiene. Como una consulta que nombra una columna que el almacén nunca ha
+recibido falla al planificarse, `kind` solo se puede consultar después de
+escribir el primer registro de puerto con él.
+
+## InfluxDB: la capa de la API de RouterOS
+
+Un juego por consulta a la API, sellado con la hora del agente.
+
+<ScrollTable label="Medidas de InfluxDB de la capa de la API">
+
+| Medida                      | Etiquetas                                      | Campos                                                                                                                                                | Tipo                                                                                                                                                 |
+| --------------------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mikroscope_api_system`     | ninguna                                        | `cpu_load` (u, porcentaje); `free_memory`, `total_memory`, `free_hdd` (u, bytes); `uptime_s` (u)                                                      | la vista de un segundo de RouterOS, tal como la informa                                                                                              |
+| `mikroscope_api_core`       | `cpu`                                          | `load`, `irq`, `disk` (u, porcentaje)                                                                                                                 | tal como lo informa `/system/resource/cpu`                                                                                                           |
+| `mikroscope_api_health`     | `name`                                         | `value` (float)                                                                                                                                       | tal como lo informa `/system/health`                                                                                                                 |
+| `mikroscope_api_iface`      | `interface`, `label`, `type`, `role`, `bridge` | `rx_bps`, `tx_bps`, `rx_pps`, `tx_pps` (u); `rx_drops`, `tx_drops`, `tx_queue_drops`, `rx_errors`, `tx_errors` (u) solo cuando el router los devolvió | tasas instantáneas de `monitor-traffic`; las cuatro etiquetas del inventario se omiten una a una cuando están vacías                                 |
+| `mikroscope_api_ifcounters` | `interface`, `label`, `type`, `role`, `bridge` | un campo por cada contador numérico que devolvió RouterOS, con `-` convertido en `_` (`rx_overflow`, `fp_rx_byte`, `link_downs` …) (u)                | acumulado desde el arranque o desde el último reinicio del puerto; todas las interfaces, en las consultas de `--counters-every`                      |
+| `mikroscope_api_ifinfo`     | `interface`, `label`, `type`, `role`, `bridge` | `default_name` (string, el nombre de fábrica de un puerto físico, `""` en una interfaz que no lo tiene); `mtu` (u) solo por encima de 0               | qué es cada interfaz; se escribe una vez antes de la primera petición al kernel y otra vez en cada relectura de `--labels-every`, nunca por consulta |
+| `mikroscope_api_conntrack`  | ninguna                                        | `entries` (u)                                                                                                                                         | solo en las consultas que lo pidieron, cada `--conntrack-every`                                                                                      |
+
+</ScrollTable>
+
+Los campos de `mikroscope_api_ifcounters` varían por puerto y por placa: un
+contador que un puerto no informa no es un campo de su fila. `mtu`,
+`actual-mtu`, `l2mtu`, `max-l2mtu` y `sfp-shutdown-temperature` son enteros que
+no cuentan nada, así que no son campos ahí; la MTU es el campo `mtu` de
+`mikroscope_api_ifinfo`.
+
+El inventario que hay detrás de `label`, `type`, `role` y `bridge` son tres
+lecturas de configuración: `/interface/print`,
+`/interface/list/member/print` e `/interface/bridge/port/print`. `label` es el
+comentario de RouterOS, `type` el tipo propio de RouterOS (`ether`, `bridge`,
+`vlan`, `pppoe-out`, `wg`, `veth`, `loopback`), `role` las listas de interfaces
+a las que pertenece la interfaz, ordenadas y unidas por comas (`WAN`,
+`LAN,VPN`), donde un miembro de un puente que no está en ninguna lista propia
+toma las listas de su puente, y `bridge` el puente del que es puerto. Una
+lectura de `/interface` que falla conserva el inventario que ya se tenía y
+escribe un registro de error en su lugar; las lecturas de listas y de puentes
+son de mejor esfuerzo.
+
+`type` es lo que impide sumar dos filas, porque RouterOS cuenta cosas
+distintas en interfaces distintas. Un puerto del conmutador cuenta su cable,
+incluidas las tramas que el chip conmutó por hardware; un puente cuenta su lado
+de la CPU; una VLAN o un PPPoE cuentan lo que la CPU envió y recibió. En el
+router de referencia (RB5009, RouterOS 7.24.2, 2026-09-16) ether1 recibió
+255,8 GB por el cable y 29,7 GB de ellos llegaron a la CPU: la fila `ether` y
+la fila `bridge` son planos distintos, ninguno subconjunto del otro, y sumarlos
+no cuenta nada que exista.
+
+## InfluxDB: valores derivados, anotaciones y datos del equipo
+
+<ScrollTable label="Medidas de InfluxDB que escribe el colector">
+
+| Medida                      | Etiquetas          | Campos                                                                                                                                                                                          | Sellada con                                                      |
+| --------------------------- | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `mikroscope_derived`        | ninguna            | `mem_pressure` (i, 0–4); `burst`, `suspect` (bool); `cycles_per_packet`, `instructions_per_packet`, `cache_misses_per_packet`, `packets_per_irq` (float, 3 decimales) cuando se pueden calcular | la hora de la muestra del kernel                                 |
+| `mikroscope_derived_iface`  | `interface`        | `rx_bytes`, `fp_rx_bytes`, `tx_bytes`, `fp_tx_bytes` (u, deltas desde la consulta de contadores anterior); `fp_rx_share`, `fp_tx_share` (float, 4 decimales) cuando se movieron bytes           | la hora de la muestra de la API                                  |
+| `mikroscope_detection`      | `rule`, `key`      | `value`, `threshold` (float); `seq` (u); `message` (string)                                                                                                                                     | la hora de la detección; `key` se omite cuando la regla no tiene |
+| `mikroscope_trigger`        | `cause`            | `id`, `seq` (u); `value`, `threshold` (float); `field` (string)                                                                                                                                 | el reloj de pared del agente en el disparo                       |
+| `mikroscope_gap`            | ninguna            | `from`, `to` (u, números de secuencia que ya no están en el anillo)                                                                                                                             | el reloj del colector                                            |
+| `mikroscope_device`         | `board`, `kernel`  | `cores` (i); `privileged`, `cgroup` (bool); `sources`, `hash` (string); `conntrack_max`, `cgroup_mem_max` (u) donde se publican; `ports_from` (string) donde se conoce                          | el reloj del colector                                            |
+| `mikroscope_device_thermal` | `zone`             | `critical_celsius` (float); `polling_ms` (i)                                                                                                                                                    | el reloj del colector                                            |
+| `mikroscope_device_cpufreq` | `cpu`              | `cluster` (i); `min_khz`, `max_khz` (u); `governor` (string); `steps` (string, kHz separados por espacios)                                                                                      | el reloj del colector                                            |
+| `mikroscope_device_cadence` | `source`, `reason` | `hz` (float)                                                                                                                                                                                    | el reloj del colector                                            |
+
+</ScrollTable>
+
+`fp_rx_share` es la fracción del tráfico que una interfaz entrega a la CPU que
+pasó por el fast path, no una fracción del cable: `fp-rx-byte` sobre
+`driver-rx-byte` en un puerto del conmutador, cuyo `rx-byte` es el total del
+cable, y sobre `rx-byte` en una interfaz por software, que no tiene contadores
+de driver. Las tramas conmutadas por hardware no están en ninguno de los dos
+números. `rx_bytes` y `tx_bytes` son los denominadores de la fracción, no
+totales del cable. Medido en el RB5009 de referencia (2026-09-16): los puertos
+del conmutador dan ~100 % (`fp-rx-byte` iguala a `driver-rx-byte` con unos
+pocos kB de diferencia), el puente llevó por el fast path 211,9 GB de 663,0 GB
+desde el arranque, y PPPoE_DIGI el 99,97 %. `fp-tx-byte` se quedó en 0 en todas
+las interfaces tras cientos de GB transmitidos, así que la fracción de tx y sus
+deltas se retienen mientras el `fp-tx-byte` acumulado sea 0: `fp_tx_share` no
+está y `tx_bytes` y `fp_tx_bytes` valen 0.
+
+Un valor derivado se escribe junto a sus entradas y nunca en lugar de ellas,
+así que el almacén puede volver a calcularlo. `suspect` marca una muestra con
+un reinicio de contador, en la que una cifra por paquete sería una cota
+inferior, así que los campos por paquete se dejan fuera. Las etiquetas `board`
+y `kernel` valen `unknown` cuando el agente no pudo establecerlas. Las cuatro
+medidas `mikroscope_device*` se escriben una vez cuando arranca `forward` y de
+nuevo antes de un minuto después de que cambie el hash de capacidades del
+agente, porque el colector vuelve a leer `/healthz` una vez por minuto. Un
+transporte que no puede traer `/capabilities` no escribe ninguna fila del
+equipo. Qué significa cada
+valor y cada regla está en [lo que deriva el
+colector](/mikroscope/es/sinks/derive/),
+[detecciones](/mikroscope/es/sinks/detections/) y [el flujo de datos del
+equipo](/mikroscope/es/sinks/device-info/).
+
+## Lo que exige InfluxDB 3 Core
+
+- Un nodo guarda como mucho cinco bases de datos. Una escritura a una sexta
+  falla con `422`; el destino espera y sigue intentándolo.
+- Toda consulta tiene que estar acotada en el tiempo.
+- El tipo de una columna es inmutable una vez escrito.
+- Una consulta que nombra un campo que el almacén nunca ha recibido falla al
+  planificarse, exactamente igual que una tabla que falta:
+  `No field named limit. Valid fields are …` (verificado a través del proxy de
+  la fuente de datos de Grafana, 2026-09-14).
+- La URL de escritura contiene `&`; entrecomíllala cuando vive en un fichero
+  que cargas con `source`.
+
+El destino envía un lote por segundo y encola hasta `--queue-seconds` ×
+64 KiB de lotes, un presupuesto dimensionado para unos 1,2 KiB por muestra a
+10 Hz, y después descarta el más antiguo. Un lote de más de 64 KiB, a 50 o
+100 Hz o con las fuentes privileged, hace que quepan menos de
+`--queue-seconds` lotes; [InfluxDB 3](/mikroscope/es/sinks/influxdb/)
+cubre la entrega.
+
+## SQL: el fichero
+
+`--sql out.sql` escribe texto de PostgreSQL: una cabecera y luego un `INSERT`
+por registro. No hay driver de base de datos; la conexión es cosa de `psql`.
+
+```sh
+mikroscope forward --sql out.sql --for 10m && psql -f out.sql
+```
+
+- La cabecera es `SET standard_conforming_strings = on;` y un
+  `CREATE TABLE IF NOT EXISTS` por tabla, así que cada fichero vuelve a
+  declarar el esquema sin daño. `--sql-hypertable` añade un
+  `SELECT create_hypertable('<table>', 'time', if_not_exists => TRUE);` por
+  tabla.
+- La clave primaria de cada tabla empieza por `time, host`, y cada `INSERT`
+  termina en `ON CONFLICT DO NOTHING`: aplicar dos veces el mismo fichero no
+  hace nada, porque una fila es un instante inmutable, nunca un total que una
+  pasada posterior revisa.
+- `TIMESTAMPTZ` guarda microsegundos, así que los tres últimos dígitos de los
+  nanosegundos del agente se pierden al redondear; dos muestras separadas por
+  menos de 1 µs colisionarían en la clave.
+- Un float que es NaN o infinito se escribe `NULL`. Un byte NUL en una cadena
+  se descarta, y los bytes que no son UTF-8 válido pasan a ser U+FFFD, porque
+  PostgreSQL rechaza las dos cosas.
+- `--sql -` escribe en la salida estándar. Como este destino no tiene cola, un
+  `psql` que se queda atrás bloquea el bucle de peticiones del colector en vez
+  de descartar.
+- El destino cuenta los eventos que escribió en el fichero, no las filas que
+  guardó el servidor.
+
+`dt_ns` solo está en `mikroscope_cpu`. Una tasa sobre cualquier otra tabla de
+deltas se une con `mikroscope_cpu` por `(time, host)` para obtener el
+intervalo real en vez de suponer el período nominal.
+
+## SQL: tablas de la capa del kernel
+
+<ScrollTable label="Tablas SQL de la capa del kernel">
+
+| Tabla                | Clave primaria                        | Columnas después de `time`                                                                                                                                                                                            |
+| -------------------- | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mikroscope_cpu`     | `time, host, cpu`                     | `host`, `cpu`, `user_ticks`, `nice_ticks`, `system_ticks`, `idle_ticks`, `iowait_ticks`, `irq_ticks`, `softirq_ticks`, `steal_ticks` (deltas), `busy_ratio`, `dt_ns`                                                  |
+| `mikroscope_softnet` | `time, host, cpu`                     | `host`, `cpu`, `processed`, `dropped`, `time_squeeze` (deltas)                                                                                                                                                        |
+| `mikroscope_irq`     | `time, host, irq`                     | `host`, `irq`, `name`, `count` (delta, sumado sobre las CPU; líneas del top-K)                                                                                                                                        |
+| `mikroscope_mem`     | `time, host`                          | `host`, `free_kb`, `available_kb`, `cached_kb`, `slab_kb`, `sunreclaim_kb` (niveles)                                                                                                                                  |
+| `mikroscope_load`    | `time, host`                          | `host`, `load1`, `load5`, `load15`, `running`, `threads`, `procs_blocked` (niveles)                                                                                                                                   |
+| `mikroscope_stat`    | `time, host`                          | `host`, `ctxt`, `intr`, `forks`, `irq_total`, `irq_err`, `pgfault`, `pgmajfault` (deltas)                                                                                                                             |
+| `mikroscope_self`    | `time, host`                          | `host`, `cpu_us` (delta), `rss`, `cgroup_mem` (niveles), `throttled`, `throttled_us`, `oom_kill` (deltas, `NULL` sin cgroup2), `seq`                                                                                  |
+| `mikroscope_buddy`   | `time, host, node, zone, block_order` | `host`, `node`, `zone`, `block_order`, `free_blocks` (nivel; una fila por zona y orden, y `order` está reservada)                                                                                                     |
+| `mikroscope_mtd`     | `time, host, device`                  | `host`, `device`, `partition`, `corrected_bits`, `ecc_failures`, `bad_blocks`, `bbt_blocks`, `bitflip_threshold`, `ecc_strength` (niveles; umbrales `NULL` si no se publican)                                         |
+| `mikroscope_psi`     | `time, host`                          | `host`, `cpu_some_us`, `mem_some_us`, `mem_full_us`, `io_some_us`, `io_full_us` (deltas)                                                                                                                              |
+| `mikroscope_thermal` | `time, host, zone`                    | `host`, `zone`, `celsius`, `critical_celsius` (`NULL` si no se publica)                                                                                                                                               |
+| `mikroscope_slab`    | `time, host, cache`                   | `host`, `cache`, `active_objs`, `limit_objs` (`NULL` para las cachés sin techo publicado)                                                                                                                             |
+| `mikroscope_disk`    | `time, host, device`                  | `host`, `device`, `reads`, `read_sectors`, `writes`, `write_sectors`, `io_s` (deltas), `inflight` (nivel)                                                                                                             |
+| `mikroscope_flash`   | `time, host, device`                  | `host`, `device`, `page_writes`, `page_reads`, `erasures`, `gc_copies`, `gcs` (deltas), `bad_blocks`, `free_chunks` (niveles)                                                                                         |
+| `mikroscope_event`   | `time, host, kernel_seq`              | `host`, `level`, `facility`, `kernel_seq`, `time_usec` (µs desde el arranque, el reloj monotónico del kernel, no el de `time`), `message`, `port`, `kind` (los dos `NULL` en un registro que no nombra ningún puerto) |
+
+</ScrollTable>
+
+Los nombres de columna evitan tener que entrecomillar en PostgreSQL: las
+columnas de ticks son `user_ticks` y compañía porque `user` está reservada. Las
+columnas de contadores son `BIGINT`, ya que PostgreSQL no tiene un tipo de 64
+bits sin signo y ningún delta que produzca un router en una muestra se acerca a
+2^63.
+
+## SQL: tablas de la capa de la API, del colector y del equipo
+
+<ScrollTable label="Tablas SQL de la capa de la API, del colector y del equipo">
+
+| Tabla                       | Clave primaria                   | Columnas después de `time`                                                                                                                                                                              |
+| --------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mikroscope_api_system`     | `time, host`                     | `host`, `cpu_load`, `free_memory`, `total_memory`, `free_hdd`, `uptime_s`, `version`                                                                                                                    |
+| `mikroscope_api_core`       | `time, host, cpu`                | `host`, `cpu`, `load`, `irq`, `disk`                                                                                                                                                                    |
+| `mikroscope_api_health`     | `time, host, name`               | `host`, `name`, `value`                                                                                                                                                                                 |
+| `mikroscope_api_iface`      | `time, host, interface`          | `host`, `interface`, `label`, `rx_bps`, `tx_bps`, `rx_pps`, `tx_pps`, `rx_drops`, `tx_drops`, `tx_queue_drops`, `rx_errors`, `tx_errors` (columnas de pérdidas `NULL` cuando el router no las devolvió) |
+| `mikroscope_api_conntrack`  | `time, host`                     | `host`, `entries`: el último recuento, escrito en cada consulta a la API una vez que se ha leído uno                                                                                                    |
+| `mikroscope_api_ifinfo`     | `time, host, interface`          | `host`, `interface`, `default_name`, `type`, `role`, `bridge`, `label`, `mtu` (`NULL` donde el router no da ninguno): qué es cada interfaz, una fila por interfaz y por lectura del inventario          |
+| `mikroscope_api_ifcounter`  | `time, host, interface, counter` | `host`, `interface`, `counter` (el propio nombre de RouterOS, con sus guiones), `value`: una fila por contador                                                                                          |
+| `mikroscope_api_error`      | `time, host, message`            | `host`, `message`: qué orden de la API falló en esa consulta y por qué                                                                                                                                  |
+| `mikroscope_gap`            | `time, host, seq_from, seq_to`   | `host`, `seq_from`, `seq_to`                                                                                                                                                                            |
+| `mikroscope_trigger`        | `time, host, id`                 | `host`, `id`, `cause`, `field`, `value`, `threshold`, `seq`                                                                                                                                             |
+| `mikroscope_derived`        | `time, host`                     | `host`, `seq`, `mem_pressure`, `burst`, `suspect`, `cycles_per_packet`, `instructions_per_packet`, `cache_misses_per_packet`, `packets_per_irq` (`NULL` donde no se puede calcular)                     |
+| `mikroscope_derived_iface`  | `time, host, interface`          | `host`, `interface`, `rx_bytes`, `fp_rx_bytes`, `tx_bytes`, `fp_tx_bytes`, `fp_rx_share`, `fp_tx_share`                                                                                                 |
+| `mikroscope_detection`      | `time, host, rule, key`          | `host`, `rule`, `key` (cadena vacía cuando la regla no tiene), `seq`, `value`, `threshold`, `message`                                                                                                   |
+| `mikroscope_device`         | `time, host`                     | `host`, `board`, `kernel`, `cores`, `privileged`, `cgroup`, `sources`, `conntrack_max`, `cgroup_mem_max`, `ports_from`, `hash`                                                                          |
+| `mikroscope_device_thermal` | `time, host, zone`               | `host`, `zone`, `critical_celsius`, `polling_ms`                                                                                                                                                        |
+| `mikroscope_device_cpufreq` | `time, host, cpu`                | `host`, `cpu`, `cluster`, `min_khz`, `max_khz`, `governor`, `steps`                                                                                                                                     |
+| `mikroscope_device_cadence` | `time, host, source`             | `host`, `source`, `reason`, `hz`                                                                                                                                                                        |
+
+</ScrollTable>
+
+## Dónde difieren los dos almacenes
+
+<ScrollTable label="Diferencias entre las medidas de InfluxDB y las tablas SQL">
+
+| Dato                              | InfluxDB                                                                                                                                   | SQL                                                                                   |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
+| frecuencia de CPU                 | `mikroscope_cpufreq`                                                                                                                       | no se escribe                                                                         |
+| interrupciones y softirqs por CPU | `mikroscope_irq_cpu`, `mikroscope_softirq`                                                                                                 | no se escriben; `mikroscope_irq` solo tiene la suma                                   |
+| eventos y niveles de vmstat       | `mikroscope_vm`, `mikroscope_vm_level`                                                                                                     | solo `pgfault` y `pgmajfault`, en `mikroscope_stat`                                   |
+| contadores del PMU                | `mikroscope_perf`                                                                                                                          | no se escriben                                                                        |
+| secuencia y relojes de la muestra | `mikroscope_sample`                                                                                                                        | `seq` en `mikroscope_self`; `dt_ns` en `mikroscope_cpu`                               |
+| `/proc/meminfo`                   | diecinueve campos en `mikroscope_mem`                                                                                                      | cinco columnas en `mikroscope_mem`                                                    |
+| log del kernel                    | recuentos por nivel, puerto y kind, `mikroscope_kmsg`; sin texto                                                                           | cada registro con su texto, `port` y `kind`, `mikroscope_event`; sin recuentos        |
+| extras del observador             | `cgroup_mem_max`, `resets`, `kmsg_dropped` en `mikroscope_self`                                                                            | no se escriben                                                                        |
+| techo de slab                     | campo `limit`                                                                                                                              | columna `limit_objs`; población `active` frente a `active_objs`                       |
+| listas libres                     | una fila por zona, un campo por orden                                                                                                      | una fila por zona y orden                                                             |
+| qué es una interfaz               | `label`, `type`, `role` y `bridge` como etiquetas en `mikroscope_api_iface` y `mikroscope_api_ifcounters`, junto a `mikroscope_api_ifinfo` | solo `label` en `mikroscope_api_iface`; el resto, a través de `mikroscope_api_ifinfo` |
+| contadores de puerto              | `mikroscope_api_ifcounters`, una fila por puerto, `_` en los nombres                                                                       | `mikroscope_api_ifcounter`, una fila por contador, nombres de RouterOS                |
+| recuento de conntrack             | solo en las consultas que lo pidieron                                                                                                      | el último recuento, repetido en cada consulta después de la primera                   |
+| fallos de órdenes de la API       | no se escriben                                                                                                                             | `mikroscope_api_error`                                                                |
+| límites de un hueco               | `from`, `to`                                                                                                                               | `seq_from`, `seq_to`                                                                  |
+| `mikroscope_api_system.version`   | no se escribe                                                                                                                              | `version`                                                                             |
+
+</ScrollTable>
+
+<NotClaimed>
+	El destino SQL nunca se ha ejecutado contra un TimescaleDB real en este repositorio: las llamadas
+	a `create_hypertable` siguen la firma documentada de TimescaleDB 2.x y no están verificadas. Su
+	tamaño se midió el 2026-09-12 sobre el propio fixture de pruebas del paquete (2 núcleos, una cola
+	de softnet, una línea de interrupción, sin fuentes privileged), no en un router: un evento del
+	kernel se renderiza en 1 375 B de SQL frente a 716 B de line protocol, un evento de la API en
+	1 138 B frente a 608 B, y 10 Hz más la capa de la API a 1 Hz escriben unos 14 KiB/s tras una
+	cabecera de 5,6 KiB; con las fuentes privileged el mismo evento del kernel crece hasta 2 749 B.
+	Las cifras no cubren catorce de las treinta y dos tablas que escribe el destino — `load`, `stat`,
+	`buddy`, `mtd`, `api_ifcounter`, `api_ifinfo`, `trigger`, `derived`, `derived_iface`, `detection`
+	y las cuatro tablas `device` — y no se han vuelto a medir, así que son anteriores a las columnas
+	`port` y `kind` de `mikroscope_event`. La cabecera de las treinta y dos, calculada a partir de
+	las cadenas del esquema de `internal/sinks/sql.go` y no medida, ocupa 7 757 B, unos 7,6 KiB. No
+	se ha medido cómo se comporta `--sql - | psql` cuando `psql` se queda atrás frente a un agente a
+	10 Hz.
+</NotClaimed>
+
+<SeeAlso>
+
+## Véase también
+
+- [InfluxDB 3](/mikroscope/es/sinks/influxdb/): apuntar `forward` a InfluxDB y qué garantías de
+  entrega tiene.
+- [Familias de métricas de Prometheus](/mikroscope/es/reference/metrics/): los mismos datos como
+  scrape.
+- [El fichero y los demás destinos](/mikroscope/es/sinks/other/): JSONL, SQL en la práctica, Loki,
+  OTLP, Graphite, Elasticsearch, Telegraf.
+- [Importar y comprobar](/mikroscope/es/dashboards/import-and-check/): los paneles que consultan
+  estas medidas.
+
+</SeeAlso>

@@ -1,0 +1,135 @@
+---
+title: La CPU del router, la red del contenedor
+description: Qué ficheros del kernel ve un contenedor de RouterOS como los del router y cuáles como propios, por qué privileged no cambia eso, y la cuenta de conntrack que aun así se cuela.
+---
+
+import Measured from "../../../../components/Measured.astro";
+import NotClaimed from "../../../../components/NotClaimed.astro";
+import Provenance from "../../../../components/Provenance.astro";
+import ScrollTable from "../../../../components/ScrollTable.astro";
+import SeeAlso from "../../../../components/SeeAlso.astro";
+
+Un contenedor de RouterOS comparte el kernel del router, pero no toda la visión del kernel. Esta
+página responde qué ficheros dentro del contenedor describen el router y cuáles describen solo el
+propio contenedor, qué significa eso para el tráfico por interfaz y el número de conexiones, y
+por qué ningún ajuste del contenedor que mikroscope pudiera elegir mueve esa línea.
+
+## La CPU y la memoria son del router
+
+Los ficheros de CPU, interrupciones, memoria y dispositivos de bloque son globales: dentro del
+contenedor son los del propio router, y se leen en cada tick (la fila de un dispositivo de bloque
+solo se guarda cuando hizo algo). Establecido en el RB5009 (RouterOS 7.24.2, kernel 5.6.3,
+2026-09-11):
+
+- `/proc/stat`, por núcleo
+- `/proc/interrupts` y `/proc/softirqs`
+- `/proc/net/softnet_stat`: descartes y _time squeezes_ en la ruta de recepción del kernel. Vive
+  bajo `/proc/net` pero cuenta por CPU, no por espacio de nombres.
+- `/proc/meminfo`, `/proc/vmstat` y `/proc/loadavg`
+- `/proc/diskstats`
+
+Un contenedor normal también lee como los del router estos ficheros, leídos el 2026-09-12: las dos
+zonas térmicas bajo `/sys/class/thermal`, `scaling_cur_freq` por núcleo,
+los contadores de desgaste de la NAND en `/proc/yaffs` y `/proc/buddyinfo`. La cadena `model` del
+árbol de dispositivos (`RB5009`) tampoco está en un espacio de nombres, y es como el agente
+identifica la placa sin la API de RouterOS.
+
+## La red es la del contenedor
+
+`/proc/net/dev`, `/proc/net/snmp`, `/proc/net/netstat` y `nf_conntrack_count` son por espacio de
+nombres de red. Dentro del contenedor describen la veth del propio contenedor: 4 paquetes mientras
+el router reenviaba millones. El agente no los lee como datos del router, y `/capabilities` los
+lista bajo `namespaced` para que un consumidor vea que se dejaron fuera a propósito y no por
+descuido.
+
+**`privileged=yes` no cambia esto.** Elimina el espacio de nombres de _usuario_ del contenedor, no
+su espacio de nombres de red:
+
+<Provenance of="netns-2026-09-12" />
+
+Así que los bytes y paquetes por interfaz vienen en su lugar de la API de RouterOS, y el colector
+los fusiona con la capa del kernel sobre el reloj del agente. No se interpolan a partir de nada
+que el contenedor pueda ver. Cómo se consulta esa capa, y lo poco que queda de ella, está en
+[la capa de la API de RouterOS](/mikroscope/es/sinks/api-tier/).
+
+La misma frontera aparece en otros sitios, cada uno medido en el RB5009:
+
+<ScrollTable label="Ficheros del espacio de nombres de red tal como los ve el contenedor en el RB5009">
+
+| Qué                                                                               | Lo que ve el contenedor                                                                             | Medido     |
+| --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ---------- |
+| `/sys/class/net`                                                                  | solo `lo` y la veth; ningún dispositivo para ningún puerto frontal, privilegiado o no               | 2026-09-14 |
+| `/sys/class/mdio_bus`, `/sys/class/phy`                                           | `mdio_bus` solo contiene `fixed-0`; `phy` está vacío                                                | 2026-09-14 |
+| `netdev_budget`, `netdev_max_backlog` y las demás entradas globales de `net.core` | ausentes; las entradas por espacio de nombres, como `somaxconn`, están presentes                    | 2026-09-14 |
+| ficheros de `/proc/net/*` creados por módulos                                     | los del propio contenedor: `fib_trie` muestra solo el `/30` de la veth, `snmp6` cuenta sus paquetes | 2026-09-15 |
+| `nf_conntrack_max`                                                                | el techo real del router, 966 656, el mismo que RouterOS informa como `max-entries`                 | 2026-09-14 |
+| tiempos de expiración de conntrack                                                | los valores por defecto de Linux (`tcp_timeout_established` 432 000 s frente al `1d` de RouterOS)   | 2026-09-14 |
+
+</ScrollTable>
+
+Las dos últimas filas están en el mismo directorio y se separan en direcciones opuestas.
+`nf_conntrack_max` se lee una vez al arrancar y se envía como el techo de la tabla de conexiones.
+Los tiempos de expiración nunca se presentan como la configuración del router, porque no lo son.
+
+La ausencia de `netdev_budget` es también la razón por la que los paneles de _squeeze_ no tienen un
+denominador de presupuesto: es cosa del espacio de nombres, no del agente.
+
+## Conntrack: la cuenta que se cuela
+
+El número de conexiones es la excepción. Con `privileged=yes` el agente lee `/proc/slabinfo`, y el
+asignador slab es global: la cuenta de objetos activos de la caché `nf_conntrack` es la población
+real de conntrack del router. En el RB5009, el 2026-09-12, marcaba 6 582 en el contenedor de
+descubrimiento y <Measured id="conntrack.slab" /> desde el agente ese mismo día, mientras el espacio de nombres propio del
+contenedor informaba de 0; la API de RouterOS había contado <Measured id="conntrack.api" /> el día anterior.
+
+Eso sustituye un recorrido de tabla por la API con la lectura de un fichero, y es la razón por la
+que el colector nunca consulta la cuenta de conntrack salvo que se indique `--conntrack-every`
+(desactivado por defecto en todos los `--api-mode`). Con el techo de más
+arriba, «cuánto de llena está la tabla de conexiones» se puede responder solo desde el contenedor.
+
+Lo que no puede decirte es qué son esas conexiones. `/proc/slabinfo` cuenta objetos en una caché y
+nada más: ni protocolo, ni dirección, ni estado. Una inundación de conntrack y una ráfaga
+legítima de muchas conexiones (un torrent) se ven igual en él. Sin `privileged=yes` el fichero no se puede leer y la cuenta
+desaparece; consulta [lo que aporta privileged](/mikroscope/es/limits/privileged/). Cómo
+contrastarla una vez con la API está en
+[conntrack sin la API](/mikroscope/es/playbooks/conntrack/).
+
+## Montar las rutas del host no cruza la frontera
+
+Si montar las rutas propias del router dentro del contenedor atraviesa los espacios de nombres se
+probó directamente en el RB5009 el 2026-09-15, con el consentimiento del propietario: un
+contenedor privilegiado con `/proc`, `/sys` y `/` del host montados.
+
+- `/proc` del host se monta pero muestra **cero PID**. RouterOS genera un procfs nuevo en el punto
+  de montaje, así que el espacio de nombres de PID se mantiene y la CPU por proceso de los
+  procesos propios de RouterOS sigue fuera de alcance.
+- `/sys` del host se monta pero no tiene `class/net`. La parte de red de sysfs es por espacio de
+  nombres de red y el montaje no lleva la del host, así que los contadores por interfaz siguen
+  siendo solo de la API.
+- `/` del host funciona, y expone el sistema de ficheros de la flash de RouterOS: configuración y
+  ficheros, no telemetría en vivo. Un contenedor privilegiado con `/` montado lee la configuración
+  entera, secretos incluidos. El instalador de mikroscope no monta nada en el contenedor y nunca
+  debe hacer esto.
+
+Los espacios de nombres son fronteras del kernel, y un montaje de sistema de ficheros no las cruza.
+
+<NotClaimed variant="device-specific">
+	Cada fila de esta página se leyó en un único RB5009 con RouterOS 7.24.2. Qué ficheros están en un
+	espacio de nombres es una propiedad del kernel y de cómo construye RouterOS sus contenedores, y no
+	se ha comprobado en otra versión de RouterOS ni en otra placa.
+</NotClaimed>
+
+<SeeAlso>
+
+## Véase también
+
+- [La capa de la API de RouterOS](/mikroscope/es/sinks/api-tier/): de dónde viene el tráfico por
+  interfaz, ya que el contenedor no puede verlo.
+- [Lo que aporta privileged](/mikroscope/es/limits/privileged/): el espacio de nombres de usuario
+  que elimina, y los dos que deja en su sitio.
+- [Conntrack sin la API](/mikroscope/es/playbooks/conntrack/): leer la cuenta del slab y
+  contrastarla una vez con RouterOS.
+- [Puertos de RouterOS y nombres del kernel](/mikroscope/es/playbooks/port-names/): poner nombre a
+  un puerto que el contenedor no puede ver como dispositivo.
+
+</SeeAlso>

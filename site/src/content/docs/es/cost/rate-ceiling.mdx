@@ -1,0 +1,105 @@
+---
+title: El techo de muestreo
+description: Cinco ejecuciones medidas a 10, 50 y 100 Hz en un RB5009 — ninguna pierde datos — y lo que muestrear más rápido compra de verdad.
+---
+
+import { Aside } from "@astrojs/starlight/components";
+import Measured from "../../../../components/Measured.astro";
+import NotClaimed from "../../../../components/NotClaimed.astro";
+import Provenance from "../../../../components/Provenance.astro";
+import RunFlags from "../../../../components/RunFlags.astro";
+import RunsTable from "../../../../components/RunsTable.astro";
+import SeeAlso from "../../../../components/SeeAlso.astro";
+
+La pregunta que responde esta página es la que merece la pena hacer antes de
+fiarse de nada de lo demás: **¿a qué velocidad puede muestrear antes de empezar
+a perder datos?**
+
+En el equipo de referencia la respuesta es que no pierde, hasta el tope de
+100 Hz de la propia CLI, con todas las fuentes leídas en cada tick. Eso no es
+una extrapolación desde la cifra de 10 Hz. Son cinco ejecuciones.
+
+## Las cinco ejecuciones
+
+Cada cifra sale del propio cgroup del agente y de `/metrics`, con el conjunto completo de fuentes.
+Cada fila es una ventana con el anillo ya lleno:
+
+<Provenance of="rates-2026-09-15" />
+
+<RunsTable />
+
+`FLOOR_HZ` significa que cada fuente se lee en cada tick, sin ningún suelo por
+fuente — el peor caso que se le puede pedir al agente.
+
+La memoria cambia de fila en fila porque el anillo cambia. La fila de 10 Hz es
+la instalación por defecto (anillo de 300 s, <RunFlags run="10hz" />); las filas de 50 Hz
+usaron <RunFlags run="50hz" /> y las de 100 Hz <RunFlags run="100hz" />. Dale sitio al
+recolector de basura del agente o el coste se dispara por motivos que no tienen nada que ver con
+la cadencia.
+
+<Aside type="tip" title="No se perdió nada a ninguna cadencia, en ninguna configuración">
+	Los segundos muestreados cubrieron el reloj de pared hasta 1,0000 en las cinco ejecuciones, la
+	cadencia entregada fue la configurada con tres cifras, y todos los destinos — fichero, Prometheus,
+	InfluxDB — informaron de 0 huecos y 0 descartes.
+</Aside>
+
+## Dos cosas de esa tabla que merecen releerse
+
+### El coste por muestra baja cuando sube la cadencia
+
+Una muestra cuesta <Measured id="run.10hz.usPerSample" /> a 10 Hz frente a <Measured id="run.100hz.usPerSample" /> a 100 Hz. No es
+una paradoja, son los suelos funcionando: las fuentes caras se amortizan entre más muestras.
+`/proc/slabinfo`, una de las fuentes caras (13,8 kB), se lee cada 2 ticks a 10 Hz y cada 17 a 100 Hz, así que una
+muestra media cuesta menos mientras la _frecuencia_ de lecturas de slabinfo se queda cerca de su suelo de 6 Hz en ambos casos (5 Hz a 10 Hz, unos 5,9 Hz a 100 Hz).
+
+Con `FLOOR_HZ` no hay nada que amortizar y el coste por muestra es plano —
+son <Measured id="run.50hz-floor.usPerSample" /> a 50 Hz y <Measured id="run.100hz-floor.usPerSample" /> a 100 Hz — así que la CPU
+escala linealmente con la cadencia: <Measured id="run.50hz-floor.cpu" />, y luego <Measured id="run.100hz-floor.cpu" />.
+
+### Un tick retrasado no es una muestra perdida
+
+La muestra se produce igual y se entrega igual, llevando su `dt_ns` real, así
+que cualquier tasa calculada a partir de ella sigue siendo correcta. Es un
+emborronamiento, no un agujero, y se ve en
+`mikroscope_tick_interval_seconds`. A 100 Hz con todo en cada tick, el 99,5 % de
+los ticks cayeron aun así dentro de 11 ms de un período de 10 ms y el peor fue
+de 15 ms.
+
+## Lo que limita es la lectura, no la CPU
+
+Con los suelos por defecto, todas las fuentes de un tick se leen en menos de
+2 ms en el <Measured id="read.under2ms" /> de las muestras a 100 Hz, holgadamente dentro de un período de
+10 ms. `FLOOR_HZ` empuja un 1,4 % de las lecturas más allá de 5 ms, y esos son
+los ticks que se retrasan. El margen de CPU es mayor que el margen de tiempo,
+que es por lo que el techo es una afirmación sobre E/S y no sobre el A72.
+
+## Lo que muestrear más rápido compra de verdad
+
+Resolución de porcentaje de CPU no. El jiffie son 10 ms, así que a 100 Hz una
+muestra contiene 0 o 1 ticks ocupados y la proporción de ocupación por muestra
+tiene dos valores posibles. Por encima de unos 20 Hz los contadores de ticks
+dejan de ser un porcentaje y pasan a ser un indicador de ocupación; a partir de
+ahí la resolución la pone el PMU.
+
+Lo que sí compra una cadencia mayor es todo lo que no está cuantizado por el
+jiffie — cuentas de paquetes de softnet, deltas de interrupciones, contadores
+del PMU, las marcas de tiempo del propio log del kernel — y una cota más
+estrecha sobre cuánto puede esconderse una ráfaga entre dos muestras.
+
+<NotClaimed>
+	Cualquier cadencia en una placa que no sea esta, y qué pasa bajo una carga de tráfico mayor que la
+	tarde corriente de este router — unos <Measured id="load.evening" />. Antes de citar un número
+	para tu equipo, vuelve a medirlo allí: dos lecturas de `/metrics` separadas 60 s en régimen
+	estacionario.
+</NotClaimed>
+
+<SeeAlso>
+
+## Véase también
+
+- [El coste del observador](/mikroscope/es/cost/): el presupuesto contra el que se miden estas
+  ejecuciones, y las tres órdenes para medirlo tú.
+- [Lo que los números no dicen](/mikroscope/es/cost/limits/): lo que `/metrics` puede y no puede
+  recuperar a cualquiera de estas cadencias.
+
+</SeeAlso>

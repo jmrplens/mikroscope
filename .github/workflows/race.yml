@@ -1,0 +1,66 @@
+# Race detector workflow for mikroscope.
+#
+# Where it runs, and where it deliberately does not. Not on every pull request:
+# ci.yml converges on one job, "CI", which is the single check branch
+# protection requires, and a job added there becomes a gate on every pull
+# request for a class of defect that is rare and not introduced by most
+# changes. Instead, the way github.com/jmrplens/ghchronicle runs it:
+#
+#   * at release, called by release.yml beside the E2E gate, so a race cannot
+#     reach a tag;
+#   * once a week on main, after the scheduled E2E run, so a race introduced
+#     this week surfaces this week rather than at the next tag;
+#   * by hand, from the dispatch menu.
+#
+# Reusable, not copied. release.yml calls this file, so the command a
+# maintainer can run by hand is the command the release gate runs, and both
+# are `make test-race`, which is what a developer runs locally.
+
+name: Race Detector
+
+on:
+  schedule:
+    # Mondays, 06:23 UTC: the same day as the scheduled E2E run (04:41) and
+    # after it, off the hour because GitHub delays runs that pile up on round
+    # times.
+    - cron: "23 6 * * 1"
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  # Every test under the detector: the sampler, the ring and its HTTP stream,
+  # the sinks and their queues, which is where the concurrency of both binaries
+  # lives. The end-to-end suite runs too, but its harness builds the two
+  # binaries without -race on purpose (test/e2e/e2e_test.go, buildBoth): an
+  # instrumented 10 Hz agent plus an instrumented collector plus ten sinks on
+  # one runner is a timing test, not a race test. So, unlike ghchronicle, there
+  # is no race build of a binary to warm before the run.
+  #
+  # `go test -timeout` bounds each package's test binary, not the run, so the
+  # Makefile's RACE_TIMEOUT has to cover the worst single package rather than
+  # their sum. It is there to end a genuine deadlock with every goroutine stack
+  # printed, which a job-level kill does not. The job bound is what covers the
+  # whole set.
+  unit:
+    name: Race (every suite)
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - run: go mod download
+
+      - name: Every suite under the race detector
+        run: make test-race

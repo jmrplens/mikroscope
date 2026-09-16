@@ -1,0 +1,79 @@
+---
+title: What it is
+description: An agent inside the router reading the shared kernel, a CLI outside it, and the four limits that cannot be engineered away.
+---
+
+import { Steps } from "@astrojs/starlight/components";
+import Measured from "../../../components/Measured.astro";
+import Provenance from "../../../components/Provenance.astro";
+import RouterWrites from "../../../components/RouterWrites.astro";
+import SeeAlso from "../../../components/SeeAlso.astro";
+
+mikroscope is two programs and one container.
+
+The **agent** is a static Go binary in a scratch container on the router. A
+RouterOS container shares the host kernel, so `/proc` inside it is the router's
+own `/proc`: `/proc/stat` per core, `/proc/interrupts`, `/proc/softirqs`,
+`/proc/net/softnet_stat`, `/proc/meminfo`, `/proc/vmstat`, `/proc/diskstats`,
+`/dev/kmsg`. It samples them on a ticker at 1 to 100 Hz (10 Hz by default; 10, 50 and 100 Hz measured), keeps the last 300 seconds in a ring, and serves them. It has no outbound connection and presents no credential; the only secret it holds is the optional token it requires of whoever reads it.
+
+The **CLI** runs on your machine. It installs and removes the agent, records a
+window with markers, draws a deterministic SVG of it, and runs as a collector
+that pulls from the agent, merges a RouterOS API tier at 1 Hz, and fans out to
+file, Prometheus and InfluxDB 3. It is released as an archive per platform —
+linux, macOS, Windows and FreeBSD on amd64, arm64 and arm — and the agent
+beside it as one image tar per architecture and as
+`ghcr.io/jmrplens/mikroscope-agent`, so installing needs a Go toolchain only
+when you want the agent built from your own tree.
+
+## Four limits, stated before anything else
+
+<Steps>
+
+1. **The prerequisites the tool cannot remove.** RouterOS 7.24 or later with the
+   `container` package and `device-mode container=yes` — which MikroTik gates
+   behind a physical reset-button press or a power cycle. 7.24 is the floor
+   because the container step writes `privileged=`, an attribute MikroTik added
+   in that release; `--privileged=false` changes its value, not whether it is
+   written. arm64, arm and x86_64; not MIPS, not TILE.
+
+2. **The resolution floor is the kernel's, not the tool's.** `/proc/stat` ticks
+   at 100 Hz, so a 100 ms window resolves one core to <Measured id="tick.stepOneCore" /> steps.
+   The agent ships raw ticks so you choose the window. Do not expect PSI: the
+   RB5009's kernel has neither PSI nor schedstat.
+
+   <Provenance of="kernel-2026-09-11" />
+
+3. **The container sees the router's CPU and memory, but its own network.**
+   `/proc/net/dev`, `/proc/net/snmp` and `nf_conntrack_count` are per network namespace and describe the container; the conntrack count from the slab under `privileged` is the exception, and describes the router. Interface counters come from the
+   RouterOS API and are merged, not faked.
+
+4. **The observer costs something, and it is written down.** <Measured id="run.10hz.cpu" /> of
+   one core at 10 Hz on an RB5009, <Measured id="run.100hz.cpu" /> at 100 Hz. [What it
+   costs](/mikroscope/cost/) has the full table and the conditions. Every figure
+   on this site comes from that one device, an RB5009UG+S+ on RouterOS 7.24.2,
+   arm64: the arm and x86_64 builds are cross-built and checked in CI and have
+   never run on hardware.
+
+</Steps>
+
+<RouterWrites command="install" />
+
+## What it does not do
+
+It does not replace the RouterOS API — it merges with it. It does not claim a
+number it did not measure: where a source is absent on a board, the metric is
+absent rather than zero. And it does not decide for you what a percentage means,
+because it never computes one.
+
+<SeeAlso>
+
+## See also
+
+- [The cost of the observer](/mikroscope/cost/): the budget, the measured result and how to
+  measure it on your own device.
+- [The rate ceiling](/mikroscope/cost/rate-ceiling/): the five runs behind the figures in point 4.
+- [What the numbers do not say](/mikroscope/cost/limits/): what one device on one day cannot tell
+  you.
+
+</SeeAlso>

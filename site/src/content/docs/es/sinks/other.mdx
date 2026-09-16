@@ -1,0 +1,511 @@
+---
+title: El fichero y los demás destinos
+description: El fichero JSONL, la salida estándar, SQL, Loki, OTLP, Graphite, Elasticsearch y Telegraf — qué lleva cada uno, cómo entrega y lo que su protocolo no puede prometer.
+---
+
+import { Aside } from "@astrojs/starlight/components";
+import Measured from "../../../../components/Measured.astro";
+import NotClaimed from "../../../../components/NotClaimed.astro";
+import ScrollTable from "../../../../components/ScrollTable.astro";
+import SeeAlso from "../../../../components/SeeAlso.astro";
+
+Además de [Prometheus](/mikroscope/es/sinks/prometheus/) e [InfluxDB
+3](/mikroscope/es/sinks/influxdb/), `forward` escribe en ocho destinos más. Esta página
+responde, para cada uno, qué partes de la línea temporal recibe, cómo se le entregan y qué
+no te puede decir por culpa del protocolo del destino. La cola, la espera entre reintentos
+y los contadores que comparten están en [el colector](/mikroscope/es/sinks/).
+
+## Lo que recibe cada destino
+
+<ScrollTable label="Lo que recibe cada uno de los ocho destinos">
+
+| Destino       | Muestras del kernel        | Texto del log del kernel                   | Capa de la API                        | Derivados y detecciones                                | Disparos, huecos, equipo  |
+| ------------- | -------------------------- | ------------------------------------------ | ------------------------------------- | ------------------------------------------------------ | ------------------------- |
+| file          | líneas del agente tal cual | dentro de las líneas de muestra            | líneas `{"api":…}`                    | `{"derived":…}`, `{"detection":…}`                     | los tres, como líneas     |
+| stdout `json` | líneas del agente tal cual | dentro de las líneas de muestra            | líneas `{"api":…}`                    | como el fichero                                        | los tres, como líneas     |
+| stdout `lp`   | las medidas de InfluxDB    | cuentas por nivel, puerto y tipo de evento | las medidas de InfluxDB               | las medidas de InfluxDB                                | los tres                  |
+| SQL           | una tabla por fuente       | filas `mikroscope_event`                   | tablas, más `mikroscope_api_error`    | `mikroscope_derived`, `mikroscope_detection`           | los tres                  |
+| Loki          | no                         | una línea por registro                     | solo errores por orden                | solo detecciones                                       | los tres, como líneas     |
+| OTLP          | sums y gauges              | no                                         | gauges, y una cuenta de errores       | gauges, un sum de detecciones                          | los tres                  |
+| Graphite      | una ruta por valor         | no                                         | rutas                                 | rutas                                                  | solo las partes numéricas |
+| Elasticsearch | un documento por tick      | un documento por registro                  | un documento por lectura, sin errores | en el documento del kernel, un documento por detección | los tres                  |
+| Telegraf      | las medidas de InfluxDB    | cuentas por nivel, puerto y tipo de evento | las medidas de InfluxDB               | las medidas de InfluxDB                                | los tres                  |
+
+</ScrollTable>
+
+Los registros del log del kernel solo existen cuando el contenedor corre con
+`privileged=yes`; consulta [lo que aporta privileged](/mikroscope/es/limits/privileged/).
+
+## El fichero
+
+```sh
+mikroscope forward --file timeline.jsonl
+```
+
+El fichero se abre y se **trunca**, con modo `0600`. Cada línea es un objeto JSON, y su
+primera clave dice qué es:
+
+- una muestra del kernel — la propia línea del agente, byte a byte, tal como la sirvió
+  `/snapshot`;
+- `{"trigger":…}` — el marcador de captura del agente, también tal cual;
+- `{"derived":…}` — los valores de la etapa de derivación, en la línea siguiente a la
+  muestra a la que pertenecen, para que un lector que solo quiere muestras en bruto se
+  salte ese tipo;
+- `{"detection":…}`, `{"device":…}`, `{"api":…}` y `{"gap":…}`.
+
+Las escrituras son síncronas a través de un búfer de 64 KiB, y los contadores van en
+eventos. Una escritura que el sistema de ficheros rechaza cuenta un error y un descarte.
+
+## Salida estándar
+
+```sh
+mikroscope forward --stdout=lp | telegraf --config …
+mikroscope forward --stdout=json | jq
+```
+
+`--stdout lp` renderiza protocolo de líneas de InfluxDB con el propio codificador del
+destino de InfluxDB, así que una tubería muestra exactamente lo que enviaría `--influx`.
+`--stdout json` escribe los mismos tipos de línea que el fichero. Cualquier otro valor se
+rechaza antes de que empiece la ejecución.
+
+La salida estándar se puede atascar — un lector lento llena el búfer de la tubería y la
+escritura se bloquea sin nada que la acote — así que este destino va en cola: un lote por
+segundo, cada lote escrito en una sola llamada de líneas completas para que un lector nunca
+vea un registro a medias, 64 KiB × `--queue-seconds` de presupuesto, descartando primero lo
+más antiguo. Un lote que un lector atascado deja crecer por encima del presupuesto entero
+se cierra antes. Ese presupuesto se dimensionó para una muestra en protocolo de líneas de
+unos 1,2 KiB; **no** se ha medido para `json`, cuyas líneas llevan fuentes que el protocolo
+de líneas omite y son más grandes.
+
+- Una tubería rota no llega a los contadores: Go deja `SIGPIPE` sin capturar en la salida
+  estándar, así que el proceso termina.
+- Al cerrar, el destino espera como mucho 3 s a que el lector acepte el último lote, así
+  que un lector que dejó de leer no puede colgar `forward`.
+- `forward` imprime también su resumen de salida por la salida estándar, así que una
+  tubería hacia `telegraf` termina cada ejecución con líneas que el consumidor no puede
+  interpretar.
+
+## SQL para PostgreSQL y TimescaleDB
+
+```sh
+mikroscope forward --sql out.sql --for 10m && psql -f out.sql
+mikroscope forward --sql - | psql        # mira el aviso de abajo
+```
+
+`--sql` escribe texto PostgreSQL — una cabecera DDL y luego un `INSERT` por fila — a un
+fichero, o a la salida estándar con `-`. No usa driver a propósito: hablar el protocolo de
+red de PostgreSQL necesita un driver de terceros, así que el texto SQL es la interfaz y
+`psql` es dueño de la conexión. El coste es que el destino no puede saber si una fila se
+guardó; cuenta los eventos que escribió.
+
+La cabecera se puede aplicar por sí sola y es idempotente:
+
+- `SET standard_conforming_strings = on;` — para que una barra invertida en un mensaje del
+  kernel nunca se convierta en un escape y se trague las sentencias siguientes;
+- `CREATE TABLE IF NOT EXISTS` para cada tabla, cada una con una clave primaria que empieza
+  por `time, host`;
+- con `--sql-hypertable`, una llamada `create_hypertable` de TimescaleDB sobre `time` para
+  cada tabla, con `if_not_exists => TRUE`.
+
+Cada `INSERT` termina en `ON CONFLICT DO NOTHING`, así que aplicar el mismo fichero dos
+veces no hace nada en vez de abortar por clave duplicada. Una fila es un instante inmutable
+de un delta de contador, nunca un total acumulado que un fichero posterior corrija.
+
+<ScrollTable label="Tablas que declara el destino SQL">
+
+| Tabla                                                                                                      | Clave tras `time, host`    | Guarda                                                                                         |
+| ---------------------------------------------------------------------------------------------------------- | -------------------------- | ---------------------------------------------------------------------------------------------- |
+| `mikroscope_cpu`                                                                                           | `cpu`                      | `user_ticks` … `steal_ticks`, `busy_ratio`, `dt_ns`                                            |
+| `mikroscope_softnet`                                                                                       | `cpu`                      | `processed`, `dropped`, `time_squeeze`                                                         |
+| `mikroscope_irq`                                                                                           | `irq`                      | `name`, `count` sumado sobre las CPU                                                           |
+| `mikroscope_mem`                                                                                           | —                          | niveles: `free_kb`, `available_kb`, `cached_kb`, `slab_kb`, `sunreclaim_kb`                    |
+| `mikroscope_load`                                                                                          | —                          | niveles: medias de carga, `running`, `threads`, `procs_blocked`                                |
+| `mikroscope_stat`                                                                                          | —                          | deltas: `ctxt`, `intr`, `forks`, `irq_total`, `irq_err`, `pgfault`, `pgmajfault`               |
+| `mikroscope_self`                                                                                          | —                          | delta `cpu_us`; niveles `rss`, `cgroup_mem`; eventos de cgroup, NULL sin cgroup2; `seq`        |
+| `mikroscope_buddy`                                                                                         | `node, zone, block_order`  | `free_blocks`, una fila por zona y orden                                                       |
+| `mikroscope_mtd`                                                                                           | `device`                   | `partition`, contadores ECC tal como se leen, umbrales NULL donde no se publican               |
+| `mikroscope_psi`                                                                                           | —                          | microsegundos de bloqueo; ninguna fila donde el kernel no tiene PSI                            |
+| `mikroscope_thermal`                                                                                       | `zone`                     | `celsius`, `critical_celsius`                                                                  |
+| `mikroscope_slab`                                                                                          | `cache`                    | `active_objs`, `limit_objs` (NULL para toda caché salvo `nf_conntrack`)                        |
+| `mikroscope_disk`                                                                                          | `device`                   | deltas de lectura y escritura, `io_s`; `inflight` es un nivel                                  |
+| `mikroscope_flash`                                                                                         | `device`                   | deltas de desgaste; `bad_blocks` y `free_chunks` son niveles                                   |
+| `mikroscope_event`                                                                                         | `kernel_seq`               | un registro del log del kernel: `level`, `facility`, `time_usec`, `message`, y `port`, `kind`  |
+| `mikroscope_api_system`                                                                                    | —                          | `cpu_load`, memoria, `free_hdd`, `uptime_s`, `version`                                         |
+| `mikroscope_api_core`                                                                                      | `cpu`                      | el porcentaje `load`, `irq`, `disk` de RouterOS                                                |
+| `mikroscope_api_health`                                                                                    | `name`                     | `value`                                                                                        |
+| `mikroscope_api_iface`                                                                                     | `interface`                | `label`, tasas, y cinco columnas de pérdidas que son NULL donde el router no devolvió la clave |
+| `mikroscope_api_conntrack`                                                                                 | —                          | `entries`, el último valor repetido a la cadencia de la API                                    |
+| `mikroscope_api_ifinfo`                                                                                    | `interface`                | qué es cada interfaz: `default_name`, `type`, `role`, `bridge`, `label`, `mtu`                 |
+| `mikroscope_api_ifcounter`                                                                                 | `interface, counter`       | `value`, en formato largo, con el nombre de contador del propio RouterOS                       |
+| `mikroscope_api_error`                                                                                     | `message`                  | una por cada orden de la API que falló                                                         |
+| `mikroscope_gap`                                                                                           | `seq_from, seq_to`         | el rango perdido, con el reloj del colector                                                    |
+| `mikroscope_trigger`                                                                                       | `id`                       | `cause`, `field`, `value`, `threshold`, `seq`                                                  |
+| `mikroscope_derived`                                                                                       | —                          | `seq`, `mem_pressure`, `burst`, `suspect`, valores por paquete NULL donde no se calcularon     |
+| `mikroscope_derived_iface`                                                                                 | `interface`                | los cuatro deltas de bytes y las dos proporciones del fast path                                |
+| `mikroscope_detection`                                                                                     | `rule, key`                | `seq`, `value`, `threshold`, `message`                                                         |
+| `mikroscope_device`, `mikroscope_device_thermal`, `mikroscope_device_cpufreq`, `mikroscope_device_cadence` | —, `zone`, `cpu`, `source` | [el flujo de datos del equipo](/mikroscope/es/sinks/device-info/)                              |
+
+</ScrollTable>
+
+Las columnas nunca necesitan comillas: las columnas de ticks son `user_ticks` y compañía
+porque `user` es una palabra reservada, y `block_order` porque `order` lo es. `dt_ns` va
+solo en `mikroscope_cpu`, así que una tasa sobre cualquier otra tabla de deltas se une a
+`mikroscope_cpu` por `(time, host)` para tener el intervalo real en vez de suponer el
+periodo nominal.
+
+`mikroscope_api_ifinfo` guarda una fila por interfaz, escrita al arrancar el colector y en
+cada relectura de `--labels-every` (5 minutos por defecto), así que una consulta la une por
+`interface` para darle a cualquier serie de interfaz un tipo, un rol y el comentario del
+puerto. `default_name` es el nombre de fábrica de un puerto físico y está vacío para un
+bridge, una VLAN o un túnel; `mtu` es el `actual-mtu` de RouterOS, NULL donde el router no
+lo publica. En `mikroscope_event`, `port` es el puerto que nombra el registro — su nombre
+actual en RouterOS cuando el inventario de la capa de la API lo da, y el nombre por defecto
+de la placa si no — y `kind` es lo que le pasó: `link-up`, `link-down`, los estados
+`stp-*`, `own-address` (el bridge recibió una trama con su propia MAC como origen, la firma
+de un bucle de capa 2) u `other`. Ambas son NULL para un registro que no nombra ningún
+puerto.
+
+Una fuente que el despliegue no puede leer no emite ninguna fila. Un valor que no se midió
+es NULL, nunca 0: RouterOS 7.24.2 no devuelve ninguna clave de errores de interfaz, y un 0
+ahí afirmaría una medida que nunca se hizo. El texto se fuerza donde PostgreSQL lo
+rechazaría — un byte NUL se elimina, el UTF-8 inválido pasa a U+FFFD — y un float NaN o
+infinito pasa a NULL. `TIMESTAMPTZ` resuelve a 1 µs, así que dos muestras más cercanas que
+eso chocarían en la clave primaria; a 10 Hz están a 100 ms.
+
+Comparado con InfluxDB, el destino SQL lleva menos fuentes: no hay tablas de frecuencia de
+CPU, PMU, softirq, niveles de `/proc/vmstat`, interrupciones por CPU ni cuentas del log del
+kernel; no hay tabla de contadores de `/proc/vmstat` más allá de `pgfault` y `pgmajfault` (que
+van en `mikroscope_stat`, así que faltan los deltas de `pgscan_*`, `pgsteal_*`, `pgalloc`,
+`pgfree`, `allocstall`, `compact_stall`, `oom_kill`, `pswpin` y `pswpout`); no hay `mikroscope_sample`, y `mikroscope_mem` es más
+estrecha. Lleva dos que InfluxDB no tiene: el texto del
+log del kernel en `mikroscope_event`, y los errores de la capa de la API.
+
+<Aside type="caution" title="Una tubería hacia psql puede bloquear el colector">
+	El destino SQL es síncrono, sin cola. Con `--sql -` alimentando `psql`, un `psql` que se retrasa —
+	cada `INSERT` es su propia transacción y su propio commit — llena la tubería, y la siguiente
+	escritura bloquea el bucle de extracción del colector en vez de descartar. No medido. Escribe un
+	fichero y aplícalo después, o envuelve el fichero en `BEGIN`/`COMMIT` a mano.
+</Aside>
+
+Tamaño, según el propio fixture de pruebas del destino el 2026-09-12 — dos núcleos, una
+cola softnet, una interrupción, sin fuentes privilegiadas — no según el equipo: un evento
+del kernel se renderiza en 1 375 B de SQL y un evento de la API en 1 138 B, así que 10 Hz
+más la capa de la API a 1 Hz son unos 14 KiB/s de fichero tras una cabecera de 5,6 KiB.
+Los mismos dos eventos en protocolo de líneas son 716 B y 608 B, unas 1,9× más pequeños,
+aunque parte de eso es contenido que las filas SQL llevan y el protocolo de líneas no. Con
+las fuentes privilegiadas presentes el evento del kernel crece hasta 2 749 B. Esa cabecera es la
+del fixture: la de las treinta y dos tablas que declara el destino, calculada a partir de las
+cadenas del esquema y no medida, son 7 757 B, unos 7,6 KiB.
+
+## Loki
+
+```sh
+export MIKROSCOPE_LOKI_URL=http://host:3100/loki/api/v1/push
+mikroscope forward --loki "$MIKROSCOPE_LOKI_URL" --loki-tenant team-a
+```
+
+Loki recibe los **eventos** de la línea temporal, no sus muestras. Una muestra es una
+medida y pertenece a un almacén de métricas; 10 Hz de números en un almacén de logs son
+una copia más lenta y más grande. Lo que llega es lo que pasó una vez, en un momento
+conocido. Un token bearer sale de `MIKROSCOPE_LOKI_TOKEN`, y `--loki-tenant`
+(`MIKROSCOPE_LOKI_TENANT`) fija `X-Scope-OrgID` para un Loki multi-tenant.
+
+Los streams llevan tres etiquetas y ninguna más — `host`, `source` y `level` — porque Loki
+indexa las etiquetas y la cardinalidad es un coste:
+
+<ScrollTable label="Streams de Loki por fuente">
+
+| `source`    | `level`                                   | Una línea por                                                                         |
+| ----------- | ----------------------------------------- | ------------------------------------------------------------------------------------- |
+| `kmsg`      | el del propio registro: `emerg` … `debug` | registro del log del kernel, marcado en su tick                                       |
+| `gap`       | `warn`                                    | rango de secuencia perdido, marcado cuando el colector lo notó                        |
+| `api`       | `err`                                     | orden de la capa de la API que falló                                                  |
+| `detection` | `warn`                                    | [detección](/mikroscope/es/sinks/detections/), en la muestra que la provocó           |
+| `trigger`   | `info`                                    | disparo de captura, en el momento del disparo; la captura se queda en el agente       |
+| `device`    | `info`                                    | registro de datos del equipo: board, kernel, cores, privileged, cgroup, sources, hash |
+
+</ScrollTable>
+
+La línea de un registro del kernel es el mensaje seguido de pares logfmt — `level`,
+`facility`, `prio`, `kseq`, `us` (los microsegundos del propio kernel desde el arranque),
+`seq` (la muestra) y, cuando el registro nombra un puerto, `iface` (el nombre del kernel),
+`ros_iface` (el nombre en RouterOS), `port_event` (lo que pasó: `link-up`, `link-down`, un
+estado `stp-*`, `own-address` u `other`), `label` (el comentario del puerto, entre
+comillas) y `role` (sus listas de interfaces). `ros_iface` es el nombre actual del puerto
+en RouterOS cuando el inventario de la capa de la API lo da, y el nombre por defecto de la
+placa si no; `label` y `role` salen también de ese inventario, así que una ejecución sin
+capa de la API no lleva ninguno de los dos. El puerto
+va en la línea, no en una etiqueta, porque un stream por puerto multiplica el número de
+streams por un campo que LogQL extrae bajo demanda:
+
+```text
+{source="kmsg"} | logfmt | ros_iface="ether2"
+{source="kmsg"} | logfmt | port_event="own-address"
+```
+
+Cada registro se marca con el reloj de pared de su tick, nunca con su propia marca desde
+el arranque, que lo fecharía en 1970 más el uptime y Loki lo rechazaría. Los registros de
+un mismo tick están separados 1 ns, en orden creciente, porque un stream de Loki se ordena
+solo por marca de tiempo y en el equipo de referencia una pareja «blocking state» y luego
+«learning state» llega dentro de un mismo tick de 100 ms con el mismo nivel: su orden es
+la señal. El desplazamiento es como mucho 63 ns, acotado por el límite del agente de 64
+registros por tick.
+
+Un push por segundo, 64 KiB × `--queue-seconds` de presupuesto. En el RB5009 (RouterOS
+7.24.2, kernel 5.6.3, 2026-09-12) el log del kernel iba a <Measured id="loop.eventsBefore" /> mientras el
+reflejo de capa 2 estaba activo y a <Measured id="loop.eventsAfter" /> después de arreglarlo, y una línea renderizada
+mide unos 150 B con su envoltorio JSON, así que un segundo de presupuesto guarda horas de
+ese tráfico. No medido durante una tormenta del log del kernel.
+
+## OTLP
+
+```sh
+mikroscope forward --otlp http://collector:4318/v1/metrics
+```
+
+`--otlp` envía métricas de OpenTelemetry a un receptor OTLP/HTTP en la codificación JSON,
+una petición por segundo. Un token bearer sale de `MIKROSCOPE_OTLP_TOKEN`. JSON en vez de
+protobuf es una decisión de dependencias: protobuf añadiría un generador de código y un
+runtime, y todo receptor OTLP acepta `application/json` en el mismo endpoint. El recurso
+lleva `host.name` (la etiqueta de host) y `service.name=mikroscope`; el scope lleva la
+versión del colector.
+
+El mapeo es la razón de que este destino sea barato de consumir. mikroscope envía deltas
+en bruto, y OTLP tiene un sitio exacto para ellos: cada contador es un **Sum** con
+`AGGREGATION_TEMPORALITY_DELTA` e `isMonotonic=true`. En los contadores de la muestra del
+kernel, `startTimeUnixNano` = el reloj de pared de la muestra menos su intervalo real, y
+`timeUnixNano` = su reloj de pared — así al receptor se le dice el intervalo que cubre cada
+delta en vez de que adivine el nominal. Las demás sumas no llevan intervalo:
+`mikroscope.api.errors`, `mikroscope.collector.gaps` y `mikroscope.collector.gap.samples` no
+tienen hora de inicio, y `mikroscope.trigger.fired` y `mikroscope.detection` tienen una hora
+de inicio igual a su hora. Cada nivel es un **Gauge**. De la capa del kernel no hay nada
+dividido de antemano salvo `mikroscope.cpu.busy_ratio`; los gauges `mikroscope.derived.*` son
+la [etapa de derivación](/mikroscope/es/sinks/derive/) del colector.
+
+<ScrollTable label="Métricas OTLP">
+
+| Tipo  | Métrica                                                                                                                                                     | Atributos                                                                          |
+| ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Sum   | `mikroscope.cpu.ticks`                                                                                                                                      | `cpu`, `mode`                                                                      |
+| Sum   | `mikroscope.context_switches`, `mikroscope.interrupts`, `mikroscope.forks`, `mikroscope.self.cpu.time`                                                      | —                                                                                  |
+| Sum   | `mikroscope.self.throttled_periods`, `mikroscope.self.throttled_time`, `mikroscope.self.oom_kills` (solo con cgroup2)                                       | —                                                                                  |
+| Sum   | `mikroscope.irq.count`; `mikroscope.irq.total`, `mikroscope.irq.errors`                                                                                     | `irq`, `name`; —                                                                   |
+| Sum   | `mikroscope.softnet`; `mikroscope.sched`                                                                                                                    | `cpu`, `kind`                                                                      |
+| Sum   | `mikroscope.softirq`; `mikroscope.vm.events`                                                                                                                | `kind`                                                                             |
+| Sum   | `mikroscope.psi.stalled`                                                                                                                                    | `resource`, `scope`                                                                |
+| Sum   | `mikroscope.flash`, `mikroscope.disk`; `mikroscope.disk.io_time` (ms)                                                                                       | `device`, `kind`; `device`                                                         |
+| Sum   | `mikroscope.api.errors`; `mikroscope.collector.gaps`, `mikroscope.collector.gap.samples`                                                                    | `tier`; —                                                                          |
+| Sum   | `mikroscope.trigger.fired`; `mikroscope.detection`                                                                                                          | `cause`; `rule`                                                                    |
+| Gauge | `mikroscope.cpu.busy_ratio`, `mikroscope.cpu.frequency`                                                                                                     | `cpu`                                                                              |
+| Gauge | `mikroscope.sample.dt`, `mikroscope.sample.seq`, `mikroscope.threads`, `mikroscope.procs_blocked`                                                           | —                                                                                  |
+| Gauge | `mikroscope.memory` (KiB), `mikroscope.self.memory`, `mikroscope.vm.pages`                                                                                  | `kind`                                                                             |
+| Gauge | `mikroscope.load`                                                                                                                                           | `window`                                                                           |
+| Gauge | `mikroscope.thermal.temperature`                                                                                                                            | `zone`                                                                             |
+| Gauge | `mikroscope.slab.objects`, `mikroscope.slab.limit`                                                                                                          | `cache`                                                                            |
+| Gauge | `mikroscope.memory.buddy_free_blocks`                                                                                                                       | `node`, `zone`, `order`                                                            |
+| Gauge | `mikroscope.mtd.ecc`; `mikroscope.mtd.bitflip_threshold`, `mikroscope.mtd.ecc_strength`                                                                     | `device`, `partition`, `kind`; `device`, `partition`                               |
+| Gauge | `mikroscope.flash.blocks`; `mikroscope.disk.io_in_progress`                                                                                                 | `device`, `kind`; `device`                                                         |
+| Gauge | `mikroscope.api.cpu_load`, `mikroscope.api.uptime`; `mikroscope.api.memory`                                                                                 | —; `kind`                                                                          |
+| Gauge | `mikroscope.api.core`; `mikroscope.api.health`                                                                                                              | `cpu`, `kind`; `name`                                                              |
+| Gauge | `mikroscope.api.interface`                                                                                                                                  | `interface`, `kind`, y `label`, `type`, `role` donde el inventario los tiene       |
+| Gauge | `mikroscope.api.interface.counter`; `mikroscope.api.conntrack.entries`                                                                                      | `interface`, `counter`, y `label`, `type`, `role` donde el inventario los tiene; — |
+| Gauge | `mikroscope.derived.memory_pressure`, `mikroscope.derived.cycles_per_packet`, `….instructions_per_packet`, `….cache_misses_per_packet`, `….packets_per_irq` | —                                                                                  |
+| Gauge | `mikroscope.derived.fastpath_share`                                                                                                                         | `interface`, `direction`                                                           |
+| Gauge | `mikroscope.device.cores`; `mikroscope.device.thermal.critical`, `mikroscope.device.thermal.polling` (s)                                                    | `board`, `kernel`, `hash`; `zone`                                                  |
+| Gauge | `mikroscope.device.cpu.frequency_max`, `mikroscope.device.cpu.frequency_min`; `mikroscope.device.source_cadence`                                            | `cpu`; `source`, `reason`                                                          |
+
+</ScrollTable>
+
+Los miembros de reclaim y swap de `mikroscope.vm.events` se omiten cuando valen cero: en
+un Sum de deltas, un punto ausente y un punto a cero significan lo mismo. Los contadores
+por puerto son gauges de un total acumulado, no Sums, porque el destino no tiene tiempo de
+inicio para un contador que RouterOS lleva desde el arranque. Un gauge cuyo valor es NaN o
+infinito se descarta. Los registros del log del kernel no se emiten: su sitio son los logs
+OTLP en `/v1/logs`, que este destino no implementa.
+
+Un **éxito parcial** de OTLP — un 2xx cuyo cuerpo rechaza algunos puntos — cuenta como
+escrito y se registra, no se reintenta. El rechazo es determinista (un receptor OTLP de
+Prometheus que rechaza un punto más antiguo que su ventana es el caso habitual), así que el
+mismo lote se rechazaría igual.
+
+Tamaño, según un fixture de pruebas de dos núcleos el 2026-09-12 y no según el equipo: una
+muestra del kernel se renderiza en 8 132 B de JSON OTLP frente a 716 B de protocolo de
+líneas, unas 11×, el precio de repetir las claves de los atributos y de poner entre
+comillas cada entero de 64 bits. Un segundo de muestras a 10 Hz más una muestra de la API
+son 68 868 B, así que el presupuesto de 64 KiB por segundo guarda aproximadamente un
+segundo de atraso por segundo y los 60 s por defecto unos 57 lotes. El RB5009 de cuatro
+núcleos, con su top-K real de interrupciones, renderiza más; no medido.
+
+## Graphite
+
+```sh
+mikroscope forward --graphite carbon:2003 --graphite-prefix mikroscope
+```
+
+`--graphite` (`MIKROSCOPE_GRAPHITE_ADDR`) escribe el protocolo de texto plano de carbon —
+`path value timestamp`, una línea por valor — sobre una única conexión TCP persistente.
+Graphite no tiene etiquetas, así que cada dimensión es un nodo de ruta bajo
+`<prefix>.<host>.`; `--graphite-prefix` vale `mikroscope` por defecto. En un nodo solo
+sobreviven letras ASCII, dígitos, `_`, `-` y `:`, cualquier otro byte pasa a `_`, y un
+valor vacío pasa a `none`, así que la profundidad de una ruta nunca cambia.
+
+<ScrollTable label="Rutas de Graphite bajo prefix.host">
+
+| Rutas                                                                                                                                                | De                                         |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| `sample.{seq,dt_ns}`, `stat.{ctxt,intr,forks,procs_blocked,irq_total,irq_err}`                                                                       | la muestra                                 |
+| `cpu.<n>.{user,nice,system,idle,iowait,irq,softirq,steal,busy_ratio,freq_khz}`                                                                       | `/proc/stat`, cpufreq                      |
+| `softnet.<n>.{processed,dropped,time_squeeze}`, `irq.<id>.<name>.count`, `softirq.<kind>.count`                                                      | softnet, interrupts, softirqs              |
+| `mem.{total,free,available,cached,slab,sunreclaim,dirty,writeback}_kb`, `load.{load1,load5,load15,running,threads}`                                  | meminfo, loadavg                           |
+| `vm.{pgfault,pgmajfault,pgscan_kswapd,pgscan_direct,pgsteal_kswapd,pgsteal_direct,allocstall,oom_kill}`, `vmg.{nr_free_pages,nr_dirty,nr_writeback}` | vmstat                                     |
+| `self.{cpu_us,rss_bytes,cgroup_mem,throttled,throttled_us,oom_kill}`                                                                                 | el coste propio del agente                 |
+| `psi.*_us`, `sched.<n>.{run_ns,wait_ns}`                                                                                                             | solo donde el kernel los tiene             |
+| `thermal.<index>.celsius`, `slab.<cache>.{active_objs,limit_objs}`, `buddy.<node>.<zone>.order_<n>`                                                  | thermal, slab, buddyinfo                   |
+| `mtd.<dev>.<counter>`, `flash.<dev>.<counter>`, `disk.<dev>.{reads,read_sectors,writes,write_sectors,io_s,inflight}`                                 | flash y dispositivos de bloques            |
+| `api.system.<field>`, `api.core.<n>.{load,irq,disk}`, `api.health.<name>`, `api.conntrack.entries`                                                   | la capa de la API                          |
+| `api.iface.<if>.{rx_bps,tx_bps,rx_pps,tx_pps,<loss>,fp_rx_share,fp_tx_share}`, `api.ifcounter.<if>.<counter>`                                        | la capa de la API y la etapa de derivación |
+| `derived.{mem_pressure,cycles_per_packet,instructions_per_packet,cache_misses_per_packet,packets_per_irq}`                                           | la etapa de derivación                     |
+| `trigger.<cause>`, `detection.<rule>` — el valor 1 en cada evento                                                                                    | disparos y detecciones                     |
+| `device.{cores,conntrack_max,cgroup_mem_max}`, `device.thermal.<zone>.*`, `device.cpufreq.<n>.*`, `device.cadence.<source>.hz`                       | el flujo de datos del equipo               |
+| `collector.gap.{samples,from,to}`                                                                                                                    | huecos, con el reloj del colector          |
+
+</ScrollTable>
+
+Lo que el protocolo no puede prometer, dicho porque cada punto cambia lo que significa un
+panel de Graphite:
+
+- **Marcas de tiempo en segundos enteros.** La retención más fina de Whisper es un
+  segundo, así que a 10 Hz nueve de cada diez muestras caen en una casilla que ya tiene
+  valor y carbon se queda con el último escrito. Es una lectura válida para un nivel
+  (`mem`, `load`, `thermal`, `freq_khz`, `slab`, `vmg`) y se queda corta para un delta:
+  una suma sobre `cpu.0.user` ve más o menos una décima parte de los ticks que envió el
+  agente. Sumar los deltas de cada segundo en el destino arreglaría las rutas de deltas y
+  no las de niveles; ese intercambio no se ha hecho. Un consumidor que necesite cada tick
+  tiene el destino de InfluxDB o el de fichero.
+- **Sin respuesta.** `written` cuenta lotes entregados al socket, no puntos que carbon
+  guardó. Una escritura en un socket que carbon ya cerró funciona una vez y falla en la
+  siguiente, así que el destino reintenta una vez con una conexión nueva; el lote que
+  entró en el socket cerrado se pierde, uno por cada reinicio de carbon.
+- **Zonas térmicas por índice**, no por nombre, porque la cadena de tipo de una zona no es
+  única; el nombre se conserva en los destinos de fichero e InfluxDB.
+- **Menos detalle**: se descartan las cuentas de interrupciones por CPU, los softirqs se
+  suman sobre las CPU, no se emite `cpu.total` (`sumSeries` sobre `cpu.*.user` lo da), se
+  omiten `pgalloc`, `pgfree` y los contadores de swap, y se descartan los registros del
+  log del kernel porque Graphite solo guarda números. Las cadenas de placa, kernel y
+  governor no tienen forma en Graphite.
+
+El presupuesto de bytes es de 256 KiB por segundo en cola, cuatro veces el de los demás: un
+tick con forma de RB5009 de cuatro núcleos con todas las fuentes presentes se renderiza en
+6 411 B en 131 líneas en el fixture de pruebas del destino (máquina de desarrollo,
+2026-09-12, no el equipo), así que 10 Hz son unos 63 KiB/s. No medido por encima de 10 Hz.
+
+## Elasticsearch y OpenSearch
+
+```sh
+export MIKROSCOPE_ELASTIC_AUTH=elastic:…   # o una clave de API
+mikroscope forward --elastic http://opensearch:9200 --elastic-index 'mikroscope-%Y.%m.%d'
+```
+
+`--elastic` (`MIKROSCOPE_ELASTIC_URL`) escribe a través de la API bulk que comparten los
+dos productos. `/_bulk` se añade a la raíz de un clúster, conservando cualquier query
+string. Un `MIKROSCOPE_ELASTIC_AUTH` con `user:password` se envía como autenticación
+básica, y cualquier otra cosa como `Authorization: ApiKey`; las credenciales incrustadas en
+la URL se ocultan en el nombre del destino que se imprime.
+
+Un documento por evento, con `kind` para distinguirlos:
+
+- `kernel` — un tick del agente: ticks por CPU con `busy` y `busy_ratio`, `stat`, `mem`,
+  `load`, `vm`, `self`, cada fuente opcional solo cuando se leyó (sin clave, nunca un
+  cero), y los valores de la etapa de derivación bajo `derived`;
+- `event` — un registro del log del kernel: `priority`, `level`, `facility`, `seq`,
+  `time_usec`, `message` y, cuando el registro nombra un puerto, `iface`, `ros_iface`,
+  `port_event` (lo que le pasó al puerto), `label` y `role`;
+- `api` — una lectura de la API: `system`, `cores`, `health`, `ifaces`, `iface_counters`,
+  el último número de conexiones, las proporciones del fast path bajo `fastpath`, e
+  `inventory` en las rondas que leen qué es cada interfaz. Cada entrada de `ifaces` lleva
+  `label`, `type`, `role` y `bridge`, y cada entrada de `iface_counters` lleva `comment`,
+  `type`, `role` y `bridge`, donde el inventario los tiene. Los errores por orden de la
+  capa de la API no se escriben;
+- `gap` (`from`, `to`, `lost`), `device`, `detection` y `trigger`.
+
+Cada documento lleva `@timestamp` con el reloj del agente (el del colector para huecos y
+registros del equipo) y `host`. El nombre del índice expande `%Y`, `%m` y `%d` — solo esos
+— contra esa marca de tiempo, así que un lote que queda en cola pasada la medianoche cae en
+el día en que se muestreó, y se pasa a minúsculas porque el clúster rechaza la petición
+entera si el nombre de índice tiene mayúsculas.
+
+La acción es `index` con un `_id` construido a partir del tipo, el host, la marca de tiempo
+del documento en nanosegundos y, donde existe, el número de secuencia que distingue
+documentos del mismo instante, así que un lote que el clúster aplicó pero cuya respuesta se
+perdió se reenvía sin duplicar nada. La marca de tiempo forma parte de la identidad porque
+la secuencia del agente vuelve a empezar desde 1 en cada arranque: sin ella, las muestras de un
+agente reiniciado sobrescribirían las anteriores del día, cada una con un 201.
+
+Una petición bulk responde 200 aunque se hayan rechazado todos sus elementos. El destino
+lee el veredicto de cada elemento, suma uno a `dropped` por cada documento rechazado, y
+registra el primer motivo una vez por minuto — por separado de los fallos de entrega,
+porque un conflicto de mapeo y un clúster inalcanzable piden acciones distintas. Los lotes
+se cierran una vez por segundo o al llegar a 1 MiB, lo que ocurra primero.
+
+Tamaño, según el fixture de dos núcleos del destino el 2026-09-12 y no según el equipo:
+1 077 B de NDJSON para una muestra del kernel sin fuentes opcionales, 1 952 B repartidos en
+dos documentos con las fuentes opcionales y un registro del log del kernel. Una muestra de
+cuatro núcleos del RB5009 no se ha renderizado en este formato.
+
+## Telegraf
+
+```sh
+mikroscope forward --telegraf http://host:8186/telegraf
+mikroscope forward --telegraf tcp://host:8094
+```
+
+`--telegraf` (`MIKROSCOPE_TELEGRAF_URL`) envía los mismos registros de protocolo de líneas
+que el destino de InfluxDB — llama a ese codificador en vez de copiarlo — para que las
+propias salidas de Telegraf los repartan a sistemas para los que este repositorio no tiene
+destino. Telegraf deja pasar la marca de tiempo sin cambiarla.
+
+El esquema del endpoint elige el transporte:
+
+- `http://` o `https://` — envía a una entrada `http_listener_v2` o
+  `influxdb_v2_listener`. Un `host:port` sin más se interpreta como HTTP, y a un endpoint
+  HTTP sin ruta se le da `/telegraf`, el valor por defecto de `http_listener_v2`: un
+  listener responde 404 en `/` y el cuerpo no dice por qué. Un `MIKROSCOPE_TELEGRAF_TOKEN`
+  con `user:password` se envía como autenticación básica, y cualquier otra cosa como
+  `Authorization: Token …`.
+- `tcp://` — registros delimitados por saltos de línea a un `socket_listener`, con una
+  conexión nueva por lote.
+- `udp://` — datagramas de como mucho 1 432 bytes, cortados en los límites de registro para
+  que ningún datagrama lleve media línea. No hay confirmación: `written` cuenta lotes que
+  aceptó el kernel local, un datagrama perdido por el camino es invisible, y un reintento
+  tras un fallo a mitad de lote puede entregar algunos registros dos veces. Usa `http://`
+  o `tcp://` para cualquier cosa que importe.
+
+El presupuesto es el del destino de InfluxDB, 64 KiB por segundo en cola: a unos 1,2 KiB
+por muestra a 10 Hz (RB5009, 2026-09-12), unos 5 minutos de atraso con los 60 s por
+defecto. El codificador compartido escribe las lecturas de `/system/health` en el orden de
+un map de Go, así que los registros dentro de un lote no tienen un orden estable — 12
+renderizados de un map de 8 nombres dieron 7 órdenes (2026-09-12). Cada registro lleva su
+propia marca de tiempo, así que no se pierde ni se desfasa nada.
+
+<NotClaimed>
+	Salvo el destino de fichero, que fue uno de los tres destinos de las ejecuciones de cadencia del
+	2026-09-15, ninguno de estos destinos formó parte de las ejecuciones de cadencia medidas, y
+	ninguno se ha alimentado desde el RB5009 hacia un Loki, receptor OTLP, carbon, Elasticsearch,
+	OpenSearch, Telegraf o TimescaleDB en marcha en una ejecución registrada. Cada uno de estos se ha
+	probado contra un receptor local que comprueba los bytes que acepta su protocolo (máquina de
+	desarrollo, amd64, 2026-09-12).
+</NotClaimed>
+
+<SeeAlso>
+
+## Véase también
+
+- [El colector](/mikroscope/es/sinks/): la cola, la espera entre reintentos y los contadores que
+  comparten estos destinos.
+- [InfluxDB 3](/mikroscope/es/sinks/influxdb/): las medidas que llevan `--stdout lp` y `--telegraf`.
+- [Detecciones](/mikroscope/es/sinks/detections/): lo que dicen las líneas, filas y documentos de
+  detección.
+- [Variables de entorno](/mikroscope/es/reference/environment/): cada `MIKROSCOPE_*` que lee un
+  destino.
+
+</SeeAlso>
