@@ -88,8 +88,13 @@ go build ./... && go test ./...
 For a change under `site/`:
 
 ```sh
-cd site && pnpm install && pnpm run lint
+make site-check     # build the site, then every static gate over the output
+make docs           # regenerate docs/ from the English pages
+make check-docs     # or just fail if docs/ is stale
 ```
+
+`make site-check` is `cd site && pnpm install && pnpm run build && pnpm run
+lint`; the gates read `site/dist`, so the build has to come first.
 
 `docs/` is generated from the English pages of the site by
 `site/scripts/gen-docs.mjs` and never edited by hand: change the page and its
