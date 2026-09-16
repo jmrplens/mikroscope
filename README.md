@@ -131,7 +131,7 @@ Pick one; the documentation walks through each:
 |---|---|---|
 | Build it yourself | `mikroscope install` | Go 1.27 and a checkout — the CLI cross-compiles the agent |
 | The published tar | `mikroscope install --agent-tar mikroscope-agent-arm64.tar` | Only the release assets; the CLI checks the tar's architecture before it uploads it |
-| Let the router pull it | `mikroscope install --remote-image ghcr.io/jmrplens/mikroscope-agent:1.0.0` | The router reaching ghcr.io, and `/container/config registry-url` pointing there — a global RouterOS setting mikroscope reads and never writes |
+| Let the router pull it | `mikroscope install --remote-image jmrplens/mikroscope-agent:1.0.0` | The router reaching Docker Hub, which `/container/config registry-url` points at out of the box. The image is on GHCR too, and that one needs the registry repointed — a global RouterOS setting mikroscope reads and never writes |
 | On the router, no CLI | `mikroscope plan --rsc --remote-image … --out install.rsc`, then paste or `/import` it | Nothing but the router; the script carries the same commands and the same ownership tags |
 
 Every route ends with the same container, tagged the same way, so `status`,

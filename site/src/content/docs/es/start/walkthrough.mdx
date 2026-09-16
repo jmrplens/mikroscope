@@ -52,8 +52,9 @@ necesites, o copia `.env.example` a `.env` y carga el fichero con `set -a; . ./.
    La versión publicada trae la CLI como un archivo por plataforma —linux, macOS, Windows y
    FreeBSD en amd64, arm64 y arm— con `checksums.txt`, las firmas de cosign y los SBOM al lado. El
    agente viaja aparte, como un tar de imagen por arquitectura (`mikroscope-agent-arm64.tar`,
-   `mikroscope-agent-arm.tar`, `mikroscope-agent-amd64.tar`) y como
-   `ghcr.io/jmrplens/mikroscope-agent:1.0.0`; el paso 2 toma uno de los dos.
+   `mikroscope-agent-arm.tar`, `mikroscope-agent-amd64.tar`) y como imagen de registro, publicada
+   tanto como `jmrplens/mikroscope-agent:1.0.0` en Docker Hub como
+   `ghcr.io/jmrplens/mikroscope-agent:1.0.0` en GHCR; el paso 2 toma uno de los dos.
 
    Desde una copia del repositorio, en cambio:
 
@@ -87,21 +88,23 @@ necesites, o copia `.env.example` a `.env` y carga el fichero con `set -a; . ./.
      copia del repositorio. La CLI lee el tar antes de subirlo —tiene que ser una imagen del agente
      de mikroscope y su arquitectura tiene que coincidir con `--arch`—, o el verbo se detiene y
      nombra el fichero que hay que descargar;
-   - **el registro**, `--remote-image ghcr.io/jmrplens/mikroscope-agent:1.0.0`: el router se
-     descarga la imagen él mismo, no se sube nada y `uninstall` no tiene ningún fichero del que
-     responder. RouterOS toma el host del registro del ajuste global
-     `/container/config registry-url`, que mikroscope nunca escribe porque lo comparten todos los
-     contenedores del equipo; `doctor` lo comprueba e imprime
-     `/container/config/set registry-url=https://ghcr.io` cuando no coincide, o remite a
-     `--agent-tar`. La descarga necesita que el router llegue al registro y que haya RAM libre para
-     las capas.
+   - **el registro**, `--remote-image jmrplens/mikroscope-agent:1.0.0`: el router se descarga la
+     imagen él mismo, no se sube nada y `uninstall` no tiene ningún fichero del que responder.
+     RouterOS toma el host del registro del ajuste global `/container/config registry-url`, que
+     mikroscope nunca escribe porque lo comparten todos los contenedores del equipo, y que viene
+     puesto en `https://registry-1.docker.io`: por eso la referencia de Docker Hub de arriba
+     funciona tal cual en un router sin tocar. La referencia de GHCR,
+     `ghcr.io/jmrplens/mikroscope-agent:1.0.0`, nombra un host propio: `doctor` compara el ajuste
+     con él e imprime `/container/config/set registry-url=https://ghcr.io` cuando no coincide, o
+     remite a `--agent-tar`. La descarga necesita que el router llegue al registro y que haya RAM
+     libre para las capas.
 
    `--arch` vale por defecto `arm64`, la del RB5009; no se detecta a partir del router, pero
    `doctor` la compara con la arquitectura que informa el router y nombra el valor de `--arch` con
    el que volver a ejecutar si no coinciden.
 
    En un router al que solo llegas por WinBox o WebFig hay una cuarta vía, sin CLI de tu lado:
-   `mikroscope plan --rsc --remote-image ghcr.io/jmrplens/mikroscope-agent:1.0.0 --out install.rsc`
+   `mikroscope plan --rsc --remote-image jmrplens/mikroscope-agent:1.0.0 --out install.rsc`
    escribe las mismas órdenes, en el mismo orden y con las mismas etiquetas, como un script de
    RouterOS para pegar en el terminal o hacerle `/import`.
    [Instalar el agente](/mikroscope/es/install/) tiene esa vía y sus dos advertencias al completo.

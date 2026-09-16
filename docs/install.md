@@ -386,7 +386,10 @@ a container that will not start.
 The `registry-url` check runs only with `--remote-image`, and only when the
 reference carries a registry host. `/container/config` is global to the device
 and shared with every other container on it, so mikroscope reads that setting
-and never writes it;
+and never writes it. RouterOS ships it as `https://registry-1.docker.io`, so the
+Docker Hub reference, `--remote-image jmrplens/mikroscope-agent:1.0.0`, needs
+nothing set there on an untouched router, and the GHCR reference is the one that
+needs the setting changed first.
 [Four ways to install](https://jmrp.io/docs/mikroscope/install/routes/#a-registry-pull) has the
 command to set it by hand.
 
@@ -456,7 +459,7 @@ route works around it.
 | ------------------------------------------------ | ---------------------------------------------------------------- | ----------------------------------------------------------------- |
 | [A checkout, with Go](https://jmrp.io/docs/mikroscope/install/routes/#a-checkout-with-go)       | Go 1.27 and the repository; ssh to the router                    | you are working on mikroscope and want the agent from your tree   |
 | [The published tar](https://jmrp.io/docs/mikroscope/install/routes/#the-published-tar)          | the release assets; ssh to the router                            | you are installing a release and would rather upload than pull    |
-| [A registry pull](https://jmrp.io/docs/mikroscope/install/routes/#a-registry-pull)              | the router reaches the registry; the global `registry-url` match | you are installing a release and nothing should land on the flash |
+| [A registry pull](https://jmrp.io/docs/mikroscope/install/routes/#a-registry-pull)              | the router reaches the registry; Docker Hub needs no `registry-url` change | you are installing a release and nothing should land on the flash |
 | [A RouterOS script](https://jmrp.io/docs/mikroscope/install/routes/#a-routeros-script)          | a terminal on the router; `--remote-image`                       | you reach the router only through WinBox or WebFig                |
 
 For a release, the tar and the registry pull are the two to choose between; the
@@ -548,15 +551,27 @@ way.
 
 ```sh
 mikroscope install --router user@192.168.88.1 \
-  --remote-image ghcr.io/jmrplens/mikroscope-agent:1.0.0
+  --remote-image jmrplens/mikroscope-agent:1.0.0
 ```
 
 Nothing is uploaded, no tar lands on the device, and `uninstall` has no file to
 account for: the container step becomes
 `/container/add remote-image="jmrplens/mikroscope-agent:1.0.0" …` and the plan
 prints `the router pulls … (nothing is uploaded)` where the upload line would
-be. The image is published for `linux/amd64`, `linux/arm64` and `linux/arm/v7`,
-and RouterOS picks the one its architecture needs.
+be. The release publishes the image twice, as
+`jmrplens/mikroscope-agent:1.0.0` on Docker Hub and as
+`ghcr.io/jmrplens/mikroscope-agent:1.0.0` on GHCR. Both carry `linux/amd64`,
+`linux/arm64` and `linux/arm/v7`, and RouterOS picks the one its architecture
+needs.
+
+The reference above is the Docker Hub one, and it carries no registry host: the
+router pulls it from whatever `/container/config registry-url` already names,
+and RouterOS ships that setting as `https://registry-1.docker.io`. On a router
+where nobody has changed it, the command above needs nothing set first — on the
+RB5009 this project is measured on, that setting reads
+`https://registry-1.docker.io`. The GHCR reference is the alternative, and it
+needs `/container/config/set registry-url=https://ghcr.io` on the device first,
+which is a change to every container on it.
 
 It needs two things the other routes do not: the router has to reach the
 registry, and it has to have room in RAM for the layers while it extracts them.
@@ -567,9 +582,9 @@ registry, and it has to have room in RAM for the layers while it extracts them.
 > device and shared with every other container on it, and only the rest of the reference goes into
 > `remote-image=`. mikroscope never writes that setting — pointing your router's registry somewhere
 > else to install a probe would be a change to somebody else's containers. `doctor` reads it
-> instead, and when it does not match it names the one command to run:
-> `/container/config/set registry-url=https://ghcr.io`. Install with `--agent-tar` if you would
-> rather not change it.
+> instead, and when the reference names a host the setting does not match it names the one command
+> to run — `/container/config/set registry-url=https://ghcr.io` for the GHCR reference. Install
+> with `--agent-tar` if you would rather not change it.
 
 A reference with no host — `jmrplens/mikroscope-agent:1.0.0` — leaves the
 registry to whatever the router is already configured for, and `doctor` then
@@ -584,7 +599,7 @@ from another machine at all:
 
 ```sh
 mikroscope plan --rsc \
-  --remote-image ghcr.io/jmrplens/mikroscope-agent:1.0.0 \
+  --remote-image jmrplens/mikroscope-agent:1.0.0 \
   --out install.rsc
 ```
 
