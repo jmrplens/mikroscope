@@ -76,12 +76,16 @@ jobs:
 
   # The same workflow ci.yml calls and a maintainer runs by hand, called rather
   # than copied, so there is one harness and a fix to it cannot land in one
-  # copy and not the other. Both of its jobs gate: the suite against fakes, and
-  # the same suite with no network at all.
+  # copy and not the other. All three of its jobs gate here: the suite against
+  # fakes, the same suite with no network at all, and — unlike on the
+  # pull-request path, where nine containers per push is not worth it — the
+  # sinks against the real stores. A tag is the moment to pay for that one.
   e2e:
     name: E2E gate
     needs: [preflight]
     uses: ./.github/workflows/e2e.yml
+    with:
+      stores: true
     permissions:
       contents: read
 
