@@ -123,6 +123,13 @@ func TestDialInvalidPort(t *testing.T) {
 }
 
 func TestDialTimeout(t *testing.T) {
+	// Same platform difference as TestDialTLSTimeout below: on Windows the
+	// stack refuses a broadcast address outright (WSAEACCES) instead of
+	// letting the connect hang until the deadline, so the error is real but
+	// it is not a timeout.
+	if runtime.GOOS == "windows" {
+		t.Skip("a broadcast address is refused rather than timed out on Windows")
+	}
 	con, err := DialTimeout("255.255.255.0:8729", "x", "x", time.Millisecond)
 	if con != nil {
 		assert.NoError(t, con.Close())
