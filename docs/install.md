@@ -492,7 +492,7 @@ Two assets, from the release page: the CLI archive for the machine you run it
 from, and `mikroscope-agent-<arch>.tar` for the router's architecture. No Go
 toolchain, no checkout.
 
-1. Download `mikroscope_1.0.0_<os>_<arch>.tar.gz` (`.zip` on Windows) and the
+1. Download `mikroscope_1.0.1_<os>_<arch>.tar.gz` (`.zip` on Windows) and the
    agent image tar for the router — `mikroscope-agent-arm64.tar`,
    `mikroscope-agent-arm.tar` or `mikroscope-agent-amd64.tar` — together with
    `checksums.txt` and `checksums.txt.sigstore.json`.
@@ -502,7 +502,7 @@ toolchain, no checkout.
 3. Unpack the CLI and install:
 
    ```sh
-   tar xzf mikroscope_1.0.0_linux_x86_64.tar.gz
+   tar xzf mikroscope_1.0.1_linux_x86_64.tar.gz
    ./mikroscope install --router user@192.168.88.1 \
      --arch arm64 --agent-tar mikroscope-agent-arm64.tar
    ```
@@ -523,7 +523,7 @@ up with `scp`, RouterOS extracts it at add time, and `install` deletes it.
 > **Two assets have similar names**
 >
 > `mikroscope-agent-arm64.tar` is the side-loadable container image, the one `--agent-tar` wants.
-> `mikroscope-agent_1.0.0_linux_arm64.tar.gz` is an archive of the bare agent binary, for reading or
+> `mikroscope-agent_1.0.1_linux_arm64.tar.gz` is an archive of the bare agent binary, for reading or
 > running it outside a container; `--agent-tar` rejects it.
 
 #### Verifying the download
@@ -551,16 +551,16 @@ way.
 
 ```sh
 mikroscope install --router user@192.168.88.1 \
-  --remote-image jmrplens/mikroscope-agent:1.0.0
+  --remote-image jmrplens/mikroscope-agent:1.0.1
 ```
 
 Nothing is uploaded, no tar lands on the device, and `uninstall` has no file to
 account for: the container step becomes
-`/container/add remote-image="jmrplens/mikroscope-agent:1.0.0" …` and the plan
+`/container/add remote-image="jmrplens/mikroscope-agent:1.0.1" …` and the plan
 prints `the router pulls … (nothing is uploaded)` where the upload line would
 be. The release publishes the image twice, as
-`jmrplens/mikroscope-agent:1.0.0` on Docker Hub and as
-`ghcr.io/jmrplens/mikroscope-agent:1.0.0` on GHCR. Both carry `linux/amd64`,
+`jmrplens/mikroscope-agent:1.0.1` on Docker Hub and as
+`ghcr.io/jmrplens/mikroscope-agent:1.0.1` on GHCR. Both carry `linux/amd64`,
 `linux/arm64` and `linux/arm/v7`, and RouterOS picks the one its architecture
 needs.
 
@@ -586,7 +586,7 @@ registry, and it has to have room in RAM for the layers while it extracts them.
 > to run — `/container/config/set registry-url=https://ghcr.io` for the GHCR reference. Install
 > with `--agent-tar` if you would rather not change it.
 
-A reference with no host — `jmrplens/mikroscope-agent:1.0.0` — leaves the
+A reference with no host — `jmrplens/mikroscope-agent:1.0.1` — leaves the
 registry to whatever the router is already configured for, and `doctor` then
 checks nothing about it. `--remote-image` reads its default from
 `MIKROSCOPE_REMOTE_IMAGE`, and `upgrade` takes it too; `image` refuses it,
@@ -599,7 +599,7 @@ from another machine at all:
 
 ```sh
 mikroscope plan --rsc \
-  --remote-image jmrplens/mikroscope-agent:1.0.0 \
+  --remote-image jmrplens/mikroscope-agent:1.0.1 \
   --out install.rsc
 ```
 
