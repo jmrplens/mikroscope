@@ -1777,8 +1777,17 @@ func kernelEventPanels(b qb) []Panel {
 		},
 		{
 			Title: "Port events in the window, per port", Type: typeTable, Unit: "short", W: 12, H: 8, Format: "table",
-			KnownEmpty:     true,
-			RequiresFields: []string{"mikroscope_kmsg.kind"},
+			KnownEmpty: true,
+			// label and role as well as kind: the query SELECTs all three,
+			// and a column that is not in the table is not an empty column
+			// on InfluxDB 3 — it is "Schema error: No field named label" and
+			// a panel that cannot render at all. The sink writes label and
+			// role onto a kmsg row only from the API tier's inventory, so
+			// without --api-mode this panel belongs in the not-available row
+			// rather than on the dashboard. Caught by test/e2e/docker, which
+			// runs the panels against a store filled with no API tier, on
+			// 2026-09-16.
+			RequiresFields: []string{"mikroscope_kmsg.kind", "mikroscope_kmsg.label", "mikroscope_kmsg.role"},
 			// THE CASTS ARE NOT COSMETIC. `sum(CASE WHEN … THEN count ELSE 0 END)` over a
 			// u64 field returns a type Grafana's InfluxDB plugin answers with
 			// "An error occurred within the plugin" (HTTP 500), while the same query
@@ -1786,7 +1795,7 @@ func kernelEventPanels(b qb) []Panel {
 			// datasource proxy, 2026-09-16). CAST to BIGINT is what the plugin decodes.
 			// The same shape without a CAST is why this panel drew a red badge on its
 			// first live render.
-			Description: "The census of the panel beside it: one row per port that the kernel log named in the window, with the port's comment and interface lists from the API tier's inventory and a column per kind of event. Read link down against link up (a port that went down and never came back has more of the first), own address (loop) against zero, and STP disabled on a port that should be forwarding. label and role are empty when the collector ran without the API tier, or before the inventory could be read. The Prometheus form is one row per port and kind, because the agent knows neither the comment nor the role.",
+			Description: "The census of the panel beside it: one row per port that the kernel log named in the window, with the port's comment and interface lists from the API tier's inventory and a column per kind of event. Read link down against link up (a port that went down and never came back has more of the first), own address (loop) against zero, and STP disabled on a port that should be forwarding. label and role come from the API tier's inventory, and the panel is only offered when the store has them: a collector that ran with --api-mode off writes no such columns, and the probe routes this panel into the not-available row rather than shipping a query the store would refuse. The Prometheus form is one row per port and kind, because the agent knows neither the comment nor the role.",
 			Queries: b.q(
 				`SELECT max(time) AS time, port, max(label) AS "label", max(role) AS "role", CAST(sum(CASE WHEN kind = 'link-down' THEN count ELSE 0 END) AS BIGINT) AS "link down", CAST(sum(CASE WHEN kind = 'link-up' THEN count ELSE 0 END) AS BIGINT) AS "link up", CAST(sum(CASE WHEN kind = 'own-address' THEN count ELSE 0 END) AS BIGINT) AS "own address (loop)", CAST(sum(CASE WHEN kind = 'stp-blocking' THEN count ELSE 0 END) AS BIGINT) AS "STP blocking", CAST(sum(CASE WHEN kind = 'stp-disabled' THEN count ELSE 0 END) AS BIGINT) AS "STP disabled", CAST(sum(CASE WHEN kind = 'stp-learning' THEN count ELSE 0 END) AS BIGINT) AS "STP learning", CAST(sum(CASE WHEN kind = 'stp-forwarding' THEN count ELSE 0 END) AS BIGINT) AS "STP forwarding", CAST(sum(CASE WHEN kind = 'other' THEN count ELSE 0 END) AS BIGINT) AS "other" FROM mikroscope_kmsg WHERE $__timeFilter(time) AND port IS NOT NULL GROUP BY port ORDER BY port`,
 				`sum by (port, kind) (increase(mikroscope_kmsg_port_records_total[$__range]))`,

@@ -105,6 +105,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     needs: [preflight, e2e, race]
+    env:
+      # Lifted out of `secrets` so a step can ask whether it is set: a fork
+      # releasing from its own tag has no Docker Hub credentials and pushes to
+      # GHCR alone rather than failing.
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
     steps:
       - name: Check out the repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -195,6 +200,19 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Docker Hub as well as GHCR: a RouterOS device's `/container/config
+      # registry-url` ships pointing at registry-1.docker.io, and that setting
+      # is global to the device, so `install --remote-image` works there
+      # without repointing someone's router. Skipped when the secrets are
+      # absent — a fork releasing from its own tag pushes to GHCR alone
+      # instead of failing.
+      - name: Log in to Docker Hub
+        if: env.DOCKERHUB_USERNAME != ''
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f  # v4.6.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       # The agent image tars are built inside this step, by the before hook in
       # .goreleaser.yaml, with the same stamps as the binaries: not in a step

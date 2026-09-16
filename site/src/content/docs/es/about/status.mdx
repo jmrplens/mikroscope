@@ -18,7 +18,7 @@ del 2026-09-16.
 
 ## Qué funciona de extremo a extremo
 
-Todo lo siguiente, salvo la batería de pruebas y los siete destinos señalados
+Todo lo siguiente, salvo las baterías de pruebas y los siete destinos señalados
 como tales, se ha ejecutado contra el RB5009 de referencia (RouterOS 7.24.2), y
 no solo contra simulaciones:
 
@@ -40,11 +40,14 @@ no solo contra simulaciones:
   desfase de reloj.
 - **`forward`**, el colector, une la capa del kernel con la capa de la API de
   RouterOS y escribe en diez destinos. Fichero, Prometheus e InfluxDB 3 se han
-  ejecutado desde el RB5009; Loki, OTLP, Graphite, Elasticsearch, SQL, Telegraf
-  y stdout solo los ejercita byte a byte la batería de extremo a extremo,
-  contra simulaciones en el equipo de desarrollo. Su etapa de derivación
-  añade valores derivados y eventos de detección junto a las filas en bruto, y
-  emite un flujo de datos del equipo una vez por cada hash de capacidades.
+  ejecutado desde el RB5009; por Loki, OTLP, Graphite, Elasticsearch, SQL,
+  Telegraf y stdout todavía no han pasado muestras del router, pero todos ellos
+  escriben ya en el producto real — InfluxDB 3, PostgreSQL, Elasticsearch,
+  Graphite, Loki, un OpenTelemetry Collector, Telegraf y Prometheus en
+  contenedores — y la batería vuelve a leer cada uno por su propia API
+  (2026-09-16). Su etapa de derivación añade valores derivados y eventos de
+  detección junto a las filas en bruto, y emite un flujo de datos del equipo
+  una vez por cada hash de capacidades.
 - **Dos paneles de Grafana**, uno por almacén, generados a partir de una sola
   lista de paneles, con reglas de alerta. El 2026-09-16, en Grafana 13.2.1,
   contra el RB5009 con los disparadores por defecto y un `forward` de 30 minutos
@@ -61,6 +64,19 @@ no solo contra simulaciones:
   contra un árbol `/proc` capturado del equipo de referencia y contra un agente
   simulado, con un receptor por cada protocolo de destino que comprueba los
   bytes. No necesita router, ni Grafana, ni red, y se ejecuta en la CI.
+- **Una segunda batería contra los almacenes mismos** (`make test-e2e-docker`)
+  levanta nueve de ellos con docker compose, ejecuta el mismo colector contra
+  el mismo agente simulado con todos los destinos apuntando a ellos y luego
+  le pregunta a cada almacén por su propia API: SQL contra InfluxDB 3, `psql`
+  contra el guion que escribió el destino SQL, una búsqueda contra
+  Elasticsearch, `query_range` contra Loki, `render` contra Graphite, el OTLP
+  que el colector decodificó, el protocolo de línea que Telegraf analizó y un
+  scrape del exportador almacenado en Prometheus. Después importa los dos
+  dashboards en Grafana y pasa la consulta de cada panel por la propia API de
+  Grafana. Necesita Docker y ningún router: las muestras son las mismas
+  enlatadas, así que la ejecución es reproducible en cualquier máquina. La
+  primera ejecución completa, el 2026-09-16, encontró un panel que nombraba dos
+  columnas que el almacén solo tiene cuando se ejecutó la capa de la API.
 
 ## Lo que cuesta hoy el agente
 
@@ -165,9 +181,14 @@ configuración de GoReleaser, que publica:
   `mikroscope-agent-arm64.tar`, `mikroscope-agent-arm.tar`,
   `mikroscope-agent-amd64.tar` —, que es lo que `install --agent-tar` sube al
   router.
-- **La imagen del agente en GHCR**, `ghcr.io/jmrplens/mikroscope-agent:1.0.0`,
-  un único manifiesto sobre `linux/amd64`, `linux/arm64` y `linux/arm/v7`, que
-  `install --remote-image` hace descargar al router.
+- **La imagen del agente en dos registros**, `jmrplens/mikroscope-agent:1.0.0`
+  en Docker Hub y `ghcr.io/jmrplens/mikroscope-agent:1.0.0` en GHCR, cada una un
+  único manifiesto sobre `linux/amd64`, `linux/arm64` y `linux/arm/v7`, que
+  `install --remote-image` hace descargar al router. RouterOS toma el host del
+  registro del ajuste global `/container/config registry-url`, que viene puesto
+  en `https://registry-1.docker.io`, así que la referencia de Docker Hub no
+  necesita fijar nada en el equipo y la de GHCR necesita cambiar antes ese
+  ajuste.
 - **`checksums.txt`**, que cubre todos los archivos y todos los tar de imagen,
   una firma cosign sin claves sobre él y un SBOM SPDX por archivo, firmado a su
   vez.

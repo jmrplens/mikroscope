@@ -1,0 +1,156 @@
+---
+title: Cómo se prueba el proyecto a sí mismo
+description: Las tres capas de pruebas — los bytes que cada destino pone en el cable, si un almacén real los acepta y si las consultas de los propios paneles responden —, qué demuestra cada una, qué no demuestra ninguna y la orden de cada una.
+---
+
+import { Aside } from "@astrojs/starlight/components";
+import NotClaimed from "../../../../components/NotClaimed.astro";
+import ScrollTable from "../../../../components/ScrollTable.astro";
+import SeeAlso from "../../../../components/SeeAlso.astro";
+
+Un destino puede equivocarse en tres sitios, y cada uno pide una prueba
+distinta. Puede codificar los bytes equivocados. Puede codificar bytes que un
+almacén rechaza — algo que un servidor de captura nunca advierte, porque
+responde 204 a todo. Y puede escribir algo que el almacén guarda pero ningún
+panel puede volver a leer.
+
+El proyecto tiene por eso tres capas, y son tres órdenes.
+
+<ScrollTable label="Las tres capas de prueba, qué demuestra cada una y qué necesita">
+
+| Capa                | Orden                  | Docker | Qué demuestra                                                          |
+| ------------------- | ---------------------- | ------ | ----------------------------------------------------------------------- |
+| 1, el contrato      | `make test-e2e`        | no     | los bytes exactos que cada destino pone en el cable                     |
+| 2, los almacenes    | `make test-e2e-docker` | sí     | que un almacén real los acepta y los devuelve sin cambiarlos            |
+| 3, los paneles      | la misma orden         | sí     | que la consulta de cada panel responde contra lo que los destinos escribieron |
+
+</ScrollTable>
+
+Ninguna de las tres toca un router. Las capas 1 y 2 ejecutan el colector contra
+un agente simulado que sirve muestras enlatadas, y la capa 1 ejecuta además el
+binario real del agente contra `testdata/proc/rb5009`, un árbol `/proc` y
+`/sys` capturado del equipo de referencia. Eso es lo que hace que una ejecución
+sea reproducible en cualquier máquina, y lo que deja al router fuera del bucle.
+
+## Capa 1 — el contrato
+
+`make test-e2e` compila los dos binarios y apunta cada destino a un receptor
+dentro del binario de prueba: servidores HTTP de captura para InfluxDB, Loki,
+OTLP, Elasticsearch y Telegraf, escuchas TCP y UDP para Graphite y los modos de
+socket de Telegraf, ficheros reales para los destinos de fichero y SQL, la
+salida estándar del propio proceso, y un scrape del `/metrics` del colector
+para Prometheus. Cada receptor comprueba lo que llegó, byte a byte.
+
+No necesita router, ni Grafana, ni base de datos, ni contenedor, ni red: toda
+dirección que enlaza o marca está en loopback. `make test-e2e-offline` lo
+demuestra en vez de afirmarlo, ejecutando la batería entera dentro de un
+espacio de nombres de red que no tiene más que `lo`.
+
+## Capa 2 — los almacenes
+
+`make test-e2e-docker` levanta nueve almacenes con docker compose, ejecuta el
+mismo colector contra el mismo agente simulado con todos los destinos apuntando
+a ellos y luego le pregunta a cada almacén por su propia API. El JSONL del
+destino de fichero es el oráculo contra el que se compara cada almacén, valor a
+valor y no solo por recuento.
+
+<ScrollTable label="Qué se le pregunta a cada almacén en la batería de contenedores">
+
+| Almacén                 | La pregunta que se le hace                                                  |
+| ----------------------- | --------------------------------------------------------------------------- |
+| InfluxDB 3 Core         | SQL por HTTP: las tablas, un recuento de filas por tabla, cada valor `ctxt`  |
+| PostgreSQL 18           | el guion del destino SQL por `psql`, luego recuentos y el rango de `ctxt`    |
+| Elasticsearch 9         | `_search` con una agregación por tipo, y un documento entero                |
+| Loki 3                  | `query_range` para las etiquetas de esta ejecución, y el texto de cada registro |
+| Graphite                | `metrics/find` para el árbol, `render` para los puntos y su orden            |
+| OpenTelemetry Collector | lo que decodificó, escrito de vuelta como OTLP/JSON                          |
+| Telegraf 1.39           | el protocolo de línea que analizó: medidas, etiquetas, tipos de campo, marcas de tiempo |
+| Prometheus 3            | un scrape del exportador, contra la exposición que sirvió                    |
+
+</ScrollTable>
+
+Cada uno está ahí porque ese producto rechaza algo que un servidor de captura
+acepta:
+
+- **InfluxDB 3** fija una columna como etiqueta o como campo la primera vez que
+  ve la tabla y rechaza una escritura posterior que no coincida.
+- **Carbon** no responde nada en absoluto: un punto más viejo que su archivo más
+  largo, o un nombre del que whisper no puede hacer una ruta, se descarta en
+  silencio.
+- **Loki** responde 204 a un envío que no es consultable hasta que el trozo se
+  vuelca, y rechaza entradas desordenadas por flujo, en el cuerpo.
+- **Elasticsearch** infiere un mapeo del primer documento que ve para un campo
+  y luego rechaza otro posterior que no encaje — por documento, dentro de una
+  petición bulk que aun así responde 200.
+- **Telegraf** es un analizador real de protocolo de línea: un espacio sin
+  escapar en el valor de una etiqueta, o un campo sin tipo, se descarta y el
+  lote sigue siendo 204.
+- **PostgreSQL** es lo único que puede decir si el guion del destino SQL es SQL
+  válido, si los tipos que eligió aguantan los valores que emite y si sus
+  claves primarias chocan en una ejecución real.
+
+## Capa 3 — los paneles
+
+La misma orden importa después los dos dashboards en un Grafana real, apuntado
+al almacén que la ejecución acaba de llenar, y pasa la consulta de cada panel
+por la propia `/api/ds/query` de Grafana. Ahí es donde un panel falla por
+motivos a los que ninguna prueba unitaria llega: un tipo que devuelve una
+agregación y el complemento de la fuente de datos no sabe decodificar, una
+macro que el complemento escapa, una columna que el almacén no tiene.
+
+La primera ejecución completa, el 2026-09-16, encontró uno: la tabla de eventos
+de puerto nombra `label` y `role`, que el destino escribe en una fila del
+registro del kernel solo desde el inventario de la capa de la API. Una columna
+que no está en la tabla no es una columna vacía en InfluxDB 3 — es
+`Schema error: No field named label` y un panel que no puede dibujarse.
+
+## Cómo ejecutarlo
+
+```sh
+make test-e2e-docker   # todo; la pila se levanta y se apaga con la ejecución
+make e2e-docker-up     # deja la pila levantada, para una ejecución concreta
+go test -v -tags dockere2e -run TestLoki ./test/e2e/docker/
+make e2e-docker-down
+```
+
+El paquete está tras la etiqueta de compilación `dockere2e`, así que `make
+test` y todos los trabajos por defecto de la CI no compilan nada de él: la
+etiqueta es la forma de pedir nueve contenedores. `make lint` lo comprueba de
+tipos para que no se pudra, y el flujo semanal de E2E y la puerta de publicación
+lo ejecutan.
+
+Medido en la máquina de desarrollo el 2026-09-16: la pila se levanta en 55 a
+81 s con las imágenes ya descargadas, y la batería entera tarda de 75 a 100 s
+desde cero.
+
+<Aside type="note" title="Linux, para dos de los nueve">
+	Prometheus y Grafana se ejecutan sobre la pila de red del anfitrión, porque
+	Prometheus es el único destino que se consulta en vez de recibir envíos y
+	tiene que alcanzar el exportador del colector en el anfitrión. Un contenedor
+	en una red puente llega al anfitrión por la pasarela del puente, y ese camino
+	pasa por la cadena INPUT del anfitrión, que un cortafuegos que deniega por
+	defecto descarta. Los otros siete servicios son contenedores normales de red
+	puente.
+</Aside>
+
+## Lo que las tres capas siguen dejando a una persona
+
+<NotClaimed title="Qué no demuestra ninguna de ellas">
+	Que un destino funcione desde el router. Las muestras de las tres capas vienen
+	de un agente simulado o de un árbol `/proc` capturado, nunca de un equipo
+	vivo, y la pila de contenedores se ejecuta en la máquina de desarrollo y no a
+	través del veth del router. Fichero, Prometheus e InfluxDB 3 han llevado
+	muestras reales del RB5009 de extremo a extremo; los otros siete no.
+</NotClaimed>
+
+<SeeAlso>
+
+## Véase también
+
+- [Dónde está el proyecto](/mikroscope/es/about/status/): qué se ha ejecutado
+  contra el equipo de referencia y qué no.
+- [El colector y sus destinos](/mikroscope/es/sinks/): qué escribe cada destino.
+- [Importar y comprobar los dashboards](/mikroscope/es/dashboards/import-and-check/):
+  el mismo `dashboards check` que ejecuta la tercera capa, contra tu almacén.
+
+</SeeAlso>

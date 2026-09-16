@@ -1,57 +1,69 @@
-# mikroscope — notes for coding agents
+# mikroscope — session bootstrap
 
-Sub-second kernel-level telemetry for container-capable RouterOS devices: a
-static Go agent that runs on the router in a scratch container and reads the
-shared kernel's `/proc`, plus a CLI and collector that installs it, records,
-plots and forwards to ten sinks.
+Sub-second kernel-level telemetry for container-capable RouterOS devices: an
+agent that runs on the router in a scratch container and reads the shared
+kernel's `/proc`, `/sys`, `/dev/kmsg` and `perf_event_open`, plus a
+CLI/collector that installs it, records, plots and forwards to ten sinks.
+Released: 1.0.0. Go 1.27, one module, MIT.
 
-`CONTRIBUTING.md` is the contributor's guide and this file does not repeat it.
-What follows is what an agent working in this repository gets wrong otherwise.
+## Read first, in this order
 
-## The two things that are easy to break
+1. `README.md` — what it is, the four install routes, where it has been
+   verified.
+2. The bilingual site under `site/src/content/docs` — every claim the project
+   makes about itself lives there, and `docs/*.md` is generated from the
+   English pages. `about/status.mdx` is the honest state of things: what has
+   run against the reference device, what has only run against fakes or
+   containers, what is known and open.
+3. `CONTRIBUTING.md` — the commands, and which one to run for which change.
 
-- **`docs/*.md` is generated.** Every page lives in the bilingual site under
-  `site/src/content/docs` (English) and `site/src/content/docs/es` (its
-  structurally identical Spanish twin). Change the pages, then run
-  `pnpm run docs` in `site/`. `pnpm run docs:check` fails when `docs/` is
-  stale, and `pnpm run i18n:check` fails when the twins diverge. Never edit
-  anything under `docs/` by hand.
-- **`dashboards/*.json` and `brand/*` are generated too**, by
-  `make gen-dashboards` and `make gen-brand` from `internal/dashboards` and
-  `cmd/gen_brand`. `make check-generated` fails when they are stale.
+## The two test suites, and what each proves
+
+- `make test` / `make test-e2e` — the binaries against a captured `/proc` tree
+  and a fake agent, with one receiver per sink protocol asserting the bytes.
+  No router, no network, no containers.
+- `make test-e2e-docker` — the same collector against nine real stores in
+  docker compose, read back through each store's own API, plus both dashboards
+  imported into Grafana and every panel's query run. Needs Docker, no router.
+  Behind the `dockere2e` build tag; `test/e2e/docker/README.md` says why each
+  store is not a fake.
+
+## The reference device is production
+
+`.env` holds the access data (gitignored; `.env.example` is the template). The
+RB5009 at `MIKROSCOPE_ROUTER` is the owner's live router:
+
+- **Read-only by default.** Any write — a container, a veth, a firewall
+  object, a user, a debug image — needs the owner's explicit consent in the
+  session that does it, stated for that write, not inherited from an earlier
+  one. `--dry-run` before any `install`.
+- **Batch SSH.** Each connect costs 20–27 % CPU on this device for its
+  duration. One `ssh router '…; …; …'` with many commands, never a loop of
+  connects, never SSH as a data path.
+- **Never quote secrets.** `/container/print detail` on a router can expose a
+  tunnel token in a stopped container's `cmd=`. Do not echo it, do not write it
+  anywhere, do not put it in a report.
+- **There is no lab device.** Anything that needs a reboot waits for an
+  owner-scheduled maintenance window.
 
 ## Conventions
 
-- Go 1.27, one module, two shipped binaries (`cmd/mikroscope`,
-  `cmd/mikroscope-agent`). `cmd/gen_brand` is a build-time tool, never shipped.
-- The agent links only `procfs`, `sample`, `agent`, `version` and the standard
-  library. Keep it that way: it runs on a router with 1 GiB of RAM under an
-  8 MiB image budget CI enforces.
-- The agent ships raw tick deltas, never percentages. The averaging window is
-  the reader's choice, and `/metrics` stays independent of who scrapes it.
-- Voice, in code comments and documentation: what was measured, on which
-  device and RouterOS version, and what was not. Numbers carry their spread.
-  No claim without its evidence. Present tense — the documentation describes
-  what the project does, not how it got there.
-- Commits: conventional prefixes (`feat`, `fix`, `docs`, `ci`, `chore`), no
-  attribution lines.
-- `make analyze` is the whole gate: golangci-lint, govulncheck, actionlint,
-  markdownlint, the documentation link check and the generated-artifact check.
-  `make test` and `make cover-check` are the tests and the coverage floor.
-
-## Working against a real router
-
-The test suite needs no router: `test/e2e` drives both binaries against a
-captured `/proc` tree and fake sinks, and `testdata/proc/rb5009` is the
-reference device's own files. Anything that writes to a RouterOS device —
-a container, a veth, a firewall object, a user — needs the owner's explicit
-consent for that write, in the session that performs it, and `--dry-run` or
-`plan` comes first. `plan --rsc` renders the same install as a script for
-someone who would rather read it before it runs.
-
-## Lineage
-
-The deployment steps, the dockerless image builder and the vendored RouterOS
-API client come from `cmd/perfmon` and `internal/rosapi` in
-[cs-routeros-bouncer](https://github.com/jmrplens/cs-routeros-bouncer) (MIT),
-with attribution in each package.
+- Two shipped binaries (`cmd/mikroscope`, `cmd/mikroscope-agent`);
+  `cmd/gen_brand` is a build-time tool that writes `brand/` and is never
+  shipped. The agent links only `procfs`, `sample`, `agent` and the standard
+  library.
+- Voice, in code comments, CHANGELOG and docs: what was measured, on which
+  device and version, on what date, and what was not. Numbers carry their
+  spread. No claim without its evidence.
+- Commits: conventional prefixes (`feat`, `fix`, `docs`, `test`, `chore`), no
+  attribution lines, no session links. `main` takes pull requests only.
+- The agent ships raw tick deltas, never percentages. `/metrics` stays
+  independent of who scrapes and when.
+- **All documentation lives in the bilingual site** under
+  `site/src/content/docs`, English and Spanish, and `docs/*.md` is GENERATED
+  from the English pages by `site/scripts/gen-docs.mjs`. Never hand-edit a file
+  under `docs/`: change the page and its Spanish twin, then run `pnpm run docs`
+  in `site/`. `pnpm run docs:check` fails when `docs/` is stale and runs in
+  `lint` and in `.github/workflows/docs.yml`. A page added to the site fails
+  that check until it is claimed by an entry of `MANIFEST` or named in
+  `NOT_IN_DOCS` with a reason.

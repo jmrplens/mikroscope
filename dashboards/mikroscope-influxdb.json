@@ -8241,7 +8241,7 @@
             "type": "influxdb",
             "uid": "${DS_MIKROSCOPE}"
           },
-          "description": "The census of the panel beside it: one row per port that the kernel log named in the window, with the port's comment and interface lists from the API tier's inventory and a column per kind of event. Read link down against link up (a port that went down and never came back has more of the first), own address (loop) against zero, and STP disabled on a port that should be forwarding. label and role are empty when the collector ran without the API tier, or before the inventory could be read. The Prometheus form is one row per port and kind, because the agent knows neither the comment nor the role.",
+          "description": "The census of the panel beside it: one row per port that the kernel log named in the window, with the port's comment and interface lists from the API tier's inventory and a column per kind of event. Read link down against link up (a port that went down and never came back has more of the first), own address (loop) against zero, and STP disabled on a port that should be forwarding. label and role come from the API tier's inventory, and the panel is only offered when the store has them: a collector that ran with --api-mode off writes no such columns, and the probe routes this panel into the not-available row rather than shipping a query the store would refuse. The Prometheus form is one row per port and kind, because the agent knows neither the comment nor the role.",
           "fieldConfig": {
             "defaults": {
               "color": {

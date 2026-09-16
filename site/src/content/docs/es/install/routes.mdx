@@ -25,7 +25,7 @@ ninguna ruta lo esquiva.
 | ------------------------------------------------------ | ------------------------------------------------------------------- | ---------------------------------------------------------------------- |
 | [Un checkout, con Go](#un-checkout-con-go)             | Go 1.27 y el repositorio; ssh al router                             | trabajas en mikroscope y quieres el agente de tu propio árbol          |
 | [El tar publicado](#el-tar-publicado)                  | los artefactos de la release; ssh al router                         | instalas una release y prefieres subir el tar a que el router tire     |
-| [Un pull del registro](#un-pull-del-registro)          | que el router llegue al registro; que cuadre el `registry-url` global | instalas una release y no quieres que nada aterrice en la flash        |
+| [Un pull del registro](#un-pull-del-registro)          | que el router llegue al registro; con Docker Hub no hay que tocar `registry-url` | instalas una release y no quieres que nada aterrice en la flash        |
 | [Un script de RouterOS](#un-script-de-routeros)        | una terminal en el router; `--remote-image`                         | solo llegas al router por WinBox o WebFig                              |
 
 </ScrollTable>
@@ -125,15 +125,26 @@ verifica igual.
 
 ```sh
 mikroscope install --router usuario@192.168.88.1 \
-  --remote-image ghcr.io/jmrplens/mikroscope-agent:1.0.0
+  --remote-image jmrplens/mikroscope-agent:1.0.0
 ```
 
 No se sube nada, ningún tar aterriza en el equipo, y `uninstall` no tiene
 ningún fichero del que dar cuenta: el paso del contenedor pasa a ser
 `/container/add remote-image="jmrplens/mikroscope-agent:1.0.0" …` y el plan
 imprime `the router pulls … (nothing is uploaded)` donde iría la línea de
-subida. La imagen se publica para `linux/amd64`, `linux/arm64` y `linux/arm/v7`,
-y RouterOS toma la que necesita su arquitectura.
+subida. La release publica la imagen dos veces, como
+`jmrplens/mikroscope-agent:1.0.0` en Docker Hub y como
+`ghcr.io/jmrplens/mikroscope-agent:1.0.0` en GHCR. Las dos llevan `linux/amd64`,
+`linux/arm64` y `linux/arm/v7`, y RouterOS toma la que necesita su arquitectura.
+
+La referencia de arriba es la de Docker Hub, y no lleva host de registro: el
+router se la descarga del que ya nombre `/container/config registry-url`, y
+RouterOS trae ese ajuste puesto en `https://registry-1.docker.io`. En un router
+donde nadie lo haya tocado, la orden de arriba no necesita fijar nada antes —en
+la RB5009 sobre la que se mide este proyecto, ese ajuste vale
+`https://registry-1.docker.io`—. La referencia de GHCR es la alternativa, y
+necesita antes `/container/config/set registry-url=https://ghcr.io` en el
+equipo, que es un cambio para todos sus contenedores.
 
 Necesita dos cosas que las otras rutas no: que el router llegue al registro, y
 que tenga sitio en RAM para las capas mientras las extrae.
@@ -143,9 +154,9 @@ que tenga sitio en RAM para las capas mientras las extrae.
 	compartido con cualquier otro contenedor que tenga, y solo el resto de la referencia va a
 	`remote-image=`. mikroscope nunca escribe ese ajuste: apuntar el registro de tu router a otro
 	sitio para instalar una sonda sería cambiar los contenedores de otra persona. `doctor` lo lee en
-	su lugar y, cuando no cuadra, nombra la única orden que hay que ejecutar:
-	`/container/config/set registry-url=https://ghcr.io`. Instala con `--agent-tar` si prefieres no
-	tocarlo.
+	su lugar y, cuando la referencia nombra un host que no cuadra con el ajuste, nombra la única
+	orden que hay que ejecutar: `/container/config/set registry-url=https://ghcr.io` para la
+	referencia de GHCR. Instala con `--agent-tar` si prefieres no tocarlo.
 </Aside>
 
 Una referencia sin host —`jmrplens/mikroscope-agent:1.0.0`— deja el registro a
@@ -161,7 +172,7 @@ otra máquina en absoluto:
 
 ```sh
 mikroscope plan --rsc \
-  --remote-image ghcr.io/jmrplens/mikroscope-agent:1.0.0 \
+  --remote-image jmrplens/mikroscope-agent:1.0.0 \
   --out install.rsc
 ```
 

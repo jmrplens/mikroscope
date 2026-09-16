@@ -469,6 +469,11 @@ export default defineConfig({
 							translations: { es: "Medidas de InfluxDB y SQL" },
 							slug: "reference/measurements",
 						},
+						{
+							label: "How the project tests itself",
+							translations: { es: "Cómo se prueba el proyecto" },
+							slug: "reference/testing",
+						},
 					],
 				},
 				{

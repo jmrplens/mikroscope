@@ -12,7 +12,9 @@ SHELL := /bin/bash
 
 .PHONY: all help version \
 	build build-agent build-agent-all agent-size agent-tars agent-smoke install clean \
-	test test-race test-e2e e2e-offline-warm test-e2e-offline cover cover-check \
+	test test-race test-e2e e2e-offline-warm test-e2e-offline \
+	test-e2e-docker test-e2e-docker-race e2e-docker-up e2e-docker-down e2e-docker-build \
+	cover cover-check \
 	fmt fmt-check vet tidy lint golangci-lint govulncheck actionlint analyze analyze-fix sonar \
 	mdlint mdlint-fix check-doc-links \
 	gen-dashboards check-dashboards gen-brand check-brand check-generated \
@@ -243,6 +245,34 @@ test-e2e-offline: e2e-offline-warm ## Run the end-to-end suite in a network name
 		GOFLAGS="$$(go env GOFLAGS)" GOTOOLCHAIN=local GOPROXY=off \
 		unshare --net -- sh -c 'ip link set lo up && cd "$(CURDIR)" && exec setpriv --reuid=$(OFFLINE_UID) --regid=$(OFFLINE_GID) --clear-groups -- "$(GO)" test -count=1 -timeout 15m ./test/e2e/...'
 
+# The stores, for real. Behind a build tag, so `make test` and every default
+# CI job compile none of it: the tag is how you ask for nine containers.
+#
+# The stack comes up once per `go test` run and goes down with it. To keep it
+# between runs — which is how you debug one sink without paying the boot every
+# time — bring it up first with `make e2e-docker-up`: the harness reuses a
+# stack it did not start and leaves it alone afterwards.
+test-e2e-docker: ## Run the sinks against real stores in docker compose (Linux + docker)
+	go test -v -count=1 -tags dockere2e -timeout 30m ./test/e2e/docker/
+
+test-e2e-docker-race: ## The same suite under the race detector
+	go test -v -count=1 -race -tags dockere2e -timeout 45m ./test/e2e/docker/
+
+e2e-docker-up: ## Start the store stack and leave it up (for a targeted -run)
+	cd test/e2e/docker && docker compose -p mikroscope-e2e up -d --wait --wait-timeout 600
+	@echo "The stack is up. Run one test against it with:"
+	@echo "  go test -v -tags dockere2e -run TestLoki ./test/e2e/docker/"
+
+e2e-docker-down: ## Stop the store stack and delete its volumes
+	cd test/e2e/docker && docker compose -p mikroscope-e2e down --volumes --remove-orphans --timeout 10
+
+# A tagged package compiles in no default job, so nothing but this notices
+# when a change to a sink breaks the suite that tests it. It costs a compile
+# and it runs in `make lint`.
+e2e-docker-build: ## Type-check the docker suite without starting anything
+	go vet -tags dockere2e ./test/e2e/docker/
+	go test -c -o /dev/null -tags dockere2e ./test/e2e/docker/
+
 cover: ## Write a coverage profile over cmd/ and internal/ and print its total
 	go test -count=1 -coverpkg=$(COVERAGE_COVERPKG) -coverprofile=coverage.out $(COVERAGE_PKGS)
 	@go tool cover -func=coverage.out | grep '^total:'
@@ -264,7 +294,7 @@ cover-check: ## Fail if coverage over cmd/ and internal/ is below COVERAGE_MIN
 
 ##@ Static analysis
 
-lint: golangci-lint govulncheck ## Run golangci-lint and govulncheck
+lint: golangci-lint e2e-docker-build govulncheck ## Run golangci-lint, type-check the tagged suite, and govulncheck
 
 # The three commands CI's golangci-lint job runs, in its order.
 golangci-lint: ## Verify the linter config, check formatting, then lint

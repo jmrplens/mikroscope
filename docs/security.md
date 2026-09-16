@@ -546,7 +546,7 @@ rule it broke:
 | `--capture-mb`                          | 0–256                                                                                             |
 | `--expose`                              | needs `--lan-address` as an IPv4 address, and a non-empty token                                   |
 | `--triggers`                            | the agent's own condition list, parsed by `agent.ParseTriggers`                                   |
-| `--remote-image`                        | a registry reference: `ghcr.io/owner/name:1.0.0`, no quote, space or semicolon                    |
+| `--remote-image`                        | a registry reference: `owner/name:1.0.0`, with or without a host, no quote, space or semicolon                    |
 
 There is no exception. `--triggers` is checked by the same gate as the rest: `Finish` hands it to
 `agent.ParseTriggers`, the agent's own parser, which is the authority on what a condition means.
@@ -576,10 +576,13 @@ check of its own before anything is written.
   before it reaches the command line, because RouterOS takes it inside a quoted string on a
   `;`-joined line. The router then needs to reach that registry over its own network, and it takes
   the registry host from `/container/config registry-url`, a setting global to the device and shared
-  with every other container on it. **mikroscope never writes that setting.** `doctor` reads it, and
-  when it does not match the reference it prints the one command to run
-  (`/container/config/set registry-url=https://ghcr.io`) or says to use `--agent-tar` instead. Trust
-  in the image is trust in that registry: nothing in the CLI verifies what the router pulls.
+  with every other container on it and ships as `https://registry-1.docker.io`. **mikroscope never
+  writes that setting.** `doctor` reads it, and when the reference names a host the setting does not
+  match it prints the one command to run
+  (`/container/config/set registry-url=https://ghcr.io`, for the GHCR copy of the image) or says to
+  use `--agent-tar` instead. The Docker Hub reference `jmrplens/mikroscope-agent:1.0.0` carries no
+  host and leaves the setting as the router has it. Trust in the image is trust in that registry:
+  nothing in the CLI verifies what the router pulls.
 
 ### A generated .rsc script is a credential
 

@@ -17,7 +17,7 @@ there is anything to download. It is checked against the code as of 2026-09-16.
 
 ## What works end to end
 
-Everything below except the test suite and the seven sinks marked as such has
+Everything below except the test suites and the seven sinks marked as such has
 run against the reference RB5009 (RouterOS 7.24.2), not only against fakes:
 
 - **The agent** reads the shared kernel's `/proc`, `/sys`, `/dev/kmsg` and
@@ -35,9 +35,12 @@ run against the reference RB5009 (RouterOS 7.24.2), not only against fakes:
   2026-09-12 yielded exactly 600 samples, 0 gaps and −7 ms of clock skew.
 - **`forward`**, the collector, merges the kernel tier with the RouterOS API
   tier and writes to ten sinks. File, Prometheus and InfluxDB 3 have run from
-  the RB5009; Loki, OTLP, Graphite, Elasticsearch, SQL, Telegraf and stdout are
-  exercised byte for byte by the end-to-end suite only, against fakes on the
-  development host. Its derive stage adds derived values and detection events
+  the RB5009; Loki, OTLP, Graphite, Elasticsearch, SQL, Telegraf and stdout
+  have not yet had router samples pushed through them, but every one of them
+  now writes into the real product — InfluxDB 3, PostgreSQL, Elasticsearch,
+  Graphite, Loki, an OpenTelemetry Collector, Telegraf and Prometheus in
+  containers — and the suite reads each one back through its own API
+  (2026-09-16). Its derive stage adds derived values and detection events
   beside the raw rows, and it emits a device-info stream once per capability
   hash.
 - **Two Grafana dashboards**, one per store, generated from one panel list,
@@ -54,6 +57,18 @@ run against the reference RB5009 (RouterOS 7.24.2), not only against fakes:
   captured `/proc` tree of the reference device and against a fake agent, with
   one receiver per sink protocol asserting the bytes. It needs no router, no
   Grafana and no network, and runs in CI.
+- **A second suite against the stores themselves** (`make test-e2e-docker`)
+  starts nine of them with docker compose, runs the same collector against the
+  same fake agent with every sink pointed at them, and then asks each store its
+  own question with its own API: SQL against InfluxDB 3, `psql` against the
+  script the SQL sink wrote, a search against Elasticsearch, `query_range`
+  against Loki, `render` against Graphite, the decoded OTLP the collector
+  received, the line protocol Telegraf parsed, and a scrape of the exporter
+  stored in Prometheus. It then imports both dashboards into Grafana and runs
+  every panel's query through Grafana's own API. It needs Docker and no router:
+  the samples are the same canned ones, so the run is reproducible anywhere.
+  The first full run, on 2026-09-16, found a panel that named two columns the
+  store only has when the API tier ran.
 
 ## What the agent costs today
 
@@ -152,9 +167,13 @@ configuration, which publishes:
   `mikroscope-agent-arm64.tar`, `mikroscope-agent-arm.tar`,
   `mikroscope-agent-amd64.tar` — which `install --agent-tar` uploads to the
   router.
-- **The agent image on GHCR**, `ghcr.io/jmrplens/mikroscope-agent:1.0.0`, one
+- **The agent image in two registries**, `jmrplens/mikroscope-agent:1.0.0` on
+  Docker Hub and `ghcr.io/jmrplens/mikroscope-agent:1.0.0` on GHCR, each one
   manifest over `linux/amd64`, `linux/arm64` and `linux/arm/v7`, which
-  `install --remote-image` makes the router pull.
+  `install --remote-image` makes the router pull. RouterOS takes the registry
+  host from the global `/container/config registry-url`, which ships as
+  `https://registry-1.docker.io`, so the Docker Hub reference needs nothing set
+  on the device and the GHCR one needs that setting changed first.
 - **`checksums.txt`**, covering every archive and every image tar, a keyless
   cosign signature over it, and an SPDX SBOM per archive, signed in its own
   right.

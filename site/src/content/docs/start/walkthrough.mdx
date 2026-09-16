@@ -51,8 +51,9 @@ plain defaults, whatever the CLI's usage text says. Export the variables you nee
    The release carries the CLI as an archive per platform — linux, macOS, Windows and FreeBSD on
    amd64, arm64 and arm — with `checksums.txt`, cosign signatures and SBOMs beside it. The agent
    travels separately, as one image tar per architecture (`mikroscope-agent-arm64.tar`,
-   `mikroscope-agent-arm.tar`, `mikroscope-agent-amd64.tar`) and as
-   `ghcr.io/jmrplens/mikroscope-agent:1.0.0`; step 2 takes one of the two.
+   `mikroscope-agent-arm.tar`, `mikroscope-agent-amd64.tar`) and as a registry image, published
+   both as `jmrplens/mikroscope-agent:1.0.0` on Docker Hub and as
+   `ghcr.io/jmrplens/mikroscope-agent:1.0.0` on GHCR; step 2 takes one of the two.
 
    From a checkout instead:
 
@@ -87,10 +88,13 @@ plain defaults, whatever the CLI's usage text says. Export the variables you nee
      checkout. The CLI reads the tar before it uploads it — it has to be a mikroscope agent image
      and its architecture has to match `--arch`, or the verb stops and names the asset to download
      instead;
-   - **the registry**, `--remote-image ghcr.io/jmrplens/mikroscope-agent:1.0.0`: the router pulls
-     the image itself, nothing is uploaded, and `uninstall` has no file to account for. RouterOS
-     takes the registry host from the global `/container/config registry-url`, which mikroscope
-     never writes because every container on the device shares it; `doctor` checks it and prints
+   - **the registry**, `--remote-image jmrplens/mikroscope-agent:1.0.0`: the router pulls the image
+     itself, nothing is uploaded, and `uninstall` has no file to account for. RouterOS takes the
+     registry host from the global `/container/config registry-url`, which mikroscope never writes
+     because every container on the device shares it, and which ships as
+     `https://registry-1.docker.io` — so the Docker Hub reference above runs on a stock router as
+     it stands. The GHCR reference, `ghcr.io/jmrplens/mikroscope-agent:1.0.0`, names a host of its
+     own: `doctor` checks the setting against it and prints
      `/container/config/set registry-url=https://ghcr.io` when it does not match, or points at
      `--agent-tar`. The pull needs the router to reach the registry and the free RAM for the layers.
 
@@ -99,7 +103,7 @@ plain defaults, whatever the CLI's usage text says. Export the variables you nee
    if they differ.
 
    On a router you only reach through WinBox or WebFig, there is a fourth way with no CLI on your
-   side at all: `mikroscope plan --rsc --remote-image ghcr.io/jmrplens/mikroscope-agent:1.0.0 --out install.rsc`
+   side at all: `mikroscope plan --rsc --remote-image jmrplens/mikroscope-agent:1.0.0 --out install.rsc`
    writes the same commands, in the same order and with the same tags, as a RouterOS script to
    paste into the terminal or `/import`. [Installing the agent](/mikroscope/install/) has that path
    and its two caveats in full.

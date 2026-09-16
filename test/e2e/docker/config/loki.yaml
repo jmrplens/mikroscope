@@ -1,0 +1,40 @@
+# Loki answers 204 to a push that is not queryable until the chunk is flushed,
+# so every read in the suite polls; these settings make the wait seconds rather
+# than minutes, and stop Loki rejecting a sample whose timestamp came from a
+# captured recording rather than from now.
+auth_enabled: false
+server:
+  http_listen_port: 3100
+  log_level: warn
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: /loki
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+schema_config:
+  configs:
+    - from: 2020-01-01
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+limits_config:
+  reject_old_samples: false
+  reject_old_samples_max_age: 8760h
+  allow_structured_metadata: true
+  volume_enabled: true
+ingester:
+  chunk_idle_period: 5s
+  chunk_retain_period: 5s
+  max_chunk_age: 720h
+  flush_check_period: 2s
+querier:
+  max_concurrent: 4

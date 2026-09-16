@@ -22,7 +22,8 @@ ventana con marcadores, dibuja un SVG determinista de ella, y funciona como
 colector que tira del agente, fusiona una capa de la API de RouterOS a 1 Hz y
 reparte a fichero, Prometheus e InfluxDB 3. Se publica como un archivo por
 plataforma —linux, macOS, Windows y FreeBSD en amd64, arm64 y arm— y el agente
-a su lado como un tar de imagen por arquitectura y como
+a su lado como un tar de imagen por arquitectura y como imagen de registro, en
+Docker Hub como `jmrplens/mikroscope-agent` y en GHCR como
 `ghcr.io/jmrplens/mikroscope-agent`, así que instalar solo necesita una
 toolchain de Go cuando quieres el agente construido desde tu propio árbol.
 

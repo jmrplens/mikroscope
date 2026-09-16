@@ -139,8 +139,15 @@ changelog:
 dockers_v2:
   - id: agent
     ids: [mikroscope-agent]
+    # Two registries, one build. GHCR is where a GitHub user looks first;
+    # Docker Hub is where a RouterOS device looks by default, because
+    # `/container/config registry-url` ships pointing at registry-1.docker.io
+    # and that setting is global to the device — a reader who wants
+    # `install --remote-image` should not have to repoint their router's
+    # registry to try this project.
     images:
       - "ghcr.io/jmrplens/mikroscope-agent"
+      - "docker.io/jmrplens/mikroscope-agent"
     tags:
       - "{{ .Version }}"
       - latest
@@ -190,7 +197,9 @@ release:
     - glob: build/agent-images/*.tar
   footer: |
     ---
-    **Agent image:** `ghcr.io/jmrplens/mikroscope-agent:{{ .Version }}`
+    **Agent image:** `jmrplens/mikroscope-agent:{{ .Version }}` on Docker Hub,
+    which is the registry a RouterOS device is pointed at out of the box, and
+    `ghcr.io/jmrplens/mikroscope-agent:{{ .Version }}`
     (linux/amd64, linux/arm64, linux/arm/v7). Four ways to install it:
     `mikroscope install` builds the agent from a checkout;
     `--agent-tar mikroscope-agent-<arch>.tar` uses the asset below and needs no

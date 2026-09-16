@@ -1,0 +1,12 @@
+# The collector's /metrics is a moving target — its port is picked at run time
+# — so the target is written by the suite into a file_sd file rather than baked
+# in here.
+global:
+  scrape_interval: 2s
+  scrape_timeout: 2s
+  evaluation_interval: 30s
+scrape_configs:
+  - job_name: mikroscope
+    file_sd_configs:
+      - files: ["/etc/prometheus/targets/*.json"]
+        refresh_interval: 2s
