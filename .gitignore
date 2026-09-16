@@ -16,6 +16,11 @@
 /site/dist/
 /site/.astro/
 
+# What the docker store suite writes: the collector binary it builds, the file
+# and SQL sinks' output, and the two bind mounts the OTel collector and Telegraf
+# write back through. All of it is one run's scratch.
+/test/e2e/docker/out/
+
 # Go coverage
 *.out
 coverage.html

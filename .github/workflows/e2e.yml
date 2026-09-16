@@ -12,11 +12,21 @@
 #
 # What it needs. No router, no Grafana, no database, no container, and no
 # network: every address it binds or dials is on the loopback interface. The
-# second job proves that rather than asserting it, by running the whole suite
-# inside a network namespace that has nothing but `lo`. That check is the
+# `offline` job proves that rather than asserting it, by running the whole
+# suite inside a network namespace that has nothing but `lo`. That check is the
 # reason this file exists as a job of its own: a suite that quietly grew a
 # dependency on a public endpoint would still pass on a runner with egress,
 # and would fail on the first one without it.
+#
+# The stores, for real. A capture server accepts anything; a store does not.
+# The `stores` job (test/e2e/docker, build tag dockere2e) starts InfluxDB 3,
+# PostgreSQL, Elasticsearch, Graphite, Loki, an OpenTelemetry Collector,
+# Telegraf, Prometheus and Grafana with docker compose, runs the same collector
+# against the same fake agent with every sink pointed at them, and then asks
+# each store its own question with its own API. It still needs no router: the
+# samples come from the same canned agent, so the run is reproducible on any
+# machine with Docker. It is not on the pull-request path — nine containers —
+# and runs weekly, on dispatch, and on the release gate.
 #
 # Duration. Measured on the development machine on 2026-09-12: 15 s for
 # `go test ./test/e2e/`, 18 s with the race detector, 16 s inside the network
@@ -49,12 +59,20 @@ on:
         description: "Git ref to check out (branch, tag, or a fork pull request's merge SHA)"
         default: ""
         type: string
+      stores:
+        description: "Also run the sinks against the real stores in docker compose"
+        default: true
+        type: boolean
   workflow_call:
     inputs:
       ref:
         description: "Git ref to check out; empty means the calling workflow's ref"
         default: ""
         type: string
+      stores:
+        description: "Also run the sinks against the real stores in docker compose"
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -93,6 +111,51 @@ jobs:
       # and the timeout live in the Makefile rather than being restated here.
       - name: Run the end-to-end suite
         run: make test-e2e
+
+  # The same collector, the same sinks, against the stores themselves. Nine
+  # containers, so it is not on the pull-request path: ci.yml calls this
+  # workflow without `stores`, and it runs on the weekly schedule, on a manual
+  # dispatch, and on the release gate. Everything else about it is the same
+  # single make target a developer runs.
+  stores:
+    name: Sinks against real stores
+    if: ${{ github.event_name == 'schedule' || inputs.stores }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - run: go mod download
+
+      # Pulled before the suite so that a registry problem is a named step
+      # rather than a timeout inside `docker compose up --wait`.
+      - name: Pull the store images
+        working-directory: test/e2e/docker
+        run: docker compose -p mikroscope-e2e pull --quiet
+
+      - name: Run the sinks against the stores
+        run: make test-e2e-docker
+
+      # A store that refused a write says why in its own log, and the suite
+      # only sees the silence that follows.
+      - name: The stores' logs, if it failed
+        if: failure()
+        working-directory: test/e2e/docker
+        run: docker compose -p mikroscope-e2e logs --no-color --tail 200
+
+      - name: Stop the stack
+        if: always()
+        run: make e2e-docker-down
 
   offline:
     name: No network needed

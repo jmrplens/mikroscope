@@ -72,6 +72,16 @@ go build ./... && go test ./...
   8 MiB on arm64, arm and amd64.
 - `make test-e2e-offline` on Linux, if a test might have grown a dependency on
   the network: it runs the end-to-end suite in a namespace with only `lo`.
+- `make test-e2e-docker` for a change to a sink, its encoding or its schema. It
+  starts InfluxDB 3, PostgreSQL, Elasticsearch, Graphite, Loki, an
+  OpenTelemetry Collector, Telegraf, Prometheus and Grafana with docker
+  compose, runs the collector against the same fake agent with every sink
+  pointed at them, and reads each store back through its own API — a capture
+  server accepts bytes a store rejects. It needs Docker and no router. Keep the
+  stack between runs with `make e2e-docker-up`, then
+  `go test -tags dockere2e -run TestLoki ./test/e2e/docker/`; `make
+  e2e-docker-down` when you are done. The package is behind the `dockere2e`
+  build tag, so `make test` never compiles it and `make lint` type-checks it.
 - `make agent-smoke PLATFORM=linux/arm/v7` with Docker and QEMU, for a change to
   `internal/image` or to how the agent starts.
 

@@ -1,0 +1,190 @@
+# The stores, for real, so the sinks are tested against something that can
+# refuse them.
+#
+# test/e2e is a contract test of the bytes: it points every sink at a capture
+# server and asserts what came out. That cannot prove a store ACCEPTS those
+# bytes. InfluxDB 3 fixes a column as a tag or a field the first time it sees
+# it and refuses later writes that disagree; Graphite's carbon silently drops a
+# point older than its longest archive; Loki answers 204 for a push that is not
+# queryable until the chunk flushes. A capture server says 204 to all of it.
+#
+# Every port is published on loopback and on an ephemeral host port from a
+# stated range, never on the service's own default: this machine also runs the
+# real InfluxDB, Prometheus and Grafana this project forwards to, and a suite
+# that grabbed 3000 or 9090 would fight them. The harness asks compose which
+# port it got (`compose port`) rather than assuming one.
+name: mikroscope-e2e
+
+services:
+  influxdb:
+    image: influxdb:3.11.2-core
+    command:
+      - influxdb3
+      - serve
+      - --node-id=e2e
+      - --object-store=memory
+      - --http-bind=0.0.0.0:8181
+      - --without-auth
+    ports: ["127.0.0.1:49400-49499:8181"]
+    mem_limit: 2g
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8181/health"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+
+  postgres:
+    image: postgres:18.6-alpine
+    environment:
+      POSTGRES_PASSWORD: mikroscope
+      POSTGRES_USER: mikroscope
+      POSTGRES_DB: mikroscope
+      POSTGRES_INITDB_ARGS: --nosync
+    # Nothing here survives the run, so durability is a waste of the runner's
+    # disk and of the suite's time.
+    command: ["postgres", "-c", "fsync=off", "-c", "full_page_writes=off", "-c", "synchronous_commit=off"]
+    ports: ["127.0.0.1:49400-49499:5432"]
+    mem_limit: 1g
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mikroscope -d mikroscope"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.5.3
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+      # CI runners do not raise vm.max_map_count, and a full runner disk would
+      # otherwise flip every index to read-only mid-suite.
+      node.store.allow_mmap: "false"
+      cluster.routing.allocation.disk.threshold_enabled: "false"
+    ports: ["127.0.0.1:49400-49499:9200"]
+    mem_limit: 2g
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9200/_cluster/health | grep -qE '\"status\":\"(green|yellow)\"'"]
+      interval: 5s
+      timeout: 5s
+      retries: 40
+
+  graphite:
+    image: graphiteapp/graphite-statsd:1.1.10-5
+    ports:
+      - "127.0.0.1:49400-49499:2003"
+      - "127.0.0.1:49400-49499:80"
+    volumes:
+      - ./config/carbon.conf:/opt/graphite/conf/carbon.conf:ro
+      - ./config/storage-schemas.conf:/opt/graphite/conf/storage-schemas.conf:ro
+    mem_limit: 1g
+    # No healthcheck either: inside the container `localhost` resolves to ::1
+    # first and graphite-web's nginx listens on 0.0.0.0, so a check that works
+    # from the host fails in here. The harness polls the render API from the
+    # host (readiness in harness.go), which is also the side that will query
+    # it.
+
+  loki:
+    image: grafana/loki:3.7.7
+    command: ["-config.file=/etc/loki/loki.yaml"]
+    ports: ["127.0.0.1:49400-49499:3100"]
+    volumes:
+      - ./config/loki.yaml:/etc/loki/loki.yaml:ro
+      - loki-data:/loki
+    mem_limit: 1g
+    # No healthcheck: the image is distroless, with no shell and no wget for
+    # one to use. The harness polls /ready from the host instead, which is
+    # where it can speak HTTP anyway (readiness in harness.go).
+
+  # otelcol and telegraf write a file back to the host, and both images drop
+  # to a non-root user of their own, so the harness creates ./out/* world
+  # writable rather than running either container as root.
+  otelcol:
+    image: otel/opentelemetry-collector-contrib:0.160.0
+    command: ["--config=/etc/otelcol/config.yaml"]
+    ports:
+      - "127.0.0.1:49400-49499:4318"
+      - "127.0.0.1:49400-49499:13133"
+    volumes:
+      - ./config/otel-collector.yaml:/etc/otelcol/config.yaml:ro
+      - ./out/otel:/out
+    mem_limit: 512m
+    healthcheck:
+      test: ["CMD", "/otelcol-contrib", "--version"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  telegraf:
+    image: telegraf:1.39.3
+    ports: ["127.0.0.1:49400-49499:8186"]
+    volumes:
+      - ./config/telegraf.conf:/etc/telegraf/telegraf.conf:ro
+      - ./out/telegraf:/out
+    mem_limit: 512m
+    healthcheck:
+      test: ["CMD-SHELL", "telegraf --version >/dev/null"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # Prometheus and Grafana run on the host's network stack, and the other
+  # eight do not. Prometheus is the one sink that is scraped rather than
+  # pushed to, so it has to reach the collector's exporter, which runs on the
+  # host with the rest of the suite. A container on a bridge network reaches
+  # the host through the bridge's gateway address, and that path goes through
+  # the host's INPUT chain — which on any machine with a default-deny firewall
+  # (ufw, firewalld, a hardened CI image) drops it. From the host's network
+  # namespace, 127.0.0.1 is 127.0.0.1 and no firewall is in the way. Grafana
+  # follows because its Prometheus datasource has to reach Prometheus.
+  #
+  # The cost is that these two bind fixed ports instead of drawing from the
+  # published range, and that this part of the suite is Linux-only: Docker
+  # Desktop's host networking is not the host's stack. Both ports are outside
+  # 49400-49499 so they cannot collide with a port compose handed out.
+  prometheus:
+    image: prom/prometheus:v3.14.0
+    network_mode: host
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=1h
+      - --web.listen-address=127.0.0.1:49510
+      - --web.enable-lifecycle
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./out/prometheus-targets:/etc/prometheus/targets
+    mem_limit: 1g
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:49510/-/ready | grep -q Ready"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+
+  grafana:
+    image: grafana/grafana:13.2.1
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_SECURITY_ADMIN_PASSWORD: mikroscope
+      GF_INSTALL_PLUGINS: ""
+      GF_SERVER_HTTP_ADDR: 127.0.0.1
+      GF_SERVER_HTTP_PORT: "49511"
+    network_mode: host
+    mem_limit: 1g
+    # Ordering only, deliberately not `condition: service_healthy`: `up -d
+    # --wait` would otherwise block on the slowest store and hide the per
+    # service boot timings the harness reports.
+    #
+    # The datasources are created over the API by the test rather than
+    # provisioned from a file, because the address of each store is whatever
+    # port compose handed it and a file cannot know it.
+    depends_on: [influxdb, prometheus]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:49511/api/health | grep -q ok"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+
+volumes:
+  loki-data:

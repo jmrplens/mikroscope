@@ -1,0 +1,23 @@
+# A deliberately bare pipeline: no batching and no transformation, so what the
+# file exporter writes is what the sink sent. The health_check extension is
+# there because the image has no shell for a healthcheck to use.
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+exporters:
+  file:
+    path: /out/metrics.json
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+service:
+  extensions: [health_check]
+  telemetry:
+    logs:
+      level: warn
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      exporters: [file]

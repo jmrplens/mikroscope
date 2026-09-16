@@ -22,6 +22,11 @@ run:
   go: "1.27"
   timeout: 15m
   tests: true
+  # The docker store suite is behind this tag (test/e2e/docker), and a package
+  # no linter compiles is a package that rots. Naming it here is what makes
+  # `make golangci-lint` see it; `make e2e-docker-build` type-checks it.
+  build-tags:
+    - dockere2e
   # golangci-lint defaults to one worker per logical CPU, and the working set of
   # every linter across every package grows with it. Four matches a CI runner,
   # so a local run behaves like the one that gates the merge.
