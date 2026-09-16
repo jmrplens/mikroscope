@@ -1,0 +1,34 @@
+packages:
+  - .
+
+# The only packages allowed to run an install script. pnpm blocks them all by
+# default, which is the right default: an install script is arbitrary code from
+# a transitive dependency. esbuild and sharp are named because the site does not
+# build without them — both ship a native binary, and Astro's image pipeline is
+# sharp. puppeteer is named because pa11y-ci drives a browser through it and its
+# install script is what fetches that browser. scripts/run-pa11y.mjs hands it
+# Playwright's Chromium instead, so the Chrome the script downloads goes unused,
+# as it does on ghchronicle's site, which allows the same script.
+allowBuilds:
+  esbuild: true
+  puppeteer: true
+  sharp: true
+
+auditConfig:
+  ignoreGhsas:
+    # extract-zip symlink path traversal: the advisory lists >=2.0.2 as patched,
+    # but no release after 2.0.1 exists on npm, so there is nothing to pin to.
+    # Dev-only path (pa11y-ci > puppeteer > @puppeteer/browsers). Remove this
+    # exception once extract-zip publishes a fixed release.
+    - GHSA-jmr9-qjv8-65gv
+    # extract-zip arbitrary file writes through symlink archive entries: the
+    # same package, the same dev-only path, and the same absence of anywhere to
+    # go. This one records no patched version at all, and 2.0.1 is still the
+    # last release published. Both exceptions retire together, on the release
+    # that fixes either.
+    - GHSA-7pqw-9j4j-h8q3
+
+# Resolve to the latest published versions; pnpm 11.8 applies a non-zero
+# release-age gate otherwise, which turns a fresh install into a different
+# dependency tree from the one the lockfile was written against.
+minimumReleaseAge: 0

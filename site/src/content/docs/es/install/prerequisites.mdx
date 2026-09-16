@@ -1,0 +1,160 @@
+---
+title: Lo que necesita el router
+description: La arquitectura, el paquete container y el paso de device-mode que exige una mano en el router, más lo que necesita tu propia máquina, y cómo comprueba `doctor` cada cosa.
+---
+
+import { Aside, Steps } from "@astrojs/starlight/components";
+import DoctorChecks from "../../../../components/DoctorChecks.astro";
+import NotClaimed from "../../../../components/NotClaimed.astro";
+import SeeAlso from "../../../../components/SeeAlso.astro";
+
+Esta página enumera lo que tiene que estar listo antes de que
+`mikroscope install` pueda escribir nada: tres cosas en el router que la
+herramienta no puede hacer por ti, los recursos y las listas del cortafuegos que
+comprueba, y lo que necesita la máquina desde la que lo ejecutas.
+`mikroscope doctor` lo comprueba todo en solo lectura, en una conexión ssh, e
+imprime la orden exacta o el paso físico para lo que falte.
+
+<Aside type="caution" title="Un paso exige tus manos en el router">
+	`device-mode container=yes` no se puede activar en remoto. Tras la orden, RouterOS espera cinco
+	minutos a que alguien pulse el botón de reset o el de modo, o haga un ciclo de alimentación del
+	equipo. Ninguna sesión ssh, llamada a la API ni opción de esta herramienta puede dar ese paso.
+	Cuenta con estar junto al router.
+</Aside>
+
+## Un equipo capaz de ejecutar contenedores
+
+El router debe ejecutar RouterOS 7.24 o posterior en una de tres arquitecturas:
+arm64, arm (RouterOS de 32 bits en la línea renovada hEX) o x86_64. Ni MIPS ni
+TILE.
+
+7.24 es el suelo porque el paso del contenedor escribe `privileged=`, un
+atributo que RouterOS añadió en esa versión. `doctor` imprime la versión y no
+comprueba nada contra ella, así que en una 7.x anterior la instalación llega
+hasta el contenedor y falla ahí con el error de RouterOS sobre un parámetro
+`privileged` desconocido —y una escritura que imprime algo cuenta como fallo,
+de modo que la instalación se detiene y se lleva de vuelta el tar que había
+subido—. `--privileged=false` es la forma de pasar, al precio de todo lo que
+oculta el espacio de nombres de usuario del contenedor:
+[Lo que aporta privileged](/mikroscope/es/limits/privileged/) lo enumera.
+
+Dile a la CLI cuál con `--arch`: `arm64` (por defecto), `arm` o `amd64`.
+`doctor` la compara con el `architecture-name` del router y, si no coinciden,
+nombra la opción con la que volver a ejecutar. Para `arm` el agente se compila
+con `--goarm`, por defecto `7`, y la imagen declara la variante v7.
+
+## El paquete container
+
+Descarga el paquete `container` para tu arquitectura y tu versión de RouterOS
+desde mikrotik.com, súbelo al router y reinicia; después
+`/system/package/enable container`. Esa es la solución que imprime `doctor`, y
+solo da el paquete por presente cuando está instalado y no deshabilitado.
+
+## device-mode container=yes
+
+MikroTik protege los contenedores tras un paso físico:
+
+<Steps>
+
+1. Ejecuta, en la consola del router:
+
+   ```text
+   /system/device-mode/update container=yes
+   ```
+
+2. La consola responde:
+
+   ```text
+   update: please activate by turning power off or pressing reset or mode button in 5m00s
+   ```
+
+3. En esos cinco minutos, pulsa el botón de reset o el de modo, o haz un ciclo de
+   alimentación del router. Si nadie lo hace, el cambio se cancela.
+
+</Steps>
+
+Tras tres intentos fallidos el router dice
+`too many unsuccessful attempts … to reset attempt-count` y necesita un ciclo de
+alimentación antes de aceptar otro.
+
+## Lo que comprueba doctor
+
+`doctor` imprime `device:` con la placa, la versión de RouterOS y la
+arquitectura, y después una línea por comprobación marcada `ok` o `MISSING`, con
+lo que encontró entre paréntesis y, si falta algo, una línea `fix:`. Termina con
+`doctor: every prerequisite is met`, o falla con
+`N prerequisite(s) missing; nothing was written`. `install` ejecuta primero las
+mismas comprobaciones salvo que pases `--no-doctor`.
+
+<DoctorChecks />
+
+La comprobación de flash usa el tamaño real del tar dentro de `install`.
+`doctor` por sí solo supone una imagen de 7 MiB, así que pide 18.0 MiB. El doble
+de la imagen porque el tar y la raíz extraída de él conviven en el disco hasta
+que `install` borra el tar; con `--remote-image` no se sube ningún tar, así que
+la comprobación pide solo los 4 MiB de margen. El umbral de memoria sigue a
+`--memory-max`: pide al menos lo que pide esa opción, que por defecto son
+64 MiB, de modo que `--memory-max 128M` en un router con 70 MiB libres se
+detecta aquí y no en un contenedor que no arranca.
+
+La comprobación de `registry-url` solo se ejecuta con `--remote-image`, y solo
+cuando la referencia lleva un host de registro. `/container/config` es global al
+equipo y compartido con cualquier otro contenedor que tenga, así que mikroscope
+lee ese ajuste y nunca lo escribe;
+[Cuatro formas de instalar](/mikroscope/es/install/routes/#un-pull-del-registro)
+tiene la orden para ponerlo a mano.
+
+Las dos comprobaciones de listas existen por dos reglas raw del cortafuegos que
+descartan cada paquete que envía un contenedor;
+[Las dos trampas del cortafuegos](/mikroscope/es/install/firewall/) las explica.
+`doctor` marca como ausente una address-list vacía incluso en un router que no
+tiene esa regla; ahí, `--no-doctor` es la forma de pasar, y con ella te saltas
+también todas las demás comprobaciones.
+
+## Lo que necesita tu máquina
+
+- **ssh al router con un usuario que pueda escribir**, tu propio acceso de
+  administrador. La CLI ejecuta el `ssh` del sistema con `BatchMode=yes` y
+  `ConnectTimeout=15`, así que no puede responder a una petición de contraseña:
+  usa una clave o un agente ssh. `--router` acepta `user@host` o un alias de la
+  configuración de ssh; `--ssh-port` y `--ssh-key`
+  (`MIKROSCOPE_SSH_PORT`, `MIKROSCOPE_SSH_KEY`) recurren a tu configuración de
+  ssh cuando no tienen valor. La imagen sube con `scp`, en las dos rutas que
+  suben una. La ruta del script de RouterOS no necesita ssh en absoluto.
+- **Una imagen del agente, por una de cuatro rutas.** La CLI puede compilar una
+  (`go build ./cmd/mikroscope-agent` desde un checkout, lo que exige Go 1.27),
+  tomar el tar que publica la release (`--agent-tar`, sin toolchain y sin
+  checkout), o dejar que el router se baje la imagen él mismo
+  (`--remote-image`, sin subir nada). La cuarta ruta no necesita ni CLI en tu
+  máquina: `plan --rsc` escribe un script de RouterOS que pegas en el router.
+  [Cuatro formas de instalar](/mikroscope/es/install/routes/) tiene las
+  órdenes, lo que necesita cada ruta y cómo verificar una descarga.
+- **Una forma de llegar al agente** una vez en marcha: una ruta a la /30 del
+  contenedor a través del router, el relay por la API de RouterOS, o
+  `--expose`. Consulta
+  [Llegar al agente](/mikroscope/es/install/reaching-the-agent/).
+- **Un usuario de la API de RouterOS**, solo para el transporte relay,
+  `--log-markers` y la capa de la API del colector. Se queda en tu máquina; su
+  política está en [El usuario de la API](/mikroscope/es/security/api-user/).
+
+<NotClaimed variant="untested">
+	Una instalación en arm o x86_64: todas las instalaciones hasta ahora se hicieron en un único
+	RB5009 arm64, y el hEX S que probará RouterOS de 32 bits no ha llegado. Cualquier RouterOS que no
+	sea 7.24.2. El paso del contenedor escribe `privileged=`, que RouterOS añadió en 7.24, y entradas
+	de envlist con `key=`, donde `name=` falla en 7.24.2; no se probó cómo acepta una 7.x anterior
+	cualquiera de las dos.
+</NotClaimed>
+
+<SeeAlso>
+
+## Véase también
+
+- [Instalar el agente](/mikroscope/es/install/): lo que hace `install` una vez esto está listo.
+- [Cuatro formas de instalar](/mikroscope/es/install/routes/): las cuatro rutas por las que la
+  imagen del agente llega al router, y cómo verificar una descarga.
+- [Las dos trampas del cortafuegos](/mikroscope/es/install/firewall/): por qué existen las dos
+  comprobaciones de listas.
+- [Dónde va cada cosa](/mikroscope/es/install/layout/): el disco al que se refiere la comprobación
+  de flash, y `--ephemeral`.
+
+</SeeAlso>

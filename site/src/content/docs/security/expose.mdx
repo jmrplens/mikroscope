@@ -1,0 +1,139 @@
+---
+title: What --expose opens
+description: The two tagged firewall rules install --expose adds, who can reach the agent through them, and why the token becomes mandatory.
+---
+
+import { Aside } from "@astrojs/starlight/components";
+import NotClaimed from "../../../components/NotClaimed.astro";
+import RouterWrites from "../../../components/RouterWrites.astro";
+import SeeAlso from "../../../components/SeeAlso.astro";
+import Verified from "../../../components/Verified.astro";
+
+`--expose` is the one install option that changes the router's firewall beyond the two list
+memberships every install adds. This page answers exactly what it writes, who can then reach the
+agent, what the token protects and what it does not, and how the rules come off again.
+
+<RouterWrites command="expose" />
+
+## Without it
+
+The agent binds to the container's address, the `.2` of `--subnet` (`172.30.10.2` by default), on
+`--port` (`9123`). Without `--expose` it is reachable only from hosts the router routes to that veth
+/30. On the reference RB5009 the interface-list and address-list memberships every install adds
+were enough for a LAN host to reach it directly; [the two firewall
+traps](/mikroscope/install/firewall/) explains why those two are needed.
+
+## The two rules
+
+`install --expose --lan-address <router LAN IP> --token …` adds, after the list memberships and
+before the container, a dst-nat from the router's LAN address on the agent port to the veth:
+
+```text
+/ip/firewall/nat/add chain=dstnat dst-address=<router LAN IP> protocol=tcp dst-port=9123 action=dst-nat to-addresses=172.30.10.2 to-ports=9123 comment="mikroscope:mikroscope (managed by mikroscope)"
+```
+
+and a forward accept for that flow, placed before the first `chain=forward action=drop` rule, or
+appended when the forward chain has no drop:
+
+```text
+/ip/firewall/filter/add chain=forward dst-address=172.30.10.2 protocol=tcp dst-port=9123 connection-nat-state=dstnat action=accept comment="mikroscope:mikroscope (managed by mikroscope)" place-before=<first forward drop>
+```
+
+The addresses and port above are the defaults, and `<first forward drop>` stands for the lookup the
+real command does on the router before it adds the rule; `plan` prints both commands exactly as
+they will run, with your values. Both carry the tag, and both were verified
+on <Verified of="expose-rules" />: the LAN reached the agent through the router's own address, and both rules
+were removable by tag.
+
+`--lan-address` must be an IPv4 address; `install` refuses `--expose` without one
+(`--expose needs the router's IPv4 LAN address`). An existing rule matching the same chain,
+destination address, port and protocol that does not carry the tag stops `install`, as any foreign
+object does — see [what the installer refuses](/mikroscope/security/installer/).
+
+## Who reaches the agent through them
+
+Every LAN host can then reach the agent at `<router LAN IP>:9123`. Neither rule restricts the source:
+the dst-nat has no `in-interface` and no `src-address`, and the accept matches only the destination,
+the port and `connection-nat-state=dstnat`. Which hosts get through is decided by which hosts can
+send a packet to the router's LAN address, and by whatever your other rules do before these.
+
+<NotClaimed variant="untested">
+	Only a LAN host reaching the router's LAN address was tested. Whether anything outside the LAN can
+	reach that address on your router depends on the rest of your firewall, which mikroscope neither
+	reads nor changes, and no such path was tried.
+</NotClaimed>
+
+## The token
+
+Because the agent is no longer reachable only through the veth, the token is mandatory: `install`
+refuses `--expose` without one (`--expose makes the agent reachable from the LAN: a token is
+mandatory`). With a token set, every endpoint the agent serves except `/healthz` returns
+`401 token required`, with `WWW-Authenticate: Bearer`, unless the request carries
+`Authorization: Bearer <token>`: `/capabilities`, `/snapshot`, `/stream`, `/metrics`, `/captures`,
+`/captures/{id}` (including `DELETE`) and `POST /capture`. A path the agent does not serve gets
+`404`, and a wrong method `405`, token or not. The agent strips an optional `"Bearer "` prefix before
+comparing, so a header holding the bare token is accepted too.
+
+`/healthz` stays open. It returns the agent's version, rate, sequence numbers, uptime, slip count,
+capabilities hash, its wall and monotonic clocks, and the board's device-tree model — the model is
+there on purpose, because it is what an operator is asked to send when their board has no
+kernel-to-RouterOS port map yet.
+
+What the token is, and is not:
+
+- It may contain letters, digits, `_`, `.` and `-`, up to 128 characters; anything else is refused
+  before the first command.
+- It is stored in the envlist as `TOKEN`. `/container/print` returned the `envlist` property to a
+  `read,api` user (<Verified of="read-user-envlist" />); reading the entries' values was not checked
+  separately, and the design assumes a `read` user can. Treat it as guarding the agent's HTTP paths
+  from the LAN, not from the router's own `read` users.
+- A token set without `--expose` is still written and still required.
+- The agent compares it as a plain string, over plain HTTP: the dst-nat carries no TLS, so the
+  header crosses the LAN unencrypted.
+
+## What uses the exposed path, and what does not
+
+The rules serve a client that addresses `<router LAN IP>:<port>` — a Prometheus job, a browser, a
+`curl` with the header. mikroscope's own commands do not use that address:
+
+- `record` and `forward` build the agent's URL from `--subnet` and `--port`, so they always
+  dial the container's address. There is no flag that points them at the LAN address.
+- `install`, `upgrade` and `status` probe `/healthz` at the container's address too.
+- The relay transport cannot carry the token: `/tool fetch` on the router sends no
+  `Authorization` header. Against an agent with a token, the relay's `/healthz` answers and every
+  sample request is refused. A token needs the direct transport, or a deployment without a token.
+
+## Removing them
+
+`uninstall` removes both rules, selecting each by the tag together with the chain, destination
+address, port and protocol, then asks the router whether anything tagged is still there and fails
+naming the step if it is. Those `find` selectors quote the address and the port: unquoted, RouterOS
+parses them as typed values and matches nothing — an unquoted `dst-port=9123` found no rule
+on <Verified of="find-quoting" />, and an uninstall built that way would have reported success with the
+rule still in place.
+
+`upgrade` does not touch either rule. It removes the container step — the container, the envlist
+`<name>-env` and the image — and creates it again, writing the envlist from the flags given to
+`upgrade`, not from the ones the install used. Its only check is that every step of the plan built
+from its own flags exists, and a plan built without `--expose` has no rule steps to miss.
+
+<Aside type="caution" title="Give upgrade the flags install had">
+	Pass `upgrade` the same `--token` (or `MIKROSCOPE_TOKEN`), `--expose` and `--lan-address`, and the
+	same tuning flags (`--rate`, `--mem-limit-mb`, `--privileged` and the rest), as the install. An
+	upgrade without the token passes its check, leaves both rules in place and writes an envlist with
+	no `TOKEN`: the agent is then reachable from the LAN with no token. A tuning flag left out comes
+	back at its default.
+</Aside>
+
+<SeeAlso>
+
+## See also
+
+- [Reaching the agent](/mikroscope/install/reaching-the-agent/): direct, relay and `--expose`
+  compared.
+- [What runs where](/mikroscope/security/): where the token sits among the other credentials.
+- [What the installer refuses](/mikroscope/security/installer/): the ownership checks every rule
+  goes through.
+- [The agent's HTTP endpoints](/mikroscope/reference/http/): every path the token guards.
+
+</SeeAlso>

@@ -1,0 +1,48 @@
+---
+/**
+ * The reasons a level source can give for its cadence, from
+ * src/data/cadence-reasons.ts, in the order the code's comment lists them.
+ *
+ * Shown where the floors are explained and where the device-info stream
+ * carries them to a store, from one table, so the two cannot word the same
+ * reason differently.
+ */
+import { cadenceReasons } from "../data/cadence-reasons";
+import { nextId } from "../lib/ids";
+import { langOf } from "../lib/lang";
+import CodeText from "./CodeText.astro";
+import ScrollTable from "./ScrollTable.astro";
+import InlineCode from "./InlineCode.astro";
+
+const lang = langOf(Astro.locals.starlightRoute);
+const t = Astro.locals.t;
+const captionId = nextId(Astro.locals, "ms-cadence");
+---
+
+<ScrollTable labelledby={captionId}>
+	<table>
+		<caption class="sr-only" id={captionId}>{t("ms.cadence.label")}</caption>
+		<thead>
+			<tr>
+				<th scope="col">
+					<code>reason</code>
+				</th>
+				<th scope="col">{t("ms.cadence.meaning")}</th>
+			</tr>
+		</thead>
+		<tbody>
+			{
+				cadenceReasons.map((r) => (
+					<tr>
+						<th scope="row">
+							<InlineCode text={r.reason} />
+						</th>
+						<td>
+							<CodeText text={r.meaning[lang]} />
+						</td>
+					</tr>
+				))
+			}
+		</tbody>
+	</table>
+</ScrollTable>

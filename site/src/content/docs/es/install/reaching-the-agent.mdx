@@ -1,0 +1,143 @@
+---
+title: Llegar al agente
+description: Cómo llega la máquina que ejecuta `record` o `forward` a un agente que solo escucha en la dirección de su veth, qué te dice el sondeo tras `install` cuando no puede y qué cuesta cada vía, directa, relay y `--expose`.
+---
+
+import Measured from "../../../../components/Measured.astro";
+import NotClaimed from "../../../../components/NotClaimed.astro";
+import RouterWrites from "../../../../components/RouterWrites.astro";
+import ScrollTable from "../../../../components/ScrollTable.astro";
+import SeeAlso from "../../../../components/SeeAlso.astro";
+import Verified from "../../../../components/Verified.astro";
+
+El agente escucha solo en la dirección de la veth — `http://172.30.10.2:9123`
+con los valores por defecto — y no abre ninguna conexión saliente, nunca. Algo
+tiene que ir hasta él. Esta página responde a cómo llega tu máquina, qué
+comprueba `install` por ti y cuál de las tres vías usar cuando la primera no
+funciona.
+
+## Lo que te dice el sondeo tras install
+
+Después de `install` y `upgrade`, la CLI sondea el agente desde tu máquina: una
+conexión TCP a la dirección y el puerto del agente, luego `GET /healthz`,
+reintentado un segundo después de cada intento fallido (cada intento agota su
+tiempo a los 2 s) durante hasta 30 s. Cuando responde, la CLI imprime la
+versión del agente, la cadencia, el número de secuencia, los ticks retrasados y el
+tiempo de ida y vuelta, como en
+`direct transport ok: agent 1.0.0, 10 Hz, seq 29, 0 slipped, 7ms round trip`.
+La versión es la de la propia CLI: `install` graba en el agente que compila su
+`internal/version.Version`, y tanto el Makefile como la release lo toman del
+fichero VERSION, así que un agente puesto ahí por 1.0.0 informa `1.0.0`. Un
+agente que se bajó el router informa la etiqueta con la que se publicó.
+En el RB5009 (RouterOS 7.24.2, 2026-09-12) el agente respondió 3 s después de la
+instalación, con un tiempo de ida y vuelta de 5–7 ms.
+
+Cuando no responde, la CLI pregunta al router — una conexión más — si el
+contenedor que lleva la etiqueta está en marcha, porque una veth solo está
+levantada mientras su contenedor está en marcha:
+
+- **No está en marcha**: lo dice y señala el log del router,
+  `/log/print where topics~"container"`. El cortafuegos todavía no es el
+  problema.
+- **Está en marcha**: esta máquina no llega a la dirección del agente. Sugiere
+  ejecutar el colector en una máquina desde la que el router enrute hacia la
+  veth, o `install --expose --lan-address <router LAN IP> --token …`. El relay no está en ese
+  mensaje; es la tercera vía, más abajo.
+
+En los dos casos la orden falla con
+`agent installed but not reachable from this host`, y todo lo que creó se queda
+en el router.
+
+## Directa, la predeterminada
+
+Tu máquina llega a la /30 a través del router, con HTTP plano a la dirección del
+agente. En <Verified of="direct-lists" /> bastaron las dos pertenencias a listas que añade
+`install`; [Las dos trampas del cortafuegos](/mikroscope/es/install/firewall/)
+las explica. La máquina necesita que sus paquetes para la /30 vayan al router:
+una máquina cuya puerta de enlace por defecto es el router ya los manda ahí.
+
+Con un token puesto, el transporte directo envía
+`Authorization: Bearer <token>` a partir de `--token` o `MIKROSCOPE_TOKEN`.
+`/healthz` nunca lo necesita.
+
+## Relay, a través de la API de RouterOS
+
+`record` y `forward` con `--transport relay` ejecutan `/tool fetch` en el router
+por la API binaria, y el router, que sí llega a su propia veth, pide los datos
+al agente.
+
+- Necesita un usuario de RouterOS con la política `read,api,test`: en RouterOS
+  7.24.2 `/tool fetch` exige `test`, y sin ella la llamada responde `not enough
+permissions (9)` en vez de venir vacía.
+  [El usuario de la API](/mikroscope/es/security/api-user/) tiene las órdenes.
+  La CLI acepta `--api host:port` (`MIKROSCOPE_API_ADDR`), `--api-user`
+  (`MIKROSCOPE_API_USER`) y la contraseña solo desde
+  `MIKROSCOPE_API_PASSWORD`, nunca desde una opción.
+- Cada llamada devuelve como mucho <Measured id="relay.replyMaxBytes" />; RouterOS trunca en silencio lo
+  que sea más largo. Por eso el relay pide como mucho 18 muestras por petición y
+  rechaza una respuesta que llegue al tope en vez de interpretarla truncada.
+  `forward` avisa al arrancar cuando eso no puede seguir la cadencia del agente.
+- Cada llamada tarda o ~3 ms o ~1 s; más o menos la mitad de las llamadas
+  tardaron ~1 s (RB5009, RouterOS 7.24.2, 2026-09-11).
+- El relay de esta compilación solo le pasa la URL a `/tool fetch`, sin
+  cabeceras, así que no presenta un token. Todas las rutas salvo `/healthz` devuelven 401 sin él: un
+  agente instalado con token necesita el transporte directo.
+
+`--transport auto`, el valor por defecto, prueba primero la vía directa; si
+`/healthz` no responde y `--api` y `--api-user` están puestos, prueba el relay;
+si no, falla nombrando `install --expose`.
+
+## --expose, en la dirección LAN del router
+
+<RouterWrites command="expose" />
+
+`install --expose --lan-address <router LAN IP> --token …` añade un dst-nat
+desde la dirección LAN del router en el puerto del agente hacia la veth, y un
+accept en forward para ese flujo colocado antes del primer drop de forward
+(añadido al final cuando la cadena forward no tiene drop). Cualquier máquina de
+la LAN puede entonces llegar al agente, así que el token es obligatorio:
+`install` rechaza `--expose` sin token o sin una dirección LAN IPv4. El token
+puede contener letras, dígitos, `_`, `.` y `-`, hasta 128 caracteres.
+`uninstall` quita las dos reglas — si recibe otra vez `--expose`, como advierte
+[Instalar el agente](/mikroscope/es/install/). Verificado
+en <Verified of="expose-rules" />: el par funciona, y las dos reglas se pueden quitar por etiqueta.
+
+Lo usa un cliente al que apuntes a `http://<router LAN IP>:9123`: Prometheus,
+`curl`. Los transportes de la propia CLI no. `record`, `forward` y el sondeo
+tras `install` construyen la dirección del agente a partir de `--subnet` y
+`--port`, y esta compilación no tiene ninguna opción que los dirija a la
+dirección expuesta.
+
+Lo que abre un servicio escuchando para toda la LAN está en
+[Lo que abre --expose](/mikroscope/es/security/expose/).
+
+## Elegir
+
+<ScrollTable label="Las tres vías para llegar al agente">
+
+| Vía        | Necesita                                                               | Costes y límites                                                                                                         |
+| ---------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| directa    | una ruta desde tu máquina a la /30 a través del router                 | solo las dos pertenencias a listas que ya añade `install`                                                                |
+| relay      | un usuario de la API con `read,api,test`; `--transport relay` o `auto` | <Measured id="relay.replyMaxBytes" /> y 18 muestras por llamada, ~1 s en más o menos la mitad de las llamadas, sin token |
+| `--expose` | `--lan-address` y un token; dos reglas de cortafuegos en el router     | alcanzable desde toda la LAN; no lo usan `record`, `forward` ni el sondeo                                                |
+
+</ScrollTable>
+
+<NotClaimed variant="device-specific">
+	Todos los resultados de alcance de esta página son del RB5009, con su propio cortafuegos y su LAN,
+	en septiembre de 2026. El tope de <Measured id="relay.replyMaxBytes" /> y la fracción de ~1 s del
+	relay se midieron en RouterOS 7.24.2 y pueden ser distintos en otra versión.
+</NotClaimed>
+
+<SeeAlso>
+
+## Véase también
+
+- [Las dos trampas del cortafuegos](/mikroscope/es/install/firewall/): las pertenencias de las que
+  depende el transporte directo.
+- [El usuario de la API](/mikroscope/es/security/api-user/): el usuario que necesita el relay, y
+  dónde restringirlo.
+- [Lo que abre --expose](/mikroscope/es/security/expose/): las dos reglas y el token.
+- [El colector](/mikroscope/es/sinks/): lo que tira del agente una vez que es alcanzable.
+
+</SeeAlso>

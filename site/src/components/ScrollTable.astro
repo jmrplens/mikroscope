@@ -1,0 +1,154 @@
+---
+/**
+ * A table that keeps its rows readable at any width and scrolls inside its
+ * own box when it still does not fit.
+ *
+ * Two kinds of table live on this site. Most hold sentences: a flag and what
+ * it means, a metric family and what it counts. Their cells wrap, the last
+ * column keeps a readable minimum width, and the region scrolls only when the
+ * columns' minimums add up to more than the box. The other kind holds numbers
+ * a reader compares across a row ("10.13 %" broken across two lines is not a
+ * number any more); `nowrap` keeps those cells on one line and pins the first
+ * column, so a row keeps its name while the numbers scroll under it.
+ *
+ * With nowrap as the only mode, the prose tables turned each description into
+ * one line: at 1280 px 193 of 214 regions scrolled by more than 40 px and the
+ * widest, the forward flags on reference/cli, was 3363 px in a 616 px box
+ * (Playwright against pnpm preview, 2026-09-15).
+ *
+ * A scroll container is focusable for keyboard users, so it is a named
+ * region. The visible hint, and the tab stop, exist only while the table
+ * actually overflows: a hint that is always there is a hint people learn to
+ * ignore, and a tab stop that scrolls nothing is a wasted keypress. The markup
+ * ships focusable, so without JavaScript an overflowing table stays reachable.
+ *
+ * In a box under 36rem a table of sentences that does not fit stops being a
+ * grid: each row becomes a block, each cell a label and its value. Wider than
+ * that it stays a grid and scrolls, because one row per screen is the wrong
+ * trade when a table of thirty flags fits in two. Wrapping alone still
+ * left the description column 287 px to the right of a 358 px box on
+ * reference/cli at 390 px (2026-09-15). The labels come from the header row,
+ * set by the script below, which also restates the table roles, because a
+ * table drawn as blocks loses them in some screen readers. Without JavaScript
+ * the table stays a table and scrolls.
+ */
+interface Props {
+	/** The region's name, when nothing inside it already names the table. */
+	label?: string;
+	/**
+	 * The id of an element inside that already names the table — its caption.
+	 * Pass this instead of `label` when the table has one: a region and a table
+	 * both carrying the same string made screen readers announce the name twice
+	 * in a row ("region The measured runs, table The measured runs", Playwright
+	 * ariaSnapshot, 2026-09-15).
+	 */
+	labelledby?: string;
+	/** Keep every cell on one line: for tables of numbers compared along a row. */
+	nowrap?: boolean;
+	/**
+	 * Pin the first column while the rest scroll. Defaults to `nowrap`: in a
+	 * table of sentences the name column can take half a phone's width, and
+	 * pinned it left about 200 px of window onto the text (reference/cli at
+	 * 390 px, 2026-09-15).
+	 */
+	sticky?: boolean;
+}
+
+const { label, labelledby, nowrap = false, sticky = nowrap } = Astro.props;
+if ((!label || label.trim() === "") && !labelledby) {
+	throw new Error(
+		"ScrollTable: name the region, with label=\"The five measured runs\" or labelledby=\"<caption id>\"",
+	);
+}
+---
+
+<div
+	class="ms-scroll"
+	role="region"
+	aria-label={labelledby ? undefined : label}
+	aria-labelledby={labelledby}
+	tabindex="0"
+	data-sticky={sticky || undefined}
+	data-nowrap={nowrap || undefined}
+>
+	<slot />
+</div>
+<p class="ms-scroll-hint" hidden>{Astro.locals.t("ms.scroll.hint")}</p>
+
+<script>
+	// One observer for every region on the page. It watches the region (its box
+	// changes with the viewport) and the table inside it (its width changes with
+	// its content, which the region's box does not report).
+	const update = (region: HTMLElement) => {
+		// A labelled table of sentences that does not fit is drawn as blocks.
+		// The width it needs as a grid is measured while it is one and kept, so
+		// the switch back happens only once the box is wide enough again and
+		// the two layouts never chase each other.
+		const narrow = region.clientWidth < 36 * 16;
+		if (region.hasAttribute("data-stack")) {
+			if (!region.hasAttribute("data-stacked")) {
+				const need = region.scrollWidth;
+				if (narrow && need > region.clientWidth + 1) {
+					region.dataset.gridWidth = String(need);
+					region.dataset.stacked = "";
+				}
+			} else if (!narrow || region.clientWidth >= Number(region.dataset.gridWidth ?? Infinity)) {
+				delete region.dataset.stacked;
+			}
+		}
+		// The ARIA scrollable-region pattern pairs role=region with the
+		// focusability, so the two are toggled together: a table that fits is
+		// not a scrollable region and has no business being a landmark. Both
+		// stay in the server-rendered markup, so a reader without JavaScript
+		// still gets the named, focusable region.
+		const overflow = region.scrollWidth > region.clientWidth;
+		if (overflow) {
+			region.setAttribute("tabindex", "0");
+			region.setAttribute("role", "region");
+		} else {
+			region.removeAttribute("tabindex");
+			region.removeAttribute("role");
+		}
+		const hint = region.nextElementSibling;
+		if (hint instanceof HTMLElement && hint.classList.contains("ms-scroll-hint")) {
+			hint.hidden = !overflow;
+		}
+	};
+	const observer = new ResizeObserver((entries) => {
+		for (const { target } of entries) {
+			const region = target.closest<HTMLElement>(".ms-scroll");
+			if (region) update(region);
+		}
+	});
+	const stack = (region: HTMLElement) => {
+		const table = region.querySelector("table");
+		const head = table?.tHead?.rows[table.tHead.rows.length - 1];
+		if (!table || !head || table.tBodies.length === 0) return;
+		const labels: string[] = [];
+		for (const cell of head.cells) {
+			for (let i = 0; i < cell.colSpan; i++) labels.push(cell.textContent?.trim() ?? "");
+		}
+		table.setAttribute("role", "table");
+		for (const group of [table.tHead, ...table.tBodies]) group?.setAttribute("role", "rowgroup");
+		for (const row of table.rows) {
+			row.setAttribute("role", "row");
+			let col = 0;
+			for (const cell of row.cells) {
+				const inHead = row.parentElement === table.tHead;
+				cell.setAttribute(
+					"role",
+					inHead ? "columnheader" : cell.tagName === "TH" ? "rowheader" : "cell",
+				);
+				if (!inHead && labels[col]) cell.dataset.label = labels[col];
+				col += cell.colSpan;
+			}
+		}
+		region.dataset.stack = "";
+		update(region);
+	};
+	for (const region of document.querySelectorAll<HTMLElement>(".ms-scroll")) {
+		if (!region.hasAttribute("data-nowrap")) stack(region);
+		observer.observe(region);
+		for (const child of region.children) observer.observe(child);
+	}
+</script>

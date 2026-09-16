@@ -1,0 +1,218 @@
+---
+title: Un bucle que solo veía el kernel
+description: Un bucle de capa 2 en la red de producción del router de referencia que ni el log de RouterOS ni su monitor de puertos mostraron nunca, encontrado por la fuente de log del kernel del agente, diagnosticado a partir de una tasa y corregido con una actualización de firmware confirmada de dos formas independientes.
+---
+
+import FaultSignature from "../../../../components/FaultSignature.astro";
+import Measured from "../../../../components/Measured.astro";
+import NotClaimed from "../../../../components/NotClaimed.astro";
+import ScrollTable from "../../../../components/ScrollTable.astro";
+import SeeAlso from "../../../../components/SeeAlso.astro";
+
+Este fallo no se provocó. Se encontró por casualidad el 2026-09-12, mientras se
+medía otra cosa, en el RB5009UG+S+ de producción del propietario (RouterOS
+7.24.2, kernel 5.6.3), y se diagnosticó y corrigió ese mismo día. Es la respuesta
+más clara que tiene este proyecto a _"¿por qué no consultar sin más la API de
+RouterOS?"_: durante toda su vida, la API informó de un equipo sano.
+
+La página sigue el diagnóstico en el orden en que ocurrió, porque el orden es el
+método.
+
+## El síntoma
+
+`/snapshot` traía un flujo constante de `events` — la fuente `kmsg` del agente —
+a **<Measured id="loop.eventsBefore" />**:
+
+```text
+[6] br0: port 2(eth1) entered blocking state
+[4] br0: received packet on eth1 with own address as source address (addr:00:00:5e:00:53:5d, vlan:0)
+[6] br0: port 2(eth1) entered learning state
+```
+
+La dirección de la segunda línea es la del propio router: la MAC de
+`sfp-sfpplus1`, volviendo a entrar en el bridge. Aquí aparece como
+`00:00:5e:00:53:5d`, del bloque que la RFC 7042 reserva para documentación; en
+tu equipo será la de tu bridge, y así es como reconoces la línea.
+
+## Paso 1 — establecer que es real, y obtener un número
+
+Una sola línea de log alarmante es una anécdota. Una _tasa_ es una medida, y una
+tasa es lo que te dice después si una corrección funcionó. Cuenta sucesos por
+segundo en una ventana lo bastante larga como para ser estable:
+
+```sh
+curl -s "http://172.30.10.2:9123/snapshot?seconds=120" \
+  | python3 -c '
+import sys, json, collections
+rows=[json.loads(l) for l in sys.stdin if l.strip()]
+secs=sum(r["dt_ns"] for r in rows)/1e9
+ev=[e for r in rows for e in r.get("events",[])]
+print(f"{len(ev)/secs:.2f} events/s over {secs:.0f}s")
+c=collections.Counter(e["msg"].split("(")[0][:60] for e in ev)
+for k,v in c.most_common(): print(f"  {v:5d}  {k}")'
+```
+
+`?seconds=` admite de 1 a 3600, y el agente solo puede devolver lo que su anillo
+aún guarda — 300 s con el `BUFFER_S` por defecto. La longitud de la ventana sale
+de sumar el `dt_ns` de cada muestra, no del número que pediste.
+
+## Paso 2 — leer los tiempos, no solo el texto
+
+Los intervalos entre las tramas reflejadas eran de **<Measured id="loop.helloGap" />**, siempre. Eso
+no es una coincidencia que anotar y dejar atrás: 2 s es el _hello interval_ de
+STP. El mecanismo era, por tanto, "el router emite una BPDU y recibe de vuelta su
+propia BPDU", lo que es un bucle, no un cliente que se porta mal.
+
+Los tiempos suelen ser donde de verdad está el diagnóstico:
+
+```sh
+# intervalos entre apariciones consecutivas de un mismo mensaje
+... | python3 -c '
+import sys, json
+ts=sorted(e["us"]/1e6 for l in sys.stdin if l.strip()
+          for e in json.loads(l).get("events",[]) if "own address" in e["msg"])
+print([round(ts[i+1]-ts[i],2) for i in range(len(ts)-1)][:12])'
+```
+
+`us` es la marca de tiempo del propio kernel para el registro, en microsegundos
+desde el arranque sobre el reloj monótono — no el momento en que el agente lo
+leyó —, así que los intervalos son los del kernel, no los del muestreador.
+
+## Paso 3 — confirmar que la API de verdad no lo ve
+
+Merece la pena hacerlo de forma explícita, porque decide dónde gastas la hora
+siguiente:
+
+```text
+/log/print where topics~"bridge" or topics~"stp" or topics~"interface"
+/interface/bridge/port/monitor [find] once
+```
+
+Las dos volvieron limpias: cero filas de log en esos temas, todos los puertos
+`designated-port` / `in-bridge`. RouterOS no estaba ocultando el fallo; de verdad
+no muestra esta clase de sucesos del kernel.
+
+## Paso 4 — buscar evidencia que lo corrobore fuera del log del kernel
+
+Una sola fuente, por convincente que sea, es una fuente. Dos observaciones
+independientes que apuntan en la misma dirección son un diagnóstico. La MAC del
+mensaje pertenecía a `sfp-sfpplus1`, así que la sospecha obvia era el segmento
+SFP+ — pero las propias tablas del bridge decían otra cosa:
+
+```text
+# hosts aprendidos por puerto
+:foreach p in=[/interface/bridge/port/find] do={ \
+  :local n [/interface/bridge/port/get $p interface]; \
+  :put ($n . " hosts=" . [:len [/interface/bridge/host/find interface=$n]]) }
+```
+
+<ScrollTable label="MAC aprendidas, tráfico y edge de RSTP por puerto del bridge, durante el bucle">
+
+| Puerto         | MAC aprendidas | Tráfico                          | `edge` de RSTP |
+| -------------- | -------------- | -------------------------------- | -------------- |
+| `sfp-sfpplus1` | 60             | 23,8 GB rx                       | true           |
+| **`ether2`**   | **0**          | **9,15 GB rx / 22,4 M paquetes** | **false**      |
+| el resto       | 0–2            | —                                | true           |
+
+</ScrollTable>
+
+`ether2` estaba pasando 22 millones de paquetes por un enlace sano de 1 Gbps y el
+bridge no había aprendido **nada** detrás de él — que es lo que hace un bridge en
+un puerto por el que no deja de ver sus propias direcciones. Era además el único
+puerto que recibía BPDU. Las dos anomalías, en el mismo puerto.
+
+El log del kernel había dicho `eth1`, no `ether2`. Establecer que son el mismo
+puerto costó tiempo de verdad aquel día; [Puertos de RouterOS y nombres del
+kernel](/mikroscope/es/playbooks/port-names/) explica cómo hacerlo en un solo paso
+seguro, y por qué el agente lo hace por ti en esta placa.
+
+## Paso 5 — hacer un cambio que ponga a prueba la hipótesis
+
+La hipótesis era "el equipo de `ether2` tiene un segundo camino hasta el router a
+través de los otros AP, que cuelgan del switch". Primero se hicieron dos cambios
+en el switch, y el resultado honesto es que **no sirvieron de nada**:
+
+| Cambio                | Tasa de sucesos                     |
+| --------------------- | ----------------------------------- |
+| línea base            | <Measured id="loop.eventsBefore" /> |
+| cambio en el switch 1 | 1,67 /s                             |
+| cambio en el switch 2 | 1,47 /s                             |
+| (banda de ruido)      | ±0,2 /s                             |
+
+Una lectura más de la misma serie, 1,50 /s, también quedó dentro de esa banda.
+
+Es un resultado útil, no un paso perdido: descartó el switch con evidencia. La
+lección para un playbook es **volver a medir siempre después de un cambio,
+incluso uno que esperas que funcione**, y conocer tu banda de ruido antes de
+interpretar una diferencia.
+
+## Paso 6 — la corrección, y confirmarla de dos formas
+
+Se actualizó el firmware de los AP de la malla (unidades Deco); el cableado no se
+tocó. Después:
+
+```text
+events 9 -> 0.03/s   (baseline 1.49/s)
+```
+
+y de esos nueve, _ninguno_ era el mensaje del bucle — eran los AP volviendo
+(`eth1: phy link up`, `eth1: set isolation from 0 to 1`). El mensaje del bucle,
+que había aparecido cada 2 s (30 veces por minuto, rodeado del doble de registros
+de blocking/learning), apareció **cero** veces en 300 s.
+
+La segunda confirmación, independiente, es la que merece la pena interiorizar: la
+visión del bridge se volvió _coherente_.
+
+|                       | Antes | Después  |
+| --------------------- | ----- | -------- |
+| MAC en `ether2`       | 0     | **24**   |
+| MAC en `sfp-sfpplus1` | 60    | **36**   |
+| `edge` de `ether2`    | false | **true** |
+
+Los mismos 60 equipos, repartidos 36/24 en lugar de 60/0. Mientras existió el
+bucle, el router aprendía casi todos los equipos en el puerto equivocado; el
+coordinador Zigbee `00:4B:12:96:80:33`, por ejemplo, pasó del SFP+ a `ether2`,
+donde de verdad está. Una corrección que hace encajar una _segunda_ medida no
+relacionada es una corrección de la que te puedes fiar.
+
+<NotClaimed title="No establecido">
+	La actualización de firmware eliminó el bucle, y las dos medidas de arriba lo confirman. Por qué
+	hacía bucle el firmware anterior no está establecido: la corrección se observó, no se explicó.
+</NotClaimed>
+
+## La firma
+
+<FaultSignature origin="real" date="2026-09-12">
+
+- Un flujo constante y periódico de `events` del kernel en reposo, donde el
+  estado sano es cero.
+- `received packet on <port> with own address as source address`, con la propia
+  MAC del router dentro.
+- Tiempos entre llegadas de <Measured id="loop.helloGap" />: el hello interval de STP.
+- Un puerto con mucho tráfico en el que el bridge no ha aprendido ningún host,
+  con `edge=false` mientras sus vecinos están a `true`.
+- `/log/print` y `/interface/bridge/port/monitor`, ambos limpios.
+
+</FaultSignature>
+
+## Qué sacar de esto
+
+- Un texto alarmante es una pista; una tasa es evidencia; una tasa antes y
+  después es una conclusión.
+- Lee los tiempos entre llegadas. A menudo te nombran el protocolo.
+- Prefiere un cambio que discrimine entre hipótesis a un cambio que tal vez lo
+  arregle.
+- Desconfía de una corrección que solo tu instrumento principal puede confirmar.
+
+<SeeAlso>
+
+## Véase también
+
+- [Puertos de RouterOS y nombres del kernel](/mikroscope/es/playbooks/port-names/): cómo `eth1` resultó
+  ser `ether2`, y lo que el agente incluye para ahorrarte esa hora.
+- [La forma de un router en reposo](/mikroscope/es/playbooks/idle/): por qué cero sucesos es la línea
+  base contra la que destacó este flujo.
+- [La CPU del router, la red del contenedor](/mikroscope/es/limits/namespaces/): por qué el log del
+  kernel es visible desde el contenedor y los contadores de las interfaces no.
+
+</SeeAlso>

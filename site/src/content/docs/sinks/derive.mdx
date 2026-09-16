@@ -1,0 +1,199 @@
+---
+title: What the collector derives
+description: The values the collector computes beside the raw samples — memory pressure, per-packet PMU cost, packets per interrupt, the burst flag and the fast-path share — and when each one is withheld.
+---
+
+import Measured from "../../../components/Measured.astro";
+import NotClaimed from "../../../components/NotClaimed.astro";
+import ScrollTable from "../../../components/ScrollTable.astro";
+import SeeAlso from "../../../components/SeeAlso.astro";
+
+The collector has a derive stage. This page answers what it computes, from which inputs,
+when a value is withheld rather than written, and where each sink puts it. The discrete
+events the same stage raises are on [detections](/mikroscope/sinks/detections/).
+
+## Why the collector, and not the agent or the dashboard
+
+The derive stage exists for the derivations that need state across samples, that join
+the kernel tier to the API tier, or that must be computed once so every sink that carries
+them carries the same numbers (which sinks have a place for them is in the table below) —
+none of which a dashboard query does, and none of which the agent should pay for. The agent
+ships raw tick deltas and never divides; the collector may. Nothing in this stage runs
+on the router.
+
+Two rules govern it:
+
+- **A derived value is written beside its inputs, never instead of them**, so the store
+  can recompute it if the derivation is later found wrong.
+- **A detection is a discrete event** on the timeline, a "look here" — never a continuous
+  series and never a verdict.
+
+## Beside every kernel sample
+
+### `mem_pressure`
+
+The allocator's own escalation ladder as one ordinal. Every input is already shipped and
+plotted on its own; what the ordinal adds is that the ladder is ordered, so one series
+says how bad it got. The highest rung reached in the sample's `/proc/vmstat` deltas wins:
+
+<ScrollTable label="The memory-pressure ladder">
+
+| Value | Rung                                        | From the sample's `/proc/vmstat` deltas |
+| ----- | ------------------------------------------- | --------------------------------------- |
+| 0     | none                                        | none of the below                       |
+| 1     | kswapd scanned                              | `pgscan_kswapd` > 0                     |
+| 2     | direct reclaim: a thread scanned itself     | `pgscan_direct` > 0                     |
+| 3     | an allocation stalled or a page swapped out | `allocstall` > 0 or `pswpout` > 0       |
+| 4     | the OOM killer ran                          | `oom_kill` > 0                          |
+
+</ScrollTable>
+
+### The per-packet PMU ratios
+
+`cycles_per_packet`, `instructions_per_packet` and `cache_misses_per_packet`: PMU counts
+summed over cores, divided by the packets softnet processed in the sample,
+summed over cores: the forwarding cost of the router in the one unit that lets two
+configurations be compared. A ruleset change that halves cycles per packet is a real
+win; one that halves busy time while traffic also halved is not.
+
+Absent without a PMU, in a sample with no packets, and in a sample with a counter reset
+(`suspect`), where a delta is a lower bound and not a measurement.
+
+### `packets_per_irq`
+
+Packets processed per device interrupt — every `/proc/interrupts` row but the timer and
+the inter-processor interrupts — which is the NAPI coalescing depth. The device count is
+the sample's total interrupts minus the timer rows and the `IPI` rows present in its
+top-K.
+
+Absent in a sample with no packets or with a counter reset (`suspect`), and when the timer
+row is not in the sample's top-K, because then the device count cannot be separated from
+the total.
+
+### `burst`
+
+A dropped packet, or more softnet squeezes than that CPU usually has — above its trailing
+90th percentile **and** at least 3 — in a sample whose packet count was at or below its
+trailing median. It is the kernel's own evidence of a burst shorter than the sample
+interval, which is the only way this tool can see inside one. The flag is true when any
+CPU qualifies.
+
+The trailing baselines span ten seconds of wall clock at any rate: 100 samples at 10 Hz,
+500 at 50 Hz, 1 000 at 100 Hz, bounded between 10 and 2 000 samples. No sample is flagged
+until its CPU has at least ten samples of history.
+
+Why a percentile and not "any squeeze", measured on the reference RB5009 over 3 476
+samples on 2026-09-15: about <Measured id="squeeze.backgroundOne" /> of samples carry one squeeze as background and 2 % carry
+two or more. "Any squeeze" would flag the device's norm several times a minute.
+
+Three flagged samples on one CPU within 60 s is what raises the `microburst`
+[detection](/mikroscope/sinks/detections/#microburst); one flagged sample stays a data
+point.
+
+### `suspect`
+
+True when the agent reported a counter reset in the sample: a counter that went backwards
+without a 32-bit wrap. The raw row is kept; the per-packet values above — the three PMU
+ratios and `packets_per_irq` — are withheld.
+
+## Beside every counter poll
+
+On each API round that carried the per-port counters, the collector computes, over the
+deltas since the previous poll, the fast-path share of the traffic each interface hands
+the CPU: of the bytes that reached the CPU on that interface, the part RouterOS counted
+through the fast path rather than the slow path. The denominator is not the same counter
+on every interface, because RouterOS does not count the same thing on every type — the
+first counter present in both polls wins:
+
+<ScrollTable label="The fast-path share and its denominator per interface type">
+
+| Interface                                     | `fp_rx_share` is                             | Why that denominator                                                                                                             |
+| --------------------------------------------- | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| a switch port (`ether…`, `sfp-sfpplus1`)      | Δ`fp-rx-byte` / Δ`driver-rx-byte`            | its `rx-byte` is the wire total, including frames the switch chip forwarded in hardware; `driver-rx-byte` is what reached the CPU |
+| a software interface (bridge, VLAN, PPPoE)    | Δ`fp-rx-byte` / Δ`rx-byte` (or `rx-bytes`)   | it has no driver counters, and its `rx-byte` is already what the CPU sent and received                                           |
+
+</ScrollTable>
+
+`fp_tx_share` is the same quotient in the other direction — Δ`fp-tx-byte` over
+Δ`driver-tx-byte`, Δ`tx-byte` or Δ`tx-bytes` — and is withheld on the reference device, below.
+Each share is capped at 1, with the four byte deltas written on the same row; `rx_bytes`
+and `tx_bytes` there are the share's denominators, not the wire totals.
+
+**It is not a share of the wire.** A frame the switch chip forwarded in hardware is in
+neither number: it never reached the CPU. The CPU's share of a port's wire bytes —
+`driver-rx-byte` against `rx-byte` — is a different question, and the stacked "Where a
+port's receive bytes went" dashboard panel answers it from the raw counters; the derive
+stage does not compute it.
+
+Measured on the reference RB5009 (RouterOS 7.24.2, 2026-09-16) from the counters
+accumulated since boot: every switch port reads about 100 %, because `fp-rx-byte` there
+equals `driver-rx-byte` to within a few kB — every byte a port hands the CPU is counted at
+the fast-path-capable driver, so a port's line says little. The software interfaces are
+the lines the share informs on: `bridge` fast-pathed 211.9 GB of 663.0 GB (32 %),
+`PPPoE_DIGI` 99.97 %.
+
+**The tx share is withheld while `fp-tx-byte` has never counted.** On that router
+`fp-tx-byte` stands at 0 on every interface after hundreds of GB transmitted, which reads
+as a counter RouterOS does not maintain here rather than as a fast path that forwarded
+nothing; a share computed from it would be a fabricated 0 %. While an interface's
+cumulative `fp-tx-byte` is 0, the collector writes no `fp_tx_share` for it, and its
+`tx_bytes` and `fp_tx_bytes` are 0.
+
+A share is also absent for a direction that moved no bytes, whose counter went backwards,
+or whose fast-path counter the port does not report, and the whole row is absent when
+neither direction's denominator could be differenced. The first poll of each interface
+seeds and writes nothing.
+
+A delta that could not be computed — its counter absent, gone backwards, or withheld with
+the tx share — is written as 0 beside the absent share: the InfluxDB and SQL rows and the
+Elasticsearch `fastpath` object carry `rx_bytes`, `fp_rx_bytes`, `tx_bytes` and
+`fp_tx_bytes` unconditionally. Read from the code (`internal/derive/derive.go`), not
+observed. In that case read the share, not the delta.
+
+The share is per poll, and on an interface moving a few packets it swings: the dashboard
+walk of 2026-09-15 saw it go 0–100 % between polls on such interfaces, so the panel
+"Fast-path share of the traffic each interface hands the CPU" weights it by bytes per bin
+— the bin's fast-path bytes over the bin's bytes — rather than plotting the per-poll
+value. The Prometheus form of that panel is the collector's per-poll gauge and keeps the
+noise.
+
+## Where each sink puts it
+
+<ScrollTable label="Where the derived values land in each sink">
+
+| Sink                            | Beside kernel samples                                                                           | Beside counter polls                                      |
+| ------------------------------- | ----------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| InfluxDB, Telegraf, stdout `lp` | `mikroscope_derived`: `mem_pressure`, `burst`, `suspect`, and the ratios that could be computed | `mikroscope_derived_iface{interface}`                     |
+| SQL                             | `mikroscope_derived`, ratios NULL where not computed                                            | `mikroscope_derived_iface`                                |
+| file, stdout `json`             | a `{"derived":…}` line after its sample                                                         | not written; the raw counters are in the `{"api":…}` line |
+| Prometheus                      | `mikroscope_derived_*` gauges for the newest sample; `mikroscope_collector_bursts_total`        | `mikroscope_derived_fastpath_share{interface,direction}`  |
+| OTLP                            | `mikroscope.derived.*` gauges                                                                   | `mikroscope.derived.fastpath_share{interface,direction}`  |
+| Graphite                        | `derived.*` paths                                                                               | `api.iface.<if>.fp_rx_share`, `fp_tx_share`               |
+| Elasticsearch                   | `derived` on the kernel document                                                                | `fastpath` on the API document                            |
+| Loki                            | —                                                                                               | —                                                         |
+
+</ScrollTable>
+
+<NotClaimed>
+	No comparison of the per-packet PMU cost across two router configurations on the reference device
+	is recorded, and that comparison is the use it exists for. The burst baseline is tuned against one
+	RB5009 on one day; on another board or another traffic mix its percentile will be that device's
+	own, and whether ten seconds is the right span there has not been measured. No interface of that
+	router counts `fp-tx-byte`, so no tx share has ever been produced from live counters, and why
+	RouterOS leaves that counter at 0 there is not established.
+</NotClaimed>
+
+<SeeAlso>
+
+## See also
+
+- [Detections](/mikroscope/sinks/detections/): the eleven rules the same stage runs, and what each
+  one may not claim.
+- [The RouterOS API tier](/mikroscope/sinks/api-tier/): the port counters the fast-path share is
+  computed from.
+- [The resolution floor is the kernel's](/mikroscope/limits/): why the PMU is the resolution below
+  the jiffie.
+- [A packet flood](/mikroscope/playbooks/packet-flood/): softnet drops and squeezes on a real
+  router.
+
+</SeeAlso>

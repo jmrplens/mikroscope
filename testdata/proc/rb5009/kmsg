@@ -1,0 +1,6 @@
+6,212198,209193854918,-,caller=T166;br0: port 2(eth1) entered blocking state
+6,212199,209195836150,-,caller=T166;br0: port 2(eth1) entered learning state
+4,212200,209195839370,-,caller=C2;br0: received packet on eth1 with own address as source address (addr:00:00:5e:00:53:5d, vlan:0)
+6,212201,209195839492,-,caller=T166;br0: port 2(eth1) entered blocking state
+6,212202,209197841930,-,caller=T166;br0: port 2(eth1) entered learning state
+4,212203,209197846852,-,caller=C2;br0: received packet on eth1 with own address as source address (addr:00:00:5e:00:53:5d, vlan:0)

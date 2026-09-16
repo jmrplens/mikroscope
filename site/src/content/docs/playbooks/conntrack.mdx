@@ -1,0 +1,124 @@
+---
+title: Conntrack without the API
+description: The container’s own namespace reports zero tracked connections, but the global slab allocator does not — how to read the router’s real conntrack population and its ceiling from files, and why no storm was provoked to show it.
+---
+
+import FaultSignature from "../../../components/FaultSignature.astro";
+import Measured from "../../../components/Measured.astro";
+import NotClaimed from "../../../components/NotClaimed.astro";
+import Provenance from "../../../components/Provenance.astro";
+import SeeAlso from "../../../components/SeeAlso.astro";
+
+This page answers how many connections the router is tracking, without a table
+scan over an API session. The ceiling and the timeouts were both read on 2026-09-14.
+
+<Provenance of="playbooks-2026-09-12" />
+
+## The namespace reports zero
+
+The container's own network namespace reports `nf_conntrack_count` = 0 no matter
+how busy the router is.
+
+<Provenance of="netns-2026-09-12" />
+
+## The slab allocator does not
+
+The slab allocator is global. Under `privileged=yes` the agent reads
+`/proc/slabinfo` and reports the `nf_conntrack` cache's active object count,
+which **is** the router's real conntrack population:
+
+```text
+slab: {'nf_conntrack': 6240, 'skbuff_head_cache': 1008, 'skbuff_fclone_cache': 400,
+       'TCP': 327, 'UDP': 180, 'TCPv6': 117, 'UDPv6': 125,
+       'sock_inode_cache': 645, 'kmalloc-1k': 1152, 'kmalloc-2k': 905}
+```
+
+In a sample it is the `slab` map; on `/metrics` it is
+`mikroscope_slab_active_objects{cache="nf_conntrack"}`. The family is absent
+without `privileged=yes`, because `/proc/slabinfo` is root-only. A cache the
+kernel does not have is omitted, not reported as a permanent 0 — the agent also
+asks for `dst_cache` and `ip_dst_cache`, which do not appear in the output above.
+
+`/proc/slabinfo` is the most expensive file the agent parses, so it is read on a
+6 Hz budget floor, rounded to whole ticks: every 2nd tick (5 Hz) at the 10 Hz
+default, every 17th at 100 Hz. 6 Hz is also about the rate `nf_conntrack` was
+measured changing at. It is stored on change, plus a heartbeat once every 60 s.
+
+## Cross-check it once
+
+Cross-check it against the API once, so you trust it thereafter:
+
+```text
+/ip/firewall/connection/print count-only     # 6 212 the day before; slab said 6 287
+```
+
+Two slab readings that day were recorded against it, 6 582 and <Measured id="conntrack.slab" />; the
+snippet above is a third moment (6 240).
+
+The two will not match exactly — they are sampled at different instants, and the
+slab counts objects the allocator still holds — but they track. The difference in
+cost is the point: a file read several times a second versus a table scan over
+an API session.
+
+## The ceiling is readable too
+
+Next to `nf_conntrack_count` in `/proc/sys/net/netfilter`, `nf_conntrack_max` is
+not per-namespace. It reads **966 656** from inside the container — the same number
+a read-only `/ip/firewall/connection/tracking/print` reports as `max-entries` on
+the reference router (2026-09-14). So "how full is the connection table" is
+answerable without the API: the slab population over that ceiling.
+
+The agent reads the ceiling once at start, since it is a sysctl a human edits and
+not a counter, and ships it beside the population it bounds:
+`mikroscope_slab_limit_objects` on `/metrics`, `limit` on the InfluxDB slab row.
+
+The collector runs two detections on the population and its ceiling:
+`conntrack-cliff`, when `nf_conntrack` falls below half its previous stored value,
+and `conntrack-high`, when occupancy is above 80 % of `nf_conntrack_max` **and**
+rising over the last 60 s, with no time-to-full attached.
+
+The same subtree has a trap. The conntrack _timeouts_ there read Linux defaults
+(`tcp_timeout_established` 432 000 s, against RouterOS's `1d`; read 2026-09-14),
+so they must never be presented as the router's configuration.
+
+## The neighbouring caches
+
+They are worth watching for their own sake:
+
+- `skbuff_head_cache` / `skbuff_fclone_cache` — packet buffers in flight. A spike
+  here during a traffic event is memory pressure from the network path, not from
+  anything you installed.
+- `TCP` / `UDP` / `sock_inode_cache` — sockets the router itself holds.
+- `kmalloc-1k` / `kmalloc-2k` — where large-allocation storms show up.
+
+## The signature
+
+<FaultSignature origin="unprovoked" date="2026-09-12">
+
+- `nf_conntrack` climbing toward `nf_conntrack_max` while the namespace's own
+  count stays 0.
+- `nf_conntrack` falling below half its previous stored value, which is what
+  `conntrack-cliff` flags; the detection says where to look, not why it fell.
+- `skbuff_*` rising with a traffic event, which places the memory pressure on the
+  network path.
+
+</FaultSignature>
+
+<NotClaimed variant="not-provoked">
+	A conntrack storm. Generating thousands of connections against a production router risks tripping
+	its own firewall or a CrowdSec-style bouncer and locking out the very path you are working
+	through. The cross-check above gives the same confidence in the counter without that risk, but
+	what a storm looks like in these caches was not observed.
+</NotClaimed>
+
+<SeeAlso>
+
+## See also
+
+- [The router's CPU, the container's network](/mikroscope/limits/namespaces/): which counters the
+  network namespace hides, and the slab exception.
+- [What privileged buys](/mikroscope/limits/privileged/): the root-only files, `/proc/slabinfo` among
+  them.
+- [Detections](/mikroscope/sinks/detections/): `conntrack-cliff` and `conntrack-high` in full.
+
+</SeeAlso>

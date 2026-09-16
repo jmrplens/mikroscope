@@ -1,0 +1,18 @@
+---
+/**
+ * An inline mark for a source that needs the container to run `privileged=yes`.
+ *
+ * Which sources need it (the kernel log, the slab caches, the MTD ECC
+ * counters, the PMU) comes up on a dozen pages, each in its own words. The
+ * mark is the same words everywhere and links to the one page that explains
+ * the rest: without it the family is absent, not zero. The link is the
+ * locale's own, so the Spanish twin calls this identically.
+ */
+import { langOf } from "../lib/lang";
+import CodeText from "./CodeText.astro";
+
+const lang = langOf(Astro.locals.starlightRoute);
+const href = lang === "en" ? "/mikroscope/limits/privileged/" : `/mikroscope/${lang}/limits/privileged/`;
+---
+
+<a class="ms-privileged" href={href}><CodeText text={Astro.locals.t("ms.privileged.badge")} /></a>

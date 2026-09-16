@@ -1,0 +1,101 @@
+---
+title: El coste del observador
+description: Lo que cuesta el agente en un RB5009, medido desde su propio cgroup, y cómo medirlo en un equipo que no sea este.
+---
+
+import { Aside } from "@astrojs/starlight/components";
+import Measured from "../../../../components/Measured.astro";
+import Provenance from "../../../../components/Provenance.astro";
+import SeeAlso from "../../../../components/SeeAlso.astro";
+
+Un observador que cuesta un 20 % de aquello que observa no está midiendo el
+router: se está midiendo a sí mismo. Por eso aquí este número es un resultado de
+primera clase y no una nota al pie: el agente lo publica en cada muestra y lo expone en `/metrics`, y CI comprueba el presupuesto de tamaño de la imagen.
+
+## El presupuesto, y lo que cuesta de verdad
+
+El presupuesto es **≤ <Measured id="budget.cpu" /> de un núcleo, ≤ <Measured id="budget.rss" /> de
+RSS, ≤ <Measured id="budget.image" /> de imagen**. La imagen son <Measured id="image.size" />. Los
+otros dos dependen de la cadencia y de cuánto le pidas leer, y la respuesta honesta es una tabla, no
+un número.
+
+Con los valores por defecto de la instalación — 10 Hz, suelos por fuente por defecto, anillo de
+300 s — el agente cuesta **un <Measured id="run.10hz.cpu" /> de un núcleo y
+un <Measured id="run.10hz.rss" /> de RSS**, desde su propio cgroup:
+
+<Provenance of="rates-2026-09-15" />
+
+Eso está por encima del <Measured id="budget.cpu" /> que pide el presupuesto, con todas las fuentes
+leídas, entre ellas los tiempos de perf, buddyinfo, los contadores ECC de MTD, los eventos de cgroup
+y los contadores de puerto.
+
+### Lo que cuesta la alternativa
+
+El presupuesto dice lo que se le permite costar al agente. La otra comparación,
+la que suele querer quien lee, es contra hacerlo de la forma obvia: un bucle de
+shell de busybox leyendo el mismo conjunto de ficheros a la misma cadencia. En el
+mismo router eso cuesta **<Measured id="busybox.cpu" /> de un núcleo**, mientras
+que las lecturas en sí rondan los <Measured id="procread.ms" /> por muestra.
+
+<Provenance of="busybox-2026-09-11" />
+
+Así que la mayor parte del coste del bucle de shell no está en leer. Paga un fork
+por iteración y el agente no paga ninguno: un proceso arranca, abre sus ficheros
+una vez y los deja abiertos. Esa es toda la diferencia, y es la razón de que el
+agente sea un binario y no un script.
+
+<Aside type="note" title="De dónde sale el número">
+	No de `top`, y no de una instantánea. El agente cuenta sus propios microsegundos de CPU y su RSS
+	desde su cgroup y los publica como `mikroscope_self_cpu_usec_total` y `mikroscope_self_rss_bytes`.
+	Dos lecturas de `/metrics` separadas 60 s, en régimen estacionario y con el anillo ya lleno, son
+	la medida. El `/tool profile` de RouterOS muestra el mismo proceso como `mikroscope-agent`.
+</Aside>
+
+## Dimensiona el límite de memoria según los datos
+
+El error más caro disponible aquí es dar al proceso menos memoria de la que su
+anillo necesita. El recolector de basura de Go responde a un límite blando
+ajustado ejecutándose más a menudo, y el coste de CPU se dispara por un motivo
+que no tiene nada que ver con la cadencia de muestreo.
+
+El anillo guarda líneas ya codificadas en vez de structs por la misma razón. Si
+subes `--buffer` o la cadencia, sube con ellos `--mem-limit-mb` y el
+`--memory-max` del contenedor; los valores usados en cada fila de las medidas
+están junto a ellas en [el techo de
+muestreo](/mikroscope/es/cost/rate-ceiling/).
+
+El análisis no es donde se va el tiempo. Analizar los siete ficheros globales de `/proc` más un
+delta costó 27 µs y 239 asignaciones por muestra en el equipo de desarrollo amd64 (Go 1.27.1, tres
+ejecuciones, 26,7–27,5 µs, 2026-09-11). En el Cortex-A72 del RB5009 un tick entero — con
+temporizadores, JSON y el recolector de basura incluidos — cuesta <Measured id="run.10hz.usPerSample" />
+a 10 Hz con los suelos por defecto, y [las cinco
+ejecuciones](/mikroscope/es/cost/rate-ceiling/) lo dan a cada cadencia. El análisis por sí solo no
+se midió en el A72.
+
+## Medirlo en tu propio equipo
+
+Nada de esto se traslada a una placa que no sea un RB5009: otro número de
+núcleos, otro reloj, otro kernel y otra flash lo mueven. El procedimiento son
+tres órdenes y lleva un minuto:
+
+```sh
+curl -s http://172.30.10.2:9123/metrics | grep -E 'self_cpu_usec_total|self_rss_bytes'
+sleep 60
+curl -s http://172.30.10.2:9123/metrics | grep -E 'self_cpu_usec_total|self_rss_bytes'
+```
+
+La diferencia de `self_cpu_usec_total` dividida entre 60 000 000 es la fracción
+de un núcleo. Tómala en régimen estacionario, con el anillo lleno: un agente
+recién arrancado todavía lo está llenando y marcará de menos.
+
+<SeeAlso>
+
+## Véase también
+
+- [El techo de muestreo](/mikroscope/es/cost/rate-ceiling/): las cinco ejecuciones, las opciones de
+  memoria de cada una y lo que compra muestrear más rápido.
+- [Lo que los números no dicen](/mikroscope/es/cost/limits/): lo que estas cifras no pueden decirte
+  sobre otro equipo u otra carga.
+- [Qué es](/mikroscope/es/start/): el agente, la CLI y los cuatro límites dichos primero.
+
+</SeeAlso>

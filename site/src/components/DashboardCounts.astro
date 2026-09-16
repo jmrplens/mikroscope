@@ -1,0 +1,60 @@
+---
+/**
+ * Panels per section, per store, with the totals, counted from the committed
+ * dashboards in `dashboards/` (src/data/dashboards.ts).
+ *
+ * These are the counts of the files as committed, which carry the compiled
+ * defaults; `import` and `check` can move panels in a live Grafana, and the
+ * page says so beside this table.
+ */
+import { countOf, panelTotal, sectionNames, STORES } from "../data/dashboards";
+import { formatNumber } from "../lib/format";
+import { nextId } from "../lib/ids";
+import { langOf } from "../lib/lang";
+import ScrollTable from "./ScrollTable.astro";
+
+const lang = langOf(Astro.locals.starlightRoute);
+const t = Astro.locals.t;
+const captionId = nextId(Astro.locals, "ms-dash-counts");
+const titleLang = lang === "en" ? undefined : "en";
+const cell = (n: number | null) => (n === null ? t("ms.dash.noRow") : formatNumber(n, lang, 0));
+---
+
+<ScrollTable labelledby={captionId} nowrap>
+	<table>
+		<caption class="sr-only" id={captionId}>{t("ms.dash.countsLabel")}</caption>
+		<thead>
+			<tr>
+				<th scope="col">{t("ms.dash.section")}</th>
+				<th scope="col" class="ms-num">InfluxDB</th>
+				<th scope="col" class="ms-num">Prometheus</th>
+			</tr>
+		</thead>
+		<tbody>
+			{
+				sectionNames.map((s) => (
+					<tr>
+						<th scope="row" lang={titleLang}>
+							{s}
+						</th>
+						{STORES.map((store) => (
+							<td class="ms-num">{cell(countOf(store, s))}</td>
+						))}
+					</tr>
+				))
+			}
+			<tr>
+				<th scope="row">
+					<strong>{t("ms.dash.total")}</strong>
+				</th>
+				{
+					STORES.map((store) => (
+						<td class="ms-num">
+							<strong>{formatNumber(panelTotal(store), lang, 0)}</strong>
+						</td>
+					))
+				}
+			</tr>
+		</tbody>
+	</table>
+</ScrollTable>

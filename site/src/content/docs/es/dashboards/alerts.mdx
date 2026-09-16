@@ -1,0 +1,232 @@
+---
+title: Reglas de alerta
+description: Las reglas de alerta de Grafana que se generan junto a los dashboards, con qué salta cada una, de dónde sale su umbral y qué no se ha probado de ellas.
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+import AlertRules from "../../../../components/AlertRules.astro";
+import DashboardCount from "../../../../components/DashboardCount.astro";
+import Measured from "../../../../components/Measured.astro";
+import NotClaimed from "../../../../components/NotClaimed.astro";
+import ScrollTable from "../../../../components/ScrollTable.astro";
+import SeeAlso from "../../../../components/SeeAlso.astro";
+
+`mikroscope dashboards gen` escribe, junto a cada dashboard, un fichero de aprovisionamiento de las
+alertas unificadas de Grafana con las reglas que se desprenden de los propios contadores de fallos de
+los dashboards, del registro del kernel que lee el agente y de las detecciones del colector. Esta página responde a qué reglas son, con qué salta
+cada una y qué significa para ella el silencio, cómo instalar el fichero y de dónde sale cada umbral.
+Todo umbral es cero (un contador que no debería moverse), una muestra (la regla del agente en
+silencio) o una proporción de un techo que publicó el propio equipo. Ninguno es un número compilado
+para un router concreto.
+
+## Los ficheros
+
+<ScrollTable label="Ficheros de aprovisionamiento de alertas">
+
+| Fichero                                        |                                           Reglas | Lenguaje de consulta |
+| ---------------------------------------------- | -----------------------------------------------: | -------------------- |
+| `dashboards/mikroscope-alerts-influxdb.yaml`   |   <DashboardCount store="influxdb" of="rules" /> | SQL de InfluxDB 3    |
+| `dashboards/mikroscope-alerts-prometheus.yaml` | <DashboardCount store="prometheus" of="rules" /> | PromQL               |
+
+</ScrollTable>
+
+El fichero de InfluxDB tiene una regla menos porque "The sampler is slipping ticks" no tiene forma en
+SQL: el contador de ticks perdidos por retraso se expone en el `/metrics` del agente y no se escribe
+en InfluxDB.
+
+Cada fichero es `apiVersion: 1` con un grupo de reglas, `mikroscope`, en una carpeta llamada
+`mikroscope`, organización 1, evaluado cada minuto. Las reglas se aprovisionan en vez de ir dentro de
+los dashboards, así que un operador que no quiera ninguna no copia nada.
+
+## Instalarlas
+
+Los ficheros de aprovisionamiento no resuelven la entrada `${DS_MIKROSCOPE}` de un dashboard, así que
+la fuente de datos es un marcador literal, `DS_UID_PLACEHOLDER`, que tienes que sustituir por el UID
+de tu fuente de datos antes de que Grafana lea el fichero:
+
+```sh
+sed 's/DS_UID_PLACEHOLDER/<uid>/g' dashboards/mikroscope-alerts-influxdb.yaml \
+  > /etc/grafana/provisioning/alerting/mikroscope-alerts-influxdb.yaml
+```
+
+El directorio de aprovisionamiento es cosa de Grafana; `/etc/grafana/provisioning/alerting/` es la
+ruta que nombra la cabecera del propio fichero generado. Usa el fichero que corresponda a la fuente
+de datos a la que pertenece el UID.
+
+Todas las reglas tienen la misma forma, la que escribe el propio editor de reglas de Grafana:
+
+1. **A** — la consulta, contra tu fuente de datos, con un rango de tiempo relativo de los últimos
+   600 s. Toda consulta SQL y toda consulta de Prometheus sobre un contador acota además su propia
+   ventana (2 minutos, 5 minutos o 1 hora, más abajo); las dos reglas de Prometheus sobre gauges, la
+   térmica y la de conntrack, leen el último valor.
+2. **B** — reduce A a un número por serie con `last`, descartando los valores no numéricos.
+3. **C** — compara B con el umbral. C es la condición de la regla.
+
+Cada regla lleva las etiquetas `severity` (`critical` o `warning`) y `source: mikroscope`, una
+anotación `summary` y `execErrState: Error`. Lo que hace Grafana después con una regla cuya consulta
+falla es comportamiento de Grafana, descrito en su propia documentación, y aquí no se ha probado.
+
+## Las reglas
+
+<AlertRules show="table" />
+
+La forma de InfluxDB de `mikroscope-conntrack-near-limit` está rota; la nota de lo no probado, al
+final de esta página, explica por qué. "Sin datos significa" es el `noDataState` de la regla. La regla del agente en silencio es la única en
+la que el silencio es el fallo, así que la ausencia de datos la hace saltar; para todas las demás, no
+tener datos es la lectura sana.
+
+El título de cada regla, en inglés como aparece en Grafana, y debajo una traducción de su anotación
+`summary` (el texto generado está en inglés):
+
+- **mikroscope agent stopped delivering samples.** No llegaron muestras nuevas al almacén en los
+  últimos dos minutos: se paró el agente, se paró el colector o se cortó el camino entre ellos. Todas
+  las demás reglas están ciegas mientras esta salta.
+- **Packets dropped in the kernel receive path.** `softnet_stat` descartó un paquete: una cola por
+  CPU estaba llena. Pérdida inequívoca
+  dentro del router, invisible para cualquier contador SNMP o de RouterOS. Cero es la lectura
+  esperada.
+- **The kernel OOM-killed a process.** `oom_kill` de `/proc/vmstat` se movió: el kernel mató un
+  proceso para recuperar memoria. Qué proceso
+  no se puede saber desde el contenedor (no hay espacio de nombres de PID).
+- **The collector's derive stage flagged an event.** Saltó una regla de detección (counter-reset,
+  agent-restart, agent-oom, microburst, reboot, link-flap, conntrack-cliff, conntrack-high,
+  thermal-high, thermal-rising, ipc-collapse). La regla, la clave, el valor y el umbral están en la sección de
+  detecciones y en el dashboard como anotación.
+- **A thermal zone is within 15 % of its own critical trip.** La lectura está al 85 % o más del punto
+  de disparo crítico declarado por la zona (105 C en el RB5009 de referencia). El techo es el de la
+  propia placa, leído de `/sys`, no un número compilado.
+- **The connection table is above 80 % of nf_conntrack_max.** Objetos activos de `nf_conntrack` por
+  encima del propio techo del kernel. Pasado el techo, el router descarta las conexiones nuevas. El
+  límite es el sysctl que leyó el agente, no un número compilado.
+- **The sampler is slipping ticks.** Hubo ticks que terminaron después de que tocara el siguiente. La
+  cadencia no se está cumpliendo: el equipo va falto de CPU, el conjunto de fuentes es demasiado caro para la cadencia, o la cuota de CPU
+  del contenedor limitó al agente (consulta el contador de limitación del observador).
+- **mikroscope's own container was OOM-killed.** El kernel mató un proceso dentro del cgroup del
+  agente: el anillo de captura y las capturas se han perdido, y
+  todos los números de la ventana son sospechosos. Sube `--memory-max` o baja `RATE_HZ`, `BUFFER_S` o
+  `CAPTURE_MB`.
+- **The bridge received its own address back: a layer-2 loop signature.** El registro del kernel
+  informó de `received packet on <port> with own address as source address`: una trama que envió el
+  router volvió a entrar, que es el aspecto que tiene un bucle a través de un switch o un punto de
+  acceso aguas abajo. La etiqueta del puerto dice de qué cable se trata. Se lee de `/dev/kmsg` con el
+  agente, sin API. En el RB5009 de referencia esto corrió a 1,49 registros/s durante horas el
+  2026-09-12 mientras todos los contadores de RouterOS parecían sanos. La forma de InfluxDB necesita
+  un almacén que haya tenido al menos un registro de puerto clasificado por `kind`.
+- **A port's link went down.** El registro del kernel informó de un link-down en un puerto: un cable
+  desconectado, un par que se reinició o se apagó, una renegociación. La detección de link-flap del
+  colector cubre el caso repetido; esto es el suceso único. Se lee de `/dev/kmsg` con el agente, sin
+  API; el puerto, su comentario y su rol están en los sucesos de puerto de la sección del registro
+  del kernel.
+- **The NAND reported an uncorrectable ECC failure.** `ecc_failures` subió en una partición MTD: una
+  lectura que la corrección de errores no pudo arreglar, es decir, pérdida de datos en la flash. Cualquier incremento es un incidente.
+
+## Las consultas
+
+<Tabs syncKey="store">
+<TabItem label="Prometheus">
+
+<AlertRules show="queries" store="prometheus" />
+
+`mikroscope_slipped_total` viene del trabajo de scrape del agente, el que tiene la lista `keep` en
+[Importar y comprobar](/mikroscope/es/dashboards/import-and-check/#prometheus-dos-trabajos-de-scrape);
+las otras diez leen el `/metrics` del colector. `mikroscope_kmsg_port_records_total` está entre
+ellas: las dos exposiciones las escribe el mismo renderizador, y la copia del colector es la que la
+lista `keep` deja pasar, la que clasifica el registro que el agente no clasificó y nombra cada puerto
+como lo nombra RouterOS ahora.
+
+</TabItem>
+<TabItem label="InfluxDB 3">
+
+<AlertRules show="queries" store="influxdb" />
+
+</TabItem>
+</Tabs>
+
+## De dónde salen los umbrales
+
+- **Cero, para un contador que no debería moverse.** Descartes de RX del kernel, OOM kills del
+  kernel, detecciones, ticks perdidos por retraso, OOM kills del propio agente, fallos ECC no
+  corregibles y los registros de puerto del kernel cuyo `kind` es `own-address` o `link-down`. Un
+  equipo sano lee cero en cada uno.
+- **Una muestra, para el agente en silencio.** Menos de una muestra en dos minutos es ninguna, a
+  cualquier cadencia configurada.
+- **Una proporción del propio disparo térmico de la placa.** El 85 % del punto de disparo crítico más
+  bajo que declara cada zona, que el agente lee de `/sys/class/thermal` y envía junto a cada lectura.
+  Una zona que no declara disparo crítico queda fuera de la consulta en vez de compararse con un techo
+  inventado.
+- **Una proporción del propio límite de conexiones del kernel.** 0.8 del límite de `nf_conntrack` que
+  leyó el agente. La ocupación sale de `/proc/slabinfo`, que necesita un contenedor privilegiado.
+
+Las reglas no alertan por squeezes de softnet. Medido en el RB5009 de referencia el 2026-09-15 sobre
+3 476 muestras, alrededor del <Measured id="squeeze.backgroundOne" /> de las muestras llevan un squeeze, y alertar con "squeeze > 0" te
+despertaría para siempre. Lo que llega en su lugar a la alerta de detecciones es la detección
+`microburst`: tres muestras de ráfaga en una CPU en 60 s. Una muestra de ráfaga es aquella en la que
+una cola de softnet descartó un paquete, o agotó su presupuesto más veces que el percentil 90 móvil
+de esa CPU y al menos tres, mientras el recuento de paquetes de la muestra estaba en su mediana móvil
+o por debajo. Consulta
+[Detecciones](/mikroscope/es/sinks/detections/).
+
+## Lo que las reglas no pueden ver
+
+- **Qué proceso.** La regla de OOM dice que el kernel mató algo. Desde dentro del contenedor no hay
+  espacio de nombres de PID que diga qué.
+- **Qué puerto.** Las dos consultas de sucesos de puerto suman sobre los puertos, así que una regla
+  que salta dice que hubo una firma de bucle o un link-down, no en qué cable. El puerto, su
+  comentario y sus listas de interfaces están en los dos paneles de sucesos de puerto de la sección
+  del registro del kernel.
+- **Los puntos ciegos de un agente sin privilegios.** Las reglas de la tabla de conexiones y de ECC
+  leen fuentes que necesitan un contenedor privilegiado. Sin él esas medidas nunca llegan al almacén,
+  y en Prometheus una consulta sobre una métrica inexistente no devuelve datos — lo que estas reglas
+  leen como OK.
+- **Nada mientras salta la regla del agente en silencio.** Todas las demás reglas salvo la de ticks
+  perdidos por retraso, que lee directamente el agente, leen el mismo flujo; sin muestras llegando
+  leen cero o ningún dato, y las dos cosas son OK.
+
+<NotClaimed variant="untested" title="Lo que no se ha probado">
+	Estos ficheros no se han cargado en Grafana para observar una regla evaluarse, saltar o
+	resolverse; `dashboards check` ejecuta las consultas de los paneles de los dashboards y no estas.
+	Del código se siguen varias consecuencias que no se han observado. **Tablas de InfluxDB que solo
+	aparecen tras su primer suceso:** el colector crea `mikroscope_detection` con la primera detección
+	que escribe, e InfluxDB 3 rechaza al planificarla una consulta que nombra una tabla inexistente,
+	así que en un almacén que nunca ha tenido una detección la consulta de la regla de detecciones
+	debería fallar, y se aplica su `execErrState: Error` en vez de OK; lo mismo vale para cualquier
+	tabla o columna que el despliegue no haya escrito nunca, como `mikroscope_mtd` en un agente sin
+	privilegios. **A las dos reglas de sucesos de puerto no se las ha visto saltar:** ninguna se ha
+	observado contra un bucle real ni contra un link-down real, en ninguno de los dos almacenes. Su
+	forma de InfluxDB lee la columna `kind` de `mikroscope_kmsg`, que un almacén solo tiene una vez
+	que el colector ha escrito un primer registro de puerto clasificado por `kind` — en el despliegue
+	de referencia, el 2026-09-16 el almacén todavía no tenía columna `kind`, así que allí esa consulta
+	falla al planificarse por la misma razón que el caso de la tabla inexistente de más arriba. Su
+	forma de Prometheus lee `mikroscope_kmsg_port_records_total{kind=…}` del `/metrics` del colector,
+	que lleva un `kind` en todo registro de puerto sea cual sea la versión del agente; la exposición
+	del propio agente lleva la etiqueta solo cuando es él quien clasifica, y el del router de
+	referencia no lo hace, así que un Prometheus que raspe solo al agente no ve allí ningún `kind` y
+	la consulta no devuelve datos, lo que estas reglas leen como OK. **La regla de conntrack de InfluxDB nombra una columna que ningún almacén InfluxDB
+	tiene:** su consulta lee `limit_objs`, que es el nombre de la columna en el destino SQL
+	(Postgres/Timescale), mientras que el destino InfluxDB escribe el techo del slab como el campo
+	`limit` (el propio panel de ocupación de los dashboards lee `limit`). Así que en todo almacén
+	InfluxDB, con o sin privilegios, esa consulta debería fallar al planificarse y la regla no puede
+	evaluarse. Es un defecto del generador, no una propiedad del equipo. **La regla ECC de InfluxDB a
+	través de particiones:** su consulta toma la mayor lectura de `ecc_failures` de la hora menos la
+	menor, sobre todas las particiones juntas, sin agrupar por partición — así que en una placa cuyas
+	particiones estén en niveles distintos de cero la diferencia no es cero sin que haya ningún fallo
+	nuevo. Todas las particiones leen cero en el RB5009 de referencia, así que ese equipo no puede
+	mostrarlo. La propia descripción del panel de la flash añade que una placa que sale de fábrica con
+	bloques marcados como defectuosos muestra un nivel distinto de cero que es normal para ella, y que
+	el suceso es el cambio, no el nivel.
+</NotClaimed>
+
+<SeeAlso>
+
+## Véase también
+
+- [Detecciones](/mikroscope/es/sinks/detections/): las once reglas detrás de la alerta de detecciones,
+  y lo que cada una no puede afirmar.
+- [Importar y comprobar](/mikroscope/es/dashboards/import-and-check/): el UID de fuente de datos que
+  necesitan estos ficheros, y los trabajos de scrape de Prometheus.
+- [Dos paneles, una sola lista](/mikroscope/es/dashboards/): los paneles de cuyos contadores de fallos
+  salen estas reglas.
+- [Familias de métricas de Prometheus](/mikroscope/es/reference/metrics/): las familias que leen las
+  consultas de Prometheus.
+
+</SeeAlso>

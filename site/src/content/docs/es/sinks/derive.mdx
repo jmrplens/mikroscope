@@ -1,0 +1,204 @@
+---
+title: Lo que deriva el colector
+description: Los valores que el colector calcula junto a las muestras en bruto — presión de memoria, coste de PMU por paquete, paquetes por interrupción, la marca de ráfaga y la proporción del fast path — y cuándo se omite cada uno.
+---
+
+import Measured from "../../../../components/Measured.astro";
+import NotClaimed from "../../../../components/NotClaimed.astro";
+import ScrollTable from "../../../../components/ScrollTable.astro";
+import SeeAlso from "../../../../components/SeeAlso.astro";
+
+El colector tiene una etapa de derivación. Esta página responde a qué calcula, a partir
+de qué entradas, cuándo un valor se omite en vez de escribirse y dónde lo pone cada
+destino. Los eventos discretos que provoca la misma etapa están en
+[detecciones](/mikroscope/es/sinks/detections/).
+
+## Por qué el colector, y no el agente ni el panel
+
+La etapa de derivación existe para las derivaciones que necesitan estado entre muestras,
+que unen la capa del kernel con la capa de la API, o que deben calcularse una sola vez para
+que cada destino que las lleva lleve los mismos números (qué destinos tienen sitio para ellas
+está en la tabla de abajo) — nada de lo cual hace una consulta de un panel, y nada de lo cual debería pagar
+el agente. El agente envía deltas de ticks en bruto y nunca divide; el colector puede
+hacerlo. Nada de esta etapa se ejecuta en el router.
+
+La rigen dos reglas:
+
+- **Un valor derivado se escribe junto a sus entradas, nunca en su lugar**, para que el
+  almacén pueda recalcularlo si más adelante se descubre que la derivación estaba mal.
+- **Una detección es un evento discreto** en la línea temporal, un «mira aquí» — nunca una
+  serie continua y nunca un veredicto.
+
+## Junto a cada muestra del kernel
+
+### `mem_pressure`
+
+La propia escalera de escalada del asignador como un único ordinal. Cada entrada ya se
+envía y se dibuja por separado; lo que añade el ordinal es que la escalera está ordenada,
+así que una sola serie dice hasta dónde llegó. Gana el peldaño más alto alcanzado en los
+deltas de `/proc/vmstat` de la muestra:
+
+<ScrollTable label="La escalera de presión de memoria">
+
+| Valor | Peldaño                                               | A partir de los deltas de `/proc/vmstat` de la muestra |
+| ----- | ----------------------------------------------------- | ------------------------------------------------------ |
+| 0     | ninguno                                               | nada de lo de abajo                                    |
+| 1     | kswapd escaneó                                        | `pgscan_kswapd` > 0                                    |
+| 2     | reclaim directo: un hilo escaneó por sí mismo         | `pgscan_direct` > 0                                    |
+| 3     | una asignación se bloqueó o se sacó una página a swap | `allocstall` > 0 o `pswpout` > 0                       |
+| 4     | actuó el OOM killer                                   | `oom_kill` > 0                                         |
+
+</ScrollTable>
+
+### Las razones por paquete del PMU
+
+`cycles_per_packet`, `instructions_per_packet` y `cache_misses_per_packet`: cuentas de PMU
+sumadas sobre los núcleos, divididas entre los paquetes que softnet procesó
+en la muestra, sumados sobre los núcleos: el coste de reenvío del router en la única unidad
+que permite comparar dos configuraciones. Un cambio de reglas que reduce a la mitad los
+ciclos por paquete es una mejora real; uno que reduce a la mitad el tiempo ocupado mientras
+el tráfico también se reducía a la mitad no lo es.
+
+Ausentes sin PMU, en una muestra sin paquetes, y en una muestra con un reinicio de contador
+(`suspect`), donde un delta es una cota inferior y no una medida.
+
+### `packets_per_irq`
+
+Paquetes procesados por interrupción de dispositivo — todas las filas de `/proc/interrupts`
+salvo el temporizador y las interrupciones entre procesadores — que es la profundidad de
+agrupamiento de NAPI. La cuenta de dispositivo es el total de interrupciones de la muestra
+menos las filas del temporizador y las filas `IPI` presentes en su top-K.
+
+Ausente en una muestra sin paquetes o con un reinicio de contador (`suspect`), y cuando la
+fila del temporizador no está en el top-K de la muestra, porque entonces la cuenta de
+dispositivo no se puede separar del total.
+
+### `burst`
+
+Un paquete descartado, o más squeezes de softnet de los que esa CPU suele tener — por
+encima de su percentil 90 móvil **y** al menos 3 — en una muestra cuya cuenta de paquetes
+estaba en su mediana móvil o por debajo. Es la prueba del propio kernel de una ráfaga más
+corta que el intervalo de muestreo, que es la única forma en que esta herramienta puede ver
+dentro de uno. La marca es verdadera cuando cualquier CPU cumple la condición.
+
+Las referencias móviles abarcan diez segundos de reloj de pared a cualquier cadencia: 100
+muestras a 10 Hz, 500 a 50 Hz, 1 000 a 100 Hz, acotadas entre 10 y 2 000 muestras. No se
+marca ninguna muestra hasta que su CPU tiene al menos diez muestras de historia.
+
+Por qué un percentil y no «cualquier squeeze», medido en el RB5009 de referencia sobre
+3 476 muestras el 2026-09-15: alrededor del <Measured id="squeeze.backgroundOne" /> de las muestras llevan un squeeze de fondo
+y el 2 % llevan dos o más. «Cualquier squeeze» marcaría la normalidad del equipo varias
+veces por minuto.
+
+Tres muestras marcadas en una CPU en 60 s es lo que provoca la
+[detección](/mikroscope/es/sinks/detections/#microburst) `microburst`; una muestra marcada
+se queda en un dato.
+
+### `suspect`
+
+Verdadero cuando el agente informó de un reinicio de contador en la muestra: un contador
+que retrocedió sin un desbordamiento de 32 bits. La fila en bruto se conserva; los valores
+por paquete de arriba — los tres cocientes de la PMU y `packets_per_irq` — se omiten.
+
+## Junto a cada lectura de contadores
+
+En cada ronda de la API que trajo los contadores por puerto, el colector calcula, sobre los
+deltas desde la lectura anterior, la proporción del fast path del tráfico que cada interfaz
+entrega a la CPU: de los bytes que llegaron a la CPU en esa interfaz, la parte que RouterOS
+contó por el fast path y no por el camino lento. El denominador no es el mismo contador en
+todas las interfaces, porque RouterOS no cuenta lo mismo en todos los tipos — gana el primer
+contador presente en las dos lecturas:
+
+<ScrollTable label="La proporción del fast path y su denominador según el tipo de interfaz">
+
+| Interfaz                                         | `fp_rx_share` es                             | Por qué ese denominador                                                                                                                         |
+| ------------------------------------------------ | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| un puerto del switch (`ether…`, `sfp-sfpplus1`)  | Δ`fp-rx-byte` / Δ`driver-rx-byte`            | su `rx-byte` es el total del cable, incluidas las tramas que el chip del switch reenvió por hardware; `driver-rx-byte` es lo que llegó a la CPU |
+| una interfaz software (bridge, VLAN, PPPoE)      | Δ`fp-rx-byte` / Δ`rx-byte` (o `rx-bytes`)    | no tiene contadores del driver, y su `rx-byte` ya es lo que la CPU envió y recibió                                                              |
+
+</ScrollTable>
+
+`fp_tx_share` es el mismo cociente en el otro sentido — Δ`fp-tx-byte` entre
+Δ`driver-tx-byte`, Δ`tx-byte` o Δ`tx-bytes` — y en el equipo de referencia se omite, más abajo.
+Cada proporción está limitada a 1, con los cuatro deltas de bytes escritos en la misma fila;
+ahí `rx_bytes` y `tx_bytes` son los denominadores de la proporción, no los totales del cable.
+
+**No es una proporción del cable.** Una trama que el chip del switch reenvió por hardware no
+está en ninguno de los dos números: nunca llegó a la CPU. La parte de los bytes del cable de
+un puerto que se queda la CPU — `driver-rx-byte` frente a `rx-byte` — es otra pregunta, y la
+responde a partir de los contadores en bruto el panel apilado "Where a port's receive bytes
+went"; la etapa de derivación no la calcula.
+
+Medido en el RB5009 de referencia (RouterOS 7.24.2, 2026-09-16) sobre los contadores
+acumulados desde el arranque: todos los puertos del switch dan alrededor del 100 %, porque
+allí `fp-rx-byte` es igual a `driver-rx-byte` con unos pocos kB de diferencia — cada byte que
+un puerto entrega a la CPU se cuenta en el driver, capaz de fast path, así que la línea de un
+puerto dice poco. Las interfaces software son las líneas sobre las que la proporción informa:
+`bridge` pasó por el fast path 211,9 GB de 663,0 GB (32 %), `PPPoE_DIGI` el 99,97 %.
+
+**La proporción de tx se omite mientras `fp-tx-byte` no haya contado nunca.** En ese router
+`fp-tx-byte` está a 0 en todas las interfaces tras cientos de GB transmitidos, lo que se lee
+como un contador que RouterOS no mantiene aquí y no como un fast path que no reenvió nada; una
+proporción calculada a partir de él sería un 0 % fabricado. Mientras el `fp-tx-byte` acumulado
+de una interfaz sea 0, el colector no escribe `fp_tx_share` para ella, y sus `tx_bytes` y
+`fp_tx_bytes` son 0.
+
+También falta una proporción para un sentido que no movió bytes, cuyo contador retrocedió, o
+cuyo contador del fast path el puerto no informa, y la fila entera falta cuando no se pudo
+diferenciar el denominador de ninguno de los dos sentidos. La primera lectura de cada interfaz
+siembra y no escribe nada.
+
+Un delta que no se pudo calcular — su contador ausente, que retrocedió, u omitido junto con la
+proporción de tx — se escribe como 0 junto a la proporción ausente: las filas de InfluxDB y SQL
+y el objeto `fastpath` de Elasticsearch llevan `rx_bytes`, `fp_rx_bytes`, `tx_bytes` y
+`fp_tx_bytes` siempre. Leído en el código (`internal/derive/derive.go`), no observado. En ese
+caso, lee la proporción, no el delta.
+
+La proporción es por lectura, y en una interfaz que mueve pocos paquetes oscila: el repaso del
+panel del 2026-09-15 la vio ir de 0 a 100 % entre lecturas en interfaces así, por lo que el
+panel "Fast-path share of the traffic each interface hands the CPU" la pondera por bytes en
+cada intervalo — los bytes por fast path del intervalo entre los bytes del intervalo — en vez
+de dibujar el valor de cada lectura. La forma de Prometheus de ese panel es el gauge por
+lectura del colector y conserva ese ruido.
+
+## Dónde lo pone cada destino
+
+<ScrollTable label="Dónde caen los valores derivados en cada destino">
+
+| Destino                         | Junto a las muestras del kernel                                                                    | Junto a las lecturas de contadores                                   |
+| ------------------------------- | -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| InfluxDB, Telegraf, stdout `lp` | `mikroscope_derived`: `mem_pressure`, `burst`, `suspect`, y los cocientes que se pudieron calcular | `mikroscope_derived_iface{interface}`                                |
+| SQL                             | `mikroscope_derived`, cocientes NULL donde no se calcularon                                        | `mikroscope_derived_iface`                                           |
+| file, stdout `json`             | una línea `{"derived":…}` tras su muestra                                                          | no se escribe; los contadores en bruto están en la línea `{"api":…}` |
+| Prometheus                      | gauges `mikroscope_derived_*` de la muestra más reciente; `mikroscope_collector_bursts_total`      | `mikroscope_derived_fastpath_share{interface,direction}`             |
+| OTLP                            | gauges `mikroscope.derived.*`                                                                      | `mikroscope.derived.fastpath_share{interface,direction}`             |
+| Graphite                        | rutas `derived.*`                                                                                  | `api.iface.<if>.fp_rx_share`, `fp_tx_share`                          |
+| Elasticsearch                   | `derived` en el documento del kernel                                                               | `fastpath` en el documento de la API                                 |
+| Loki                            | —                                                                                                  | —                                                                    |
+
+</ScrollTable>
+
+<NotClaimed>
+	No consta ninguna comparación del coste de PMU por paquete entre dos configuraciones del router en
+	el equipo de referencia, y esa comparación es el uso para el que existe. La referencia de ráfagas
+	está ajustada contra un RB5009 en un solo día; en otra placa o con otra mezcla de tráfico su
+	percentil será el de ese equipo, y no se ha medido si diez segundos son el intervalo adecuado
+	allí. Ninguna interfaz de ese router cuenta `fp-tx-byte`, así que nunca se ha producido una
+	proporción de tx a partir de contadores en vivo, y no está establecido por qué RouterOS deja ese
+	contador a 0 allí.
+</NotClaimed>
+
+<SeeAlso>
+
+## Véase también
+
+- [Detecciones](/mikroscope/es/sinks/detections/): las once reglas que ejecuta la misma etapa, y lo
+  que no puede afirmar cada una.
+- [La capa de la API de RouterOS](/mikroscope/es/sinks/api-tier/): los contadores de puerto a partir
+  de los que se calcula la proporción del fast path.
+- [El suelo de resolución es del kernel](/mikroscope/es/limits/): por qué la PMU es la resolución por
+  debajo del jiffie.
+- [Una inundación de paquetes](/mikroscope/es/playbooks/packet-flood/): descartes y squeezes de
+  softnet en un router real.
+
+</SeeAlso>

@@ -1,0 +1,283 @@
+---
+title: Detecciones
+description: Las once reglas que ejecuta la etapa de derivación del colector, cada una con su condición exacta, las pruebas que necesita del despliegue y lo que no puede afirmar.
+---
+
+import { Aside } from "@astrojs/starlight/components";
+import Measured from "../../../../components/Measured.astro";
+import NotClaimed from "../../../../components/NotClaimed.astro";
+import PrivilegedOnly from "../../../../components/PrivilegedOnly.astro";
+import ScrollTable from "../../../../components/ScrollTable.astro";
+import SeeAlso from "../../../../components/SeeAlso.astro";
+
+Una detección es un evento discreto que el colector pone en la línea temporal: un «mira
+aquí», nunca una serie continua y nunca un veredicto. Esta página responde, para cada una
+de las once reglas, exactamente cuándo salta, qué tiene que aportar el despliegue para que
+pueda saltar y qué no te puede decir. Los valores derivados en los que se apoyan algunas
+reglas están en [lo que deriva el colector](/mikroscope/es/sinks/derive/).
+
+## Lo que lleva una detección
+
+Toda detección tiene los mismos campos: `rule`; `key` — la CPU, el núcleo, la zona o el
+puerto al que se refiere, vacío para una regla de todo el equipo; `seq` y `wall_ns` de la
+muestra que la provocó; `value`, la cantidad que comparó la regla; `threshold`, contra qué
+la comparó; y un `message` en palabras. Los umbrales son los de cada regla y se escriben en
+cada evento.
+
+**Una vez por regla y clave cada 10 s.** Tras saltar una regla para una clave, la misma
+regla y clave quedan suprimidas durante 10 s del reloj de pared de las muestras, así que una
+condición que persiste salta cada 10 s en vez de en cada muestra. La etapa cuenta lo que
+suprimió, pero ningún destino exporta esa cuenta.
+
+Las reglas se ejecutan en el proceso del colector y su historia vive allí. Un colector que
+se reinicia empieza desde cero cada ventana móvil, cada intervalo y cada valor anterior.
+
+## Dónde caen las detecciones
+
+<ScrollTable label="Dónde escribe las detecciones cada destino">
+
+| Destino                         | Forma                                                                                |
+| ------------------------------- | ------------------------------------------------------------------------------------ |
+| InfluxDB, Telegraf, stdout `lp` | `mikroscope_detection{rule,key}` con `value`, `threshold`, `seq`, `message`          |
+| SQL                             | una fila de `mikroscope_detection`                                                   |
+| file, stdout `json`             | una línea `{"detection":…}`                                                          |
+| Prometheus                      | `mikroscope_collector_detections_total{rule}`, cada regla a 0 desde el primer scrape |
+| Loki                            | una línea en el stream `source="detection"`, `level="warn"`                          |
+| OTLP                            | un sum de deltas `mikroscope.detection{rule}` de 1                                   |
+| Graphite                        | `detection.<rule>` = 1 en el segundo del evento                                      |
+| Elasticsearch                   | un documento con `kind: detection`                                                   |
+
+</ScrollTable>
+
+Los paneles dibujan cada detección como una anotación, y una de las [reglas de
+alerta](/mikroscope/es/dashboards/alerts/) salta con cualquier detección.
+
+## Las reglas
+
+<ScrollTable label="Las once reglas de un vistazo">
+
+| Regla             | Clave     | Salta cuando                                                                                                                              | Necesita                                |
+| ----------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| `counter-reset`   | —         | la muestra informa de un contador que retrocedió sin un desbordamiento de 32 bits                                                         | cualquier despliegue                    |
+| `agent-restart`   | —         | el número de secuencia retrocedió                                                                                                         | cualquier despliegue                    |
+| `agent-oom`       | —         | el cgroup propio del contenedor registró un OOM kill                                                                                      | cgroup2 en el contenedor                |
+| `microburst`      | `cpu<N>`  | tres muestras `burst` en una CPU en 60 s                                                                                                  | softnet                                 |
+| `reboot`          | —         | el reloj desde el arranque de un registro del log del kernel es menor que el del registro anterior                                        | <PrivilegedOnly />                      |
+| `link-flap`       | puerto    | dos o más registros de enlace up/down en un puerto en 60 s                                                                                | <PrivilegedOnly />                      |
+| `conntrack-cliff` | —         | `nf_conntrack` cayó por debajo de la mitad de su valor guardado anterior                                                                  | <PrivilegedOnly />                      |
+| `conntrack-high`  | —         | ocupación por encima del 80 % de `nf_conntrack_max` **y** en aumento durante los últimos 60 s                                             | <PrivilegedOnly />                      |
+| `thermal-high`    | zona      | una zona a menos del 15 % de su propio disparo crítico declarado                                                                          | una zona térmica que declare un disparo |
+| `thermal-rising`  | zona      | tres subidas consecutivas de un minuto de más de 1 °C cada una                                                                            | una zona térmica                        |
+| `ipc-collapse`    | `core<N>` | el IPC de un segundo de un núcleo por debajo de la mitad de su mediana móvil **mientras** su tasa de ciclos está por encima de su mediana | la PMU                                  |
+
+</ScrollTable>
+
+### `counter-reset`
+
+**Salta cuando** el `resets` de la muestra del kernel es mayor que 0: el agente encontró un
+contador más bajo que su lectura anterior sin un desbordamiento de 32 bits que lo explique,
+y usó el valor del contador tras el reinicio como delta de ese tick, una cota inferior.
+`value` es el número de esos contadores, `threshold` 0.
+
+**Necesita** solo una muestra. La misma condición marca la muestra como `suspect`,
+y los valores derivados por paquete se omiten para ella.
+
+**No puede afirmar** qué contador se reinició, ni por qué. Cada delta de esa muestra es una
+cota inferior.
+
+### `agent-restart`
+
+**Salta cuando** el número de secuencia de una muestra es menor que el de la muestra
+anterior. `value` es el nuevo número de secuencia, `threshold` el anterior.
+
+**Necesita** que el colector haya visto al menos una muestra antes del reinicio. La
+secuencia del agente vuelve a empezar desde 1 en cada arranque, así que así es como se ve un
+reinicio desde fuera.
+
+<Aside type="caution" title="Un forward en marcha no lo ve hoy">
+	Leído en el código, no observado en una ejecución: `forward` guarda su cursor de lectura, el último
+	número de secuencia que recibió, y nunca lo reinicia. El anillo de un agente reiniciado responde a
+	`/snapshot?since=<secuencia antigua>` con nada, y sin hueco, hasta que su nueva secuencia supera
+	el cursor antiguo; para entonces cada muestra que devuelve tiene un número de secuencia mayor que
+	el anterior. Así que un `forward` que sigue en marcha durante el reinicio de un agente no recibe
+	nada del agente nuevo durante tanto tiempo como llevaba en marcha el anterior — un día a 10 Hz
+	para un agente que llevaba un día — y esta regla no puede saltar en él. La regla solo la ejercitan
+	las pruebas unitarias de la etapa de derivación; ninguna prueba de forward ni de extremo a extremo
+	la cubre. Reiniciar `forward` después de que se reinicie el agente recupera los datos, pero
+	entonces no hay número de secuencia anterior y la regla tampoco salta.
+</Aside>
+
+**No puede afirmar** por qué se reinició el agente. Un colector reiniciado a la vez no tiene
+número de secuencia anterior y no ve nada.
+
+### `agent-oom`
+
+**Salta cuando** el cgroup propio del contenedor registra un OOM kill en la muestra — el
+kernel mató un proceso dentro del contenedor de mikroscope. `value` es el número de kills.
+
+**Necesita** cgroup2 legible en el contenedor; sin él, el agente no informa de eventos de
+cgroup y esta regla no puede saltar.
+
+**No puede afirmar** nada sobre los números que la rodean: todos los números de esa ventana
+son sospechosos. Cómo dimensionar la memoria del contenedor según el anillo del agente está
+en [el coste del observador](/mikroscope/es/cost/).
+
+### `microburst`
+
+**Salta cuando** la muestra de una CPU lleva la marca [`burst`](/mikroscope/es/sinks/derive/#burst)
+— un descarte, o squeezes por encima del percentil 90 móvil de esa CPU y al menos 3,
+mientras su cuenta de paquetes estaba en su mediana móvil o por debajo — y esa CPU tiene ya
+al menos tres muestras marcadas en los últimos 60 s. `value` es el número de muestras
+marcadas en la ventana, `threshold` 3; el mensaje lleva los squeezes, descartes y paquetes
+de la última muestra y la mediana móvil.
+
+**Necesita** `/proc/net/softnet_stat`, que lee todo despliegue, y diez muestras de historia
+por CPU antes de su primera marca. Las referencias abarcan diez segundos de reloj de pared a
+cualquier cadencia del muestreador.
+
+**Falsos positivos, medidos.** En este equipo el squeeze es el fondo, no un suceso. En el
+RB5009 de referencia `time_squeeze` es 0 en el 87,3 % de las muestras por CPU, 1 en el <Measured id="squeeze.backgroundOne" />,
+2 en el <Measured id="squeeze.backgroundTwo" /> y 3 en el <Measured id="squeeze.atLeastThree" />, mientras que softnet no descartó nada
+en esas mismas 24 h. Una ventana móvil de una distribución que es siete octavos ceros tiene
+un percentil 90 de 1, así que «por encima de p90» lo cumple cualquier 2 — por eso quien
+manda es el suelo y no el percentil. Reejecutada sobre 6 h de muestras almacenadas, con
+suelo 2 salta <Measured id="microburst.firesPerHourAtTwo" /> y con suelo 3 salta <Measured id="microburst.firesPerHourAtThree" />, y sigue marcando
+88 muestras para el contador de ráfagas y para `derived.burst`. Un descarte marca por sí
+solo, con cualquier cuenta de squeezes.
+
+**No puede afirmar** el tamaño de la ráfaga, ni el flujo ni la interfaz que la causó. Dice
+que el kernel se quedó sin presupuesto más de lo habitual mientras llevaba menos paquetes
+de lo habitual — prueba de algo más corto que el intervalo de muestreo.
+
+### `reboot`
+
+**Salta cuando** la marca de tiempo de un registro del log del kernel, en microsegundos
+desde el arranque, es menor que la del registro anterior. `value` y `threshold` son las
+marcas nueva y anterior en segundos.
+
+**Necesita** `privileged=yes`, que exige el log del kernel, y un colector que siga en marcha
+durante el reinicio mientras el agente vuelve. No necesita credenciales de la API de
+RouterOS. Que el colector siga en marcha no basta por sí solo: el agente que vuelve tras el
+reinicio es un proceso nuevo, y sus muestras solo llegan a `forward` cuando su secuencia
+supera el cursor antiguo (ver [`agent-restart`](#agent-restart)). La regla solo puede
+saltar entonces con un registro del log del kernel cuyo tiempo desde el arranque siga por
+debajo del último visto antes del reinicio. Esto está leído en el código, no observado.
+
+**No puede afirmar** que se vea cada reinicio. El agente lee el log del kernel desde el
+final al arrancar, así que el primer registro tras un reinicio es uno escrito después de que
+el agente arrancara; si el tiempo desde el arranque de ese registro es posterior al del
+último registro antes del reinicio, el reloj no retrocedió y no salta nada.
+
+### `link-flap`
+
+**Salta cuando** un registro del log del kernel que nombra una interfaz se clasifica como
+`link-up` o `link-down` —el mismo clasificador que pone un `kind` en cada registro de
+puerto— y ese puerto tiene ya dos o más de esos registros en los últimos 60 s. `key` es el
+nombre actual del puerto en RouterOS cuando el inventario de interfaces de la capa de la
+API lo da, el nombre por defecto de la placa cuando la tabla de puertos del agente traduce
+el nombre del kernel, y el nombre del kernel en otro caso. `value` es el número de
+registros en la ventana, `threshold` 2.
+
+**Necesita** `privileged=yes`. Un nombre de RouterOS necesita que la placa esté en la tabla
+de puertos del agente, y el nombre actual necesita además la capa de la API; consulta
+[puertos de RouterOS y nombres del kernel](/mikroscope/es/playbooks/port-names/).
+
+**No puede afirmar** una avería. Un cable desenchufado y vuelto a enchufar en menos de un
+minuto son un registro de down y uno de up, y salta. No se ha capturado ningún flap
+provocado con esta regla en marcha; los flaps medidos para la tabla de puertos el
+2026-09-15 no lo fueron.
+
+### `conntrack-cliff`
+
+**Salta cuando** la cuenta de objetos activos de la caché slab `nf_conntrack` está por
+debajo de la mitad de su valor guardado anterior. `value` es la nueva cuenta, `threshold` la
+anterior.
+
+**Necesita** `privileged=yes`, para `/proc/slabinfo`. El slab se lee a unos 6 Hz y se guarda
+al cambiar, así que «anterior» es la muestra guardada anterior, no el tick anterior.
+
+**Tampoco puede afirmar** una avería: el mensaje dice «a flush or a reset», y un vaciado
+deliberado de la tabla de conexiones la hace saltar.
+
+### `conntrack-high`
+
+**Salta cuando** los objetos activos de `nf_conntrack` están por encima de 0,8 del
+`nf_conntrack_max` del kernel, **y** la cuenta es mayor que el valor guardado más antiguo de
+los últimos 60 s. `value` es la ocupación como fracción, `threshold` 0,8.
+
+**Necesita** `privileged=yes`, el techo publicado por el kernel y al menos dos muestras
+guardadas en los últimos 60 s.
+
+**No puede afirmar** cuándo se llenará la tabla: a propósito, no se adjunta ningún tiempo
+hasta el llenado. Como escala, la tabla del router de referencia estaba al 0,63 % de su
+techo de 966 656 el 2026-09-12.
+
+### `thermal-high`
+
+**Salta cuando** la lectura de una zona está en 0,85 o más del punto de disparo crítico
+declarado más bajo de esa misma zona. `value` es la lectura en °C, `threshold` 0,85 × el
+disparo.
+
+**Necesita** una zona térmica que declare un disparo crítico. Una zona que no declara
+ninguno nunca salta; no se compara nada con un número compilado.
+
+**No puede afirmar** que haya fallado la refrigeración, ni nada sobre una zona que la placa
+no informa.
+
+### `thermal-rising`
+
+**Salta cuando** las últimas cuatro medias de un minuto completas de una zona superan cada
+una a la anterior en más de 1 °C — tres subidas consecutivas. `value` es la subida desde la
+primera de las cuatro medias hasta la última, `threshold` 3. Un intervalo de un minuto se
+cierra con la primera muestra al menos 60 s después de abrirse, y la regla se comprueba cada
+vez que se cierra uno, así que lo antes que puede saltar es tras unos cuatro minutos de
+lecturas.
+
+**Necesita** una zona térmica. Las medias son sobre las lecturas que llevaban las muestras;
+la temperatura se lee a la cadencia de sondeo declarada por la zona, 1 Hz en el equipo de
+referencia.
+
+**Resolución.** El sensor del equipo de referencia cuantiza a unos <Measured id="thermal.quantumC" />, así que 1 °C por
+minuto son 2,4 escalones y se puede resolver.
+
+**No puede afirmar** una causa, ni una subida más lenta que 1 °C por minuto.
+
+### `ipc-collapse`
+
+**Salta cuando**, en un núcleo, se cierra un intervalo de un segundo con instrucciones por
+ciclo por debajo de la mitad de la mediana de los intervalos móviles de ese núcleo
+**mientras** su tasa de ciclos está por encima de la mediana de sus tasas móviles. `key` es
+`core<N>`, `value` el IPC del intervalo, `threshold` la mitad de la mediana.
+
+**Necesita** los `cycles` e `instructions` de la PMU por CPU (con `privileged=yes`), y veinte
+intervalos de un segundo completos de historia para ese núcleo antes de poder saltar; la
+historia móvil guarda hasta sesenta.
+
+**No puede afirmar** inactividad, ni nada agregado: la conjunción con la tasa de ciclos es lo
+que separa un régimen de bloqueo por memoria de un núcleo que se queda quieto, y la regla es
+por núcleo, nunca entre núcleos.
+
+<NotClaimed variant="not-provoked">
+	De las once reglas, solo `microburst` tiene un comportamiento registrado en el equipo de
+	referencia. Las demás las ejercitan las pruebas unitarias de la etapa de derivación contra
+	muestras construidas. No se ha provocado en el RB5009, con estas reglas en marcha, ningún OOM kill
+	dentro del contenedor, reinicio, flap de enlace, vaciado o tormenta de conntrack, excursión
+	térmica ni colapso de IPC: es el router de producción del propietario, los reinicios esperan a una
+	ventana de mantenimiento, y una tormenta de conntrack provocada puede dejar sin acceso el camino
+	por el que se está trabajando.
+</NotClaimed>
+
+<SeeAlso>
+
+## Véase también
+
+- [Lo que deriva el colector](/mikroscope/es/sinks/derive/): la marca `burst` y los demás valores que
+  se escriben junto a las muestras.
+- [Reglas de alerta](/mikroscope/es/dashboards/alerts/): las reglas de Grafana construidas sobre las
+  detecciones y los contadores de averías.
+- [Un bucle que solo veía el kernel](/mikroscope/es/playbooks/loop/): lo que cazó el log del kernel
+  en el router de producción.
+- [Lo que aporta privileged](/mikroscope/es/limits/privileged/): las fuentes de las que dependen la
+  mitad de estas reglas.
+
+</SeeAlso>

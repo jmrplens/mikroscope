@@ -1,0 +1,216 @@
+---
+title: A loop only the kernel could see
+description: A layer-2 loop on the reference router’s production network that RouterOS’s log and port monitor never showed, found by the agent’s kernel-log source, diagnosed from a rate, and fixed with a firmware update confirmed two independent ways.
+---
+
+import FaultSignature from "../../../components/FaultSignature.astro";
+import Measured from "../../../components/Measured.astro";
+import NotClaimed from "../../../components/NotClaimed.astro";
+import ScrollTable from "../../../components/ScrollTable.astro";
+import SeeAlso from "../../../components/SeeAlso.astro";
+
+This fault was not provoked. It was found by accident on 2026-09-12, while
+measuring something else, on the owner's production RB5009UG+S+ (RouterOS
+7.24.2, kernel 5.6.3), and it was diagnosed and fixed the same day. It is the
+clearest answer this project has to _"why not just poll the RouterOS API?"_:
+for its whole life the API reported a healthy device.
+
+The page follows the diagnosis in the order it happened, because the order is
+the method.
+
+## The symptom
+
+`/snapshot` carried a steady stream of `events` — the agent's `kmsg` source — at **<Measured id="loop.eventsBefore" />**:
+
+```text
+[6] br0: port 2(eth1) entered blocking state
+[4] br0: received packet on eth1 with own address as source address (addr:00:00:5e:00:53:5d, vlan:0)
+[6] br0: port 2(eth1) entered learning state
+```
+
+The address in the second line is the router's own: the MAC of `sfp-sfpplus1`,
+coming back into the bridge. It is shown here as `00:00:5e:00:53:5d`, from the
+block RFC 7042 reserves for documentation — on your device it is your bridge's
+address, and that is how you recognise the line.
+
+## Step 1 — establish that it is real, and get a number
+
+A single alarming log line is an anecdote. A _rate_ is a measurement, and a rate
+is what tells you later whether a fix worked. Count events per second over a
+window long enough to be stable:
+
+```sh
+curl -s "http://172.30.10.2:9123/snapshot?seconds=120" \
+  | python3 -c '
+import sys, json, collections
+rows=[json.loads(l) for l in sys.stdin if l.strip()]
+secs=sum(r["dt_ns"] for r in rows)/1e9
+ev=[e for r in rows for e in r.get("events",[])]
+print(f"{len(ev)/secs:.2f} events/s over {secs:.0f}s")
+c=collections.Counter(e["msg"].split("(")[0][:60] for e in ev)
+for k,v in c.most_common(): print(f"  {v:5d}  {k}")'
+```
+
+`?seconds=` takes 1 to 3600, and the agent can only return what its ring still
+holds — 300 s at the default `BUFFER_S`. The window's length comes from summing
+each sample's own `dt_ns`, not from the number you asked for.
+
+## Step 2 — read the timing, not just the text
+
+The gaps between the reflected frames were **<Measured id="loop.helloGap" />**, every time. That is
+not a coincidence to be noted and moved past: 2 s is the STP _hello interval_.
+The mechanism was therefore "the router emits a BPDU and receives its own BPDU
+back", which is a loop, not a misbehaving client.
+
+Timing is usually where the diagnosis actually lives:
+
+```sh
+# gaps between consecutive occurrences of one message
+... | python3 -c '
+import sys, json
+ts=sorted(e["us"]/1e6 for l in sys.stdin if l.strip()
+          for e in json.loads(l).get("events",[]) if "own address" in e["msg"])
+print([round(ts[i+1]-ts[i],2) for i in range(len(ts)-1)][:12])'
+```
+
+`us` is the kernel's own timestamp for the record, in microseconds since boot on
+the monotonic clock — not the time the agent read it — so the gaps are the
+kernel's, not the sampler's.
+
+## Step 3 — confirm the API really is blind
+
+Worth doing explicitly, because it decides where you spend the next hour:
+
+```text
+/log/print where topics~"bridge" or topics~"stp" or topics~"interface"
+/interface/bridge/port/monitor [find] once
+```
+
+Both came back clean: zero log rows on those topics, every port
+`designated-port` / `in-bridge`. RouterOS was not hiding the fault; it genuinely
+does not surface this class of kernel event.
+
+## Step 4 — find corroborating evidence outside the kernel log
+
+A single source, however convincing, is one source. Two independent observations
+pointing the same way is a diagnosis. The MAC in the message belonged to
+`sfp-sfpplus1`, so the obvious suspicion was the SFP+ segment — but the bridge's
+own tables said otherwise:
+
+```text
+# hosts learned per port
+:foreach p in=[/interface/bridge/port/find] do={ \
+  :local n [/interface/bridge/port/get $p interface]; \
+  :put ($n . " hosts=" . [:len [/interface/bridge/host/find interface=$n]]) }
+```
+
+<ScrollTable label="Learned MACs, traffic and RSTP edge per bridge port, during the loop">
+
+| Port           | Learned MACs | Traffic                         | RSTP `edge` |
+| -------------- | ------------ | ------------------------------- | ----------- |
+| `sfp-sfpplus1` | 60           | 23.8 GB rx                      | true        |
+| **`ether2`**   | **0**        | **9.15 GB rx / 22.4 M packets** | **false**   |
+| others         | 0–2          | —                               | true        |
+
+</ScrollTable>
+
+`ether2` was passing 22 million packets on a healthy 1 Gbps link and the bridge
+had learned **nothing** behind it — which is what a bridge does on a port where
+it keeps seeing its own addresses. It was also the only port receiving BPDUs.
+Both anomalies on the same port.
+
+The kernel log had said `eth1`, not `ether2`. Establishing that those are the
+same port cost real time that day; [RouterOS ports and kernel
+names](/mikroscope/playbooks/port-names/) is how to do it in one safe step, and
+why the agent does it for you on this board.
+
+## Step 5 — make a change that tests the hypothesis
+
+The hypothesis was "the device on `ether2` has a second path to the router
+through the other APs, which hang off the switch". Two changes were made on the
+switch first, and the honest result is that **they did nothing**:
+
+| Change          | Event rate                          |
+| --------------- | ----------------------------------- |
+| baseline        | <Measured id="loop.eventsBefore" /> |
+| switch change 1 | 1.67 /s                             |
+| switch change 2 | 1.47 /s                             |
+| (noise band)    | ±0.2 /s                             |
+
+One further reading in the same series, 1.50 /s, was also inside that band.
+
+That is a useful outcome, not a wasted step: it ruled out the switch with
+evidence. The lesson for a playbook is to **always re-measure after a change,
+even one you expect to work**, and to know your noise band before you interpret
+a difference.
+
+## Step 6 — the fix, and confirming it two ways
+
+The firmware of the mesh APs (Deco units) was updated; the cabling was not
+touched. Then:
+
+```text
+events 9 -> 0.03/s   (baseline 1.49/s)
+```
+
+and of those nine, _none_ was the loop message — they were the APs coming back
+(`eth1: phy link up`, `eth1: set isolation from 0 to 1`). The loop message, which
+had appeared every 2 s (30 times a minute, with twice as many blocking/learning
+records around it), appeared **zero** times in 300 s.
+
+The second, independent confirmation is the one worth internalising: the bridge's
+view became _coherent_.
+
+|                        | Before | After    |
+| ---------------------- | ------ | -------- |
+| MACs on `ether2`       | 0      | **24**   |
+| MACs on `sfp-sfpplus1` | 60     | **36**   |
+| `ether2` `edge`        | false  | **true** |
+
+The same 60 devices, redistributed 36/24 instead of 60/0. While the loop existed,
+the router was learning nearly every device on the wrong port; the Zigbee
+coordinator `00:4B:12:96:80:33`, for instance, moved from the SFP+ to `ether2`,
+where it actually lives. A fix that makes a _second_ unrelated measurement fall
+into place is a fix you can trust.
+
+<NotClaimed title="Not established">
+	The firmware update removed the loop, and the two measurements above confirm it. Why the previous
+	firmware looped is not established: the fix was observed, not explained.
+</NotClaimed>
+
+## The signature
+
+<FaultSignature origin="real" date="2026-09-12">
+
+- A steady, periodic stream of kernel `events` at idle, where the healthy state
+  is zero.
+- `received packet on <port> with own address as source address`, with the
+  router's own MAC in it.
+- Inter-arrival times of <Measured id="loop.helloGap" />: the STP hello interval.
+- A busy port on which the bridge has learned no hosts, with `edge=false` while
+  its neighbours are `true`.
+- `/log/print` and `/interface/bridge/port/monitor` both clean.
+
+</FaultSignature>
+
+## What to take from it
+
+- Alarming text is a lead; a rate is evidence; a rate before and after is a
+  conclusion.
+- Read the inter-arrival times. They often name the protocol for you.
+- Prefer a change that discriminates between hypotheses over a change that
+  merely might fix things.
+- Distrust a fix that only your primary instrument can confirm.
+
+<SeeAlso>
+
+## See also
+
+- [RouterOS ports and kernel names](/mikroscope/playbooks/port-names/): how `eth1` became `ether2`,
+  and what the agent ships to spare you the hour.
+- [The shape of an idle router](/mikroscope/playbooks/idle/): why zero events is the baseline this
+  stream stood out against.
+- [The router's CPU, the container's network](/mikroscope/limits/namespaces/): why the kernel log is
+  visible from the container and the interface counters are not.
+
+</SeeAlso>

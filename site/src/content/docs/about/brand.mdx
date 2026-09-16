@@ -1,0 +1,210 @@
+---
+title: The mark
+description: Nine sample bars and the line of their own mean, why none of it is drawn at partial opacity, and the contrast each tone measures against its page.
+---
+
+import Mark from "../../../assets/mark-inline.svg";
+import ScrollTable from "../../../components/ScrollTable.astro";
+import SeeAlso from "../../../components/SeeAlso.astro";
+
+This page answers what the mikroscope mark says, how it is made, and why its
+colours are the ones they are — with the contrast of every tone measured
+against the background it is drawn on, and the cost of that choice stated
+beside it.
+
+<p style="color: var(--ms-accent)">
+	<Mark
+		width={96}
+		role="img"
+		height={96}
+		aria-label="The mikroscope mark: nine sample bars, three of them standing above the flat line of their own mean"
+	/>
+</p>
+
+## A spike standing over its own average
+
+The mark is geometry, not a drawing: nine sample bars whose envelope is a
+burst, crossed by the flat line of their own mean. That is the whole claim of
+the project in one shape — a one-second average reports the line, and
+sub-second sampling is what resolves the spike standing over it.
+
+The burst is asymmetric the way a real one is: three quiet samples, a fast
+rise, the peak, a slower fall, three quiet again. The peak sits in the middle
+of an odd number of bars, so the mark balances on its own centre.
+
+## The line is the mean, and it is computed
+
+The generator draws the line at the arithmetic mean of the heights it was
+given, not at a number chosen to look right, and a bar takes the loud tone
+exactly when it stands above that mean. So the sentence the mark makes is one
+the code enforces: three of the nine samples are above their own average, and
+they are the three the eye goes to. `TestTheLineSitsAtTheMeanOfTheBars` fails
+the build if the drawing and the arithmetic drift apart.
+
+## Four tones, two per theme, and no opacity anywhere
+
+Measured against the background each is drawn on, as WCAG 2.2 defines contrast:
+
+<ScrollTable label="The mark's tones and their measured contrast" nowrap>
+
+| Theme | Background | Above the mean        | At or below it, and the line | Apart  |
+| ----- | ---------- | --------------------- | ---------------------------- | ------ |
+| Dark  | `#0e1316`  | `#fbbf24` **11.20:1** | `#c2740a` **5.16:1**         | 2.17:1 |
+| Light | `#ffffff`  | `#633009` **10.73:1** | `#b45309` **5.02:1**         | 2.14:1 |
+
+</ScrollTable>
+
+One palette per theme is not a refinement; it is the only way the mark is
+legible in both. An amber light enough to read on the near-black page reads
+1.67:1 on white (`#fbbf24`), and one dark enough for white disappears into the
+dark page. On white, the sample standing above the
+mean is the darker tone, so the mark reads the same way round in both themes.
+
+`TestEveryToneClearsAAInItsOwnTheme` recomputes the ratios from the hex on
+every run and fails the build if any tone reads under 4.5:1 on its own
+background, or if a theme's two tones are less than 2.0:1 apart. A tone edited
+without checking it fails the build rather than shipping.
+`TestNothingInTheMarkDependsOnOpacity` guards the other half of the decision.
+
+## Why the quiet bars are not opacity
+
+A quiet bar drawn as the loud colour at a low opacity reads well and fails.
+Composited over the page, 0.28 of `#f59e0b` gives **1.73:1** on the dark
+background and 0.42 of `#a16207` gives **1.80:1** on white, where AA asks
+4.5:1. Reaching 4.5 by raising the alpha needs 0.68 in the dark theme and 0.96
+in the light one — at which point a quiet bar is a loud bar and the one
+distinction the mark exists to make is gone. So the split is two solid tones.
+
+That costs punch. Solid against solid gives about **2.1:1** between the two
+groups; drawing the quiet bar at 0.28 (0.42 on white) separates them by about
+5:1 in the dark theme and 2.7:1 in the light one, at alphas that read 1.73:1 and
+1.80:1 against their own page and so fail AA. What it buys is that nothing in
+the mark composites against a background this repository does not control — a
+README on GitHub, an `og:image` in a chat client, a favicon over browser chrome
+— so every number in the table is the number the reader actually gets.
+
+## A house rule, stricter than the standard
+
+WCAG 1.4.11 asks **3:1** of a graphical object, and 1.4.3 exempts logotypes
+from any minimum at all. 4.5:1 on every bar is a house rule stricter than the
+standard, chosen by the owner on 2026-09-15 over the smaller change of lifting
+the alphas to 3:1.
+
+## Amber also means threshold
+
+Amber also means _threshold_ on this project's dashboards, where a panel turns
+orange before it turns red. The two do not collide literally — the panels use
+Grafana's own named colours and never these hexes — but a reader who has learnt
+"amber means look at this" on a dashboard is being asked to read the same hue
+as the project's own mark. That is the cost of the choice, made knowingly
+(owner, 2026-09-15).
+
+## The bars are proportions, not packets
+
+The bar heights are not a real capture. The burst
+measured on the reference RB5009 on 2026-09-15 peaked at 736 packets in one
+20 ms sample against a median of 28, and 26× is a range no single square
+renders: the quiet samples collapse to dots, or a log scale flattens the very
+spike the mark exists to show. The heights in the mark are proportions of the
+drawn height.
+
+## The favicon is a different drawing
+
+Nine bars at sixteen pixels is mush, so the favicon drops to five and keeps the
+spike standing over the line, which is the part that carries the meaning.
+
+The site's `favicon.svg` is the only icon with no ground of its own. It carries
+both palettes and switches on the reader's own `prefers-color-scheme`, the
+signal browser chrome itself follows, so it draws `#fbbf24`/`#c2740a` over a
+dark chrome and `#633009`/`#b45309` over a light one. Every raster brings its
+own `#0e1316` ground instead, because an `.ico` has no way to ask.
+
+## One generator, three families of files
+
+The mark lives as a generator, `cmd/gen_brand`, rather than as a folder of
+hand-drawn files, because changing the palette or the bar count is then one
+edit instead of nine in each of a dozen files. It is a build-time tool and is
+not one of the two released binaries. From the root of the repository:
+
+```sh
+go run ./cmd/gen_brand mark -out brand          # the mark and the favicon, per theme
+go run ./cmd/gen_brand compose -out brand       # the banner, the social image and the og:image
+go run ./cmd/gen_brand icons -out site/public   # the favicon and the touch icons
+```
+
+`mark` is pure text. `compose` reads the three `bg-*.png` backgrounds from the
+directory it writes to and shells out to `rsvg-convert` for the PNGs that ship.
+`icons` shells out to `rsvg-convert` and to ImageMagick for the `.ico`, and is
+the only one that writes outside `brand/`. Every coordinate is written with two
+decimals, rounded half to even, so the files are meant to reproduce byte for
+byte on any machine; `TestMarkIsByteForByteReproducible` checks that two runs on
+the same host give the same four mark and favicon files.
+
+<ScrollTable label="The brand files, where each lives, and the subcommand that writes it">
+
+| File                                                   | Where          | Subcommand | What it is                                                                                            |
+| ------------------------------------------------------ | -------------- | ---------- | ----------------------------------------------------------------------------------------------------- |
+| `mark-dark.svg`, `mark-light.svg`                      | `brand/`       | `mark`     | The mark, one per theme                                                                               |
+| `favicon-dark.svg`, `favicon-light.svg`                | `brand/`       | `mark`     | The five-bar variant, one per theme                                                                   |
+| `mark-inline.svg`                                      | `brand/`       | `mark`     | The mark for a page that inlines it: the loud tone is `currentColor`, the quiet one `--ms-mark-quiet` |
+| `banner.svg` and `.png`                                | `brand/`       | `compose`  | 1280×320, for the README                                                                              |
+| `social.svg` and `.png`                                | `brand/`       | `compose`  | 1280×640, the repository social preview                                                               |
+| `og.svg` and `.png`                                    | `brand/`       | `compose`  | 1200×630, the documentation `og:image`                                                                |
+| `background.png`                                       | `brand/`       | none       | The generated field the three compositions crop from                                                  |
+| `bg-banner.png`, `bg-social.png`, `bg-og.png`          | `brand/`       | none       | Those crops, which `compose` reads                                                                    |
+| `favicon.svg`                                          | `site/public/` | `icons`    | Both palettes, switching on `prefers-color-scheme`                                                    |
+| `favicon-32x32.png`                                    | `site/public/` | `icons`    | 32 px, on its own ground                                                                              |
+| `favicon.ico`                                          | `site/public/` | `icons`    | Three drawings, at 16, 32 and 48 px, rather than one scaled three ways                                |
+| `apple-touch-icon.png`, `icon-192.png`, `icon-512.png` | `site/public/` | `icons`    | 180, 192 and 512 px, each drawn at its own size                                                       |
+| `icon-maskable-512.png`                                | `site/public/` | `icons`    | Inset further, to sit inside the middle 80 % a launcher may crop to                                   |
+
+</ScrollTable>
+
+The last four rows are written for a web app manifest. This site declares none and links only
+`favicon.svg`, `favicon.ico` and `apple-touch-icon.png`, so `favicon-32x32.png`, `icon-192.png`,
+`icon-512.png` and `icon-maskable-512.png` ship without a consumer: no launcher reads the maskable
+inset.
+
+The mark in this site's header is `mark-inline.svg`, painted by the site's own
+palette, so the drawing in the chrome is the drawing in `brand/`.
+
+## The background
+
+Not written by the generator: `background.png` was generated once with
+inference.sh (`openai/gpt-image-2`, 1536×1024, `quality: high`, $0.16) and is
+kept as a raster. Everything drawn over it is vector, so the type stays crisp
+at whatever size the raster is produced. The prompt asked for a near-black
+field of faint vertical sample bars growing denser and warmer toward the right,
+and for the left third to stay empty — which is where the mark and the type
+sit, so the composition never fights its own background.
+
+The three crops keep the whole left-to-right gradient rather than taking a
+window out of the middle of it:
+
+```sh
+magick background.png -resize 1280x -gravity center -crop 1280x320+0+0 +repage bg-banner.png
+magick background.png -resize 1280x -gravity center -crop 1280x640+0+0 +repage bg-social.png
+magick background.png -resize 1200x -gravity center -crop 1200x630+0+0 +repage bg-og.png
+```
+
+The compositions are light on dark throughout, so they take the dark theme's
+two tones and need no theme pair. Measured over the field's own darkest ground
+(`#020608`, sampled from the left edge), the heading `#f6f3ee` reads 18.38:1,
+the tagline `#cfc6b8` 12.04:1, and the mark's two tones 12.19:1 and 5.62:1 —
+higher than on the page, the field being darker than it. The tagline is "Sub-second
+kernel telemetry from inside the router".
+
+## Setting the social preview
+
+Manual: Settings, then Social preview, then upload `social.png`. GitHub offers
+no API for it.
+
+<SeeAlso>
+
+## See also
+
+- [Two dashboards, one panel list](/mikroscope/dashboards/): where amber means a threshold.
+- [What it is](/mikroscope/start/): the claim the mark draws, in words.
+- [Lineage and licence](/mikroscope/about/lineage/): where the rest of the code came from.
+
+</SeeAlso>

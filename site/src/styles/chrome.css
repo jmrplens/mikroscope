@@ -1,0 +1,121 @@
+/* Everything around the prose: the frame, the tables, the hero, the touch targets. */
+
+:root {
+	--sl-content-pad-x: clamp(1rem, 3vw, 2rem);
+	/* Starlight's 45rem is a measure for prose, and this site's reference
+	 * pages are mostly tables: at 1440 px the three flag tables on
+	 * "Commands and flags" are 889, 819 and 822 px in a 716 px column, so the
+	 * column a reader needs — what the flag MEANS — is the one that scrolls
+	 * out of view. 50rem fits them without scrolling on a 1280 px screen and
+	 * leaves the prose measure to .sl-markdown-content, which is narrower. */
+	--sl-content-width: 50rem;
+}
+
+.sl-markdown-content :is(table) {
+	border-collapse: collapse;
+	width: 100%;
+}
+
+.sl-markdown-content :is(th, td) {
+	border: 1px solid var(--ms-border);
+	padding: 0.4rem 0.6rem;
+	/* `start`, not `left`: a right-to-left locale gets its own leading edge. */
+	text-align: start;
+}
+
+.sl-markdown-content thead th {
+	background: var(--ms-surface);
+	color: var(--ms-heading);
+}
+
+/* ------------------------------------------------------------------ hero */
+
+/* The hero shares the landing's measure. Starlight lets it fill the whole
+ * container while `.ms-home` is 60rem wide, so the title would start away from
+ * every heading under it. One column, one left edge. */
+.sl-container:has(.hero) > .hero {
+	max-width: 60rem;
+	margin-inline: auto;
+}
+
+/* typography.css caps `.sl-markdown-content` at 62rem and Starlight leaves it
+ * at the container's start, so `.ms-home` centred inside it began 44 px left
+ * of the centred hero at 1280 px (measured 2026-09-15). Centring the content
+ * box too puts both on one axis. */
+.sl-container:has(.hero) > .sl-markdown-content {
+	margin-inline: auto;
+}
+
+/* Starlight leaves `hero.image.html` at the start of its flex box, and the
+ * mark is narrower than that box, so it sat off-centre from the copy. */
+.hero .hero-html {
+	justify-content: center;
+}
+
+/* The quiet tone comes from `--ms-mark-quiet` inside the SVG itself. */
+.ms-hero-mark svg {
+	display: block;
+	width: min(12rem, 50vw);
+	height: auto;
+	color: var(--ms-accent);
+}
+
+/* Below md the mark already sits above the centred copy (Starlight's own
+ * order). What changes is the padding, which Starlight sizes for a desktop
+ * fold, and the actions: the primary one spans the column and the other two
+ * share a row, so each tap target is still wide and the three cost two rows
+ * of height instead of three. */
+@media (max-width: 49.99rem) {
+	.hero {
+		padding-block: 1rem 0.5rem;
+	}
+	/* At 12rem the mark was 192 px wide at both 390 and 360, 53 % of the
+	 * narrower screen, and with three stacked actions the first measured
+	 * figure started at y = 701 of a 740 px screen at 360 (measured
+	 * 2026-09-15). The header already carries the mark beside the name, so
+	 * here it can be small. */
+	.ms-hero-mark svg {
+		width: min(5.5rem, 30vw);
+	}
+	.hero .stack {
+		gap: 1rem;
+	}
+	.hero .actions {
+		flex-wrap: wrap;
+		gap: 0.75rem;
+	}
+	.hero .actions .sl-link-button {
+		flex: 1 1 0;
+		justify-content: center;
+	}
+	.hero .actions .sl-link-button:first-child {
+		flex-basis: 100%;
+	}
+}
+
+/* ------------------------------------------------------- touch targets */
+
+/* On a touch screen a sidebar link one line of text tall is a 20 px target.
+ * `pointer: coarse`, not a width, because a narrow desktop window has a mouse. */
+@media (pointer: coarse) {
+	#starlight__sidebar a {
+		min-height: 2.25rem;
+		display: flex;
+		align-items: center;
+	}
+	.pagination-links a {
+		min-height: 2.75rem;
+	}
+}
+
+/* ------------------------------------------------------------ the header */
+
+/* Starlight sizes the theme select at 6.25em for every language, and says so
+ * in a TODO. "Oscuro" did not fit once the icon and the caret took their
+ * padding: the Spanish dark theme read "Oscu…" at 103.5 px (measured
+ * 2026-09-15, headless Chromium, 1280 px). Unlayered, so it beats the
+ * `@layer starlight.core` width; `--sl-inline-padding` is inherited from the
+ * select's label. Header only: the drawer's footer select has its own row. */
+.header starlight-theme-select select {
+	width: calc(7.25em + var(--sl-inline-padding) * 2);
+}

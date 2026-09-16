@@ -1,0 +1,36 @@
+/* Type. The stacks are system fonts: a documentation site that ships a webfont
+ * pays for it on every first paint, and this one has nothing to say that a
+ * system face cannot. */
+
+:root {
+	--sl-font:
+		system-ui, -apple-system, "Segoe UI", "Roboto", "Helvetica Neue", "Arial",
+		"Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+	--sl-font-mono:
+		ui-monospace, "Cascadia Code", "Source Code Pro", "Menlo", "Consolas",
+		"DejaVu Sans Mono", monospace;
+}
+
+/* A measure, because prose at full width is unreadable and this site's prose
+ * is the product. */
+.sl-markdown-content {
+	max-width: 62rem;
+}
+
+.sl-markdown-content :is(h2, h3, h4) {
+	color: var(--ms-heading);
+	letter-spacing: -0.01em;
+}
+
+.sl-markdown-content mark {
+	background: var(--ms-mark-highlight);
+	color: var(--ms-body);
+	padding: 0 0.15em;
+	border-radius: 0.2em;
+}
+
+/* Numbers in prose read as data when they line up, which is most of what this
+ * documentation is doing. */
+.sl-markdown-content table {
+	font-variant-numeric: tabular-nums;
+}

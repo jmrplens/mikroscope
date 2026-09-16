@@ -1,0 +1,110 @@
+---
+/**
+ * A two-state light/dark button for the header below `md`, with no "auto".
+ *
+ * It drives Starlight's own `<select>` rather than running a second theme
+ * system: the click sets the select's value and fires `change`, so the page
+ * ends up exactly as if the reader had picked from the menu — same
+ * `starlight-theme` key, same `data-theme`, and every picker, the drawer's
+ * included, kept in step by Starlight's `updatePickers`. Two systems disagree
+ * the first time someone uses the other control.
+ *
+ * The icon is the TARGET theme, a sun while dark and a moon while light, and
+ * the accessible name says the same thing ("Switch to light theme"), so the
+ * button is legible without a visible label.
+ *
+ * The script is inline, not bundled: Starlight's ThemeProvider has set
+ * `data-theme` in `<head>` before the body is parsed, so the label is right at
+ * first paint rather than after the module graph loads. There is one instance
+ * per page, so inlining it costs nothing twice.
+ *
+ * It is rendered `hidden` and shown by that script. Without JavaScript it did
+ * nothing and was named "Switch to dark theme" on a dark page (measured
+ * 2026-09-15, Playwright with JavaScript off), and a control that is inert and
+ * misnamed is worse than none. The script runs as the button is parsed, so
+ * with JavaScript on it is visible at first paint and nothing shifts.
+ */
+import { Icon } from "@astrojs/starlight/components";
+
+const t = Astro.locals.t;
+---
+
+<button
+	type="button"
+	class="ms-theme-toggle"
+	data-label-dark={t("ms.theme.toDark")}
+	data-label-light={t("ms.theme.toLight")}
+	aria-label={t("ms.theme.toLight")}
+	hidden
+>
+	<Icon name="sun" class="ms-icon-sun" />
+	<Icon name="moon" class="ms-icon-moon" />
+</button>
+<script is:inline>
+	(() => {
+		const b = document.currentScript.previousElementSibling;
+		const root = document.documentElement;
+		const cur = () => (root.dataset.theme === "light" ? "light" : "dark");
+		const label = () =>
+			b.setAttribute("aria-label", cur() === "light" ? b.dataset.labelDark : b.dataset.labelLight);
+		label();
+		b.hidden = false;
+		new MutationObserver(label).observe(root, { attributes: true, attributeFilter: ["data-theme"] });
+		b.addEventListener("click", () => {
+			const next = cur() === "light" ? "dark" : "light";
+			const select = document.querySelector("starlight-theme-select select");
+			// The select only listens once its custom element is defined, which is a
+			// bundled module and so can arrive after a fast first tap.
+			if (select && customElements.get("starlight-theme-select")) {
+				select.value = next;
+				select.dispatchEvent(new Event("change"));
+			} else {
+				root.dataset.theme = next;
+				try {
+					localStorage.setItem("starlight-theme", next);
+				} catch {
+					// Storage blocked: the theme still applies to this page.
+				}
+			}
+		});
+	})();
+</script>
+
+<style>
+	.ms-theme-toggle {
+		display: grid;
+		place-items: center;
+		width: 2rem;
+		height: 2rem;
+		padding: 0;
+		border: 0;
+		background: transparent;
+		color: var(--sl-color-gray-2);
+		border-radius: var(--ms-radius);
+		cursor: pointer;
+	}
+	/* The class's `display: grid` would otherwise beat the UA's `[hidden]`. */
+	.ms-theme-toggle[hidden] {
+		display: none;
+	}
+	.ms-theme-toggle:hover {
+		color: var(--sl-color-white);
+		background: var(--ms-surface);
+	}
+	.ms-theme-toggle:focus-visible {
+		outline: 2px solid var(--ms-accent);
+		outline-offset: 2px;
+	}
+	.ms-theme-toggle :global(svg) {
+		width: 1.15rem;
+		height: 1.15rem;
+	}
+	/* :global on the icon classes, because a class handed to a child component
+	 * does not carry this component's scope attribute. */
+	:global(:root[data-theme="light"]) .ms-theme-toggle :global(.ms-icon-sun) {
+		display: none;
+	}
+	:global(:root:not([data-theme="light"])) .ms-theme-toggle :global(.ms-icon-moon) {
+		display: none;
+	}
+</style>

@@ -1,0 +1,406 @@
+---
+title: InfluxDB and SQL measurements
+description: Every measurement the InfluxDB line-protocol encoder writes and every table the SQL sink creates, with tags, fields, columns, keys, units and whether each value is a delta or a level.
+---
+
+import { Aside } from "@astrojs/starlight/components";
+import NotClaimed from "../../../components/NotClaimed.astro";
+import PrivilegedOnly from "../../../components/PrivilegedOnly.astro";
+import ScrollTable from "../../../components/ScrollTable.astro";
+import SeeAlso from "../../../components/SeeAlso.astro";
+
+This page answers what a row in the store holds: which measurement or table,
+which tags or key columns identify it, which fields it carries, in what unit,
+and whether a value is a delta over the sample's interval or a level. It is
+read from `internal/sinks/influx.go`, `device.go` and `sql.go`. The two stores
+do not hold the same set; [where they differ](#where-the-two-stores-differ)
+is the last section.
+
+## Which sinks write these
+
+- `forward --influx` posts the InfluxDB line protocol below.
+- `forward --stdout lp` and `forward --telegraf` render with the same encoder,
+  so they write the same measurements and lines. The order of the
+  `mikroscope_api_health`, `mikroscope_softirq` and `mikroscope_slab` lines
+  within a batch is not stable: the encoder walks Go maps for them, and
+  `internal/sinks/telegraf.go` records 12 renders of an 8-name map giving 7
+  distinct orders (2026-09-12).
+- `forward --sql` writes its own PostgreSQL tables, listed further down.
+
+Loki, OTLP, Graphite and Elasticsearch shape the same timeline differently;
+they are on [the file and the other sinks](/mikroscope/sinks/other/).
+
+## Conventions
+
+- **Every row carries `host`**, the `--host-tag` value (`router` by default),
+  as a tag in InfluxDB and as a `host` column in SQL.
+- **Timestamps are the agent's wall clock**, in ns for InfluxDB and as
+  `TIMESTAMPTZ` for SQL. An API-tier row is stamped with the collector's clock
+  corrected by the measured skew, so both tiers share the agent's time. Gaps
+  and the device-info rows have no clock of their own and carry the
+  collector's at the moment it handled them.
+- **Counters are deltas since the previous sample**, not running totals, and
+  levels are the value as read. The tables below say which is which; never sum
+  a level.
+- **Absent is absent, for the per-source measurements.** `psi`, `thermal`,
+  `slab`, `flash`, `mtd`, `disk`, `perf`, `kmsg`, `buddy` and `irq` write no
+  row for a source the kernel does not have or the deployment cannot read. A
+  ceiling the device does not publish is a missing field in InfluxDB and
+  `NULL` in SQL, never 0. The exception: InfluxDB's `mikroscope_mem`,
+  `mikroscope_load`, `mikroscope_vm`, `mikroscope_vm_level`,
+  `mikroscope_stat`, `mikroscope_sample` and `mikroscope_self`, and SQL's
+  `mikroscope_mem`, `mikroscope_load`, `mikroscope_stat` and
+  `mikroscope_self`, are written on every sample and read 0 for a source that
+  could not be read.
+- **One dimension, one name.** A processor is `cpu` in every tag and column.
+- **The unit is in the field name**: `_kb`, `_khz`, `_ns`, `_us`, `_s`,
+  `_ms`, `_bps`, `_pps`. Temperatures are `celsius` beside `critical_celsius`;
+  block-device busy time is `io_s`, converted once from the kernel's
+  milliseconds.
+
+In line protocol a trailing `u` is an unsigned integer, `i` a signed one, a
+bare number a float, `true`/`false` a boolean, and a quoted value a string.
+
+## InfluxDB: the kernel tier
+
+One set of rows per kernel sample, all at that sample's `wall_ns`.
+
+### CPU, interrupts and the sample itself
+
+<ScrollTable label="InfluxDB kernel-tier measurements: CPU, interrupts, sample">
+
+| Measurement          | Tags                 | Fields                                                                                                                                    | Kind                                                                   |
+| -------------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `mikroscope_cpu`     | `cpu`                | `user`, `nice`, `system`, `idle`, `iowait`, `irq`, `softirq`, `steal` (u, `USER_HZ` ticks); `busy_ratio` (float, 4 decimals); `dt_ns` (i) | ticks are deltas; `busy_ratio` is busy ticks over `dt_ns`, capped at 1 |
+| `mikroscope_cpufreq` | `cpu`                | `khz` (u); `max_khz` (u) where the core publishes a ceiling                                                                               | level, on the samples that carry it: on change or the 60 s heartbeat   |
+| `mikroscope_stat`    | none                 | `ctxt`, `intr`, `forks`, `irq_total`, `irq_err` (u)                                                                                       | deltas                                                                 |
+| `mikroscope_softnet` | `cpu`                | `processed`, `dropped`, `time_squeeze` (u)                                                                                                | deltas                                                                 |
+| `mikroscope_softirq` | `kind`, `cpu`        | `count` (u)                                                                                                                               | delta; only non-zero (kind, cpu) pairs                                 |
+| `mikroscope_irq`     | `irq`, `name`        | `count` (u), summed over CPUs                                                                                                             | delta; the sample's top-K lines only                                   |
+| `mikroscope_irq_cpu` | `irq`, `name`, `cpu` | `count` (u)                                                                                                                               | delta; only non-zero CPUs                                              |
+| `mikroscope_sample`  | none                 | `seq` (u), `dt_ns` (i), `mono_ns` (i)                                                                                                     | one row per sample                                                     |
+| `mikroscope_psi`     | none                 | `cpu_some_us`, `mem_some_us`, `mem_full_us`, `io_some_us`, `io_full_us` (u)                                                               | deltas; only on a kernel with PSI                                      |
+
+</ScrollTable>
+
+`busy_ratio` is the one ratio in the kernel tier, and it is computed by the
+sink, not shipped by the agent. The ticks beside it are what to divide when
+the window matters: sum `user + nice + system + irq + softirq + steal` and
+divide by `dt_ns / 1e9 × 100`.
+
+### Memory and load
+
+<ScrollTable label="InfluxDB kernel-tier measurements: memory and load">
+
+| Measurement           | Tags           | Fields                                                                                                                                                                                                                                                                                  | Kind                           |
+| --------------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
+| `mikroscope_mem`      | none           | `total_kb`, `free_kb`, `available_kb`, `cached_kb`, `buffers_kb`, `slab_kb`, `sreclaimable_kb`, `sunreclaim_kb`, `anon_kb`, `mapped_kb`, `dirty_kb`, `writeback_kb`, `kernel_stack_kb`, `page_tables_kb`, `committed_kb`, `commit_limit_kb`, `shmem_kb`, `active_kb`, `inactive_kb` (u) | levels                         |
+| `mikroscope_load`     | none           | `load1`, `load5`, `load15` (float, 2 decimals); `running`, `threads`, `procs_blocked` (u)                                                                                                                                                                                               | levels                         |
+| `mikroscope_vm`       | none           | `pgfault`, `pgmajfault`, `pgscan_kswapd`, `pgscan_direct`, `pgsteal_kswapd`, `pgsteal_direct`, `pgalloc`, `pgfree`, `allocstall`, `compact_stall`, `oom_kill`, `pswpin`, `pswpout` (u)                                                                                                  | deltas                         |
+| `mikroscope_vm_level` | none           | `nr_free_pages`, `nr_dirty`, `nr_writeback`, `nr_slab_reclaimable`, `nr_slab_unreclaimable` (u, pages)                                                                                                                                                                                  | levels                         |
+| `mikroscope_buddy`    | `node`, `zone` | `free_pages` (u, the sum over orders in pages); `order_0` … `order_N` (u, free blocks of 2^N pages)                                                                                                                                                                                     | levels, on change or heartbeat |
+
+</ScrollTable>
+
+`mikroscope_vm` and `mikroscope_vm_level` are separate measurements because a
+delta of `pgscan` is an event rate and `nr_dirty` is a depth.
+
+### Sensors, slab caches and flash
+
+<ScrollTable label="InfluxDB kernel-tier measurements: sensors, slab, flash, disks">
+
+| Measurement          | Tags                  | Fields                                                                                                                    | Kind                                                                                  |
+| -------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `mikroscope_thermal` | `zone`                | `celsius` (float, 3 decimals); `critical_celsius` (float) where the zone declares a critical trip                         | level, at the zone's declared cadence                                                 |
+| `mikroscope_slab`    | `cache`               | `active` (u, objects); `limit` (u) for caches with a published ceiling, today `nf_conntrack`                              | level; <PrivilegedOnly />; stored on change at a budget floor                         |
+| `mikroscope_flash`   | `device`              | `page_writes`, `page_reads`, `erasures`, `gc_copies`, `gcs` (u); `bad_blocks`, `free_chunks` (u)                          | first five deltas, last two levels; only when something changed                       |
+| `mikroscope_mtd`     | `device`, `partition` | `corrected_bits`, `ecc_failures`, `bad_blocks`, `bbt_blocks` (u); `bitflip_threshold`, `ecc_strength` (u) where published | levels: the kernel's since-boot counts as read, never differenced; <PrivilegedOnly /> |
+| `mikroscope_disk`    | `device`              | `reads`, `read_sectors`, `writes`, `write_sectors` (u); `io_s` (float, 3 decimals); `inflight` (u)                        | `inflight` is a level, the rest deltas; an idle device writes no row                  |
+
+</ScrollTable>
+
+`limit` is an SQL keyword, so an InfluxDB 3 SQL query double-quotes it, as
+the shipped connection-table panel does: `max("limit")`. The shipped CPU-frequency panel
+double-quotes the `cluster` field of `mikroscope_device_cpufreq` the same way
+(`internal/dashboards/panels_p5.go`); no source in the repository says why.
+
+<Aside type="caution" title="The generated InfluxDB alert asks for the SQL column name">
+	`mikroscope dashboards gen` writes a conntrack alert into `mikroscope-alerts-influxdb.yaml` whose
+	query reads `limit_objs` from `mikroscope_slab`. That is the SQL sink's column; InfluxDB's field
+	is `limit`. Read from `internal/dashboards/alerts.go` and `internal/sinks/influx.go`; the rule was
+	not run against a store for this page.
+</Aside>
+
+### Observer, PMU and kernel log
+
+<ScrollTable label="InfluxDB kernel-tier measurements: observer, PMU, kernel log">
+
+| Measurement       | Tags                                     | Fields                                                                                                                                                                                         | Kind                                                                                                                                                                                        |
+| ----------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mikroscope_self` | none                                     | `cpu_us` (u); `rss`, `cgroup_mem` (u, bytes); `cgroup_mem_max` (u) on the samples that carry it; `throttled`, `throttled_us`, `oom_kill` (u) with cgroup2; `resets`, `kmsg_dropped`, `seq` (u) | `cpu_us`, `throttled`, `throttled_us`, `oom_kill`, `resets`, `kmsg_dropped` are deltas; `rss`, `cgroup_mem`, `cgroup_mem_max` levels                                                        |
+| `mikroscope_perf` | `counter`, `cpu`                         | `count` (u); `enabled_ns`, `running_ns` (u) when the kernel reported them                                                                                                                      | deltas; <PrivilegedOnly />; `running_ns` below `enabled_ns` means the count is multiplexed                                                                                                  |
+| `mikroscope_kmsg` | `level`, `port`, `kind`, `label`, `role` | `count` (u), records in this sample                                                                                                                                                            | per (level, port, kind); a record that names no port carries none of `port`, `kind`, `label` and `role`; `label` and `role` only where the inventory knows them; only non-zero combinations |
+
+</ScrollTable>
+
+`resets` counts monotonic counters that went backwards this tick without a
+32-bit wrap, and `kmsg_dropped` kernel-log loss events, not records: one for a tick that hit the 64-record cap, one per kernel ring overrun, which can stand for many records.
+Both are usually 0; either one non-zero means the tick is not to be trusted as
+a rate. The text of kernel-log records is not in InfluxDB; `port` is the
+interface's current RouterOS name where the collector holds the API tier's
+inventory, the board's default name otherwise, and the kernel's own name on a
+board with no port table.
+
+`kind` says what happened to that port: `link-up`, `link-down`,
+`stp-blocking`, `stp-listening`, `stp-learning`, `stp-forwarding`,
+`stp-disabled`, `own-address` — the bridge received a frame carrying its own
+MAC as source address, the layer-2 loop signature — or `other`. A link coming
+up writes four records, not four faults: the link-up and the three STP
+transitions of its bridge port. `label` and `role` are the port's RouterOS
+comment and its interface lists, tagged only where the inventory has them.
+Because a query naming a column the store has never received fails at planning
+time, `kind` can be queried only after the first port record has been written
+with it.
+
+## InfluxDB: the RouterOS API tier
+
+One set per API poll, stamped in the agent's time.
+
+<ScrollTable label="InfluxDB API-tier measurements">
+
+| Measurement                 | Tags                                           | Fields                                                                                                                                                | Kind                                                                                                                          |
+| --------------------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `mikroscope_api_system`     | none                                           | `cpu_load` (u, percent); `free_memory`, `total_memory`, `free_hdd` (u, bytes); `uptime_s` (u)                                                         | RouterOS's one-second view, as reported                                                                                       |
+| `mikroscope_api_core`       | `cpu`                                          | `load`, `irq`, `disk` (u, percent)                                                                                                                    | as `/system/resource/cpu` reports                                                                                             |
+| `mikroscope_api_health`     | `name`                                         | `value` (float)                                                                                                                                       | as `/system/health` reports                                                                                                   |
+| `mikroscope_api_iface`      | `interface`, `label`, `type`, `role`, `bridge` | `rx_bps`, `tx_bps`, `rx_pps`, `tx_pps` (u); `rx_drops`, `tx_drops`, `tx_queue_drops`, `rx_errors`, `tx_errors` (u) only when the router returned them | instantaneous rates from `monitor-traffic`; the four inventory tags are omitted one by one when empty                         |
+| `mikroscope_api_ifcounters` | `interface`, `label`, `type`, `role`, `bridge` | one field per numeric counter RouterOS returned, its name with `-` folded to `_` (`rx_overflow`, `fp_rx_byte`, `link_downs` …) (u)                    | cumulative since boot or the port's last reset; every interface, on the `--counters-every` polls                              |
+| `mikroscope_api_ifinfo`     | `interface`, `label`, `type`, `role`, `bridge` | `default_name` (string, the factory name of a physical port, `""` for an interface that has none); `mtu` (u) only above 0                             | what each interface is; written once before the first kernel pull and again on every `--labels-every` re-read, never per poll |
+| `mikroscope_api_conntrack`  | none                                           | `entries` (u)                                                                                                                                         | only on the polls that asked, every `--conntrack-every`                                                                       |
+
+</ScrollTable>
+
+The fields of `mikroscope_api_ifcounters` differ by port and by board: a
+counter a port does not report is not a field on its row. `mtu`, `actual-mtu`,
+`l2mtu`, `max-l2mtu` and `sfp-shutdown-temperature` are integers that count
+nothing, so they are not fields there; the MTU is the `mtu` field of
+`mikroscope_api_ifinfo`.
+
+The inventory behind `label`, `type`, `role` and `bridge` is three
+configuration reads — `/interface/print`, `/interface/list/member/print` and
+`/interface/bridge/port/print`. `label` is the RouterOS comment, `type`
+RouterOS's own (`ether`, `bridge`, `vlan`, `pppoe-out`, `wg`, `veth`,
+`loopback`), `role` the interface lists an interface belongs to, sorted and
+comma-joined (`WAN`, `LAN,VPN`), where a bridge member in no list of its own
+takes its bridge's lists, and `bridge` the bridge it is a port of. A failed
+`/interface` read keeps the inventory already held and writes an error record
+instead; the list and bridge reads are best effort.
+
+`type` is what keeps two rows from being added together, because RouterOS
+counts different things on different interfaces. A switch port counts its wire,
+including the frames the switch chip forwarded in hardware; a bridge counts its
+CPU side; a VLAN or a PPPoE counts what the CPU sent and received. On the
+reference RB5009 (RouterOS 7.24.2, 2026-09-16) ether1 received 255.8 GB on the
+wire and 29.7 GB of that reached the CPU: the `ether` row and the `bridge` row
+are different planes, neither a subset of the other, and summing them counts
+nothing that exists.
+
+## InfluxDB: derived values, annotations and device facts
+
+<ScrollTable label="InfluxDB measurements from the collector">
+
+| Measurement                 | Tags               | Fields                                                                                                                                                                               | Stamped at                                                 |
+| --------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------- |
+| `mikroscope_derived`        | none               | `mem_pressure` (i, 0–4); `burst`, `suspect` (bool); `cycles_per_packet`, `instructions_per_packet`, `cache_misses_per_packet`, `packets_per_irq` (float, 3 decimals) when computable | the kernel sample's time                                   |
+| `mikroscope_derived_iface`  | `interface`        | `rx_bytes`, `fp_rx_bytes`, `tx_bytes`, `fp_tx_bytes` (u, deltas since the previous counter poll); `fp_rx_share`, `fp_tx_share` (float, 4 decimals) when bytes moved                  | the API sample's time                                      |
+| `mikroscope_detection`      | `rule`, `key`      | `value`, `threshold` (float); `seq` (u); `message` (string)                                                                                                                          | the detection's time; `key` omitted when the rule has none |
+| `mikroscope_trigger`        | `cause`            | `id`, `seq` (u); `value`, `threshold` (float); `field` (string)                                                                                                                      | the agent's wall clock at the fire                         |
+| `mikroscope_gap`            | none               | `from`, `to` (u, sequence numbers no longer in the ring)                                                                                                                             | the collector's clock                                      |
+| `mikroscope_device`         | `board`, `kernel`  | `cores` (i); `privileged`, `cgroup` (bool); `sources`, `hash` (string); `conntrack_max`, `cgroup_mem_max` (u) where published; `ports_from` (string) where known                     | the collector's clock                                      |
+| `mikroscope_device_thermal` | `zone`             | `critical_celsius` (float); `polling_ms` (i)                                                                                                                                         | the collector's clock                                      |
+| `mikroscope_device_cpufreq` | `cpu`              | `cluster` (i); `min_khz`, `max_khz` (u); `governor` (string); `steps` (string, space-separated kHz)                                                                                  | the collector's clock                                      |
+| `mikroscope_device_cadence` | `source`, `reason` | `hz` (float)                                                                                                                                                                         | the collector's clock                                      |
+
+</ScrollTable>
+
+`fp_rx_share` is the fast-path share of the traffic an interface hands the CPU,
+not a share of the wire: `fp-rx-byte` over `driver-rx-byte` on a switch port,
+whose `rx-byte` is the wire total, and over `rx-byte` on a software interface,
+which has no driver counters. Hardware-switched frames are in neither number.
+`rx_bytes` and `tx_bytes` are the share's denominators, not wire totals.
+Measured on the reference RB5009 (2026-09-16): switch ports read ~100 %
+(`fp-rx-byte` equals `driver-rx-byte` within a few kB), the bridge fast-pathed
+211.9 GB of 663.0 GB since boot, PPPoE_DIGI 99.97 %. `fp-tx-byte` stayed 0 on
+every interface after hundreds of GB transmitted, so the tx share and its
+deltas are withheld while the cumulative `fp-tx-byte` is 0: `fp_tx_share` is
+absent and `tx_bytes`, `fp_tx_bytes` are 0.
+
+A derived value is written beside its inputs and never instead of them, so the
+store can recompute it. `suspect` marks a sample with a counter reset, where a
+per-packet figure would be a lower bound, so the per-packet fields are left
+out. The `board` and `kernel` tags read `unknown` when the agent could not
+establish them. The four `mikroscope_device*` measurements are written once
+when `forward` starts and again within a minute of the agent's capability hash
+changing, because the collector re-reads `/healthz` once a minute. A transport
+that cannot fetch `/capabilities` writes no device rows at all.
+What each value and rule means is on [what the collector
+derives](/mikroscope/sinks/derive/), [detections](/mikroscope/sinks/detections/)
+and [the device-info stream](/mikroscope/sinks/device-info/).
+
+## What InfluxDB 3 Core requires
+
+- A node holds at most five databases. A write to a sixth fails with `422`;
+  the sink backs off and keeps trying.
+- Every query must be time-bounded.
+- A column's type is immutable once written.
+- A query naming a field the store has never received fails at planning time,
+  exactly as a missing table does: `No field named limit. Valid fields are …`
+  (verified through the Grafana datasource proxy, 2026-09-14).
+- The write URL holds `&`; quote it when it lives in a file you `source`.
+
+The sink sends one batch per second and queues up to `--queue-seconds` ×
+64 KiB of batches, a budget sized for about 1.2 KiB per 10 Hz sample, then
+drops the oldest. A batch larger than 64 KiB, at 50 or 100 Hz or with the
+privileged sources, means fewer than `--queue-seconds` batches fit; [InfluxDB 3](/mikroscope/sinks/influxdb/) covers
+delivery.
+
+## SQL: the file
+
+`--sql out.sql` writes PostgreSQL text: a header, then one `INSERT` per record.
+There is no database driver; `psql` owns the connection.
+
+```sh
+mikroscope forward --sql out.sql --for 10m && psql -f out.sql
+```
+
+- The header is `SET standard_conforming_strings = on;` and one
+  `CREATE TABLE IF NOT EXISTS` per table, so every file re-states the schema
+  harmlessly. `--sql-hypertable` adds one
+  `SELECT create_hypertable('<table>', 'time', if_not_exists => TRUE);` per
+  table.
+- Every table's primary key starts with `time, host`, and every `INSERT` ends
+  in `ON CONFLICT DO NOTHING`: applying the same file twice is a no-op, because
+  a row is one immutable instant, never a total a later sweep revises.
+- `TIMESTAMPTZ` stores microseconds, so the last three digits of the agent's
+  nanoseconds are rounded away; two samples closer than 1 µs would collide on
+  the key.
+- A float that is NaN or infinite is written `NULL`. A NUL byte in a string is
+  dropped, and bytes that are not valid UTF-8 become U+FFFD, because PostgreSQL
+  refuses both.
+- `--sql -` writes to standard output. With no queue in this sink, a `psql`
+  that falls behind blocks the collector's pull loop instead of dropping.
+- The sink counts events it wrote to the file, not rows the server stored.
+
+`dt_ns` is on `mikroscope_cpu` only. A rate over any other delta table joins
+`mikroscope_cpu` on `(time, host)` for the real interval rather than assuming
+the nominal period.
+
+## SQL: kernel-tier tables
+
+<ScrollTable label="SQL kernel-tier tables">
+
+| Table                | Primary key                           | Columns after `time`                                                                                                                                                                        |
+| -------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mikroscope_cpu`     | `time, host, cpu`                     | `host`, `cpu`, `user_ticks`, `nice_ticks`, `system_ticks`, `idle_ticks`, `iowait_ticks`, `irq_ticks`, `softirq_ticks`, `steal_ticks` (deltas), `busy_ratio`, `dt_ns`                        |
+| `mikroscope_softnet` | `time, host, cpu`                     | `host`, `cpu`, `processed`, `dropped`, `time_squeeze` (deltas)                                                                                                                              |
+| `mikroscope_irq`     | `time, host, irq`                     | `host`, `irq`, `name`, `count` (delta, summed over CPUs; top-K lines)                                                                                                                       |
+| `mikroscope_mem`     | `time, host`                          | `host`, `free_kb`, `available_kb`, `cached_kb`, `slab_kb`, `sunreclaim_kb` (levels)                                                                                                         |
+| `mikroscope_load`    | `time, host`                          | `host`, `load1`, `load5`, `load15`, `running`, `threads`, `procs_blocked` (levels)                                                                                                          |
+| `mikroscope_stat`    | `time, host`                          | `host`, `ctxt`, `intr`, `forks`, `irq_total`, `irq_err`, `pgfault`, `pgmajfault` (deltas)                                                                                                   |
+| `mikroscope_self`    | `time, host`                          | `host`, `cpu_us` (delta), `rss`, `cgroup_mem` (levels), `throttled`, `throttled_us`, `oom_kill` (deltas, `NULL` without cgroup2), `seq`                                                     |
+| `mikroscope_buddy`   | `time, host, node, zone, block_order` | `host`, `node`, `zone`, `block_order`, `free_blocks` (level; one row per zone and order, and `order` is reserved)                                                                           |
+| `mikroscope_mtd`     | `time, host, device`                  | `host`, `device`, `partition`, `corrected_bits`, `ecc_failures`, `bad_blocks`, `bbt_blocks`, `bitflip_threshold`, `ecc_strength` (levels; thresholds `NULL` unpublished)                    |
+| `mikroscope_psi`     | `time, host`                          | `host`, `cpu_some_us`, `mem_some_us`, `mem_full_us`, `io_some_us`, `io_full_us` (deltas)                                                                                                    |
+| `mikroscope_thermal` | `time, host, zone`                    | `host`, `zone`, `celsius`, `critical_celsius` (`NULL` unpublished)                                                                                                                          |
+| `mikroscope_slab`    | `time, host, cache`                   | `host`, `cache`, `active_objs`, `limit_objs` (`NULL` for caches with no published ceiling)                                                                                                  |
+| `mikroscope_disk`    | `time, host, device`                  | `host`, `device`, `reads`, `read_sectors`, `writes`, `write_sectors`, `io_s` (deltas), `inflight` (level)                                                                                   |
+| `mikroscope_flash`   | `time, host, device`                  | `host`, `device`, `page_writes`, `page_reads`, `erasures`, `gc_copies`, `gcs` (deltas), `bad_blocks`, `free_chunks` (levels)                                                                |
+| `mikroscope_event`   | `time, host, kernel_seq`              | `host`, `level`, `facility`, `kernel_seq`, `time_usec` (µs since boot, the kernel's monotonic clock, not `time`'s), `message`, `port`, `kind` (both `NULL` for a record that names no port) |
+
+</ScrollTable>
+
+The column names avoid quoting in PostgreSQL: the tick columns are
+`user_ticks` and friends because `user` is reserved. The counter columns are
+`BIGINT`, since PostgreSQL has no unsigned 64-bit type and no delta a router
+produces in one sample comes near 2^63.
+
+## SQL: API-tier, collector and device tables
+
+<ScrollTable label="SQL API-tier, collector and device tables">
+
+| Table                       | Primary key                      | Columns after `time`                                                                                                                                                                               |
+| --------------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mikroscope_api_system`     | `time, host`                     | `host`, `cpu_load`, `free_memory`, `total_memory`, `free_hdd`, `uptime_s`, `version`                                                                                                               |
+| `mikroscope_api_core`       | `time, host, cpu`                | `host`, `cpu`, `load`, `irq`, `disk`                                                                                                                                                               |
+| `mikroscope_api_health`     | `time, host, name`               | `host`, `name`, `value`                                                                                                                                                                            |
+| `mikroscope_api_iface`      | `time, host, interface`          | `host`, `interface`, `label`, `rx_bps`, `tx_bps`, `rx_pps`, `tx_pps`, `rx_drops`, `tx_drops`, `tx_queue_drops`, `rx_errors`, `tx_errors` (loss columns `NULL` when the router did not return them) |
+| `mikroscope_api_conntrack`  | `time, host`                     | `host`, `entries`: the last count, written on every API poll once one has been read                                                                                                                |
+| `mikroscope_api_ifinfo`     | `time, host, interface`          | `host`, `interface`, `default_name`, `type`, `role`, `bridge`, `label`, `mtu` (`NULL` where the router gives none): what each interface is, one row per interface per inventory read               |
+| `mikroscope_api_ifcounter`  | `time, host, interface, counter` | `host`, `interface`, `counter` (RouterOS's own name, with its dashes), `value`: one row per counter                                                                                                |
+| `mikroscope_api_error`      | `time, host, message`            | `host`, `message`: which API command failed on that poll and why                                                                                                                                   |
+| `mikroscope_gap`            | `time, host, seq_from, seq_to`   | `host`, `seq_from`, `seq_to`                                                                                                                                                                       |
+| `mikroscope_trigger`        | `time, host, id`                 | `host`, `id`, `cause`, `field`, `value`, `threshold`, `seq`                                                                                                                                        |
+| `mikroscope_derived`        | `time, host`                     | `host`, `seq`, `mem_pressure`, `burst`, `suspect`, `cycles_per_packet`, `instructions_per_packet`, `cache_misses_per_packet`, `packets_per_irq` (`NULL` where not computable)                      |
+| `mikroscope_derived_iface`  | `time, host, interface`          | `host`, `interface`, `rx_bytes`, `fp_rx_bytes`, `tx_bytes`, `fp_tx_bytes`, `fp_rx_share`, `fp_tx_share`                                                                                            |
+| `mikroscope_detection`      | `time, host, rule, key`          | `host`, `rule`, `key` (empty string when the rule has none), `seq`, `value`, `threshold`, `message`                                                                                                |
+| `mikroscope_device`         | `time, host`                     | `host`, `board`, `kernel`, `cores`, `privileged`, `cgroup`, `sources`, `conntrack_max`, `cgroup_mem_max`, `ports_from`, `hash`                                                                     |
+| `mikroscope_device_thermal` | `time, host, zone`               | `host`, `zone`, `critical_celsius`, `polling_ms`                                                                                                                                                   |
+| `mikroscope_device_cpufreq` | `time, host, cpu`                | `host`, `cpu`, `cluster`, `min_khz`, `max_khz`, `governor`, `steps`                                                                                                                                |
+| `mikroscope_device_cadence` | `time, host, source`             | `host`, `source`, `reason`, `hz`                                                                                                                                                                   |
+
+</ScrollTable>
+
+## Where the two stores differ
+
+<ScrollTable label="Differences between the InfluxDB measurements and the SQL tables">
+
+| Data                            | InfluxDB                                                                                                                            | SQL                                                                               |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| CPU frequency                   | `mikroscope_cpufreq`                                                                                                                | not written                                                                       |
+| per-CPU interrupts and softirqs | `mikroscope_irq_cpu`, `mikroscope_softirq`                                                                                          | not written; `mikroscope_irq` has the sum only                                    |
+| vmstat events and levels        | `mikroscope_vm`, `mikroscope_vm_level`                                                                                              | only `pgfault` and `pgmajfault`, on `mikroscope_stat`                             |
+| PMU counters                    | `mikroscope_perf`                                                                                                                   | not written                                                                       |
+| sample sequence and clocks      | `mikroscope_sample`                                                                                                                 | `seq` on `mikroscope_self`; `dt_ns` on `mikroscope_cpu`                           |
+| `/proc/meminfo`                 | nineteen fields on `mikroscope_mem`                                                                                                 | five columns on `mikroscope_mem`                                                  |
+| kernel log                      | counts per level, port and kind, `mikroscope_kmsg`; no text                                                                         | every record with its text, `port` and `kind`, `mikroscope_event`; no counts      |
+| observer extras                 | `cgroup_mem_max`, `resets`, `kmsg_dropped` on `mikroscope_self`                                                                     | not written                                                                       |
+| slab ceiling                    | field `limit`                                                                                                                       | column `limit_objs`; population `active` against `active_objs`                    |
+| free lists                      | one row per zone, a field per order                                                                                                 | one row per zone and order                                                        |
+| what an interface is            | `label`, `type`, `role`, `bridge` as tags on `mikroscope_api_iface` and `mikroscope_api_ifcounters`, beside `mikroscope_api_ifinfo` | `label` alone on `mikroscope_api_iface`; the rest through `mikroscope_api_ifinfo` |
+| port counters                   | `mikroscope_api_ifcounters`, one row per port, `_` in names                                                                         | `mikroscope_api_ifcounter`, one row per counter, RouterOS's names                 |
+| conntrack count                 | only on the polls that asked                                                                                                        | the last count, repeated on every poll after the first                            |
+| API command failures            | not written                                                                                                                         | `mikroscope_api_error`                                                            |
+| gap bounds                      | `from`, `to`                                                                                                                        | `seq_from`, `seq_to`                                                              |
+| `mikroscope_api_system.version` | not written                                                                                                                         | `version`                                                                         |
+
+</ScrollTable>
+
+<NotClaimed>
+	The SQL sink has never been run against a live TimescaleDB in this repository: the
+	`create_hypertable` calls follow TimescaleDB 2.x's documented signature and are not verified. Its
+	size was measured on 2026-09-12 on the package's own test fixture (2 cores, one softnet queue, one
+	interrupt line, no privileged sources), not on a router: a kernel event renders to 1 375 B of SQL
+	against 716 B of line protocol, an API event to 1 138 B against 608 B, and 10 Hz plus the 1 Hz API
+	tier writes about 14 KiB/s after a 5.6 KiB header; with the privileged sources the same kernel
+	event grows to 2 749 B. The figures do not cover fourteen of the thirty-two tables the sink
+	writes — `load`, `stat`, `buddy`, `mtd`, `api_ifcounter`, `api_ifinfo`, `trigger`, `derived`,
+	`derived_iface`, `detection` and the four `device` tables — and have not been re-measured, so
+	they predate the `port` and `kind` columns of `mikroscope_event`. The header for all thirty-two,
+	computed from the schema strings in `internal/sinks/sql.go` rather than measured, is 7 757 B,
+	about 7.6 KiB. How `--sql - | psql` behaves when `psql` falls behind a 10 Hz agent is not
+	measured.
+</NotClaimed>
+
+<SeeAlso>
+
+## See also
+
+- [InfluxDB 3](/mikroscope/sinks/influxdb/): pointing `forward` at InfluxDB and what delivery
+  guarantees it has.
+- [Prometheus metric families](/mikroscope/reference/metrics/): the same data as a scrape.
+- [The file and the other sinks](/mikroscope/sinks/other/): JSONL, SQL in practice, Loki, OTLP,
+  Graphite, Elasticsearch, Telegraf.
+- [Import and check](/mikroscope/dashboards/import-and-check/): the dashboards that query these
+  measurements.
+
+</SeeAlso>

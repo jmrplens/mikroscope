@@ -1,0 +1,63 @@
+---
+/**
+ * The checks `mikroscope doctor` runs, in its order, from
+ * src/data/doctor-checks.ts.
+ *
+ * The prerequisites page and the CLI reference both list them, and the list
+ * is the code's (internal/router/doctor.go), so it is kept once. The check
+ * column is what the terminal prints and stays English in both locales.
+ */
+import { doctorChecks, isDoctorCheckId } from "../data/doctor-checks";
+import { nextId } from "../lib/ids";
+import { langOf } from "../lib/lang";
+import CodeText from "./CodeText.astro";
+import ScrollTable from "./ScrollTable.astro";
+
+interface Props {
+	/** Check ids to show, in doctor's order whatever order they are given in. */
+	only?: string[];
+}
+
+const { only } = Astro.props;
+for (const id of only ?? []) {
+	if (!isDoctorCheckId(id)) {
+		throw new Error(
+			`DoctorChecks: unknown check "${id}"; use ${doctorChecks.map((c) => `"${c.id}"`).join(", ")}`,
+		);
+	}
+}
+const rows = only ? doctorChecks.filter((c) => only.includes(c.id)) : doctorChecks;
+const lang = langOf(Astro.locals.starlightRoute);
+const t = Astro.locals.t;
+const captionId = nextId(Astro.locals, "ms-doctor");
+---
+
+<ScrollTable labelledby={captionId}>
+	<table>
+		<caption class="sr-only" id={captionId}>{t("ms.doctor.label")}</caption>
+		<thead>
+			<tr>
+				<th scope="col">{t("ms.doctor.check")}</th>
+				<th scope="col">{t("ms.doctor.passes")}</th>
+				<th scope="col">{t("ms.doctor.fix")}</th>
+			</tr>
+		</thead>
+		<tbody>
+			{
+				rows.map((c) => (
+					<tr>
+						<th scope="row" lang="en">
+							{c.printed}
+						</th>
+						<td>
+							<CodeText text={c.passes[lang]} />
+						</td>
+						<td>
+							<CodeText text={c.fix[lang]} />
+						</td>
+					</tr>
+				))
+			}
+		</tbody>
+	</table>
+</ScrollTable>

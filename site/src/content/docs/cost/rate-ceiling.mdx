@@ -1,0 +1,100 @@
+---
+title: The rate ceiling
+description: Five measured runs at 10, 50 and 100 Hz on an RB5009 — all of them lossless — and what sampling faster actually buys.
+---
+
+import { Aside } from "@astrojs/starlight/components";
+import Measured from "../../../components/Measured.astro";
+import NotClaimed from "../../../components/NotClaimed.astro";
+import Provenance from "../../../components/Provenance.astro";
+import RunFlags from "../../../components/RunFlags.astro";
+import RunsTable from "../../../components/RunsTable.astro";
+import SeeAlso from "../../../components/SeeAlso.astro";
+
+The question this page answers is the one worth asking before trusting any of
+it: **how fast can it sample before it starts losing data?**
+
+On the reference device the answer is that it does not, up to the CLI's own
+100 Hz cap, with every source read on every tick. That is not an extrapolation
+from the 10 Hz figure. It is five runs.
+
+## The five runs
+
+Every figure is from the agent's own cgroup and `/metrics`, with the full source set. Each row is
+one window with the ring already full:
+
+<Provenance of="rates-2026-09-15" />
+
+<RunsTable />
+
+`FLOOR_HZ` means every source is read on every tick, with no per-source floor at
+all — the worst case the agent can be asked for.
+
+Memory differs by row because the ring does. The 10 Hz row is the install
+default (300 s ring, <RunFlags run="10hz" />); the 50 Hz rows used <RunFlags run="50hz" /> and
+the 100 Hz rows <RunFlags run="100hz" />. Give the agent's garbage collector room or the cost
+jumps for reasons that have nothing to do with the rate.
+
+<Aside type="tip" title="Nothing was lost at any rate, in any configuration">
+	Sampled seconds covered wall clock to 1.0000 in all five runs, the delivered rate was the
+	configured rate to three figures, and every sink — file, Prometheus, InfluxDB — reported 0 gaps
+	and 0 drops.
+</Aside>
+
+## Two things in that table worth reading twice
+
+### Per-sample cost falls as the rate rises
+
+A sample costs <Measured id="run.10hz.usPerSample" /> at 10 Hz against <Measured id="run.100hz.usPerSample" /> at 100 Hz. That is not a
+paradox, it is the floors working: the expensive sources are amortised over more samples.
+`/proc/slabinfo`, one of the expensive sources (13.8 kB), is read every 2nd tick at 10 Hz and every
+17th at 100 Hz, so an average sample costs less while the _rate_ of slabinfo reads
+stays near its 6 Hz floor either way (5 Hz at 10 Hz, about 5.9 Hz at 100 Hz).
+
+With `FLOOR_HZ` there is no amortisation to be had and the per-sample cost is
+flat — <Measured id="run.50hz-floor.usPerSample" /> at 50 Hz and <Measured id="run.100hz-floor.usPerSample" /> at
+100 Hz — so CPU scales linearly with the rate: <Measured id="run.50hz-floor.cpu" />, then <Measured id="run.100hz-floor.cpu" />.
+
+### A slipped tick is not a lost sample
+
+The sample is still produced and still delivered, carrying its real `dt_ns`, so
+any rate computed from it stays correct. It is a smear, not a hole, and
+`mikroscope_tick_interval_seconds` is where you see it. At 100 Hz with
+everything on every tick, 99.5 % of ticks still landed within 11 ms of a 10 ms
+period and the worst was 15 ms.
+
+## What binds is the read, not the CPU
+
+At the default floors a whole tick's sources are read in under 2 ms for <Measured id="read.under2ms" /> of
+samples at 100 Hz, comfortably inside a 10 ms period. `FLOOR_HZ` pushes 1.4 %
+of reads past 5 ms, and those are the ticks that slip. The CPU headroom is
+larger than the timing headroom, which is why the ceiling is a statement about
+I/O rather than about the A72.
+
+## What sampling faster actually buys
+
+Not CPU-percent resolution. The jiffie is 10 ms, so at 100 Hz a sample holds
+either 0 or 1 busy tick and the per-sample busy ratio has two possible values.
+Above roughly 20 Hz the tick counters stop being a percentage and become an
+occupancy indicator; the PMU is the resolution from there.
+
+What a higher rate does buy is everything that is not jiffie-quantised — softnet
+packet counts, interrupt deltas, PMU counters, the kernel log's own timestamps —
+and a tighter bound on how long a burst can hide between two samples.
+
+<NotClaimed>
+	Any rate on a board that is not this one, and what happens under a traffic load heavier than this
+	router's ordinary evening — about <Measured id="load.evening" />. Before quoting a number for your
+	device, re-measure it there: two `/metrics` reads 60 s apart at steady state.
+</NotClaimed>
+
+<SeeAlso>
+
+## See also
+
+- [The cost of the observer](/mikroscope/cost/): the budget these runs are measured against, and the
+  three commands to measure it yourself.
+- [What the numbers do not say](/mikroscope/cost/limits/): what `/metrics` can and cannot recover
+  at any of these rates.
+
+</SeeAlso>

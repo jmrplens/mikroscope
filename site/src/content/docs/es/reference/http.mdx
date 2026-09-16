@@ -1,0 +1,374 @@
+---
+title: Los endpoints HTTP del agente
+description: Cada ruta que sirve el agente en la veth, sus parámetros de consulta, lo que devuelve, cómo la protege el token y los formatos de línea de /snapshot y /stream.
+---
+
+import { Aside } from "@astrojs/starlight/components";
+import Measured from "../../../../components/Measured.astro";
+import NotClaimed from "../../../../components/NotClaimed.astro";
+import PrivilegedOnly from "../../../../components/PrivilegedOnly.astro";
+import ScrollTable from "../../../../components/ScrollTable.astro";
+import SeeAlso from "../../../../components/SeeAlso.astro";
+
+El agente es un servidor HTTP y nada más: no abre ninguna conexión saliente.
+Esta página responde qué devuelve cada ruta, qué parámetros de consulta admite,
+con qué códigos de estado responde y qué aspecto tiene una línea de su NDJSON.
+Está leída de `internal/agent/http.go`, `capture.go`, `source.go` e
+`internal/sample/sample.go`.
+
+## Dónde escucha
+
+El agente escucha en `ADDR:PORT`. `install` escribe la dirección de la propia
+veth del agente en `ADDR` y `9123` en `PORT`, así que por defecto es
+`http://172.30.10.2:9123`. Un agente arrancado sin `ADDR` escucha en `:PORT`,
+todas las direcciones dentro del espacio de nombres de red de su contenedor.
+Cómo llega un equipo a esa dirección, directamente, por el relay o mediante
+`--expose`, está en [llegar al agente](/mikroscope/es/install/reaching-the-agent/).
+
+El servidor le da a un cliente 5 s para enviar las cabeceras de su petición y
+30 s para recibir una respuesta (`ReadHeaderTimeout` y `WriteTimeout` en
+`internal/agent/agent.go`).
+
+## Autenticación
+
+Sin `TOKEN`, todas las rutas están abiertas. Con él, **todas las rutas salvo
+`/healthz`** necesitan:
+
+```http
+Authorization: Bearer <token>
+```
+
+El valor de la cabecera se compara con el token después de quitarle un
+prefijo `"Bearer "` opcional, así que también se acepta una cabecera que lleve
+el token a secas. Una petición sin ella, o con otro token, recibe `401`, el
+cuerpo
+`token required` y `WWW-Authenticate: Bearer`. `/healthz` sigue abierta a
+propósito: lleva la cadena de la placa que se le pide enviar a un operador
+cuando su placa no tiene mapa de puertos, y para eso no debería hacer falta un
+token.
+
+El transporte por relay no puede presentar un token. `/tool fetch` se ejecuta en
+el router y no envía cabecera `Authorization`
+(`internal/transport/transport.go`), así que en un agente con token el relay
+llega a `/healthz` y a nada más. `--expose` hace obligatorio el token; [lo que
+abre --expose](/mikroscope/es/security/expose/) cuenta por qué.
+
+## Las rutas
+
+<ScrollTable label="Todas las rutas que sirve el agente">
+
+| Método   | Ruta             | Token | Devuelve                                                                                                  |
+| -------- | ---------------- | ----- | --------------------------------------------------------------------------------------------------------- |
+| `GET`    | `/healthz`       | no    | JSON: si está vivo, números de secuencia, relojes, cadencia, ticks retrasados, hash de capacidades, placa |
+| `GET`    | `/capabilities`  | sí    | JSON: el kernel, la placa, las fuentes, los techos propios del equipo y la cadencia de cada fuente        |
+| `GET`    | `/snapshot`      | sí    | NDJSON, y cierra: los últimos N segundos, o hasta N muestras tras un número de secuencia                  |
+| `GET`    | `/stream`        | sí    | NDJSON, por trozos y abierto: relleno desde un número de secuencia, y luego en directo                    |
+| `GET`    | `/metrics`       | sí    | exposición de texto de Prometheus, `text/plain; version=0.0.4`                                            |
+| `GET`    | `/captures`      | sí    | JSON: el índice de capturas                                                                               |
+| `GET`    | `/captures/{id}` | sí    | NDJSON: una línea de cabecera de la captura y luego las líneas de muestra tal cual                        |
+| `DELETE` | `/captures/{id}` | sí    | `204`, y los bytes de la captura vuelven al presupuesto                                                   |
+| `POST`   | `/capture`       | sí    | JSON: arma una captura ahora                                                                              |
+
+</ScrollTable>
+
+Cualquier otra ruta es `404`; una ruta conocida con otro método la rechaza el
+enrutador de Go con `405`.
+
+## `GET /healthz`
+
+<ScrollTable label="Campos del cuerpo de /healthz">
+
+| Campo               | Tipo   | Significado                                                                              |
+| ------------------- | ------ | ---------------------------------------------------------------------------------------- |
+| `ok`                | bool   | siempre `true` cuando el agente responde                                                 |
+| `seq`               | entero | número de secuencia de la muestra más reciente del anillo; 0 cuando el anillo está vacío |
+| `oldest_seq`        | entero | número de secuencia más antiguo que aún se guarda; 0 cuando está vacío                   |
+| `wall_ns`           | entero | el reloj de pared del router en la respuesta, ns desde la época                          |
+| `mono_ns`           | entero | el reloj monotónico del agente en la respuesta, ns                                       |
+| `uptime_s`          | float  | segundos desde que se montó el servidor HTTP                                             |
+| `rate_hz`           | entero | cadencia configurada del muestreador                                                     |
+| `slipped`           | entero | ticks cuya lectura terminó después de que tocara el siguiente tick                       |
+| `capabilities_hash` | cadena | ocho dígitos hexadecimales sobre el kernel, el número de núcleos y las fuentes activas   |
+| `version`           | cadena | la identidad de compilación del agente                                                   |
+| `board`             | cadena | el modelo del device tree, por ejemplo `RB5009`; se omite cuando la placa no tiene       |
+
+</ScrollTable>
+
+La CLI usa `wall_ns` frente a su propio reloj para medir el desfase, `seq` y
+`oldest_seq` para planificar un relleno, y `capabilities_hash` para darse cuenta
+de que ha cambiado el kernel o el conjunto de fuentes que tiene debajo; ningún
+código de la CLI lee `mono_ns`. El sondeo que sigue a `install` imprime esta
+respuesta como
+`direct transport ok: agent <version>, <rate> Hz, seq <n>, <n> slipped, <rtt> round trip`,
+donde `<version>` es la versión de la propia CLI, que esta graba en el agente
+que compila (`dev` cuando la CLI se compiló sin ella). La prueba de ida y vuelta registrada en el RB5009 el 2026-09-12 tiene dos sondeos, 7 ms tras `install` y 5 ms tras `upgrade`; el primero imprimió `direct transport ok: agent 4857d0a-dirty, 10 Hz, seq 29, 0 slipped, 7ms round trip`.
+
+## `GET /capabilities`
+
+Lo que el agente estableció al arrancar sobre el kernel y la placa, sin la API
+de RouterOS. [El flujo de datos del equipo](/mikroscope/es/sinks/device-info/)
+es este objeto tal como el colector se lo entrega a cada destino.
+
+<ScrollTable label="Campos del cuerpo de /capabilities">
+
+| Campo        | Significado                                                                                                                                                                                                                                                                       |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `kernel`     | la cadena de versión del kernel de `/proc/version`                                                                                                                                                                                                                                |
+| `board`      | el modelo del device tree; se omite cuando no existe                                                                                                                                                                                                                              |
+| `ports`      | nombre de interfaz del kernel a nombre por defecto de RouterOS, para una placa de la tabla de puertos; si no, se omite                                                                                                                                                            |
+| `ports_from` | cómo se estableció ese mapa; se omite con él                                                                                                                                                                                                                                      |
+| `cores`      | número de núcleos, de la primera lectura de `/proc/stat`                                                                                                                                                                                                                          |
+| `user_hz`    | `USER_HZ`, la unidad de los contadores de ticks                                                                                                                                                                                                                                   |
+| `sources`    | nombre de fuente a `true` cuando el fichero se abrió y la fuente está activa: `stat`, `meminfo`, `loadavg`, `softnet`, `softirqs`, `interrupts`, `vmstat`, `psi`, `schedstat`, `self`, `yaffs`, `diskstats`, `slabinfo`, `kmsg`, `thermal`, `cpufreq`, `perf`, `buddyinfo`, `mtd` |
+| `namespaced` | lo que el agente a propósito no lee como datos del router: `net/dev`, `net/snmp`, `net/netstat`, `sys/net/netfilter/nf_conntrack_count`                                                                                                                                           |
+| `cgroup`     | `true` cuando se puede leer el `cpu.stat` de cgroup2, así que el coste propio es exacto                                                                                                                                                                                           |
+| `privileged` | `true` cuando se abrieron tanto `/proc/slabinfo` como `/dev/kmsg`                                                                                                                                                                                                                 |
+| `limits`     | los techos propios del equipo, leídos una vez al arrancar (abajo)                                                                                                                                                                                                                 |
+| `cadences`   | nombre de fuente a `{"hz", "reason"}` para cada fuente de nivel (abajo)                                                                                                                                                                                                           |
+| `hash`       | el mismo valor que el `capabilities_hash` de `/healthz`                                                                                                                                                                                                                           |
+
+</ScrollTable>
+
+`limits` no tiene etiquetas JSON en el código, así que sus claves son los
+nombres de campo de Go: `ThermalCriticalMilliC` (zona al punto de disparo
+crítico más bajo, m°C), `ThermalPollingMS` (zona a su `polling_delay`),
+`CPUFreqMinKHz`, `CPUFreqMaxKHz`, `CPUFreqStepsKHz` (núcleo a su escalera),
+`CPUFreqGovernor`, `CPUFreqRelated` (núcleo a los núcleos que cambian de
+frecuencia con él), `CgroupMemoryMaxBytes` y `ConntrackMax`. Un techo que el
+equipo no publica queda vacío o a 0.
+
+El `reason` de una cadencia es uno de estos: `rate` (se lee a la cadencia del
+muestreador), `declared` (el equipo publica su propia cadencia de refresco),
+`policy` (un gobernador de cpufreq `userspace` significa que el reloj no puede
+moverse sin una escritura), `budget` (un coste de análisis medido), `change` (se
+lee en cada tick y se guarda al cambiar) u `override` (`FLOOR_HZ`). Los
+contadores nunca aparecen aquí, porque a los contadores nunca se les pone
+suelo. [Cada fuente a su propio suelo](/mikroscope/es/limits/source-floors/)
+tiene las medidas que hay detrás de los suelos.
+
+## `GET /snapshot`
+
+Escribe NDJSON y cierra. Dos formas, según esté presente `since` o no.
+
+<ScrollTable label="Parámetros de consulta de /snapshot">
+
+| Parámetro | Por defecto | Acepta                 | Significado                                                                                                                         |
+| --------- | ----------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `seconds` | `1`         | 1–3600                 | sin `since`: las `seconds × rate` muestras más recientes que guarda el anillo, de la más antigua a la más nueva                     |
+| `since`   | ausente     | un número de secuencia | hasta `max` muestras con número de secuencia mayor, de la más antigua a la más nueva; `since=0` empieza por la más antigua guardada |
+| `max`     | `20`        | 1–10000                | con `since`: el máximo de muestras que lleva una respuesta                                                                          |
+
+</ScrollTable>
+
+Un valor fuera de su rango es `400` con un motivo de una línea. La forma
+`since` es de la que tiran `record` y `forward`, por los dos transportes. Añade
+dos tipos de línea que la forma `seconds` no tiene: primero una línea de hueco
+cuando `since` es más antiguo que el anillo, y una línea de disparo antes de
+cada muestra en la que saltó una condición de captura. `max` existe por el
+relay, porque `/tool fetch output=user` devuelve como mucho <Measured id="relay.replyMaxBytes" /> en
+RouterOS 7.24.2 y trunca el resto sin avisar; el relay pide como mucho 18
+líneas.
+
+<Aside type="caution" title="Un /snapshot grande no es una forma gratuita de leer el coste">
+	Un `/snapshot` de 60 s a 10 Hz hace que el agente entregue unas 600 líneas, alrededor de 1,5 MB, y
+	el `self.cpu_us` de esas muestras incluye el coste de servirlas. Lee el coste del agente en
+	`/metrics`: [el coste del observador](/mikroscope/es/cost/) tiene el procedimiento.
+</Aside>
+
+## `GET /stream`
+
+NDJSON por trozos con `Cache-Control: no-store`, abierto hasta que el cliente
+se va.
+
+- `since` ausente o `0`: empieza en directo. La primera muestra que se escribe
+  es la siguiente que se produce después de la petición; la más reciente que ya
+  estaba en el anillo no se escribe.
+- `since=N`: primero rellena con todas las muestras guardadas posteriores a N y
+  después sigue. Un `since` más antiguo que el anillo escribe primero una línea
+  de hueco.
+- El anillo se consulta cada medio período y cada muestra nueva se escribe en
+  cuanto llega, con las líneas de disparo antes de las muestras en las que
+  saltaron.
+- Cada 5 s se escribe una línea de comentario `# heartbeat seq=<newest>`. Un
+  consumidor se salta las líneas que empiezan por `#`.
+
+Un `since` que no es un número es `400`.
+
+<NotClaimed variant="untested">
+	El `WriteTimeout` de 30 s del servidor se aplica a todas las respuestas, y el servidor HTTP de Go
+	no lo levanta para un manejador que sigue escribiendo, así que cabe esperar que una conexión a
+	`/stream` termine unos 30 s después de abrirse. Eso está leído de `internal/agent/agent.go` y
+	`http.go`, no medido. La CLI no depende de `/stream`: `record` y `forward` tiran de
+	`/snapshot?since=`.
+</NotClaimed>
+
+## Los tipos de línea
+
+Aparte del comentario de latido de `/stream`, cada línea que escriben
+`/snapshot`, `/stream` y `/captures/{id}` es un objeto JSON y un salto de
+línea. Existen cuatro tipos, que se distinguen por su primera clave:
+
+<ScrollTable label="Los tipos de línea NDJSON">
+
+| Línea                              | Dónde                             | Significado                                            |
+| ---------------------------------- | --------------------------------- | ------------------------------------------------------ |
+| una muestra, que empieza `{"seq":` | las tres                          | un tick, abajo                                         |
+| `{"gap":{"from":F,"to":T}}`        | `/snapshot?since=`, `/stream`     | las muestras de F a T ya no están en el anillo         |
+| `{"trigger":{…}}`                  | `/snapshot?since=`, `/stream`     | saltó una condición de captura en la muestra que sigue |
+| `{"capture":{…}}`                  | primera línea de `/captures/{id}` | la cabecera de la captura                              |
+
+</ScrollTable>
+
+Un consumidor que no conoce un tipo se lo salta, así que un tipo de línea que
+no ha visto nunca no le cuesta nada.
+
+### Una línea de muestra
+
+Cada campo numérico es un **delta desde la muestra anterior** salvo que la
+tabla diga que es un nivel. Una fuente que el kernel no tiene, o que el
+despliegue no puede leer, se **omite**, nunca se escribe como cero. Los ticks
+ocupados de un núcleo son `u + n + s + q + sq + st`; idle e iowait no cuentan
+como ocupados.
+
+<ScrollTable label="Campos de primer nivel de una línea de muestra">
+
+| Campo              | Tipo  | Contenido                                                                                                                                                                                                                                                                                            |
+| ------------------ | ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `seq`              | —     | número de secuencia, desde 1                                                                                                                                                                                                                                                                         |
+| `mono_ns`          | —     | el reloj monotónico del agente en la lectura                                                                                                                                                                                                                                                         |
+| `wall_ns`          | —     | el reloj de pared del router en la lectura, ns desde la época                                                                                                                                                                                                                                        |
+| `dt_ns`            | —     | el intervalo real desde la muestra anterior; todos los deltas son sobre este, no sobre el período nominal                                                                                                                                                                                            |
+| `cpu`              | delta | un objeto por núcleo: `u` user, `n` nice, `s` system, `i` idle, `w` iowait, `q` irq, `sq` softirq, `st` steal, en ticks de `USER_HZ`                                                                                                                                                                 |
+| `cpu_total`        | delta | las mismas claves, de la propia línea resumen `cpu` de `/proc/stat`                                                                                                                                                                                                                                  |
+| `ctxt`, `intr`     | delta | cambios de contexto e interrupciones de `/proc/stat`                                                                                                                                                                                                                                                 |
+| `forks`            | delta | la línea `processes` de `/proc/stat`                                                                                                                                                                                                                                                                 |
+| `procs_blocked`    | nivel | tareas en espera no interrumpible                                                                                                                                                                                                                                                                    |
+| `psi`              | delta | `cpu_some`, `mem_some`, `mem_full`, `io_some`, `io_full`, µs; solo en un kernel con PSI                                                                                                                                                                                                              |
+| `sched`            | delta | por CPU `run_ns`, `wait_ns`; solo en un kernel con `/proc/schedstat`                                                                                                                                                                                                                                 |
+| `softnet`          | delta | por CPU `p` procesados, `d` descartados, `ts` time squeeze                                                                                                                                                                                                                                           |
+| `softirq`          | delta | tipo de softirq a un array de recuentos por CPU                                                                                                                                                                                                                                                      |
+| `irq`              | delta | las `IRQ_TOP_K` líneas de interrupción más ocupadas en este tick (8 por defecto): `id`, `name`, array `cpu`                                                                                                                                                                                          |
+| `irq_total`        | delta | todas las líneas de interrupción sumadas, el denominador del top-K                                                                                                                                                                                                                                   |
+| `irq_err`          | delta | la fila `Err` de `/proc/interrupts`; se omite cuando es cero                                                                                                                                                                                                                                         |
+| `mem`              | nivel | `/proc/meminfo` en kB, con claves por nombre de campo de Go: `MemTotal`, `MemFree`, `MemAvailable`, `Buffers`, `Cached`, `Dirty`, `Shmem`, `Slab`, `SReclaimable`, `CommittedAS`, `Writeback`, `SUnreclaim`, `AnonPages`, `Mapped`, `KernelStack`, `PageTables`, `CommitLimit`, `Active`, `Inactive` |
+| `load`             | nivel | `/proc/loadavg`: `Load1`, `Load5`, `Load15`, `Running`, `Total`, `LastPID`                                                                                                                                                                                                                           |
+| `vm`               | delta | eventos de `/proc/vmstat`: `pgfault`, `pgmajfault`, y cuando no son cero `pgscan_kswapd`, `pgscan_direct`, `pgsteal_kswapd`, `pgsteal_direct`, `pgalloc`, `pgfree`, `allocstall`, `compact_stall`, `oom_kill`, `pswpin`, `pswpout`                                                                   |
+| `vmg`              | nivel | `nr_free_pages`, `nr_dirty`, `nr_writeback`, `nr_slab_reclaimable`, `nr_slab_unreclaimable`, en páginas                                                                                                                                                                                              |
+| `self`             | mixto | `cpu_us` (delta, µs), `rss` (nivel, bytes), `cg_mem` (nivel, se omite cuando es cero), `cg` (`true` cuando se leyó cgroup2), y `throttled`, `throttled_us`, `oom_kill` (deltas); los cuatro últimos se omiten cuando son cero o falso                                                                |
+| `thermal`          | nivel | por zona `type`, `mc` (m°C) y `Celsius`; a la cadencia declarada de la zona, en cada tick cuando ninguna zona declara una, o a `FLOOR_HZ`                                                                                                                                                            |
+| `freq_khz`         | nivel | por núcleo, kHz; al cambiar o en el latido de 60 s                                                                                                                                                                                                                                                   |
+| `thermal_critical` | nivel | zona a punto de disparo crítico en m°C, en las filas que llevan `thermal`                                                                                                                                                                                                                            |
+| `freq_max_khz`     | nivel | núcleo a techo de cpufreq en kHz, en las filas que llevan `freq_khz`                                                                                                                                                                                                                                 |
+| `cgroup_mem_max`   | nivel | el `memory.max` del contenedor en bytes, en el primer tick y una vez por latido                                                                                                                                                                                                                      |
+| `flash`            | mixto | por dispositivo YAFFS `dev`, `pw`, `pr`, `er`, `gcc`, `gc` (deltas) y `bad`, `free` (niveles); se omite un dispositivo sin operaciones y con los chunks libres sin cambios                                                                                                                           |
+| `disk`             | mixto | por dispositivo de bloques `name`, `r`, `rs`, `w`, `ws`, `io_ms` (deltas) e `inflight` (nivel); se omite un dispositivo inactivo                                                                                                                                                                     |
+| `slab`             | nivel | caché a objetos activos; <PrivilegedOnly />; al cambiar, con un suelo de presupuesto                                                                                                                                                                                                                 |
+| `slab_limit`       | nivel | caché a su techo publicado, hoy solo `nf_conntrack`                                                                                                                                                                                                                                                  |
+| `perf`             | delta | por contador hardware `name`, array `cpu`, y `enabled_ns`, `running_ns`; <PrivilegedOnly />, y solo los contadores que implementa la CPU                                                                                                                                                             |
+| `buddy`            | nivel | por zona `node`, `zone`, array `free` indexado por orden; al cambiar o en el latido                                                                                                                                                                                                                  |
+| `mtd`              | nivel | por partición `dev`, `name`, `corr`, `fail`, `bad`, `bbt`, `bitflip_threshold`, `ecc_strength`; <PrivilegedOnly />; recuentos del kernel desde el arranque                                                                                                                                           |
+| `events`           | —     | registros del log del kernel en este tick: `prio`, `lvl` (0 emerg … 7 debug), `fac`, `seq`, `us` (µs desde el arranque), `msg`, y, cuando el texto nombra un puerto, `iface`, `ros_iface` y `kind` (`link-up`, `link-down`, `stp-<estado>`, `own-address` u `other`)                                 |
+| `events_dropped`   | —     | episodios de pérdida del log del kernel en este tick, no registros: uno si el tick llegó al tope de 64 registros, uno por cada desbordamiento del búfer circular del kernel (que puede suponer muchos registros); mientras no sea cero, `events` es una cota inferior; se omite cuando es cero       |
+| `resets`           | —     | contadores monotónicos que retrocedieron sin un desbordamiento de 32 bits en este tick; se omite cuando es cero                                                                                                                                                                                      |
+
+</ScrollTable>
+
+Los nombres de contadores perf que el agente intenta abrir son `cycles`,
+`instructions`, `cache-references`, `cache-misses`, `branch-instructions`,
+`branch-misses` y `bus-cycles`. Las cachés slab que guarda son `nf_conntrack`,
+`skbuff_head_cache`, `skbuff_fclone_cache`, `TCP`, `UDP`, `TCPv6`, `UDPv6`,
+`sock_inode_cache`, `dst_cache`, `ip_dst_cache`, `kmalloc-1k` y `kmalloc-2k`,
+allí donde el kernel las tiene.
+
+## `GET /metrics`
+
+La exposición de texto de Prometheus, construida a partir de contadores
+acumulados que ningún scrape pone a cero, así que `rate()` sobre cualquier
+rango es correcto y dos scrapers ven los mismos valores. El texto se construye
+en memoria y se escribe después de liberar el cerrojo de los contadores, así
+que un scraper lento no puede frenar al muestreador. [Familias de métricas de
+Prometheus](/mikroscope/es/reference/metrics/) enumera todas las familias.
+
+## Capturas
+
+Las cuatro rutas de captura responden `404` con
+`captures disabled (CAPTURE_MB=0)` cuando el presupuesto es 0.
+
+### `GET /captures`
+
+<ScrollTable label="Campos del índice de /captures">
+
+| Campo          | Significado                                                                            |
+| -------------- | -------------------------------------------------------------------------------------- |
+| `policy`       | `first` o `last`                                                                       |
+| `budget_bytes` | el presupuesto de bytes retenidos, `CAPTURE_MB` en bytes                               |
+| `bytes`        | bytes que retienen las capturas guardadas                                              |
+| `pending`      | la captura que aún está recogiendo su ventana posterior al disparo; se omite si no hay |
+| `captures`     | las cabeceras de las capturas guardadas, de la más antigua a la más nueva              |
+| `triggers`     | las condiciones configuradas, cada una con `name` y `threshold`                        |
+
+</ScrollTable>
+
+### `GET /captures/{id}`
+
+Una línea de cabecera `{"capture":{…}}` y luego las líneas de muestra
+exactamente como las habría escrito `/snapshot`, así que no hace falta ningún
+analizador nuevo. Los bytes servidos se cuentan en
+`mikroscope_capture_bytes_served_total`: una descarga se ejecuta en el mismo
+núcleo que el muestreador. Un `id` que no es un número es `400`; uno
+desconocido es `404` con `no such capture`.
+
+<ScrollTable label="Campos de la cabecera de una captura">
+
+| Campo                          | Significado                                                                                                           |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
+| `id`                           | número de captura, desde 1                                                                                            |
+| `cause`                        | el nombre de la condición tal como está configurada, o `manual`                                                       |
+| `condition`                    | la condición tal como está configurada, por ejemplo `busy>=0.95`; vacía en una captura manual                         |
+| `field`                        | lo que se comparó, por ejemplo `cpu[2].busy_ratio`; en una captura manual, el `reason`                                |
+| `value`                        | el valor que la hizo saltar                                                                                           |
+| `threshold`                    | el umbral configurado                                                                                                 |
+| `fire_seq`                     | la muestra en la que saltó                                                                                            |
+| `fire_mono_ns`, `fire_wall_ns` | los dos relojes en el disparo                                                                                         |
+| `first_seq`, `last_seq`        | la ventana guardada                                                                                                   |
+| `samples`, `bytes`             | su tamaño                                                                                                             |
+| `complete`                     | `false` cuando guarda menos de `pre + post + 1` muestras: el anillo no llegaba tan atrás, o el agente se detuvo antes |
+
+</ScrollTable>
+
+La línea de disparo de `/snapshot` y `/stream` lleva `id`, `cause`, `field`
+(se omite si está vacío), `value`, `threshold`, `seq` y `wall_ns`. El agente
+guarda las 64 últimas.
+
+### `DELETE /captures/{id}`
+
+Libera los bytes de la captura y responde `204` sin cuerpo. Los ids
+desconocidos o no numéricos responden igual que con `GET`.
+
+### `POST /capture`
+
+Arma una captura en la muestra más reciente, como si hubiera saltado una
+condición:
+
+```sh
+curl -X POST "http://172.30.10.2:9123/capture?reason=queue-tree-applied"
+```
+
+`reason` vale `operator` por defecto. La respuesta es `{"id":N,"armed":true}`.
+Si otra captura sigue recogiendo su ventana, o si una captura manual saltó
+dentro de la ventana refractaria, la respuesta es `409` y no se arma nada. Las
+condiciones, el presupuesto y lo que una captura no puede mostrar están en
+[captura por disparo](/mikroscope/es/record/triggers/).
+
+<SeeAlso>
+
+## Véase también
+
+- [Llegar al agente](/mikroscope/es/install/reaching-the-agent/): las tres formas en que un equipo
+  llega a estas rutas.
+- [Familias de métricas de Prometheus](/mikroscope/es/reference/metrics/): lo que lleva `/metrics`.
+- [Captura por disparo](/mikroscope/es/record/triggers/): las condiciones que hay detrás de
+  `/captures`.
+- [Lo que abre --expose](/mikroscope/es/security/expose/): cuándo el token pasa a ser obligatorio.
+
+</SeeAlso>

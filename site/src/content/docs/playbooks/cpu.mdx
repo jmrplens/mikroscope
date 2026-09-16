@@ -1,0 +1,101 @@
+---
+title: A CPU-bound workload
+description: A console loop that saturates one core of the reference RB5009 for a minute — why the device total reads 29 %, how the scheduler’s migration shows at 10 Hz, and what the temperature and frequency did.
+---
+
+import FaultSignature from "../../../components/FaultSignature.astro";
+import Measured from "../../../components/Measured.astro";
+import NotClaimed from "../../../components/NotClaimed.astro";
+import Provenance from "../../../components/Provenance.astro";
+import SeeAlso from "../../../components/SeeAlso.astro";
+
+This page answers what a single-threaded bottleneck looks like in the per-core
+data, and why the device total hides it. The workload was provoked on purpose.
+
+<Provenance of="playbooks-2026-09-12" />
+
+## How it was provoked
+
+With no configuration change and no external dependency — a console loop that
+burns one core and ends on its own:
+
+```text
+:local i 0; :while ($i < 4000000) do={ :set i ($i + 1) }
+```
+
+It ran 58.8 s.
+
+## What the agent recorded
+
+In 5-second buckets. The agent ships raw tick deltas; the percentages below were
+computed from them afterwards.
+
+```text
+   t  busy%   per-core busy%          ctxt/s  temp   MHz
+   0   22.3   31.8   7.4  40.4   9.6    9192  36.5  1400
+   1   30.9   11.7  11.4  89.7  10.6   11325  37.0  1400
+   2   29.9   14.3   9.4  19.6  76.0    9476  37.0  1400
+   3   29.1    7.4   9.4  17.6  81.6   10805  37.0  1400
+   4   29.3    3.1   9.4   4.9  99.8    9257  37.2  1400
+   8   28.4    2.2   7.0   4.6  99.8   11947  37.2  1400
+  11   33.0   11.8  11.2   9.0  99.7   12222  37.3  1400
+```
+
+## What to read
+
+- **Total ~29 % is one core of four.** A device total is a trap; always look at
+  the per-core row. "29 % CPU" here means "one core is saturated and three are
+  idle", which for a single-threaded bottleneck is the whole story.
+- **The scheduler took ~20 s to settle.** Buckets 0–3 show the work moving
+  between cores (40 % → 90 % → 76 % → 82 %) before pinning on core 3 at 99.8 %.
+  If you sample at 1 s or slower you see a vague plateau; at 10 Hz you see the
+  migration. This is the resolution earning its cost.
+- **Temperature followed: 36.5 → 37.3 °C.** One saturated core is worth ~0.8 °C
+  on this passively cooled board. Small, but it tracks, and it is read from
+  `/sys/class/thermal` with no API call.
+- **Frequency stayed flat at 1400 MHz.** On this device that is a
+  _configuration_, not an observation: the owner has pinned the clock to maximum,
+  which `/system/routerboard/settings` reports as
+  `Warning: cpu not running at default frequency`. On a device that scales, the
+  `freq_khz` field is where you would see a busy tick that was earned slowly.
+  The agent reads the frequency every tick and stores `freq_khz` only when it
+  changes, plus a heartbeat once every 60 s, so on a pinned clock you get one row
+  a minute, and on a scaling clock you get every step that lasts at least one
+  tick.
+
+## Check the sampler before the CPU
+
+Before you conclude anything from a CPU number, confirm
+`mikroscope_slipped_total` is 0. A slipped tick is one whose read finished
+after the next tick was due, and the sampler's own accounting is then the first
+thing you should distrust.
+
+## The signature
+
+<FaultSignature origin="provoked" date="2026-09-12">
+
+- A device total near 100 % divided by the core count — here ~29 % on four
+  cores — with one per-core column at 99.7–99.8 %.
+- Before it settles, the load visibly hopping between cores for tens of seconds.
+- A temperature rise of under a degree that tracks the load.
+
+</FaultSignature>
+
+<NotClaimed>
+	A multi-threaded load, a load long enough to reach thermal equilibrium, and any change of clock
+	frequency: the reference device's clock is pinned, so what a scaling governor does under this loop
+	was not observed.
+</NotClaimed>
+
+<SeeAlso>
+
+## See also
+
+- [The resolution floor is the kernel's](/mikroscope/limits/): why a 100 ms sample resolves one core
+  in <Measured id="tick.stepOneCore" /> steps, and the PMU counters that read beneath it.
+- [Five minutes with a router](/mikroscope/start/walkthrough/): a recorded script loop pinning one
+  core, with markers naming what else the router was doing.
+- [Each source at its own floor](/mikroscope/limits/source-floors/): why temperature is read at
+  the zone's declared 1 Hz and frequency is stored only when it changes.
+
+</SeeAlso>

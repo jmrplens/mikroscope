@@ -1,0 +1,126 @@
+---
+title: El usuario de la API
+description: El usuario dedicado de RouterOS con el que entra el colector, la política que necesita cada orden y lo que esa política le deja leer.
+---
+
+import { Aside } from "@astrojs/starlight/components";
+import ScrollTable from "../../../../components/ScrollTable.astro";
+import SeeAlso from "../../../../components/SeeAlso.astro";
+import Verified from "../../../../components/Verified.astro";
+
+El agente no necesita cuenta en RouterOS. Tres cosas de tu máquina sí: la capa de la API del
+colector, el transporte relay y los marcadores en el log del router. Esta página responde qué
+política necesita cada una, cómo crear un usuario que tenga eso y nada más, y qué puede seguir
+leyendo un usuario así.
+
+## Qué órdenes lo necesitan
+
+<ScrollTable label="Qué entra en la API de RouterOS, qué ejecuta y qué política necesita">
+
+| Lo usa                                                                            | Ejecuta por la API binaria                                                                                                                                                                                                                                           | Política        |
+| --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------- |
+| la capa de la API de `forward`                                                    | `/interface/monitor-traffic`, `/interface/print` (`name`, `default-name`, `type`, `comment`, `actual-mtu`), `/interface/list/member/print` (`list`, `interface`), `/interface/bridge/port/print` (`interface`, `bridge`), `/interface/print stats-detail`, `/interface/ethernet/print stats`, `/system/resource/print`, `/system/resource/cpu/print`, `/system/health/print`, `/ip/firewall/connection/print count-only` | `read,api`      |
+| `record --log-markers`, `mark --log-markers`                                      | `/log/print` (`time`, `topics`, `message`)                                                                                                                                                                                                                           | `read,api`      |
+| el transporte relay (`--transport relay`, o `auto` cuando el directo no responde) | `/tool/fetch output=user` contra la dirección del agente                                                                                                                                                                                                             | `read,api,test` |
+
+</ScrollTable>
+
+`/tool fetch` y `/tool profile` exigen ambos la política `test` (verificado
+en <Verified of="test-policy" />). mikroscope usa `/tool fetch` para el relay y no usa `/tool profile`.
+
+`read,api` basta para la capa de la API y para `--log-markers`. `test` solo hace falta cuando se usa
+el relay — `--transport relay`, o `auto` cuando el transporte directo no responde — sea cual sea
+`--api-mode`. Con `--api-mode off` la capa no necesita ningún usuario.
+
+No todas las llamadas de la primera fila se ejecutan siempre. `/system/health/print` se omite en
+`slow` y con `--no-health`; el `count-only` de conntrack solo se ejecuta cuando `--conntrack-every`
+es mayor que 0, y su valor por defecto es 0 incluso en `full`; `monitor-traffic` solo se ejecuta cuando se da
+`--interfaces`, mientras que las tres lecturas de configuración del inventario de interfaces se
+ejecutan siempre que la capa esté encendida, una vez antes de la primera extracción del kernel y de
+nuevo cada `--labels-every`; las dos lecturas de stats siguen a `--counters-every`, 10 s por
+defecto. Qué llamadas se ejecutan y con qué cadencia está en
+[la capa de la API de RouterOS](/mikroscope/es/sinks/api-tier/).
+
+Sin dirección y usuario, cada orden lo dice de una manera distinta:
+
+- `forward` funciona solo con la capa del kernel y registra `api tier disabled: …`.
+- `mark --log-markers` y `--transport relay` fallan con
+  `the RouterOS API needs --api, --api-user and MIKROSCOPE_API_PASSWORD`.
+- `record --log-markers` conserva la grabación, imprime `log markers: the RouterOS API needs …` en
+  stderr y sale con 0.
+- `--transport auto`, cuando el transporte directo no responde, falla con
+  ``direct transport did not answer and the relay is not configured: the RouterOS API needs … (or `install --expose`)``.
+
+Esa comprobación solo mira `--api` y `--api-user`. Un `MIKROSCOPE_API_PASSWORD` vacío no se detecta
+ahí; aparece como un inicio de sesión fallido, `api <dirección>: …`.
+
+## El grupo y el usuario
+
+Un grupo que concede `read`, `api` y `test` y niega por su nombre todas las demás políticas, y un
+usuario en él restringido a la dirección del colector:
+
+```text
+/user/group/add name=mikroscope policy=read,api,test,!write,!ftp,!local,!telnet,!ssh,!reboot,!policy,!winbox,!password,!web,!sniff,!sensitive,!romon,!rest-api
+/user/add name=mikroscope group=mikroscope password=<generate> address=<collector host>/32
+```
+
+Quita `test` del grupo si nunca vas a usar el relay.
+
+Restringe `address=` a la máquina del colector, y restringe `/ip/service` para `api` a tu LAN. Las
+dos son limitaciones del lado de RouterOS sobre desde dónde se acepta la contraseña, y ninguna
+depende de mikroscope.
+
+Crea este usuario para mikroscope en vez de reutilizar uno hecho para otra herramienta. Un usuario
+de la API de mínimo privilegio creado para otra cosa suele pertenecer a un grupo que niega `test`,
+así que no puede ejecutar el relay, y ampliar ese grupo lo amplía también para la otra herramienta.
+
+## Lo que `read` sigue leyendo
+
+`read` no es estrecha. **Por la API binaria, `/container/print` devolvió todas las propiedades de
+todos los contenedores, `cmd` y `envlist` incluidas, a un usuario con solo `read,api`** (el usuario
+`mikroscope`, <Verified of="read-user-envlist" />; solo se imprimieron los nombres de las
+propiedades). Leer los valores de las entradas de la envlist en `/container/envs` no se comprobó por
+separado; el diseño supone que este usuario puede, y por eso trata la entrada `TOKEN` del agente,
+cuando hay una, como legible por él.
+
+El colector acota lo que pide allí donde lee configuración. Las tres lecturas del inventario de
+interfaces nombran sus propiedades — `name`, `default-name`, `type`, `comment` y `actual-mtu`;
+`list` e `interface`; `interface` y `bridge` — y ningún otro campo, así que ninguna se trae un campo
+que pudiera llevar un secreto; `/system/resource`, `/system/resource/cpu`, `/system/health` y `/log/print` llevan también
+un `.proplist`. Las lecturas de contadores — `monitor-traffic`, `stats`, `stats-detail` — y el
+`count-only` de conntrack no. Nada de esto limita lo que el usuario tiene permitido pedir: sigue
+pudiendo pedir todas las propiedades de todos los contenedores.
+
+## Cómo se lo pasa la CLI
+
+<ScrollTable label="Cómo se lo pasa la CLI">
+
+| Ajuste     | Opción       | Variable de entorno       |
+| ---------- | ------------ | ------------------------- |
+| dirección  | `--api`      | `MIKROSCOPE_API_ADDR`     |
+| usuario    | `--api-user` | `MIKROSCOPE_API_USER`     |
+| contraseña | ninguna      | `MIKROSCOPE_API_PASSWORD` |
+
+</ScrollTable>
+
+La contraseña no tiene opción a propósito: una opción se ve en `ps` y en el historial de la shell.
+`.env.example` da la dirección como `192.168.88.1:8728`.
+
+<Aside type="caution" title="La conexión con la API no va cifrada">
+	`record`, `mark` y `forward` se conectan a la API binaria sin cifrar. El cliente incluido en el
+	repositorio puede usar TLS, pero ninguna opción lo activa, así que el inicio de sesión y cada
+	respuesta cruzan sin cifrar la red entre el colector y el router. `address=` limita desde dónde se
+	acepta el inicio de sesión; eso no lo cambia.
+</Aside>
+
+<SeeAlso>
+
+## Véase también
+
+- [Qué se ejecuta dónde](/mikroscope/es/security/): cada pieza, a qué llega y qué credencial guarda.
+- [La capa de la API de RouterOS](/mikroscope/es/sinks/api-tier/): lo que lee el colector con este
+  usuario, y los perfiles `off`, `slow` y `full`.
+- [Llegar al agente](/mikroscope/es/install/reaching-the-agent/): los transportes directo y relay, y
+  cuándo necesita `test` el relay.
+
+</SeeAlso>

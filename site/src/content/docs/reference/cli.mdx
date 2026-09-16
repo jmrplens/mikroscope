@@ -1,0 +1,343 @@
+---
+title: Commands and flags
+description: Every verb of the mikroscope CLI, every flag with its default, its range and the MIKROSCOPE_* variable that sets it, read from cmd/mikroscope.
+---
+
+import { Aside } from "@astrojs/starlight/components";
+import DoctorChecks from "../../../components/DoctorChecks.astro";
+import Measured from "../../../components/Measured.astro";
+import NotClaimed from "../../../components/NotClaimed.astro";
+import RouterWrites from "../../../components/RouterWrites.astro";
+import ScrollTable from "../../../components/ScrollTable.astro";
+import SeeAlso from "../../../components/SeeAlso.astro";
+
+This page answers one question for each flag of `mikroscope`: what it does,
+what it defaults to, what range is accepted, and whether an environment
+variable can set it. It is read from `cmd/mikroscope/*.go` and
+`internal/router/options.go`, not from the help text, and where the two differ
+the page says so.
+
+## Usage and exit status
+
+```sh
+mikroscope <verb> [flags]
+```
+
+The verbs fall into five groups, each with its own flag set: the deployment
+verbs (`doctor`, `plan`, `install`, `upgrade`, `uninstall`, `status`,
+`image`), the recording verbs (`record`, `mark`, `plot`), the collector
+(`forward`), `dashboards`, and `version`. Flags are Go `flag` flags: `-rate 50`
+and `--rate 50` are the same, and a boolean is turned off with
+`-privileged=false`.
+
+<ScrollTable label="Exit status of the CLI">
+
+| Status | When                                                                                                                                                                                                                                      |
+| ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `0`    | the verb finished                                                                                                                                                                                                                         |
+| `1`    | the verb ran and failed (a missing prerequisite, a router error, a sink that could not be built, a panel with no data), the verb is unknown, or a flag of `record`, `mark`, `plot`, `forward` or `dashboards` failed to parse or validate |
+| `2`    | no verb was given, or a flag of a deployment verb failed to parse or validate; nothing was sent to the router                                                                                                                             |
+
+</ScrollTable>
+
+Every flag is checked before the first connection, by `Finish` in
+`internal/router/options.go`, which runs for the deployment verbs and for
+`record`, `mark`, `plot` and `forward` alike. `--triggers` goes through the
+agent's own `ParseTriggers`, so an unknown condition, a bad threshold, a quote
+or a semicolon fails the verb with exit 2 and nothing is sent. The agent parses
+`TRIGGERS` again when it starts, which is what catches an envlist edited by
+hand on the router: a bad value there shows up as a container that exits with
+status `2` after a `mikroscope-agent: bad configuration:` line in the router
+log, which `restart-policy=on-failure` then restarts.
+
+### Where a default comes from
+
+A flag that names a variable in the tables below reads its default from
+`MIKROSCOPE_<KEY>`; a variable set to the empty string counts as unset, and a
+flag on the command line always wins. **Only the flags that name a variable
+have one.** `--rate`, `--buffer`, `--port`, `--memory-max`, `--mem-limit-mb`,
+`--capture-mb`, `--triggers`, `--floor-hz`, `--privileged`, `--ephemeral` and
+`--expose` are flags only. The CLI does not read `.env` itself; export it
+first with `set -a; . ./.env; set +a`. [Environment
+variables](/mikroscope/reference/environment/) lists every variable, including
+the credentials that have no flag at all.
+
+## The deployment verbs
+
+<ScrollTable label="Deployment verbs and what each one does">
+
+| Verb        | What it does                                                                                                                           | Writes to the router |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
+| `doctor`    | Read-only preflight in one ssh connect; each failing check names its fix. Exits 1 if any prerequisite is missing.                      | no                   |
+| `plan`      | Prints every object `install` would create, then stops. Same as `install --dry-run`; with `--rsc` it writes a RouterOS script instead. | no                   |
+| `install`   | Gets the image, prints the listing, runs `doctor`, asks for confirmation, writes, then probes the agent from this host.                | yes                  |
+| `upgrade`   | Gets a new image, checks that every install step is present, asks, removes and re-creates the container step, then probes.             | yes                  |
+| `uninstall` | Removes every step newest first, then verifies by ownership counts and fails naming anything that remains.                             | yes                  |
+| `status`    | Prints the ownership count of every step; if anything is installed, probes the agent and prints its health and board.                  | no                   |
+| `image`     | Builds the agent image tar and writes it to `--out`, for side-loading by hand.                                                         | no                   |
+
+</ScrollTable>
+
+`doctor` runs these checks, in this order:
+
+<DoctorChecks />
+
+<Aside type="note" title="Three ways to get the agent image, one flag apart">
+	`plan`, `install`, `upgrade` and `image` need an agent image, and `buildImage` in
+	`cmd/mikroscope/main.go` gets it by whichever of three routes the flags ask for. With neither
+	flag they run `go build -trimpath ./cmd/mikroscope-agent` with `CGO_ENABLED=0`, `GOOS=linux` and
+	the `--arch` as `GOARCH` (`internal/image/image.go`), which needs a checkout of the repository
+	and a Go toolchain on `PATH`. With `--agent-tar` they read the published tar instead, check that
+	it is a mikroscope agent image for `--arch`, and upload that. With `--remote-image` nothing is
+	built and nothing is uploaded: the router pulls the image itself, and `image` refuses, because
+	there is no tar to write. Without a Go toolchain and with neither flag the build fails naming
+	both flags and the Go version, before anything is listed. The fourth install route gets no image
+	on this machine at all: `plan --rsc` writes a script that runs on the router, so it needs
+	`--remote-image` or a tar already on the device. [Four ways to
+	install](/mikroscope/install/routes/) sets the four side by side, and [Installing the
+	agent](/mikroscope/install/) walks what `install` does.
+</Aside>
+
+### Flags of the deployment verbs
+
+<ScrollTable label="Flags shared by doctor, plan, install, upgrade, uninstall, status and image">
+
+| Flag             | Default                         | Variable                  | Accepted                                                   | Meaning                                                                                                                                                                                                                                                                                                         |
+| ---------------- | ------------------------------- | ------------------------- | ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--router`       | none, required                  | `MIKROSCOPE_ROUTER`       | `user@host` or an ssh config alias                         | ssh target; every verb but `plan`, `install --dry-run` and `image` fails without it                                                                                                                                                                                                                             |
+| `--ssh-port`     | empty (ssh config)              | `MIKROSCOPE_SSH_PORT`     |                                                            | ssh port                                                                                                                                                                                                                                                                                                        |
+| `--ssh-key`      | empty (agent or ssh config)     | `MIKROSCOPE_SSH_KEY`      |                                                            | ssh identity file                                                                                                                                                                                                                                                                                               |
+| `--name`         | `mikroscope`                    | `MIKROSCOPE_NAME`         | `^[A-Za-z0-9][A-Za-z0-9_.-]{0,31}$`                        | container name; tags every object as `mikroscope:<name> (managed by mikroscope)`                                                                                                                                                                                                                                |
+| `--veth`         | `veth-mikroscope`               | `MIKROSCOPE_VETH`         | `^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`                        | veth interface name on the router                                                                                                                                                                                                                                                                               |
+| `--subnet`       | `172.30.10.0/30`                | `MIKROSCOPE_SUBNET`       | an IPv4 /30 at its network address                         | the router takes `.1`, the agent `.2`                                                                                                                                                                                                                                                                           |
+| `--iface-list`   | `LAN`                           | `MIKROSCOPE_IFACE_LIST`   | same pattern as `--veth`                                   | interface list the veth joins                                                                                                                                                                                                                                                                                   |
+| `--addr-list`    | `LANs`                          | `MIKROSCOPE_ADDR_LIST`    | same pattern as `--veth`                                   | address list the /30 joins                                                                                                                                                                                                                                                                                      |
+| `--disk`         | empty (internal flash)          | `MIKROSCOPE_DISK`         | `^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$`                         | RouterOS disk for the image tar and the root: `tmpfs`, `disk1`, `usb1` …                                                                                                                                                                                                                                        |
+| `--ephemeral`    | `false`                         | none                      |                                                            | forces `--disk tmpfs` and `start-on-boot=no`: nothing written to flash, nothing survives a reboot                                                                                                                                                                                                               |
+| `--arch`         | `arm64`                         | `MIKROSCOPE_ARCH`         | `^[a-z0-9]{1,16}$`; `doctor` knows `arm64`, `arm`, `amd64` | device architecture, used as `GOARCH` and in the image manifest                                                                                                                                                                                                                                                 |
+| `--goarm`        | `7`                             | none                      |                                                            | `GOARM` level, used only with `--arch arm`                                                                                                                                                                                                                                                                      |
+| `--agent-tar`    | empty (build the agent here)    | `MIKROSCOPE_AGENT_TAR`    | a path to an agent image tar                               | `plan`, `install`, `upgrade`, `image`: upload this tar instead of building one, so neither a Go toolchain nor a checkout is needed. The tar is checked first: one that is not a mikroscope agent image, or is built for an architecture other than `--arch`, fails the verb naming the asset to download        |
+| `--remote-image` | empty (upload a tar)            | `MIKROSCOPE_REMOTE_IMAGE` | a registry reference, `ghcr.io/owner/name:tag`             | `plan`, `install`, `upgrade`: the router pulls the image itself, so nothing is built and nothing is uploaded, and no tar lands on the device. RouterOS takes the registry host from the global `/container/config registry-url`, which mikroscope never writes; `doctor` checks it and names the command to run |
+| `--rsc`          | `false`                         | none                      |                                                            | `plan`: write a RouterOS script that installs from the router itself, instead of the listing                                                                                                                                                                                                                    |
+| `--port`         | `9123`                          | none                      | 1–65535                                                    | agent HTTP port on the veth                                                                                                                                                                                                                                                                                     |
+| `--rate`         | `10`                            | none                      | 1–100                                                      | sampler rate in Hz (envlist `RATE_HZ`); 10, 50 and 100 Hz measured lossless on the RB5009 ([rate ceiling](/mikroscope/cost/rate-ceiling/))                                                                                                                                                                      |
+| `--buffer`       | `300`                           | none                      | 10–3600                                                    | ring buffer in seconds (envlist `BUFFER_S`)                                                                                                                                                                                                                                                                     |
+| `--memory-max`   | `64M`                           | none                      | `^\d{1,6}[KMG]?$`                                          | container cgroup `memory-max`, RouterOS syntax                                                                                                                                                                                                                                                                  |
+| `--mem-limit-mb` | `40`                            | none                      | 8–1024                                                     | agent Go soft memory limit in MiB (envlist `MEM_LIMIT_MB`); must fit the ring, rate × buffer × about <Measured id="ring.lineKB" />, with room for the garbage collector                                                                                                                                         |
+| `--capture-mb`   | `4`                             | none                      | 0–256                                                      | triggered-capture budget in MiB (envlist `CAPTURE_MB`); `0` turns captures off                                                                                                                                                                                                                                  |
+| `--triggers`     | empty (the agent's default set) | none                      | see [triggered capture](/mikroscope/record/triggers/)      | trigger conditions, comma-separated (envlist `TRIGGERS`)                                                                                                                                                                                                                                                        |
+| `--floor-hz`     | `0`                             | none                      | 0–1000                                                     | one cadence for every level source, in Hz (envlist `FLOOR_HZ`); `0` keeps the per-source floors; equal to `--rate` reads and emits every source every tick                                                                                                                                                      |
+| `--privileged`   | `true`                          | none                      |                                                            | runs the container `privileged=yes`; `-privileged=false` opts out                                                                                                                                                                                                                                               |
+| `--token`        | empty                           | `MIKROSCOPE_TOKEN`        | `^[A-Za-z0-9_.-]{0,128}$`                                  | bearer token the agent requires (envlist `TOKEN`); mandatory with `--expose`                                                                                                                                                                                                                                    |
+| `--expose`       | `false`                         | none                      | needs `--lan-address` and `--token`                        | dst-nat the agent port on the router's LAN address; adds two tagged firewall rules                                                                                                                                                                                                                              |
+| `--lan-address`  | empty                           | `MIKROSCOPE_LAN_ADDRESS`  | an IPv4 address                                            | the router's LAN address for `--expose`                                                                                                                                                                                                                                                                         |
+| `--dry-run`      | `false`                         | none                      |                                                            | `install`: print the listing and write nothing                                                                                                                                                                                                                                                                  |
+| `--yes`          | `false`                         | none                      |                                                            | `install`, `upgrade`: do not ask before writing                                                                                                                                                                                                                                                                 |
+| `--no-doctor`    | `false`                         | none                      |                                                            | `install`: skip the preflight checks                                                                                                                                                                                                                                                                            |
+| `--out`          | `mikroscope-agent-<arch>.tar`   | none                      |                                                            | `image`: output path of the tar. `plan --rsc`: where the script is written; empty writes it to standard output                                                                                                                                                                                                  |
+
+</ScrollTable>
+
+Three settings of the container are not flags: `logging=yes`,
+`restart-policy=on-failure` with `restart-max-count=5` and
+`restart-interval=10s`, and `ignore-remote-image-change=yes`. The restart
+values are the ones `Defaults()` sets; all three are what `install` writes
+(`internal/router/steps.go`). `start-on-boot` has no flag of its own either: it
+is `no` with `--ephemeral` and `yes` without.
+
+### Pass the same shape to status, upgrade and uninstall
+
+`status`, `upgrade` and `uninstall` do not read what is on the router to learn
+how it was installed. Each one rebuilds the install plan from the flags of its
+own invocation and selects objects by that plan's names, paths and tag. So:
+
+- An install made with `--expose` is only removed, and only verified, by an
+  `uninstall` that is also given `--expose --lan-address … --token …`.
+  Without them the two firewall rules are not in the plan, and the
+  verification does not look for them.
+- `upgrade` removes the envlist with the container and writes it again from
+  its own flags. An `upgrade` without the `--rate`, `--buffer`,
+  `--mem-limit-mb`, `--capture-mb`, `--triggers`, `--floor-hz` or `--token`
+  you installed with writes the defaults in their place, and `--memory-max`
+  and `--privileged` likewise go back to theirs.
+- `--name`, `--veth`, `--subnet`, `--iface-list`, `--addr-list`, `--port` and
+  `--disk` or `--ephemeral` decide what the selectors match; change one and
+  the verb is looking for different objects.
+
+<NotClaimed variant="untested">
+	The three consequences above are read from `internal/router/deploy.go`, `probe.go` and `steps.go`.
+	None of them was exercised against the router: an `upgrade` that drops the token of an exposed
+	install, in particular, has not been run.
+</NotClaimed>
+
+### What the writing verbs write
+
+<RouterWrites command="install" />
+
+<RouterWrites command="expose" />
+
+<RouterWrites command="upgrade" />
+
+<RouterWrites command="uninstall" />
+
+## record, mark and plot
+
+The three verbs share one flag set with `forward`, so a flag that means
+something to a sibling is accepted and ignored: `plot --for 5m` parses and
+does nothing. The table marks which verb reads each flag.
+
+<ScrollTable label="Flags of record, mark and plot">
+
+| Flag            | Default                      | Variable              | Read by                     | Meaning                                                                                                                                                                                                                                                                                                                |
+| --------------- | ---------------------------- | --------------------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--out`         | `capture-<UTC time>`         | none                  | `record`, `mark`            | output prefix: `<out>.jsonl`, `.csv`, `.markers.csv`, `.meta.json`. `mark` needs the prefix of an existing recording                                                                                                                                                                                                   |
+| `--for`         | `0` (until Ctrl-C)           | none                  | `record`, `forward`         | run this long, then stop                                                                                                                                                                                                                                                                                               |
+| `--from-start`  | `false`                      | none                  | `record`                    | backfill everything the agent's ring holds before going live                                                                                                                                                                                                                                                           |
+| `--poll`        | `500ms`                      | none                  | `record`, `forward`         | how often the agent's ring is pulled                                                                                                                                                                                                                                                                                   |
+| `--batch`       | `0`                          | none                  | `record`, `forward`         | samples per pull; `0` is twice what one `--poll` produces at the agent's rate, never under 20. The relay caps a pull at 18. A pull repeats until it comes back short                                                                                                                                                   |
+| `--transport`   | `auto`                       | none                  | `record`, `forward`         | `auto` (direct, then relay), `direct` (HTTP to the veth) or `relay` (`/tool fetch` over the RouterOS API; each call returns at most <Measured id="relay.replyMaxBytes" /> and took either ~3 ms or ~1 s on the RB5009, RouterOS 7.24.2, 2026-09-11; see [reaching the agent](/mikroscope/install/reaching-the-agent/)) |
+| `--log-markers` | `false`                      | none                  | `record`, `mark`            | `record`: after recording, pull the router log over the API and append the matching lines to `<out>.markers.csv`. `mark`: add the log lines of the recording's window                                                                                                                                                  |
+| `--topics`      | `system,interface,container` | none                  | `record`, `mark`            | log topics kept as markers with `--log-markers`                                                                                                                                                                                                                                                                        |
+| `--router-tz`   | `Local`                      | none                  | `record`, `mark`            | IANA zone the router's clock shows; RouterOS log times carry no zone                                                                                                                                                                                                                                                   |
+| `--in`          | none, required               | none                  | `plot`                      | recording prefix, or its `.jsonl` path                                                                                                                                                                                                                                                                                 |
+| `--svg`         | `<in>.svg`                   | none                  | `plot`                      | output SVG                                                                                                                                                                                                                                                                                                             |
+| `--title`       | the prefix                   | none                  | `plot`                      | chart title                                                                                                                                                                                                                                                                                                            |
+| `--api`         | empty                        | `MIKROSCOPE_API_ADDR` | `record`, `mark`, `forward` | RouterOS API `host:port`, for the relay, `--log-markers` and the API tier                                                                                                                                                                                                                                              |
+| `--api-user`    | empty                        | `MIKROSCOPE_API_USER` | `record`, `mark`, `forward` | API user; its password comes only from `MIKROSCOPE_API_PASSWORD`                                                                                                                                                                                                                                                       |
+| `--token`       | empty                        | `MIKROSCOPE_TOKEN`    | `record`, `forward`         | bearer token the direct transport sends to the agent                                                                                                                                                                                                                                                                   |
+| `--port`        | `9123`                       | none                  | `record`, `forward`         | agent HTTP port                                                                                                                                                                                                                                                                                                        |
+| `--subnet`      | `172.30.10.0/30`             | `MIKROSCOPE_SUBNET`   | `record`, `forward`         | the agent's /30; its address is `.2`                                                                                                                                                                                                                                                                                   |
+
+</ScrollTable>
+
+`mark` takes the marker's text as its remaining arguments,
+`mikroscope mark --out cap "queue tree applied"`, or `--log-markers` instead
+of text. `record` turns every line typed on a terminal into a marker; when
+standard input is not a terminal it does not read it.
+
+`auto` tries `/healthz` over the direct transport first. If that does not
+answer it needs `--api`, `--api-user` and `MIKROSCOPE_API_PASSWORD` to try the
+relay. It fails naming `install --expose` when the direct transport does not
+answer and the relay is not configured; a configured relay that fails reports
+`relay transport:` and its error. The relay does
+not carry the token: `/tool fetch` on the router sends no `Authorization`
+header, so an agent with a token set can only be pulled over the direct
+transport.
+
+## forward
+
+`forward` runs the collector: it pulls the kernel tier from the agent, polls
+the RouterOS API tier, and writes both to every sink named. It reads `--for`,
+`--poll`, `--batch`, `--transport`, `--api`, `--api-user`, `--token`,
+`--port` and `--subnet` from the table above, plus its own flags below. It
+refuses to start without at least one sink.
+
+### API tier
+
+<ScrollTable label="API-tier flags of forward">
+
+| Flag                | Default | Variable                | Meaning                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ------------------- | ------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--api-mode`        | `full`  | none                    | preset. `off` sets `--api-every 0` unless you set it yourself, so the collector opens no API-tier session; the relay transport still uses the API. `slow` runs the tier every 10 s with no `/system/health` and no conntrack count; `/system/resource`, `/system/resource/cpu`, `monitor-traffic` on `--interfaces` and the `--counters-every` port counters are still read. `full` (the flag defaults) reads everything. An explicit flag below wins over it |
+| `--api-every`       | `1s`    | none                    | API-tier cadence; `0` disables the tier. `off` sets it to `0`, `slow` to `10s`                                                                                                                                                                                                                                                                                                                                                                                |
+| `--interfaces`      | empty   | `MIKROSCOPE_INTERFACES` | comma-separated interfaces for `monitor-traffic`, one call for all                                                                                                                                                                                                                                                                                                                                                                                            |
+| `--conntrack-every` | `0`     | none                    | ask the conntrack count this often; `0` never, because it is a table scan. One scan took <Measured id="api.conntrackMs" /> at <Measured id="conntrack.api" /> entries on the RB5009 (date not recorded). `slow` sets it to `0` unless given explicitly                                                                                                                                                                                                        |
+| `--counters-every`  | `10s`   | none                    | read every port's cumulative counters (typed errors, fast-path split, link-downs, frame sizes) this often; `0` never                                                                                                                                                                                                                                                                                                                                          |
+| `--labels-every`    | `5m`    | none                    | re-read what each interface is (label from its comment, type, interface lists, bridge, MTU); read once before the first kernel pull and again this often; `0` takes the 5 min default                                                                                                                                                                                                                                                                         |
+| `--no-health`       | `false` | none                    | skip `/system/health`. `slow` sets it                                                                                                                                                                                                                                                                                                                                                                                                                         |
+
+</ScrollTable>
+
+Without `--api` and `--api-user`, `forward` logs `api tier disabled` and runs
+the kernel tier alone; that is a warning, not a failure.
+
+### Sinks
+
+<ScrollTable label="Sink flags of forward">
+
+| Flag                | Default               | Variable                   | Meaning                                                                                                            |
+| ------------------- | --------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `--file`            | empty                 | none                       | write the merged timeline as JSONL to this path (truncated at start)                                               |
+| `--prom`            | empty                 | none                       | serve Prometheus `/metrics` on this address, for example `:9124`                                                   |
+| `--influx`          | empty                 | `MIKROSCOPE_INFLUX_URL`    | InfluxDB 3 write URL, for example `http://host:8181/api/v3/write_lp?db=mikroscope&precision=nanosecond`            |
+| `--loki`            | empty                 | `MIKROSCOPE_LOKI_URL`      | Loki push URL; carries events (kernel log, gaps, API errors, detections, triggers, the device record), not samples |
+| `--loki-tenant`     | empty                 | `MIKROSCOPE_LOKI_TENANT`   | `X-Scope-OrgID` for a multi-tenant Loki                                                                            |
+| `--otlp`            | empty                 | `MIKROSCOPE_OTLP_URL`      | OTLP/HTTP metrics endpoint, for example `http://host:4318/v1/metrics`                                              |
+| `--graphite`        | empty                 | `MIKROSCOPE_GRAPHITE_ADDR` | Graphite carbon plaintext listener, `host:port`                                                                    |
+| `--graphite-prefix` | `mikroscope`          | none                       | first node of every Graphite metric path                                                                           |
+| `--elastic`         | empty                 | `MIKROSCOPE_ELASTIC_URL`   | Elasticsearch or OpenSearch base URL for `_bulk`                                                                   |
+| `--elastic-index`   | `mikroscope-%Y.%m.%d` | none                       | index name; `%Y`, `%m`, `%d` expand to the event's date                                                            |
+| `--sql`             | empty                 | none                       | write PostgreSQL/TimescaleDB statements to this path, or to standard output with `-`; there is no database driver  |
+| `--sql-hypertable`  | `false`               | none                       | also emit TimescaleDB `create_hypertable` calls in the SQL header                                                  |
+| `--telegraf`        | empty                 | `MIKROSCOPE_TELEGRAF_URL`  | Telegraf listener: `http://host:8186/telegraf`, `tcp://host:8094` or `udp://host:8094`                             |
+| `--stdout`          | empty                 | none                       | write to standard output as `lp` (InfluxDB line protocol) or `json` (NDJSON); any other value is refused           |
+| `--host-tag`        | `router`              | `MIKROSCOPE_HOST_TAG`      | host tag or label on every point, in every sink                                                                    |
+| `--queue-seconds`   | `60`                  | none                       | seconds of data each queued sink may hold before it drops the oldest batch; `0` or less takes 60                   |
+
+</ScrollTable>
+
+No sink credential is a flag, because a flag is visible in `ps` and in shell
+history: the tokens come from `MIKROSCOPE_INFLUX_TOKEN`,
+`MIKROSCOPE_LOKI_TOKEN`, `MIKROSCOPE_OTLP_TOKEN`, `MIKROSCOPE_ELASTIC_AUTH`
+and `MIKROSCOPE_TELEGRAF_TOKEN`. A sink that was asked for and cannot be
+built stops `forward` before it pulls anything.
+
+On exit `forward` prints the number of kernel samples, API samples, gaps and
+skew jumps, and for each sink how many events it wrote, dropped and failed
+on. While it runs it logs a line on standard error once a minute with the
+kernel, API, gap, trigger and detection counts, the last sequence number, and
+each sink's written, dropped and error counts.
+
+The collector's Prometheus sink sizes its busy-tick histogram for 10 Hz
+whatever rate the agent runs at (`promHistogramRateHz` in
+`cmd/mikroscope/sinkflags.go`), so the bucket layout does not change when it
+reconnects to an agent configured differently. [Prometheus metric
+families](/mikroscope/reference/metrics/) says what else follows from that
+constant.
+
+## dashboards
+
+```sh
+mikroscope dashboards gen
+mikroscope dashboards import --store influxdb --datasource-uid <uid>
+mikroscope dashboards check  --store influxdb --datasource-uid <uid> --window 1h --end 2026-09-13T08:30:00Z
+```
+
+<ScrollTable label="Flags of mikroscope dashboards">
+
+| Flag               | Default         | Variable      | Read by           | Meaning                                                                                          |
+| ------------------ | --------------- | ------------- | ----------------- | ------------------------------------------------------------------------------------------------ |
+| `--out`            | `dashboards`    | none          | `gen`             | output directory for `mikroscope-<store>.json` and `mikroscope-alerts-<store>.yaml`, both stores |
+| `--store`          | `influxdb`      | none          | `import`, `check` | `influxdb` or `prometheus`                                                                       |
+| `--grafana`        | empty           | `GRAFANA_URL` | `import`, `check` | Grafana base URL; the token comes only from `GRAFANA_TOKEN`                                      |
+| `--datasource-uid` | empty, required | none          | `import`, `check` | the datasource UID bound to `DS_MIKROSCOPE`                                                      |
+| `--no-probe`       | `false`         | none          | `import`, `check` | do not ask the datasource which measurements it holds; use the compiled defaults                 |
+| `--window`         | `15m`           | none          | `check`           | length of the query window                                                                       |
+| `--end`            | now             | none          | `check`           | RFC 3339 instant the window ends at, to check against a capture that has already finished        |
+
+</ScrollTable>
+
+`import` and `check` refuse to run without `--grafana` (or `GRAFANA_URL`),
+`GRAFANA_TOKEN` and `--datasource-uid`. Unless `--no-probe` is given, they
+first ask the datasource which measurements it holds; if that question fails
+they warn and continue with the compiled defaults. `check` prints one line per
+panel (`ok`, `none` for a known-empty panel, `FAIL`) and exits 1 if any panel
+fails. The variables are `GRAFANA_URL` and `GRAFANA_TOKEN`, without the
+`MIKROSCOPE_` prefix.
+
+## version
+
+`mikroscope version` prints `mikroscope` and the build identity from
+`internal/version`. It takes no flags.
+
+<SeeAlso>
+
+## See also
+
+- [Environment variables](/mikroscope/reference/environment/): every `MIKROSCOPE_*` variable, the
+  credentials with no flag, and the agent's own envlist.
+- [Installing the agent](/mikroscope/install/): the deployment verbs in the order they are used.
+- [Record, mark, plot](/mikroscope/record/): what a recording is and how markers get into it.
+- [The collector](/mikroscope/sinks/): what `forward` does with the flags above.
+
+</SeeAlso>

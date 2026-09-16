@@ -1,0 +1,56 @@
+---
+/**
+ * A statement of what the measurements do not cover.
+ *
+ * Not a Starlight `caution` aside, because "not measured" is not a hazard:
+ * dressing it as a warning teaches a reader to skim past warnings. The
+ * meaning is carried three ways, so no single one has to survive alone: a
+ * dashed rule on the leading edge, a legend word, and the note colour.
+ * `data-claim` makes these blocks countable later.
+ *
+ * The visible legend is in the reading order and is also the aside's name
+ * (aria-labelledby): a screen reader reading continuously often does not
+ * announce landmark names, and "not claimed" is the one meaning this block
+ * exists to carry, so it cannot live in an aria-label alone.
+ */
+const VARIANTS = {
+	"not-measured": "ms.claim.notMeasured",
+	untested: "ms.claim.untested",
+	"not-provoked": "ms.claim.notProvoked",
+	"device-specific": "ms.claim.deviceSpecific",
+} as const;
+
+type Variant = keyof typeof VARIANTS;
+
+interface Props {
+	variant?: Variant;
+	title?: string;
+}
+
+const { variant = "not-measured", title } = Astro.props;
+if (!Object.hasOwn(VARIANTS, variant)) {
+	throw new Error(
+		`NotClaimed: unknown variant "${variant}"; use ${Object.keys(VARIANTS)
+			.map((v) => `"${v}"`)
+			.join(", ")}`,
+	);
+}
+const legend = title ?? Astro.locals.t(VARIANTS[variant]);
+// A page can hold several; the id counts them per request, so it is unique on
+// the page and the same on every build. The count lives on `Astro.locals`,
+// which is one object per page render: a counter declared in this frontmatter
+// is recreated on every render (Astro compiles the frontmatter INTO the render
+// function) and would give every block on a page `ms-claim:1`, so each aside
+// would take its accessible name from the first legend. The colon is there
+// because a heading slug cannot contain one (github-slugger strips it), so no
+// heading can produce the same id; `ms-claim-1` could.
+const locals = Astro.locals as { msClaimCount?: number };
+const count = (locals.msClaimCount ?? 0) + 1;
+locals.msClaimCount = count;
+const legendId = `ms-claim:${count}`;
+---
+
+<aside class="ms-not-claimed" data-claim={variant} aria-labelledby={legendId}>
+	<p class="ms-claim-legend" id={legendId}>{legend}</p>
+	<div class="ms-claim-body"><slot /></div>
+</aside>

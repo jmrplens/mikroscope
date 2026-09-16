@@ -1,0 +1,271 @@
+---
+title: Instalar el agente
+description: Qué hace `mikroscope install` en un equipo RouterOS y en qué orden, y cómo `upgrade` y `uninstall` lo cambian o lo quitan sin tocar nada que no hayan creado.
+---
+
+import { Aside, Steps } from "@astrojs/starlight/components";
+import Measured from "../../../../components/Measured.astro";
+import NotClaimed from "../../../../components/NotClaimed.astro";
+import RouterWrites from "../../../../components/RouterWrites.astro";
+import SeeAlso from "../../../../components/SeeAlso.astro";
+import Verified from "../../../../components/Verified.astro";
+
+Esta página responde a dos preguntas: qué le hace `mikroscope install` a tu
+router y cómo recuperas el router después. `install` pone una imagen del agente
+de <Measured id="image.size" /> en un contenedor del router; `uninstall` la
+vuelve a quitar. En <Verified of="export-identical" />, un ciclo
+completo con guion doctor → install → status → upgrade → uninstall
+(`make roundtrip`, que pasa `--ephemeral` a doctor, install y upgrade) dejó el `/export` del router idéntico byte a byte, salvo sus líneas
+de cabecera `#`. Cada objeto que crea install lleva el comentario
+`mikroscope:<name> (managed by mikroscope)`, salvo la envlist y el fichero de la
+imagen, que no lo admiten; la envlist lleva la etiqueta en su entrada
+`MIKROSCOPE_TAG`. No se escribe nada antes de listarlo; la eliminación
+selecciona por esa etiqueta más la identidad del objeto, nunca por patrón, y se
+verifica con recuentos de propiedad.
+
+## Antes de la primera instalación
+
+En el router tienen que cumplirse tres cosas, y la herramienta no puede
+conseguir ninguna por ti: una arquitectura capaz de ejecutar contenedores con
+RouterOS 7.24 o posterior, el paquete `container` y
+`device-mode container=yes` — esto último exige pulsar un botón físico o un
+ciclo de alimentación.
+[Lo que necesita el router](/mikroscope/es/install/prerequisites/) cubre las
+tres. `mikroscope doctor` las comprueba en solo lectura, en una conexión ssh, e
+imprime la orden exacta o el paso físico para lo que falte.
+
+Hay una decisión que va antes de la primera instalación y no después: de dónde
+sale la imagen del agente. Un checkout la compila, `--agent-tar` toma la que
+publica la release, `--remote-image` hace que el router se la baje, y
+`plan --rsc` escribe un script que instala sin esta CLI.
+[Cuatro formas de instalar](/mikroscope/es/install/routes/) expone las cuatro.
+
+## Qué hace install, en orden
+
+<Steps>
+
+1. **Consigue la imagen del agente.** Desde un checkout, la CLI la compila:
+   `go build ./cmd/mikroscope-agent` para `linux/<arch>` (`--arch`, por defecto
+   `arm64`) con `CGO_ENABLED=0`, empaquetado en un tar de imagen sin Docker, y
+   la ruta de compilación es relativa, así que ejecútalo desde el checkout.
+   `--agent-tar` toma en su lugar el tar que publica la release, y lo comprueba
+   antes de subirlo. `--remote-image` se salta este paso entero: el router se
+   baja la imagen él mismo y no se sube nada.
+   [Cuatro formas de instalar](/mikroscope/es/install/routes/) es la elección,
+   con lo que necesita cada ruta.
+
+2. **Imprime el plan.** Una línea de opciones (un token aparece como
+   `token=(set)`, nunca su valor), la etiqueta y luego cada orden de RouterOS
+   numerada, con la subida por `scp` y su tamaño antes del paso del contenedor.
+   Termina con `nothing above has been written yet`. `mikroscope plan` e
+   `install --dry-run` se detienen aquí, antes de cualquier conexión ssh.
+
+3. **Ejecuta `doctor`.** Cualquier requisito que falte detiene la instalación
+   con `N prerequisite(s) missing; nothing was written`. `--no-doctor` se salta
+   este paso.
+
+4. **Pregunta** `write the objects above to the router? [y/N]`. `--yes` se salta
+   la pregunta.
+
+5. **Pregunta al router por todos los pasos a la vez.** Una conexión pregunta,
+   para cada paso, si el objeto de mikroscope está y si el efecto existe con
+   cualquier otro propietario. Un paso que ya es nuestro imprime
+   `ok … (already present)` y se salta; un efecto que existe sin la etiqueta
+   detiene la instalación, nombrándolo; uno ausente se crea, con una conexión
+   por escritura.
+
+6. **Sube la imagen y crea el contenedor.** El tar sube con `scp`; después una
+   sola orden escribe la envlist, añade el contenedor, espera hasta 15 s a que
+   el contenedor aparezca y luego 3 s más (RouterOS extrae la imagen al
+   añadirlo), borra el tar y arranca el contenedor. Con `--remote-image` no hay
+   subida ni tar al que esperar o que borrar: el contenedor se añade con
+   `remote-image=` y se arranca. En cualquier caso el contenedor se añade con
+   `privileged=`, que RouterOS conoce desde 7.24: en una 7.x anterior este es el
+   paso que falla, y `--privileged=false` es la forma de pasar.
+
+7. **Sondea el agente** desde tu máquina y dice qué transporte funciona:
+   [Llegar al agente](/mikroscope/es/install/reaching-the-agent/).
+
+</Steps>
+
+Un segundo `install` en un router donde todos los pasos ya son nuestros no crea
+nada y pasa directamente al sondeo.
+
+<RouterWrites command="install" />
+
+Dónde vive cada uno de esos objetos, qué lleva la envlist y qué ajustes del
+contenedor se escriben está en [Dónde va cada cosa](/mikroscope/es/install/layout/).
+Por qué dos de ellos son pertenencias a listas del cortafuegos está en
+[Las dos trampas del cortafuegos](/mikroscope/es/install/firewall/).
+
+## Cómo se decide la propiedad
+
+La etiqueta es lo único con lo que casa una eliminación, junto con la identidad
+propia del objeto: la veth por nombre, la dirección por interfaz, una pertenencia
+a lista por lista e interfaz, una entrada de address-list por lista y dirección.
+Ni `/container/envs` ni `/file` admiten comentario, así que la envlist se firma
+con una entrada `MIKROSCOPE_TAG` cuyo valor es la etiqueta exacta, y la imagen
+subida cuenta como de mikroscope solo mientras exista esa marca. El agente
+ignora la entrada.
+
+Cada `find` entrecomilla sus atributos de dirección y puerto. Sin comillas,
+RouterOS los interpreta como valores tipados y la comparación con el valor
+guardado sale vacía — un `dst-port=9123` sin comillas no casa con nada
+(verificado en <Verified of="find-quoting" />).
+
+Por ssh, RouterOS informa de un error como texto con código de salida 0 y
+abandona el resto de una línea unida con `;` en el primero. Por eso una
+escritura que imprime algo se trata como un fallo. Si el paso del contenedor
+falla tras la subida, el tar subido se retira
+(`undo  removed the uploaded …`), porque sin la marca contaría como ajeno para
+siempre. Qué más rechaza el instalador está en
+[Lo que el instalador rechaza](/mikroscope/es/security/installer/).
+
+## Actualizar
+
+<RouterWrites command="upgrade" />
+
+`mikroscope upgrade` consigue la imagen igual que `install` —compilándola desde
+el checkout, con `--agent-tar`, o con `--remote-image` y ninguna imagen—,
+comprueba que todos los pasos están
+(si no, `nothing to upgrade: run install first`), pide confirmación, quita el
+paso del contenedor, espera a la eliminación asíncrona de RouterOS, vuelve a
+crear el paso con la imagen nueva y sondea el agente. A diferencia de
+`install`, no imprime ningún plan ni ejecuta `doctor`: su pregunta es la misma
+`write the objects above to the router? [y/N]` sin nada listado encima.
+`mikroscope plan` con las mismas opciones muestra la orden del contenedor que va
+a escribir.
+
+La envlist pertenece al paso del contenedor, así que `upgrade` la vuelve a
+escribir a partir de las opciones que recibe el propio `upgrade`. `--port`,
+`--rate`, `--buffer`, `--memory-max`, `--mem-limit-mb`, `--capture-mb`,
+`--triggers`, `--floor-hz`, `--privileged`, `--ephemeral` y `--expose` no leen
+ninguna variable de entorno: pásalas otra vez o vuelven a sus valores por
+defecto. Esa es también la forma de cambiarlas sin tocar los objetos de red. Dos
+omisiones no son inocuas. Un upgrade sin `--ephemeral` vuelve a crear el
+contenedor con la imagen y la raíz en la flash interna y `start-on-boot=yes`. Un
+upgrade de una instalación con `--expose` hecho sin `--expose` y sin token
+(`--token` o `MIKROSCOPE_TOKEN`) vuelve a crear el agente sin token, mientras
+las dos reglas del cortafuegos hacia la LAN se quedan.
+
+## Desinstalar
+
+<RouterWrites command="uninstall" />
+
+`mikroscope uninstall` ejecuta las eliminaciones de la más reciente a la más
+antigua. Una eliminación que falla o imprime algo se informa como `skip` con lo
+que dijo el router, y el resto continúa. Un paso cuyo selector no encuentra nada
+imprime `gone` igualmente, y por eso decide el recuento, no la salida de la
+eliminación. Después pregunta el recuento de propiedad de cada paso en una
+conexión, imprime una línea por paso y o bien termina con
+`verified: nothing mikroscope created remains on the router` o bien falla con
+`uninstall left objects behind`, nombrando los pasos que siguen presentes.
+
+La eliminación del contenedor espera, porque RouterOS no lo hace:
+`/container/remove` vuelve antes de que el contenedor haya desaparecido, y un
+`/file/remove` de la imagen lanzado entretanto no hizo nada, en silencio
+(<Verified of="remove-race" />). Así que para el contenedor, lo quita,
+espera hasta 20 s a que desaparezca, reintenta la eliminación del tar durante
+hasta 15 s y quita la marca solo cuando el fichero ya no está. Si sigue, la
+marca se queda y el recuento lo dice.
+
+<Aside type="caution" title="Desinstala con las opciones con las que instalaste">
+	`uninstall`, `status` y `upgrade` construyen sus selectores a partir de sus propias opciones, no
+	de algo guardado en el router. Pasa los mismos `--name`, `--veth`, `--subnet`, `--iface-list`,
+	`--addr-list`, `--disk` o `--ephemeral` y `--port` que recibió `install`. Para una instalación con
+	`--remote-image`, pásalo también: el recuento de propiedad del contenedor se toma por aquello de
+	lo que se creó, y una instalación con remote-image no tiene ningún tar que contar. Para una
+	instalación con `--expose`, pasa también `--expose --lan-address … --token …`: sin `--expose` el
+	plan no tiene pasos de cortafuegos, así que `uninstall` ni quita las dos reglas ni las cuenta.
+</Aside>
+
+## Estado
+
+`mikroscope status` imprime el recuento de propiedad de cada paso, desde una
+conexión. Cuando no hay nada instalado termina con la línea `verified` y no
+sondea nada. Si no, sondea el `/healthz` del agente con un tiempo de espera de
+3 s e imprime su versión, cadencia, secuencia y secuencia más antigua, tiempo
+en marcha, ticks retrasados y tiempo de ida y vuelta, y después una línea sobre
+la placa: si esta compilación sabe convertir en ella los nombres de puerto del
+kernel (`eth0`, `eth1`, …) en los de RouterOS. Donde no sabe, la línea pide la
+medida que añadiría la placa; [Puertos de RouterOS y nombres del
+kernel](/mikroscope/es/playbooks/port-names/) muestra cómo tomarla. Si el agente
+no responde, imprime `agent: not reachable from this host` con el error, y
+ninguna línea de placa; `status` sale igualmente con código 0.
+
+## El día a día
+
+```sh
+mikroscope doctor                      # solo lectura
+mikroscope plan                        # todas las órdenes, nada escrito
+mikroscope install [--ephemeral]       # doctor, confirmación, escrituras, sondeo
+mikroscope status                      # recuentos de propiedad + salud del agente
+mikroscope upgrade                     # imagen nueva, solo el contenedor
+mikroscope uninstall                   # quita y verifica
+mikroscope image --arch arm64          # el tar, para cargarlo a mano
+mikroscope plan --rsc --out install.rsc # las mismas escrituras, como script de RouterOS
+```
+
+`--router` acepta `user@host` o un alias de la configuración de ssh y lo exige
+toda orden que se conecta.
+
+## Opciones y entorno
+
+Para estas órdenes, las opciones que toman su valor por defecto de una variable
+son `--router`, `--ssh-port`, `--ssh-key`, `--name`, `--veth`, `--subnet`,
+`--iface-list`, `--addr-list`, `--disk`, `--arch`, `--token`, `--lan-address`,
+`--agent-tar` y `--remote-image`
+(`MIKROSCOPE_ROUTER`, `MIKROSCOPE_SSH_PORT` y así sucesivamente);
+`.env.example` las documenta. La CLI no lee `.env` por sí misma:
+
+```sh
+set -a; . ./.env; set +a
+```
+
+Cada valor que llega a una orden de RouterOS se acota antes de la primera
+conexión: nombres, discos, la arquitectura, la sintaxis de memoria, los
+caracteres del token, los rangos de puerto y de cadencia, la referencia del
+registro, la subred, que debe ser una /30 IPv4 dada en su dirección de red, y
+`--triggers`, sobre el que decide el propio analizador del agente: una
+condición desconocida, un umbral incorrecto, una comilla o un punto y coma
+hacen fallar la orden con código 2 sin escribir nada. El agente vuelve a
+analizar `TRIGGERS` al arrancar, porque una envlist se puede editar a mano en el
+router; un valor que rechace allí hace que termine y registre
+`bad configuration`. La lista completa está en
+[Órdenes y opciones](/mikroscope/es/reference/cli/) y
+[Variables de entorno](/mikroscope/es/reference/environment/).
+
+## Lo que ssh le cuesta al router
+
+Cada conexión ssh le cuesta al RB5009 un <Measured id="ssh.connectCpu" /> de CPU mientras dura. Por eso
+la CLI agrupa cada lectura en una sola conexión — `doctor` es una, `status` es
+una, las preguntas de estado de `install` son una — y cada escritura cuesta una
+más, además de la subida por `scp`. ssh nunca es un camino de datos: `record` y
+`forward` llegan al agente por HTTP o por la API de RouterOS.
+
+<NotClaimed variant="untested">
+	Que una instalación persistente sobreviva a un reinicio: el router de referencia está en
+	producción y no se reinicia para pruebas. El ciclo idéntico byte a byte en cualquier equipo que no
+	sea el RB5009, en cualquier RouterOS que no sea 7.24.2, o con install y upgrade ejecutados sin
+	`--ephemeral` (la ejecución con guion lo pasó a doctor, install y upgrade, no a status ni a
+	uninstall). El ciclo no se ha ejecutado contra los ajustes actuales del contenedor:
+	`privileged=yes`, `memory-max=64M` y las entradas de envlist `MEM_LIMIT_MB`, `CAPTURE_MB`,
+	`TRIGGERS` y `FLOOR_HZ`; se ejecutó con `memory-max=32M`.
+</NotClaimed>
+
+<SeeAlso>
+
+## Véase también
+
+- [Lo que necesita el router](/mikroscope/es/install/prerequisites/): la arquitectura, el paquete y
+  el paso de device-mode que exige tus manos en el router.
+- [Cuatro formas de instalar](/mikroscope/es/install/routes/): un checkout, el tar publicado, un
+  pull del registro, o un script de RouterOS.
+- [Dónde va cada cosa](/mikroscope/es/install/layout/): discos, la envlist y los ajustes del
+  contenedor.
+- [Llegar al agente](/mikroscope/es/install/reaching-the-agent/): el sondeo, y directo, relay y
+  `--expose`.
+- [Lo que el instalador rechaza](/mikroscope/es/security/installer/): objetos sobre los que no
+  construye ni que quita.
+
+</SeeAlso>

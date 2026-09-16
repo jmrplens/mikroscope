@@ -1,0 +1,68 @@
+---
+/**
+ * The sentence every figure needs beside it: which device, which RouterOS,
+ * which date, under what conditions.
+ *
+ * It is one block per campaign rather than a sentence retyped per page, so
+ * the landing and `cost/rate-ceiling` cannot describe the same run two ways.
+ * A campaign whose source records no date says "date not recorded" instead of
+ * borrowing one. Dates stay ISO in both locales, which is unambiguous in both.
+ *
+ * Segments are separated by " · " with ordinary spaces, so a phone wraps
+ * between them; inside a segment the spaces are U+00A0, so "RouterOS 7.24.2"
+ * never splits. The conditions are a clause, not a segment, and wrap freely.
+ */
+import { campaigns, describeCpu, isCampaignId } from "../data/measurements";
+import { codeSpans, unbreakable } from "../lib/format";
+import { langOf } from "../lib/lang";
+import InlineCode from "./InlineCode.astro";
+
+interface Props {
+	of: string;
+}
+
+const { of } = Astro.props;
+if (!isCampaignId(of)) {
+	throw new Error(`Provenance: unknown campaign "${of}"; campaigns live in src/data/measurements.ts`);
+}
+// See the `image` campaign in measurements.ts: a build artefact has no device.
+if (of === "image") {
+	throw new Error("Provenance: the image size was not measured on a device; say where it comes from in prose");
+}
+const c = campaigns[of];
+const lang = langOf(Astro.locals.starlightRoute);
+const t = Astro.locals.t;
+// The short facts, each kept on one line. U+00A0 alone was not enough:
+// "Cortex-A72" broke at its hyphen at 390 px (measured 2026-09-15), so each
+// segment is also a nowrap span.
+const facts = [
+	c.device,
+	describeCpu(c, lang),
+	unbreakable(`RouterOS ${c.routeros}`),
+	...("kernel" in c ? [unbreakable(`Linux ${c.kernel}`)] : []),
+];
+---
+
+<p class="ms-provenance" data-campaign={of}>
+	<span class="ms-provenance-verb">{t("ms.provenance.measured")}</span>{" "}
+	{
+		facts.map((fact, i) => (
+			<Fragment>
+				{i > 0 && " · "}
+				<span class="ms-provenance-fact">{fact}</span>
+			</Fragment>
+		))
+	}
+	{" · "}
+	{
+		c.date === null ? (
+			t("ms.provenance.undated")
+		) : (
+			<time class="ms-provenance-fact" datetime={c.date}>
+				{c.date}
+			</time>
+		)
+	}
+	{" · "}
+	{codeSpans(c.conditions[lang]).map((part) => (part.code ? <InlineCode text={part.text} /> : part.text))}
+</p>

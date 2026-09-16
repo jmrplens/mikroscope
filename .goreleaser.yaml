@@ -1,0 +1,212 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+project_name: mikroscope
+version: 2
+
+before:
+  hooks:
+    - go mod download
+    # The side-loadable agent image tars, one per architecture, through the
+    # same builder `mikroscope install` uses (internal/image). A hook rather
+    # than a workflow step for two reasons: `release --clean` empties dist/
+    # before anything else runs, which once took tars written there ahead of
+    # GoReleaser with it, and only here are the version, commit and date the
+    # binaries below are stamped with known. The script writes outside dist/,
+    # to build/agent-images/, which release.extra_files and checksum.extra_files
+    # then pick up. A global hook is a plain command line, not run by a shell,
+    # so the stamps reach the script through env(1).
+    - env VERSION={{ .Version }} COMMIT={{ .ShortCommit }} BUILD_DATE={{ .CommitDate }} ./scripts/agent-tars.sh build/agent-images
+
+builds:
+  - id: mikroscope
+    main: ./cmd/mikroscope/
+    binary: mikroscope
+    env: [CGO_ENABLED=0]
+    flags: [-trimpath]
+    goos: [linux, darwin, windows, freebsd]
+    goarch: [amd64, arm64, arm]
+    goarm: ["7"]
+    ignore:
+      - { goos: windows, goarch: arm }
+      - { goos: darwin, goarch: arm }
+    # internal/version.Version is what the release number reaches the binary
+    # by, and the tag is what names it: the VERSION file is a floor the root
+    # package embeds, and the release workflow's preflight holds the two equal
+    # before this runs. The date is the commit's, not the build's, so
+    # rebuilding the same tag produces the same binary; mod_timestamp does the
+    # same for the file's mtime.
+    ldflags:
+      - -s -w
+      - -X github.com/jmrplens/mikroscope/internal/version.Version={{ .Version }}
+      - -X github.com/jmrplens/mikroscope/internal/version.Commit={{ .ShortCommit }}
+      - -X github.com/jmrplens/mikroscope/internal/version.BuildDate={{ .CommitDate }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+  - id: mikroscope-agent
+    main: ./cmd/mikroscope-agent/
+    binary: mikroscope-agent
+    env: [CGO_ENABLED=0]
+    flags: [-trimpath]
+    goos: [linux]
+    goarch: [amd64, arm64, arm]
+    goarm: ["7"]
+    # The same three stamps as the CLI, and the same three internal/image
+    # writes into the agent of every tar the hook above builds, so the
+    # archive, the image and the tar of one release report one identity.
+    ldflags:
+      - -s -w
+      - -X github.com/jmrplens/mikroscope/internal/version.Version={{ .Version }}
+      - -X github.com/jmrplens/mikroscope/internal/version.Commit={{ .ShortCommit }}
+      - -X github.com/jmrplens/mikroscope/internal/version.BuildDate={{ .CommitDate }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: cli
+    ids: [mikroscope]
+    formats: [tar.gz]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64{{ else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files: [LICENSE, README.md]
+  - id: agent
+    ids: [mikroscope-agent]
+    formats: [tar.gz]
+    name_template: "mikroscope-agent_{{ .Version }}_linux_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}"
+    files: [LICENSE]
+
+# The agent image tars are listed here as well as under release.extra_files:
+# an extra file is otherwise uploaded without a line in checksums.txt, and the
+# checksum file is the one thing the signature below covers, so a tar outside
+# it would be the one asset of the release nothing vouches for.
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+  extra_files:
+    - glob: build/agent-images/*.tar
+
+# `archive`, not `binary`: this project ships tar.gz and zip archives, and the
+# artifact filter has to name the kind that actually exists or GoReleaser logs
+# "no artifacts matching current filters" and ships no SBOM at all.
+sboms:
+  - id: archive
+    artifacts: archive
+    documents:
+      - "{{ .ArtifactName }}.spdx.json"
+
+# Keyless signing: the identity is the workflow that ran, recorded in a public
+# transparency log, so there is no private key for anyone to lose or leak. The
+# checksum file covers every archive and every agent image tar through its
+# digest; the SBOMs are signed in their own right because they are consumed
+# separately from the archives.
+signs:
+  - id: checksums
+    cmd: cosign
+    signature: "${artifact}.sigstore.json"
+    args:
+      - sign-blob
+      - "--bundle=${signature}"
+      - "${artifact}"
+      - --yes
+    artifacts: checksum
+  - id: sboms
+    cmd: cosign
+    signature: "${artifact}.sigstore.json"
+    args:
+      - sign-blob
+      - "--bundle=${signature}"
+      - "${artifact}"
+      - --yes
+    artifacts: sbom
+
+# CHANGELOG.md is the record of what changed and what it was measured against;
+# notes generated from commit subjects would be a second, thinner account.
+changelog:
+  disable: true
+
+# One multi-platform agent image. GoReleaser assembles the manifest itself, so
+# there is no docker_manifests block: on a real release it runs a single
+# `buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 --push`, which
+# is also why the index annotations below are accepted. A local
+# `goreleaser release --snapshot` builds each platform separately with --load
+# instead, and buildx refuses index annotations on a single-platform export,
+# so a local dry run needs `--skip=docker`.
+#
+# linux/arm/v7 is the 32-bit RouterOS userland of the hEX S (2025); the other
+# two are the RB5009 class and x86 CHR.
+dockers_v2:
+  - id: agent
+    ids: [mikroscope-agent]
+    images:
+      - "ghcr.io/jmrplens/mikroscope-agent"
+    tags:
+      - "{{ .Version }}"
+      - latest
+    platforms:
+      - linux/amd64
+      - linux/arm64
+      - linux/arm/v7
+    dockerfile: Dockerfile.agent
+    # Labels describe each architecture's image; GHCR reads a multi-arch
+    # package page's description from the INDEX annotations instead, so the
+    # two say the same thing on purpose. Reword them together.
+    labels:
+      "org.opencontainers.image.title": "mikroscope-agent"
+      "org.opencontainers.image.description": "Sub-second kernel telemetry agent for container-capable RouterOS devices"
+      "org.opencontainers.image.source": "https://github.com/jmrplens/mikroscope"
+      "org.opencontainers.image.url": "https://github.com/jmrplens/mikroscope"
+      "org.opencontainers.image.documentation": "https://github.com/jmrplens/mikroscope/tree/main/docs"
+      "org.opencontainers.image.licenses": "MIT"
+      "org.opencontainers.image.vendor": "jmrplens"
+      "org.opencontainers.image.version": "{{ .Version }}"
+      "org.opencontainers.image.revision": "{{ .FullCommit }}"
+      "org.opencontainers.image.created": "{{ .CommitDate }}"
+    annotations:
+      "index:org.opencontainers.image.title": "mikroscope-agent"
+      "index:org.opencontainers.image.description": "Sub-second kernel telemetry agent for container-capable RouterOS devices"
+      "index:org.opencontainers.image.source": "https://github.com/jmrplens/mikroscope"
+      "index:org.opencontainers.image.url": "https://github.com/jmrplens/mikroscope"
+      "index:org.opencontainers.image.documentation": "https://github.com/jmrplens/mikroscope/tree/main/docs"
+      "index:org.opencontainers.image.licenses": "MIT"
+      "index:org.opencontainers.image.vendor": "jmrplens"
+      "index:org.opencontainers.image.version": "{{ .Version }}"
+      "index:org.opencontainers.image.revision": "{{ .FullCommit }}"
+      "index:org.opencontainers.image.created": "{{ .CommitDate }}"
+
+release:
+  github:
+    owner: jmrplens
+    name: mikroscope
+  # Published straight away rather than as a draft: nothing uploads assets
+  # after GoReleaser finishes, so there is no window a draft would protect.
+  draft: false
+  prerelease: auto
+  name_template: "v{{ .Version }}"
+  extra_files:
+    # The side-loadable agent images, built by the before hook above;
+    # `mikroscope install` builds the same bytes itself.
+    - glob: build/agent-images/*.tar
+  footer: |
+    ---
+    **Agent image:** `ghcr.io/jmrplens/mikroscope-agent:{{ .Version }}`
+    (linux/amd64, linux/arm64, linux/arm/v7). Four ways to install it:
+    `mikroscope install` builds the agent from a checkout;
+    `--agent-tar mikroscope-agent-<arch>.tar` uses the asset below and needs no
+    Go toolchain; `--remote-image ghcr.io/jmrplens/mikroscope-agent:{{ .Version }}`
+    lets the router pull it; and `mikroscope plan --rsc` writes a RouterOS
+    script that installs it from the router itself, with no CLI and no ssh.
+
+    **Verify the checksums** (keyless, no key to fetch); `checksums.txt` also
+    covers the agent image tars:
+    ```
+    cosign verify-blob \
+      --certificate-identity-regexp 'https://github.com/jmrplens/mikroscope/.github/workflows/release.yml@refs/tags/.*' \
+      --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+      --bundle checksums.txt.sigstore.json \
+      checksums.txt
+    sha256sum --ignore-missing -c checksums.txt
+    ```
+
+    **Full changelog:** https://github.com/jmrplens/mikroscope/blob/v{{ .Version }}/CHANGELOG.md

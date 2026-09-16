@@ -1,0 +1,130 @@
+---
+title: Desgaste de la flash
+description: El RB5009 de referencia escribe en su NAND en reposo sin que nadie se lo pida — cómo verlo en los contadores de YAFFS, rastrearlo hasta una regla de logging y leer los contadores ECC que avisan antes de que se pierda un bloque.
+---
+
+import FaultSignature from "../../../../components/FaultSignature.astro";
+import NotClaimed from "../../../../components/NotClaimed.astro";
+import Provenance from "../../../../components/Provenance.astro";
+import ScrollTable from "../../../../components/ScrollTable.astro";
+import SeeAlso from "../../../../components/SeeAlso.astro";
+
+Esta página responde a qué está escribiendo en la flash del router, y a si la
+flash se está desgastando. No hubo que provocar nada: el RB5009 escribe en la NAND
+por su cuenta, y la fuente `yaffs` del agente lo muestra. Las cifras de MTD son del 2026-09-14.
+
+<Provenance of="playbooks-2026-09-12" />
+
+## Lo que escribe el router en reposo
+
+En una ventana de 30 segundos en reposo, la partición Main recibió **2 escrituras
+de página y 14 lecturas de página**; en otra, cero.
+
+La causa se puede encontrar:
+
+```text
+/system/logging/print where action="disk"
+#  TOPICS  ACTION
+30 dns     disk
+```
+
+El tema `dns` registra en disco, que es también la razón de que el log de este
+equipo guarde decenas de miles de filas. Si los deltas de `pw` (escrituras de
+página) o `er` (borrados) suben, pregúntate qué empezó a escribir.
+
+## Qué significan los campos
+
+<ScrollTable label="Campos de YAFFS en una muestra y cómo leerlos">
+
+| Campo       | Significado                     | Léelo como                                                                                                            |
+| ----------- | ------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `er`        | borrados                        | el contador que corresponde a la _vida útil_ de la flash                                                              |
+| `pw` / `pr` | escrituras / lecturas de página | la carga de trabajo                                                                                                   |
+| `gcc`       | copias del GC                   | amplificación de escritura: `gcc` ≫ `pw` significa que el sistema de ficheros trabaja mucho por cada byte que guardas |
+| `gc`        | recolecciones de basura         | con qué frecuencia recolectó el sistema de ficheros                                                                   |
+| `bad`       | bloques defectuosos             | un nivel, y tiene que seguir en 0                                                                                     |
+| `free`      | chunks libres                   | margen                                                                                                                |
+
+</ScrollTable>
+
+En `/metrics` los contadores son `mikroscope_flash_operations_total{device,kind}`
+con `kind` uno de `page_writes`, `page_reads`, `erasures`, `gc_copies` y `gcs`;
+los niveles son `mikroscope_flash_bad_blocks` y `mikroscope_flash_free_chunks`.
+
+Con los suelos por fuente por defecto, los contadores se leen en cada tick y solo
+se guardan cuando un contador se movió o cambió el nivel de chunks libres, lo que
+en el equipo de referencia ocurre unas 0,04 veces por segundo (unas pocas veces
+por minuto). Que falte una fila `flash` en una muestra significa que no pasó
+ninguna de las dos cosas, no que la fuente no exista.
+
+## Boot y Main
+
+Se informa de los dos dispositivos YAFFS. El reparto es instructivo: tras dos
+semanas, la partición **Main** mostraba 83 812 escrituras de página y 1 579
+borrados, mientras que la partición **Boot** mostraba **6** escrituras de página y
+16 borrados en toda la vida del equipo — Boot solo se escribe en una actualización
+de firmware.
+
+## Los contadores ECC: el aviso antes de la pérdida
+
+Con `privileged=yes` también se pueden leer los contadores ECC de MTD, desde
+`/sys/class/mtd`: `corrected_bits`, `ecc_failures` y `bad_blocks`. Todos están a
+cero en un equipo sano. Que `corrected_bits` suba es NAND que envejece;
+`ecc_failures` es pérdida de datos.
+
+El recuento de bloques defectuosos de YAFFS es la autopsia — un bloque solo se
+retira después de que el ECC haya fallado en él. El recuento de bits corregidos es
+el indicador adelantado, porque sube a medida que las celdas se debilitan. El
+kernel publica también el techo: `bitflip_threshold` es el número de bits
+corregidos por paso de ECC a partir del cual mueve los datos fuera de un bloque, y
+`ecc_strength` es el máximo de bits por paso que el código puede corregir.
+
+En el RB5009 de referencia, el 2026-09-14, había tres particiones —
+`RouterBoard NAND 1 Boot` (8 MiB), `RouterBoard NAND 1 Main` (1 GiB) y
+`RouterBoot` (1 MiB SPI) — con `corrected_bits`, `ecc_failures`, `bad_blocks` y
+`bbt_blocks` todos a 0, y `bitflip_threshold` 12 y `ecc_strength` 16 en la NAND.
+
+En una muestra son filas `mtd` (`corr`, `fail`, `bad`, `bbt`,
+`bitflip_threshold`, `ecc_strength`); en `/metrics`,
+`mikroscope_mtd_ecc_corrected_bits_total{device,partition}`,
+`mikroscope_mtd_ecc_failures_total`, `mikroscope_mtd_blocks{kind="bad"|"bbt"}`,
+`mikroscope_mtd_bitflip_threshold` y `mikroscope_mtd_ecc_strength`. Son acumulados desde el arranque y se envían tal
+como se leen, nunca como diferencias, porque se mueven a la escala de la vida de
+un equipo. El agente los lee cada 10 s — una cadencia arbitraria y holgada, no un
+suelo medido.
+
+## Por qué existe `--ephemeral`
+
+Esta es la fuente que justifica `--ephemeral`: un despliegue con la raíz y la
+imagen en tmpfs no añade absolutamente nada a estos contadores.
+
+## La firma
+
+<FaultSignature origin="unprovoked" date="2026-09-12">
+
+- Deltas de `pw` y `er` en reposo que no has causado tú: algo está configurado
+  para escribir. Mira primero las acciones de `/system/logging` puestas a `disk`.
+- `gcc` muy por encima de `pw`: el sistema de ficheros está pagando amplificación
+  de escritura.
+- `corrected_bits` subiendo, o cualquier `ecc_failures` o bloques `bad` nuevos: la
+  propia flash, no la carga de trabajo.
+
+</FaultSignature>
+
+<NotClaimed>
+	Una flash que se desgasta. Todos los contadores ECC de MTD del equipo de referencia marcaban 0 el
+	2026-09-14, así que en el hardware de este proyecto no se observó cómo se ve un `corrected_bits`
+	que sube con el tiempo, ni con cuánta antelación avisa de un bloque retirado.
+</NotClaimed>
+
+<SeeAlso>
+
+## Véase también
+
+- [Lo que aporta privileged](/mikroscope/es/limits/privileged/): por qué los contadores ECC necesitan
+  `privileged=yes`.
+- [Dónde va cada cosa](/mikroscope/es/install/layout/): qué pone `--ephemeral` en tmpfs y a qué
+  renuncia.
+- [Reglas de alerta](/mikroscope/es/dashboards/alerts/): la alerta de fallos de ECC no corregibles.
+
+</SeeAlso>

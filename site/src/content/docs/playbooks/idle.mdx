@@ -1,0 +1,75 @@
+---
+title: The shape of an idle router
+description: Sixty seconds of the reference RB5009 doing nothing in particular — the busy floor, the squeeze that is never zero, and the silence of a healthy kernel log.
+---
+
+import Measured from "../../../components/Measured.astro";
+import NotClaimed from "../../../components/NotClaimed.astro";
+import Provenance from "../../../components/Provenance.astro";
+import SeeAlso from "../../../components/SeeAlso.astro";
+
+This page answers what "normal" looks like, so that the other pages have
+something to be anomalous against. Know this shape before you go looking for
+anomalies, or you will find them everywhere.
+
+<Provenance of="playbooks-2026-09-12" />
+
+## Sixty seconds at idle
+
+Three 20-second buckets:
+
+```text
+   t  busy%  per-core busy%           ctxt    sirq  squeeze  temp   MHz  events
+   0    7.1  10.5   7.9   4.3   5.8  41793     325      296  36.2  1400       0
+   1    8.4   8.0   7.8   9.9   7.8  60518     251      223  36.2  1400       0
+   2    6.5   7.1   5.2   6.7   6.8  58259     199      179  36.3  1400       0
+```
+
+The percentages in that table were computed after the fact from the raw tick
+deltas the agent ships; the agent never turns them into percentages.
+
+## What to read
+
+- **6–8 % busy across four cores is this router's floor**, not a problem. It is
+  DNS, DHCP, WireGuard, the bridge and its own housekeeping.
+- **`time_squeeze` is never zero** (~200 per 20 s). A nonzero squeeze is normal;
+  what matters is the _change_ under load, which [the packet
+  flood](/mikroscope/playbooks/packet-flood/) shows. Alerting on "squeeze > 0"
+  would page you forever.
+- **`arch_timer` and `switch0` are always the top two interrupt sources.**
+- **Zero kernel events is the healthy state.** Any steady stream of `events` at
+  idle deserves the treatment in [the loop case
+  study](/mikroscope/playbooks/loop/) — that is exactly how it started.
+
+## The background squeeze and the burst flag
+
+The squeeze floor was measured again on 2026-09-15, on the same device, over
+3 476 samples: about <Measured id="squeeze.backgroundOne" /> of samples carry one squeeze as background, and 2 %
+carry two or more. Measured on this router that day: a rule that flags any
+squeeze fires 92 times in twenty minutes, and means nothing.
+
+So the collector's `burst` flag is a deviation from the device's own norm: a
+dropped packet, or more squeezes than that CPU usually has (above its trailing
+90th percentile and at least 3) in a sample whose packet count was at or below
+its trailing median. The trailing baselines span ten seconds of wall clock at
+any rate. Three flagged samples on one CPU within 60 s raise the `microburst`
+detection; one flagged sample stays a data point.
+
+<NotClaimed variant="device-specific">
+	This floor is one RB5009 with its clock pinned at 1400 MHz, running this owner's DNS, DHCP,
+	WireGuard and bridge. A router with different services, a scaling clock or a different board has a
+	different idle shape. Take the same sixty seconds on yours before reading any other page against
+	it.
+</NotClaimed>
+
+<SeeAlso>
+
+## See also
+
+- [A packet flood](/mikroscope/playbooks/packet-flood/): what the squeeze does when it does change.
+- [A loop only the kernel could see](/mikroscope/playbooks/loop/): what a steady stream of events at
+  idle turned out to be.
+- [Detections](/mikroscope/sinks/detections/): the `microburst` rule and the others, with what each
+  may not claim.
+
+</SeeAlso>

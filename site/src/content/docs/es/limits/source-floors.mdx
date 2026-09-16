@@ -1,0 +1,179 @@
+---
+title: Cada fuente a su propio suelo
+description: Qué fuentes lee el agente en cada tick y cuáles lee o guarda con menos frecuencia, el motivo con nombre que publica cada una, y FLOOR_HZ, el único ajuste que desactiva todos los suelos.
+---
+
+import CadenceReasons from "../../../../components/CadenceReasons.astro";
+import Measured from "../../../../components/Measured.astro";
+import NotClaimed from "../../../../components/NotClaimed.astro";
+import ScrollTable from "../../../../components/ScrollTable.astro";
+import SeeAlso from "../../../../components/SeeAlso.astro";
+
+No todas las fuentes cambian tan rápido como hace tick el muestreador, y registrar un valor más a
+menudo de lo que el hardware lo refresca es almacenamiento sin información. Esta página responde
+qué fuentes lee y guarda el agente a la cadencia del muestreador y cuáles no, el motivo que da
+cada una para la diferencia, de dónde salieron esas cadencias y cómo desactivarlas todas para
+medir tu propio equipo.
+
+## Los contadores nunca tienen suelo
+
+Los ticks de CPU, las interrupciones, las softirqs, los contadores de vmstat, la PMU y los niveles
+de memoria (que se movían unas 24 veces por segundo en el equipo de referencia) se leen y se
+envían en cada tick. En un contador, un delta de cero es información real, el núcleo estaba
+ocioso, así que no hay nada que saltarse.
+
+Otras tres fuentes se leen en cada tick con su propia regla:
+
+- **El desgaste de la NAND (`/proc/yaffs`) y la E/S de bloque (`/proc/diskstats`)** son contadores
+  y baratos de leer. La fila de un dispositivo solo se guarda cuando su delta no es cero, lo que en
+  el equipo de referencia ocurre unas pocas veces por minuto. El RB5009 lista además dieciséis
+  dispositivos `nbd` ociosos, y una fila por tick para cada uno sería carga útil y nada más.
+- **El log del kernel (`/dev/kmsg`)** se vacía en cada tick y nunca se ralentiza. El valor de un
+  evento es su marca de tiempo, y un marcador retrasado un segundo ya no cuadra con el pico que
+  explica.
+
+## Una fuente de nivel solo se ralentiza por un motivo con nombre
+
+Una fuente de nivel (una temperatura, una frecuencia de reloj, la población de una caché) puede
+leerse o guardarse con menos frecuencia que en cada tick, pero solo por un motivo que el agente
+nombra. Nunca se ralentiza porque se la haya visto cambiar despacio, ya que eso mediría una noche
+en un equipo. Cada fuente de nivel publica su cadencia y su motivo en `/capabilities` bajo
+`cadences`, en `/metrics` como `mikroscope_source_cadence_hz{source,reason}`, y a cada destino en
+el [flujo de datos del equipo](/mikroscope/es/sinks/device-info/), de modo que un consumidor lee
+la cadencia verdadera de un campo en vez de deducirla de los datos.
+
+<CadenceReasons />
+
+`rate` describe solo la cadencia de lectura, así que `/proc/buddyinfo` publica `rate` aunque se
+guarda al cambiar. Los contadores MTD publican `budget` aunque no se midió ningún coste de análisis
+para ellos. Así los etiqueta el código, y ninguno de los dos encaja del todo con la tabla de
+arriba.
+
+## Fuente a fuente
+
+<ScrollTable label="Cómo se lee y se guarda cada fuente de nivel">
+
+| Fuente             | Lectura                                                      | Almacenamiento           | `reason`                                                                                                               |
+| ------------------ | ------------------------------------------------------------ | ------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| zonas térmicas     | al `polling_delay` declarado por la zona, si no en cada tick | cada lectura             | `declared`, o `rate` donde la placa no declara ninguno o la cadencia del muestreador no es más rápida que la declarada |
+| `scaling_cur_freq` | en cada tick                                                 | al cambiar, o por latido | `change`, o `policy` con un gobernador `userspace`                                                                     |
+| `/proc/slabinfo`   | a unos 6 Hz                                                  | al cambiar, o por latido | `budget`                                                                                                               |
+| `/proc/buddyinfo`  | en cada tick                                                 | al cambiar, o por latido | `rate`                                                                                                                 |
+| contadores ECC MTD | cada 10 s                                                    | al cambiar, o por latido | `budget`                                                                                                               |
+
+</ScrollTable>
+
+Una cadencia más lenta es un número entero de ticks: la cadencia del muestreador dividida entre el
+suelo, redondeada al entero más cercano y nunca menor que uno. Así que la cadencia publicada es lo
+que ocurre de verdad, no el suelo nominal.
+
+**Temperatura.** En el RB5009 de referencia ambas zonas declaran un `polling_delay` de 1 000 ms
+(`polling-delay-passive` 250 ms, leído el 2026-09-14), así que el propio kernel vuelve a leer el
+sensor a 1 Hz; a 10 Hz el agente lee uno de cada 10 ticks. El sensor cuantiza en escalones de unos <Measured id="thermal.quantumC" /> y la lectura en
+bruto tiembla a ambos lados de un escalón decenas de veces por segundo. Guardar al cambiar
+guardaría ese temblor como señal; muestrear y mantener a la cadencia declarada captura la curva
+real y descarta el temblor. En una placa que no declara cadencia, las zonas se leen en cada tick.
+
+**Frecuencia de CPU.** Un salto de frecuencia es una transición DVFS real, no ruido, así que la
+frecuencia se lee en cada tick y se guarda cuando se mueve cualquier núcleo. En un equipo con el
+reloj fijado eso no guarda nada tras la primera lectura salvo el latido; en un equipo que escala
+recoge cada movimiento. El gobernador del RB5009 de referencia marcaba `userspace` el 2026-09-14,
+así que por la regla de arriba su motivo ahí es `policy`.
+
+**`/proc/slabinfo`** es la cara: 13 833 bytes y 129 líneas por lectura en el equipo de referencia
+(2026-09-14), el mayor análisis por tick, un orden de magnitud por encima de cualquier otro. Ese
+coste es la razón de que se ralentice; los 6 Hz a los que se ralentiza son la frecuencia a la que se midió
+que cambiaba su caché más rápida, `nf_conntrack`. Se guarda al cambiar. A 10 Hz eso es uno de cada
+2 ticks (5 Hz); a 100 Hz, uno de cada 17 (unos 5,9 Hz). Cómo se nota ese reparto en el coste por
+muestra está en [el techo de muestreo](/mikroscope/es/cost/rate-ceiling/).
+
+**`/proc/buddyinfo`** ocupa unos 100 bytes, uno de los ficheros más baratos que lee el agente, y no tiene
+suelo porque no se ha medido ninguno. Las listas libres se agitan con cada asignación, así que en
+un router ocupado se guardará en la mayoría de los ticks, y eso es la medida, no ruido.
+
+**Los contadores ECC de MTD** se leen cada 10 segundos. Eso no es un suelo medido: los contadores
+se mueven a la escala de la vida de un equipo (todos a cero en la placa de referencia tras años), y
+cada lectura son seis pequeños ficheros de sysfs por partición, así que diez segundos es una
+elección arbitraria pero holgada. El código sigue etiquetando esa cadencia como `budget`, aunque
+no se midió ningún coste de análisis para ella. Necesitan `privileged=yes`.
+
+## El latido, y por qué un medidor no desaparece
+
+Toda fuente que se guarda al cambiar se vuelve a emitir además aproximadamente una vez cada 60
+segundos (en la primera lectura que toque pasados 60 s), de modo que un valor que se queda quieto
+una hora sigue teniendo una fila reciente en cualquier almacén. El propio `memory.max` del
+contenedor, una constante, se vuelve a emitir en las muestras una vez por latido (en cada tick con
+`FLOOR_HZ`); los `limits` de `/capabilities` y el
+[flujo de datos del equipo](/mikroscope/es/sinks/device-info/) lo llevan desde el arranque.
+
+En `/metrics`, un medidor con suelo mantiene entre emisiones la última lectura, porque el valor de
+un nivel entre lecturas es el último leído, no nada. `mikroscope_source_age_seconds{source}` dice
+lo antigua que es esa lectura mantenida.
+
+El filtro de cambios se rearma una vez que el muestreador ha tomado su lectura de referencia.
+Medido contra el árbol de fixtures el 2026-09-15, las tres familias con suelo y
+`mikroscope_slab_limit_objects` estaban presentes en 6 de 6 scrapes desde 5 s después del
+arranque.
+
+## De dónde salen los suelos, y lo que no son
+
+Un suelo sale de una captura de 10,5 h a 50 Hz en el RB5009 de referencia que midió con qué
+frecuencia cambia de verdad cada fuente: los 6 Hz a los que se ralentiza `/proc/slabinfo`. Esa
+captura es una placa, una noche en reposo, con el reloj fijado en el ajuste del propietario.
+«cpufreq nunca cambió» significa que no cambió _esa noche_. Un router con un reloj que escala,
+una carga con muchas páginas sucias o una placa distinta tienen suelos distintos.
+
+Los suelos son constantes con nombre en `internal/agent/source.go` y no números enterrados en la
+lógica.
+
+<NotClaimed variant="device-specific">
+	Todas las cadencias de esta página son las del RB5009 de referencia, con RouterOS 7.24.2. Antes de
+	fiarte de cualquiera de ellas en otro equipo o con otra carga, vuelve a medir con `FLOOR_HZ` igual
+	a la cadencia del muestreador.
+</NotClaimed>
+
+## `FLOOR_HZ`: todos los suelos desactivados a la vez
+
+Todos los suelos se pueden anular a la vez, sin recompilar:
+
+```sh
+mikroscope install --rate 10 --floor-hz 10   # escribe FLOOR_HZ=10 en el envlist del agente
+```
+
+`FLOOR_HZ` es la variable de entorno del agente; `--floor-hz` es la opción de despliegue
+(`install`, `upgrade`, y `plan` para el listado) que la escribe en el envlist del contenedor, solo
+cuando es mayor que cero. Es un único
+ajuste global en hercios, de 0 a 1000.
+
+- `0`, el valor por defecto, mantiene los suelos por fuente descritos arriba.
+- Cualquier `N > 0` pone las zonas térmicas, `/proc/slabinfo` y los contadores MTD en una única
+  cadencia de N Hz, y desactiva el filtro de guardar al cambiar para todas las fuentes de nivel,
+  de modo que no se retiene nada y una captura ve cada lectura. Todas las fuentes de nivel publican
+  entonces el motivo `override`.
+- Un `N` igual o superior a `--rate` lee y emite todo en cada tick. Es la configuración desde la
+  que se midieron los suelos, y la que hay que volver a ejecutar antes de fiarse en tu equipo de
+  cualquier número de esta página.
+
+Hay dos cosas que `FLOOR_HZ` no cambia. El filtro de filas por dispositivo de `/proc/yaffs` y
+`/proc/diskstats` se mantiene: un dispositivo cuyos contadores no se movieron sigue sin fila, lo
+que no pierde nada porque el delta era cero. Y `scaling_cur_freq` y `/proc/buddyinfo` se leen en
+cada tick con o sin él; con `N` por debajo de `--rate` se emiten en cada tick, pero su cadencia
+publicada es la del override, no la del muestreador.
+
+Lo que cuesta leerlo todo en cada tick en el RB5009, a 50 y a 100 Hz, son dos de las ejecuciones de
+[el techo de muestreo](/mikroscope/es/cost/rate-ceiling/).
+
+<SeeAlso>
+
+## Véase también
+
+- [El techo de muestreo](/mikroscope/es/cost/rate-ceiling/): las ejecuciones con y sin `FLOOR_HZ`,
+  y por qué el coste por muestra baja al subir la cadencia.
+- [El flujo de datos del equipo](/mikroscope/es/sinks/device-info/): por dónde llegan a un almacén
+  la cadencia y el motivo de cada fuente.
+- [Variables de entorno](/mikroscope/es/reference/environment/): `FLOOR_HZ` junto a los demás
+  ajustes del agente.
+- [El suelo de resolución es del kernel](/mikroscope/es/limits/): el suelo que ningún ajuste puede
+  mover.
+
+</SeeAlso>

@@ -1,0 +1,33 @@
+---
+/**
+ * One measured figure, inline, from src/data/measurements.ts.
+ *
+ * `<Measured id="run.10hz.cpu" />` renders "2.85 %" on an English page and
+ * "2,85 %" on its Spanish twin, and both change when the run is repeated.
+ * The locale comes from the route, never a prop, so the two twins call it
+ * identically and the parity gate can compare the ids they cite.
+ *
+ * MDX props are not type-checked by `astro check`, so the id is checked here
+ * and a typo fails the build instead of rendering nothing.
+ */
+import { isMeasurementId, measurements } from "../data/measurements";
+import { formatQuantity } from "../lib/format";
+import { langOf } from "../lib/lang";
+
+interface Props {
+	id: string;
+}
+
+const { id } = Astro.props;
+if (!isMeasurementId(id)) {
+	throw new Error(`Measured: unknown id "${id}"; ids live in src/data/measurements.ts`);
+}
+const m = measurements[id];
+const lang = langOf(Astro.locals.starlightRoute);
+// A range's machine value is both ends, "20/27": one end alone would state a
+// precision the source does not have. The element stays on one line, because a
+// line break inside it is a space before the full stop that follows it in prose.
+const machine = m.max === undefined ? String(m.value) : `${m.value}/${m.max}`;
+---
+
+<data class="ms-measured" value={machine}>{formatQuantity(m, lang)}</data>

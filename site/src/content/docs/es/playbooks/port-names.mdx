@@ -1,0 +1,262 @@
+---
+title: Puertos de RouterOS y nombres del kernel
+description: El log del kernel dice eth5 donde RouterOS dice ether6 — cómo medir la correspondencia en un puerto muerto en un solo paso seguro, qué incluye el agente para el RB5009 y cuánto de esa tabla se midió.
+---
+
+import NotClaimed from "../../../../components/NotClaimed.astro";
+import Provenance from "../../../../components/Provenance.astro";
+import ScrollTable from "../../../../components/ScrollTable.astro";
+import SeeAlso from "../../../../components/SeeAlso.astro";
+
+El log del kernel nombra netdevs (`eth0`, `eth5`), RouterOS nombra interfaces
+(`ether1`, `sfp-sfpplus1`) y **no coinciden**. Esta página responde a qué cable se
+refiere un registro del log del kernel. Durante [el caso del
+bucle](/mikroscope/es/playbooks/loop/) esto costó tiempo de verdad: `eth1` en el
+log parece que debería ser `ether1`, y no lo es.
+
+<Provenance of="playbooks-2026-09-12" />
+
+Las observaciones posteriores llevan su fecha donde aparecen.
+
+## Por qué hay que medirlo
+
+RouterOS no expone ninguna correspondencia, y el contenedor no puede leer una.
+Los dispositivos de red están en su namespace, así que `/sys/class/net` dentro
+del contenedor solo muestra `lo` y la veth; `/sys/class/mdio_bus` solo contiene
+`fixed-0` y `/sys/class/phy` está vacío. `privileged=yes` no cambia eso. Los
+nombres de RouterOS viven en la configuración de RouterOS, no en el kernel.
+
+## Mídelo en un puerto muerto
+
+Elige un puerto que seguro no lleve nada, apágalo y enciéndelo, y lee el nombre
+que escribe el kernel. Busca primero un puerto realmente muerto — cero paquetes
+en ambos sentidos, en toda su vida:
+
+```text
+/interface/print stats where name="ether6" or name="ether7"
+```
+
+Después, con el agente en marcha:
+
+```text
+/interface/ethernet/disable [find name="ether6"]
+:delay 4s
+/interface/ethernet/enable  [find name="ether6"]
+```
+
+El kernel dijo:
+
+```text
+[6] br0: port 7(eth5) entered blocking state
+[4] eth5: set isolation from 0 to 1
+[4] eth5: set isolation from 1 to 0
+```
+
+Así que `ether6` de RouterOS es `eth5` del kernel. Repetirlo en `ether7` dio
+`eth6`: un **desfase de −1**, visto en dos puntos.
+
+## La tabla del RB5009
+
+La correspondencia es un desplazamiento de uno — RouterOS numera los puertos desde
+1 y el kernel desde 0, chip del switch incluido (`switch0` es el `switch=switch1`
+que declaran todos los puertos):
+
+<ScrollTable label="Nombres de puerto de RouterOS y nombres de netdev del kernel en el RB5009">
+
+| RouterOS            | kernel          | cómo se sabe                                          |
+| ------------------- | --------------- | ----------------------------------------------------- |
+| `ether1`            | `eth0`          | deducido                                              |
+| `ether2`            | `eth1`          | **medido** — el bucle del caso de estudio, 2026-09-13 |
+| `ether3` … `ether5` | `eth2` … `eth4` | deducido                                              |
+| `ether6`            | `eth5`          | **medido** — apagado y encendido el 2026-09-15        |
+| `ether7`            | `eth6`          | **medido** — apagado y encendido el 2026-09-15        |
+| `ether8`            | `eth7`          | deducido                                              |
+| `sfp-sfpplus1`      | `eth8`          | deducido, el último de la enumeración                 |
+| `switch1`           | `switch0`       | deducido                                              |
+
+</ScrollTable>
+
+Los pares de `ether6` y `ether7` se midieron el **2026-09-15**. Los dos puertos
+están comentados como `Unused` y ninguno estaba `RUNNING` — sin cable y sin
+enlace — así que cada uno se apagó y se volvió a encender por la API mientras
+el agente leía `/dev/kmsg`. El kernel registró `br0: port 7(eth5) entered
+disabled state` dentro de la ventana de `ether6` y `port 7(eth6)` dentro de la de
+`ether7`, con nueve segundos entre ellas, que es lo que descarta leer dos veces el
+mismo apagado. No se interrumpió ningún tráfico y los dos puertos estaban de
+vuelta en menos de cuatro segundos.
+
+Eso hace tres pares medidos, todos con el mismo desplazamiento de uno, que es en
+lo que se apoyan las seis filas deducidas.
+
+Los pares deducidos se apoyan en dos observaciones de un
+`/interface/ethernet/print` de solo lectura (2026-09-13, la fecha de la cadena de
+evidencia de la propia tabla): los nueve puertos llevan direcciones MAC
+consecutivas, de `…:55` para `ether1` a `…:5D` para `sfp-sfpplus1`, en el orden
+de enumeración del propio RouterOS; y los nueve declaran `switch=switch1` frente
+al único `switch0` del kernel.
+
+## Dos advertencias
+
+- **El nombre es fiable; el número de puerto del bridge, no.** Los dos apagados
+  dieron `port 7`, porque el kernel reutiliza las posiciones de puerto cuando un
+  puerto sale del bridge y vuelve a entrar. Compara con `eth5`, nunca con
+  `port 7`.
+- **El desfase es una propiedad del driver de este modelo, no una regla.** Vuelve a
+  medirlo en otro equipo en lugar de suponerlo, y ten cuidado con la intuición de
+  que el SFP+ tiene que ser `eth0` — aquí es el último, no el primero. El device
+  tree tampoco ayuda: muestra el `ethernet@0` del SoC con tres MAC, solo `eth0`
+  habilitada (el enlace de subida de 10 G) y `eth1`/`eth2` deshabilitadas,
+  mientras que los nueve puertos del frontal son netdevs que el driver del switch
+  crea en tiempo de ejecución (el device tree se analizó el 2026-09-14). Los
+  nombres del log del kernel son los de tiempo de ejecución.
+
+## Qué hace el agente con la tabla
+
+El agente lee el modelo de placa del device tree al arrancar —
+`/proc/device-tree/model` dice `RB5009` incluso sin privilegios — y, en una placa
+que está en su tabla, nombra los puertos sin preguntar a RouterOS:
+
+- todo registro del log del kernel cuyo texto nombra un puerto lleva los dos
+  nombres y lo que le ha pasado a ese puerto: `iface`, `ros_iface` y `kind` en el
+  suceso, etiquetas `port` y `kind` en las filas de InfluxDB e
+  `iface=eth1 ros_iface=ether2 port_event=own-address` en una línea de Loki;
+- `/metrics` añade `mikroscope_kmsg_port_records_total{port,kind,level}`, con el
+  nombre de RouterOS como `port` en una placa que está en la tabla, el nombre del
+  kernel en una placa que no lo está, y ninguna serie de puerto en un equipo cuyo
+  device tree no declara modelo. Es un subconjunto de
+  `mikroscope_kmsg_records_total`, no una partición: los registros que no nombran
+  ningún puerto no aparecen en él;
+- la detección `link-flap` del colector usa el nombre de puerto como clave y lee
+  esa misma clasificación: un parpadeo son registros `link-up` y `link-down` de un
+  puerto, contados, no el texto analizado por segunda vez;
+- `mikroscope status` muestra la placa y si tiene correspondencia, por ejemplo
+  `eth1 (ether2)`; `/healthz` y `/capabilities` llevan la placa, y
+  `/capabilities` y `mikroscope_device_info` llevan la cadena de evidencia de la
+  tabla como `ports_from`, para que nadie tenga que fiarse de la correspondencia a
+  ciegas.
+
+**Una placa desconocida no recibe nombres de puerto, ni siquiera adivinados.** El
+desplazamiento de uno no se aplica a una placa que nadie ha medido, porque un
+nombre de puerto equivocado dicho con seguridad manda a alguien al cable
+equivocado. En una placa así, `status` lo dice y pide el par: baja un puerto,
+mira qué `ethN` nombra el log y envía ese par junto con la cadena de la placa.
+
+## Qué clase de suceso fue
+
+El nombre del puerto por sí solo no dice qué le ha pasado, así que todo registro
+que nombra uno se clasifica también, con `procfs.KmsgKind` sobre el texto del
+registro. Las clases, y las formas de registro que escribe el kernel de RouterOS
+(RB5009, kernel 5.6.3, registros vistos entre el 2026-09-12 y el 2026-09-15):
+
+<ScrollTable label="Clases de suceso de puerto del log del kernel y los registros que las producen">
+
+| `kind`        | el registro                                                                         |
+| ------------- | ----------------------------------------------------------------------------------- |
+| `link-up`     | `eth8: link up, 1Gbps, full-duplex`, `eth1: Link is Up - 1Gbps/Full`, `eth1: phy link up` |
+| `link-down`   | `eth1: link down`                                                                   |
+| `stp-<state>` | `br0: port 2(eth1) entered blocking state` — `blocking`, `listening`, `learning`, `forwarding`, `disabled` |
+| `own-address` | `br0: received packet on eth1 with own address as source address (addr:…, vlan:0)` — la firma del bucle de nivel 2 |
+| `other`       | cualquier otra cosa que nombre un puerto, incluido `eth1: link becomes ready`, que es la configuración de direcciones IPv6 dándose cuenta de la portadora y no una transición propia |
+
+</ScrollTable>
+
+El agente clasifica en el momento de leer y envía `kind` dentro del registro, y
+un colector que tiene delante un agente más antiguo cuyos registros no lo llevan
+los clasifica él mismo, con la misma función. Es lo que pasa hoy en el router de
+referencia: el agente que corre allí no se ha vuelto a desplegar con esta
+compilación, así que su `/metrics` todavía no lleva la etiqueta `kind` y el
+trabajo lo hace el colector.
+
+**Cuatro registros no son cuatro fallos.** A un `link-up` normal le siguen
+`stp-blocking`, `stp-learning` y `stp-forwarding` mientras el bridge devuelve el
+puerto al servicio.
+
+## Del nombre por defecto al nombre actual
+
+La tabla corresponde a los nombres **por defecto** de RouterOS. Un puerto
+renombrado en el router (`ether5` → `WAN`) tiene un nombre que la tabla no puede
+conocer, así que el colector se lo pregunta a la capa de la API. Su inventario de
+interfaces —leído una vez antes del primer sondeo del kernel y otra vez cada
+`--labels-every`, cinco minutos por defecto— guarda de cada interfaz su nombre de
+fábrica, su nombre actual, su comentario y sus listas de interfaces, y el colector
+lo usa en cada registro que nombra un puerto para:
+
+- sustituir el nombre por defecto por el **actual**, de modo que quien haya
+  renombrado `ether5` como `WAN` lea `WAN` en el suceso, en la etiqueta `port` de
+  InfluxDB, en la línea de Loki y en la clave de `link-flap`;
+- añadir `label`, el comentario del puerto, y `role`, sus listas de interfaces —
+  así el parpadeo de `eth5` llega como `ether6`, etiqueta `Unused`, y no como un
+  número de netdev que alguien tiene que buscar.
+
+Sin capa de la API el registro se queda con el nombre por defecto de la placa y
+sin etiqueta, que es lo que puede sostener.
+
+## Dónde un mensaje del kernel se convierte en un cable
+
+Dos paneles de la fila **Kernel log** de los dashboards son donde se juntan el
+nombre, la clase y el comentario:
+
+- **Port events from the kernel log, per port and kind** — barras por intervalo,
+  una serie por puerto y clase, con
+  `sum by (port, kind) (increase(mikroscope_kmsg_port_records_total[$__interval]))`
+  en Prometheus y con las etiquetas `port`/`kind` en InfluxDB;
+- **Port events in the window, per port** — una tabla con una fila por puerto que
+  el log haya nombrado: el puerto, su `label` y su `role`, y una columna por clase
+  (link down, link up, own address (loop), STP blocking, STP disabled, STP
+  learning, STP forwarding, other).
+
+Los dos son paneles que se sabe que pueden salir vacíos —un conjunto de puertos
+callado es el estado sano— y la forma de Prometheus de cada uno lee el `/metrics`
+del colector, cuya copia de la familia lleva un `kind` en todo registro de puerto
+venga como venga del agente. En un almacén InfluxDB la
+columna `kind` no existe hasta que se escribe el primer registro de puerto
+clasificado por clase, así que las dos consultas se validaron el 2026-09-16
+contra una tabla sintética en ese mismo InfluxDB 3, porque el almacén en
+producción todavía no tenía esa columna.
+
+Junto a ellos se publican dos reglas de alerta, en los dos ficheros de
+aprovisionamiento. Las dos leen `/dev/kmsg` a través del agente y no preguntan
+nada a RouterOS:
+
+- `mikroscope-l2-loop`, crítica: cualquier registro `own-address` en cinco
+  minutos. En el RB5009 de referencia esa firma corrió a 1,49 registros/s durante
+  horas el 2026-09-12 mientras todos los contadores de RouterOS parecían sanos.
+- `mikroscope-port-link-down`, aviso: cualquier registro `link-down` en cinco
+  minutos — el suceso suelto, ya que de las repeticiones se ocupa `link-flap`.
+
+La forma de InfluxDB de cada una necesita un almacén que ya haya guardado un
+registro de puerto clasificado por clase; antes de eso la consulta falla al
+planificarse.
+
+<NotClaimed variant="untested">
+	No se ha visto saltar ninguna de las dos reglas de puerto con un suceso real: se escribieron
+	contra las formas de registro medidas en el RB5009 de referencia y no se han puesto delante de un
+	bucle ni de una caída de enlace en vivo. El recorrido de render fila a fila con Chromium sin
+	interfaz del 2026-09-15 cubrió 168 paneles de InfluxDB y 130 de Prometheus, y no se ha repetido
+	para estos dos.
+</NotClaimed>
+
+La tabla de puertos sobre la que se apoya todo esto tiene su propio límite.
+
+<NotClaimed variant="device-specific">
+	El desplazamiento de uno, la posición de la jaula SFP+ y la reutilización de `port 7` se
+	observaron en un RB5009UG+S+ con RouterOS 7.24.2. No se afirman para ninguna otra placa, y el
+	agente no los aplica a ninguna.
+</NotClaimed>
+
+<SeeAlso>
+
+## Véase también
+
+- [Un bucle que solo veía el kernel](/mikroscope/es/playbooks/loop/): el fallo que hizo que esta
+  correspondencia valiera una hora.
+- [El flujo de datos del equipo](/mikroscope/es/sinks/device-info/): por dónde viajan la placa y
+  `ports_from`.
+- [Detecciones](/mikroscope/es/sinks/detections/): la regla `link-flap`, que usa estos nombres como
+  clave.
+- [La capa de la API de RouterOS](/mikroscope/es/sinks/api-tier/): el inventario de interfaces que
+  convierte un nombre por defecto en el actual, con su comentario y sus listas.
+- [Reglas de alerta](/mikroscope/es/dashboards/alerts/): las reglas de bucle y de caída de enlace que
+  disparan estos registros.
+
+</SeeAlso>

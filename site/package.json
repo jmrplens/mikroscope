@@ -1,0 +1,58 @@
+{
+  "name": "mikroscope-docs",
+  "type": "module",
+  "version": "0.0.1",
+  "private": true,
+  "engines": {
+    "node": ">=24.18.0"
+  },
+  "scripts": {
+    "dev": "astro dev",
+    "start": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "check": "astro check",
+    "eslint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "html-validate": "test -n \"$(find dist -name '*.html' -print -quit 2>/dev/null)\" || { echo 'No HTML in dist. Run pnpm build first.' >&2; exit 1; }; html-validate --max-warnings 0 \"dist/**/*.html\"",
+    "htmlhint": "test -n \"$(find dist -name '*.html' -print -quit 2>/dev/null)\" || { echo 'No HTML in dist. Run pnpm build first.' >&2; exit 1; }; htmlhint \"dist/**/*.html\"",
+    "pa11y": "node scripts/run-pa11y.mjs",
+    "a11y:check": "node scripts/check-headings-labels.mjs",
+    "schema:check": "node scripts/check-structured-data.mjs",
+    "directives:check": "node scripts/check-directives.mjs",
+    "twins:check": "node scripts/check-twins.mjs --only twins",
+    "llms:check": "node scripts/check-twins.mjs --only llms",
+    "contrast:check": "node scripts/check-contrast.mjs",
+    "i18n:check": "node scripts/check-i18n-parity.mjs",
+    "docs": "node scripts/gen-docs.mjs",
+    "docs:check": "node scripts/gen-docs.mjs --check",
+    "lint": "pnpm run check && pnpm run contrast:check && pnpm run i18n:check && pnpm run llms:check && pnpm run docs:check && pnpm run eslint && pnpm run format:check && pnpm run html-validate && pnpm run htmlhint && pnpm run a11y:check && pnpm run schema:check && pnpm run directives:check && pnpm run twins:check",
+    "test:a11y": "pnpm run pa11y",
+    "analyze": "pnpm run build && pnpm run lint && pnpm run test:a11y",
+    "astro": "astro"
+  },
+  "dependencies": {
+    "@astrojs/sitemap": "^3.7.3",
+    "@astrojs/starlight": "^0.42.0",
+    "astro": "^7.3.1",
+    "sharp": "^0.35.4"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.10",
+    "@typescript-eslint/eslint-plugin": "^8.69.0",
+    "@typescript-eslint/parser": "^8.69.0",
+    "eslint": "^10.10.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-astro": "^3.1.0",
+    "html-validate": "^11.13.0",
+    "htmlhint": "^1.9.2",
+    "pa11y-ci": "^4.1.1",
+    "playwright": "^1.63.0",
+    "prettier": "^3.9.6",
+    "starlight-links-validator": "^0.25.3",
+    "typescript": "^6.0.3",
+    "yaml": "2.9.0"
+  },
+  "packageManager": "pnpm@11.25.0+sha512.5cde925b4f075f725eb71fbae18a42ffe784524789f19b61c731cb8721ec28aaee160e01a8d5af4fedb2a42cdbf300efe23db356b0d4a17b4d63e11f8ab7c956"
+}

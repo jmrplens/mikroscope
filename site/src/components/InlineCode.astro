@@ -1,0 +1,22 @@
+---
+/**
+ * One inline `<code>` from a data string, with the same break rules markdown
+ * code gets from src/lib/inline-code.mjs: short code on one line, a flag's
+ * dashes kept with its name, a long name breakable only after `_`, `/`, `.`.
+ * Without it the doctor checks on reference/cli rendered `--memory-max` as
+ * "-" / "-memory-max" at 390 px (2026-09-15), because the markdown plugin
+ * never sees code a component renders.
+ */
+import { inlineCodeParts } from "../lib/inline-code.mjs";
+
+interface Props {
+	text: string;
+	class?: string;
+}
+
+const { text, class: extra } = Astro.props;
+const { nowrap, parts } = inlineCodeParts(text);
+const className = [extra, nowrap ? "ms-code-nowrap" : undefined].filter(Boolean).join(" ") || undefined;
+---
+
+<code class={className}>{parts.map((p) => (p.kind === "wbr" ? <wbr /> : p.kind === "keep" ? <span class="ms-code-nowrap">{p.value}</span> : p.value))}</code>

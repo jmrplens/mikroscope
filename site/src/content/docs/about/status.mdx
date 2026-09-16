@@ -1,0 +1,183 @@
+---
+title: Where the project stands
+description: What works end to end, what it costs on the one device it has run on, what was found and not fixed, and what the release publishes.
+---
+
+import Measured from "../../../components/Measured.astro";
+import NotClaimed from "../../../components/NotClaimed.astro";
+import Provenance from "../../../components/Provenance.astro";
+import RunsTable from "../../../components/RunsTable.astro";
+import ScrollTable from "../../../components/ScrollTable.astro";
+import SeeAlso from "../../../components/SeeAlso.astro";
+
+This page answers what a reader deciding whether to try mikroscope needs first:
+which parts work end to end, on what hardware that was shown, what the
+observer costs today, which defects are known and still open, and whether
+there is anything to download. It is checked against the code as of 2026-09-16.
+
+## What works end to end
+
+Everything below except the test suite and the seven sinks marked as such has
+run against the reference RB5009 (RouterOS 7.24.2), not only against fakes:
+
+- **The agent** reads the shared kernel's `/proc`, `/sys`, `/dev/kmsg` and
+  `perf_event_open` counters on a fixed ticker at 1 to 100 Hz (10 Hz by
+  default; 10, 50 and 100 Hz measured), keeps the samples in a ring, and serves
+  them: `/healthz`, `/capabilities`, `/snapshot`, `/stream`, `/metrics`, and
+  the triggered-capture endpoints `/captures` and `/capture`.
+- **The deployment CLI** installs, upgrades and removes it — `doctor`, `plan`,
+  `install`, `status`, `upgrade`, `uninstall` — with every write listed before
+  it happens and every removal verified by ownership counts. On 2026-09-12,
+  `doctor` → `install` → `status` → `upgrade` → `uninstall` left the router's
+  `/export` byte-identical, compared by hash in memory and never written to
+  disk. The agent answered 3 s after install, at a 5–7 ms round trip.
+- **`record`, `mark` and `plot`** work end to end. A 60 s recording at 10 Hz on
+  2026-09-12 yielded exactly 600 samples, 0 gaps and −7 ms of clock skew.
+- **`forward`**, the collector, merges the kernel tier with the RouterOS API
+  tier and writes to ten sinks. File, Prometheus and InfluxDB 3 have run from
+  the RB5009; Loki, OTLP, Graphite, Elasticsearch, SQL, Telegraf and stdout are
+  exercised byte for byte by the end-to-end suite only, against fakes on the
+  development host. Its derive stage adds derived values and detection events
+  beside the raw rows, and it emits a device-info stream once per capability
+  hash.
+- **Two Grafana dashboards**, one per store, generated from one panel list,
+  with alert rules. On 2026-09-16, in Grafana 13.2.1, against the RB5009 with
+  the default triggers and a 30-minute `forward` into both stores,
+  `dashboards check` passed 171 InfluxDB panels (0 failing, 10 known-empty
+  tolerated) and 133 Prometheus panels (0 failing, 9 known-empty tolerated).
+  The headless row-by-row render walk of both dashboards — 0 error badges, 0
+  "No data" — is from 2026-09-15 and covers 168 and 130 panels; it has not been
+  repeated for the two port-event panels and the interface-inventory table it
+  does not cover. A walk on 2026-09-14, against a 10.5 h capture from the same
+  device, rendered 140 InfluxDB panels with the same result.
+- **An end-to-end suite** builds both binaries and drives them against a
+  captured `/proc` tree of the reference device and against a fake agent, with
+  one receiver per sink protocol asserting the bytes. It needs no router, no
+  Grafana and no network, and runs in CI.
+
+## What the agent costs today
+
+At the install default — 10 Hz, default per-source floors, a 300 s ring — the
+agent costs **<Measured id="run.10hz.cpu" /> of one core and <Measured id="run.10hz.rss" /> RSS**,
+read from its own cgroup at steady state with the ring full:
+
+<Provenance of="rates-2026-09-15" />
+
+<RunsTable only={["10hz"]} />
+
+That is above the budget of <Measured id="budget.cpu" /> of one core and <Measured id="budget.rss" /> RSS. The
+budget is guidance rather than a contract: cost scales with the device, the
+source set and the ring size. The image budget is <Measured id="budget.image" />; the one image size on
+record is <Measured id="image.size" />, and it carries no date.
+
+Two rules keep the cost figure honest: wait out the ring (`BUFFER_S`) before
+quoting a steady-state figure — on the RB5009, at a 14 MiB soft memory limit, a
+reading taken in the first minute after install came back at 1.47 % of one core
+against a 9.38 % steady state — and read cost from `/metrics` rather than from a
+large `/snapshot`, whose ~1.5 MB response the agent must serialise.
+
+### Cost at 10 Hz, by configuration
+
+Every row was measured on the same RB5009 at 10 Hz, and each is one window with
+no spread recorded. They are the settings a reader can choose, so the table says
+what each one costs — not what the number was at some earlier point.
+
+<ScrollTable label="The agent's cost at 10 Hz on the RB5009, by configuration">
+
+| Configuration                                         | CPU of one core                                                       | RSS                            | Measured   | Note                                                                                                     |
+| ----------------------------------------------------- | --------------------------------------------------------------------- | ------------------------------ | ---------- | -------------------------------------------------------------------------------------------------------- |
+| Every source read every tick                          | 2.43 %                                                                | not recorded                   | 2026-09-12 | above the budget                                                                                         |
+| Ring full, `MEM_LIMIT_MB` 14                          | <Measured id="gc.tight.cpu" /> (<Measured id="gc.tight.us" />/sample) | not recorded                   | 2026-09-12 | a 300 s ring of lines of about <Measured id="ring.lineKB" /> holds ~7.3 MB; the Go GC runs without pause |
+| Ring full, `--mem-limit-mb 40`, `--memory-max 64M`    | <Measured id="gc.roomy.cpu" /> (<Measured id="gc.roomy.us" />/sample) | 25.13 MiB                      | 2026-09-12 | 0 slipped ticks                                                                                          |
+| PMU counters on, a live `forward` writing to InfluxDB | 1.72 %                                                                | not recorded                   | 2026-09-12 | 0 slipped ticks; 2 400 samples forwarded, 0 gaps, 0 drops                                                |
+| The install default                                   | <Measured id="run.10hz.cpu" />                                        | <Measured id="run.10hz.rss" /> | 2026-09-15 | the figure above                                                                                         |
+
+</ScrollTable>
+
+## One device, one RouterOS version
+
+Every on-device figure in this documentation comes from one RB5009UG+S+ on
+RouterOS 7.24.2, the owner's production router. There is no lab device.
+
+<NotClaimed variant="untested">
+	A second board of any kind. The hEX S (2025) — 32-bit RouterOS on an ARM64 chip, which is what the
+	agent's `linux/arm` build is for — has not arrived, so the 32-bit counter-wrap path and the
+	`linux/arm` image have not run on hardware. No x86_64 RouterOS host. No RouterOS version other
+	than 7.24.2. Nothing that needs a reboot, which waits for a maintenance window. The end-to-end
+	suite has run on Linux only; it has not been run on macOS or Windows.
+</NotClaimed>
+
+## Found and not fixed
+
+Checked against the code as of this page:
+
+- **`forward`'s end-of-run summary goes to stdout**, the same stream the
+  `--stdout` sink writes records to, so `forward --stdout=lp | telegraf` ends
+  every run with lines the consumer cannot parse.
+- **A wrong `--token` does not fail the run.** Each pull is logged as
+  `401 Unauthorized`, and the run then ends at its `--for` deadline with exit
+  status 0 and `forwarded 0 kernel samples`. The health check `forward` makes before
+  it starts pulling reads `/healthz`, which needs no token, so it passes. The message is right;
+  the exit status tells a unit file nothing.
+- **Duplicate sequence numbers in the 2026-09-13 overnight run.** The 50 Hz run
+  wrote repeated `seq` values into InfluxDB; the dashboards name those rows
+  "duplicate sample (seq repeated)". The leading explanation, which is
+  unverified, is Go's HTTP client replaying a POST on a dead pooled connection
+  after the server had committed it. The InfluxDB, Loki, OTLP, Elasticsearch and
+  Telegraf sinks refuse that replay, so a dead connection is an error the sink
+  retries and counts. No run since that night shows whether the duplicates are
+  gone.
+- **Graphite names thermal zones by index.** The index is deliberate — a
+  zone's `type` string is not unique across zones — but the path listing at the
+  top of `internal/sinks/graphite.go` reads `thermal.<zone>`.
+
+### Found on the device and not collected
+
+Two readable files on the reference device, read there on 2026-09-15, are not
+collected: `/proc/cmdline`, which
+carries `board=5009 ver=7.24.1` — a second device identity without the API —
+and the hardware watchdog at `/sys/class/watchdog/watchdog0`.
+
+## What the release publishes
+
+The current release is **v1.0.0** — the version in `VERSION`, compiled into both
+binaries and reported by `mikroscope version`. A `v*` tag runs the GoReleaser
+configuration, which publishes:
+
+- **CLI archives** for linux, darwin, windows and freebsd on amd64, arm64 and
+  arm: `.tar.gz`, and `.zip` on Windows, each carrying `LICENSE` and `README.md`.
+- **Agent archives** for linux on the same three architectures, for a host that
+  wants the bare binary rather than an image.
+- **Side-loadable agent image tars**, one per architecture —
+  `mikroscope-agent-arm64.tar`, `mikroscope-agent-arm.tar`,
+  `mikroscope-agent-amd64.tar` — which `install --agent-tar` uploads to the
+  router.
+- **The agent image on GHCR**, `ghcr.io/jmrplens/mikroscope-agent:1.0.0`, one
+  manifest over `linux/amd64`, `linux/arm64` and `linux/arm/v7`, which
+  `install --remote-image` makes the router pull.
+- **`checksums.txt`**, covering every archive and every image tar, a keyless
+  cosign signature over it, and an SPDX SBOM per archive, signed in its own
+  right.
+
+Installing from a release needs no Go toolchain and no checkout. A checkout and
+Go 1.27 install an agent built from your own tree instead: `make build` for the
+CLI, `make build-agent` for the agent, which `install` and `image` also compile
+themselves. The four ways to get the agent onto a router, and what each one
+needs, are on [Installing the agent](/mikroscope/install/).
+
+What the release publishes for `linux/arm` and `linux/amd64` is cross-built and
+checked in CI. Of the three architectures, only `arm64` has run on hardware — on
+the one RB5009 above.
+
+<SeeAlso>
+
+## See also
+
+- [The cost of the observer](/mikroscope/cost/): the budget, the current figure and how to measure
+  it on your own device.
+- [The rate ceiling](/mikroscope/cost/rate-ceiling/): the five measured runs at 10, 50 and 100 Hz.
+- [The file and the other sinks](/mikroscope/sinks/other/): the ten sinks `forward` writes to.
+- [Lineage and licence](/mikroscope/about/lineage/): where the deployment code and the API client
+  came from.
+
+</SeeAlso>

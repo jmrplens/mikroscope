@@ -1,0 +1,28 @@
+           CPU0       CPU1       CPU2       CPU3       
+  1:          0          0          0          0     GICv2  25 Level     vgic
+  3:  132480584   87027753   70832031   65888071     GICv2  30 Level     arch_timer
+  4:          0          0          0          0     GICv2  27 Level     kvm guest vtimer
+ 18:          0          0          0          0   ICU-NSR  95 Level     f2760000.trng
+ 19:        102          0          0      62619   ICU-NSR 115 Level     marvell-nfc
+ 20:          0          0          0          0   ICU-NSR 120 Level     mv64xxx_i2c
+ 21:          0          0          0          0  f03f0100.interrupt-controller  17 Level     arm-pmu
+ 22:          0          0          0          0   ICU-NSR  22 Level     armada8k-pcie, aerdrv
+ 24:          0          0          0          0   ICU-NSR  24 Level     armada8k-pcie, aerdrv
+ 29:          0          0          0          0   ICU-NSR  23 Level     armada8k-pcie, aerdrv
+ 30:          0          0          0          0   ICU-NSR  88 Level     f2800000.crypto
+ 31:          0          0          0          0   ICU-NSR  89 Level     f2800000.crypto
+ 32:          0          0          0          0   ICU-NSR  90 Level     f2800000.crypto
+ 33:          0          0          0          0   ICU-NSR  91 Level     f2800000.crypto
+ 34:          0          0          0          0   ICU-NSR 105 Level     xhci-hcd:usb1
+ 35:  100863982          0          0          0   ICU-NSR  39 Level     switch0
+ 36:          0   94140175          0          0   ICU-NSR  43 Level     switch0
+ 37:          0          0  102801610          0   ICU-NSR  47 Level     switch0
+ 38:          0          0          0   92074138   ICU-NSR  51 Level     switch0
+IPI0:   3510374    4786923    4424540    4746898       Rescheduling interrupts
+IPI1:       778       1194        650        723       Function call interrupts
+IPI2:         0          0          0          0       CPU stop interrupts
+IPI3:         0          0          0          0       CPU stop (for crash dump) interrupts
+IPI4:         0          0          0          0       Timer broadcast interrupts
+IPI5:         0          0          0          0       IRQ work interrupts
+IPI6:         0          0          0          0       CPU wake-up interrupts
+Err:          0

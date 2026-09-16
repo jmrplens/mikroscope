@@ -1,0 +1,115 @@
+---
+/**
+ * The landing page body, below the hero.
+ *
+ * Seven sections, in the order a first-time reader's doubts arrive: what the
+ * numbers are, why a one-second average is not enough, what the observer
+ * costs, what it can and cannot see, what it does to the router, what is not
+ * claimed, and where to read on. Copy comes from src/data/home.ts, numbers
+ * from src/data/measurements.ts; nothing here is typed per locale.
+ *
+ * Only `h2` and `h3` are rendered: the hero owns the page's one `h1`. The
+ * install commands are frameless: five one-line commands each in a terminal
+ * window with its own title bar read as five programs, not one sequence.
+ *
+ * `locale` is passed, not detected: Expressive Code reads it from the path
+ * with the base still on it ("mikroscope/es/"), finds no locale there and fell
+ * back to English, so the Spanish landing's five copy buttons said "Copied!"
+ * while the fence on es/cost/ said "¡Copiado!" (dist, 2026-09-15).
+ */
+import { Code } from "@astrojs/starlight/components";
+import type { HomeContent } from "../../data/home";
+import NotClaimed from "../NotClaimed.astro";
+import Provenance from "../Provenance.astro";
+import RouterWrites from "../RouterWrites.astro";
+import RunsTable from "../RunsTable.astro";
+import { langOf } from "../../lib/lang";
+import Readout from "./Readout.astro";
+
+interface Props {
+	content: HomeContent;
+}
+
+const { content } = Astro.props;
+const lang = langOf(Astro.locals.starlightRoute);
+// The parity gate compares tags, not the object a page imports, so a Spanish
+// page handed `en` would pass it and ship English. This is the check it cannot make.
+if (content.lang !== lang) {
+	throw new Error(
+		`<Home> on a ${lang} page was given ${content.lang} content; import { ${lang} } from data/home`,
+	);
+}
+---
+
+<div class="ms-home">
+	<section class="ms-home-readout" aria-labelledby="ms-home-readout">
+		<Readout readout={content.readout} headingId="ms-home-readout" />
+	</section>
+
+	<section class="ms-home-hides" aria-labelledby="ms-home-hides">
+		<h2 id="ms-home-hides">{content.hides.title}</h2>
+		{content.hides.paragraphs.map((p) => <p set:html={p} />)}
+	</section>
+
+	<section class="ms-home-cost" aria-labelledby="ms-home-cost">
+		<h2 id="ms-home-cost">{content.cost.title}</h2>
+		<p>{content.cost.lead}</p>
+		<Provenance of="rates-2026-09-15" />
+		<RunsTable only={content.cost.runs} />
+		<p>{content.cost.after}</p>
+		<p><a href={content.cost.href}>{content.cost.linkText}</a></p>
+	</section>
+
+	<section class="ms-home-tiers" aria-labelledby="ms-home-tiers">
+		<h2 id="ms-home-tiers">{content.tiers.title}</h2>
+		<div class="ms-tiers">
+			{
+				[content.tiers.kernel, content.tiers.api].map((tier) => (
+					<div class="ms-tier">
+						<h3>{tier.title}</h3>
+						<p set:html={tier.body} />
+					</div>
+				))
+			}
+		</div>
+	</section>
+
+	<section class="ms-home-install" aria-labelledby="ms-home-install">
+		<h2 id="ms-home-install">{content.install.title}</h2>
+		<p set:html={content.install.prereq} />
+		<ol class="ms-steps">
+			{
+				content.install.steps.map((step) => (
+					<li>
+						<Code lang="sh" code={step.cmd} frame="none" locale={lang} />
+						<p>{step.note}</p>
+					</li>
+				))
+			}
+		</ol>
+		<RouterWrites command="install" />
+	</section>
+
+	<section class="ms-home-not-claimed" aria-labelledby="ms-home-not-claimed">
+		<h2 id="ms-home-not-claimed">{content.notClaimed.title}</h2>
+		<NotClaimed variant="not-measured">
+			<p set:html={content.notClaimed.body} />
+		</NotClaimed>
+	</section>
+
+	<section class="ms-home-next" aria-labelledby="ms-home-next">
+		<h2 id="ms-home-next">{content.next.title}</h2>
+		<ul class="ms-next">
+			{
+				content.next.links.map((link) => (
+					<li>
+						<a class="ms-next-card" href={link.href}>
+							<span class="ms-next-title">{link.text}</span>
+							<span class="ms-next-note">{link.note}</span>
+						</a>
+					</li>
+				))
+			}
+		</ul>
+	</section>
+</div>

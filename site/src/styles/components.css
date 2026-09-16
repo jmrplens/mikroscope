@@ -1,0 +1,468 @@
+/* The content components in src/components/: Measured, Provenance,
+ * ScrollTable, RunsTable, NotClaimed, RouterWrites, SeeAlso, FaultSignature,
+ * PrivilegedOnly, Verified, DashboardPanels and the data tables
+ * (EnvlistKeys, DoctorChecks, CadenceReasons, DashboardCounts, AlertRules),
+ * which need nothing beyond ScrollTable's rules.
+ *
+ * Unlayered, like every sheet in customCss, so these beat Starlight's
+ * `@layer starlight.content` spacing without an !important. Colours are
+ * `--ms-*` tokens only: a hex here would be invisible to
+ * scripts/check-contrast.mjs, which gates every pair used below. */
+
+/* -------------------------------------------------------------- Measured */
+
+.ms-measured {
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+}
+
+/* ------------------------------------------------------------ Provenance */
+
+.sl-markdown-content .ms-provenance {
+	background: var(--ms-surface-raised);
+	border: 1px solid var(--ms-border);
+	border-radius: var(--ms-radius);
+	padding: 0.5rem 0.75rem;
+	color: var(--ms-muted);
+	font-size: var(--sl-text-sm);
+}
+
+.ms-provenance-verb {
+	color: var(--ms-body);
+	font-weight: 600;
+}
+
+.ms-provenance-fact {
+	white-space: nowrap;
+}
+
+/* ------------------------------------------------------ Inline code */
+
+/* Set by src/lib/inline-code.mjs on short inline code and on a long one's
+ * leading flag, so `--for` never renders as "-" / "-for". */
+.sl-markdown-content .ms-code-nowrap {
+	white-space: nowrap;
+}
+
+/* ----------------------------------------------------------- ScrollTable */
+
+/* A table inside `.ms-scroll` scrolls inside its own box when it does not
+ * fit, and the page never scrolls sideways with it.
+ *
+ * Cells wrap by default, because most tables here hold sentences. The last
+ * column keeps a readable minimum so a description is not squeezed into a
+ * word per line on a phone; the region scrolls when the minimums do not fit.
+ * `data-nowrap` is for tables of numbers compared along a row, where a value
+ * broken across two lines is not a number any more. */
+.sl-markdown-content .ms-scroll {
+	overflow-x: auto;
+	/* No border-radius here: with overflow set, a radius clips the table's own
+	 * square outer border, and the frame's bottom corners came out cut off
+	 * (visible in the 1280 px screenshots, 2026-09-15). A scroll container is
+	 * focusable for keyboard users, so <ScrollTable> gives it a role and a name. */
+}
+
+.sl-markdown-content .ms-scroll > table {
+	/* Starlight makes every markdown table `display: block; overflow: auto`,
+	 * so the table would scroll inside the region instead of the region
+	 * scrolling: the region's own overflow, its hint and the sticky first
+	 * column all measured nothing. A real table box undoes that. */
+	display: table;
+	overflow: visible;
+	width: auto;
+	min-width: 100%;
+	margin-block: 0;
+}
+
+/* Compact, so the seven-column run table fits the 616 px content column at
+ * 1280 px beside the table of contents, where it scrolled sideways at 834 px
+ * (en) and 970 px (es) and cut off its last two columns (measured
+ * 2026-09-15). */
+.sl-markdown-content .ms-scroll > table {
+	font-size: var(--sl-text-sm);
+}
+
+.sl-markdown-content .ms-scroll :is(th, td) {
+	padding-inline: 0.45rem;
+	vertical-align: top;
+}
+
+.sl-markdown-content
+	.ms-scroll:not([data-nowrap])
+	:is(th, td):last-child:not(:first-child) {
+	min-width: 14rem;
+}
+
+.sl-markdown-content .ms-scroll[data-nowrap] :is(th, td) {
+	white-space: nowrap;
+	vertical-align: middle;
+}
+
+.sl-markdown-content .ms-scroll[data-nowrap] :is(thead th, tbody th) {
+	white-space: normal;
+}
+
+.sl-markdown-content .ms-scroll thead th {
+	vertical-align: bottom;
+}
+
+.ms-run-default {
+	white-space: nowrap;
+}
+
+/* The first column is the row's name; it stays in view while the numbers
+ * scroll under it, and needs an opaque ground or they show through. In a
+ * collapsed-border table the cell's border does not travel with the sticky
+ * cell, and 1-2 px of the scrolled glyphs showed at its leading edge
+ * (reference/cli at 390 px, scrollLeft 480, 2026-09-15): the leading shadow
+ * paints over that strip and the trailing one is the column's rule. */
+.sl-markdown-content .ms-scroll[data-sticky] :is(th, td):first-child {
+	position: sticky;
+	inset-inline-start: 0;
+	z-index: 1;
+	background: var(--ms-page);
+	box-shadow:
+		-2px 0 0 var(--ms-page),
+		inset -1px 0 0 var(--ms-border);
+}
+
+.sl-markdown-content .ms-scroll[data-sticky] thead th:first-child {
+	background: var(--ms-surface);
+	box-shadow:
+		-2px 0 0 var(--ms-surface),
+		inset -1px 0 0 var(--ms-border);
+}
+
+/* A table of sentences that does not fit a box under 36rem: one block per
+ * row, each cell a label from the header row and its value. ScrollTable's
+ * script sets `data-stacked` only when the grid overflows there, so a table that fits stays a
+ * table, and without JavaScript every table stays a table and scrolls. */
+.sl-markdown-content .ms-scroll[data-stacked] > table,
+.sl-markdown-content .ms-scroll[data-stacked] :is(tbody, tr, th, td) {
+	display: block;
+}
+
+.sl-markdown-content .ms-scroll[data-stacked] > table {
+	min-width: 0;
+	width: 100%;
+}
+
+/* The header row is the labels now; it stays for screen readers. */
+.sl-markdown-content .ms-scroll[data-stacked] thead {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
+}
+
+.sl-markdown-content .ms-scroll[data-stacked] tbody tr {
+	border: 1px solid var(--ms-border);
+	border-radius: var(--ms-radius);
+	padding-block: 0.25rem;
+}
+
+.sl-markdown-content .ms-scroll[data-stacked] tbody tr + tr {
+	margin-top: 0.5rem;
+}
+
+.sl-markdown-content .ms-scroll[data-stacked] :is(th, td) {
+	border: 0;
+	min-width: 0;
+	padding: 0.2rem 0.6rem;
+}
+
+.sl-markdown-content .ms-scroll[data-stacked] :is(th, td):first-child {
+	color: var(--ms-heading);
+	font-weight: 600;
+}
+
+.sl-markdown-content .ms-scroll[data-stacked] :is(th, td):empty {
+	display: none;
+}
+
+.sl-markdown-content
+	.ms-scroll[data-stacked]
+	:is(th, td):not(:first-child)[data-label]::before {
+	content: attr(data-label);
+	display: block;
+	color: var(--ms-muted);
+	font-size: var(--sl-text-xs);
+	font-weight: 600;
+}
+
+.sl-markdown-content .ms-scroll-hint {
+	margin-top: 0.25rem;
+	color: var(--ms-muted);
+	font-size: var(--sl-text-xs);
+}
+
+/* ------------------------------------------------------------- RunsTable */
+
+/* Qualified with `.sl-markdown-content :is(th, td)`, because chrome.css sets
+ * `text-align: start` on every cell with that selector (0,1,1), which a bare
+ * `.ms-num` (0,1,0) lost to: the numbers were left-aligned and did not line up
+ * by magnitude (measured 2026-09-15). */
+.sl-markdown-content :is(th, td).ms-num {
+	text-align: end;
+	font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------------------ NotClaimed */
+
+.sl-markdown-content .ms-not-claimed {
+	background-color: var(--ms-note-soft);
+	color: var(--ms-body);
+	border-radius: var(--ms-radius);
+	padding: 0.75rem 1rem;
+	padding-inline-start: 1.25rem;
+	/* A dashed rule on the leading edge, drawn as a gradient because a dashed
+	 * border's dash length is the browser's choice and reads as dotted at 3px.
+	 * `background-image` paints over `background-color`, so both apply. */
+	background-image: repeating-linear-gradient(
+		to bottom,
+		var(--ms-note) 0 9px,
+		transparent 9px 15px
+	);
+	background-size: var(--ms-rule) 100%;
+	background-repeat: no-repeat;
+	background-position: left;
+}
+
+.sl-markdown-content .ms-not-claimed:dir(rtl) {
+	background-position: right;
+}
+
+/* Under forced colours the UA drops both the tint and the gradient rule, and
+ * the block had no edge at all, only its legend (measured 2026-09-15,
+ * Playwright `forcedColors: "active"`). A real dashed border is the one of
+ * the three meanings the UA keeps, repainted in the system text colour. */
+@media (forced-colors: active) {
+	.sl-markdown-content .ms-not-claimed {
+		border-inline-start: var(--ms-rule) dashed CanvasText;
+		background-image: none;
+	}
+}
+
+.sl-markdown-content .ms-claim-legend {
+	color: var(--ms-note);
+	font-family: var(--sl-font-mono);
+	text-transform: uppercase;
+	letter-spacing: 0.08em;
+	font-size: var(--sl-text-xs);
+}
+
+.sl-markdown-content .ms-claim-body {
+	margin-top: 0.25rem;
+}
+
+/* ---------------------------------------------------------- RouterWrites */
+
+/* Not the accent: a write is not a status and not a link. The leading rule is
+ * `--ms-muted`, because `--ms-border-strong` is 1.81:1 against a surface and a
+ * rule that means something has to clear 3:1 (WCAG 1.4.11). */
+.sl-markdown-content .ms-writes {
+	background: var(--ms-surface-raised);
+	color: var(--ms-body);
+	border: 1px solid var(--ms-border);
+	border-inline-start: var(--ms-rule) solid var(--ms-muted);
+	border-radius: var(--ms-radius);
+	padding: 0.75rem 1rem;
+}
+
+/* Its own rhythm, the same on the landing (where home.css zeroes Starlight's
+ * sibling margins) and on a doc page (where Starlight's 1rem would space a
+ * title from its own list like two sections). */
+.sl-markdown-content .ms-writes {
+	display: grid;
+	gap: 0.5rem;
+}
+
+.sl-markdown-content .ms-writes > * {
+	margin: 0;
+}
+
+.ms-writes-title {
+	color: var(--ms-heading);
+	font-weight: 600;
+}
+
+/* The 41-character tag breaks at its spaces on a phone, never mid-word. */
+.ms-writes-tag {
+	white-space: normal;
+	overflow-wrap: normal;
+}
+
+/* --------------------------------------------------------------- SeeAlso */
+
+.sl-markdown-content .ms-see-also {
+	background: var(--ms-surface);
+	border: 1px solid var(--ms-border);
+	border-radius: var(--ms-radius);
+	padding: 0.25rem 1rem 1rem;
+}
+
+/* ≥ 24 px tap targets between stacked links (WCAG 2.5.8). */
+.sl-markdown-content .ms-see-also li {
+	padding-block: 0.25rem;
+}
+
+/* Sized on the wrapper, not the h2. Starlight sizes the heading wrapper at
+ * h2 and measures the anchor icon's negative offset in the wrapper's em, but
+ * the heading's end padding in its own: shrinking only the h2 left the offset
+ * sized for h2 and the icon overlapped "See also" by 3 px, where every other
+ * h2 kept about 7 px (about/brand at 390 px, 2026-09-15). */
+.sl-markdown-content .ms-see-also .sl-heading-wrapper.level-h2 {
+	font-size: var(--sl-text-h4);
+}
+
+.sl-markdown-content .ms-see-also h2 {
+	font-size: inherit;
+}
+
+/* -------------------------------------------------------- FaultSignature */
+
+/* The same frame as RouterWrites, because it is the same kind of thing: a
+ * plain block a reader looks for, not a status. The origin is carried by the
+ * legend word; no colour means "real" or "provoked". */
+.sl-markdown-content .ms-fault {
+	display: grid;
+	gap: 0.5rem;
+	background: var(--ms-surface);
+	color: var(--ms-body);
+	border: 1px solid var(--ms-border);
+	border-inline-start: var(--ms-rule) solid var(--ms-muted);
+	border-radius: var(--ms-radius);
+	padding: 0.75rem 1rem;
+}
+
+.sl-markdown-content .ms-fault > * {
+	margin: 0;
+}
+
+/* The date is one token: "2026-09-" / "12" reads as a different value. */
+.ms-fault-legend time {
+	white-space: nowrap;
+}
+
+.sl-markdown-content .ms-fault-legend {
+	color: var(--ms-muted);
+	font-family: var(--sl-font-mono);
+	text-transform: uppercase;
+	letter-spacing: 0.08em;
+	font-size: var(--sl-text-xs);
+}
+
+/* -------------------------------------------------------- PrivilegedOnly */
+
+/* A link that reads as a tag: it sits in table cells and after a source's
+ * name, so it keeps to one line and to the size of the text around it. */
+.ms-privileged {
+	white-space: nowrap;
+}
+
+.ms-privileged code {
+	font-size: 0.875em;
+}
+
+/* -------------------------------------------------------------- Verified */
+
+.ms-verified-fact {
+	white-space: nowrap;
+}
+
+/* ------------------------------------------------------- DashboardPanels */
+
+/* A section can list a dozen panels; the store note is secondary to the
+ * title, so it is quieter, and still a word, never only a colour. */
+.ms-panel-only {
+	color: var(--ms-muted);
+}
+
+/* ----------------------------------------------------------------- Charts */
+
+/* A 1200 × 792 chart scaled to a 358 px phone column has 3-4 px labels
+ * (start/walkthrough at 390 px, 2026-09-15), so it links to its own file,
+ * which a phone can open and zoom. The frame keeps the chart's light ground
+ * from reading as a bare white block on the dark page. */
+.sl-markdown-content .ms-chart-link {
+	display: block;
+}
+
+.sl-markdown-content .ms-chart {
+	display: block;
+	border: 1px solid var(--ms-border);
+	border-radius: var(--ms-radius);
+}
+
+.sl-markdown-content .ms-chart-open {
+	margin-top: 0.25rem;
+	color: var(--ms-muted);
+	font-size: var(--sl-text-sm);
+}
+
+/* ---------------------------------------------- Expressive Code copy button */
+
+/* Measured with Playwright at 390 × 844, isMobile/hasTouch, dark theme,
+ * 2026-09-15: on a pointer without hover Expressive Code renders the
+ * copy-to-clipboard button permanently at opacity 0.75, 2.5rem square,
+ * absolutely positioned over the top-right of the frame. It is not a hover
+ * artefact — the parent `.copy` is visible and the button's own idle opacity
+ * is 0.75 in the base rules; the `@media (hover: hover)` block is what hides
+ * it until hover on a desktop. Its box starts at x = 325 of a 390 px viewport
+ * and code spans intersect it on 140 blocks across 60 built pages. On
+ * /playbooks/cpu/ it covered `do{` in the one-line RouterOS command the page
+ * exists to hand the reader; on /playbooks/loop/, two characters of a kernel
+ * log line; on /record/ and /sinks/, parts of two flags.
+ *
+ * Expressive Code already reserves room for it — `:nth-child(1 of .ec-line)
+ * .code` gets `padding-inline-end: calc(2rem + …)` — but only on the FIRST
+ * line and only at the 2rem hover size, while the touch button is 2.5rem tall
+ * and so covers the first two lines. Widening that reserve does not fix the
+ * worst case either: the frames that matter scroll horizontally, so on a long
+ * command the padding sits at the far end of the line and the button still
+ * lands on whatever text is under it.
+ *
+ * So the button is not rendered where it cannot be moved out of the way. A
+ * touch reader keeps the code; text selection still copies it. Nothing changes
+ * for a mouse or a keyboard: `(hover: hover)` is untouched, and that is where
+ * the button was already only visible on hover or focus. */
+@media (hover: none) {
+	.expressive-code .copy {
+		display: none;
+	}
+}
+
+/* ------------------------------------------------- Inline code, two details */
+
+/* A chip's trailing padding sits between its last glyph and the punctuation
+ * after it, so "(`doctor`, `plan`)" reads as "( doctor , plan )" — measured at
+ * 6 px of padding-inline-end plus 0 margin on 95 of the 97 built pages
+ * (2026-09-15). The leading padding stays larger than the trailing one:
+ * asymmetric padding is what makes a chip look centred when the text before it
+ * ends in a space and the text after it is a comma. */
+.sl-markdown-content :not(pre) > code {
+	padding-inline: 0.3em 0.15em;
+}
+
+/* When a long identifier does break — src/lib/inline-code.mjs allows a break
+ * after `_`, `/` or `.` in anything over 24 characters, because a metric name
+ * that cannot break widens its table column to 300-350 px — the second half
+ * otherwise loses its left padding and its rounded corners, and the two halves
+ * read as two different identifiers. `clone` gives both halves the whole
+ * decoration, so it reads as one chip that wrapped. */
+.sl-markdown-content :not(pre) > code {
+	-webkit-box-decoration-break: clone;
+	box-decoration-break: clone;
+}
+
+/* ------------------------------------------- The phone's "On this page" menu */
+
+/* The open panel is opaque and sat flush on the body text, so the line it
+ * covered was sliced through the middle and read as a rendering fault rather
+ * than as text behind an overlay (measured on /cost/rate-ceiling/ at 390 px,
+ * 2026-09-15). A shadow under its bottom edge is what says "this is in front". */
+mobile-starlight-toc .dropdown {
+	box-shadow: 0 8px 16px -8px var(--ms-shadow);
+}

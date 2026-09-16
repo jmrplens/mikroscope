@@ -1,0 +1,314 @@
+---
+title: Cinco minutos con un router
+description: Consigue la CLI, instala el agente, graba una ventana mientras cambias algo, añade el propio log del router como marcadores y dibuja el gráfico, con una grabación real de un RB5009.
+---
+
+import { Aside, Steps } from "@astrojs/starlight/components";
+import Measured from "../../../../components/Measured.astro";
+import NotClaimed from "../../../../components/NotClaimed.astro";
+import Provenance from "../../../../components/Provenance.astro";
+import RouterWrites from "../../../../components/RouterWrites.astro";
+import SeeAlso from "../../../../components/SeeAlso.astro";
+import Verified from "../../../../components/Verified.astro";
+import walkthrough from "../../../../assets/walkthrough/rb5009-walkthrough.svg";
+
+La pregunta para la que existe esta herramienta: _estoy a punto de cambiar algo en el router; ¿qué
+hace de verdad, a una resolución en la que pueda verlo?_ Esta página es el camino más corto desde
+un router que nunca ha visto mikroscope hasta un gráfico que la responde: seis pasos con las
+órdenes tal cual son, y una grabación real del RB5009 leída línea a línea.
+
+## Antes de empezar
+
+El router necesita lo que la herramienta no le puede dar: RouterOS 7.24 o posterior con el paquete
+`container` y `device-mode container=yes`, que MikroTik protege tras una pulsación del botón de
+reset o un ciclo de alimentación. El suelo es 7.24 porque el paso del contenedor escribe
+`privileged=`, un atributo que MikroTik añadió en esa versión; `--privileged=false` cambia su
+valor, no si se escribe, así que una 7.x anterior rechaza la orden igualmente. Todo lo de esta
+página se midió en 7.24.2. `doctor` informa de la versión del router en su primera línea, pero no
+la condiciona. [Lo que necesita el router](/mikroscope/es/install/prerequisites/) tiene la lista
+completa, y `mikroscope doctor` comprueba el resto en solo lectura y nombra el arreglo de lo que
+falte.
+
+La CLI no lee `.env` por sí misma, y solo algunas opciones toman su valor por defecto de una
+variable `MIKROSCOPE_*`: las de conexión y nombres (`ROUTER`, `SSH_PORT`, `SSH_KEY`, `NAME`,
+`VETH`, `SUBNET`, `IFACE_LIST`, `ADDR_LIST`, `DISK`, `ARCH`, `TOKEN`, `LAN_ADDRESS`), las de la API
+(`API_ADDR`, `API_USER`, `API_PASSWORD`), las URL de los destinos como `INFLUX_URL`, `INTERFACES`
+y `HOST_TAG`. El resto, entre ellas `--ephemeral`, `--rate`, `--for`, `--topics` y `--prom`, tiene
+valores por defecto fijos, diga lo que diga el texto de uso de la CLI. Exporta las variables que
+necesites, o copia `.env.example` a `.env` y carga el fichero con `set -a; . ./.env; set +a`;
+[variables de entorno](/mikroscope/es/reference/environment/) las lista todas.
+
+## El camino
+
+<Steps>
+
+1. **Conseguir mikroscope.**
+
+   ```sh wrap
+   tar xzf mikroscope_1.0.0_linux_x86_64.tar.gz   # un .zip en Windows
+   ./mikroscope version
+   ```
+
+   La versión publicada trae la CLI como un archivo por plataforma —linux, macOS, Windows y
+   FreeBSD en amd64, arm64 y arm— con `checksums.txt`, las firmas de cosign y los SBOM al lado. El
+   agente viaja aparte, como un tar de imagen por arquitectura (`mikroscope-agent-arm64.tar`,
+   `mikroscope-agent-arm.tar`, `mikroscope-agent-amd64.tar`) y como
+   `ghcr.io/jmrplens/mikroscope-agent:1.0.0`; el paso 2 toma uno de los dos.
+
+   Desde una copia del repositorio, en cambio:
+
+   ```sh wrap
+   git clone https://github.com/jmrplens/mikroscope && cd mikroscope && make build
+   ```
+
+   Eso necesita Go 1.27 y deja la CLI en `bin/mikroscope`, que es como están escritas las órdenes
+   de abajo. Es además el único camino que instala un agente construido desde tu propio árbol,
+   porque `install` lo compila de forma cruzada desde la raíz del módulo.
+
+2. **Instalar, una vez.**
+
+   ```sh wrap
+   export MIKROSCOPE_ROUTER=admin@192.168.88.1
+   bin/mikroscope plan --ephemeral
+   bin/mikroscope doctor --ephemeral && bin/mikroscope install --ephemeral
+   ```
+
+   `plan` imprime cada orden de RouterOS y no escribe nada. `install` pone la imagen del agente en
+   el router, lista los objetos, vuelve a pasar la misma comprobación previa (`--no-doctor` se la
+   salta), pregunta `write the objects above to the router? [y/N]` (`--yes` se salta la pregunta),
+   escribe y después sondea el agente desde tu equipo.
+
+   De dónde sale la imagen lo eliges tú, y es la única diferencia entre las tres instalaciones:
+
+   - **tu toolchain de Go**, como arriba: la CLI ejecuta `go build ./cmd/mikroscope-agent` con
+     `CGO_ENABLED=0`, `GOOS=linux` y `GOARCH` tomado de `--arch`, por lo que tiene que ejecutarse
+     desde la raíz del módulo;
+   - **el tar publicado**, `--agent-tar mikroscope-agent-arm64.tar`: sin toolchain de Go y sin
+     copia del repositorio. La CLI lee el tar antes de subirlo —tiene que ser una imagen del agente
+     de mikroscope y su arquitectura tiene que coincidir con `--arch`—, o el verbo se detiene y
+     nombra el fichero que hay que descargar;
+   - **el registro**, `--remote-image ghcr.io/jmrplens/mikroscope-agent:1.0.0`: el router se
+     descarga la imagen él mismo, no se sube nada y `uninstall` no tiene ningún fichero del que
+     responder. RouterOS toma el host del registro del ajuste global
+     `/container/config registry-url`, que mikroscope nunca escribe porque lo comparten todos los
+     contenedores del equipo; `doctor` lo comprueba e imprime
+     `/container/config/set registry-url=https://ghcr.io` cuando no coincide, o remite a
+     `--agent-tar`. La descarga necesita que el router llegue al registro y que haya RAM libre para
+     las capas.
+
+   `--arch` vale por defecto `arm64`, la del RB5009; no se detecta a partir del router, pero
+   `doctor` la compara con la arquitectura que informa el router y nombra el valor de `--arch` con
+   el que volver a ejecutar si no coinciden.
+
+   En un router al que solo llegas por WinBox o WebFig hay una cuarta vía, sin CLI de tu lado:
+   `mikroscope plan --rsc --remote-image ghcr.io/jmrplens/mikroscope-agent:1.0.0 --out install.rsc`
+   escribe las mismas órdenes, en el mismo orden y con las mismas etiquetas, como un script de
+   RouterOS para pegar en el terminal o hacerle `/import`.
+   [Instalar el agente](/mikroscope/es/install/) tiene esa vía y sus dos advertencias al completo.
+
+   `--ephemeral` pone el tar de la imagen y la raíz del contenedor en el disco RAM tmpfs del router y
+   crea el contenedor con `start-on-boot=no`, así que el agente no vuelve tras un reinicio.
+   `install` borra el tar en cuanto el contenedor lo ha extraído. No se escribió nada en la flash: `write-sect-since-reboot` se quedó en 58 279 durante la instalación, la ejecución y la retirada (verificado en <Verified of="tmpfs-zero-writes" />). Quítalo para una instalación persistente. El disco tmpfs tiene que existir; el
+   RB5009 tiene uno, y `doctor --ephemeral` lo comprueba e imprime el `/disk/add` que lo crea si no
+   existe. Pasa `--ephemeral` también a `doctor`: sin él, `doctor` comprueba en su lugar la flash
+   libre.
+
+   `install` termina sondeando al agente desde tu equipo, e imprime una línea:
+
+   ```text wrap
+   direct transport ok: agent 1.0.0 (9ddd760) built 2026-09-16T08:38:27Z, 10 Hz, seq 29, 0 slipped, 7ms round trip
+   ```
+
+   El primer campo es la identidad de compilación del agente: la versión, que una publicación graba
+   desde el fichero `VERSION`, y después el commit y la fecha de compilación. Un `go build` sin
+   grabar dentro de una copia del repositorio informa de esa misma versión con el commit y la hora
+   que registra la toolchain de Go, así que el campo nunca dice `dev` ni un hash a secas. Un agente
+   que sale del tar o del registro informa de lo que grabó la compilación publicada; uno que
+   `install` construye desde tu árbol lleva la marca de la propia CLI, así que ambos informan de la
+   misma cadena. El resto de la línea es el sondeo: la cadencia del muestreador, la secuencia a la
+   que había llegado el agente, los ticks que se le escaparon y el tiempo de ida y vuelta. En el
+   RB5009 el sondeo respondió a los tres segundos con 7 ms de ida y vuelta, y con 5 ms tras un
+   `upgrade` ese mismo día (2026-09-12).
+
+   El sondeo espera hasta 30 s. Si tu equipo no llega a la /30 del agente, primero pregunta al router
+   si el contenedor está en marcha y solo entonces sugiere alternativas; consulta
+   [llegar al agente](/mikroscope/es/install/reaching-the-agent/).
+
+3. **Grabar mientras haces el cambio.**
+
+   ```sh wrap
+   bin/mikroscope record --for 70s --out burst
+   ```
+
+   Escribe una línea y pulsa Intro cada vez que hagas algo que merezca recordarse; se convierte en un
+   marcador con la marca de tiempo del agente. Funciona cuando la entrada estándar es un terminal, y
+   la CLI lo dice: `type a line and press Enter to add a marker; Ctrl-C stops`. Desde otra shell,
+
+   ```sh wrap
+   bin/mikroscope mark --out burst "queue tree applied"
+   ```
+
+   hace lo mismo: `mark` añade al final de `<prefijo>.markers.csv` mientras `record` mantiene el
+   fichero abierto, así que una nota desde un segundo terminal y otra escrita en el del grabador
+   acaban en el mismo fichero. `--for 0`, el valor por defecto, graba hasta Ctrl-C. Al final
+   `record` imprime el número de muestras, el rango de secuencia, los huecos, los marcadores y el
+   transporte que usó, y nombra cualquier tramo de muestras que ya no estaba en el anillo del
+   agente.
+
+4. **Añadir el propio log del router.**
+
+   Este paso habla con la API de RouterOS, no con el agente, así que necesita una cuenta en el
+   router con la que hablar. Basta una de solo lectura, y [el usuario de la
+   API](/mikroscope/es/security/api-user/) trae las dos órdenes que crean el grupo y el usuario; la
+   CLI no necesita `admin` para esto.
+
+   ```sh wrap
+   export MIKROSCOPE_API_ADDR=192.168.88.1:8728 MIKROSCOPE_API_USER=mikroscope MIKROSCOPE_API_PASSWORD=…
+   bin/mikroscope mark --out burst --log-markers --router-tz Europe/Madrid
+   ```
+
+   (O pon esas tres en `.env` —`cp .env.example .env`— y carga el fichero, como arriba.)
+
+   Cada línea de log de la ventana de la grabación (desde su inicio hasta su última muestra, en el
+   reloj del agente) cuyo tema sea `system`, `interface` o `container` se convierte en un marcador;
+   añade `firewall` o `script` con `--topics` cuando sus líneas sean la historia. El router informa
+   ahí de errores y de ejecuciones del planificador, y el log a menudo explica un transitorio que no
+   provocaste tú.
+
+   `MIKROSCOPE_API_ADDR` tiene la opción `--api` y `MIKROSCOPE_API_USER` la opción `--api-user`; la
+   contraseña no tiene opción. `--router-tz` es la zona IANA que muestra el reloj del router, porque
+   las horas del log de RouterOS no llevan zona; por defecto es la de tu máquina.
+   `record --log-markers` hace lo mismo al final de una grabación, y `mark --log-markers` lo hace
+   después, como aquí ([el propio log del router como
+   marcadores](/mikroscope/es/record/#el-propio-log-del-router-como-marcadores)).
+
+5. **Mirar.**
+
+   ```sh wrap
+   bin/mikroscope plot --in burst
+   ```
+
+   Esto escribe `burst.svg`: tres paneles sobre un mismo eje de tiempo (proporción de ocupación por
+   núcleo, descartes de softnet y time squeezes por segundo, memoria disponible) con cada marcador
+   como una vertical discontinua dibujada panel a panel, de modo que ningún título de panel queda
+   tachado. Los marcadores del log que caen en el mismo segundo se pliegan en
+   una sola línea cuya etiqueta dice `N×` y el primer mensaje; un hueco en las muestras se dibuja
+   como una línea roja; una etiqueta de más de 40 caracteres se corta a 37 y unos puntos
+   suspensivos, y una etiqueta a la que no le queda sitio se acorta más hasta que cabe en vez de
+   montarse sobre la de al lado, y se queda solo con su vertical cuando ya no queda nada legible;
+   un marcador fuera del intervalo de la grabación no se dibuja. La misma grabación produce siempre los mismos bytes. `--title` fija
+   el encabezado y `--svg` otra ruta de salida.
+
+6. **Dejarlo en marcha (opcional).**
+
+   ```sh wrap
+   bin/mikroscope forward --prom :9124 --influx "$MIKROSCOPE_INFLUX_URL" --interfaces bridge,ether1
+   ```
+
+   Esto ejecuta el colector: la capa del kernel desde el agente y, con las variables
+   `MIKROSCOPE_API_*` del paso 4 en el entorno, la capa de la API de RouterOS a su lado. Con el
+   `--api-mode full` por defecto esa capa lee `/system/resource`, `/system/resource/cpu`,
+   `/system/health`, `monitor-traffic` cada segundo para las interfaces nombradas en
+   `--interfaces`, los contadores acumulados de cada puerto cada 10 s y qué es cada interfaz —su
+   comentario, su tipo, sus listas de interfaces, su bridge y su MTU— al arrancar y cada 5 min; [la capa de la API de RouterOS](/mikroscope/es/sinks/api-tier/) dice cuáles de ellos
+   puede leer el propio agente. Sin esas variables la
+   capa de la API queda desactivada con un aviso y la capa del kernel sigue funcionando. Ambas van a
+   una exposición de Prometheus en `:9124` y a InfluxDB 3. A partir de ahí,
+   [importar y comprobar](/mikroscope/es/dashboards/import-and-check/) monta los dos paneles de
+   Grafana, el campo del origen de datos que necesita una importación de InfluxDB 3 y los dos
+   trabajos de scrape de Prometheus.
+
+</Steps>
+
+## Lo que muestra el gráfico
+
+<a class="ms-chart-link" href={walkthrough.src}>
+	<img
+		class="ms-chart"
+		src={walkthrough.src}
+		width={walkthrough.width}
+		height={walkthrough.height}
+		alt="RB5009UG+S+, 70 s a 10 Hz: 700 muestras en 69,9 s sobre cuatro núcleos, con tres marcadores discontinuos: «baseline, router idle» a los 12 s, «dashboards check started» a los 30 s y «check finished» a los 50 s. La ocupación por núcleo se mantiene baja, con excursiones de una sola muestra al 100 %; el panel de softnet muestra time squeezes y un cero plano en los descartes; la memoria disponible se mantiene entre 662 y 671 MiB."
+	/>
+</a>
+
+<div class="ms-chart-open">
+	<a href={walkthrough.src}>Abre el gráfico a tamaño completo</a> (SVG, 1200 × 754) para leer sus
+	etiquetas en un móvil. Los rótulos de los paneles van en inglés porque `plot` los escribe así:
+	el título lo pones tú con `--title`, el resto es el vocabulario del kernel.
+</div>
+
+<Provenance of="record-2026-09-16" />
+
+Es una grabación real de un router en reposo, la forma contra la que se lee todo lo demás. Las tres
+líneas discontinuas son las notas escritas en el terminal de `record` durante ella; las etiquetas
+las llevan enteras porque caben, y una más larga se acorta en vez de montarse sobre la siguiente.
+
+- **t = 12 s, `baseline, router idle`.** No pasa nada, y los paneles lo dicen: cada núcleo promedia
+  menos del 10 % en toda la grabación, y en el tramo tranquilo que sigue a esta nota los cuatro
+  juntos promedian un 3,9 %.
+- **t = 30 a 50 s, entre `dashboards check started` y `check finished`.** Un navegador cargando los
+  dos paneles de Grafana contra el colector de este mismo router. Los cuatro núcleos juntos
+  promedian un 5,0 % en ese tramo, y el trabajo llega en dos ráfagas cortas justo después de la
+  nota: el núcleo 0 al 50 % o por encima durante 0,6 s desde los 32,3 s, y otros 0,3 s a los
+  33,2 s.
+- **El trabajo está en excursiones cortas.** 76 de las 700 muestras tienen un núcleo al 50 % o por
+  encima, en 46 tramos separados; 38 de ellos duran una sola muestra, y el más largo dura 1,4 s, al
+  principio de la grabación y antes de la primera nota. El planificador del kernel pone cada
+  excursión en el núcleo que esté libre. Una muestra aislada —un núcleo al 100 % durante 100 ms—
+  mueve una media de un segundo sobre cuatro núcleos en un <Measured id="burst.100msOn4Cores" />.
+- **softnet: `dropped` plano en cero, `time_squeeze` entre 0 y unos 20 por segundo.** No se perdió
+  nada en 70 s. Los squeezes son el fondo de este equipo, no un suceso; lo que el colector llama
+  microburst es un racimo de ellos —tres muestras marcadas en un mismo núcleo dentro de 60 s—, y
+  nunca uno solo.
+- **Memoria disponible, de 662 a 671 MiB.** Unos 9 MiB de vaivén normal en toda la grabación, sin
+  ningún escalón en ninguno de los dos extremos de la comprobación de los paneles.
+
+El propio `cpu-load` de RouterOS, a 1 s, da este minuto por un puñado plano de puntos porcentuales.
+La grabación muestra de qué está hecho ese puñado: qué núcleo se llevó cada excursión, cuánto duró
+y dónde caen las notas frente a ella.
+
+<NotClaimed variant="device-specific">
+	Una grabación, en un router, a 10 Hz, con el router por lo demás en reposo. Las cifras por panel
+	de arriba están leídas de este gráfico, no vueltas a medir. Los tres segundos hasta que respondió
+	el sondeo y los 7 ms de ida y vuelta son lo que mostró esa instalación en esa red, no una cifra
+	para la tuya.
+</NotClaimed>
+
+## Lo que escribió el paso 2, y cómo quitarlo
+
+<RouterWrites command="install" />
+
+```sh wrap
+bin/mikroscope uninstall --ephemeral
+```
+
+Pasa los mismos `--ephemeral`, `--disk` y `--name` con los que instalaste: `uninstall` y `status`
+reconstruyen el plan a partir de sus propias opciones, y sin `--ephemeral` buscan el tar de la
+imagen en la flash en lugar de en tmpfs. `uninstall` deshace cada paso del plan en orden inverso, por etiqueta exacta, luego cuenta lo que
+queda en el router a nombre de mikroscope y falla, nombrando los objetos, si queda algo.
+`bin/mikroscope status --ephemeral` imprime esos mismos recuentos de propiedad en cualquier momento, más la
+salud del agente cuando se puede llegar a él.
+
+<Aside type="note" title="ssh no sale gratis en el router">
+	Cada conexión ssh le cuesta al RB5009 un <Measured id="ssh.connectCpu" /> de CPU mientras dura.
+	Por eso la CLI agrupa cada lectura en una sola conexión y nunca usa ssh como camino de datos; las
+	muestras viajan por HTTP hasta la veth, o por el relay de la API de RouterOS.
+</Aside>
+
+<SeeAlso>
+
+## Véase también
+
+- [Instalar el agente](/mikroscope/es/install/): cada opción de instalación, y dónde va cada objeto.
+- [Grabar, marcar, dibujar](/mikroscope/es/record/): los ficheros de grabación, los transportes y los
+  marcadores al completo.
+- [El usuario de la API](/mikroscope/es/security/api-user/): la cuenta de solo lectura que necesitan
+  el paso 4 y la capa de la API, y las dos órdenes que la crean.
+- [El colector](/mikroscope/es/sinks/): lo que fusiona `forward` y adónde lo envía.
+- [Importar y comprobar](/mikroscope/es/dashboards/import-and-check/): los paneles de Grafana, sus
+  orígenes de datos y los trabajos de scrape.
+- [Cómo leer lo que muestra](/mikroscope/es/playbooks/): las firmas que un fallo real y uno provocado
+  dejan en estos paneles.
+
+</SeeAlso>

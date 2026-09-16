@@ -1,0 +1,734 @@
+/**
+ * Every figure the site quotes in more than one place, each written once.
+ *
+ * The landing, `start`, `cost` and `cost/rate-ceiling` repeat the same numbers
+ * in two languages. Typed into eight files, one of them goes stale the day a
+ * run is repeated; here, a new run changes every page and both locales in the
+ * same commit. Components read from this module (`<Measured>`, `<RunsTable>`,
+ * `<Provenance>`), and so does src/data/home.ts, which types no figure.
+ *
+ * Each value names the campaign it came from, and each campaign names the
+ * device, the RouterOS version, the date and the conditions, plus the site
+ * page or Go symbol that states it, which is for the reviewer and never rendered.
+ *
+ * The busybox baseline is the only comparison the project has between the
+ * agent and the naive approach.
+ */
+import { formatNumber, unbreakable } from "../lib/format";
+
+export type Lang = "en" | "es";
+export type Unit =
+	| "%"
+	| "MiB"
+	| "µs"
+	| "Hz"
+	| "ms"
+	| "s"
+	| "kB"
+	| "B"
+	| "Mbit/s"
+	| "/s"
+	| "/h"
+	| "°C"
+	| "";
+
+export interface Campaign {
+	device: "RB5009UG+S+";
+	cpu: { cores: 4; ghz: 1.4; core: "Cortex-A72" };
+	routeros: string;
+	kernel?: string;
+	/** ISO date; null where the source does not record one, rendered as "date not recorded". */
+	date: string | null;
+	/** The window, the load and the sinks, as a reader needs them to reuse the number. */
+	conditions: Record<Lang, string>;
+	/** The length of each measurement window, in seconds, where the campaign used one. */
+	windowS?: number;
+	/** The sinks the collector forwarded to during the campaign, where it ran one. */
+	sinks?: readonly string[];
+	/** Where this is stated, a site page or a Go file and symbol, for review. Never rendered. */
+	source: string;
+}
+
+export const RB5009 = {
+	device: "RB5009UG+S+",
+	cpu: { cores: 4, ghz: 1.4, core: "Cortex-A72" },
+	routeros: "7.24.2",
+} as const;
+
+export const campaigns = {
+	"rates-2026-09-15": {
+		...RB5009,
+		date: "2026-09-15",
+		windowS: 60,
+		conditions: {
+			en: "60 s windows at steady state (ring full), full source set, collector forwarding to a file, a Prometheus exposition and InfluxDB 3 at once",
+			es: "ventanas de 60 s en régimen estacionario (con el anillo ya lleno), conjunto completo de fuentes, colector reenviando a la vez a fichero, a una exposición Prometheus y a InfluxDB 3",
+		},
+		sinks: ["file", "Prometheus", "InfluxDB 3"],
+		source: "site/src/content/docs/cost/rate-ceiling.mdx",
+	},
+	"kernel-2026-09-11": {
+		...RB5009,
+		kernel: "5.6.3",
+		date: "2026-09-11",
+		conditions: {
+			en: "`/proc/pressure` and `/proc/schedstat` absent",
+			es: "`/proc/pressure` y `/proc/schedstat` ausentes",
+		},
+		source: "site/src/content/docs/limits/index.mdx",
+	},
+	// The naive approach, measured once so the agent's cost has something to be
+	// compared against: a busybox shell loop reading the same file set at the
+	// same rate, which pays a fork per iteration where the Go agent pays none.
+	// The read cost beside it is the same campaign's ≈ 0.77 ms per sample.
+	"busybox-2026-09-11": {
+		...RB5009,
+		date: "2026-09-11",
+		conditions: {
+			en: "a busybox shell loop reading the full file set at 10 Hz, one fork per iteration, in a container on the router",
+			es: "un bucle de shell de busybox leyendo el conjunto completo de ficheros a 10 Hz, con un fork por iteración, en un contenedor del router",
+		},
+		source: "site/src/content/docs/cost/index.mdx",
+	},
+	"netns-2026-09-12": {
+		...RB5009,
+		date: "2026-09-12",
+		conditions: {
+			en: "`privileged=yes` does not change the network namespace",
+			es: "`privileged=yes` no cambia el espacio de nombres de red",
+		},
+		source: "site/src/content/docs/limits/namespaces.mdx",
+	},
+	"playbooks-2026-09-12": {
+		...RB5009,
+		kernel: "5.6.3",
+		date: "2026-09-12",
+		conditions: {
+			en: "agent at 10 Hz in an ephemeral privileged container",
+			es: "agente a 10 Hz en un contenedor privilegiado efímero",
+		},
+		source: "site/src/content/docs/playbooks/index.mdx",
+	},
+	// One recording, the one the walkthrough's chart is drawn from. The sample
+	// count and span are the chart's own subtitle; the gaps and the skew have no
+	// source outside the record pages' own prose, so they stay there and out of
+	// this line.
+	"record-2026-09-12": {
+		...RB5009,
+		date: "2026-09-12",
+		conditions: {
+			en: "a 60 s `record` at 10 Hz, 600 samples over 59.9 s, a RouterOS script loop started over ssh and the router log added as markers",
+			es: "un `record` de 60 s a 10 Hz, 600 muestras en 59,9 s, un bucle de script de RouterOS lanzado por ssh y el log del router añadido como marcadores",
+		},
+		source:
+			"site/src/content/docs/record/index.mdx; plan/phase0/rb5009/captures/burst.meta.json",
+	},
+	// The recording the walkthrough's chart is drawn from: the router at rest,
+	// with three notes typed into `record`'s own terminal. The sample count and
+	// the span are the chart's subtitle; the per-panel readings the page quotes
+	// are read off that chart and say so.
+	"record-2026-09-16": {
+		...RB5009,
+		date: "2026-09-16",
+		conditions: {
+			en: "a 70 s `record` at 10 Hz, 700 samples over 69.9 s, the router otherwise at rest, three notes typed into `record`'s terminal",
+			es: "un `record` de 70 s a 10 Hz, 700 muestras en 69,9 s, el router por lo demás en reposo, tres notas escritas en el terminal de `record`",
+		},
+		source:
+			"site/src/content/docs/start/walkthrough.mdx; site/src/assets/walkthrough/rb5009-walkthrough.svg subtitle",
+	},
+	// The next four have no date beside them in the sources cited, so they render "date not recorded"
+	// wherever a page gives them provenance; the pages that know more say it
+	// in their own prose, beside the figure.
+	"ssh-connect": {
+		...RB5009,
+		date: null,
+		conditions: {
+			en: "one ssh connect, for its duration",
+			es: "una conexión ssh, mientras dura",
+		},
+		source: "site/src/content/docs/install/index.mdx (undated there)",
+	},
+	"relay-fetch": {
+		...RB5009,
+		date: null,
+		conditions: {
+			en: "`/tool fetch output=user` called over the binary API",
+			es: "`/tool fetch output=user` llamado por la API binaria",
+		},
+		source: "site/src/content/docs/install/reaching-the-agent.mdx (undated)",
+	},
+	"api-conntrack": {
+		...RB5009,
+		date: null,
+		conditions: {
+			en: "the connection table counted over the RouterOS API",
+			es: "la tabla de conexiones contada por la API de RouterOS",
+		},
+		source:
+			"site/src/content/docs/sinks/api-tier.mdx (undated); site/src/content/docs/playbooks/conntrack.mdx places the count a day before the slab reading",
+	},
+	"floors-overnight": {
+		...RB5009,
+		date: null,
+		conditions: {
+			en: "a 10.5 h capture at 50 Hz over one idle night, clock pinned",
+			es: "una captura de 10,5 h a 50 Hz durante una noche en reposo, con el reloj fijo",
+		},
+		source: "site/src/content/docs/limits/source-floors.mdx (undated there)",
+	},
+	"squeeze-2026-09-15": {
+		...RB5009,
+		date: "2026-09-15",
+		conditions: {
+			en: "3 476 samples, softnet `time_squeeze` per sample",
+			es: "3 476 muestras, `time_squeeze` de softnet por muestra",
+		},
+		source:
+			"site/src/content/docs/sinks/derive.mdx (the share, the date and the sample count); the date and the sample count are also the comment on Derived.Burst, internal/derive/derive.go",
+	},
+	"squeeze-2026-09-16": {
+		...RB5009,
+		date: "2026-09-16",
+		conditions: {
+			en: "3 738 704 per-CPU samples over 24 h at 10 Hz, softnet `time_squeeze` per sample, 0 drops in the whole window",
+			es: "3 738 704 muestras por CPU en 24 h a 10 Hz, `time_squeeze` de softnet por muestra, 0 descartes en toda la ventana",
+		},
+		source:
+			"site/src/content/docs/sinks/detections.mdx; the same distribution is the comment on minSqueeze, internal/derive/derive.go",
+	},
+	"microburst-replay-2026-09-16": {
+		...RB5009,
+		date: "2026-09-16",
+		conditions: {
+			en: "the rule replayed over 6 h of stored samples, 863 944 rows, 4 CPUs",
+			es: "la regla reejecutada sobre 6 h de muestras almacenadas, 863 944 filas, 4 CPU",
+		},
+		source:
+			"site/src/content/docs/sinks/detections.mdx; the comment on minSqueeze, internal/derive/derive.go",
+	},
+	// The line size site/src/content/docs/install/layout.mdx rounds to 2.4 kB. The exact 2 439 B is
+	// the comment on ApproxLineBytes, internal/agent/agent.go, which carries the
+	// device and K=8 but not the date; site/src/content/docs/limits/index.mdx
+	// gives the date, and the rest of the conditions were checked on the
+	// reference device and are written down nowhere that publishes. It predates the PMU, buddyinfo and MTD sources and
+	// the per-source floors.
+	"line-size": {
+		...RB5009,
+		date: "2026-09-12",
+		conditions: {
+			en: "the mean pre-encoded ring line with every source of that date, the slow sources refreshed at 1 Hz, privileged, 10 Hz, 4 cores, `IRQ_TOP_K=8`",
+			es: "la línea media precodificada del anillo con todas las fuentes de esa fecha, las lentas refrescadas a 1 Hz, privileged, 10 Hz, 4 núcleos, `IRQ_TOP_K=8`",
+		},
+		source:
+			"internal/agent/agent.go, ApproxLineBytes (the exact 2 439 B, the device and K=8); site/src/content/docs/install/layout.mdx (rounded to about 2.4 kB); site/src/content/docs/limits/index.mdx (the date); the remaining conditions were checked on the reference device, no published document records them",
+	},
+	// The garbage-collector pair: the same agent, ring and sources, first under
+	// a 14 MiB soft limit and then with room. The figures are
+	// site/src/content/docs/about/status.mdx's; that page gives the date too.
+	gc: {
+		...RB5009,
+		date: "2026-09-12",
+		conditions: {
+			en: "10 Hz, 300 s ring full, the same sources in both runs; only the memory limits differ",
+			es: "10 Hz, anillo de 300 s lleno, las mismas fuentes en las dos ejecuciones; solo cambian los límites de memoria",
+		},
+		source: "site/src/content/docs/about/status.mdx; date from the same page",
+	},
+	// The question this campaign answers: is cpu-load a one-second average, as
+	// this project says everywhere, or a longer one? Settled by correlating the
+	// API series against the kernel tier's own busy ratio at 10 Hz.
+	"cpu-load-window-2026-09-15": {
+		...RB5009,
+		kernel: "5.6.3",
+		date: "2026-09-15",
+		conditions: {
+			en: "`/system/resource` polled at 1 Hz against the agent's per-core busy ratio at 10 Hz, two separate hours",
+			es: "`/system/resource` consultado a 1 Hz frente a la proporción de ocupación por núcleo del agente a 10 Hz, en dos horas distintas",
+		},
+		source: "measured from the collector's own InfluxDB series",
+	},
+	// The image tar's size is a property of the build, not of the router: the
+	// device fields are here only because every campaign has them, and
+	// Provenance refuses this campaign so no page can print "Measured on
+	// RB5009UG+S+" beside it.
+	image: {
+		...RB5009,
+		date: null,
+		conditions: {
+			en: "agent image size",
+			es: "tamaño de la imagen del agente",
+		},
+		source: "site/src/content/docs/about/status.mdx (undated there)",
+	},
+} satisfies Record<string, Campaign>;
+
+export type CampaignId = keyof typeof campaigns;
+
+/**
+ * The bound `read.under2ms` is a share under: a whole tick's due sources read
+ * in under this long (site/src/content/docs/cost/rate-ceiling.mdx). Kept beside the share, so the
+ * copy quoting the share takes its bound from the same place.
+ */
+export const readBound = { value: 2, unit: "ms", digits: 0 } as const;
+
+/**
+ * The burst the landing's arithmetic is about: one core saturated for `onMs`
+ * of a `windowMs` window, which is how often the RouterOS API reports
+ * `cpu-load`. `burst.100msOn4Cores` is computed from it and the core count.
+ */
+export const burst = { onMs: 100, windowMs: 1000 } as const;
+
+export const isCampaignId = (id: string): id is CampaignId =>
+	Object.hasOwn(campaigns, id);
+
+/** "4 × 1.4 GHz Cortex-A72", with the locale's decimal and no break inside. */
+export function describeCpu(c: Campaign, lang: Lang): string {
+	return unbreakable(
+		`${c.cpu.cores} × ${formatNumber(c.cpu.ghz, lang, 1)} GHz ${c.cpu.core}`,
+	);
+}
+
+/**
+ * What a figure is, which decides what may be said beside it.
+ *
+ * - `reading`: taken off the device, in the named campaign.
+ * - `derived`: arithmetic from a constant that campaign established (USER_HZ),
+ *   so the copy around it must say "arithmetic", not "measured".
+ * - `budget`: a design target. Nobody measured it, so it has no
+ *   campaign, and nothing may render provenance for it.
+ */
+export type Measurement = {
+	value: number;
+	/**
+	 * The top of a range, where the source gives one ("20–27 %"). `value` is
+	 * then its bottom. A spread is part of the figure, so it is never averaged
+	 * into one number here.
+	 */
+	max?: number;
+	unit: Unit;
+	/** Decimal places shown, which is the precision the source reports. */
+	digits: number;
+} & (
+	| { kind: "reading" | "derived"; campaign: CampaignId }
+	| { kind: "budget"; campaign: null }
+);
+
+export interface Run {
+	key: "10hz" | "50hz" | "100hz" | "50hz-floor" | "100hz-floor";
+	rateHz: number;
+	/** 0 is the default per-source floors; otherwise every source at FLOOR_HZ. */
+	floorHz: 0 | number;
+	installDefault: boolean;
+	cpuPct: number;
+	usPerSample: number;
+	rssMiB: number;
+	slipped: number;
+	slippedPct: number;
+	gaps: number;
+	drops: number;
+	/** The memory flags the run used, verbatim (site/src/content/docs/cost/rate-ceiling.mdx); `<RunFlags>` renders them. */
+	flags: string;
+}
+
+// The 10 Hz row ran the install default ring (300 s), so it passes no --buffer.
+const FLAGS_10 = "--mem-limit-mb 40 --memory-max 64M";
+const FLAGS_50 = "--buffer 120 --mem-limit-mb 64 --memory-max 96M";
+const FLAGS_100 = "--buffer 120 --mem-limit-mb 80 --memory-max 128M";
+
+/** site/src/content/docs/cost/rate-ceiling.mdx, all from campaign rates-2026-09-15. */
+export const runs: readonly Run[] = [
+	{
+		key: "10hz",
+		rateHz: 10,
+		floorHz: 0,
+		installDefault: true,
+		cpuPct: 2.85,
+		usPerSample: 2856,
+		rssMiB: 31.3,
+		slipped: 0,
+		slippedPct: 0,
+		gaps: 0,
+		drops: 0,
+		flags: FLAGS_10,
+	},
+	{
+		key: "50hz",
+		rateHz: 50,
+		floorHz: 0,
+		installDefault: false,
+		cpuPct: 10.13,
+		usPerSample: 2026,
+		rssMiB: 51.9,
+		slipped: 0,
+		slippedPct: 0,
+		gaps: 0,
+		drops: 0,
+		flags: FLAGS_50,
+	},
+	{
+		key: "100hz",
+		rateHz: 100,
+		floorHz: 0,
+		installDefault: false,
+		cpuPct: 17.81,
+		usPerSample: 1781,
+		rssMiB: 76.5,
+		slipped: 5,
+		slippedPct: 0.08,
+		gaps: 0,
+		drops: 0,
+		flags: FLAGS_100,
+	},
+	{
+		key: "50hz-floor",
+		rateHz: 50,
+		floorHz: 50,
+		installDefault: false,
+		cpuPct: 22.47,
+		usPerSample: 4494,
+		rssMiB: 60.6,
+		slipped: 6,
+		slippedPct: 0.2,
+		gaps: 0,
+		drops: 0,
+		flags: FLAGS_50,
+	},
+	{
+		key: "100hz-floor",
+		rateHz: 100,
+		floorHz: 100,
+		installDefault: false,
+		cpuPct: 43.95,
+		usPerSample: 4395,
+		rssMiB: 79.6,
+		slipped: 14,
+		slippedPct: 0.23,
+		gaps: 0,
+		drops: 0,
+		flags: FLAGS_100,
+	},
+];
+
+export type RunKey = Run["key"];
+
+export const isRunKey = (key: string): key is RunKey =>
+	runs.some((r) => r.key === key);
+
+const fixed = {
+	// The design budget (site/src/content/docs/cost/index.mdx): a target, not a reading.
+	"budget.cpu": {
+		kind: "budget",
+		value: 2,
+		unit: "%",
+		digits: 0,
+		campaign: null,
+	},
+	"budget.rss": {
+		kind: "budget",
+		value: 16,
+		unit: "MiB",
+		digits: 0,
+		campaign: null,
+	},
+	"budget.image": {
+		kind: "budget",
+		value: 8,
+		unit: "MiB",
+		digits: 0,
+		campaign: null,
+	},
+	"image.size": {
+		kind: "reading",
+		value: 6.1,
+		unit: "MiB",
+		digits: 1,
+		campaign: "image",
+	},
+	// site/src/content/docs/cost/index.mdx. The shell loop's own cost, and the cost of the reads it
+	// makes: the difference between the two is the fork, the pipes and the
+	// `sh` arithmetic, not the /proc reads, which both approaches pay.
+	"busybox.cpu": {
+		kind: "reading",
+		value: 2.4,
+		unit: "%",
+		digits: 1,
+		campaign: "busybox-2026-09-11",
+	},
+	"procread.ms": {
+		kind: "reading",
+		value: 0.77,
+		unit: "ms",
+		digits: 2,
+		campaign: "busybox-2026-09-11",
+	},
+	// site/src/content/docs/cost/rate-ceiling.mdx: at the DEFAULT floors a tick reads only its due
+	// sources, so the copy must not say "every source".
+	"read.under2ms": {
+		kind: "reading",
+		value: 97.5,
+		unit: "%",
+		digits: 1,
+		campaign: "rates-2026-09-15",
+	},
+	// site/src/content/docs/cost/rate-ceiling.mdx; the source says "about", and so must the copy around it.
+	"load.evening": {
+		kind: "reading",
+		value: 30,
+		unit: "Mbit/s",
+		digits: 0,
+		campaign: "rates-2026-09-15",
+	},
+	// Arithmetic from USER_HZ = 100 (site/src/content/docs/limits/index.mdx): one tick is 10 ms, so a
+	// 100 ms sample holds 10 ticks per core and resolves one core in 10 % steps.
+	"tick.stepOneCore": {
+		kind: "derived",
+		value: 10,
+		unit: "%",
+		digits: 0,
+		campaign: "kernel-2026-09-11",
+	},
+	"tick.ms": {
+		kind: "derived",
+		value: 10,
+		unit: "ms",
+		digits: 0,
+		campaign: "kernel-2026-09-11",
+	},
+	// A different quantity that happens to share the 2.5 % of a four-core step:
+	// one core busy for 100 ms of a 1 s window is 100 / 1000 of that core, and
+	// that core is one of four, so the four-core, one-second average moves by
+	// 0.1 / 4 = 2.5 %. Kept separate so a change to either definition cannot
+	// silently change the other.
+	"burst.100msOn4Cores": {
+		kind: "derived",
+		value: (burst.onMs / burst.windowMs / RB5009.cpu.cores) * 100,
+		unit: "%",
+		digits: 1,
+		campaign: "kernel-2026-09-11",
+	},
+	// site/src/content/docs/about/status.mdx: MEM_LIMIT_MB 14, then --mem-limit-mb 40 --memory-max 64M.
+	"gc.tight.cpu": {
+		kind: "reading",
+		value: 9.38,
+		unit: "%",
+		digits: 2,
+		campaign: "gc",
+	},
+	"gc.tight.us": {
+		kind: "reading",
+		value: 9374,
+		unit: "µs",
+		digits: 0,
+		campaign: "gc",
+	},
+	"gc.roomy.cpu": {
+		kind: "reading",
+		value: 1.39,
+		unit: "%",
+		digits: 2,
+		campaign: "gc",
+	},
+	"gc.roomy.us": {
+		kind: "reading",
+		value: 1388,
+		unit: "µs",
+		digits: 0,
+		campaign: "gc",
+	},
+	// site/src/content/docs/limits/index.mdx, the same arithmetic as tick.stepOneCore: ten ticks per
+	// core in 100 ms, four cores, so the four-core average moves by 2.5 %; and
+	// one core over a whole second holds 100 ticks, so 1 %.
+	"tick.stepFourCores": {
+		kind: "derived",
+		value: 2.5,
+		unit: "%",
+		digits: 1,
+		campaign: "kernel-2026-09-11",
+	},
+	"tick.stepOneSecond": {
+		kind: "derived",
+		value: 1,
+		unit: "%",
+		digits: 0,
+		campaign: "kernel-2026-09-11",
+	},
+	// site/src/content/docs/install/index.mdx.
+	"ssh.connectCpu": {
+		kind: "reading",
+		value: 20,
+		max: 27,
+		unit: "%",
+		digits: 0,
+		campaign: "ssh-connect",
+	},
+	// site/src/content/docs/install/reaching-the-agent.mdx: a reply is truncated there, silently.
+	"relay.replyMaxBytes": {
+		kind: "reading",
+		value: 64512,
+		unit: "B",
+		digits: 0,
+		campaign: "relay-fetch",
+	},
+	// site/src/content/docs/playbooks/loop.mdx (the rate before the fix, the rate after it,
+	// and the gap between reflected frames, the STP hello interval).
+	"loop.eventsBefore": {
+		kind: "reading",
+		value: 1.49,
+		unit: "/s",
+		digits: 2,
+		campaign: "playbooks-2026-09-12",
+	},
+	"loop.eventsAfter": {
+		kind: "reading",
+		value: 0.03,
+		unit: "/s",
+		digits: 2,
+		campaign: "playbooks-2026-09-12",
+	},
+	"loop.helloGap": {
+		kind: "reading",
+		value: 2.0,
+		max: 2.01,
+		unit: "s",
+		digits: 2,
+		campaign: "playbooks-2026-09-12",
+	},
+	// site/src/content/docs/limits/namespaces.mdx: the nf_conntrack slab's active
+	// objects read from inside the container while its own namespace said 0.
+	"conntrack.slab": {
+		kind: "reading",
+		value: 6287,
+		unit: "",
+		digits: 0,
+		campaign: "playbooks-2026-09-12",
+	},
+	// site/src/content/docs/sinks/api-tier.mdx ("the day before").
+	"conntrack.api": {
+		kind: "reading",
+		value: 6212,
+		unit: "",
+		digits: 0,
+		campaign: "api-conntrack",
+	},
+	"api.conntrackMs": {
+		kind: "reading",
+		value: 1.3,
+		unit: "ms",
+		digits: 1,
+		campaign: "api-conntrack",
+	},
+	// site/src/content/docs/sinks/derive.mdx; the source says "about", and so must the copy.
+	"squeeze.backgroundOne": {
+		kind: "reading",
+		value: 11.2,
+		unit: "%",
+		digits: 1,
+		campaign: "squeeze-2026-09-16",
+	},
+	"squeeze.backgroundTwo": {
+		kind: "reading",
+		value: 1.2,
+		unit: "%",
+		digits: 1,
+		campaign: "squeeze-2026-09-16",
+	},
+	"squeeze.atLeastThree": {
+		kind: "reading",
+		value: 0.21,
+		unit: "%",
+		digits: 2,
+		campaign: "squeeze-2026-09-16",
+	},
+	"microburst.firesPerHourAtTwo": {
+		kind: "reading",
+		value: 77.7,
+		unit: "/h",
+		digits: 1,
+		campaign: "microburst-replay-2026-09-16",
+	},
+	"microburst.firesPerHourAtThree": {
+		kind: "reading",
+		value: 0.5,
+		unit: "/h",
+		digits: 1,
+		campaign: "microburst-replay-2026-09-16",
+	},
+	// site/src/content/docs/limits/source-floors.mdx; internal/agent/source.go, the per-source floors comment in ProcSource; the source says "~", and so must the copy.
+	"thermal.quantumC": {
+		kind: "reading",
+		value: 0.42,
+		unit: "°C",
+		digits: 2,
+		campaign: "floors-overnight",
+	},
+	// site/src/content/docs/install/layout.mdx; internal/router/options.go, Options.MemLimitMB, "~2.4 kB"; the copy says "about".
+	"ring.lineKB": {
+		kind: "reading",
+		value: 2.4,
+		unit: "kB",
+		digits: 1,
+		campaign: "line-size",
+	},
+	// The same line to the byte, internal/agent/agent.go, ApproxLineBytes.
+	"ring.lineBytes": {
+		kind: "reading",
+		value: 2439,
+		unit: "B",
+		digits: 0,
+		campaign: "line-size",
+	},
+} satisfies Record<string, Measurement>;
+
+type RunMetric = "cpu" | "rss" | "usPerSample";
+
+export type MeasurementId = keyof typeof fixed | `run.${RunKey}.${RunMetric}`;
+
+const fromRuns = Object.fromEntries(
+	runs.flatMap((r) => {
+		const base = { kind: "reading", campaign: "rates-2026-09-15" } as const;
+		return [
+			[`run.${r.key}.cpu`, { ...base, value: r.cpuPct, unit: "%", digits: 2 }],
+			[
+				`run.${r.key}.rss`,
+				{ ...base, value: r.rssMiB, unit: "MiB", digits: 1 },
+			],
+			[
+				`run.${r.key}.usPerSample`,
+				{ ...base, value: r.usPerSample, unit: "µs", digits: 0 },
+			],
+		];
+	}),
+);
+
+export const measurements = { ...fixed, ...fromRuns } as Record<
+	MeasurementId,
+	Measurement
+>;
+
+export const isMeasurementId = (id: string): id is MeasurementId =>
+	Object.hasOwn(measurements, id);
+
+/*
+ * Sentences the site states in prose that are true only while the data says
+ * so. Each throws at build time the day a repeated run makes it false, rather
+ * than shipping a page that contradicts its own table.
+ */
+const installDefault = runs.find((r) => r.installDefault);
+if (installDefault === undefined)
+	throw new Error("measurements.ts: no run is the install default");
+// "above the budget": cost/index.mdx (both locales), src/data/home.ts readout.claim.
+if (!(
+	installDefault.cpuPct > measurements["budget.cpu"].value &&
+	installDefault.rssMiB > measurements["budget.rss"].value
+)) {
+	throw new Error(
+		"measurements.ts: the install-default run is no longer above the design budget; rewrite cost/index.mdx and home.ts, which say it is",
+	);
+}
+// "nothing was lost": cost/rate-ceiling.mdx (both locales), src/data/home.ts cost.after.
+if (runs.some((r) => r.gaps !== 0 || r.drops !== 0)) {
+	throw new Error(
+		"measurements.ts: a run reports gaps or drops; rewrite cost/rate-ceiling.mdx and home.ts, which say none did",
+	);
+}

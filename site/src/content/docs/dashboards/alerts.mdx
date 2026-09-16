@@ -1,0 +1,215 @@
+---
+title: Alert rules
+description: The Grafana alert rules generated beside the dashboards, what each one fires on, where its threshold comes from, and what has not been tested about them.
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+import AlertRules from "../../../components/AlertRules.astro";
+import DashboardCount from "../../../components/DashboardCount.astro";
+import Measured from "../../../components/Measured.astro";
+import NotClaimed from "../../../components/NotClaimed.astro";
+import ScrollTable from "../../../components/ScrollTable.astro";
+import SeeAlso from "../../../components/SeeAlso.astro";
+
+`mikroscope dashboards gen` writes, beside each dashboard, a Grafana unified-alerting provisioning
+file with the rules that follow from the dashboards' own fault counters, from the kernel log the
+agent reads, and from the collector's detections. This page answers what those rules are, what each one fires on and what silence means
+for it, how to install the file, and where every threshold comes from. Every threshold is zero (a
+counter that should not move), one sample (the silent-agent rule), or a share of a ceiling the
+device itself published. None is a number compiled in for one router.
+
+## The files
+
+<ScrollTable label="Alert provisioning files">
+
+| File                                           |                                            Rules | Query language |
+| ---------------------------------------------- | -----------------------------------------------: | -------------- |
+| `dashboards/mikroscope-alerts-influxdb.yaml`   |   <DashboardCount store="influxdb" of="rules" /> | InfluxDB 3 SQL |
+| `dashboards/mikroscope-alerts-prometheus.yaml` | <DashboardCount store="prometheus" of="rules" /> | PromQL         |
+
+</ScrollTable>
+
+The InfluxDB file has one rule fewer because "The sampler is slipping ticks" has no SQL form: the
+slipped-tick counter is exposed on the agent's `/metrics` and is not written to InfluxDB.
+
+Each file is `apiVersion: 1` with one rule group, `mikroscope`, in a folder named `mikroscope`,
+organisation 1, evaluated every minute. The rules are provisioned rather than built into the
+dashboards, so an operator who wants none copies nothing.
+
+## Installing them
+
+Provisioning files do not resolve a dashboard's `${DS_MIKROSCOPE}` input, so the datasource is a
+literal placeholder, `DS_UID_PLACEHOLDER`, that you replace with your datasource's UID before Grafana
+reads the file:
+
+```sh
+sed 's/DS_UID_PLACEHOLDER/<uid>/g' dashboards/mikroscope-alerts-influxdb.yaml \
+  > /etc/grafana/provisioning/alerting/mikroscope-alerts-influxdb.yaml
+```
+
+The provisioning directory is Grafana's; `/etc/grafana/provisioning/alerting/` is the path the
+generated file's own header names. Use the file that matches the datasource the UID belongs to.
+
+Every rule has the same shape, the one Grafana's own rule editor writes:
+
+1. **A** — the query, against your datasource, with a relative time range of the last 600 s. Every
+   SQL query and every Prometheus counter query also bounds its own window (2 minutes, 5 minutes or 1
+   hour, below); the two Prometheus gauge rules, thermal and conntrack, read the latest value.
+2. **B** — reduce A to one number per series with `last`, dropping non-numeric values.
+3. **C** — compare B against the threshold. C is the rule's condition.
+
+Each rule carries the labels `severity` (`critical` or `warning`) and `source: mikroscope`, a
+`summary` annotation, and `execErrState: Error`. What Grafana then does with a rule whose query
+fails is Grafana's behaviour, set out in its own documentation, and has not been tested here.
+
+## The rules
+
+<AlertRules show="table" />
+
+The InfluxDB form of `mikroscope-conntrack-near-limit` is broken; the "what has not been tried" note
+at the end of this page says why. "No data means" is the rule's `noDataState`. The silent-agent rule is the one where silence is the
+fault, so no data fires it; for every other rule no data is the healthy reading.
+
+Each rule's title, and under it its `summary` annotation verbatim, as generated:
+
+- **mikroscope agent stopped delivering samples.** "No new samples reached the store in the last two
+  minutes: the agent stopped, the collector stopped, or the path between them did. Every other rule
+  is blind while this one fires."
+- **Packets dropped in the kernel receive path.** "softnet_stat dropped a packet: a per-CPU backlog
+  was full. Unambiguous loss inside the router, invisible to every SNMP and RouterOS counter. Zero is
+  the expected reading."
+- **The kernel OOM-killed a process.** "/proc/vmstat oom_kill moved: the kernel killed a process to
+  get memory back. Which process is not knowable from the container (no PID namespace)."
+- **The collector's derive stage flagged an event.** "A detection rule fired (counter-reset,
+  agent-restart, agent-oom, microburst, reboot, link-flap, conntrack-cliff, conntrack-high,
+  thermal-high, thermal-rising, ipc-collapse). The rule, key, value and threshold are in the
+  Detections section and on the dashboard as an annotation."
+- **A thermal zone is within 15 % of its own critical trip.** "The reading is at or above 85 % of
+  the zone's declared critical trip point (105 C on the reference RB5009). The ceiling is the
+  board's own, read from /sys, not a number compiled in."
+- **The connection table is above 80 % of nf_conntrack_max.** "nf_conntrack active objects over the
+  kernel's own ceiling. Past the ceiling the router drops new connections. The limit is the sysctl
+  the agent read, not a compiled number."
+- **The sampler is slipping ticks.** "Ticks finished after the next was due. The rate is not being
+  delivered: the device is starved, the source set is too expensive for the rate, or the container's
+  CPU quota throttled the agent (see the observer's throttling counter)."
+- **mikroscope's own container was OOM-killed.** "The kernel killed a process inside the agent's
+  cgroup: the capture ring and the captures are gone, and every number in the window is suspect.
+  Raise --memory-max or lower RATE_HZ, BUFFER_S or CAPTURE_MB."
+- **The bridge received its own address back: a layer-2 loop signature.** "The kernel log reported
+  `received packet on <port> with own address as source address`: a frame the router sent came back
+  in, which is what a loop through a downstream switch or access point looks like. The port label
+  says which cable. Read from /dev/kmsg by the agent, no API. On the reference RB5009 this ran at
+  1.49 records/s for hours on 2026-09-12 while every RouterOS counter looked healthy. The InfluxDB
+  form needs a store that has held at least one port record classified by kind."
+- **A port's link went down.** "The kernel log reported a link-down on a port: a cable pulled, a peer
+  rebooted or powered off, a renegotiation. The collector's link-flap detection covers the repeated
+  case; this is the single event. Read from /dev/kmsg by the agent, no API; the port, its comment and
+  its role are on the Kernel log section's port events."
+- **The NAND reported an uncorrectable ECC failure.** "ecc_failures rose on an MTD partition: a read
+  the error correction could not fix, i.e. data loss on the flash. Any increment is an incident."
+
+## The queries
+
+<Tabs syncKey="store">
+<TabItem label="Prometheus">
+
+<AlertRules show="queries" store="prometheus" />
+
+`mikroscope_slipped_total` comes from the agent scrape job, the one with the keep list on
+[Import and check](/mikroscope/dashboards/import-and-check/#prometheus-two-scrape-jobs); the other
+ten read the collector's `/metrics`. `mikroscope_kmsg_port_records_total` is among them: both
+expositions are written by the same renderer, and the collector's copy is the one the keep list
+leaves in place, the one that classifies a record the agent did not and names each port as RouterOS
+names it now.
+
+</TabItem>
+<TabItem label="InfluxDB 3">
+
+<AlertRules show="queries" store="influxdb" />
+
+</TabItem>
+</Tabs>
+
+## Where the thresholds come from
+
+- **Zero, for a counter that should not move.** Kernel RX drops, kernel OOM kills, detections,
+  slipped ticks, the agent's own OOM kills, uncorrectable ECC failures, and the kernel-log port
+  records whose kind is `own-address` or `link-down`. A healthy device reads zero on each.
+- **One sample, for the silent agent.** Fewer than one sample in two minutes is none at all, at any
+  configured rate.
+- **A share of the board's own thermal trip.** 85 % of the lowest critical trip point each zone
+  declares, which the agent reads from `/sys/class/thermal` and ships beside every reading. A zone
+  that declares no critical trip is left out of the query rather than compared against a made-up
+  ceiling.
+- **A share of the kernel's own connection limit.** 0.8 of the `nf_conntrack` limit the agent read.
+  The occupancy comes from `/proc/slabinfo`, which needs a privileged container.
+
+The rules do not alert on softnet squeezes. Measured on the reference RB5009 on 2026-09-15 over
+3 476 samples, about <Measured id="squeeze.backgroundOne" /> of samples carry one squeeze, and alerting on "squeeze > 0" would page
+forever. What reaches the detections alert instead is the `microburst` detection: three burst
+samples on one CPU within 60 s. A burst sample is one in which a softnet queue dropped a packet, or
+ran out of budget more often than that CPU's trailing 90th percentile and at least three times, while the
+sample's packet count was at or below its trailing median. See
+[Detections](/mikroscope/sinks/detections/).
+
+## What the rules cannot see
+
+- **Which process.** The OOM rule says the kernel killed something. From inside the container there
+  is no PID namespace to say what.
+- **Which port.** The two port-event queries sum over ports, so a firing rule says a loop signature
+  or a link-down happened, not on which cable. The port, its comment and its interface lists are on
+  the Kernel log section's two port-event panels.
+- **An unprivileged agent's blind spots.** The connection-table and ECC rules read sources that need
+  a privileged container. Without one those measurements never reach the store, and on Prometheus a
+  query over a missing metric returns no data — which these rules read as OK.
+- **Anything while the silent-agent rule fires.** Every other rule but the slipped-ticks rule, which
+  reads the agent directly, reads the same stream; with no samples arriving they read zero or no
+  data, and both are OK.
+
+<NotClaimed variant="untested" title="What has not been tried">
+	These files have not been loaded into Grafana and watched while a rule evaluated, fired or
+	resolved; `dashboards check` runs the dashboards' panel queries and not these. Several consequences
+	follow from the code and have not been observed. **InfluxDB tables that appear only after their
+	first event:** the collector creates `mikroscope_detection` with the first detection it writes,
+	and InfluxDB 3 refuses a query naming a missing table when it plans it, so on a store that has
+	never held a detection the detections rule's query should fail, and its `execErrState: Error`
+	applies instead of OK; the same applies to any table or column the deployment has never written,
+	such as `mikroscope_mtd` on an unprivileged agent. **The two port-event rules have never been seen
+	firing:** neither has been watched against a live loop or a live link-down, on either store. Their
+	InfluxDB form reads the `kind` column of `mikroscope_kmsg`, which a store holds only once the
+	collector has written a first port record classified by kind — on the reference deployment on
+	2026-09-16 the store had no `kind` column yet, so that query fails at planning there for the same
+	reason as the missing-table case above. Their Prometheus form reads
+	`mikroscope_kmsg_port_records_total{kind=…}` from the collector's `/metrics`, which carries a
+	`kind` on every port record whatever the agent shipped; the agent's own exposition carries the
+	label only when the agent classifies, and the one on the reference router does not, so a
+	Prometheus scraping the agent alone sees no `kind` there and the query returns no data, which
+	these rules read as OK. **The InfluxDB conntrack rule names a column no
+	InfluxDB store holds:** its query reads `limit_objs`, which is the column name in the SQL
+	(Postgres/Timescale) sink, while the InfluxDB sink writes the slab ceiling as the field `limit`
+	(the dashboards' own occupancy panel reads `limit`). So on every InfluxDB store, privileged or
+	not, that query should fail at planning and the rule cannot evaluate. This is a defect in the
+	generator, not a property of the device. **The InfluxDB ECC rule across partitions:** its query
+	takes the largest `ecc_failures` reading in the hour minus the smallest, over every partition
+	together, with no grouping by partition — so on a board whose partitions sit at different non-zero
+	levels the difference is non-zero without any new failure. Every partition reads zero on the
+	reference RB5009, so that device cannot show it. The flash panel's own description adds that a
+	board shipping with factory-marked bad blocks shows a non-zero level that is normal for it, and
+	that the change is the event, not the level.
+</NotClaimed>
+
+<SeeAlso>
+
+## See also
+
+- [Detections](/mikroscope/sinks/detections/): the eleven rules behind the detections alert, and
+  what each may not claim.
+- [Import and check](/mikroscope/dashboards/import-and-check/): the datasource UID these files need,
+  and the Prometheus scrape jobs.
+- [Two dashboards, one panel list](/mikroscope/dashboards/): the panels whose fault counters these
+  rules are built from.
+- [Prometheus metric families](/mikroscope/reference/metrics/): the families the Prometheus queries
+  read.
+
+</SeeAlso>

@@ -1,0 +1,78 @@
+---
+title: La forma de un router en reposo
+description: Sesenta segundos del RB5009 de referencia sin hacer nada en particular — el suelo de ocupación, el squeeze que nunca llega a cero y el silencio de un log del kernel sano.
+---
+
+import Measured from "../../../../components/Measured.astro";
+import NotClaimed from "../../../../components/NotClaimed.astro";
+import Provenance from "../../../../components/Provenance.astro";
+import SeeAlso from "../../../../components/SeeAlso.astro";
+
+Esta página responde a qué aspecto tiene lo "normal", para que las demás páginas
+tengan algo respecto a lo que ser anómalas. Conoce esta forma antes de salir a
+buscar anomalías, o las encontrarás en todas partes.
+
+<Provenance of="playbooks-2026-09-12" />
+
+## Sesenta segundos en reposo
+
+Tres tramos de 20 segundos:
+
+```text
+   t  busy%  per-core busy%           ctxt    sirq  squeeze  temp   MHz  events
+   0    7.1  10.5   7.9   4.3   5.8  41793     325      296  36.2  1400       0
+   1    8.4   8.0   7.8   9.9   7.8  60518     251      223  36.2  1400       0
+   2    6.5   7.1   5.2   6.7   6.8  58259     199      179  36.3  1400       0
+```
+
+Los porcentajes de esa tabla se calcularon a posteriori a partir de los deltas de
+ticks en bruto que envía el agente; el agente nunca los convierte en porcentajes.
+
+## Qué leer
+
+- **Un 6–8 % de ocupación en los cuatro núcleos es el suelo de este router**, no
+  un problema. Son DNS, DHCP, WireGuard, el bridge y su propio mantenimiento.
+- **`time_squeeze` nunca es cero** (~200 cada 20 s). Un squeeze distinto de cero
+  es normal; lo que importa es el _cambio_ bajo carga, que muestra [la inundación
+  de paquetes](/mikroscope/es/playbooks/packet-flood/). Una alerta con "squeeze >
+  0" te despertaría para siempre.
+- **`arch_timer` y `switch0` son siempre las dos fuentes de interrupciones con más
+  actividad.**
+- **Cero sucesos del kernel es el estado sano.** Cualquier flujo constante de
+  `events` en reposo merece el tratamiento del [caso del
+  bucle](/mikroscope/es/playbooks/loop/) — así es exactamente como empezó.
+
+## El squeeze de fondo y la marca de ráfaga
+
+El suelo del squeeze se volvió a medir el 2026-09-15, en el mismo equipo, sobre
+3 476 muestras: alrededor del <Measured id="squeeze.backgroundOne" /> de las muestras llevan un squeeze de fondo, y
+un 2 % llevan dos o más. Medido en este router ese día: una regla que marque
+cualquier squeeze salta 92 veces en veinte minutos, y no significa nada.
+
+Así que la marca `burst` del colector es una desviación respecto a la norma del
+propio equipo: un paquete descartado, o más squeezes de los que esa CPU suele
+tener (por encima de su percentil 90 móvil y al menos 3) en una muestra cuyo
+número de paquetes estuvo en su mediana móvil o por debajo. Las líneas base
+móviles abarcan diez segundos de reloj de pared a cualquier cadencia. Tres
+muestras marcadas en una CPU en 60 s disparan la detección `microburst`; una sola
+muestra marcada se queda en un dato.
+
+<NotClaimed variant="device-specific">
+	Este suelo es un RB5009 con el reloj fijado a 1400 MHz, que ejecuta el DNS, el DHCP, el WireGuard
+	y el bridge de este propietario. Un router con otros servicios, un reloj que escala o una placa
+	distinta tiene otra forma en reposo. Toma los mismos sesenta segundos en el tuyo antes de leer
+	cualquier otra página contra ella.
+</NotClaimed>
+
+<SeeAlso>
+
+## Véase también
+
+- [Una inundación de paquetes](/mikroscope/es/playbooks/packet-flood/): lo que hace el squeeze cuando
+  sí cambia.
+- [Un bucle que solo veía el kernel](/mikroscope/es/playbooks/loop/): lo que resultó ser un flujo
+  constante de sucesos en reposo.
+- [Detecciones](/mikroscope/es/sinks/detections/): la regla `microburst` y las demás, con lo que cada
+  una no puede afirmar.
+
+</SeeAlso>

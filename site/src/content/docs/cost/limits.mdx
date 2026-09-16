@@ -1,0 +1,62 @@
+---
+title: What the numbers do not say
+description: The questions the measurements on this site cannot answer, and which metric to reach for instead of guessing.
+---
+
+import Measured from "../../../components/Measured.astro";
+import NotClaimed from "../../../components/NotClaimed.astro";
+import SeeAlso from "../../../components/SeeAlso.astro";
+
+Every measurement on this site was taken on one device, on one day, under one
+load. This page is the list of things it therefore does not tell you — kept
+here, in the documentation, rather than left for a reader to discover by being
+wrong.
+
+## What `/metrics` can recover, and what it cannot
+
+The histogram `mikroscope_cpu_busy_ticks` (integer busy ticks per sample and core, which keeps
+timing jitter out of the bucket choice) recovers **time above a threshold** to one sample. It cannot recover **contiguity**: a 2 s plateau at 30 % and twenty
+scattered 100 ms spikes at 30 % look identical in it.
+
+That is what `mikroscope_cpu_busy_run_seconds{threshold="0.5"|"0.9"}` is for —
+the length of each run of consecutive samples at or above the threshold,
+observed when the run ends, with the run still in progress in
+`…_run_open_seconds`.
+
+The trailing-window gauges (`window="1s"|"10s"|"60s"`, `stat="max"|"min"|"p95"`)
+show the peak whatever your scrape interval is, because the agent computes them
+over its own clock rather than over yours. To see the _shape_ of a transient
+rather than its envelope, `record` it, or let a trigger capture it.
+
+## The sampler's own smear is published, not hidden
+
+How late the sampler woke after its ticker and how long the read took are
+`mikroscope_tick_wake_latency_seconds` and `mikroscope_tick_read_seconds`, with
+the interval actually achieved in `mikroscope_tick_interval_seconds`. If you
+suspect the sampler rather than the router, those three are where to look
+first.
+
+## Gaps are reported, never papered over
+
+The agent keeps 300 s by default. A collector outage shorter than that is
+backfilled on reconnect through `since=<seq>`; a longer one is reported as a gap
+of known length — a marker in a recording, a counter on the collector. A chart
+with a hole in it is a chart telling the truth.
+
+<NotClaimed>
+	Any board that is not the RB5009 described on [the rate ceiling](/mikroscope/cost/rate-ceiling/).
+	Traffic heavier than about <Measured id="load.evening" />. A 32-bit RouterOS build, which is
+	coming on a hEX S but has not arrived. Sustained operation beyond the windows stated. None of
+	these are claims this project is making, and none of them should be inferred from the ones it is.
+</NotClaimed>
+
+<SeeAlso>
+
+## See also
+
+- [The rate ceiling](/mikroscope/cost/rate-ceiling/): the five runs and the conditions they were
+  taken under.
+- [The cost of the observer](/mikroscope/cost/): the budget, and how to measure the cost on a device
+  that is not this one.
+
+</SeeAlso>

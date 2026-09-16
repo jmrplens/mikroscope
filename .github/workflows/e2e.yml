@@ -1,0 +1,129 @@
+# The end-to-end suite: the two built binaries driven against fakes.
+#
+# What it is. test/e2e builds cmd/mikroscope and cmd/mikroscope-agent, points
+# the agent at testdata/proc/rb5009 (the reference device's captured /proc and
+# /sys, reachable because internal/agent reads PROC_ROOT and SYS_ROOT from the
+# container envlist), and points the collector at either that agent or a fake
+# one serving canned samples. Every destination is a receiver in the test
+# binary: HTTP capture servers for influx, loki, otlp, elasticsearch and
+# telegraf, TCP and UDP listeners for graphite and telegraf's socket modes,
+# real files for the file and sql sinks, the process's own stdout for the
+# stdout sink, and a scrape of the collector's own /metrics for prometheus.
+#
+# What it needs. No router, no Grafana, no database, no container, and no
+# network: every address it binds or dials is on the loopback interface. The
+# second job proves that rather than asserting it, by running the whole suite
+# inside a network namespace that has nothing but `lo`. That check is the
+# reason this file exists as a job of its own: a suite that quietly grew a
+# dependency on a public endpoint would still pass on a runner with egress,
+# and would fail on the first one without it.
+#
+# Duration. Measured on the development machine on 2026-09-12: 15 s for
+# `go test ./test/e2e/`, 18 s with the race detector, 16 s inside the network
+# namespace. The bounds below are far looser than that because the suite
+# drives two processes and ten sinks at 10 Hz, and a loaded shared runner is
+# slower than a development machine by an amount nobody has measured.
+#
+# Three ways in. As a reusable workflow: ci.yml calls it after its compile job,
+# so a pull request gets exactly one run of it, and release.yml calls it as a
+# gate, so a tag is held to the same file rather than to a copy that drifts.
+# Manually, from the "Use workflow from" dropdown, optionally with a custom ref
+# such as a fork pull request's merge SHA. And once a week on main, because a
+# run that only happens when a pull request touches the code says nothing about
+# a main that changed under it through a dependency or a runner image: in
+# jmrplens/gitlab-mcp-server the first release rehearsal found three tests that
+# had been broken on main for weeks, because nothing ran the suite between
+# releases. The weekly run is not a required check.
+
+name: E2E
+
+on:
+  schedule:
+    # Mondays, 04:41 UTC: off the hour, because GitHub delays runs that pile up
+    # on round times, and before the week's first pushes. race.yml follows at
+    # 06:23.
+    - cron: "41 4 * * 1"
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref to check out (branch, tag, or a fork pull request's merge SHA)"
+        default: ""
+        type: string
+  workflow_call:
+    inputs:
+      ref:
+        description: "Git ref to check out; empty means the calling workflow's ref"
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+# Per calling workflow and ref. A newer push to the same ref makes the run in
+# flight obsolete, and unlike a suite that starts containers there is nothing
+# a cancelled run leaves behind: every process it starts is a child of the test
+# binary and every file is under a temporary directory of the runner.
+concurrency:
+  group: e2e-${{ github.workflow }}-${{ inputs.ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: Binaries against fakes
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
+        with:
+          # Tracks the toolchain go.mod declares, so this file cannot drift
+          # from the module it builds.
+          go-version-file: go.mod
+          cache: true
+
+      - run: go mod download
+
+      # One command, the same one a developer runs: the package, the verbosity
+      # and the timeout live in the Makefile rather than being restated here.
+      - name: Run the end-to-end suite
+        run: make test-e2e
+
+  offline:
+    name: No network needed
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # `unshare --net` gives the process a fresh network namespace: no
+      # interfaces at all until `lo` is brought up, no route off the host, no
+      # DNS. If any test reaches for something outside, this is where it
+      # fails.
+      #
+      # The runner user cannot create the namespace, so the target runs
+      # `unshare` under sudo, and sudo is what this job used to lose its Go
+      # caches to: it resets HOME to root's, and the Go inside the namespace
+      # looked for root's cold caches with no network to fill them. The target
+      # now warms the caches as the runner user, carries GOCACHE, GOMODCACHE,
+      # GOPATH, HOME and PATH across sudo explicitly, and drops back to the
+      # runner user (setpriv) once `lo` is up, so the suite reads what the
+      # warm-up wrote and leaves nothing root-owned in the caches setup-go
+      # saves at the end of the job. The Makefile target explains each piece.
+      - name: Run the suite with only a loopback interface
+        run: make test-e2e-offline

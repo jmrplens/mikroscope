@@ -1,0 +1,164 @@
+---
+title: Qué se ejecuta dónde
+description: Qué pieza de mikroscope corre en el router y cuál en tu máquina, a qué llega cada una y dónde vive cada credencial.
+---
+
+import EnvlistKeys from "../../../../components/EnvlistKeys.astro";
+import NotClaimed from "../../../../components/NotClaimed.astro";
+import ScrollTable from "../../../../components/ScrollTable.astro";
+import SeeAlso from "../../../../components/SeeAlso.astro";
+import Verified from "../../../../components/Verified.astro";
+
+Esta página responde a la pregunta que hay que hacerse antes de poner nada en un router de
+producción: qué ejecuta mikroscope en él, qué ejecuta en tu propia máquina, a qué puede llegar cada
+pieza y qué credencial está en cada sitio. En corto: el router aloja un agente que escucha y nunca
+abre conexiones hacia fuera, y toda credencial que abre algo distinto del agente se queda en tu
+máquina.
+
+## Qué se ejecuta dónde
+
+<ScrollTable label="Qué se ejecuta dónde, a qué llega y qué credencial guarda">
+
+| Pieza                                                            | Corre                                      | Llega a                                                                                                                         | Credenciales                                                                    |
+| ---------------------------------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `mikroscope-agent`                                               | en un contenedor scratch dentro del router | sirve HTTP solo en la dirección de la veth; **ninguna conexión saliente**                                                       | no presenta ninguna; un token bearer opcional que _exige_                       |
+| `mikroscope doctor`, `install`, `upgrade`, `uninstall`, `status` | tu máquina, cuando los ejecutas            | el router por tu propio ssh de administrador; `install`, `upgrade` y `status` además sondean el `/healthz` del agente           | tu clave ssh                                                                    |
+| `mikroscope plan`, `install --dry-run`                           | tu máquina                                 | nada: construyen la imagen e imprimen el listado sin conectarse al router                                                       | ninguna, salvo que `plan --rsc` reciba un token (abajo)                         |
+| `mikroscope record`, `forward`                                   | tu máquina                                 | el agente por HTTP; la API binaria del router para la capa de la API de `forward`, el transporte relay y `record --log-markers` | el token del agente si hay uno; un usuario de la API dedicado y de solo lectura |
+| `mikroscope mark`                                                | tu máquina                                 | los ficheros locales de la grabación; la API binaria del router solo con `--log-markers`; nunca el agente                       | el usuario de la API, solo con `--log-markers`                                  |
+| destinos                                                         | tu máquina, dentro de `forward`            | sirven `/metrics` para tu Prometheus; envían a InfluxDB y a los demás destinos que indiques                                     | sus tokens, en tu entorno                                                       |
+| `mikroscope dashboards import`, `check`                          | tu máquina                                 | tu Grafana                                                                                                                      | `GRAFANA_TOKEN`, en tu entorno                                                  |
+
+</ScrollTable>
+
+`plan` e `install --dry-run` nunca llegan al router, así que tampoco hacen las comprobaciones de
+propiedad; esas solo se hacen en un `install` real.
+
+La herramienta no informa de nada a ningún sitio. No hay comprobación de actualizaciones. En el
+código, el único código de red del agente es su servidor HTTP. Las conexiones salientes viven todas
+en la CLI — los destinos (HTTP, TCP o UDP), el cliente de Grafana, el cliente de la API de RouterOS,
+el transporte directo y la sonda de `/healthz` — y cada una va solo a una dirección que tú le diste
+o, para el agente, a la `.2` de `--subnet` (`172.30.10.2` salvo que la cambies).
+
+La exposición Prometheus del propio colector, `forward --prom <dirección>`, escucha en la dirección
+que le pases y sirve `/metrics` sin autenticación. Enlázala a una dirección a la que solo llegue tu
+Prometheus.
+
+## Las credenciales se quedan fuera del router
+
+**Por la API binaria, `/container/print` devolvió todas las propiedades de todos los contenedores,
+`cmd` y `envlist` incluidas, a un usuario con solo `read,api`** (<Verified of="read-user-envlist" />;
+solo se imprimieron los nombres de las propiedades). Leer los valores de las entradas de
+la envlist, en `/container/envs`, con un usuario así no se comprobó por separado. El diseño supone
+que también se pueden leer: lo que haya en una envlist se trata como legible por cualquier usuario
+`read` de ese router, no solo por los administradores.
+
+Por eso el agente no tiene destino push: un token de destino en el router lo podría leer cualquier
+usuario `read`. Si algún día llega el push, será agente → colector con el mismo NDJSON, nunca
+agente → InfluxDB.
+
+Lo que `install` sí pone en la envlist `<name>-env` es configuración, y nada que abra otra cosa:
+
+<EnvlistKeys />
+
+La última fila es el único secreto que sí vive en el router. Se escribe siempre que se dé `--token`
+o `MIKROSCOPE_TOKEN`, con o sin `--expose`, y como el resto de la envlist se trata como legible por
+cualquier usuario `read`. Abre las rutas HTTP del propio agente y nada más. `plan` y `--dry-run` lo imprimen
+como `value="(token)"`, la línea de opciones como `token=(set)`, y la línea de arranque del agente en
+el log del router como `token=true`.
+
+`plan --rsc` es la excepción a ese enmascarado. Escribe la instalación como un script de RouterOS
+para ejecutarlo en el propio router, así que la línea de la envlist tiene que llevar el token real;
+el propio script lo dice en su cabecera. Un `.rsc` generado con un token dentro es una credencial:
+[lo que el instalador rechaza](/mikroscope/security/installer/) explica cómo tratarlo.
+
+## Dónde viven las credenciales del colector
+
+En tu máquina, las credenciales que abren algo distinto del agente se leen solo del entorno, nunca
+de una opción. El código da el motivo: una opción se ve en `ps` y en el historial de la shell.
+
+- La contraseña del usuario de la API: `MIKROSCOPE_API_PASSWORD`. La dirección y el usuario vienen de
+  `--api` y `--api-user`, o de `MIKROSCOPE_API_ADDR` y `MIKROSCOPE_API_USER`.
+- Credenciales de los destinos: `MIKROSCOPE_INFLUX_TOKEN`, `MIKROSCOPE_LOKI_TOKEN`,
+  `MIKROSCOPE_OTLP_TOKEN`, `MIKROSCOPE_ELASTIC_AUTH`, `MIKROSCOPE_TELEGRAF_TOKEN`.
+- Grafana: `GRAFANA_TOKEN`.
+
+El token del agente es la excepción: tiene una opción `--token` además de `MIKROSCOPE_TOKEN`. El
+mismo razonamiento vale para él, así que prefiere la variable.
+
+La CLI no lee `.env` por su cuenta. Exporta las variables a la shell que la ejecuta, por ejemplo con
+`set -a; . ./.env; set +a`.
+
+## De dónde sale la imagen del agente
+
+El contenedor ejecuta una imagen, y la vía que la pone ahí decide en qué estás confiando.
+
+- `install` con una cadena de herramientas de Go y un checkout construye la imagen en tu máquina a
+  partir del código que tienes delante y la sube por tu propia sesión ssh. Confías en tu propio
+  árbol.
+- `install --agent-tar <fichero>` sube el tar que publica la release, por esa misma sesión ssh. La
+  CLI comprueba que el tar es una imagen del agente de mikroscope de la arquitectura que nombra
+  `--arch` antes de enviarlo; comprobar que es el fichero que publicó la release te toca a ti,
+  contra `checksums.txt`.
+- `install --remote-image <referencia>` no sube nada: es el propio router quien descarga la imagen
+  del registro que nombra su ajuste global `/container/config registry-url`. Confías en ese registro
+  y en el camino del router hasta él, y mikroscope no verifica nada de lo que llega.
+- `plan --rsc` escribe esas mismas órdenes como un script de RouterOS para pegarlo o hacerle
+  `/import`; la imagen sigue teniendo que llegar por una de las dos vías anteriores que no necesitan
+  una subida desde la CLI.
+
+## El contenedor
+
+`install` crea un contenedor con estos ajustes, todos impresos por `plan` antes de escribir nada:
+
+- **`privileged=yes` por defecto**, `--privileged=false` para renunciar a ello. El ajuste necesita RouterOS 7.24 o posterior. Quita el espacio de nombres de usuario del contenedor (verificado en <Verified of="privileged-namespaces" />), que es lo que hace legibles el log del
+  kernel, `/proc/slabinfo`, `/proc/pagetypeinfo` y los contadores ECC de la MTD. **No** quita el
+  espacio de nombres de red ni el de PID: ni contadores de interfaz, ni la tabla conntrack del
+  router, ni vista de los procesos de RouterOS. [Lo que aporta privileged](/mikroscope/es/limits/privileged/)
+  tiene las medidas.
+- **`memory-max=64M`** (`--memory-max`), aplicado como límite cgroup del contenedor, con el límite
+  blando de Go del agente en 40 MiB (`--mem-limit-mb`) dentro de él.
+- **`restart-policy=on-failure`**, limitado a cinco reintentos separados diez segundos, para que una
+  imagen rota no pueda entrar en bucle al arrancar.
+- **`start-on-boot=yes`**, o `no` con `--ephemeral`, cuya raíz vive en el disco tmpfs y no sobrevive
+  a un reinicio.
+- **`logging=yes`**, para que las líneas de ciclo de vida del agente lleguen al log del router.
+- **`ignore-remote-image-change=yes`**: con el valor por defecto, RouterOS vigila la imagen y, en
+  cuanto se borra el tar, detiene y elimina el contenedor y lo vuelve a extraer minutos después
+  (<Verified of="remote-image-change" />). `install` borra el tar justo después de la extracción, y
+  por eso fija este ajuste.
+- Raíz e imagen en el disco que elegiste con `--disk`: la flash interna por defecto.
+- **Ningún bind mount.** `install` no monta ninguna ruta del anfitrión dentro del contenedor.
+
+El agente lee `/proc`, `/sys` (`/sys/fs/cgroup` para su propia contabilidad, `/sys/class/thermal` y
+`/sys/class/mtd` para el equipo) y — con privileged — `/dev/kmsg` y los contadores de rendimiento del
+hardware. No escribe nada en su raíz durante la ejecución: el anillo y las capturas por disparo se
+guardan en memoria. Atrapa SIGTERM, porque RouterOS mata en el acto a un contenedor que no lo hace.
+
+El último ajuste de la lista es deliberado. El 2026-09-15 se le dieron a un contenedor privilegiado
+en el RB5009 de referencia `/proc`, `/sys` y `/` del anfitrión como bind mounts, para ver si un
+montaje da más acceso. El `/proc` del anfitrión se montó pero leyó cero PID, y el `/sys` del
+anfitrión no tenía `class/net`: los espacios de nombres aguantaron. El `/` del anfitrión sí
+funcionó, y expone el sistema de ficheros de la flash de RouterOS — configuración y ficheros,
+secretos incluidos. mikroscope no hace esto, y un contenedor que construyas tú tampoco debería.
+
+<NotClaimed variant="untested">
+	Que la instalación persistente sobreviva a un reinicio no está probado: el router de referencia es
+	de producción y no se reinicia para pruebas. Los ajustes del contenedor de arriba se verificaron
+	en un RB5009 con RouterOS 7.24.2; no se probó ninguna otra placa ni versión de RouterOS.
+</NotClaimed>
+
+<SeeAlso>
+
+## Véase también
+
+- [El usuario de la API](/mikroscope/es/security/api-user/): el usuario de RouterOS que necesita el
+  colector, y la política que recibe.
+- [Lo que abre --expose](/mikroscope/es/security/expose/): las dos reglas de cortafuegos, y por qué
+  el token pasa a ser obligatorio.
+- [Lo que el instalador rechaza](/mikroscope/es/security/installer/): los objetos sobre los que no
+  construye, y los valores que no mete en una orden.
+- [Lo que aporta privileged](/mikroscope/es/limits/privileged/): lo que lee la concesión de
+  privilegio por defecto, y lo que no.
+
+</SeeAlso>

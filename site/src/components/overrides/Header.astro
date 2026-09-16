@@ -1,0 +1,119 @@
+---
+/**
+ * Starlight's header, with the theme and language controls kept on screen
+ * below `md`.
+ *
+ * Starlight hides its whole right-hand group under 50rem and moves theme and
+ * language to the foot of the drawer, so on a phone both are two taps and a
+ * scroll away. This wraps the stock header rather than copying it, so an
+ * upgrade of Starlight changes the title, search and social links here too,
+ * and adds a compact pair beside it: a two-state theme toggle and the language
+ * select reduced to its globe.
+ *
+ * At `md` and up the pair is hidden and the stock selects take over, because
+ * the stock theme select is the only place "Auto" stays reachable there: the
+ * desktop drawer has no preferences footer. One breakpoint, Starlight's own, so
+ * there is no band between two of them that nobody tests.
+ */
+import Default from "@astrojs/starlight/components/Header.astro";
+// The virtual path, so a future LanguageSelect override reaches this header
+// too; src/env.d.ts declares the module for `astro check`.
+import LanguageSelect from "virtual:starlight/components/LanguageSelect";
+import ThemeToggle from "./ThemeToggle.astro";
+---
+
+<div class="ms-header">
+	<div class="ms-default"><Default><slot /></Default></div>
+	<div class="ms-controls">
+		<ThemeToggle />
+		<div class="ms-lang"><LanguageSelect /></div>
+	</div>
+</div>
+
+<script>
+	// Chromium matches `:focus-visible` on a <select> focused by a tap or a
+	// click (measured 2026-09-15, headless Chromium, 390 px), so that alone still
+	// left the ring on the globe after a tap. The label remembers a pointer
+	// until the next key, which is the modality `:focus-visible` is meant to track.
+	for (const label of document.querySelectorAll<HTMLElement>(".ms-lang label")) {
+		label.addEventListener("pointerdown", () => label.setAttribute("data-pointer", ""));
+		label.addEventListener("keydown", () => label.removeAttribute("data-pointer"));
+		label.addEventListener("focusout", () => label.removeAttribute("data-pointer"));
+	}
+</script>
+
+<style>
+	/* Unlayered on purpose: the media queries below decide visibility on their
+	 * own, without a utility class from `@layer starlight.utils` to outrank. */
+	.ms-header {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		height: 100%;
+	}
+	.ms-default {
+		flex: 1;
+		min-width: 0;
+		height: 100%;
+	}
+	.ms-controls {
+		display: flex;
+		align-items: center;
+		gap: 0.25rem;
+	}
+	@media (min-width: 50rem) {
+		.ms-controls {
+			display: none;
+		}
+	}
+	@media print {
+		.ms-controls {
+			display: none;
+		}
+	}
+
+	/* The language select reduced to its globe. The stock one spends about
+	 * seven characters of width on the locale name, which a 360 px row does not
+	 * have. A transparent native select stretched over the icon keeps the
+	 * browser's own dropdown, which is the part worth keeping. */
+	.ms-lang :global(label) {
+		position: relative;
+		display: grid;
+		place-items: center;
+		width: 2rem;
+		height: 2rem;
+		border-radius: var(--ms-radius);
+		color: var(--sl-color-gray-2);
+	}
+	.ms-lang :global(.label-icon) {
+		position: static;
+		/* Select.astro centres the icon with a -50% translate; static, that
+		 * translate would push it half its height out of the button. */
+		transform: none;
+		width: 1.15rem;
+		height: 1.15rem;
+	}
+	.ms-lang :global(.caret) {
+		display: none;
+	}
+	.ms-lang :global(select) {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		margin: 0;
+		padding: 0;
+		opacity: 0;
+		cursor: pointer;
+	}
+	.ms-lang :global(label:hover) {
+		color: var(--sl-color-white);
+	}
+	/* The select is transparent, so its own focus ring is invisible: without
+	 * this a keyboard user sees no focus at all. `:focus-visible`, not
+	 * `:focus-within`, so a tap or a click does not leave a ring on the globe. */
+	.ms-lang :global(label:has(select:focus-visible):not([data-pointer])) {
+		outline: 2px solid var(--ms-accent);
+		outline-offset: 2px;
+	}
+</style>

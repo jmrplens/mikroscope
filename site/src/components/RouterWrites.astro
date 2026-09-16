@@ -1,0 +1,61 @@
+---
+/**
+ * What an installer command writes to the reader's router, before they run it.
+ *
+ * The list comes from src/data/router-objects.ts, so `start` and the landing
+ * cannot disagree about what `install` creates. It is a plain block, not a
+ * warning: a write is not a status, and the accent is kept for things a
+ * reader can act on. The title is a paragraph, not a heading, so it does not
+ * change a page's outline or the parity gate's heading ladder.
+ */
+import { isRouterCommand, routerObjects } from "../data/router-objects";
+import { codeSpans } from "../lib/format";
+import { langOf } from "../lib/lang";
+import InlineCode from "./InlineCode.astro";
+
+interface Props {
+	command: string;
+}
+
+const { command } = Astro.props;
+if (!isRouterCommand(command)) {
+	throw new Error(
+		`RouterWrites: unknown command "${command}"; use ${Object.keys(routerObjects)
+			.map((c) => `"${c}"`)
+			.join(", ")} (src/data/router-objects.ts)`,
+	);
+}
+const lang = langOf(Astro.locals.starlightRoute);
+const t = Astro.locals.t;
+const TITLES = {
+	install: "ms.writes.title.install",
+	expose: "ms.writes.title.expose",
+	upgrade: "ms.writes.title.upgrade",
+	uninstall: "ms.writes.title.uninstall",
+} as const;
+// Only install and uninstall touch the removal path that verify describes.
+const verifies = command === "install" || command === "uninstall";
+---
+
+<div class="ms-writes" data-writes={command}>
+	<p class="ms-writes-title">
+		{codeSpans(t(TITLES[command])).map((p) => (p.code ? <InlineCode text={p.text} /> : p.text))}
+	</p>
+	<ul>
+		{
+			routerObjects[command].map((o) => (
+				<li>{codeSpans(o[lang]).map((p) => (p.code ? <InlineCode text={p.text} /> : p.text))}</li>
+			))
+		}
+	</ul>
+	<p>
+		{t("ms.writes.tag")}{" "}
+		<code class="ms-writes-tag">{"mikroscope:<name> (managed by mikroscope)"}</code>
+	</p>
+	<p>{codeSpans(t("ms.writes.plan")).map((p) => (p.code ? <InlineCode text={p.text} /> : p.text))}</p>
+	{
+		verifies && (
+			<p>{codeSpans(t("ms.writes.verify")).map((p) => (p.code ? <InlineCode text={p.text} /> : p.text))}</p>
+		)
+	}
+</div>

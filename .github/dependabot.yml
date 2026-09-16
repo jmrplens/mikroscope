@@ -1,0 +1,98 @@
+# Dependabot configuration: mikroscope
+# Docs: https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-options-reference
+#
+# Every ecosystem states its own cooldown. GitHub has applied a three-day
+# default since July 2026, but a default is a property of the platform, not of
+# this repository: it can be changed, and an absent key would then mean
+# something different without anything here changing. A week is long enough for
+# a compromised release to be yanked (the September 2025 npm maintainer
+# phishing that hit `debug`, `chalk` and 16 other packages was caught in
+# hours), and security updates ignore cooldown entirely, so this delays
+# convenience, not fixes.
+#
+# One deliberate omission: there is no docker entry. Dockerfile.agent is
+# `FROM scratch`, which has no version and no digest for Dependabot to move,
+# and the image's only content is the agent binary this repository builds.
+
+version: 2
+
+updates:
+  # Go modules (root go.mod). Not govulncheck or gotestsum: go.mod records a
+  # tool's module as `// indirect`, version updates skip every indirect
+  # requirement, and Dependabot reads no `tool` directive
+  # (dependabot/dependabot-core#12050), so both are bumped by hand (see
+  # scripts/govulncheck.sh). The agent links only the standard library and
+  # this module's own packages, so an update here reaches the CLI, never the
+  # binary on the router.
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      timezone: "Europe/Madrid"
+    cooldown:
+      default-days: 7
+      semver-minor-days: 14
+      semver-major-days: 30
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "go"
+    groups:
+      go-minor-patch:
+        applies-to: version-updates
+        update-types:
+          - "minor"
+          - "patch"
+    open-pull-requests-limit: 10
+
+  # pnpm / Astro docs site (site/package.json)
+  - package-ecosystem: "npm"
+    directory: "/site"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      timezone: "Europe/Madrid"
+    cooldown:
+      default-days: 7
+      semver-minor-days: 14
+      semver-major-days: 30
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "javascript"
+    groups:
+      npm-minor-patch:
+        applies-to: version-updates
+        update-types:
+          - "minor"
+          - "patch"
+    open-pull-requests-limit: 5
+
+  # GitHub Actions workflows
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      timezone: "Europe/Madrid"
+    # No SemVer sub-keys: an action pin is a commit SHA with a version comment,
+    # and the cooldown that matters is the flat one before a hijacked tag is
+    # adopted.
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "github-actions"
+    groups:
+      actions-all:
+        applies-to: version-updates
+        patterns:
+          - "*"
