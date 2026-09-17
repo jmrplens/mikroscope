@@ -227,7 +227,7 @@ func (s *OTLP) kernelCPU(k *sample.Sample) {
 			{"softirq", c.SoftIRQ},
 			{"steal", c.Steal},
 		} {
-			s.sum("mikroscope.cpu.ticks", "{tick}", start, ts, m.v, "cpu", core, "mode", m.name)
+			s.sum("mikroscope.cpu.ticks", unitTick, start, ts, m.v, "cpu", core, "mode", m.name)
 		}
 		s.gaugeF("mikroscope.cpu.busy_ratio", "1", ts, c.BusyRatio(k.DtNS), "cpu", core)
 	}
@@ -996,10 +996,13 @@ func (s *OTLP) Close() error {
 
 // writeSampler renders the agent's own counters: cumulative ones as sums,
 // what it is holding right now as gauges.
+// unitTick is OpenTelemetry's unit annotation for a count of sampler ticks.
+const unitTick = "{tick}"
+
 func (s *OTLP) writeSampler(st *agent.SamplerStats) {
 	ts := time.Now().UnixNano()
-	s.sum("mikroscope.sampler.ticks", "{tick}", 0, ts, st.Ticks)
-	s.sum("mikroscope.sampler.slipped", "{tick}", 0, ts, st.Slipped)
+	s.sum("mikroscope.sampler.ticks", unitTick, 0, ts, st.Ticks)
+	s.sum("mikroscope.sampler.slipped", unitTick, 0, ts, st.Slipped)
 	c := st.Captures
 	if c == nil {
 		return
