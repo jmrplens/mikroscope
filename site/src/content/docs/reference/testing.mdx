@@ -110,8 +110,15 @@ make e2e-docker-down
 
 The package is behind the `dockere2e` build tag, so `make test` and every
 default CI job compile none of it — the tag is how you ask for nine containers.
-`make lint` type-checks it so it cannot rot, and the weekly E2E workflow and
-the release gate run it.
+`make lint` type-checks it so it cannot rot, and **every pull request runs it**,
+along with the weekly workflow and the release gate.
+
+It was not on the pull-request path until 2026-09-18, on the grounds that nine
+containers are a lot to ask of one. That is how 1.0.5 reached `main` with two
+tests in this suite still reading the agent's `/metrics`, which that release
+had removed: every pull-request check was green, and the tag was what found
+it. The cost of having it there is **2 min 37 s**, measured on the release run
+that failed — containers included.
 
 Measured on the development machine on 2026-09-16: the stack comes up in 55 to
 81 s with the images already pulled, and the whole suite takes 75 to 100 s from

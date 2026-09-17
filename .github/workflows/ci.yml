@@ -338,6 +338,15 @@ jobs:
     name: End-to-end
     needs: [compile]
     uses: ./.github/workflows/e2e.yml
+    # The stores too, since 2026-09-18. They used to run weekly, on dispatch
+    # and on the release gate only — nine containers seemed too much for a
+    # pull request — and that is how 1.0.5 reached main with two tests in that
+    # suite still reading an endpoint the release had removed: every
+    # pull-request check was green and the tag was what found it. MEASURED on
+    # the release run that failed: 2 min 37 s from job start to result,
+    # containers included, against a 20-minute timeout.
+    with:
+      stores: true
     permissions:
       contents: read
 
