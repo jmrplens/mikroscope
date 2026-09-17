@@ -91,6 +91,23 @@ func ArmVariant(goarm string) string {
 	return "v" + goarm
 }
 
+// VariantNote is what an operator needs to be told about an image they chose
+// by hand, or the empty string when there is nothing to say.
+//
+// 32-bit ARM is the only case. MikroTik's container documentation states that
+// devices with the EN7562CT CPU — the hEX Refresh line — "support only arm32v5
+// container images", and its other 32-bit ARM boards run an ARMv7 userland. An
+// ARMv5 image runs on both, an ARMv7 one does not run on the first, and the
+// way that fails is an `exec format error` in the container log after an
+// install that reported success. So the v7 image is the one that needs a word,
+// and only when the operator picked it.
+func VariantNote(info Info) string {
+	if info.Arch != "arm" || info.Variant != "v7" {
+		return ""
+	}
+	return "note: this is the ARMv7 image. A board with an EN7562CT CPU (hEX Refresh) needs mikroscope-agent-armv5.tar instead; it runs on every 32-bit ARM MikroTik ships"
+}
+
 // Info is what Inspect could read back out of an image tar.
 type Info struct {
 	Arch    string // the config's `architecture`: arm64, arm, amd64

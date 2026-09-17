@@ -275,14 +275,8 @@ func loadAgentTar(path, arch string) ([]byte, error) {
 		return nil, fmt.Errorf("--agent-tar %s is a linux/%s image and --arch says %s: download the mikroscope-agent-%s.tar asset instead", path, info.Arch, arch, arch)
 	}
 	fmt.Fprintf(os.Stderr, "using %s: linux/%s%s, agent %d KiB\n", path, info.Arch, info.Variant, info.Size/1024)
-	// A 32-bit ARM image is not one thing. MikroTik's container documentation
-	// says devices with the EN7562CT CPU — the hEX Refresh line — "support
-	// only arm32v5 container images", and an ARMv7 image on one of those
-	// installs, starts and dies in the container log. The v5 image runs on
-	// every 32-bit ARM board MikroTik ships, so the only tar that needs a
-	// word is the v7 one, and the operator asked for it by downloading it.
-	if info.Arch == "arm" && info.Variant == "v7" {
-		fmt.Fprintf(os.Stderr, "note: this is the ARMv7 image. A board with an EN7562CT CPU (hEX Refresh) needs mikroscope-agent-armv5.tar instead; it runs on every 32-bit ARM MikroTik ships\n")
+	if note := image.VariantNote(info); note != "" {
+		fmt.Fprintln(os.Stderr, note)
 	}
 	return data, nil
 }

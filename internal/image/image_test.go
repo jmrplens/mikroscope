@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"strings"
 	"testing"
 )
 
@@ -95,6 +96,41 @@ func TestArmVariant(t *testing.T) {
 	}
 	if img64, _ := Tar([]byte("x"), "arm64", ""); bytes.Contains(img64, []byte(`"variant"`)) {
 		t.Fatal("arm64 image declares a variant")
+	}
+}
+
+// TestVariantNote pins which image gets a word and which does not: only the
+// 32-bit ARMv7 one, because it is the only image a reader can download that
+// will not run on a board MikroTik ships.
+func TestVariantNote(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		info Info
+		want bool
+	}{
+		{Info{Arch: "arm", Variant: "v7"}, true},
+		{Info{Arch: "arm", Variant: "v5"}, false},
+		{Info{Arch: "arm64"}, false},
+		{Info{Arch: "amd64"}, false},
+	} {
+		note := VariantNote(tc.info)
+		if (note != "") != tc.want {
+			t.Errorf("VariantNote(%+v) = %q, wanted a note: %v", tc.info, note, tc.want)
+		}
+		if tc.want && !strings.Contains(note, "armv5") {
+			t.Errorf("the note does not name the image to use instead: %q", note)
+		}
+	}
+}
+
+// TestArmVariantString pins the mapping GOARM → OCI variant, including the
+// empty string, which is what the toolchain's own default means here.
+func TestArmVariantString(t *testing.T) {
+	t.Parallel()
+	for goarm, want := range map[string]string{"": "v7", "5": "v5", "6": "v6", "7": "v7"} {
+		if got := ArmVariant(goarm); got != want {
+			t.Errorf("ArmVariant(%q) = %q, want %q", goarm, got, want)
+		}
 	}
 }
 

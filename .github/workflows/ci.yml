@@ -605,9 +605,11 @@ jobs:
   # Every architecture's image, built AND started. The image is assembled from
   # a cross-compiled binary that nothing else in this pipeline executes, and
   # gitlab-mcp-server once shipped an arm64 image that could not exec at all,
-  # past every gate that only built it. linux/arm/v7 is the one that matters
-  # most here: a 32-bit ARM userland is where a wrong GOARM or a bad variant
-  # would show, and the hEX S (2025) is that platform.
+  # past every gate that only built it. The two 32-bit ARM rows are the ones
+  # that matter most: a wrong GOARM or a bad variant shows there and nowhere
+  # else, and MikroTik ships both — linux/arm/v5 for the EN7562CT boards (hEX
+  # Refresh), which its container documentation says take arm32v5 images only,
+  # and linux/arm/v7 for the rest.
   #
   # The tar comes from the project's own builder (scripts/agent-tars.sh, which
   # is internal/image, the code `mikroscope install` uploads), not from a
@@ -623,7 +625,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform: [linux/amd64, linux/arm64, linux/arm/v7]
+        platform: [linux/amd64, linux/arm64, linux/arm/v7, linux/arm/v5]
     steps:
       - name: Check out the repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
