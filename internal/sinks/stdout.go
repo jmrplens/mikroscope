@@ -175,6 +175,8 @@ func (s *Stdout) renderJSON(e Event) {
 		s.cur.WriteByte('\n')
 	case e.Detection != nil:
 		s.marshal(map[string]any{"detection": e.Detection})
+	case e.Sampler != nil:
+		s.marshal(map[string]any{"sampler": e.Sampler})
 	case e.Device != nil:
 		// The terminal is for change; the cadence repeat says nothing the
 		// line above it did not.

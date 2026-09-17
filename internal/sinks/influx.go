@@ -437,8 +437,16 @@ func (s *Influx) writeKernelCounters(k *sample.Sample, ts string) {
 	if k.Self.HasCgroup {
 		maxField += fmt.Sprintf(",throttled=%du,throttled_us=%du,oom_kill=%du", k.Self.Throttled, k.Self.ThrottledUsec, k.Self.OOMKill)
 	}
-	fmt.Fprintf(&s.cur, "mikroscope_self%s cpu_us=%du,rss=%du,cgroup_mem=%du%s,resets=%du,kmsg_dropped=%du,seq=%du %s\n",
-		s.tag(), k.Self.CPUUsec, k.Self.RSSBytes, k.Self.CgroupMem, maxField, k.Resets, k.EventsDropped, k.Seq, ts)
+	// wake_ns and read_ns are the sampler's own timing, which only the agent
+	// can measure: how late this tick woke after its ticker, and how long the
+	// read of every source took. They reach the store since 1.0.5, when the
+	// agent stopped serving an exposition of its own.
+	timing := ""
+	if k.Self.WakeNS != 0 || k.Self.ReadNS != 0 {
+		timing = fmt.Sprintf(",wake_ns=%di,read_ns=%di", k.Self.WakeNS, k.Self.ReadNS)
+	}
+	fmt.Fprintf(&s.cur, "mikroscope_self%s cpu_us=%du,rss=%du,cgroup_mem=%du%s%s,resets=%du,kmsg_dropped=%du,seq=%du %s\n",
+		s.tag(), k.Self.CPUUsec, k.Self.RSSBytes, k.Self.CgroupMem, maxField, timing, k.Resets, k.EventsDropped, k.Seq, ts)
 	if k.PSI != nil {
 		fmt.Fprintf(&s.cur, "mikroscope_psi%s cpu_some_us=%du,mem_some_us=%du,mem_full_us=%du,io_some_us=%du,io_full_us=%du %s\n", s.tag(), k.PSI.CPUSome, k.PSI.MemSome, k.PSI.MemFull, k.PSI.IOSome, k.PSI.IOFull, ts)
 	}

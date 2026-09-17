@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jmrplens/mikroscope/internal/agent"
 	"github.com/jmrplens/mikroscope/internal/apitier"
 	"github.com/jmrplens/mikroscope/internal/derive"
 	"github.com/jmrplens/mikroscope/internal/procfs"
@@ -155,7 +156,7 @@ var sqlSchema = []sqlTable{
 	// resets is the agent's own restart counter and kmsg_dropped what the
 	// kernel-log reader had to throw away: both are the observer's honesty
 	// about itself, and both are on the InfluxDB rows already.
-	{"mikroscope_self", "host TEXT NOT NULL, cpu_us BIGINT, rss BIGINT, cgroup_mem BIGINT, throttled BIGINT, throttled_us BIGINT, oom_kill BIGINT, resets BIGINT, kmsg_dropped BIGINT, seq BIGINT", keyHost},
+	{"mikroscope_self", "host TEXT NOT NULL, cpu_us BIGINT, rss BIGINT, cgroup_mem BIGINT, throttled BIGINT, throttled_us BIGINT, oom_kill BIGINT, resets BIGINT, kmsg_dropped BIGINT, seq BIGINT, wake_ns BIGINT, read_ns BIGINT", keyHost},
 	// Long form, one row per (zone, order): free blocks of 2^order pages, a
 	// level. `order` is reserved, hence block_order.
 	{"mikroscope_buddy", "host TEXT NOT NULL, node INTEGER NOT NULL, zone TEXT NOT NULL, block_order INTEGER NOT NULL, free_blocks BIGINT", "time, host, node, zone, block_order"},
@@ -229,6 +230,13 @@ var sqlSchema = []sqlTable{
 	{"mikroscope_device_thermal", "host TEXT NOT NULL, zone TEXT NOT NULL, critical_celsius DOUBLE PRECISION, polling_ms INTEGER", "time, host, zone"},
 	{"mikroscope_device_cpufreq", "host TEXT NOT NULL, cpu INTEGER NOT NULL, cluster INTEGER, min_khz BIGINT, max_khz BIGINT, governor TEXT, steps TEXT", "time, host, cpu"},
 	{"mikroscope_device_cadence", "host TEXT NOT NULL, source TEXT NOT NULL, reason TEXT, hz DOUBLE PRECISION", "time, host, source"},
+	// What only the agent can count about itself, read on the collector's
+	// health cadence rather than produced by a tick: counters since the agent
+	// started, and what the trigger evaluator is holding right now.
+	{"mikroscope_sampler", "host TEXT NOT NULL, ticks BIGINT, slipped BIGINT, captures_held INTEGER, capture_bytes BIGINT, capture_budget_bytes BIGINT, capture_served_bytes BIGINT", keyHost},
+	{"mikroscope_trigger_count", "host TEXT NOT NULL, condition TEXT NOT NULL, fired BIGINT", "time, host, condition"},
+	{"mikroscope_trigger_suppressed", "host TEXT NOT NULL, condition TEXT NOT NULL, reason TEXT NOT NULL, count BIGINT", "time, host, condition, reason"},
+	{"mikroscope_capture_refused", "host TEXT NOT NULL, reason TEXT NOT NULL, count BIGINT", "time, host, reason"},
 }
 
 // NewSQL opens (truncates) path, or writes to stdout when path is "-", and
@@ -288,6 +296,8 @@ func (s *SQL) Write(e Event) {
 		s.gapRow(sqlStamp(time.Now().UnixNano()), e.Gap)
 	case e.Device != nil:
 		s.deviceRows(sqlStamp(time.Now().UnixNano()), e.Device)
+	case e.Sampler != nil:
+		s.samplerRows(sqlStamp(time.Now().UnixNano()), e.Sampler)
 	case e.Detection != nil:
 		d := e.Detection
 		fmt.Fprintf(&s.buf, "INSERT INTO mikroscope_detection (time, host, rule, key, seq, value, threshold, message) VALUES (%s, %s, %s, %s, %d, %s, %s, %s)%s",
@@ -369,8 +379,8 @@ func (s *SQL) kernelCore(ts string, k *sample.Sample) {
 	if k.Self.HasCgroup {
 		throttled, throttledUs, oomKill = strconv.FormatUint(k.Self.Throttled, 10), strconv.FormatUint(k.Self.ThrottledUsec, 10), strconv.FormatUint(k.Self.OOMKill, 10)
 	}
-	fmt.Fprintf(&s.buf, "INSERT INTO mikroscope_self (time, host, cpu_us, rss, cgroup_mem, throttled, throttled_us, oom_kill, resets, kmsg_dropped, seq) VALUES (%s, %s, %d, %d, %d, %s, %s, %s, %d, %d, %d)%s",
-		ts, s.hostLit, k.Self.CPUUsec, k.Self.RSSBytes, k.Self.CgroupMem, throttled, throttledUs, oomKill, k.Resets, k.EventsDropped, k.Seq, sqlEnd)
+	fmt.Fprintf(&s.buf, "INSERT INTO mikroscope_self (time, host, cpu_us, rss, cgroup_mem, throttled, throttled_us, oom_kill, resets, kmsg_dropped, seq, wake_ns, read_ns) VALUES (%s, %s, %d, %d, %d, %s, %s, %s, %d, %d, %d, %d, %d)%s",
+		ts, s.hostLit, k.Self.CPUUsec, k.Self.RSSBytes, k.Self.CgroupMem, throttled, throttledUs, oomKill, k.Resets, k.EventsDropped, k.Seq, k.Self.WakeNS, k.Self.ReadNS, sqlEnd)
 	for _, z := range k.Buddy {
 		for o, n := range z.Free {
 			fmt.Fprintf(&s.buf, "INSERT INTO mikroscope_buddy (time, host, node, zone, block_order, free_blocks) VALUES (%s, %s, %d, %s, %d, %d)%s",
@@ -683,4 +693,29 @@ func (s *SQL) Close() error {
 		}
 	}
 	return err
+}
+
+// samplerRows writes the agent's account of itself: one row of counters and
+// held state, then one per condition and reason.
+func (s *SQL) samplerRows(ts string, st *agent.SamplerStats) {
+	held, pinned, budget, served := 0, int64(0), int64(0), uint64(0)
+	if c := st.Captures; c != nil {
+		held, pinned, budget, served = c.Held, c.Bytes, c.BudgetBytes, c.ServedBytes
+	}
+	fmt.Fprintf(&s.buf, "INSERT INTO mikroscope_sampler (time, host, ticks, slipped, captures_held, capture_bytes, capture_budget_bytes, capture_served_bytes) VALUES (%s, %s, %d, %d, %d, %d, %d, %d)%s",
+		ts, s.hostLit, st.Ticks, st.Slipped, held, pinned, budget, served, sqlEnd)
+	c := st.Captures
+	if c == nil {
+		return
+	}
+	for _, k := range sortedStrings(c.Refused) {
+		fmt.Fprintf(&s.buf, "INSERT INTO mikroscope_capture_refused (time, host, reason, count) VALUES (%s, %s, %s, %d)%s", ts, s.hostLit, sqlQuote(k), c.Refused[k], sqlEnd)
+	}
+	for _, k := range sortedStrings(c.Fired) {
+		fmt.Fprintf(&s.buf, "INSERT INTO mikroscope_trigger_count (time, host, condition, fired) VALUES (%s, %s, %s, %d)%s", ts, s.hostLit, sqlQuote(k), c.Fired[k], sqlEnd)
+	}
+	for _, k := range sortedStrings(c.Suppressed) {
+		cond, reason, _ := strings.Cut(k, "\x00")
+		fmt.Fprintf(&s.buf, "INSERT INTO mikroscope_trigger_suppressed (time, host, condition, reason, count) VALUES (%s, %s, %s, %s, %d)%s", ts, s.hostLit, sqlQuote(cond), sqlQuote(reason), c.Suppressed[k], sqlEnd)
+	}
 }

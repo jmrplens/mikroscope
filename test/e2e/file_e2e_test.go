@@ -57,7 +57,7 @@ func TestFileSinkWritesTheTimelineAsJSONL(t *testing.T) {
 			}
 		case strings.HasPrefix(line, `{"api":`):
 			other++
-		case strings.HasPrefix(line, `{"derived":`), strings.HasPrefix(line, `{"detection":`), strings.HasPrefix(line, `{"trigger":`), strings.HasPrefix(line, `{"device":`):
+		case strings.HasPrefix(line, `{"derived":`), strings.HasPrefix(line, `{"detection":`), strings.HasPrefix(line, `{"trigger":`), strings.HasPrefix(line, `{"device":`), strings.HasPrefix(line, `{"sampler":`):
 			// The collector's own line kinds, beside the samples; a consumer
 			// wanting raw samples skips them by prefix, as this does.
 		default:

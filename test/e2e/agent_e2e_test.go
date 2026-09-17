@@ -297,7 +297,7 @@ func TestCollectorForwardsFromTheRealAgentIntoAFile(t *testing.T) {
 	}
 	samples := 0
 	for i, line := range lines {
-		if strings.HasPrefix(line, `{"derived":`) || strings.HasPrefix(line, `{"detection":`) || strings.HasPrefix(line, `{"device":`) {
+		if strings.HasPrefix(line, `{"derived":`) || strings.HasPrefix(line, `{"detection":`) || strings.HasPrefix(line, `{"device":`) || strings.HasPrefix(line, `{"sampler":`) {
 			continue // the collector's derive stage, beside the samples
 		}
 		var s sample.Sample
