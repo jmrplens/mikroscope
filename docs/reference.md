@@ -543,10 +543,23 @@ The entries install writes into the agent's envlist:
 
 > **The agent's defaults and install's defaults are not the same**
 >
-> An agent started with no envlist entry uses a 14 MiB soft memory limit. `install` always writes
-> `MEM_LIMIT_MB=40`, and the container's `memory-max` is `64M`, because a 300 s ring at 10 Hz holds
-> about 7.3 MB and a 14 MiB limit kept the garbage collector running continuously on the RB5009: 9.38 % of one core against 1.39 % with room, both with the ring full, measured
-> on RouterOS 7.24.2 on 2026-09-12. `IRQ_TOP_K`, `CAPTURE_PRE_S`, `CAPTURE_POST_S`, `CAPTURE_POLICY`,
+> An agent started with no envlist entry uses a 14 MiB soft memory limit. `install` **derives**
+> `MEM_LIMIT_MB` from the ring — rate × buffer × the line size, times 2.5, floored at 16 MiB and
+> capped at three quarters of `memory-max` — so the default install writes `MEM_LIMIT_MB=25` for a
+> 300 s ring at 10 Hz, where it used to write a flat 40. A fixed number cannot be right for every
+> rate: the same 40 left 8 MiB unused at 10 Hz and is below the ring itself at 50 Hz.
+>
+> The factor is measured, not chosen. On the reference RB5009 (RouterOS 7.24.2, 10 Hz, 300 s, every
+> source on) on 2026-09-17, four limits over four windows of about 12 000 samples each:
+>
+> | limit          | ring multiple | RSS       | CPU per sample | |
+> | -------------- | ------------- | --------- | -------------- | ------------------------ |
+> | 40 MiB         | 4.0×          | 32.9 MiB  | 2 657 µs       | the limit never binds    |
+> | 25 MiB (today) | 2.5×          | ~26 MiB   | ~2 780 µs      | no measurable cost       |
+> | 21 MiB         | 2.1×          | 23.5 MiB  | 3 250 µs       | +22 %, and climbing      |
+> | 18 MiB         | 1.8×          | 20.4 MiB  | 14 800 µs      | +457 %, worst tick 52 ms |
+>
+> The same cliff was measured from the other side on 2026-09-12: 9.38 % of one core at 14 MiB against 1.39 % with room, both with the ring full. `IRQ_TOP_K`, `CAPTURE_PRE_S`, `CAPTURE_POST_S`, `CAPTURE_POLICY`,
 > `TRIGGER_REFRACTORY_S`, `SOURCES`, `PROC_ROOT` and `SYS_ROOT` have no flag, so an installed agent
 > runs with their defaults.
 
