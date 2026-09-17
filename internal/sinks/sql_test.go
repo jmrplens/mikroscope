@@ -36,6 +36,18 @@ func sqlRich(seq uint64) Event {
 	k.Buddy = []procfs.BuddyZone{{Node: 0, Zone: "DMA", Free: []uint64{3, 169, 150}}}
 	k.MTD = []procfs.MTDHealth{{Dev: "mtd1", Name: "RouterBoard NAND 1 Main", CorrectedBits: 7, BitflipThreshold: 12, ECCStrength: 16}, {Dev: "mtd2", Name: "RouterBoot"}}
 	k.Self.HasCgroup, k.Self.Throttled, k.Self.OOMKill = true, 2, 1
+	// The sources added in 1.0.3, so this event still covers every table in
+	// sqlSchema — which is what TestSQLSinkHeaderDeclaresEveryInsertedColumn
+	// asserts.
+	k.Softirq = map[string][]uint64{"NET_RX": {31, 0, 4, 0}}
+	k.Perf = []sample.PerfDelta{{
+		Name:      "cycles",
+		PerCPU:    []uint64{1_200_000, 900_000},
+		EnabledNS: []uint64{100_000_000, 100_000_000},
+		RunningNS: []uint64{100_000_000, 50_000_000},
+	}}
+	k.FreqKHz = []uint64{1_400_000, 1_400_000}
+	k.FreqMaxKHz = map[int]uint64{0: 1_400_000}
 	return e
 }
 
@@ -68,10 +80,10 @@ func TestSQLSinkWritesKernelAPIAndGap(t *testing.T) {
 		"INSERT INTO mikroscope_cpu (time, host, cpu, user_ticks, nice_ticks, system_ticks, idle_ticks, iowait_ticks, irq_ticks, softirq_ticks, steal_ticks, busy_ratio, dt_ns) VALUES ('2026-08-29T10:40:00.1Z'::timestamptz, 'rb5009', 0, 3, 0, 0, 7, 0, 0, 0, 0, 0.3000, 100000000) ON CONFLICT DO NOTHING;\n",
 		"INSERT INTO mikroscope_softnet (time, host, cpu, processed, dropped, time_squeeze) VALUES ('2026-08-29T10:40:00.1Z'::timestamptz, 'rb5009', 0, 5, 1, 0) ON CONFLICT DO NOTHING;\n",
 		"INSERT INTO mikroscope_irq (time, host, irq, name, count) VALUES ('2026-08-29T10:40:00.1Z'::timestamptz, 'rb5009', '35', 'switch0', 4) ON CONFLICT DO NOTHING;\n",
-		"INSERT INTO mikroscope_mem (time, host, free_kb, available_kb, cached_kb, slab_kb, sunreclaim_kb) VALUES ('2026-08-29T10:40:00.1Z'::timestamptz, 'rb5009', 700000, 690000, 0, 0, 0) ON CONFLICT DO NOTHING;\n",
+		"INSERT INTO mikroscope_mem (time, host, free_kb, available_kb, cached_kb, slab_kb, sunreclaim_kb, total_kb, buffers_kb, sreclaimable_kb, anon_kb, mapped_kb, dirty_kb, writeback_kb, kernel_stack_kb, page_tables_kb, committed_kb, commit_limit_kb, shmem_kb, active_kb, inactive_kb) VALUES ('2026-08-29T10:40:00.1Z'::timestamptz, 'rb5009', 700000, 690000, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0) ON CONFLICT DO NOTHING;\n",
 		"INSERT INTO mikroscope_load (time, host, load1, load5, load15, running, threads, procs_blocked) VALUES ('2026-08-29T10:40:00.1Z'::timestamptz, 'rb5009', 0.50, 0.00, 0.00, 0, 150, 0) ON CONFLICT DO NOTHING;\n",
 		"INSERT INTO mikroscope_stat (time, host, ctxt, intr, forks, irq_total, irq_err, pgfault, pgmajfault) VALUES ('2026-08-29T10:40:00.1Z'::timestamptz, 'rb5009', 0, 0, 0, 0, 0, 0, 0) ON CONFLICT DO NOTHING;\n",
-		"INSERT INTO mikroscope_self (time, host, cpu_us, rss, cgroup_mem, throttled, throttled_us, oom_kill, seq) VALUES ('2026-08-29T10:40:00.1Z'::timestamptz, 'rb5009', 400, 14680064, 0, NULL, NULL, NULL, 1) ON CONFLICT DO NOTHING;\n",
+		"INSERT INTO mikroscope_self (time, host, cpu_us, rss, cgroup_mem, throttled, throttled_us, oom_kill, resets, kmsg_dropped, seq) VALUES ('2026-08-29T10:40:00.1Z'::timestamptz, 'rb5009', 400, 14680064, 0, NULL, NULL, NULL, 0, 0, 1) ON CONFLICT DO NOTHING;\n",
 		"INSERT INTO mikroscope_api_system (time, host, cpu_load, free_memory, total_memory, free_hdd, uptime_s, version) VALUES ('2026-08-29T10:40:00.5Z'::timestamptz, 'rb5009', 4, 800000000, 1073741824, 0, 100, '') ON CONFLICT DO NOTHING;\n",
 		"INSERT INTO mikroscope_api_core (time, host, cpu, load, irq, disk) VALUES ('2026-08-29T10:40:00.5Z'::timestamptz, 'rb5009', 1, 1, 1, 0) ON CONFLICT DO NOTHING;\n",
 		"INSERT INTO mikroscope_api_health (time, host, name, value) VALUES ('2026-08-29T10:40:00.5Z'::timestamptz, 'rb5009', 'cpu-temperature', 43) ON CONFLICT DO NOTHING;\n",

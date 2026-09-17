@@ -49,8 +49,18 @@ run against the reference RB5009 (RouterOS 7.24.2), not only against fakes:
   (2026-09-16). Its derive stage adds derived values and detection events
   beside the raw rows, and it emits a device-info stream once per capability
   hash.
-- **Two Grafana dashboards**, one per store, generated from one panel list,
-  with alert rules. On 2026-09-16, in Grafana 13.2.1, against the RB5009 with
+- **Five Grafana dashboards**, one per store — InfluxDB 3, Prometheus,
+  PostgreSQL, Graphite and Elasticsearch — generated from one panel list, with
+  alert rules for the three whose query language the rules are written in. The
+  two SQL stores are asked the same question in two dialects: the PostgreSQL
+  panels are the InfluxDB ones rewritten, and every one of its 209 queries is
+  planned by a real PostgreSQL in the container suite. Graphite and
+  Elasticsearch carry fewer panels on purpose (41 and 30 against 171): Graphite
+  has no labels and Elasticsearch no nested documents, so what they cannot
+  express is absent rather than wrong. All five are imported into a real
+  Grafana over the stores the suite filled, and every panel is asked: on
+  2026-09-17, 57, 98, 136, 35 and 28 panels returned data and none failed.
+  On 2026-09-16, in Grafana 13.2.1, against the RB5009 with
   the default triggers and a 30-minute `forward` into both stores,
   `dashboards check` passed 171 InfluxDB panels (0 failing, 10 known-empty
   tolerated) and 133 Prometheus panels (0 failing, 9 known-empty tolerated).

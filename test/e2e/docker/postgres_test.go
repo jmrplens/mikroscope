@@ -37,21 +37,30 @@ func pgCount(ctx context.Context, table string) (int, error) {
 // hold the values it emits, and whether its primary keys collide on a real
 // run — a duplicate key inside one script is an error here and a matching
 // golden file there.
-func TestSQLSinkAppliesToPostgres(t *testing.T) {
-	s := Sweep(t)
-	ctx := t.Context()
+// loadSweepIntoPostgres applies the script the SQL sink wrote for this run.
+// It is idempotent — CREATE TABLE IF NOT EXISTS and ON CONFLICT DO NOTHING
+// throughout — so the dashboard test can call it too without caring whether
+// this one ran first.
+func loadSweepIntoPostgres(ctx context.Context, tb testing.TB, s *sweep) {
+	tb.Helper()
 	script, err := os.ReadFile(s.SQL)
 	if err != nil {
-		t.Fatalf("the SQL sink wrote nothing: %v", err)
+		tb.Fatalf("the SQL sink wrote nothing: %v", err)
 	}
 	// The header is CREATE TABLE IF NOT EXISTS, and a reused stack already
 	// has the tables, so the run would otherwise be buried in NOTICEs.
 	script = append([]byte("SET client_min_messages = warning;\n"), script...)
 	if out, applyErr := psql(ctx, script, "-f", "-"); applyErr != nil {
-		t.Fatalf("psql refused the sink's script: %v", applyErr)
+		tb.Fatalf("psql refused the sink's script: %v", applyErr)
 	} else if strings.Contains(out, "ERROR:") {
-		t.Fatalf("psql reported an error while applying the script:\n%s", out)
+		tb.Fatalf("psql reported an error while applying the script:\n%s", out)
 	}
+}
+
+func TestSQLSinkAppliesToPostgres(t *testing.T) {
+	s := Sweep(t)
+	ctx := t.Context()
+	loadSweepIntoPostgres(ctx, t, s)
 
 	samples := s.Samples(t)
 	for table, want := range map[string]int{

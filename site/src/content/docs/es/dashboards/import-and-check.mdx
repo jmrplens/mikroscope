@@ -8,7 +8,7 @@ import NotClaimed from "../../../../components/NotClaimed.astro";
 import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
 
-Esta página responde a cómo meter los dos dashboards en un Grafana, qué necesita la fuente de datos
+Esta página responde a cómo meter los cinco dashboards en un Grafana, qué necesita la fuente de datos
 antes de que puedan devolver algo y qué te dice `mikroscope dashboards check` una vez están allí. La
 versión corta de lo último: `check` demuestra que la consulta de cada panel devuelve filas a través
 de la propia API de consultas de Grafana. No demuestra que un lector pueda leer el resultado.
@@ -52,6 +52,51 @@ capturas, y los ticks perdidos por retraso.
 Hacer scrape del agente sin la lista `keep` duplicaría cada contador que también expone el colector.
 `172.30.10.2:9123` es la dirección del agente en la instalación por defecto; cómo llega a ella un
 host de Prometheus está en [Llegar al agente](/mikroscope/es/install/reaching-the-agent/).
+
+## La fuente de datos de PostgreSQL
+
+El destino SQL escribe un **guion**, no filas: `forward --sql out.sql` y después `psql -f out.sql`,
+o `--sql - | psql`. Así que la base de datos tiene el esquema y los datos solo después de aplicar
+ese guion —una fuente de datos apuntada a una base vacía responde a cada panel con «relation does
+not exist»—.
+
+La fuente de datos es el `grafana-postgresql-datasource` de Grafana, con la base y el usuario con
+los que se cargó el guion. El `sslmode` es cosa tuya; `postgresVersion` solo decide qué sintaxis
+puede emitir el complemento, y todas las consultas de este dashboard son SQL llano.
+
+Los paneles son los de InfluxDB, reescritos: la macro de agrupación, los percentiles, los casts y
+los nombres de columna que el destino SQL tuvo que cambiar porque `user`, `from` y `to` son palabras
+reservadas. Diez consultas no se reescriben y lo dicen: `mikroscope_buddy` y los contadores de
+interfaz de RouterOS son anchos en InfluxDB y largos en el esquema SQL, y un pivote es otra
+pregunta.
+
+## La fuente de datos de Graphite
+
+Graphite no tiene etiquetas: cada dimensión es un nodo de la ruta, así que una consulta ES una ruta
+—y los dos primeros nodos son tuyos—. `--graphite-prefix` (por defecto `mikroscope`) y `--host-tag`
+son por eso **variables del dashboard**, leídas del propio árbol de métricas de Graphite, y el
+dashboard las pregunta arriba en vez de quedar fijado a quien lo generó.
+
+La fuente de datos es de tipo `graphite`; no hace falta nada más. Desde la CLI, `check` no puede
+leer el selector de variables de un navegador, así que se las pasas:
+
+```sh
+mikroscope dashboards check --store graphite --datasource-uid <uid> \
+  --var prefix=mikroscope --var host=rb5009
+```
+
+## La fuente de datos de Elasticsearch
+
+De tipo `elasticsearch`, con el índice que produzca el `--elastic-index` con el que reenvíes y
+`@timestamp` como campo de tiempo.
+
+Este dashboard es el más pequeño de los cinco, y la razón está en los documentos y no en las
+consultas: el destino escribe las lecturas por núcleo y por dispositivo de una muestra como
+**arrays** —`cpu` es un array de cuatro objetos— y un array mapeado dinámicamente es un campo
+multivaluado sin correspondencia entre sus miembros. `avg(cpu.busy_ratio)` es la media entre los
+núcleos, que es un número real; «la proporción de ocupación del núcleo 2» no es expresable sin un
+mapeo nested que el destino no declara. Así que los paneles de Elasticsearch son los agregados
+escalares, y los de por núcleo están ausentes en vez de equivocados.
 
 ## Importar a mano
 
@@ -264,7 +309,7 @@ scrape del colector cada 5 s: todos los paneles devolvieron filas, entre 228 y 2
 
 ## Véase también
 
-- [Dos paneles, una sola lista](/mikroscope/es/dashboards/): cada sección y cada panel, y qué almacén
+- [Cinco dashboards, una sola lista](/mikroscope/es/dashboards/): cada sección y cada panel, y qué almacén
   lleva cada uno.
 - [Reglas de alerta](/mikroscope/es/dashboards/alerts/): los ficheros de aprovisionamiento que
   escribe `gen`, que `check` no ejecuta.

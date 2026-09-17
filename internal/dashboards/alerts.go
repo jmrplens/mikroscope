@@ -2,6 +2,7 @@ package dashboards
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -109,7 +110,20 @@ var AlertRules = []AlertRule{
 // datasource UID is the placeholder DS_UID_PLACEHOLDER, to be replaced by
 // the operator (sed is enough); Grafana's provisioning does not resolve
 // dashboard-style inputs.
+// AlertStores are the stores whose alert rules this generator can write. The
+// rules are stated as SQL and PromQL, and neither dialect is Graphite's
+// functions or Elasticsearch's aggregations: an alert file for those stores
+// would be a PromQL expression their datasource cannot parse, which is worse
+// than no file at all. Their dashboards exist; their alerts do not, yet.
+var AlertStores = []Store{Influx, Prometheus, Postgres}
+
+// HasAlerts reports whether GenerateAlerts can write a file for this store.
+func HasAlerts(store Store) bool { return slices.Contains(AlertStores, store) }
+
 func GenerateAlerts(store Store) ([]byte, error) {
+	if !HasAlerts(store) {
+		return nil, fmt.Errorf("no alert rules for store %q: its query language is neither SQL nor PromQL", store)
+	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "# mikroscope alert rules for %s — Grafana unified alerting provisioning (apiVersion 1).\n", store)
 	fmt.Fprintf(&b, "# Replace DS_UID_PLACEHOLDER with your datasource UID and drop the file into\n# /etc/grafana/provisioning/alerting/. Every threshold is zero or the device's own\n# published ceiling; nothing here is a number the device did not publish.\n")
@@ -117,8 +131,15 @@ func GenerateAlerts(store Store) ([]byte, error) {
 	n := 0
 	for _, r := range AlertRules {
 		q := r.PromQL
-		if store == Influx {
+		if store.sql() {
 			q = r.SQL
+			if store == Postgres {
+				translated, ok := toPostgres(q)
+				if !ok {
+					continue
+				}
+				q = translated
+			}
 		}
 		if q == "" {
 			continue
@@ -127,8 +148,14 @@ func GenerateAlerts(store Store) ([]byte, error) {
 		fmt.Fprintf(&b, "      - uid: %s\n        title: %s\n        condition: C\n        for: %s\n        noDataState: %s\n        execErrState: Error\n", r.UID, yamlQuote(r.Title), r.For, r.NoData)
 		fmt.Fprintf(&b, "        labels:\n          severity: %s\n          source: mikroscope\n        annotations:\n          summary: %s\n", r.Severity, yamlQuote(r.Summary))
 		fmt.Fprintf(&b, "        data:\n          - refId: A\n            relativeTimeRange: {from: 600, to: 0}\n            datasourceUid: DS_UID_PLACEHOLDER\n            model:\n              refId: A\n")
-		if store == Influx {
-			fmt.Fprintf(&b, "              rawQuery: true\n              editorMode: code\n              format: table\n              dataset: iox\n              rawSql: %s\n", yamlQuote(q))
+		if store.sql() {
+			// `dataset` is InfluxDB's schema name and PostgreSQL's plugin
+			// rejects a model that carries it.
+			dataset := ""
+			if store == Influx {
+				dataset = "              dataset: iox\n"
+			}
+			fmt.Fprintf(&b, "              rawQuery: true\n              editorMode: code\n              format: table\n%s              rawSql: %s\n", dataset, yamlQuote(q))
 		} else {
 			fmt.Fprintf(&b, "              expr: %s\n              instant: true\n              range: false\n", yamlQuote(q))
 		}

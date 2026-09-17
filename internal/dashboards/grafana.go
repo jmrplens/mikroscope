@@ -97,7 +97,14 @@ type PanelResult struct {
 // dsUID over the last window and reports rows per panel, the ghchronicle
 // way: a dashboard is not done until every panel returns data on the real
 // Grafana.
-func (g *Grafana) Check(ctx context.Context, dashboard []byte, pluginID, dsUID string, window time.Duration, end time.Time) ([]PanelResult, error) {
+// Check runs every panel's own query through Grafana's query API.
+//
+// vars stands in for the dashboard's variables. Grafana interpolates those in
+// the browser, and this path has no browser: a Graphite target reading
+// `$prefix.$host.cpu.*` would be sent verbatim and match nothing, which reads
+// as an empty panel rather than as "nobody said which host". The three stores
+// with no variables pass nil.
+func (g *Grafana) Check(ctx context.Context, dashboard []byte, pluginID, dsUID string, window time.Duration, end time.Time, vars map[string]string) ([]PanelResult, error) {
 	var doc struct {
 		Panels []checkPanel `json:"panels"`
 	}
@@ -118,9 +125,13 @@ func (g *Grafana) Check(ctx context.Context, dashboard []byte, pluginID, dsUID s
 		for _, t := range p.Targets {
 			q := map[string]any{"refId": t["refId"], "datasource": map[string]any{"type": pluginID, "uid": dsUID}, "intervalMs": intervalMS(p.Interval, window), "maxDataPoints": checkMaxDataPoints}
 			for k, v := range t {
-				if k != "datasource" {
-					q[k] = v
+				if k == "datasource" {
+					continue
 				}
+				if text, ok := v.(string); ok {
+					v = interpolate(text, vars)
+				}
+				q[k] = v
 			}
 			out, err := g.do(ctx, http.MethodPost, "/api/ds/query", map[string]any{"from": from, "to": to, "queries": []any{q}})
 			if err != nil {
@@ -176,6 +187,17 @@ type checkPanel struct {
 	Panels     []checkPanel     `json:"panels"`
 }
 
+// interpolate replaces $name and ${name} with the value given for it. A
+// variable with no value is left alone: the query then fails loudly rather
+// than silently asking about a path node called "$host".
+func interpolate(s string, vars map[string]string) string {
+	for name, value := range vars {
+		s = strings.ReplaceAll(s, "${"+name+"}", value)
+		s = strings.ReplaceAll(s, "$"+name, value)
+	}
+	return s
+}
+
 // flattenPanels returns every queryable panel, descending into rows and
 // dropping the row headers themselves.
 func flattenPanels(ps []checkPanel) []checkPanel {
@@ -207,6 +229,14 @@ func countRows(body []byte, ref string) (rows, frames int, errText string) {
 	}
 	res, ok := r.Results[ref]
 	if !ok {
+		// Not every datasource answers with a keyed result: Graphite returns
+		// an empty body for a target that matched no series, and that is a
+		// panel with no data rather than a query that failed. A body that
+		// carries other refIds is a different matter — the query was answered
+		// and this one was not — and stays an error.
+		if len(r.Results) == 0 {
+			return 0, 0, ""
+		}
 		return 0, 0, "no result for " + ref
 	}
 	for _, fr := range res.Frames {

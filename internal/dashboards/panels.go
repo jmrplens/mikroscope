@@ -37,12 +37,22 @@ import (
 //     not-available row. It is not deleted: it is a panel waiting for a
 //     device that produces the measurement.
 func panelsFor(store Store, present map[string]bool) []Panel {
-	b := qb{sql: store == Influx}
+	b := qb{store: store}
 	out := make([]Panel, 0, 176)
 	var waiting []Panel
 	for _, sec := range sections {
 		live := make([]Panel, 0, 12)
 		for _, p := range sec.Build(b) {
+			// The two stores whose queries are stated per panel rather than
+			// translated: whatever the panel declared for this store is its
+			// query set, and a panel that declared none is dropped below.
+			switch store {
+			case Graphite:
+				p.Queries = p.Graphite
+			case Elasticsearch:
+				p.Queries = p.Elastic
+			case Influx, Prometheus, Postgres:
+			}
 			p = resolveAvailability(p, store, present)
 			switch {
 			case len(p.Queries) == 0 && !p.Absent:
@@ -125,7 +135,7 @@ func resolveAvailability(p Panel, store Store, present map[string]bool) Panel {
 		}
 		missing = append(missing, m)
 	}
-	if store == Influx {
+	if store.sql() {
 		for _, f := range p.RequiresFields {
 			if !present[f] {
 				missing = append(missing, f)
@@ -193,15 +203,27 @@ const notAvailableRowTitle = "Not available on this device — measurements this
 // store needs a different number of queries than the other. A pair whose
 // chosen side is empty is dropped, so a panel with no query for this store
 // is dropped by panelsFor.
-type qb struct{ sql bool }
+type qb struct{ store Store }
 
+// q picks this store's query. The panel list states two — the InfluxDB SQL and
+// the PromQL — and PostgreSQL's is the first one rewritten (postgres.go): a
+// panel whose SQL reads a measurement the SQL sink does not hold in the same
+// shape has no PostgreSQL query at all, and is dropped for that store the same
+// way a panel with no PromQL is dropped for Prometheus.
 func (b qb) q(sqlQ, promQ string) []string {
 	pick := promQ
-	if b.sql {
+	if b.store.sql() {
 		pick = sqlQ
 	}
 	if pick == "" {
 		return nil
+	}
+	if b.store == Postgres {
+		translated, ok := toPostgres(pick)
+		if !ok {
+			return nil
+		}
+		pick = translated
 	}
 	return []string{pick}
 }
@@ -218,16 +240,28 @@ func (b qb) qn(pairs ...string) []string {
 	return out
 }
 
+// qs is q for a panel whose two stores need a different NUMBER of queries.
+// Each entry goes through the same per-store treatment as q, so a PostgreSQL
+// panel loses exactly the queries that could not be rewritten — and, with
+// them, the panel, if that leaves none.
 func (b qb) qs(sqls, proms []string) []string {
 	pick := proms
-	if b.sql {
+	if b.store.sql() {
 		pick = sqls
 	}
 	out := make([]string, 0, len(pick))
 	for _, s := range pick {
-		if s != "" {
-			out = append(out, s)
+		if s == "" {
+			continue
 		}
+		if b.store == Postgres {
+			translated, ok := toPostgres(s)
+			if !ok {
+				continue
+			}
+			s = translated
+		}
+		out = append(out, s)
 	}
 	return out
 }
@@ -296,6 +330,7 @@ func overviewPanels(b qb) []Panel {
 	return []Panel{
 		{
 			Title: "CPU busy per core", Unit: "percent", Max: f(100), W: 12, H: 8, Legends: []string{"cpu {{cpu}}"},
+			Graphite:    []string{`aliasByNode(scale($prefix.$host.cpu.*.busy_ratio, 100), 3)`},
 			Description: "Mean of the samples' busy_ratio per core, in percent of that core's capacity over the sample's real interval. Busy = user+nice+system+irq+softirq ticks; cores come from GROUP BY cpu (InfluxDB) and by (cpu) (Prometheus), so the trace has exactly as many lines as the device has cores. ON THE REFERENCE DEVICE (RB5009UG+S+, RouterOS 7.24.2, kernel 5.6.3 arm64, 4x Cortex-A72, 1 GiB), measured 2026-09-12: 4.2–7.6 % per core at idle, matching the 6–8 % device floor in docs/playbooks.md §7 — on that router the floor is DNS, DHCP, WireGuard, the bridge and RouterOS housekeeping, not a fault. YOUR DEVICE WILL DIFFER: the idle floor is a property of the router's ruleset, services and clock, not of this metric, so establish your own floor before reading any number here as high or low. WHAT IT CANNOT TELL YOU: how the busy time was spent (see the mode-share panel in the CPU section), and it cannot see work smaller than one USER_HZ tick — USER_HZ is 100 on every Linux, an ABI constant rather than a device fact, so the floor is 10 ms; on the reference device 68–77 % of samples reported zero busy ticks while the PMU still counted millions of cycles. Averaging is deliberate: max(busy_ratio) reads 1.0 on every core even at idle, because one tick landing in a short interval quantises to 100 %, so no panel here reduces this field with max(). Prometheus note: the query is a RATIO of busy ticks to all ticks on the same core, not ticks per second read as percent — the latter is numerically correct only while USER_HZ is 100, and a ratio needs no assumption about the jiffie length at all. The mode set is listed as a negation of the three idle modes on the numerator and the whole set on the denominator so that both stores compute the identical quantity.",
 			Queries: b.q(
 				`SELECT $__dateBin(time) AS time, concat('core ', lpad(cpu, 2, '0')) AS metric, avg(busy_ratio) * 100 AS value FROM mikroscope_cpu WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1`,
@@ -304,6 +339,7 @@ func overviewPanels(b qb) []Panel {
 		},
 		{
 			Title: "Memory in use, against the kernel's own total", Type: typeGauge, Unit: "percent", Max: f(100), W: 6, H: 8,
+			Graphite:    []string{`scale(divideSeries(diffSeries($prefix.$host.mem.total_kb, $prefix.$host.mem.available_kb), $prefix.$host.mem.total_kb), 100)`},
 			Description: "(MemTotal − MemAvailable) / MemTotal, from /proc/meminfo, read globally from inside the container. The denominator is the kernel's own MemTotal as emitted — mikroscope_mem.total_kb on InfluxDB, mikroscope_meminfo_kbytes{field=\"MemTotal\"} on Prometheus — so the gauge scales itself to whatever board it runs on and no memory size appears anywhere in the panel. MemAvailable is the kernel's estimate of what a new allocation could actually get, which is the honest numerator: MemFree alone reads alarmingly low on any router with a warm page cache. ON THE REFERENCE DEVICE (RB5009, RouterOS 7.24.2, kernel 5.6.3 arm64, 1 GiB) measured through the live datasource proxy on 2026-09-12: 31.12 % in use from InfluxDB and 31.03 % from Prometheus over the same six hours — the 0.1 pp gap is the two stores' different sampling of the same fields, not a disagreement about the total. MemTotal there is 999 956 kB, i.e. the board has 1 GiB and the kernel keeps the rest; your device's total is whatever its own kernel reports and this panel never assumes it. WHAT IT CANNOT TELL YOU: what the memory is for — the LRU, slab and apportionment panels in the memory sections answer that — and it cannot tell you whether the allocator is coping with the memory it has.",
 			Thresholds:  thresholds("green", step(75, "orange"), step(90, "red")),
 			Queries: b.q(
@@ -313,6 +349,8 @@ func overviewPanels(b qb) []Panel {
 		},
 		{
 			Title: "Connections tracked right now", Type: typeStat, Unit: "short", W: 6, H: 8, GraphMode: "area",
+			Graphite:    []string{`alias($prefix.$host.slab.nf_conntrack.active_objs, "connections")`},
+			Elastic:     []string{`host.keyword:$host | max:slab.nf_conntrack | date`},
 			Description: "The router's connection table, read from the global slab allocator: nf_conntrack active objects from /proc/slabinfo, reduced to the last value in the window. This is the number an operator means by 'how many connections', and it is the one the container CAN see — /proc/net/nf_conntrack_count is per network namespace and reads 0 inside the container, while the slab allocator is global and reports the router's real population (6 287 objects from inside the container while its own namespace said 0, 2026-09-12). Reading a file replaces an API table scan. ON THE REFERENCE DEVICE (RB5009UG+S+, RouterOS 7.24.2, kernel 5.6.3 arm64, 1 GiB) over 2026-09-13 09:30-10:30Z: 6.20 K objects, swinging 5.52 K to 6.63 K across the hour. That is THAT router's household traffic and says nothing about yours. WHAT IT CANNOT TELL YOU: what the connections are — no protocol, no address, no state breakdown; /proc/slabinfo counts objects in a cache and nothing else, so a conntrack flood and a legitimate torrent look identical here. The Connections section below plots the same field over time next to its churn, which is what separates them. WHY THE SLAB COUNT AND NOT THE API: the RouterOS API can answer this exactly (/ip/firewall/connection/print count-only), and the Connections section carries that series where it is polled — but it is a table scan the collector only runs when --conntrack-every is set, so it cannot be the Overview's always-on tile. NO THRESHOLDS: the ceiling is nf_conntrack_max. The agent does emit it — as the slab cache's limit (mikroscope_slab_limit_objects / mikroscope_slab.limit_objs) and in the device-info stream's conntrack_max — and the provisioned alert rule bands the share at 0.8 against it; but the ceiling is not in THIS panel's query, so there is no share to band here, and any absolute step would be this router's number. BLANK IF UNPRIVILEGED: /proc/slabinfo is root-only and an ordinary RouterOS container is placed in a user namespace where its root maps to host uid 32768, so the read returns EACCES and no slab rows reach the store at all.",
 			NoValue:     "no slab rows — /proc/slabinfo needs a privileged container",
 			Thresholds:  thresholds("blue"),
@@ -324,6 +362,7 @@ func overviewPanels(b qb) []Panel {
 		},
 		{
 			Title: "Interface throughput — rx above, tx below", Unit: "bps", W: 12, H: 7, Signed: true, CenteredZero: true,
+			Graphite:    []string{`aliasByNode($prefix.$host.api.iface.*.rx_bps, 4)`},
 			Description: "Per-interface bytes per second from the RouterOS API's monitor-traffic, rx drawn upward and tx drawn downward on one mirrored axis so a link's two directions are one shape. THIS IS THE ONE MEASUREMENT THE KERNEL TIER CANNOT PROVIDE: /proc/net/dev is per network namespace and inside the container it describes the container's own veth (4 packets while the router forwarded millions), and privileged=yes does NOT change that — it drops the user namespace, not the network namespace (measured 2026-09-12). So this panel is API-tier data merged by the collector, at the API tier's own cadence, and it is why --api-mode off gives up something real. The interface set comes from GROUP BY interface, so it is whatever --interfaces asked the router to monitor. ON THE REFERENCE DEVICE over 2026-09-13 09:30-10:30Z: bridge 14.2 Mb/s rx mean, PPPoE_DIGI 13.7, ether1 5.50, with one tx excursion to about 1.8 Gb/s at 10:05 on ether1 (a 2.5 GbE port). Your interfaces, and their names, are your own. WHAT IT CANNOT TELL YOU: what the traffic is, or which direction was the cause — monitor-traffic is a rate, not a flow record. It is also a LEVEL and not a counter: the API reports an already-computed rate, so the bin reducer is a mean and the series must never be summed over time. THE MIRRORED AXIS IS THE PANEL'S ONE PIECE OF ARITHMETIC: tx is multiplied by -1 in the query, so a reader must not take a negative number literally — it is the direction, not a sign.",
 			NoValue:     "no API-tier interface rows in the window: `forward --api-mode off` disables the tier, and --interfaces selects which interfaces it monitors",
 			Queries: b.q2(
@@ -335,6 +374,8 @@ func overviewPanels(b qb) []Panel {
 		},
 		{
 			Title: "Die temperature by zone", Unit: "celsius", W: 6, H: 7, Signed: true, FillOpacity: fi(0),
+			Graphite:    []string{`aliasByNode($prefix.$host.thermal.*.celsius, 3)`},
+			Elastic:     []string{`host.keyword:$host | avg:thermal.celsius | date`},
 			Description: "Every thermal zone the kernel exposes under /sys/class/thermal, in degrees Celsius, one series per zone named by the zone's own type string. The zone set comes from GROUP BY zone, so a board with one zone, two or none draws exactly what it has and no zone name appears in the query. ON THE REFERENCE DEVICE (RB5009, RouterOS 7.24.2, kernel 5.6.3 arm64) over 2026-09-13 09:30-10:30Z: cpu-thermal sat at 32.8-34.1 °C and soc-thermal at 44.2-46.1 °C, the two of them tracking each other about 11 °C apart. Those are that board's numbers in that room; yours are yours. WHAT IT CANNOT TELL YOU: whether the device is throttling — the clock panel in the Temperature and clock section is the other half of that question — and it cannot see anything the kernel does not model as a zone: /sys/class/hwmon is empty on this board even privileged, so there is no voltage, current or fan reading to be had. NO THRESHOLDS: a red band needs the board's own trip point, which is a per-device number this panel deliberately does not assume. The sensor quantises to about 0.42 °C steps, which is why the dwell panel in the temperature section exists: a reading that dithers across a step boundary is the sensor, not the die.",
 			NoValue:     "no thermal rows in the window: this kernel exposes no /sys/class/thermal zone",
 			Queries: b.q(
@@ -344,6 +385,8 @@ func overviewPanels(b qb) []Panel {
 		},
 		{
 			Title: "Load average (1 min) against the core count", Type: typeStat, Unit: "short", W: 6, H: 7, ShowName: true, GraphMode: "none", Legends: []string{"load1", "cores"},
+			Graphite:    []string{`alias($prefix.$host.load.load1, "load1")`},
+			Elastic:     []string{`host.keyword:$host | avg:load.load1 | date`},
 			Description: "Two tiles from two sources: the kernel's 1-minute load average, and the number of cores the same store can see. Load is global from /proc/loadavg even inside the container; the core count is measured, not assumed — count(DISTINCT core) over mikroscope_cpu on InfluxDB, count(count by (cpu) (mikroscope_cpu_ticks_total)) on Prometheus — so the comparison the panel exists to make works on a 2-core hEX S and on an 8-core CCR without editing anything. Read them together: load1 above the core count means tasks are queueing for a core. ON THE REFERENCE DEVICE (RB5009, 4x Cortex-A72) measured 2026-09-12: load1 mean 0.24, maximum 0.50 against 4 cores over 37 minutes, and 0.019–0.043 over the six hours re-measured through the datasource proxy on 2026-09-12 — the run queue is essentially never contended there. YOUR DEVICE WILL DIFFER, and so will the number it is being compared against. WHAT IT CANNOT TELL YOU: load1 is a 1-minute exponential average, so it is the one number in this dashboard that cannot resolve anything sub-second — at 10 Hz the agent ships the same value ten times over. It is a LEVEL: never summed, avg over the bin and lastNotNull for the tile. It also says nothing about WHICH threads are runnable (only 3 PIDs are visible inside the container), and load counts uninterruptible-sleep tasks as well as runnable ones, so on a router it moves with flash I/O as well as with CPU. Load5 and Load15 are in both stores and are plotted in the memory-levels section. THRESHOLDS: a single base color with no steps, and that is deliberate rather than an omission — a Grafana threshold cannot be dynamic, so a red step at the reference core count would peg an 8-core device at half load and never color a 2-core one. The measured core count is carried as the second series instead. Leaving thresholds genuinely unset is not the same thing: Grafana then applies its own default step at 80.",
 			Thresholds:  thresholds("text"),
 			Queries: b.q2(
@@ -369,6 +412,8 @@ func overviewPanels(b qb) []Panel {
 		},
 		{
 			Title: "Packets dropped in the kernel RX path (window total)", Type: typeStat, Unit: "packets", W: 6, H: 5, Calcs: []string{"sum"}, GraphMode: "none", MinInterval: "1m",
+			Graphite:    []string{`alias(sumSeries($prefix.$host.softnet.*.dropped), "packets dropped")`},
+			Elastic:     []string{`host.keyword:$host | sum:softnet.dropped | date`},
 			Description: "softnet_stat column 2, summed over the dashboard window: packets the kernel discarded because a per-CPU backlog was full. Zero is the correct and expected reading, which is why this is a tile and not a graph. The query sums across whatever CPUs the data contains and names no core count or interface. /proc/net/softnet_stat is global even inside the container's netns, so this is the router's own RX path and not the veth's. ON THE REFERENCE DEVICE (RB5009, RouterOS 7.24.2, kernel 5.6.3 arm64): zero over every row in InfluxDB (41 940 samples, 2026-09-12), zero again over the last six hours re-measured on both stores on 2026-09-12, and zero lifetime on the device on 2026-09-11 — the counter is legitimately empty there. That is a property of that router's load, not of the counter: a device under real backlog pressure will show a number here. ANY NONZERO VALUE IS UNAMBIGUOUS PACKET LOSS INSIDE THE ROUTER, invisible to every SNMP and RouterOS API counter. WHAT IT CANNOT TELL YOU: which interface or flow lost them, and it does not count drops made by the switch chip, the driver ring or a firewall rule — only backlog overflow. The reducer is a window SUM and not a last value: a last value would report the final bin's zero and never color for an event three minutes ago. Prometheus note: the rate window is $__interval and not $__range, so the per-bin deltas tile the window exactly and the panel's sum reducer gives the window total; with $__range each step would carry the whole window's total and the sum would multiply it by the number of steps.",
 			Thresholds:  thresholds("green", step(1, "red")),
 			Queries: b.q(
@@ -378,6 +423,7 @@ func overviewPanels(b qb) []Panel {
 		},
 		{
 			Title: "OOM kills in the window", Type: typeStat, Unit: "short", W: 6, H: 5, Calcs: []string{"sum"}, GraphMode: "none",
+			Graphite:    []string{`alias($prefix.$host.vm.oom_kill, "oom_kill")`},
 			Description: "The kernel killed a process to get memory back: /proc/vmstat's oom_kill delta, summed over the dashboard window. One field, no dimensions, nothing device-specific in the query. ON THE REFERENCE DEVICE (RB5009, RouterOS 7.24.2, kernel 5.6.3 arm64, 1 GiB) measured 2026-09-12 over 8 400 consecutive samples: 0, as in every capture so far, and 0 again over the last six hours re-measured through the datasource proxy on 2026-09-12. A 1 GiB router with about 700 MB free has never had to kill anything; a smaller board, or one running containers, may well. A NONZERO TILE IS THE SINGLE MOST SERIOUS NUMBER THIS DASHBOARD CAN PRODUCE, and the follow-up is the kernel log (mikroscope_kmsg, Kernel log section) where the kill records which task died. WHAT IT CANNOT TELL YOU: who was killed, or why the allocation that triggered it was made — there is no per-process view from this container, privileged or not. It also cannot be read as a rate: one kill in an hour and one kill in a second are the same tile. A per-sample DELTA, reduced with sum over the window and not lastNotNull, which would read 0 in every bin where no kill happened and hide a kill three minutes ago. BOTH STORES: the collector exports mikroscope_vm_events_total, so the Prometheus form below is increase(…{event=\"oom_kill\"}[$__range]), the same window sum the SQL form takes.",
 			Thresholds:  thresholds("text", step(1, "red")),
 			Queries: b.q(
@@ -396,6 +442,8 @@ func overviewPanels(b qb) []Panel {
 		},
 		{
 			Title: "Detections in the window", Type: typeStat, Unit: "short", W: 6, H: 5, Calcs: []string{"sum"}, GraphMode: "none", MinInterval: "1m",
+			Graphite:       []string{`alias(sumSeries($prefix.$host.detection.*), "detections")`},
+			Elastic:        []string{`kind.keyword:detection AND host.keyword:$host | count | date`},
 			NoValue:        "none",
 			Description:    "How many times the collector's derive stage said 'look here' in this window, all rules together: counter resets, agent restarts, the container's own OOM, microbursts, reboots seen from the kernel log, link flaps, conntrack cliffs and ceilings, thermal excursions, IPC collapses. Zero is the healthy reading and 'none' is what it prints. The per-rule breakdown, the thresholds and the messages are in the Detections and captures section; every event is also drawn as an annotation across the dashboard.",
 			Thresholds:     thresholds("green", step(1, "orange")),
@@ -407,6 +455,8 @@ func overviewPanels(b qb) []Panel {
 		},
 		{
 			Title: "Ticks never delivered, this window", Type: typeStat, Unit: "short", W: 6, H: 5, Calcs: []string{"sum"}, ShowName: true, GraphMode: "none", MinInterval: "1m", Legends: []string{"ticks never delivered", "agent restarts (seq reset)"},
+			Graphite:    []string{`alias($prefix.$host.collector.gap.samples, "ticks never delivered")`},
+			Elastic:     []string{`kind.keyword:gap AND host.keyword:$host | sum:lost | date`},
 			Description: "How much of this window is missing, as two tiles: the window sum of (d − 1) over every first difference of seq greater than 1, and the count of negative differences, which are agent restarts. Derived entirely from seq and its own lag — no device dimension, no configured rate, no interface. ON THE REFERENCE DEVICE (RB5009, RouterOS 7.24.2) over the 2026-09-11/12 capture: 4 493 ticks missing and 1 restart across 14 299 transitions, i.e. 23.9 % of everything the agent sampled never reached InfluxDB, in a capture that mikroscope_gap recorded nothing about; over the last six hours re-measured on 2026-09-12, 0 and 0. A clean 180 s window reports '0 gaps, 0 dropped, 0 errors' while the store covering the whole two days disagrees. Yours will have its own number, and the point is to see it rather than to trust a clean short test. WHAT IT CANNOT TELL YOU: whether the loss was upstream (queue, transport) or downstream (the collector was not running), and nothing about ticks the agent failed to TAKE in the first place — that is mikroscope_slipped_total on the agent's /metrics, which the observer section carries as its own third tile. It is also a count of samples and not of seconds: converting it to time needs the configured rate, which is mikroscope_info{rate_hz} on Prometheus and recoverable from mikroscope_cpu.dt_ns on InfluxDB, so this tile deliberately does not do the division. Reduced with sum rather than lastNotNull on purpose: the last bin of a healthy window is 0, which would be the most misleading number on the dashboard. The Prometheus form is an approximation — no seq there, so holes come from the collector's gap counter and restarts from a reset of the agent's own sample counter — and its rate window is $__interval, not $__range, so per-bin deltas tile the window exactly and the sum reducer gives the window total. THRESHOLDS: green base plus yellow at 1, the 0/non-0 signal, with the magnitude read from the number itself. There is no red step at a fixed tick count: 100 ticks is 10 s at --hz 10 and 5 s at --hz 20, so it would grade severity in a unit that changes with the configured rate. Yellow and not red deliberately, and unlike the RX-drop tile beside it: a dropped packet is a router fault, a missing tick is a hole in the record.",
 			Thresholds:  thresholds("green", step(1, "yellow")),
 			Queries: b.q2(
@@ -445,6 +495,7 @@ func cpuPanels(b qb) []Panel {
 	return []Panel{
 		{
 			Title: "CPU busy per core", Unit: "percent", Max: f(100), W: 12, H: 8, Legends: []string{"cpu {{cpu}}"},
+			Graphite:    []string{`aliasByNode(scale($prefix.$host.cpu.*.busy_ratio, 100), 3)`},
 			Description: "Mean of the per-sample busy_ratio per core, in percent of that core's capacity over the sample's own measured interval (dt_ns). Busy = user+nice+system+irq+softirq ticks. The core set comes from GROUP BY cpu on InfluxDB and by (cpu) on Prometheus, so a 2-core or 8-core device draws its own series with no change to the query. On the reference device (RB5009, RouterOS 7.24.2, kernel 5.6.3 arm64, 4x Cortex-A72, 1 GiB) re-measured 2026-09-12 over 2.75 h of live InfluxDB data: 4.2–5.4 % per core at idle (core 0 5.26, core 1 4.52, core 2 4.25, core 3 5.38), consistent with the 6–8 % device floor in docs/playbooks.md §7. On THAT router the floor is DNS, DHCP, WireGuard, the bridge and RouterOS housekeeping, not a fault; your device's floor is its own ruleset and services and will differ. What it cannot tell you: how the busy time was spent (see the mode-share panel), and it cannot see work smaller than one jiffie — on the reference device 68–77 % of samples report zero busy ticks while the PMU still counts millions of cycles. Averaging is deliberate: max(busy_ratio) reads 1.0 on every core even at idle, so no panel in this section reduces this field with max(). The Prometheus form divides busy ticks by ALL ticks rather than reading ticks/s as percent, so it carries no assumption about the jiffie length.",
 			Queries: b.q(
 				`SELECT $__dateBin(time) AS time, concat('core ', lpad(cpu, 2, '0')) AS metric, avg(busy_ratio) * 100 AS value FROM mikroscope_cpu WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1`,
@@ -579,7 +630,9 @@ func psiPanels(b qb) []Panel {
 	return []Panel{
 		{
 			Title: "Pressure stall (PSI), where the kernel exposes it", Unit: "percent", W: 12, H: 8,
-			Absent: true, KnownEmpty: true, NoValue: "this kernel exposes no /proc/pressure, so the measurement does not exist in the store — a property of the kernel build, not a fault",
+			Graphite: []string{`aliasByNode($prefix.$host.psi.*_us, 3)`},
+			Elastic:  []string{`host.keyword:$host | sum:psi.cpu_some | date`},
+			Absent:   true, KnownEmpty: true, NoValue: "this kernel exposes no /proc/pressure, so the measurement does not exist in the store — a property of the kernel build, not a fault",
 			Description: "Share of wall clock in which some or all tasks were stalled waiting on CPU, memory or I/O, from /proc/pressure/{cpu,memory,io} — the sub-tick contention signal PSI gives on kernels built with CONFIG_PSI. Five series, one per field the sink writes (internal/sinks/influx.go:231): cpu some, memory some, memory full, io some, io full. Where the kernel has no /proc/pressure the family is absent from both stores and this panel is empty; that is a property of the kernel build, not a fault, and on InfluxDB the emptiness is a planning error rather than 'No data', which is why the panel ships marked Absent and sits in the collapsed not-available row. ON THE REFERENCE DEVICE (RB5009UG+S+, RouterOS 7.24.2, kernel 5.6.3 arm64, 4 cores, 1 GiB) measured 2026-09-12: mikroscope_psi does not exist in the store at all — /proc/pressure is absent from the kernel and the kernel is monolithic with no loadable modules, so the feature cannot be added. Your device will differ: a 32-bit ARM RouterOS build or any CONFIG_PSI kernel populates this panel, and the hEX S is the device it was written for. For reclaim pressure where PSI is missing, read mikroscope_vm instead. WHAT IT CANNOT TELL YOU: which task stalled, or for how long any single one did — PSI is an aggregate share. And a 0 in 'memory full' is indistinguishable from a kernel that prints no `full` line for memory, because the presence flag procfs parses (HasMemFull) is never emitted. The denominator is dashboard wall clock, not the sampler's own measured interval, because mikroscope_psi carries no dt_ns — so 100 % is the arithmetic ceiling and a value above it means the bin's samples did not cover its wall clock rather than that stall exceeded time. Max is deliberately NOT pinned to 100 for that reason: the description names >100 % as the missed-sample diagnostic, and a pinned ceiling clips exactly that signal. No thresholds: a stall share has no portable alarm point — any step would be a policy figure, and none has been measured on any device in this project, so a colored band would be invented. The PromQL side derives its two dimensions from the resource and kind labels, so it needs no ceiling either.",
 			Queries: b.qs([]string{
 				`SELECT $__dateBin(time) AS time, 'cpu some' AS metric, sum(cpu_some_us) * 0.0001 / ($__interval_ms / 1000.0) AS value FROM mikroscope_psi WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1`,
@@ -747,6 +800,7 @@ func memoryLevelPanels(b qb) []Panel {
 	return []Panel{
 		{
 			Title: "Memory in use, against the kernel's own total", Type: typeGauge, Unit: "percent", Max: f(100), W: 6, H: 8,
+			Graphite:    []string{`scale(divideSeries(diffSeries($prefix.$host.mem.total_kb, $prefix.$host.mem.available_kb), $prefix.$host.mem.total_kb), 100)`},
 			Description: "(MemTotal − MemAvailable) ÷ MemTotal, both from /proc/meminfo, read globally from inside the container. MemAvailable is the kernel's own estimate of what a new allocation could actually get, which is the honest numerator — MemFree alone reads alarmingly low on any router with a warm page cache. Both terms are emitted, so there is no dashboard constant in this gauge: the denominator moves with whatever board it runs on. On the reference device (RB5009, RouterOS 7.24.2, kernel 5.6.3 aarch64, 4x Cortex-A72, 1 GiB) measured 2026-09-12 over 19 one-minute bins: 29.3–31.2 % in use, with MemTotal 999 956 kB; your device will differ in both the share and the total. WHAT IT CANNOT TELL YOU: what the memory is for — the apportionment, LRU and slab panels answer that — nor whether the allocator is coping with it, since free bytes and a fragmented zone look identical here. The `total_kb IS NOT NULL` guard drops bins whose rows carry no total rather than charting a divide-by-NULL (verified: 10 356 of 18 956 rows in one measured window carry a total). THRESHOLDS: green / 75 orange / 90 red are shares of an emitted total under a percent unit, so they mean the same thing on a 512 MB hEX S and a 2 GiB CCR. No absolute byte step anywhere in the panel.",
 			Thresholds:  thresholds("green", step(75, "orange"), step(90, "red")),
 			Queries: b.q(
@@ -756,6 +810,8 @@ func memoryLevelPanels(b qb) []Panel {
 		},
 		{
 			Title: "Load average, all three windows", Unit: "short", W: 9, H: 8, Signed: true,
+			Graphite:    []string{`aliasByNode($prefix.$host.load.load{1,5,15}, 3)`},
+			Elastic:     []string{`host.keyword:$host | avg:load.load1 | date`},
 			Description: "/proc/loadavg's 1-, 5- and 15-minute figures, all three emitted to both stores. Three series make the slope visible without arithmetic and answer the one question a load average is for: is this rising, falling or flat. The interesting threshold is the device's own core count, not 1.0. Load counts runnable AND uninterruptible-sleep tasks, so on a router it moves with flash I/O as well as CPU, which is why it sits in the memory family rather than the CPU one. On the reference device (RB5009, RouterOS 7.24.2, 4 cores, 1 GiB) measured 2026-09-12: load1 0.02–0.30, load5 0.05–0.16, load15 0.08–0.17; your device will differ. WHAT IT CANNOT TELL YOU: anything sub-second — these are 1-, 5- and 15-minute exponential averages, so at 10 Hz the agent ships each value many times over and no burst shorter than a minute is visible. LEVELS: averaged over the bin, never summed. The load5/load15 guards drop rows that carry neither field, so the two longer series plot where they exist rather than drawing a NULL run. No thresholds: a load average has no device-independent alarm point in absolute units — the core count is the scale, and the per-core panel in this section does that division from the data.",
 			Queries: b.q(
 				`SELECT time, metric, value FROM (SELECT $__dateBin(time) AS time, '1 min' AS metric, avg(load1) AS value FROM mikroscope_load WHERE $__timeFilter(time) GROUP BY 1 UNION ALL SELECT $__dateBin(time) AS time, '5 min' AS metric, avg(load5) AS value FROM mikroscope_load WHERE $__timeFilter(time) AND load5 IS NOT NULL GROUP BY 1 UNION ALL SELECT $__dateBin(time) AS time, '15 min' AS metric, avg(load15) AS value FROM mikroscope_load WHERE $__timeFilter(time) AND load15 IS NOT NULL GROUP BY 1) ORDER BY 1`,
@@ -764,6 +820,8 @@ func memoryLevelPanels(b qb) []Panel {
 		},
 		{
 			Title: "Runnable threads out of total", Unit: "short", W: 9, H: 8, Signed: true,
+			Graphite:    []string{`aliasByNode($prefix.$host.load.{running,threads}, 3)`},
+			Elastic:     []string{`host.keyword:$host | avg:load.running | date`},
 			Description: "/proc/loadavg's runnable/total pair. This is the closest thing to run-queue depth this kernel gives: /proc/schedstat and /proc/pressure are both absent on the reference build, so there is no wait-time signal at all and the count of tasks wanting a core is the substitute. Runnable above the core count means tasks are queueing — the core count is derived from the data in the per-core load panel, not assumed here. On the reference device (RB5009, RouterOS 7.24.2, 4 cores, 1 GiB) measured 2026-09-12: total 149–160, runnable 1–6; a router running scripts, containers or more services sits at a different baseline, so read total as a slope rather than against the number in this description. WHAT IT CANNOT TELL YOU: HOW LONG anything waited, which is precisely what schedstat would have given and does not exist on this kernel; and not which threads — only 3 PIDs are visible inside the container. Runnable is maxed over the bin (a spike in any sample is the thing you want to see), total averaged; never sum either. Both `IS NOT NULL` guards exclude rows that carry neither field. No thresholds: the meaningful line is 'runnable above the core count', which is a per-device quantity, and drawing it as a static step would be the core count as a literal.",
 			Queries: b.q(
 				`SELECT time, metric, value FROM (SELECT $__dateBin(time) AS time, 'runnable' AS metric, max(running) * 1.0 AS value FROM mikroscope_load WHERE $__timeFilter(time) AND running IS NOT NULL GROUP BY 1 UNION ALL SELECT $__dateBin(time) AS time, 'threads total' AS metric, avg(threads) * 1.0 AS value FROM mikroscope_load WHERE $__timeFilter(time) AND threads IS NOT NULL GROUP BY 1) ORDER BY 1`,
@@ -772,6 +830,8 @@ func memoryLevelPanels(b qb) []Panel {
 		},
 		{
 			Title: "Memory by category, as a share of total", Unit: "percent", W: 24, H: 9, Stacked: true,
+			Graphite:    []string{`aliasByNode($prefix.$host.mem.{anon_kb,cached_kb,slab_kb,buffers_kb}, 3)`},
+			Elastic:     []string{`host.keyword:$host | avg:mem.anon_kb | date`},
 			Description: "Stacked apportionment of physical memory from /proc/meminfo, each band divided by the emitted MemTotal so the axis is a share and the panel reads the same on any board. Read globally from inside the container. Slab is entered as its two children (SReclaimable + SUnreclaim) so the stack does not double-count slab_kb. THE GAP TO 100 % IS INFORMATION: these eight bands do not sum to MemTotal — the remainder is vmalloc, reserved and percpu memory the agent does not emit — so the space above the stack is the unaccounted residual and not a rendering artifact. Active/Inactive and Mapped are deliberately absent: they overlap anon and page cache and would double-count. On the reference device (RB5009, RouterOS 7.24.2, kernel 5.6.3 aarch64, 1 GiB) measured 2026-09-12: free 69.7 %, page cache 7.6 %, anon 10.4 %, slab unreclaimable 5.8 %, buffers 1.0 %, slab reclaimable 0.7 %, kernel stacks 0.25 %, page tables 0.13 %, residual about 4.4 %; your device will differ in every band. WHAT IT CANNOT TELL YOU: which cache or which process — /proc/slabinfo and the LRU panels go a level down, and there is no per-process view from this container at all. The Prometheus copy draws five of the eight bands — AnonPages, KernelStack and PageTables are not in the exposition, so its residual is correspondingly larger. No thresholds: a composition has no alarm point, and the gap to 100 % is the reading rather than a band.",
 			Queries: b.qs([]string{
 				`SELECT time, metric, value FROM (SELECT $__dateBin(time) AS time, 'free' AS metric, avg(free_kb) * 100.0 / NULLIF(avg(total_kb), 0) AS value FROM mikroscope_mem WHERE $__timeFilter(time) AND total_kb IS NOT NULL GROUP BY 1 UNION ALL SELECT $__dateBin(time) AS time, 'page cache' AS metric, avg(cached_kb) * 100.0 / NULLIF(avg(total_kb), 0) AS value FROM mikroscope_mem WHERE $__timeFilter(time) AND total_kb IS NOT NULL GROUP BY 1 UNION ALL SELECT $__dateBin(time) AS time, 'buffers' AS metric, avg(buffers_kb) * 100.0 / NULLIF(avg(total_kb), 0) AS value FROM mikroscope_mem WHERE $__timeFilter(time) AND total_kb IS NOT NULL GROUP BY 1 UNION ALL SELECT $__dateBin(time) AS time, 'anon' AS metric, avg(anon_kb) * 100.0 / NULLIF(avg(total_kb), 0) AS value FROM mikroscope_mem WHERE $__timeFilter(time) AND total_kb IS NOT NULL GROUP BY 1 UNION ALL SELECT $__dateBin(time) AS time, 'slab reclaimable' AS metric, avg(sreclaimable_kb) * 100.0 / NULLIF(avg(total_kb), 0) AS value FROM mikroscope_mem WHERE $__timeFilter(time) AND total_kb IS NOT NULL GROUP BY 1 UNION ALL SELECT $__dateBin(time) AS time, 'slab unreclaimable' AS metric, avg(sunreclaim_kb) * 100.0 / NULLIF(avg(total_kb), 0) AS value FROM mikroscope_mem WHERE $__timeFilter(time) AND total_kb IS NOT NULL GROUP BY 1 UNION ALL SELECT $__dateBin(time) AS time, 'kernel stacks' AS metric, avg(kernel_stack_kb) * 100.0 / NULLIF(avg(total_kb), 0) AS value FROM mikroscope_mem WHERE $__timeFilter(time) AND total_kb IS NOT NULL GROUP BY 1 UNION ALL SELECT $__dateBin(time) AS time, 'page tables' AS metric, avg(page_tables_kb) * 100.0 / NULLIF(avg(total_kb), 0) AS value FROM mikroscope_mem WHERE $__timeFilter(time) AND total_kb IS NOT NULL GROUP BY 1) ORDER BY 1`,
@@ -785,6 +845,8 @@ func memoryLevelPanels(b qb) []Panel {
 		},
 		{
 			Title: "Free memory — three definitions, against the ceiling", Type: typeBarGauge, Unit: "decbytes", W: 8, H: 6,
+			Graphite:    []string{`aliasByNode($prefix.$host.mem.{free_kb,available_kb,total_kb}, 3)`},
+			Elastic:     []string{`host.keyword:$host | avg:mem.available_kb | date`},
 			Description: "Headroom against the ceiling, as four bars because 'free' has three answers and the ceiling is the fourth. MemTotal is emitted to both stores and drawn as a bar rather than pinned as a panel Max, so nothing in this panel is a dashboard constant. MemFree + Cached is approximately what RouterOS reports as free-memory, so the third bar is the one to compare against /system/resource. On the reference device (RB5009, RouterOS 7.24.2, 1 GiB) measured 2026-09-12: MemTotal 1 023 954 944 B, MemAvailable about 705 MB, MemFree about 711 MB, MemFree + Cached about 789 MB; your device will differ, and on a board where the page cache is warm the three bars separate much further than they do here. WHAT IT CANNOT TELL YOU: whether the allocator is coping with that memory — free bytes and a fragmented zone look identical. On a window whose rows carry no total the ceiling bar is absent and the remaining three scale among themselves; that is the honest rendering of a window with no total in it. No thresholds and no Max: MemTotal is a bar, so the gauge scales itself from the data and the ceiling is visible rather than asserted.",
 			Queries: b.qs([]string{
 				`SELECT time, metric, value FROM (SELECT $__dateBin(time) AS time, 'MemTotal (the ceiling)' AS metric, avg(total_kb) * 1024 AS value FROM mikroscope_mem WHERE $__timeFilter(time) AND total_kb IS NOT NULL GROUP BY 1 UNION ALL SELECT $__dateBin(time) AS time, 'MemAvailable' AS metric, avg(available_kb) * 1024 AS value FROM mikroscope_mem WHERE $__timeFilter(time) GROUP BY 1 UNION ALL SELECT $__dateBin(time) AS time, 'MemFree' AS metric, avg(free_kb) * 1024 AS value FROM mikroscope_mem WHERE $__timeFilter(time) GROUP BY 1 UNION ALL SELECT $__dateBin(time) AS time, 'MemFree + Cached' AS metric, avg(free_kb + cached_kb) * 1024 AS value FROM mikroscope_mem WHERE $__timeFilter(time) GROUP BY 1) ORDER BY 1`,
@@ -797,6 +859,7 @@ func memoryLevelPanels(b qb) []Panel {
 		},
 		{
 			Title: "Commit headroom — Committed_AS as a share of CommitLimit", Type: typeGauge, Unit: "percent", Max: f(100), W: 8, H: 6,
+			Graphite:    []string{`scale(divideSeries($prefix.$host.mem.committed_kb, $prefix.$host.mem.commit_limit_kb), 100)`},
 			Description: "How much address space the router's userspace has promised, against the kernel's own overcommit limit. Both terms are emitted to InfluxDB — mikroscope_mem.committed_kb and .commit_limit_kb, verified present in the live store on 2026-09-12 — so this is a measured ratio, with no byte literal in the Max or the thresholds. On the reference device (RB5009, RouterOS 7.24.2, 1 GiB, no swap) measured 2026-09-12 over 19 bins: 35.3–38.5 % committed, Committed_AS 172 340–207 660 kB against CommitLimit 499 976 kB (about MemTotal/2, consistent with the default overcommit ratio); your device's limit is derived from its own RAM and overcommit ratio and will differ. WHAT IT CANNOT TELL YOU: Committed_AS is a promise, not a use — a process that mmaps 100 MB and touches 1 MB moves this gauge by 100 MB and the apportionment stack by 1 MB. It is an early warning for 'the router will start refusing allocations', not a usage number. INFLUXDB ONLY: procfs parses CommitLimit and the Prometheus exposition does not carry it (verified 2026-09-12 against the live Prometheus: ten meminfo fields, no CommitLimit), so the Prometheus dashboard drops this panel rather than shipping an absolute Committed_AS under a percent axis. THRESHOLDS: green / 70 orange / 90 red as percentages of the emitted CommitLimit. The same two ratios written as absolute bytes would be one board's CommitLimit, hiding the ratio from the reader and porting nowhere. Max is 100 because the unit is a percentage, not because of anything measured.",
 			Thresholds:  thresholds("green", step(70, "orange"), step(90, "red")),
 			Queries: b.q(
@@ -815,6 +878,8 @@ func memoryLevelPanels(b qb) []Panel {
 		},
 		{
 			Title: "Threads on the whole router", Type: typeStat, Unit: "short", W: 4, H: 6,
+			Graphite:    []string{`alias($prefix.$host.load.threads, "threads")`},
+			Elastic:     []string{`host.keyword:$host | avg:load.threads | date`},
 			Description: "Loadavg.Total — every thread the kernel knows about, not just the container's. This is the clearest single demonstration of what the shared kernel buys: the container's own PID namespace sees three processes and /proc/loadavg still reports the whole router's thread count. On the reference device (RB5009, RouterOS 7.24.2) measured 2026-09-12: 149–160 over the window, against 3 PIDs visible inside the container; a device running more RouterOS services, scripts or containers sits higher, so read the shape and not the number in this description. WHAT IT CANNOT TELL YOU: which threads, or what they are doing — there is no per-process view from this container, privileged or not. A sudden climb here is a RouterOS service spawning, and pairing it with the kernel-stack-per-thread tile is the only way this family can corroborate it. A LEVEL: max over the bin, never a sum. No thresholds: a healthy thread count is whatever this router's service set happens to be, so any step here would be the reference device's inventory.",
 			Queries: b.q(
 				`SELECT $__dateBin(time) AS time, 'threads (router-wide)' AS metric, max(threads) AS value FROM mikroscope_load WHERE $__timeFilter(time) AND threads IS NOT NULL GROUP BY 1, 2 ORDER BY 1`,
@@ -893,6 +958,7 @@ func memoryReclaimPanels(b qb) []Panel {
 		},
 		{
 			Title: "OOM kills in the window", Type: typeStat, Unit: "short", W: 12, H: 8, Calcs: []string{"sum"}, GraphMode: "none",
+			Graphite:    []string{`alias($prefix.$host.vm.oom_kill, "oom_kill")`},
 			Description: "The kernel killed a process to get memory back. ON THE REFERENCE DEVICE (RB5009, RouterOS 7.24.2, 4x Cortex-A72, 1 GiB) measured 2026-09-12 over 9 514 consecutive samples: 0, as in every capture taken so far. YOUR DEVICE WILL DIFFER — on a memory-tight board this is the first tile in the section to read, which is why it is also mirrored into the open Overview while the rest of this section stays collapsed. A non-zero tile is the single most serious number this family can produce, and the follow-up is the kernel log (mikroscope_kmsg, Kernel log section), where the kill records which task died. WHAT IT CANNOT TELL YOU: who was killed, or why the allocation that triggered it was made. It also cannot be read as a rate — one kill in an hour and one kill in a second are the same tile; use the window sum for 'did it happen' and the kernel log for 'when and to whom'. A per-sample DELTA, reduced with sum over the window and not lastNotNull, which would read 0 in every bin where no kill happened and hide a kill three minutes ago. THRESHOLDS: base 'text' so a healthy zero is not a reassuring green shout, red at 1. Structural — any kill at all is red, on any device — and this is the one panel in the section whose threshold would be wrong to omit. The GROUP BY is normalized to 1, 2 so the constant metric column is grouped like every other long-format query in the file, and so that this panel and its Overview copy are byte-identical rather than two spellings of one tile.",
 			Thresholds:  thresholds("text", step(1, "red")),
 			Queries: b.q(
@@ -926,6 +992,8 @@ func memoryReclaimPanels(b qb) []Panel {
 		},
 		{
 			Title: "Context switches and all interrupts per second", Unit: "short", W: 12, H: 8,
+			Graphite:    []string{`aliasByNode($prefix.$host.stat.{ctxt,intr}, 3)`},
+			Elastic:     []string{`host.keyword:$host | sum:stat.ctxt | date`},
 			Description: "The two global scalars from /proc/stat: ctxt (context switches) and intr (the interrupt line total, ALL vectors). ON THE REFERENCE DEVICE (RB5009, RouterOS 7.24.2, 4x Cortex-A72, 1 GiB) measured 2026-09-12 over 9 514 consecutive samples: about 2 137 context switches/s and about 5 353 interrupts/s mean, with per-minute bins spanning roughly 1 860–2 080 and 4 770–5 090. Two independent cross-checks on the same router agree: docs/playbooks.md's idle baseline recorded 41 793–60 518 context switches per 20 s bucket (about 2 100–3 000/s) measured a different way, and the Prometheus side of this panel, verified against the live Prometheus through the datasource proxy on 2026-09-12, converges to about 2 100/s and about 5 300/s — three measurements, one shape. YOUR DEVICE WILL DIFFER. WHAT IT CANNOT TELL YOU: which interrupt source, or which CPU. intr here is the only GLOBAL interrupt total mikroscope emits (Sample.IRQTotal is never written), and the per-source, per-core breakdown is mikroscope_irq. On InfluxDB both are per-sample DELTAS summed over the bin; on Prometheus both are monotonic counters, so the rate() series under-reads for one rate window after the agent starts — the first points of a fresh scrape are a ramp, not a dip in load. No thresholds, deliberately: both figures are functions of the ruleset, the services running and the traffic — the reference router's about 2 137 switches/s idle floor is a property of that box, so any step would be one router's baseline presented as a health band.",
 			Queries: b.q2(
 				`SELECT $__dateBin(time) AS time, 'context switches' AS metric, sum(ctxt) / ($__interval_ms / 1000.0) AS value FROM mikroscope_stat WHERE $__timeFilter(time) GROUP BY 1 ORDER BY 1`,
@@ -979,6 +1047,8 @@ func memoryDetailPanels(b qb) []Panel {
 		},
 		{
 			Title: "Mapped, kernel stacks and page tables", Unit: "decbytes", W: 12, H: 7,
+			Graphite:    []string{`aliasByNode($prefix.$host.mem.{mapped_kb,kernel_stack_kb,page_tables_kb}, 3)`},
+			Elastic:     []string{`host.keyword:$host | avg:mem.mapped_kb | date`},
 			Description: "The three small levels that scale with how many processes and mappings the router is carrying. They are grouped because they are the same order of magnitude and move together — all three rise when RouterOS spawns threads and fall when it reaps them — which makes them a cheap corroboration of the thread count, and that relationship is device-independent. ON THE REFERENCE DEVICE (RB5009, RouterOS 7.24.2, 4x Cortex-A72, 1 GiB), measured 2026-09-12 over a 6-hour window: Mapped 21 556–22 760 kB (the share of the page cache actually mapped into an address space, out of 75 780–76 312 kB cached), KernelStack 2 420–2 720 kB, PageTables 1 188–1 516 kB. YOUR DEVICE WILL DIFFER in all three — they track the process and mapping count, not the board. WHAT THEY CANNOT TELL YOU: anything about which process. Mapped in particular is not 'memory used by programs': it is file-backed pages in some address space, so it double-counts against page cache and is deliberately excluded from the apportionment stack. Anon is left out despite belonging to the same story — on the reference device in the same window it measured 84 624–116 012 kB, four to five times Mapped and about seventy times PageTables, and would flatten the other two. Unstacked on purpose: these three overlap each other, so their sum means nothing. No Prometheus form — Mapped, KernelStack and PageTables are not among the ten meminfo fields the exposition carries. No thresholds: every candidate band is a byte figure read off one board's process population, and there is no emitted denominator to turn these into shares.",
 			Queries: b.q(
 				`SELECT $__dateBin(time) AS time, 'Mapped (page cache in an address space)' AS metric, avg(mapped_kb) * 1024 AS value FROM mikroscope_mem WHERE $__timeFilter(time) AND mapped_kb IS NOT NULL GROUP BY 1 UNION ALL SELECT $__dateBin(time) AS time, 'KernelStack' AS metric, avg(kernel_stack_kb) * 1024 AS value FROM mikroscope_mem WHERE $__timeFilter(time) AND kernel_stack_kb IS NOT NULL GROUP BY 1 UNION ALL SELECT $__dateBin(time) AS time, 'PageTables' AS metric, avg(page_tables_kb) * 1024 AS value FROM mikroscope_mem WHERE $__timeFilter(time) AND page_tables_kb IS NOT NULL GROUP BY 1 ORDER BY 1`,
@@ -1100,6 +1170,8 @@ func interruptPanels(b qb) []Panel {
 		},
 		{
 			Title: "NET_RX softirq invocations per core", Unit: "cps", W: 12, H: 8, NoValue: "0",
+			Graphite:    []string{`aliasByNode($prefix.$host.softirq.NET_RX.count, 3)`},
+			Elastic:     []string{`host.keyword:$host | sum:softirq.NET_RX | date`},
 			Description: "NET_RX per CPU is the single most telling number on a router under load. Cores come from GROUP BY cpu on InfluxDB and sum by (cpu) on Prometheus, so the panel has no core count in it. Measured on the reference device (RB5009, RouterOS 7.24.2, kernel 5.6.3 arm64, 4 cores) 2026-09-12: 335–772/s per core on Prometheus and 418–921/s on InfluxDB over overlapping windows, all four cores active, cpu0 and cpu3 consistently ahead of cpu1 and cpu2 — the same asymmetry the NIC's per-line rates show. Your device will differ in both level and in which cores lead, since that follows its IRQ affinity. WHAT IT CANNOT TELL YOU: this counts INVOCATIONS, not time — it cannot say how long each softirq ran (see the microseconds-per-invocation panel) and it cannot say whether the handler finished its work (that is mikroscope_softnet.time_squeeze). The InfluxDB query uses a conditional sum over all kinds so that a core which did zero NET_RX in a bin yields an explicit 0: writeKernelCounters SKIPS a (kind, cpu) pair whose delta is 0, so a naive GROUP BY on kind='NET_RX' would drop the row and the line would jump the gap. Note the Prometheus label for the softirq kind is `name`, not `kind` — the two stores disagree and one must not be copied into the other. No thresholds: an invocations-per-second rate whose ceiling is set by the NIC, the link speed and the traffic mix; the reference device's 335–772/s idle band would be a red alarm on a quiet single-port board and a green floor on a CCR.",
 			Queries: b.q(
 				`SELECT $__dateBin(time) AS time, concat('cpu ', cpu) AS metric, sum(CASE WHEN kind = 'NET_RX' THEN "count" ELSE 0 END) / ($__interval_ms / 1000.0) AS value FROM mikroscope_softirq WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1`,
@@ -1108,6 +1180,8 @@ func interruptPanels(b qb) []Panel {
 		},
 		{
 			Title: "Softirq invocations by kind (all CPUs)", Unit: "cps", W: 12, H: 8, Stacked: true,
+			Graphite:    []string{`aliasByNode($prefix.$host.softirq.*.count, 3)`},
+			Elastic:     []string{`host.keyword:$host | sum:softirq.TIMER | date`},
 			Description: "What kind of deferred work the kernel is doing, across the whole device. Kinds come from GROUP BY kind (InfluxDB) and sum by (name) (Prometheus), so the panel enumerates nothing. Read it stacked: the stack height is total deferred work and the composition change is the signal. Measured on the reference device (RB5009, RouterOS 7.24.2, kernel 5.6.3 arm64, 4 cores) 2026-09-12: NET_RX 1 841–2 975/s, SCHED 276–378/s, TIMER 250–348/s, RCU 155–223/s, NET_TX 0.53–0.8/s, TASKLET 0.017–0.08/s. NET_RX dominating by an order of magnitude is the expected shape for a forwarding device, but the ratio is a property of this router's traffic, not of the metric. In docs/playbooks.md §4's flood the per-bucket softirq count tripled and time_squeeze rose with it. WHAT IT CANNOT TELL YOU: duration — these are invocation counts, and /proc/stat's irq column is flat 0 on this kernel, so hard-IRQ time hides inside system, not here. The two stores also disagree about absent kinds: InfluxDB returned 6 kinds in this window because writeKernelCounters skips zero deltas, while Prometheus returned 10 (BLOCK, HI, HRTIMER and IRQ_POLL at a flat 0) because /metrics keeps exporting a kind once it has been seen. A gap on InfluxDB is a measured zero; a zero line on Prometheus may be a kind that has not fired since the agent started. The two near-zero kinds get their own panel because they are illegible next to NET_RX. No thresholds: total deferred work has no portable ceiling, and a stacked chart makes any single step meaningless once the composition shifts.",
 			Queries: b.q(
 				`SELECT $__dateBin(time) AS time, kind AS metric, sum("count") / ($__interval_ms / 1000.0) AS value FROM mikroscope_softirq WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1`,
@@ -1168,6 +1242,8 @@ func networkPanels(b qb) []Panel {
 	return []Panel{
 		{
 			Title: "RX path: packets processed per second, per core", Unit: "pps", W: 12, H: 8,
+			Graphite:    []string{`aliasByNode($prefix.$host.softnet.*.processed, 3)`},
+			Elastic:     []string{`host.keyword:$host | sum:softnet.processed | date`},
 			Description: "softnet_stat column 1 — the per-CPU delta in each sample, divided by the dashboard interval. This is the router's real packet path, not the container's: softnet_stat is global even inside the network namespace (four rows at processed 99-119 M while the container's own veth had seen 4 packets, reference RB5009 7.24.2 / kernel 5.6.3 arm64, 2026-09-11). The core set comes from GROUP BY cpu, and on Prometheus from sum by (cpu): a 2-core hEX S or a 16-core CCR draws its own lines with nothing in the query to change. Measured on the REFERENCE device (RB5009, RouterOS 7.24.2, 4 cores, 1 GiB) through the Grafana proxy on 2026-09-12, a 2.8 h window of 19 286 samples in 60 s bins: 9.5–1 628 pps per core, and 26 / 57 / 169 packets per sample per core at p05 / p50 / p95. Your device, ruleset and traffic will put those numbers somewhere else. What it cannot tell you: which interface, protocol or direction — softnet_stat is per-CPU only; for per-interface counters use mikroscope_api_iface. The first and last bin of the window are partial and read low. No thresholds: any absolute pps band would be one board's traffic level and one owner's ruleset, and the panel's job is the shape and the per-core spread; the fault signal lives on the dropped tile and the regime panel.",
 			Queries: b.q(
 				`SELECT $__dateBin(time) AS time, concat('cpu ', cpu) AS metric, sum(processed) / ($__interval_ms / 1000.0) AS value FROM mikroscope_softnet WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1`,
@@ -1176,6 +1252,8 @@ func networkPanels(b qb) []Panel {
 		},
 		{
 			Title: "Squeeze rate: softirq budget exhaustions per second, per core", Unit: "cps", W: 12, H: 8,
+			Graphite:    []string{`aliasByNode($prefix.$host.softnet.*.time_squeeze, 3)`},
+			Elastic:     []string{`host.keyword:$host | sum:softnet.time_squeeze | date`},
 			Description: "softnet_stat column 3: each event is the NET_RX softirq handler returning with work still queued because one of its budgets ran out — net.core.dev_weight per poll, netdev_budget per cycle, or netdev_budget_usecs in time. Whether zero is reachable is a property of a device and its load, not of this counter. On the REFERENCE device (RB5009, RouterOS 7.24.2, 4 cores, 1 GiB) it never reached zero at idle: 60 s bins measured 0–3.55 events/s per core on 2026-09-12, median 1.31/s, and about 200 per 20 s device-wide in docs/playbooks.md §7 — so on THAT device an alert at 'squeeze > 0' pages forever, while on a lightly loaded device squeeze > 0 may be exactly the right alert. What travels is the rise against the device's own floor: under the 6.8 kpps ICMP flood of playbooks §4 softirq counts tripled 50 -> 150 per 5 s bucket with squeeze rising alongside. What it cannot tell you: which of the three budgets ran out, or how close to it the poll came — none of the three sysctls is emitted, so no reference line is drawn and none was invented. No thresholds: an absolute band (4 / 10 / 25 events per second) would be the reference board's idle floor and its flood peak.",
 			Queries: b.q(
 				`SELECT $__dateBin(time) AS time, concat('cpu ', cpu) AS metric, sum(time_squeeze) / ($__interval_ms / 1000.0) AS value FROM mikroscope_softnet WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1`,
@@ -1200,6 +1278,8 @@ func networkPanels(b qb) []Panel {
 		},
 		{
 			Title: "Packets dropped in the kernel RX path (window total)", Type: typeStat, Unit: "packets", W: 6, H: 8, Calcs: []string{"sum"}, GraphMode: "none", MinInterval: "1m",
+			Graphite:    []string{`alias(sumSeries($prefix.$host.softnet.*.dropped), "packets dropped")`},
+			Elastic:     []string{`host.keyword:$host | sum:softnet.dropped | date`},
 			Description: "softnet_stat column 2 summed over the dashboard window: packets the kernel discarded because the per-CPU backlog was full. Zero is the correct and expected reading, and any nonzero value is unambiguous packet loss inside the router, invisible to every SNMP and RouterOS API counter. Measured on the REFERENCE device (RB5009, RouterOS 7.24.2, 4 cores): zero across all 77 144 softnet rows of the 2.8 h window read on 2026-09-12 (19 286 samples x 4 cores), and zero lifetime on 2026-09-11 — which is why it is a tile and not a graph. A busier router, a smaller board or a device with a shallower backlog can make this nonzero, and then the timing is in the rate and regime panels beside it. What it cannot tell you: which interface or flow lost them, and it does not count drops made by the switch chip, the driver ring or a firewall rule — only backlog overflow. The reducer is a window SUM and not a last value: last would report the final bin's zero and never turn red for an earlier event. The Prometheus rate window is $__interval and not $__range for the same reason: per-bin deltas tile the window exactly and the sum reducer gives the window total, where $__range would put the whole window's total on every step and the sum would multiply it. THRESHOLDS: green base, red at 1 — the one threshold in the family that is a property of the quantity rather than of a board, because the question is zero versus nonzero and one dropped packet means the backlog overflowed on any device. No magnitude bands: how many drops are 'a lot' is a device-specific judgement.",
 			Thresholds:  thresholds("green", step(1, "red")),
 			Queries: b.q(
@@ -1269,6 +1349,8 @@ func thermalPanels(b qb) []Panel {
 	return []Panel{
 		{
 			Title: "Die temperature by zone", Unit: "celsius", W: 12, H: 8, Signed: true, FillOpacity: fi(0),
+			Graphite:    []string{`aliasByNode($prefix.$host.thermal.*.celsius, 3)`},
+			Elastic:     []string{`host.keyword:$host | avg:thermal.celsius | date`},
 			Description: "Every thermal zone /sys/class/thermal exposes, averaged inside each dashboard interval and never summed — a sum of two die sensors is a meaningless number. The zone set comes from GROUP BY zone, so a board with one zone draws one line and a board with six draws six; no zone name appears in the query. Read by the agent at 10 Hz with no API call. Both fields are LEVELS, hence avg() and not sum(). On the reference device (RB5009, RouterOS 7.24.2, kernel 5.6.3 arm64, 4x Cortex-A72, 1 GiB), 6 h window ending 2026-09-12 14:41Z, 19 384 samples per zone: two zones, cpu-thermal mean 29.12 C (27.753–30.714), soc-thermal mean 40.66 C (38.934–42.267). Your device will differ in zone count, zone names and offsets. The averaging is the only reason this reads as a curve: on the reference board the raw sensor is a staircase, 0.423 C per step on cpu-thermal and 0.476 C on soc-thermal, so a 10 Hz mean over a 10 s bin recovers roughly 1/40 of a step — sub-ADC resolution from dithering, the same trick as the PMU reading below the tick floor. The step size is a property of each board's sensor, not of the metric: measure your own on the dwell panel below. What it cannot tell you: nothing about voltage, current or fans where the board has no hwmon (on the reference device /sys/class/hwmon is empty even privileged and i2cdetect lists no buses, so those two zones are its entire sensor set; a board that does have hwmon has sensors mikroscope does not read at all); nothing about throttling action where there is no cpuidle; and no throttle threshold on any device, because the agent reads only each zone's temp file and never its trip points. No thresholds: a die temperature has no data-derived ceiling anywhere in mikroscope, so any colored band would be a datasheet figure for one board dressed as a reading.",
 			Queries: b.q(
 				`SELECT $__dateBin(time) AS time, zone AS metric, avg(celsius) AS value FROM mikroscope_thermal WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1`,
@@ -1301,6 +1383,8 @@ func thermalPanels(b qb) []Panel {
 		},
 		{
 			Title: "Latest temperature by zone", Type: typeGauge, Unit: "celsius", Min: f(0), Max: f(100), W: 8, H: 8,
+			Graphite:    []string{`aliasByNode($prefix.$host.thermal.*.celsius, 3)`},
+			Elastic:     []string{`host.keyword:$host | max:thermal.celsius | date`},
 			Description: "The current reading of each thermal zone, big enough to read at a glance, next to the time course above it: same query, reduced to lastNotNull, one gauge per zone from GROUP BY zone. On the reference device (RB5009, RouterOS 7.24.2), last sample of the 6 h window ending 2026-09-12 14:41Z: cpu-thermal 29.445 C, soc-thermal 40.363 C. Your device will show its own zones at its own offsets. The scale is 0-100 C: a presentation choice covering the plausible range of a board sensor, deliberately not a rating and not derived from any device's readings. What it cannot tell you: how much headroom there is. mikroscope reads each zone's temp file and never its trip points, and a datasheet ambient — 60 C for one indoor RB5009 variant — is a number the device's own telemetry cannot even confirm. There is no measured ceiling to substitute, so none is drawn. Where there is no cpuidle and no hwmon there is also no signal of throttling ACTION, so a stable reading here is not evidence that nothing throttled. No thresholds and no headroom arc: an arc of 60.0 − avg(celsius) on a Max of 35 with bands at 10 and 20 C of headroom would be four numbers from one datasheet and one board (35 being 'the most any zone on this board has shown'). A dashboard variable was the other option and is not expressible today: the generator writes an empty templating list.",
 			Queries: b.q(
 				`SELECT $__dateBin(time) AS time, zone AS metric, avg(celsius) AS value FROM mikroscope_thermal WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1`,
@@ -1390,6 +1474,8 @@ func yaffsPanels(b qb) []Panel {
 	return []Panel{
 		{
 			Title: "Flash page traffic per YAFFS partition (pages/s)", Unit: "short", W: 12, H: 8,
+			Graphite:    []string{`aliasByNode($prefix.$host.flash.*.page_writes, 3)`},
+			Elastic:     []string{`host.keyword:$host | sum:flash.page_writes | date`},
 			Description: "YAFFS n_page_writes and n_page_reads deltas from /proc/yaffs, divided by the bin's wall time, one pair of series per partition the file reports. The partition set and its labels come from the rows (GROUP BY device), so a board with one YAFFS device, three, or none produces the right panel without a change here; the legend carries the kernel's own device string with the YAFFS index and quotes stripped, which is why it reads 'RouterBoard NAND 1 Main' on a RouterBOARD and something else on anything else. This is finer than RouterOS's write-sect-total. On the reference device (RB5009, RouterOS 7.24.2, kernel 5.6.3 arm64, 4 cores, 1 GiB), measured through the Grafana datasource proxy on 2026-09-12 over a live about 2.6 h window at 10 Hz (22 915 samples per partition): Main took 1 078 page writes and 213 page reads, Boot took none of either — on that board Boot is written only by a firmware upgrade (docs/playbooks.md §5). An 809 s window earlier the same day on the same router read 128 writes and 20 reads, so even one device's rate is a window property, and yours will differ again. It cannot tell you WHICH file or process is writing: that is found by configuration (on the reference router, /system/logging/print where action=\"disk\" pointed at the dns topic) and not by telemetry. The yaffs counters are read every tick but stored only when the delta is non-zero (internal/agent/source.go), so on a quiet device a whole minute can pass with no row at all and then one row carries the burst: the sum over a bin is exact, but a bin narrower than the gap between writes reads 0. No thresholds: any pages/s step would be this router's logging configuration, not a property of flash, and the NAND's write budget is not emitted, so there is no share to threshold on.",
 			Queries: b.qs([]string{
 				`SELECT $__dateBin(time) AS time, ` + yaffsLabel + ` || ' page writes' AS metric, sum(page_writes) / ($__interval_ms / 1000.0) AS value FROM mikroscope_flash WHERE $__timeFilter(time) GROUP BY 1, device ORDER BY 1`,
@@ -1522,7 +1608,9 @@ func diskPanels(b qb) []Panel {
 		},
 		{
 			Title: "Block-device requests per second (reads and writes completed)", Unit: "iops", W: 12, H: 8,
-			Absent: true, KnownEmpty: true, NoValue: noBlockIO,
+			Graphite: []string{`aliasByNode($prefix.$host.disk.*.{reads,writes}, 4)`},
+			Elastic:  []string{`host.keyword:$host | sum:disk.reads_completed | date`},
+			Absent:   true, KnownEmpty: true, NoValue: noBlockIO,
 			Description: "Requests completed per second per block device and direction, from /proc/diskstats fields 1 and 5 via the agent's deltas. The device set comes from GROUP BY device (InfluxDB) or the device label (Prometheus); on Prometheus the direction comes from the op label too, so that side is a single query where InfluxDB needs one per direction — reads and writes are separate FIELDS in the line protocol, not tag values. /proc/diskstats is global and readable from inside the container, so this covers the router's real block devices. EMPTY BY CONSTRUCTION, stated as the agent's rule rather than one router's result: sample.diskDelta filters any device with zero reads, zero writes and zero inflight in the tick, so a wholly idle set of devices produces no rows and the table is never created. On the reference device (RB5009, RouterOS 7.24.2, kernel 5.6.3 arm64) that is the steady state — verified 2026-09-12 through the Grafana datasource proxy: mikroscope_disk still does not exist in the live InfluxDB. Your device will differ; this populates on anything that does block I/O, loop0 under page-fault load or a hEX S with USB storage among them, and loop0 does move on this same board when something faults pages in. WHAT IT CANNOT TELL YOU: how much data moved. A 4 KiB read and a 512 KiB read are both one request — the throughput panel answers that, and reading the two together is how you tell large-sequential from small-random — and it cannot tell you latency either, because the per-direction tick fields that would give a mean are not emitted. It also cannot attribute a request to a file or a process. No thresholds: an IOPS figure that means trouble is a property of the storage device — a NAND-backed loopback, a USB stick and an NVMe differ by three orders of magnitude — and mikroscope collects nothing that would let the dashboard derive a ceiling.",
 			Queries: b.qs([]string{
 				`SELECT $__dateBin(time) AS time, device || ' reads' AS metric, sum(reads) / ($__interval_ms / 1000.0) AS value FROM mikroscope_disk WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1`,
@@ -1542,7 +1630,9 @@ func diskPanels(b qb) []Panel {
 		},
 		{
 			Title: "Block-device throughput (sectors → bytes per second)", Unit: "Bps", W: 24, H: 7,
-			Absent: true, KnownEmpty: true, NoValue: noBlockIO,
+			Graphite: []string{`aliasByNode(scale($prefix.$host.disk.*.read_sectors, 512), 3)`},
+			Elastic:  []string{`host.keyword:$host | sum:disk.read_sectors | date`},
+			Absent:   true, KnownEmpty: true, NoValue: noBlockIO,
 			Description: "read_sectors and write_sectors from /proc/diskstats fields 3 and 7, converted to bytes per second, per device and direction. The 512 factor is neither a guess nor the device's physical sector size: the kernel always reports these two fields in 512-byte units regardless of hardware geometry, which is precisely why the agent ships sectors and the dashboard multiplies. That is a property of the interface and portable to every board — no device capacity or logical block size is needed, and none is emitted. Read it alongside the request-rate panel: bytes/s high with requests/s low means large sequential I/O, the reverse means a small-random pattern. Device set from GROUP BY device (InfluxDB) or the device and op labels (Prometheus). EMPTY BY CONSTRUCTION, as the agent's rule rather than one router's result: sample.diskDelta drops a device whose reads, writes and inflight are all zero, so an entirely idle device set writes nothing and no sink creates the table. On the reference device (RB5009, RouterOS 7.24.2, kernel 5.6.3 arm64, 4 cores, 1 GiB), verified 2026-09-12 through the Grafana datasource proxy, mikroscope_disk is still absent from the live InfluxDB. One reference-specific caveat, counter-intuitive rather than general: on that board this panel would not describe flash wear even if it populated, because RouterOS writes flash through YAFFS and not through a block device, so mtdblock0-2 read all-zero and the /proc/yaffs panels are the only wear signal there. On a board with eMMC or UBIFS that is not true, and one with no YAFFS has no flash family at all. WHAT IT CANNOT TELL YOU: which file or process moved the bytes. /proc/diskstats is per-device and has no attribution, and the agent reads no per-task I/O accounting; nor whether a write reached the medium. No thresholds: bytes per second has no portable alarm point — the ceiling is the bus and the medium, and the agent emits neither — so any absolute step would be a figure from one board. The 512 multiplier is the only constant here and it is a kernel ABI guarantee.",
 			Queries: b.qs([]string{
 				`SELECT $__dateBin(time) AS time, device || ' read' AS metric, CAST(sum(read_sectors) AS DOUBLE) * 512.0 / ($__interval_ms / 1000.0) AS value FROM mikroscope_disk WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1`,
@@ -1601,6 +1691,8 @@ func slabPanels(b qb) []Panel {
 		},
 		{
 			Title: "Packet-buffer and large-allocation caches", Unit: "short", W: 12, H: 8,
+			Graphite:    []string{`aliasByNode($prefix.$host.slab.*.active_objs, 3)`},
+			Elastic:     []string{`host.keyword:$host | max:slab.skbuff_head_cache | date`},
 			Description: "Forwarding pressure as the slab allocator sees it: skbuff_head_cache is packet buffers in flight, skbuff_fclone_cache is cloned skbs (forwarding and tapping), and the kmalloc 1k/2k buckets are where large-allocation storms land. Absolute active objects, bin-mean of a LEVEL. The cache set is matched by pattern (skbuff%, kmalloc-1%, kmalloc-2%) rather than by an explicit name list, because kmalloc bucket names are kernel-build-dependent — many kernels name them kmalloc-1024/kmalloc-2048 and 5.14+ splits them into kmalloc-rnd-* — so a literal IN list silently empties the panel on another kernel. On the reference device (RB5009, RouterOS 7.24.2, kernel 5.6.3 arm64) measured over 6 h on 2026-09-12 at 10 Hz: skbuff_head_cache 640–1 280, skbuff_fclone_cache 274–528, kmalloc-1k 1 088–1 216, kmalloc-2k 857–880; your device will differ in every one of those, and a kernel with different bucket naming may show a different set of series here. They are in their own panel because nf_conntrack at thousands of objects would flatten all four to a single band on a shared axis. WHAT IT CANNOT TELL YOU: bytes. NumObjs and ObjSize are parsed by procfs.ParseSlabinfoInto and dropped at the Delta stage, so objects cannot be converted to memory and the slab's own active-vs-total fragmentation is unavailable; mikroscope_mem.slab_kb is the only byte figure and it belongs to the memory family. A spike here during a traffic event is memory pressure from the network path, not from anything installed (docs/playbooks.md §6). No thresholds: these are absolute object counts whose idle level is a property of the router's traffic and socket population, so a band drawn at the reference device's 640-object skbuff floor would read amber at idle on a busier router and never trip on a quieter one.",
 			Queries: b.q(
 				`SELECT $__dateBin(time) AS time, cache AS metric, avg(active) AS value FROM mikroscope_slab WHERE $__timeFilter(time) AND (cache LIKE 'skbuff%' OR cache LIKE 'kmalloc-1%' OR cache LIKE 'kmalloc-2%') GROUP BY 1, 2 ORDER BY 1`,
@@ -1908,6 +2000,7 @@ func apiCPUPanels(b qb) []Panel {
 		},
 		{
 			Title: "RouterOS uptime", Type: typeStat, Unit: "s", W: 6, H: 8, Format: "table", GraphMode: "none",
+			Graphite:    []string{`alias($prefix.$host.api.system.uptime_s, "uptime")`},
 			Description: "uptime_s from /system/resource, latest sample, rendered by Grafana as a duration. On the reference device (RB5009UG+S+, RouterOS 7.24.2) the maximum observed in the 2026-09-12 capture was 223 161 s (2 d 14 h), consistent with the 2026-09-10 00:22 upgrade reboot; it read 231 927 s later the same day, advancing by 1 per second as expected. This is the family's only reboot-detection source: RouterOS's Version string is read by the poller and never written to a sink, so there is no version annotation to correlate a restart against. What it cannot tell you: whether a gap in the other panels was a reboot or a collector outage. A gap plus a reset here is a reboot; a gap with uptime still climbing is the collector, the API user's session, or the network. Because uptime_s advances by exactly 1 per second while the router is up, it is also the cheapest sanity check that the API tier is delivering live data rather than a cached last value — that property is RouterOS's, not this board's, so it holds wherever the API tier runs. No thresholds: a 'too low' uptime threshold would be a policy about maintenance windows, not a property of the metric, and the reboot count tile in the Overview is where the 0/non-zero judgement belongs.",
 			Queries: b.q(
 				`SELECT time, uptime_s AS "RouterOS uptime" FROM mikroscope_api_system WHERE $__timeFilter(time) ORDER BY time DESC LIMIT 1`,
@@ -1948,6 +2041,7 @@ func apiNetPanels(b qb) []Panel {
 	return []Panel{
 		{
 			Title: "Interface throughput — rx above, tx below", Unit: "bps", W: 12, H: 8, Signed: true, CenteredZero: true,
+			Graphite:    []string{`aliasByNode($prefix.$host.api.iface.*.rx_bps, 4)`},
 			Description: "Per-interface bits per second from /interface/monitor-traffic, rx plotted positive and tx negated so each interface reads as a mirrored pair — the node_exporter convention. One series pair per `interface` tag actually present: the set comes from GROUP BY interface, so a two-port device draws two pairs and a sixteen-port device sixteen, and no port count, port name or driver is assumed anywhere in the query. These fields are ALREADY per-second rates shipped as levels, which is the one exception in this store to the raw-counters rule: applying a Grafana rate() or a SQL delta to them produces nonsense. On the reference device (RB5009UG+S+IN, RouterOS 7.24.2, 4x Cortex-A72, 1 GiB) measured over the 24 h to 2026-09-12 16:48 UTC, 883 samples per interface: PPPoE_DIGI rx 21.0 Mbps mean / 477 Mbps peak, bridge tx 22.6 Mbps mean / 484 Mbps peak, ether1 rx 3.5 Mbps and tx 1.2 Mbps mean. Those are one router's evening traffic on one day, not properties of the metric — your device will differ in magnitude, in interface names and in how many series appear. Two things it cannot tell you. The tag set is exactly the interfaces in Options.Interfaces — a configured subset, not an inventory of the device — so an interface absent from this panel may be idle, unconfigured, or simply not selected, and the three look identical. And the series must never be summed: a bridge and its member ports carry the same forwarded packets, so any total double-counts. That overlap is general to bridged RouterOS topologies, not a quirk of this router. No thresholds: a bits-per-second panel's only honest ceiling is the interface's negotiated link speed, and the agent does not collect it, so any absolute step here would be one board's uplink presented as the metric's limit. The mirrored rx/tx layout carries the reading instead.",
 			Queries: b.q2(
 				`SELECT $__dateBin(time) AS time, concat(interface, ' rx') AS metric, avg(rx_bps) AS value FROM mikroscope_api_iface WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1`,
@@ -1958,6 +2052,7 @@ func apiNetPanels(b qb) []Panel {
 		},
 		{
 			Title: "Interface packet rate — rx above, tx below", Unit: "pps", W: 12, H: 8, Signed: true, CenteredZero: true,
+			Graphite:    []string{`aliasByNode($prefix.$host.api.iface.*.rx_pps, 4)`},
 			Description: "Per-interface packets per second, mirrored the same way as the throughput panel, one pair per `interface` tag present (GROUP BY interface — no port count assumed). Packet rate, not bit rate, is what costs a router CPU: the forwarding path does a roughly fixed amount of work per packet regardless of its size, so a small-packet flood saturates the CPU long before the headline bit rate is reached (docs/playbooks.md §4 provoked exactly this at about 6.8 kpps of ICMP). On the reference device (RB5009, RouterOS 7.24.2, 3 configured interfaces) measured over the 24 h to 2026-09-12 16:48 UTC, 883 samples each: PPPoE_DIGI rx 2 770 pps mean, bridge rx 1 991 pps mean, ether1 rx 344 pps mean; your device will differ. Read this panel together with the cpu-load scatter below: packet rate climbing while cpu-load stays flat means the switch chip or the fast path is doing the work; both climbing together means the CPU is. Same caveats as throughput — the fields are already rates, so never rate them again; the tag set is a configured subset rather than an inventory; and never sum across interfaces, because a bridge and its members overlap. No thresholds: the packet rate at which a router saturates is set by its forwarding silicon and its ruleset, not by the counter. The companion scatter panel is where a packet-rate ceiling becomes visible — as the point where the cloud bends upward — which is a shape, not a number, and therefore portable.",
 			Queries: b.q2(
 				`SELECT $__dateBin(time) AS time, concat(interface, ' rx') AS metric, avg(rx_pps) AS value FROM mikroscope_api_iface WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1`,
@@ -2186,6 +2281,8 @@ func agentCostPanels(b qb) []Panel {
 		},
 		{
 			Title: "Agent memory against the container cap", Unit: "decbytes", W: 10, H: 8,
+			Graphite:       []string{`alias($prefix.$host.self.rss_bytes, "agent rss")`},
+			Elastic:        []string{`host.keyword:$host | avg:self.rss | date`},
 			Description:    "The two memory numbers the agent knows about itself: RSS from /proc/self/stat (the agent process) and memory.current from the container cgroup2 (the whole container — RSS plus page cache charged to it, and anything written to /dev/shm). Both are ABSOLUTE LEVELS and are reduced with max() per bin, never summed: summing a gauge across the about 600 samples in a 60 s bin at --hz 10 would report gigabytes of RSS. The two flat lines are mikroscope's own install-time settings, not the router's: the container memory-max that `install` sets and mikroscope's own memory budget. They are labeled as settings rather than by value, because `install` can be told otherwise and a legend that says '64 MiB' would then be a lie — and because nothing ties the dashboard's copy of the cap to the one cmd/mikroscope/router.go sets, the cap should come from cgroup2 memory.max, which the agent already has open. On the reference device (RB5009, 1 GiB, --hz 10) measured 2026-09-11/12: RSS 8.4 -> 27.6 MiB, memory.current 20.6 -> 26.9 MiB, against a 40 MiB Go soft limit and a 64 MiB container memory-max (at 14 MiB / 32 MiB the same agent costs 9.38 % of one core instead of 1.39 %); re-measured 2026-09-12 over 6 h: RSS max 32.2 MB, memory.current max 30.1 MB. Your device will differ — the ring is sized in samples, so BUFFER_S and --hz set the floor. The y-axis is left unclamped on purpose, so an approach to the cap is visible rather than clipped. What it cannot tell you: RSS can exceed memory.current (it does on the reference device) because RSS counts shared pages the cgroup charges to whoever touched them first, so the difference is not 'page cache'. cgroup_mem was null in 5 900 of 14 300 rows of the 2026-09-11/12 capture, so that series is null-guarded and starts where the field does: missing instrumentation, not missing memory. No thresholds on the field config: the two limits are drawn as series instead, which is what makes them readable as lines being approached rather than as a color change, and because they are install settings they must not become a threshold ramp that looks like a property of the metric.",
 			RequiresFields: []string{"mikroscope_self.cgroup_mem_max"},
 			Queries: b.qs([]string{
@@ -2253,6 +2350,8 @@ func agentContinuityPanels(b qb) []Panel {
 		},
 		{
 			Title: "Ticks never delivered, this window", Type: typeStat, Unit: "short", W: 8, H: 8, Calcs: []string{"sum"}, ShowName: true, GraphMode: "none", MinInterval: "1m", Legends: []string{"ticks never delivered", "agent restarts (seq reset)", "ticks the sampler slipped"},
+			Graphite:    []string{`alias($prefix.$host.collector.gap.samples, "ticks never delivered")`},
+			Elastic:     []string{`kind.keyword:gap AND host.keyword:$host | sum:lost | date`},
 			Description: "One number for 'how much of this window is missing', with a sparkline that says when: the window sum of (d − 1) for every positive first difference of seq greater than 1, plus a count of negative differences as restarts. On the reference device (RB5009, --hz 10) measured over the 2026-09-11/12 capture: 4 493 ticks missing and 1 restart across 14 299 transitions — 23.9 % of everything the agent sampled never reached InfluxDB, in a capture that mikroscope_gap recorded nothing about; re-read 2026-09-12 over 6 h: 65 286 missing and 1 restart across 23 899 transitions. A clean 180 s window reports '0 gaps, 0 dropped, 0 errors' while the store covering days disagrees. The absolute count is deliberately not normalised, because it is what you take to the gaps table to find the sequence range; for loss as a proportion, read the sampled-vs-delivered panel above. What it cannot tell you: whether the loss was upstream (queue, transport) or downstream (the collector was not running). On Prometheus a third tile is available and is a DIFFERENT quantity, labeled as such: mikroscope_slipped_total counts ticks the agent never took because a read finished after the next tick was due — ticks that were never delivered because they never existed. It is present in the Prometheus store (verified 2026-09-12, reading 0 on the reference device) and has no InfluxDB field, so the InfluxDB copy of this panel cannot separate 'never taken' from 'never delivered'. Reduced with sum rather than lastNotNull on purpose: the last bin of a healthy window is 0, which would be the most misleading number on the dashboard — and for the same reason the Prometheus rate windows are $__interval rather than $__range, so per-bin deltas tile the window exactly instead of putting the whole window's total on every step. THRESHOLDS: the 0/non-zero question — base green, yellow from 1. There is no red step at 100 ticks: 100 ticks is 10 s at --hz 10 and 5 s at --hz 20, so a threshold in units of ticks is a threshold calibrated to a sample rate. A magnitude band would need loss as a share of expected ticks, which is the panel above. The Prometheus restart tile uses resets(mikroscope_samples_total) rather than resets on the cgroup µs counter: samples_total is the agent's own counter and resets exactly when the agent does.",
 			Thresholds:  thresholds("green", step(1, "yellow")),
 			Queries: b.qs([]string{
@@ -2266,6 +2365,8 @@ func agentContinuityPanels(b qb) []Panel {
 		},
 		{
 			Title: "Gaps and restarts in this window", Type: typeTable, Unit: "short", W: 24, H: 8, Format: "table",
+			Graphite: []string{`alias($prefix.$host.collector.gap.samples, "gap samples")`},
+			Elastic:  []string{`kind.keyword:gap AND host.keyword:$host | count | date`},
 			Overrides: []Override{
 				// A sequence number is an IDENTIFIER. Left on the panel's short
 				// unit Grafana printed seq 1 784 412 as "1.78 Mil", which is the

@@ -130,10 +130,11 @@ tienes, en vez de pedirte que montes algo nuevo.
 | quieres todo, con los dashboards, y no tienes nada montado    | `--influx`     | todas las medidas, como protocolo de línea          | **sí**, generado |
 | ya tienes Prometheus                                          | `--prom`       | todas las familias, recalculadas de las muestras    | **sí**, generado |
 | quieres capturar una ventana y mirarla después                | `--file`       | la línea temporal unida como JSONL, sin instalar nada | no      |
-| guardas datos a largo plazo en PostgreSQL o TimescaleDB       | `--sql`        | DDL e INSERTs para `psql`, sin driver               | no        |
+| guardas datos a largo plazo en PostgreSQL o TimescaleDB       | `--sql`        | DDL e INSERTs para `psql`, sin driver               | **sí**, generado |
 | quieres el registro del kernel y las detecciones con tus logs | `--loki`       | **solo eventos**: kmsg, detecciones, huecos         | no        |
 | ya tienes una tubería de OpenTelemetry                        | `--otlp`       | métricas como OTLP/HTTP                             | no        |
-| ya tienes Graphite, Elasticsearch o Telegraf                  | `--graphite`, `--elastic`, `--telegraf` | todas las medidas, con la forma de ese producto | no |
+| ya tienes Graphite o Elasticsearch                            | `--graphite`, `--elastic` | todas las medidas, con la forma de ese producto | **sí**, uno más pequeño |
+| ya tienes Telegraf                                            | `--telegraf`   | todas las medidas, como protocolo de línea          | no        |
 | quieres canalizarlo hacia algo tuyo                           | `--stdout`     | protocolo de línea o NDJSON por la salida estándar  | no        |
 
 </ScrollTable>

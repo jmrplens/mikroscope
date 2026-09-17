@@ -599,7 +599,10 @@ function renderSelfClosing(name, attributes, expressions, context) {
 		case "DashboardCounts":
 			return table(
 				t("ms.dash.countsLabel"),
-				[t("ms.dash.section"), "InfluxDB", "Prometheus"],
+				[
+					t("ms.dash.section"),
+					...dashboards.STORES.map((store) => dashboards.STORE_NAMES[store]),
+				],
 				[
 					...dashboards.sectionNames.map((s) => [
 						s,
