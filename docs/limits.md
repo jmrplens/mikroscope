@@ -172,6 +172,38 @@ of reads past 5 ms, and those are the ticks that slip. The CPU headroom is
 larger than the timing headroom, which is why the ceiling is a statement about
 I/O rather than about the A72.
 
+### The memory a rate costs, and where to buy it
+
+The ring is the memory. Every other figure — the Go runtime, the collector's
+headroom, the allocator's fragmentation — follows from how many entries it
+holds, because the soft memory limit is derived from exactly that. So the
+question "can this board sample at 100 Hz" is mostly "can it hold 100 × your
+buffer seconds of samples".
+
+MEASURED on the reference RB5009 (RouterOS 7.24.2, every source on, 60 s
+buffer, windows of about 54 000 samples) on 2026-09-17:
+
+| rate   | ring      | RSS          | CPU per sample | of one core | slipped              |
+| ------ | --------- | ------------ | -------------- | ----------- | -------------------- |
+| 10 Hz  | 1.98 MiB  | 13 627 392 B | 2 740 µs       | 2.7 %       | 0 of 4 981           |
+| 100 Hz | 19.78 MiB | 50 515 968 B | 1 809 µs       | 18.1 %      | 20 of 72 130 (0.03 %) |
+
+Two things in that table are not obvious. **The per-sample cost falls** as the
+rate rises — 1 809 µs against 2 740 — because the level sources are read at
+their own floors rather than every tick, so at 100 Hz the expensive ones are
+spread over ten times as many ticks: ten times the data costs 6.6 times the
+CPU, not ten. And **the slips are the read's fault, not the CPU's**: the worst
+read in that run was 21.5 ms against a 10 ms period, where the mean was
+1.27 ms. A tick whose read outlasts its period is late by definition.
+
+At 100 Hz the RSS is 48 MiB against a container `memory-max` of 64M, which is
+working but close. **Buy the room in buffer seconds, not in cleverness**: at
+100 Hz a 20 s buffer holds 6.59 MiB and derives a 17 MiB limit, which is the
+same relief a 4.7× compression of the ring would give — and compression was
+measured on this device at **+1 331 µs a sample**, which at 100 Hz is +74 % CPU
+and six times the slipped ticks (123 against 20). The seconds are free; the
+compression is not.
+
 ### What sampling faster actually buys
 
 Not CPU-percent resolution. The jiffie is 10 ms, so at 100 Hz a sample holds

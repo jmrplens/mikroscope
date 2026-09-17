@@ -4,6 +4,43 @@ Notable changes per release. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the versions
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.6]
+
+### Changed
+
+- **The ring holds 60 s by default, not 300.** What it buys is how long the
+  collector may be absent before samples are lost — it is not a window anybody
+  reads, because the collector drains it twice a second — and the 300 was in
+  the code with no recorded reason. MEASURED on the reference deployment over
+  24 hours on 2026-09-17: the largest interruption in delivery was **114.5 s**,
+  and it was self-inflicted, a container swap plus the minute the collector
+  takes to notice a restarted agent; in ordinary running the collector never
+  falls behind, and `mikroscope_gap` has recorded nothing since the 50 Hz
+  experiments of 2026-09-13.
+
+  60 s covers a restart of either side on a LAN and costs **2.0 MiB of ring at
+  10 Hz instead of 9.9**. Because the memory limit is derived from the ring, a
+  default install now writes `MEM_LIMIT_MB=16` instead of 25. A deployment
+  whose collector disappears for longer — a flaky link, a host that reboots
+  slowly — raises it with `--buffer`, and the limit follows.
+
+  On the reference device the whole change is **13 627 392 B of RSS against
+  33 042 432 this morning, a 57 % cut, with the CPU unmoved** (2 740 µs a
+  sample against 2 657) and 0 slipped ticks.
+
+### Added
+
+- **[The rate ceiling](https://jmrp.io/docs/mikroscope/cost/rate-ceiling/)
+  gains the memory a rate costs**, with 10 Hz and 100 Hz measured side by side
+  over windows of about 54 000 samples: 100 Hz holds a 19.78 MiB ring at 48 MiB
+  of RSS and 18.1 % of one core, slipping 0.03 % of ticks — and the per-sample
+  cost *falls* with the rate, because the level sources are read at their own
+  floors rather than every tick. The guidance that comes out of it: the ring is
+  the memory, and it is bought in buffer seconds. At 100 Hz a 20 s buffer gives
+  the same relief as compressing the ring 4.7×, and compression was measured on
+  this device at +1 331 µs a sample — at 100 Hz, +74 % CPU and six times the
+  slipped ticks. The seconds are free; the compression is not.
+
 ## [1.0.5]
 
 The agent stops being a Prometheus exporter, and the memory limit stops being

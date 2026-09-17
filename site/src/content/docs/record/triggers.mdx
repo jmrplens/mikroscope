@@ -20,8 +20,10 @@ the news, and what a capture cannot tell you.
 The one lossless thing the agent can do on its own is keep the samples that
 already exist, at full rate, around the moment they matter — and only the agent
 can, because only the agent has every sample. The ring already holds the last
-300 s by default, so the seconds before a fire cost nothing to keep; the seconds after cost
-only the wait.
+60 s by default, so the seconds before a fire cost nothing to keep; the seconds after cost
+only the wait. The default capture window is 5 s either side, so it fits with room; a longer
+`CAPTURE_PRE_S` than the ring holds is a window the ring cannot supply, and `--buffer` is what
+raises it.
 
 It decides nothing about meaning. A condition is a comparison you configured.
 The field it compared and the value that tripped it travel in the capture's

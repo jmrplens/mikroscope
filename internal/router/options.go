@@ -124,7 +124,7 @@ func Defaults() Options {
 		Arch:            "arm64",
 		Port:            9123,
 		RateHz:          10,
-		BufferS:         300,
+		BufferS:         defaultBufferS,
 		MemoryMax:       "64M",
 		MemLimitMB:      0, // derived from the ring in Finish
 		FloorHz:         0,
@@ -358,6 +358,25 @@ func (o *Options) mustBeFinished() {
 		panic("router: Plan called on options without Finish")
 	}
 }
+
+// defaultBufferS is how many seconds of samples the ring keeps, and what it
+// really buys is this: how long the collector may be absent before samples
+// are lost. It is not a window anybody reads — the collector drains the ring
+// twice a second — so every second of it is 34.5 kB on the reference device
+// (10 Hz x ApproxLineBytes) bought purely against an outage.
+//
+// It was 300 s for no recorded reason. MEASURED on the reference deployment on
+// 2026-09-17, over 24 hours: the largest interruption in delivery was 114.5 s,
+// and it was self-inflicted — a container swap plus the minute the collector
+// takes to notice a restarted agent. In ordinary running the collector never
+// falls behind at all, and mikroscope_gap has recorded nothing since the 50 Hz
+// experiments of 2026-09-13.
+//
+// 60 s covers a restart of either side on a LAN and costs 2.0 MiB of ring at
+// 10 Hz instead of 9.9. A deployment whose collector disappears for longer —
+// a flaky link, a host that reboots slowly — raises it with --buffer, and the
+// memory limit follows because it is derived from the ring.
+const defaultBufferS = 60
 
 // memLimitRingFactor is how much room the Go runtime needs above the ring's
 // live bytes, and it is measured rather than chosen. On the reference RB5009

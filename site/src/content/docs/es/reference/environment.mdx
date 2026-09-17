@@ -150,7 +150,7 @@ tema `container`, y salir con estado 2.
 | Variable               | Por defecto en el agente                           | Acepta                           | Significado                                                                                                                                                                        |
 | ---------------------- | -------------------------------------------------- | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `RATE_HZ`              | `10`                                               | 1–100                            | cadencia del muestreador                                                                                                                                                           |
-| `BUFFER_S`             | `300`                                              | 10–3600                          | longitud del anillo en segundos                                                                                                                                                    |
+| `BUFFER_S`             | `60`                                               | 10–3600                          | longitud del anillo en segundos                                                                                                                                                    |
 | `PORT`                 | `9123`                                             | 1–65535                          | puerto HTTP                                                                                                                                                                        |
 | `ADDR`                 | vacío                                              | una dirección                    | dirección de escucha. Vacía escucha en `:PORT`, todas las direcciones del espacio de nombres de red del contenedor; `install` siempre la fija a la dirección de la veth del agente |
 | `TOKEN`                | vacío                                              |                                  | cuando está definida, todas las rutas salvo `/healthz` exigen `Authorization: Bearer <token>`                                                                                      |
@@ -196,10 +196,19 @@ este orden, y nada más:
 
 <Aside type="note" title="Los valores por defecto del agente y los de install no son los mismos">
 
+El anillo son **60 s** por defecto, no los 300 que fueron hasta 1.0.6. Lo que compra es cuánto tiempo
+puede estar ausente el colector antes de que se pierdan muestras, y no es una ventana que nadie lea
+— el colector lo vacía dos veces por segundo. Medido en el despliegue de referencia sobre 24 horas
+el 2026-09-17: la mayor interrupción en la entrega fueron 114,5 s, y fue autoinfligida (un cambio de
+contenedor más el minuto que tarda el colector en notar un agente reiniciado); en operación normal
+el colector nunca se queda atrás. 60 s cubren el reinicio de cualquiera de las dos partes en una LAN
+y cuestan 2,0 MiB de anillo a 10 Hz en vez de 9,9. Un enlace que caiga más tiempo lo sube con
+`--buffer`, y el límite de memoria lo sigue porque se deriva del anillo.
+
 Un agente arrancado sin ninguna entrada en la envlist usa un límite blando de memoria de 14 MiB.
 `install` **deriva** `MEM_LIMIT_MB` del anillo — ritmo × búfer × tamaño de línea, por 2,5, con suelo
 de 16 MiB y tope en tres cuartos de `memory-max` —, así que la instalación por defecto escribe
-`MEM_LIMIT_MB=25` para un anillo de 300 s a 10 Hz, donde antes escribía un 40 fijo. Un número fijo no
+`MEM_LIMIT_MB=16` para un anillo de 60 s a 10 Hz, donde antes escribía un 40 fijo. Un número fijo no
 puede ser correcto para todos los ritmos: ese mismo 40 dejaba 8 MiB sin usar a 10 Hz y queda por
 debajo del propio anillo a 50 Hz.
 

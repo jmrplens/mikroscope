@@ -20,9 +20,11 @@ qué hace el colector con el aviso y qué no te puede decir una captura.
 Lo único sin pérdidas que el agente puede hacer por su cuenta es guardar las
 muestras que ya existen, a cadencia completa, alrededor del momento en que
 importan — y solo el agente puede, porque solo el agente tiene todas las
-muestras. El anillo ya guarda los últimos 300 s por defecto, así que conservar
+muestras. El anillo ya guarda los últimos 60 s por defecto, así que conservar
 los segundos anteriores a un disparo no cuesta nada; los posteriores solo
-cuestan la espera.
+cuestan la espera. La ventana de captura por defecto son 5 s a cada lado, así
+que cabe con holgura; un `CAPTURE_PRE_S` mayor de lo que el anillo guarda es
+una ventana que el anillo no puede dar, y `--buffer` es lo que la sube.
 
 No decide nada sobre el significado. Una condición es una comparación que
 configuraste tú. El campo que comparó y el valor que la hizo saltar viajan en la

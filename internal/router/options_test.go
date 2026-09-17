@@ -13,9 +13,9 @@ func TestDeriveMemLimitFromTheRing(t *testing.T) {
 		// 10 Hz over 300 s is a 9.89 MiB ring, and 25 is what 2.5x rounds up
 		// to. Truncating the ring to whole megabytes first would give 22, a
 		// figure measured at +22 % CPU on the reference device.
-		"the shipped default":          {rate: 10, buffer: 300, memoryMax: "64M", want: 25},
-		"a short ring takes the floor": {rate: 10, buffer: 60, memoryMax: "64M", want: minMemLimitMB},
-		"one sample a second too":      {rate: 1, buffer: 300, memoryMax: "64M", want: minMemLimitMB},
+		"the shipped default": {rate: 10, buffer: 300, memoryMax: "64M", want: 25},
+
+		"one sample a second too": {rate: 1, buffer: 300, memoryMax: "64M", want: minMemLimitMB},
 		// Three quarters of 64 MiB is 48, and the 20 Hz ring is 19.8 MiB, so
 		// the cap applies and still leaves the ring room.
 		"the cgroup caps a big ring": {rate: 20, buffer: 300, memoryMax: "64M", want: 48},

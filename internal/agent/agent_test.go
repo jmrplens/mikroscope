@@ -501,7 +501,7 @@ func TestConfigFromEnv(t *testing.T) {
 		}
 	}
 	d, err := FromEnv(func(string) string { return "" })
-	if err != nil || d.RateHz != 10 || d.BufferS != 300 || d.Port != 9123 || d.IRQTopK != 8 || d.ProcRoot != "/proc" || d.MemLimitMB != 14 {
+	if err != nil || d.RateHz != 10 || d.BufferS != 60 || d.Port != 9123 || d.IRQTopK != 8 || d.ProcRoot != "/proc" || d.MemLimitMB != 14 {
 		t.Fatalf("defaults: %+v %v", d, err)
 	}
 }
