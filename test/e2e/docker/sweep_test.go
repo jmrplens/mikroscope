@@ -275,25 +275,6 @@ func runSweep(ctx context.Context, tb testing.TB, stack *Stack) (*sweep, error) 
 	return s, nil
 }
 
-// fetch reads one body, or returns the empty string: every caller treats an
-// empty exposition as "nothing was read", which its own assertion reports.
-func fetch(ctx context.Context, url string) string {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return ""
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return ""
-	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 16<<20))
-	if err != nil || resp.StatusCode != http.StatusOK {
-		return ""
-	}
-	return string(body)
-}
-
 // pollExporter keeps the newest body /metrics served, until the run ends. A
 // single well-timed read would be a race with the collector's first sample.
 func pollExporter(ctx context.Context, addr string) string {
