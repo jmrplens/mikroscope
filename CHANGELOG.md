@@ -4,6 +4,39 @@ Notable changes per release. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the versions
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.7]
+
+The release 1.0.6 should have been. **There is no 1.0.6 release**: the tag
+exists and points at a commit that is in this one, but its release run failed
+and releases here are immutable, so the tag was left where it was and the
+artefacts come out under this number instead.
+
+### Fixed
+
+- **Two tests in the containerised suite still read the agent's `/metrics`**,
+  which 1.0.5 removed. That suite is skipped on a pull request and runs on a
+  tag, so every check on the three pull requests that made 1.0.5 and 1.0.6 was
+  green and the release run was what found it.
+  `TestPrometheusDashboardMetricsExist` now checks the dashboard's names
+  against the collector's exposition alone — the stronger statement, and the
+  one the other end-to-end suite already made — and the sweep no longer
+  fetches an exposition nothing serves.
+- **A race that the removed fetch had been hiding.** `TestPrometheus` compares
+  every unlabeled series Prometheus stored against the last body the test read,
+  on the grounds that the exporter's counters only rise and the read came
+  last; the agent fetch was the delay that made the read come last.
+  `mikroscope_uptime_seconds` is not one of those counters — it follows the
+  clock — so a scrape taken after the read legitimately carries a larger
+  value. It is excluded by name, with the reason.
+
+### Changed
+
+- **The stores suite runs on every pull request.** It ran weekly, on dispatch
+  and on the release gate, on the grounds that nine containers are a lot to
+  ask of a pull request; the cost of that was one failed release. MEASURED on
+  the pull request that introduced this: **2 min 22 s**, containers included,
+  in parallel with the two end-to-end jobs that take about a minute each.
+
 ## [1.0.6]
 
 ### Changed
