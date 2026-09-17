@@ -6,6 +6,7 @@ description: What the InfluxDB 3 and Prometheus dashboards contain, section by s
 import { FileTree } from "@astrojs/starlight/components";
 import DashboardCount from "../../../components/DashboardCount.astro";
 import DashboardCounts from "../../../components/DashboardCounts.astro";
+import DashboardCaptures from "../../../components/DashboardCaptures.astro";
 import DashboardPanels from "../../../components/DashboardPanels.astro";
 import Measured from "../../../components/Measured.astro";
 import NotClaimed from "../../../components/NotClaimed.astro";
@@ -50,6 +51,25 @@ recomputed from the samples, plus the collector's own derived and detection fami
 itself for the few families only the sampler produces. Prometheus 3 renders a histogram's zero
 bucket boundary as `le="0.0"`, so a query reading that bucket matches `le=~"0|0.0"`. The two scrape
 jobs are on [Import and check](/mikroscope/dashboards/import-and-check/#prometheus-two-scrape-jobs).
+
+## What it looks like
+
+One capture per section of the InfluxDB dashboard, in the order the dashboard
+puts them. Each is a link to the file at full size.
+
+<NotClaimed title="These are a demonstration database, not a router">
+	Every capture below is the InfluxDB dashboard over a run of the same canned fake agent the
+	end-to-end suites use, written into a container store by
+	`test/e2e/docker`'s fill step and photographed by `site/scripts/gen-dashboard-captures.mjs`.
+	Nothing in them comes from a real device, the host is called `rb5009` because the fake agent
+	imitates that board's captured `/proc`, and the figures are whatever the fake publishes — read
+	them as "this is the shape of the page", never as a measurement. A panel that is empty in a
+	capture is one the fake agent produces nothing for; on a real router with the API tier running,
+	several of them fill in, and two whole sections that the store probe moved into
+	"not available" come back.
+</NotClaimed>
+
+<DashboardCaptures />
 
 ## One list, two stores
 

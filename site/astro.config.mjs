@@ -496,6 +496,11 @@ export default defineConfig({
 							slug: "reference/port-names",
 						},
 						{
+							label: "When something does not work",
+							translations: { es: "Cuando algo no funciona" },
+							slug: "reference/troubleshooting",
+						},
+						{
 							label: "How the project tests itself",
 							translations: { es: "Cómo se prueba el proyecto" },
 							slug: "reference/testing",

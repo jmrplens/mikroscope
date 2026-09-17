@@ -97,6 +97,34 @@ receives a gap line instead of the samples, and every sink records the gap.
 | Gap                           | the collector's clock when the pull that found it returned        |
 | Device-info record            | the collector's clock: board facts have no timestamp of their own |
 
+### Which one should I use?
+
+ten destinations, capitalised by the sentence it opens:
+the honest answer is that most readers want one of the first two. The rest exist so that mikroscope fits what you already run rather
+than asking you to run something new.
+
+| If you…                                                    | Use            | It carries                                     | Dashboard |
+| ----------------------------------------------------------- | -------------- | ----------------------------------------------- | --------- |
+| want the whole thing, with the dashboards, and have nothing yet | `--influx`  | every measurement, as line protocol              | **yes**, generated |
+| already run Prometheus                                      | `--prom`       | every family, recomputed from the samples        | **yes**, generated |
+| want to capture a window and look at it later               | `--file`       | the merged timeline as JSONL, nothing to install | no        |
+| keep long-term data in PostgreSQL or TimescaleDB            | `--sql`        | DDL and INSERTs for `psql`, no driver            | no        |
+| want the kernel log and the detections where your logs are  | `--loki`       | **events only** — kmsg, detections, gaps         | no        |
+| already run an OpenTelemetry pipeline                       | `--otlp`       | metrics as OTLP/HTTP                             | no        |
+| already run Graphite, Elasticsearch or Telegraf             | `--graphite`, `--elastic`, `--telegraf` | every measurement, in that product's shape | no |
+| want to pipe it into something of your own                  | `--stdout`     | line protocol or NDJSON on standard output       | no        |
+
+Nothing stops you naming several at once, and that is the normal arrangement:
+`--file` beside a store gives you a capture to go back to, and `--loki` beside
+`--influx` puts the kernel log where a log query can reach it while the numbers
+go to the store the dashboards read.
+
+Two of these do not carry the same thing as the rest. **Loki takes events, not
+metrics** — the kernel-log records, the detections and the gaps — so a Loki-only
+run has no CPU or memory numbers in it at all. **`--prom` is scraped, not
+pushed**: `forward` serves `/metrics` and Prometheus comes to it, which means
+the collector has to be reachable from the Prometheus host.
+
 ### The ten sinks
 
 | Flag                             | Destination                                     | URL or credential from the environment                                   | Shape       | Page                                                                   |

@@ -525,3 +525,37 @@
 mobile-starlight-toc .dropdown {
 	box-shadow: 0 8px 16px -8px var(--ms-shadow);
 }
+
+/* ------------------------------------------------ Dashboard section captures */
+
+/* One capture per dashboard section (DashboardCaptures.astro). They are wide
+ * and tall — a section is up to a dozen panels — so each is a link to the file
+ * at full size, and the thumbnail is capped rather than left to push the page
+ * down by several screens per section. */
+.ms-captures {
+	display: grid;
+	gap: 1.5rem;
+	margin-block: 1.5rem;
+}
+
+.ms-capture {
+	margin: 0;
+}
+
+.ms-capture img {
+	display: block;
+	inline-size: 100%;
+	block-size: auto;
+	max-block-size: 30rem;
+	object-fit: cover;
+	object-position: top center;
+	border: 1px solid var(--ms-border);
+	border-radius: var(--ms-radius);
+	background-color: var(--ms-surface);
+}
+
+.ms-capture figcaption {
+	margin-block-start: 0.5rem;
+	color: var(--ms-muted);
+	font-size: var(--sl-text-sm);
+}

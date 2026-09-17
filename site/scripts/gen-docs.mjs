@@ -187,6 +187,7 @@ const MANIFEST = [
 			"reference/measurements",
 			"reference/port-names",
 			"reference/testing",
+			"reference/troubleshooting",
 		],
 	},
 	// Where the project stands, what the mark is, and what it was built from.
