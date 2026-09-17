@@ -144,6 +144,7 @@ type panelJSON struct {
 	Panels  []panelJSON `json:"panels"`
 	Targets []struct {
 		RawSQL string `json:"rawSql"`
+		Expr   string `json:"expr"`
 	} `json:"targets"`
 }
 
