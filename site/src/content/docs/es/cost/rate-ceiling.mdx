@@ -73,6 +73,38 @@ Con los suelos por defecto, todas las fuentes de un tick se leen en menos de
 los ticks que se retrasan. El margen de CPU es mayor que el margen de tiempo,
 que es por lo que el techo es una afirmación sobre E/S y no sobre el A72.
 
+## La memoria que cuesta un ritmo, y dónde comprarla
+
+La memoria es el anillo. Todas las demás cifras —el runtime de Go, el margen
+del recolector, la fragmentación del asignador— se derivan de cuántas entradas
+guarda, porque el límite blando de memoria se calcula justo de ahí. Así que la
+pregunta «¿puede esta placa muestrear a 100 Hz?» es sobre todo «¿puede guardar
+100 × tus segundos de búfer en muestras?».
+
+MEDIDO en el RB5009 de referencia (RouterOS 7.24.2, todas las fuentes activas,
+búfer de 60 s, ventanas de unas 54 000 muestras) el 2026-09-17:
+
+| ritmo  | anillo    | RSS          | CPU por muestra | de un núcleo | perdidos              |
+| ------ | --------- | ------------ | --------------- | ------------ | --------------------- |
+| 10 Hz  | 1,98 MiB  | 13 627 392 B | 2 740 µs        | 2,7 %        | 0 de 4 981            |
+| 100 Hz | 19,78 MiB | 50 515 968 B | 1 809 µs        | 18,1 %       | 20 de 72 130 (0,03 %) |
+
+Dos cosas de esa tabla no son obvias. **El coste por muestra baja** al subir el
+ritmo —1 809 µs frente a 2 740— porque las fuentes de nivel se leen a su propio
+suelo y no en cada tick, así que a 100 Hz las caras se reparten entre diez veces
+más ticks: diez veces los datos cuestan 6,6 veces la CPU, no diez. Y **los slips
+son culpa de la lectura, no de la CPU**: la peor lectura de esa ejecución fueron
+21,5 ms contra un período de 10 ms, con la media en 1,27 ms. Un tick cuya lectura
+dura más que su período llega tarde por definición.
+
+A 100 Hz el RSS son 48 MiB contra un `memory-max` de contenedor de 64M, que
+funciona pero va justo. **Compra el margen en segundos de búfer, no en
+ingenio**: a 100 Hz un búfer de 20 s ocupa 6,59 MiB y deriva un límite de 17 MiB,
+que es el mismo alivio que daría comprimir el anillo 4,7× — y la compresión se
+midió en este equipo en **+1 331 µs por muestra**, que a 100 Hz son +74 % de CPU
+y seis veces más ticks perdidos (123 frente a 20). Los segundos son gratis; la
+compresión no.
+
 ## Lo que muestrear más rápido compra de verdad
 
 Resolución de porcentaje de CPU no. El jiffie son 10 ms, así que a 100 Hz una
