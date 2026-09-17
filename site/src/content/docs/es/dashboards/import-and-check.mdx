@@ -27,31 +27,21 @@ campos seguros rellenos:
 
 Sin el segundo, los paneles fallan con `flightsql: Unauthenticated` (Grafana 12.3.2, 2026-09-12).
 
-## Prometheus: dos trabajos de scrape
+## Prometheus: un trabajo de scrape
 
-El dashboard de Prometheus espera dos trabajos de scrape. El primero hace scrape del colector
-(`mikroscope forward --prom :9124`), que lleva todas las familias que tiene el agente, recalculadas
-a partir de las muestras que recibió, más las familias derivadas y de detección propias del colector.
-El segundo hace scrape del agente directamente y se queda solo con las familias que únicamente puede
-producir el muestreador: sus histogramas de temporización de ticks, los contadores de disparos y
-capturas, y los ticks perdidos por retraso.
+El del colector:
 
 ```yaml
 - job_name: "mikroscope"
   scrape_interval: 5s
-  static_configs: [{ targets: ["<collector host>:9124"] }]
-- job_name: "mikroscope-agent"
-  scrape_interval: 5s
-  static_configs: [{ targets: ["172.30.10.2:9123"] }]
-  metric_relabel_configs:
-    - source_labels: [__name__]
-      regex: "mikroscope_(tick_.*|trigger_.*|capture.*|captures_held|slipped_total)"
-      action: keep
+  static_configs: [{ targets: ["<equipo del colector>:9124"] }]
 ```
 
-Hacer scrape del agente sin la lista `keep` duplicaría cada contador que también expone el colector.
-`172.30.10.2:9123` es la dirección del agente en la instalación por defecto; cómo llega a ella un
-host de Prometheus está en [Llegar al agente](/mikroscope/es/install/reaching-the-agent/).
+`mikroscope forward --prom :9124` lleva todas las familias: el tier de kernel recalculado desde las
+muestras que recibió, las familias propias de derivación y detección del colector, y —desde 1.0.5—
+lo que solo el muestreador puede producir. El agente ya no sirve ningún `/metrics`; su cronometraje
+de tick viaja en las muestras y sus contadores llegan por `GET /sampler`, que el colector lee cada
+minuto. Un segundo trabajo no tendría nada que añadir.
 
 ## La fuente de datos de PostgreSQL
 

@@ -79,14 +79,19 @@ núcleos, otro reloj, otro kernel y otra flash lo mueven. El procedimiento son
 tres órdenes y lleva un minuto:
 
 ```sh
-curl -s http://172.30.10.2:9123/metrics | grep -E 'self_cpu_usec_total|self_rss_bytes'
+curl -s http://<collector host>:9124/metrics | grep -E 'self_cpu_usec_total|self_rss_bytes'
 sleep 60
-curl -s http://172.30.10.2:9123/metrics | grep -E 'self_cpu_usec_total|self_rss_bytes'
+curl -s http://<collector host>:9124/metrics | grep -E 'self_cpu_usec_total|self_rss_bytes'
 ```
 
 La diferencia de `self_cpu_usec_total` dividida entre 60 000 000 es la fracción
 de un núcleo. Tómala en régimen estacionario, con el anillo lleno: un agente
 recién arrancado todavía lo está llenando y marcará de menos.
+
+La dirección es la del colector, no la del agente: desde 1.0.5 el agente no
+sirve ningún `/metrics`, y esos dos contadores llegan al colector en cada
+muestra. Sin destino de Prometheus configurado, esos mismos dos números son
+`cpu_us` y `rss` en `mikroscope_self`, en el almacén que estés usando.
 
 <SeeAlso>
 

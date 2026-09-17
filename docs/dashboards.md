@@ -18,9 +18,9 @@ alert rules generated beside them are on [Alert rules](https://jmrp.io/docs/mikr
 ### What `gen` writes
 
 - dashboards/
-  - mikroscope-influxdb.json 171 panels, InfluxDB 3 (SQL)
+  - mikroscope-influxdb.json 175 panels, InfluxDB 3 (SQL)
   - mikroscope-prometheus.json 133 panels, Prometheus
-  - mikroscope-postgres.json 156 panels, PostgreSQL / TimescaleDB
+  - mikroscope-postgres.json 160 panels, PostgreSQL / TimescaleDB
   - mikroscope-graphite.json 41 panels, Graphite
   - mikroscope-elasticsearch.json 30 panels, Elasticsearch
   - mikroscope-alerts-influxdb.yaml 10 rules
@@ -42,11 +42,12 @@ byte.
 The InfluxDB dashboard queries InfluxDB 3 in SQL, and every query is bounded by `$__timeFilter`,
 because InfluxDB 3 Core refuses unbounded scans; where a column is named `cluster` the SQL quotes
 it, because `cluster` is a reserved word in DataFusion. The Prometheus dashboard queries a
-Prometheus that scrapes the collector's `/metrics` — which carries everything the agent's does,
-recomputed from the samples, plus the collector's own derived and detection families — and the agent
-itself for the few families only the sampler produces. Prometheus 3 renders a histogram's zero
-bucket boundary as `le="0.0"`, so a query reading that bucket matches `le=~"0|0.0"`. The two scrape
-jobs are on [Import and check](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/#prometheus-two-scrape-jobs).
+Prometheus that scrapes the collector's `/metrics`, and that alone: it carries the kernel tier
+recomputed from the samples, the collector's own derived and detection families, and — since
+1.0.5, when the agent stopped serving an exposition — what only the sampler can produce, which
+now reaches the collector as data. Prometheus 3 renders a histogram's zero bucket boundary as
+`le="0.0"`, so a query reading that bucket matches `le=~"0|0.0"`. The scrape job is on
+[Import and check](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/#prometheus-one-scrape-job).
 
 ### What it looks like
 
@@ -72,7 +73,7 @@ One capture per section of the InfluxDB dashboard, over a demonstration database
 - Memory and load (9)
 - Connections (9)
 - Interface traffic (13)
-- Detections and captures (5)
+- Detections and captures (6)
 - Network receive path (9)
 - Forwarding cost (derived) (4)
 - Interrupts and softirqs (12)
@@ -87,7 +88,7 @@ One capture per section of the InfluxDB dashboard, over a demonstration database
 - NAND health (ECC) (2)
 - RouterOS API cross-checks — CPU and memory (9)
 - The observer (11)
-- The observer: sampler timing and self events (3)
+- The observer: sampler timing and self events (6)
 - This device (3)
 - Not available on this device (5)
 
@@ -115,7 +116,7 @@ Panels per section, per store:
 | Memory and load | 9 | 9 | 9 | 7 | 5 |
 | Connections | 9 | 3 | 9 | 1 | 1 |
 | Interface traffic | 13 | 11 | 9 | 2 | no row |
-| Detections and captures | 5 | 4 | 5 | no row | no row |
+| Detections and captures | 6 | 4 | 6 | no row | no row |
 | Network receive path | 9 | 7 | 9 | 3 | 3 |
 | Forwarding cost (derived) | 4 | 4 | 4 | no row | no row |
 | Interrupts and softirqs | 12 | 10 | 12 | 2 | 2 |
@@ -130,10 +131,10 @@ Panels per section, per store:
 | NAND health (ECC) | 2 | 2 | 2 | no row | no row |
 | RouterOS API cross-checks — CPU and memory | 9 | 9 | 9 | 1 | no row |
 | The observer | 11 | 9 | 10 | 3 | 3 |
-| The observer: sampler timing and self events | 3 | 7 | 3 | no row | no row |
+| The observer: sampler timing and self events | 6 | 7 | 6 | no row | no row |
 | This device | 3 | 3 | 3 | no row | no row |
 | Not available on this device | 5 | 5 | 5 | 5 | 5 |
-| **Total** | **171** | **133** | **156** | **41** | **30** |
+| **Total** | **175** | **133** | **160** | **41** | **30** |
 
 The counts are those of the committed files, which carry the compiled defaults. `import` and
 `check` ask the datasource what it holds first and can move panels into or out of the last row;
@@ -149,7 +150,7 @@ deliberately, and last what mikroscope costs the router it is measuring.
 
 Every section but the Overview ships **collapsed**. Grafana keeps a collapsed row's panels inside
 the row object and runs none of their queries until someone expands it, so the first render asks
-the store for the Overview's twelve panels and not for all 171.
+the store for the Overview's twelve panels and not for all 175.
 
 The defaults are a 3-hour range (`now-3h`) and a 5-minute refresh. The 5-minute refresh is kept for
 the case where someone expands a section: the slab census and the PMU and per-sample cost heatmaps
@@ -297,7 +298,7 @@ and the event panels are marked known-empty so that `check` does not fail on it.
 - Memory pressure state
 - Detections in this window — InfluxDB only
 - Trigger fires and suppressions per bin
-- Captures held on the agent, and the budget they pin — Prometheus only
+- Captures held on the agent, and the budget they pin
 - Trigger markers in this window — InfluxDB only
 
 In "Trigger fires and suppressions per bin", the suppressions are on Prometheus only: they live on
@@ -583,9 +584,9 @@ The sampler's own smear — how late it woke and how long the read took — and 
 agent records about itself. The three heatmaps read the agent's histograms, which are never shipped
 as samples, so they exist only on Prometheus.
 
-- Tick interval distribution, relative to the nominal period — Prometheus only
-- Wake latency: how late the sampler ran after its ticker — Prometheus only
-- Read duration: how long every source took to read — Prometheus only
+- Tick interval distribution, relative to the nominal period
+- Wake latency: how late the sampler ran after its ticker
+- Read duration: how long every source took to read
 - Counter resets the agent saw
 - The container's own throttling and OOM kills
 - How each level source is read
@@ -685,30 +686,21 @@ set:
 
 Without the second, panels fail with `flightsql: Unauthenticated` (Grafana 12.3.2, 2026-09-12).
 
-### Prometheus: two scrape jobs
+### Prometheus: one scrape job
 
-The Prometheus dashboard expects two scrape jobs. The first scrapes the collector
-(`mikroscope forward --prom :9124`), which carries every family the agent has, recomputed from the
-samples it received, plus the collector's own derived and detection families. The second scrapes the
-agent directly and keeps only the families only the sampler can produce: its tick timing
-histograms, the trigger and capture counters, and slipped ticks.
+The collector's:
 
 ```yaml
 - job_name: "mikroscope"
   scrape_interval: 5s
   static_configs: [{ targets: ["<collector host>:9124"] }]
-- job_name: "mikroscope-agent"
-  scrape_interval: 5s
-  static_configs: [{ targets: ["172.30.10.2:9123"] }]
-  metric_relabel_configs:
-    - source_labels: [__name__]
-      regex: "mikroscope_(tick_.*|trigger_.*|capture.*|captures_held|slipped_total)"
-      action: keep
 ```
 
-Scraping the agent without the keep list would double every counter the collector also exposes.
-`172.30.10.2:9123` is the agent's address on the default install; how a Prometheus host reaches it
-is on [Reaching the agent](https://jmrp.io/docs/mikroscope/install/reaching-the-agent/).
+`mikroscope forward --prom :9124` carries every family: the kernel tier recomputed from the samples
+it received, the collector's own derived and detection families, and — since 1.0.5 — what only the
+sampler can produce. The agent serves no `/metrics` at all any more; its tick timing rides in the
+samples and its own counters come over `GET /sampler`, which the collector reads every minute. A
+second job would have nothing to add.
 
 ### The PostgreSQL datasource
 
@@ -1091,12 +1083,13 @@ Each rule's title, and under it its `summary` annotation verbatim, as generated:
   sum(increase(mikroscope_mtd_ecc_failures_total[1h]))
   ```
 
-  `mikroscope_slipped_total` comes from the agent scrape job, the one with the keep list on
-  [Import and check](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/#prometheus-two-scrape-jobs); the other
-  ten read the collector's `/metrics`. `mikroscope_kmsg_port_records_total` is among them: both
-  expositions are written by the same renderer, and the collector's copy is the one the keep list
-  leaves in place, the one that classifies a record the agent did not and names each port as RouterOS
-  names it now.
+  All eleven read the collector's `/metrics`, which is the only exposition there is since 1.0.5 —
+  [Import and check](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/#prometheus-one-scrape-job) has the one
+  scrape job. `mikroscope_slipped_total` is among them and used to come from a second job against the
+  agent: the agent still owns the ticker and is still the only thing that can count a slipped tick,
+  but it now reports the number over `/sampler` and the collector renders it. So the rule fires on a
+  figure that is at most a minute old rather than one scrape old, which for a counter that is 0 on a
+  healthy device is the same alert.
 
 - **InfluxDB 3**
 

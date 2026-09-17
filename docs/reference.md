@@ -623,7 +623,7 @@ opens](https://jmrp.io/docs/mikroscope/security/expose/) says why.
 | `GET`    | `/capabilities`  | yes   | JSON: the kernel, the board, the sources, the device's own ceilings and each source's cadence |
 | `GET`    | `/snapshot`      | yes   | NDJSON, then closes: the last N seconds, or up to N samples after a sequence number           |
 | `GET`    | `/stream`        | yes   | NDJSON, chunked and open: backfill from a sequence number, then live                          |
-| `GET`    | `/metrics`       | yes   | Prometheus text exposition, `text/plain; version=0.0.4`                                       |
+| `GET`    | `/sampler`       | yes   | JSON: what only the agent can count about itself — ticks, slips, triggers, captures           |
 | `GET`    | `/captures`      | yes   | JSON: the capture index                                                                       |
 | `GET`    | `/captures/{id}` | yes   | NDJSON: one capture header line, then the sample lines verbatim                               |
 | `DELETE` | `/captures/{id}` | yes   | `204`, and the capture's bytes return to the budget                                           |
@@ -717,7 +717,7 @@ asks for at most 18 lines.
 >
 > A 60 s `/snapshot` at 10 Hz makes the agent hand over about 600 lines, around 1.5 MB, and the
 > `self.cpu_us` inside those samples includes the cost of serving them. Read the agent's cost from
-> `/metrics` instead: [the cost of the observer](https://jmrp.io/docs/mikroscope/cost/) has the procedure.
+> the collector's `/metrics` instead: [the cost of the observer](https://jmrp.io/docs/mikroscope/cost/) has the procedure.
 
 ### `GET /stream`
 
@@ -812,13 +812,26 @@ and `bus-cycles`. The slab caches it keeps are `nf_conntrack`,
 `sock_inode_cache`, `dst_cache`, `ip_dst_cache`, `kmalloc-1k` and
 `kmalloc-2k`, where the kernel has them.
 
-### `GET /metrics`
+### `GET /sampler`
 
-The Prometheus text exposition, built from cumulative counters that nothing
-resets on a scrape, so `rate()` over any range is correct and two scrapers
-see the same values. The text is built in memory and written after the
-counters' lock is released, so a slow scraper cannot hold up the sampler.
-[Prometheus metric families](https://jmrp.io/docs/mikroscope/reference/metrics/) lists every family.
+What only the agent can count about itself, as JSON: ticks taken, ticks
+slipped, and what the trigger evaluator has fired, suppressed and refused,
+with what it is holding right now and the budget those captures pin. Every
+configured condition is present from the first read, at 0 until it fires — a
+counter that appears with its first event reads as a gap in the series rather
+than as a quiet router.
+
+The collector reads it at start and then on the same one-minute cadence it
+re-measures the clock skew on, and hands it to every sink. That is what makes
+these figures reachable at all: they are not per-tick, so they cannot ride in
+a sample, and until 1.0.5 the only way to see them was to scrape the agent.
+
+**The agent serves no `/metrics`.** It did until 1.0.4, and a Prometheus
+deployment was documented as scraping the agent as well as the collector. It
+no longer does: the exposition is the collector's, built from the samples and
+from this endpoint, and it carries every family the dashboards ask for. The
+agent is a sampler and a ring — rendering is not its job, and not folding
+every sample into counters and histograms is memory it does not spend.
 
 ### Captures
 
@@ -885,7 +898,7 @@ capture](https://jmrp.io/docs/mikroscope/record/triggers/).
 
 - [Reaching the agent](https://jmrp.io/docs/mikroscope/install/reaching-the-agent/): the three ways a host gets to
   these paths.
-- [Prometheus metric families](https://jmrp.io/docs/mikroscope/reference/metrics/): what `/metrics` carries.
+- [Prometheus metric families](https://jmrp.io/docs/mikroscope/reference/metrics/): what the collector's `/metrics` carries.
 - [Triggered capture](https://jmrp.io/docs/mikroscope/record/triggers/): the conditions behind `/captures`.
 - [What --expose opens](https://jmrp.io/docs/mikroscope/security/expose/): when the token becomes mandatory.
 
@@ -901,40 +914,36 @@ there. It is read from `internal/agent/metrics.go`, `internal/agent/capture.go`
 and `internal/sinks/prometheus.go`. A family is listed under the source it
 comes from, because that is what decides whether a given board has it.
 
-### Two expositions, one renderer
+### One exposition, and where each family comes from
 
-The agent serves `/metrics` on the router, and `forward --prom :9124` serves
-one on the collector host. Both are written by the same `Totals` code: the
-collector feeds it the samples it pulled, so a deployment reached only through
-the relay still gets scrape-independent families. They are not identical.
+There is one exposition: the collector's, served by `forward --prom :9124`.
+The agent served one too until 1.0.4; since 1.0.5 it does not, and everything
+below is what the collector carries.
 
-| Families                                                                                                                               | Agent `:9123/metrics`              | Collector `--prom`                                  |
-| -------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- | --------------------------------------------------- |
-| everything recomputed from samples: CPU, windows, runs, receive path, memory, PMU, sensors, flash, disk, kernel log, observer counters | yes                                | yes                                                 |
-| device facts (`mikroscope_device_info`, ceilings, cadences)                                                                            | yes                                | yes, once the collector has fetched `/capabilities` |
-| the sampler's timing histograms and `mikroscope_slipped_total`                                                                         | yes                                | no                                                  |
-| trigger and capture families                                                                                                           | yes, while `CAPTURE_MB` is above 0 | no                                                  |
-| `mikroscope_collector_*`, `mikroscope_derived_*`                                                                                       | no                                 | yes                                                 |
-| `mikroscope_api_*`                                                                                                                     | no                                 | yes, once the API tier has delivered a sample       |
+| Families                                                                                                                              | Where the collector gets them                            |
+| ------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| everything recomputed from samples: CPU, windows, runs, receive path, memory, PMU, sensors, flash, disk, kernel log, observer counters | the samples it pulled, folded by the same `Totals` code   |
+| the sampler's timing histograms (`mikroscope_tick_*`)                                                                                 | `dt_ns`, `wake_ns` and `read_ns`, which ride in each sample |
+| `mikroscope_slipped_total`, `mikroscope_sampler_ticks_total`                                                                          | the agent's `/sampler`, read at start and every minute    |
+| trigger and capture families                                                                                                          | the same, while `CAPTURE_MB` is above 0                   |
+| device facts (`mikroscope_device_info`, ceilings, cadences)                                                                           | `/capabilities`, re-read every five minutes               |
+| `mikroscope_collector_*`, `mikroscope_derived_*`                                                                                      | its own: the derive stage and its counters                |
+| `mikroscope_api_*`                                                                                                                    | the API tier, once it has delivered a sample              |
 
-The collector leaves `mikroscope_slipped_total` out rather than writing 0,
-because a 0 there would be a claim about a sampler it never ran. To have both
-sets in one Prometheus, scrape the collector for everything and the agent only
-for what the collector cannot produce. Scraping the agent without the keep
-list doubles every counter the collector also exposes:
+A deployment reached only through the relay gets all of it, because none of it
+depends on scraping the router.
 
 ```yaml
 - job_name: "mikroscope"
   scrape_interval: 5s
   static_configs: [{ targets: ["<collector host>:9124"] }]
-- job_name: "mikroscope-agent"
-  scrape_interval: 5s
-  static_configs: [{ targets: ["172.30.10.2:9123"] }]
-  metric_relabel_configs:
-    - source_labels: [__name__]
-      regex: "mikroscope_(tick_.*|trigger_.*|capture.*|captures_held|slipped_total)"
-      action: keep
 ```
+
+Two things changed with the agent's exposition. `mikroscope_slipped_total` is
+no longer withheld — the collector used to leave it out rather than write a 0
+about a sampler it never ran, and now it reports the number the agent gives
+it. And the counters that are not per-tick are as fresh as that one-minute
+read rather than as fresh as the scrape.
 
 #### What the collector's copy does differently
 

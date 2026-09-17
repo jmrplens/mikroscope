@@ -63,7 +63,7 @@ abre --expose](/mikroscope/es/security/expose/) cuenta por qué.
 | `GET`    | `/capabilities`  | sí    | JSON: el kernel, la placa, las fuentes, los techos propios del equipo y la cadencia de cada fuente        |
 | `GET`    | `/snapshot`      | sí    | NDJSON, y cierra: los últimos N segundos, o hasta N muestras tras un número de secuencia                  |
 | `GET`    | `/stream`        | sí    | NDJSON, por trozos y abierto: relleno desde un número de secuencia, y luego en directo                    |
-| `GET`    | `/metrics`       | sí    | exposición de texto de Prometheus, `text/plain; version=0.0.4`                                            |
+| `GET`    | `/sampler`       | sí    | JSON: lo que solo el agente puede contar de sí mismo — ticks, slips, disparos, capturas                    |
 | `GET`    | `/captures`      | sí    | JSON: el índice de capturas                                                                               |
 | `GET`    | `/captures/{id}` | sí    | NDJSON: una línea de cabecera de la captura y luego las líneas de muestra tal cual                        |
 | `DELETE` | `/captures/{id}` | sí    | `204`, y los bytes de la captura vuelven al presupuesto                                                   |
@@ -172,7 +172,7 @@ líneas.
 <Aside type="caution" title="Un /snapshot grande no es una forma gratuita de leer el coste">
 	Un `/snapshot` de 60 s a 10 Hz hace que el agente entregue unas 600 líneas, alrededor de 1,5 MB, y
 	el `self.cpu_us` de esas muestras incluye el coste de servirlas. Lee el coste del agente en
-	`/metrics`: [el coste del observador](/mikroscope/es/cost/) tiene el procedimiento.
+	el `/metrics` del colector: [el coste del observador](/mikroscope/es/cost/) tiene el procedimiento.
 </Aside>
 
 ## `GET /stream`
@@ -280,14 +280,27 @@ Los nombres de contadores perf que el agente intenta abrir son `cycles`,
 `sock_inode_cache`, `dst_cache`, `ip_dst_cache`, `kmalloc-1k` y `kmalloc-2k`,
 allí donde el kernel las tiene.
 
-## `GET /metrics`
+## `GET /sampler`
 
-La exposición de texto de Prometheus, construida a partir de contadores
-acumulados que ningún scrape pone a cero, así que `rate()` sobre cualquier
-rango es correcto y dos scrapers ven los mismos valores. El texto se construye
-en memoria y se escribe después de liberar el cerrojo de los contadores, así
-que un scraper lento no puede frenar al muestreador. [Familias de métricas de
-Prometheus](/mikroscope/es/reference/metrics/) enumera todas las familias.
+Lo que solo el agente puede contar de sí mismo, en JSON: ticks tomados, ticks
+perdidos, y lo que el evaluador de disparos ha disparado, suprimido y
+rechazado, con lo que retiene ahora mismo y el presupuesto que esas capturas
+inmovilizan. Cada condición configurada está presente desde la primera
+lectura, a 0 hasta que se dispara — un contador que aparece con su primer
+suceso se lee como un hueco en la serie, no como un router tranquilo.
+
+El colector lo lee al arrancar y luego en la misma cadencia de un minuto en la
+que vuelve a medir el desfase de reloj, y se lo entrega a todos los destinos.
+Eso es lo que hace que estas cifras sean alcanzables: no son por tick, así que
+no pueden viajar en una muestra, y hasta 1.0.5 la única forma de verlas era
+scrapear al agente.
+
+**El agente no sirve `/metrics`.** Lo hizo hasta 1.0.4, y un despliegue con
+Prometheus estaba documentado como scrapeando al agente además de al colector.
+Ya no: la exposición es la del colector, construida desde las muestras y desde
+este endpoint, y lleva todas las familias que piden los dashboards. El agente
+es un muestreador y un anillo — renderizar no es su trabajo, y no plegar cada
+muestra en contadores e histogramas es memoria que no gasta.
 
 ## Capturas
 
@@ -366,7 +379,7 @@ condiciones, el presupuesto y lo que una captura no puede mostrar están en
 
 - [Llegar al agente](/mikroscope/es/install/reaching-the-agent/): las tres formas en que un equipo
   llega a estas rutas.
-- [Familias de métricas de Prometheus](/mikroscope/es/reference/metrics/): lo que lleva `/metrics`.
+- [Familias de métricas de Prometheus](/mikroscope/es/reference/metrics/): lo que lleva el `/metrics` del colector.
 - [Captura por disparo](/mikroscope/es/record/triggers/): las condiciones que hay detrás de
   `/captures`.
 - [Lo que abre --expose](/mikroscope/es/security/expose/): cuándo el token pasa a ser obligatorio.

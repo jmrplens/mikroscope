@@ -51,11 +51,12 @@ byte.
 The InfluxDB dashboard queries InfluxDB 3 in SQL, and every query is bounded by `$__timeFilter`,
 because InfluxDB 3 Core refuses unbounded scans; where a column is named `cluster` the SQL quotes
 it, because `cluster` is a reserved word in DataFusion. The Prometheus dashboard queries a
-Prometheus that scrapes the collector's `/metrics` — which carries everything the agent's does,
-recomputed from the samples, plus the collector's own derived and detection families — and the agent
-itself for the few families only the sampler produces. Prometheus 3 renders a histogram's zero
-bucket boundary as `le="0.0"`, so a query reading that bucket matches `le=~"0|0.0"`. The two scrape
-jobs are on [Import and check](/mikroscope/dashboards/import-and-check/#prometheus-two-scrape-jobs).
+Prometheus that scrapes the collector's `/metrics`, and that alone: it carries the kernel tier
+recomputed from the samples, the collector's own derived and detection families, and — since
+1.0.5, when the agent stopped serving an exposition — what only the sampler can produce, which
+now reaches the collector as data. Prometheus 3 renders a histogram's zero bucket boundary as
+`le="0.0"`, so a query reading that bucket matches `le=~"0|0.0"`. The scrape job is on
+[Import and check](/mikroscope/dashboards/import-and-check/#prometheus-one-scrape-job).
 
 ## What it looks like
 

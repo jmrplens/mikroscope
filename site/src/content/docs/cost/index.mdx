@@ -76,14 +76,19 @@ count, a different clock, a different kernel and a different flash all move it.
 The procedure is three commands and takes a minute:
 
 ```sh
-curl -s http://172.30.10.2:9123/metrics | grep -E 'self_cpu_usec_total|self_rss_bytes'
+curl -s http://<collector host>:9124/metrics | grep -E 'self_cpu_usec_total|self_rss_bytes'
 sleep 60
-curl -s http://172.30.10.2:9123/metrics | grep -E 'self_cpu_usec_total|self_rss_bytes'
+curl -s http://<collector host>:9124/metrics | grep -E 'self_cpu_usec_total|self_rss_bytes'
 ```
 
 The difference in `self_cpu_usec_total` divided by 60 000 000 is the share of
 one core. Take it at steady state, with the ring full: a freshly started agent
 is still filling it and will read low.
+
+The address is the collector's, not the agent's: since 1.0.5 the agent serves
+no `/metrics`, and these two counters reach the collector in every sample. With
+no Prometheus sink configured, the same two numbers are `cpu_us` and `rss` in
+`mikroscope_self`, in whichever store you are writing to.
 
 <SeeAlso>
 

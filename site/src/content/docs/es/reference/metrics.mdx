@@ -16,46 +16,40 @@ cuándo no está. Está leída de `internal/agent/metrics.go`,
 aparece bajo la fuente de la que sale, porque eso es lo que decide si una placa
 concreta la tiene.
 
-## Dos exposiciones, un solo renderizador
+## Una exposición, y de dónde sale cada familia
 
-El agente sirve `/metrics` en el router, y `forward --prom :9124` sirve otro en
-el equipo del colector. Los dos los escribe el mismo código `Totals`: el
-colector le pasa las muestras de las que tiró, así que un despliegue al que
-solo se llega por el relay sigue teniendo familias independientes del scrape. No
-son idénticas.
+Hay una exposición: la del colector, servida por `forward --prom :9124`. El
+agente servía otra hasta 1.0.4; desde 1.0.5 no, y todo lo de abajo es lo que
+lleva el colector.
 
-<ScrollTable label="Qué exposición lleva qué">
+<ScrollTable label="De dónde sale cada familia">
 
-| Familias                                                                                                                                                                     | Agente `:9123/metrics`                    | Colector `--prom`                                        |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- | -------------------------------------------------------- |
-| todo lo que se recalcula a partir de las muestras: CPU, ventanas, rachas, ruta de recepción, memoria, PMU, sensores, flash, disco, log del kernel, contadores del observador | sí                                        | sí                                                       |
-| hechos del equipo (`mikroscope_device_info`, techos, cadencias)                                                                                                              | sí                                        | sí, en cuanto el colector ha leído `/capabilities`       |
-| los histogramas de tiempos del muestreador y `mikroscope_slipped_total`                                                                                                      | sí                                        | no                                                       |
-| familias de disparos y capturas                                                                                                                                              | sí, mientras `CAPTURE_MB` sea mayor que 0 | no                                                       |
-| `mikroscope_collector_*`, `mikroscope_derived_*`                                                                                                                             | no                                        | sí                                                       |
-| `mikroscope_api_*`                                                                                                                                                           | no                                        | sí, en cuanto la capa de la API ha entregado una muestra |
+| Familias                                                                                                                                                       | De dónde las saca el colector                                    |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| todo lo recalculado desde las muestras: CPU, ventanas, rachas, ruta de recepción, memoria, PMU, sensores, flash, disco, registro del kernel, contadores del observador | las muestras que tiró, plegadas por el mismo código `Totals`      |
+| los histogramas de tiempos del muestreador (`mikroscope_tick_*`)                                                                                                | `dt_ns`, `wake_ns` y `read_ns`, que viajan en cada muestra        |
+| `mikroscope_slipped_total`, `mikroscope_sampler_ticks_total`                                                                                                    | el `/sampler` del agente, leído al arrancar y cada minuto         |
+| las familias de disparos y capturas                                                                                                                             | lo mismo, mientras `CAPTURE_MB` sea mayor que 0                   |
+| los datos del equipo (`mikroscope_device_info`, techos, cadencias)                                                                                              | `/capabilities`, releído cada cinco minutos                       |
+| `mikroscope_collector_*`, `mikroscope_derived_*`                                                                                                                | lo suyo propio: la etapa de derivación y sus contadores           |
+| `mikroscope_api_*`                                                                                                                                              | el tier de API, en cuanto ha entregado una muestra                |
 
 </ScrollTable>
 
-El colector deja fuera `mikroscope_slipped_total` en vez de escribir 0, porque
-un 0 ahí sería una afirmación sobre un muestreador que nunca ejecutó. Para
-tener los dos conjuntos en un mismo Prometheus, haz scrape del colector para
-todo y del agente solo para lo que el colector no puede producir. Hacer scrape
-del agente sin la lista de conservación duplica cada contador que el colector
-también expone:
+Un despliegue alcanzado solo por el relay lo tiene todo, porque nada de esto
+depende de hacer scrape al router.
 
 ```yaml
 - job_name: "mikroscope"
   scrape_interval: 5s
-  static_configs: [{ targets: ["<collector host>:9124"] }]
-- job_name: "mikroscope-agent"
-  scrape_interval: 5s
-  static_configs: [{ targets: ["172.30.10.2:9123"] }]
-  metric_relabel_configs:
-    - source_labels: [__name__]
-      regex: "mikroscope_(tick_.*|trigger_.*|capture.*|captures_held|slipped_total)"
-      action: keep
+  static_configs: [{ targets: ["<equipo del colector>:9124"] }]
 ```
+
+Con la exposición del agente cambiaron dos cosas. `mikroscope_slipped_total`
+ya no se omite — el colector lo dejaba fuera en vez de escribir un 0 sobre un
+muestreador que nunca corrió, y ahora informa del número que le da el agente. Y
+los contadores que no son por tick están tan frescos como esa lectura de un
+minuto, no como el scrape.
 
 ### Lo que hace distinto la copia del colector
 
