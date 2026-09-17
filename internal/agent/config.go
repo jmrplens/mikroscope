@@ -46,7 +46,7 @@ type Config struct {
 // arrive through the container's envlist.
 func FromEnv(getenv func(string) string) (Config, error) {
 	c := Config{
-		RateHz: 10, BufferS: 300, Addr: "", Port: 9123, IRQTopK: 8, ProcRoot: "/proc", SysRoot: "/sys", MemLimitMB: 14,
+		RateHz: 10, BufferS: 60, Addr: "", Port: 9123, IRQTopK: 8, ProcRoot: "/proc", SysRoot: "/sys", MemLimitMB: 14,
 		Triggers: DefaultTriggers, CaptureMB: 4, CapturePreS: 5, CapturePostS: 5, CapturePolicy: "first", RefractoryS: 10,
 	}
 	var err error

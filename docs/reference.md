@@ -121,7 +121,7 @@ The checks doctor runs:
 | `--rsc`          | `false`                         | none                      |                                                            | `plan`: write a RouterOS script that installs from the router itself, instead of the listing                                                                                                                                                                                                                    |
 | `--port`         | `9123`                          | none                      | 1–65535                                                    | agent HTTP port on the veth                                                                                                                                                                                                                                                                                     |
 | `--rate`         | `10`                            | none                      | 1–100                                                      | sampler rate in Hz (envlist `RATE_HZ`); 10, 50 and 100 Hz measured lossless on the RB5009 ([rate ceiling](https://jmrp.io/docs/mikroscope/cost/rate-ceiling/))                                                                                                                                                                      |
-| `--buffer`       | `300`                           | none                      | 10–3600                                                    | ring buffer in seconds (envlist `BUFFER_S`)                                                                                                                                                                                                                                                                     |
+| `--buffer`       | `60`                            | none                      | 10–3600                                                    | ring buffer in seconds (envlist `BUFFER_S`)                                                                                                                                                                                                                                                                     |
 | `--memory-max`   | `64M`                           | none                      | `^\d{1,6}[KMG]?$`                                          | container cgroup `memory-max`, RouterOS syntax                                                                                                                                                                                                                                                                  |
 | `--mem-limit-mb` | `40`                            | none                      | 8–1024                                                     | agent Go soft memory limit in MiB (envlist `MEM_LIMIT_MB`); must fit the ring, rate × buffer × about 2.4 kB, with room for the garbage collector                                                                                                                                         |
 | `--capture-mb`   | `4`                             | none                      | 0–256                                                      | triggered-capture budget in MiB (envlist `CAPTURE_MB`); `0` turns captures off                                                                                                                                                                                                                                  |
@@ -488,7 +488,7 @@ the `container` topic, and exit with status 2.
 | Variable               | Agent default                                      | Accepted                    | Meaning                                                                                                                                     |
 | ---------------------- | -------------------------------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | `RATE_HZ`              | `10`                                               | 1–100                       | sampler rate                                                                                                                                |
-| `BUFFER_S`             | `300`                                              | 10–3600                     | ring length in seconds                                                                                                                      |
+| `BUFFER_S`             | `60`                                               | 10–3600                     | ring length in seconds                                                                                                                      |
 | `PORT`                 | `9123`                                             | 1–65535                     | HTTP port                                                                                                                                   |
 | `ADDR`                 | empty                                              | an address                  | bind address. Empty binds `:PORT`, every address in the container's network namespace; `install` always sets it to the agent's veth address |
 | `TOKEN`                | empty                                              |                             | when set, every path but `/healthz` requires `Authorization: Bearer <token>`                                                                |
@@ -543,10 +543,19 @@ The entries install writes into the agent's envlist:
 
 > **The agent's defaults and install's defaults are not the same**
 >
-> An agent started with no envlist entry uses a 14 MiB soft memory limit. `install` **derives**
+> An agent started with no envlist entry uses a 14 MiB soft memory limit. The ring is **60 s** by default, not the 300 it was until 1.0.6. What it buys is how long the
+> collector may be absent before samples are lost, and it is not a window anybody reads — the
+> collector drains it twice a second. Measured on the reference deployment over 24 hours on
+> 2026-09-17: the largest interruption in delivery was 114.5 s, and it was self-inflicted (a
+> container swap plus the minute the collector takes to notice a restarted agent); in ordinary
+> running the collector never falls behind. 60 s covers a restart of either side on a LAN and costs
+> 2.0 MiB of ring at 10 Hz instead of 9.9. A link that drops for longer raises it with `--buffer`,
+> and the memory limit follows because it is derived from the ring.
+>
+> `install` **derives**
 > `MEM_LIMIT_MB` from the ring — rate × buffer × the line size, times 2.5, floored at 16 MiB and
-> capped at three quarters of `memory-max` — so the default install writes `MEM_LIMIT_MB=25` for a
-> 300 s ring at 10 Hz, where it used to write a flat 40. A fixed number cannot be right for every
+> capped at three quarters of `memory-max` — so the default install writes `MEM_LIMIT_MB=16` for a
+> 60 s ring at 10 Hz, where it used to write a flat 40. A fixed number cannot be right for every
 > rate: the same 40 left 8 MiB unused at 10 Hz and is below the ring itself at 50 Hz.
 >
 > The factor is measured, not chosen. On the reference RB5009 (RouterOS 7.24.2, 10 Hz, 300 s, every
