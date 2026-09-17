@@ -110,10 +110,11 @@ than asking you to run something new.
 | want the whole thing, with the dashboards, and have nothing yet | `--influx`  | every measurement, as line protocol              | **yes**, generated |
 | already run Prometheus                                      | `--prom`       | every family, recomputed from the samples        | **yes**, generated |
 | want to capture a window and look at it later               | `--file`       | the merged timeline as JSONL, nothing to install | no        |
-| keep long-term data in PostgreSQL or TimescaleDB            | `--sql`        | DDL and INSERTs for `psql`, no driver            | no        |
+| keep long-term data in PostgreSQL or TimescaleDB            | `--sql`        | DDL and INSERTs for `psql`, no driver            | **yes**, generated |
 | want the kernel log and the detections where your logs are  | `--loki`       | **events only** — kmsg, detections, gaps         | no        |
 | already run an OpenTelemetry pipeline                       | `--otlp`       | metrics as OTLP/HTTP                             | no        |
-| already run Graphite, Elasticsearch or Telegraf             | `--graphite`, `--elastic`, `--telegraf` | every measurement, in that product's shape | no |
+| already run Graphite or Elasticsearch                       | `--graphite`, `--elastic` | every measurement, in that product's shape | **yes**, a smaller one |
+| already run Telegraf                                        | `--telegraf`   | every measurement, as line protocol              | no        |
 | want to pipe it into something of your own                  | `--stdout`     | line protocol or NDJSON on standard output       | no        |
 
 Nothing stops you naming several at once, and that is the normal arrangement:

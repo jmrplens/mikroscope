@@ -7,7 +7,13 @@
  * defaults; `import` and `check` can move panels in a live Grafana, and the
  * page says so beside this table.
  */
-import { countOf, panelTotal, sectionNames, STORES } from "../data/dashboards";
+import {
+	countOf,
+	panelTotal,
+	sectionNames,
+	STORE_NAMES,
+	STORES,
+} from "../data/dashboards";
 import { formatNumber } from "../lib/format";
 import { nextId } from "../lib/ids";
 import { langOf } from "../lib/lang";
@@ -26,8 +32,11 @@ const cell = (n: number | null) => (n === null ? t("ms.dash.noRow") : formatNumb
 		<thead>
 			<tr>
 				<th scope="col">{t("ms.dash.section")}</th>
-				<th scope="col" class="ms-num">InfluxDB</th>
-				<th scope="col" class="ms-num">Prometheus</th>
+				{STORES.map((store) => (
+					<th scope="col" class="ms-num">
+						{STORE_NAMES[store]}
+					</th>
+				))}
 			</tr>
 		</thead>
 		<tbody>

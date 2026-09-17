@@ -1,6 +1,6 @@
 ---
-title: Two dashboards, one panel list
-description: What the InfluxDB 3 and Prometheus dashboards contain, section by section, in the order they are read, and why the two stores do not carry the same panels.
+title: Five dashboards, one panel list
+description: What the InfluxDB 3, Prometheus, PostgreSQL, Graphite and Elasticsearch dashboards contain, section by section, in the order they are read, and why the five stores do not carry the same panels.
 ---
 
 import { FileTree } from "@astrojs/starlight/components";
@@ -26,8 +26,12 @@ alert rules generated beside them are on [Alert rules](/mikroscope/dashboards/al
 - dashboards/
   - mikroscope-influxdb.json <DashboardCount store="influxdb" of="panels" /> panels, InfluxDB 3 (SQL)
   - mikroscope-prometheus.json <DashboardCount store="prometheus" of="panels" /> panels, Prometheus
+  - mikroscope-postgres.json <DashboardCount store="postgres" of="panels" /> panels, PostgreSQL / TimescaleDB
+  - mikroscope-graphite.json <DashboardCount store="graphite" of="panels" /> panels, Graphite
+  - mikroscope-elasticsearch.json <DashboardCount store="elasticsearch" of="panels" /> panels, Elasticsearch
   - mikroscope-alerts-influxdb.yaml <DashboardCount store="influxdb" of="rules" /> rules
   - mikroscope-alerts-prometheus.yaml <DashboardCount store="prometheus" of="rules" /> rules
+  - mikroscope-alerts-postgres.yaml <DashboardCount store="postgres" of="rules" /> rules
 
 </FileTree>
 
@@ -36,7 +40,7 @@ mikroscope dashboards gen                    # writes the four files into ./dash
 mikroscope dashboards gen --out /tmp/dash    # or into another directory
 ```
 
-Both dashboards are in Grafana's shareable export format: the datasource is a `${DS_MIKROSCOPE}`
+All five dashboards are in Grafana's shareable export format: the datasource is a `${DS_MIKROSCOPE}`
 placeholder declared in `__inputs`, there is no `id`, and the `uid` is fixed —
 `mikroscope-influxdb` and `mikroscope-prometheus` — so a re-import updates the same dashboard in
 place instead of creating a second one. A test asserts that two generations of the InfluxDB

@@ -8,7 +8,7 @@ import NotClaimed from "../../../components/NotClaimed.astro";
 import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
 
-This page answers how to get the two dashboards into a Grafana, what the datasource needs before
+This page answers how to get the five dashboards into a Grafana, what the datasource needs before
 they can return anything, and what `mikroscope dashboards check` tells you once they are there. The
 short version of the last part: `check` proves that every panel's query returns rows through
 Grafana's own query API. It does not prove that a reader can read the result.
@@ -51,6 +51,50 @@ histograms, the trigger and capture counters, and slipped ticks.
 Scraping the agent without the keep list would double every counter the collector also exposes.
 `172.30.10.2:9123` is the agent's address on the default install; how a Prometheus host reaches it
 is on [Reaching the agent](/mikroscope/install/reaching-the-agent/).
+
+## The PostgreSQL datasource
+
+The SQL sink writes a **script**, not rows: `forward --sql out.sql` and then `psql -f out.sql`, or
+`--sql - | psql`. So the database has the schema and the data only after that script has been
+applied — a datasource pointed at an empty database answers every panel with "relation does not
+exist".
+
+The datasource is Grafana's `grafana-postgresql-datasource`, with the database and the user the
+script was loaded as. `sslmode` is yours to choose; `postgresVersion` only decides which syntax the
+plugin may emit, and every query in this dashboard is plain SQL.
+
+The panels are the InfluxDB ones, rewritten: the bucket macro, the percentiles, the casts and the
+column names the SQL sink had to change because `user`, `from` and `to` are reserved words. Ten
+queries are not rewritten and say so — `mikroscope_buddy` and the RouterOS interface counters are
+wide in InfluxDB and long in the SQL schema, and a pivot is a different question.
+
+## The Graphite datasource
+
+Graphite has no labels: every dimension is a path node, so a query IS a path — and the first two
+nodes are yours. `--graphite-prefix` (default `mikroscope`) and `--host-tag` are therefore
+**dashboard variables**, read from Graphite's own metric tree, and the dashboard asks for them at
+the top rather than being hard-coded to whoever generated it.
+
+The datasource is type `graphite`; nothing else is needed. From the CLI, `check` cannot read a
+browser's variable picker, so it takes them:
+
+```sh
+mikroscope dashboards check --store graphite --datasource-uid <uid> \
+  --var prefix=mikroscope --var host=rb5009
+```
+
+## The Elasticsearch datasource
+
+Type `elasticsearch`, with the index the `--elastic-index` you forwarded with produces and
+`@timestamp` as the time field.
+
+This dashboard is the smallest of the five, and the reason is in the documents rather than in the
+queries: the sink writes a sample's per-core and per-device readings as **arrays** — `cpu` is an
+array of four objects — and a dynamically mapped array is a multi-valued field with no
+correspondence between its members. `avg(cpu.busy_ratio)` is the mean over the cores, which is a
+real number; "core 2's busy ratio" is not expressible at all without a nested mapping the sink does
+not declare. So the Elasticsearch panels are the scalar aggregates, and the per-core ones are
+absent rather than wrong.
 
 ## Importing by hand
 
@@ -254,7 +298,7 @@ every panel returned rows, 228–2 052 over 5 minutes.
 
 ## See also
 
-- [Two dashboards, one panel list](/mikroscope/dashboards/): every section and panel, and which store
+- [Five dashboards, one panel list](/mikroscope/dashboards/): every section and panel, and which store
   carries each.
 - [Alert rules](/mikroscope/dashboards/alerts/): the provisioning files `gen` writes, which `check`
   does not run.

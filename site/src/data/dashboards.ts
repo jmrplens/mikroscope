@@ -14,12 +14,46 @@
 import { parse } from "yaml";
 import influxJson from "../../../dashboards/mikroscope-influxdb.json?raw";
 import promJson from "../../../dashboards/mikroscope-prometheus.json?raw";
+import postgresJson from "../../../dashboards/mikroscope-postgres.json?raw";
+import graphiteJson from "../../../dashboards/mikroscope-graphite.json?raw";
+import elasticJson from "../../../dashboards/mikroscope-elasticsearch.json?raw";
 import influxAlertsYaml from "../../../dashboards/mikroscope-alerts-influxdb.yaml?raw";
 import promAlertsYaml from "../../../dashboards/mikroscope-alerts-prometheus.yaml?raw";
+import postgresAlertsYaml from "../../../dashboards/mikroscope-alerts-postgres.yaml?raw";
 import type { Lang } from "./measurements";
 
-export type Store = "influxdb" | "prometheus";
-export const STORES: readonly Store[] = ["influxdb", "prometheus"];
+export type Store =
+	"influxdb" | "prometheus" | "postgres" | "graphite" | "elasticsearch";
+
+/** Every store a dashboard is generated for, in the order `gen` writes them. */
+export const STORES: readonly Store[] = [
+	"influxdb",
+	"prometheus",
+	"postgres",
+	"graphite",
+	"elasticsearch",
+];
+
+/**
+ * The stores that also get an alert file. The rules are stated as SQL and
+ * PromQL, and neither is Graphite's functions or Elasticsearch's aggregations,
+ * so those two have dashboards and no alerts — which the pages say rather than
+ * leaving a reader to find an absent file.
+ */
+export const ALERT_STORES: readonly Store[] = [
+	"influxdb",
+	"prometheus",
+	"postgres",
+];
+
+/** How each store is named in prose. */
+export const STORE_NAMES: Record<Store, string> = {
+	influxdb: "InfluxDB 3",
+	prometheus: "Prometheus",
+	postgres: "PostgreSQL",
+	graphite: "Graphite",
+	elasticsearch: "Elasticsearch",
+};
 
 interface GrafanaPanel {
 	type: string;
@@ -62,6 +96,9 @@ function sectionsOf(raw: string): Map<string, string[]> {
 const bySection: Record<Store, Map<string, string[]>> = {
 	influxdb: sectionsOf(influxJson),
 	prometheus: sectionsOf(promJson),
+	postgres: sectionsOf(postgresJson),
+	graphite: sectionsOf(graphiteJson),
+	elasticsearch: sectionsOf(elasticJson),
 };
 
 /** Every section, in reading order: the InfluxDB file's order, with Prometheus-only rows after. */
@@ -73,8 +110,11 @@ export const isSection = (name: string) => sectionNames.includes(name);
 
 export interface PanelEntry {
 	title: string;
-	/** The one store carrying it, or null when both do. */
-	only: Store | null;
+	/**
+	 * The one of the two full dashboards carrying it, or null when both do.
+	 * Never one of the other three: see the comment in panelsOf.
+	 */
+	only: "influxdb" | "prometheus" | null;
 }
 
 /**
@@ -84,11 +124,20 @@ export interface PanelEntry {
  */
 export function panelsOf(section: string): {
 	entries: PanelEntry[];
-	stores: Store[];
+	stores: readonly ("influxdb" | "prometheus")[];
 } {
+	// The union is taken over the two full dashboards, and the "only on one
+	// store" mark compares those two. The other three carry a subset by
+	// construction — PostgreSQL where the SQL sink holds the measurement in
+	// the same shape, Graphite and Elasticsearch where the panel states a
+	// query for them — and marking every panel with the three of them would
+	// bury the one distinction a reader of this list needs. The per-store
+	// counts are the count table's job (DashboardCounts).
 	const a = bySection.influxdb.get(section) ?? [];
 	const b = bySection.prometheus.get(section) ?? [];
-	const stores = STORES.filter((s) => bySection[s].has(section));
+	const stores = (["influxdb", "prometheus"] as const).filter((s) =>
+		bySection[s].has(section),
+	);
 	const merged: string[] = [];
 	let ai = 0;
 	for (const title of b) {
@@ -195,6 +244,10 @@ function rulesOf(raw: string, store: Store): AlertRule[] {
 export const alertRules: Record<Store, AlertRule[]> = {
 	influxdb: rulesOf(influxAlertsYaml, "influxdb"),
 	prometheus: rulesOf(promAlertsYaml, "prometheus"),
+	postgres: rulesOf(postgresAlertsYaml, "postgres"),
+	// Neither store has an alert file; see ALERT_STORES above.
+	graphite: [],
+	elasticsearch: [],
 };
 
 /**

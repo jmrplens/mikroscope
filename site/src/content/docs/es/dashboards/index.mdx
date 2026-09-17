@@ -1,6 +1,6 @@
 ---
-title: Dos paneles, una sola lista
-description: Qué contienen los dashboards de InfluxDB 3 y de Prometheus, sección a sección y en el orden en que se leen, y por qué los dos almacenes no llevan los mismos paneles.
+title: Cinco dashboards, una sola lista
+description: Qué contienen los dashboards de InfluxDB 3, Prometheus, PostgreSQL, Graphite y Elasticsearch, sección a sección y en el orden en que se leen, y por qué los cinco almacenes no llevan los mismos paneles.
 ---
 
 import { FileTree } from "@astrojs/starlight/components";
@@ -30,8 +30,12 @@ Grafana, sin traducir, para que puedas encontrarlos.
 - dashboards/
   - mikroscope-influxdb.json <DashboardCount store="influxdb" of="panels" /> paneles, InfluxDB 3 (SQL)
   - mikroscope-prometheus.json <DashboardCount store="prometheus" of="panels" /> paneles, Prometheus
+  - mikroscope-postgres.json <DashboardCount store="postgres" of="panels" /> paneles, PostgreSQL / TimescaleDB
+  - mikroscope-graphite.json <DashboardCount store="graphite" of="panels" /> paneles, Graphite
+  - mikroscope-elasticsearch.json <DashboardCount store="elasticsearch" of="panels" /> paneles, Elasticsearch
   - mikroscope-alerts-influxdb.yaml <DashboardCount store="influxdb" of="rules" /> reglas
   - mikroscope-alerts-prometheus.yaml <DashboardCount store="prometheus" of="rules" /> reglas
+  - mikroscope-alerts-postgres.yaml <DashboardCount store="postgres" of="rules" /> reglas
 
 </FileTree>
 
@@ -40,7 +44,7 @@ mikroscope dashboards gen                    # escribe los cuatro ficheros en ./
 mikroscope dashboards gen --out /tmp/dash    # o en otro directorio
 ```
 
-Los dos dashboards están en el formato de exportación compartible de Grafana: la fuente de datos es
+Los cinco dashboards están en el formato de exportación compartible de Grafana: la fuente de datos es
 un marcador `${DS_MIKROSCOPE}` declarado en `__inputs`, no hay `id` y el `uid` es fijo —
 `mikroscope-influxdb` y `mikroscope-prometheus` —, así que una reimportación actualiza el mismo
 dashboard en su sitio en vez de crear un segundo. Un test comprueba que dos generaciones del
