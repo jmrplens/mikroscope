@@ -187,8 +187,6 @@ type checkPanel struct {
 	Panels     []checkPanel     `json:"panels"`
 }
 
-// flattenPanels returns every queryable panel, descending into rows and
-// dropping the row headers themselves.
 // interpolate replaces $name and ${name} with the value given for it. A
 // variable with no value is left alone: the query then fails loudly rather
 // than silently asking about a path node called "$host".
@@ -200,6 +198,8 @@ func interpolate(s string, vars map[string]string) string {
 	return s
 }
 
+// flattenPanels returns every queryable panel, descending into rows and
+// dropping the row headers themselves.
 func flattenPanels(ps []checkPanel) []checkPanel {
 	out := make([]checkPanel, 0, len(ps))
 	for _, p := range ps {
