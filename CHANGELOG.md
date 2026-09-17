@@ -4,6 +4,37 @@ Notable changes per release. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the versions
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.4]
+
+One fix, found by deploying 1.0.3 on the reference device and watching what
+happened next.
+
+### Fixed
+
+- **The collector stopped forwarding kernel samples after the agent
+  restarted, and nothing said so.** The agent numbers its samples from 1 at
+  every start, so an agent that restarts — an upgrade, a container restart, a
+  reboot — has a newest sequence number far below the collector's cursor. The
+  ring answers an empty batch to a request for samples after a number it will
+  not reach for days, so the cursor never moved again: the kernel tier stopped
+  for good while the API tier kept counting and every sink kept being written,
+  which is what made it invisible.
+
+  MEASURED on the reference deployment on 2026-09-17, upgrading the agent from
+  the development build to 1.0.3: the last kernel sample forwarded was seq
+  1 737 212 at 11:52, and a minute later the report still read `865 kernel …
+  last seq 1737212` with the API count grown from 109 to 169 and the agent
+  healthy at seq 571. Restarting the collector was the only thing that cleared
+  it, because `Run` takes its cursor from the health read at start.
+
+  The collector now notices on its next health read — once a minute, the only
+  one the loop makes — logs the two sequence numbers, and resumes from the new
+  ring's oldest sample, so what the agent took while nobody was collecting is
+  picked up rather than skipped. The run report counts the restarts it saw.
+  The minute between the restart and the health read is lost with the
+  container, not by the collector; a health read per pull would ask the router
+  for something twice a second to catch an event an operator causes.
+
 ## [1.0.3]
 
 Five dashboards instead of one, the stores widened so the new ones have

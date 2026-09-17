@@ -114,6 +114,7 @@ something between you and it is not:
 | `forward` prints `… dropped` for a sink             | [The sink could not keep up](#a-sink-is-dropping)                          |
 | Loki accepted everything and a query returns nothing | A push is not queryable until the chunk flushes                           |
 | Numbers stop at a round moment and resume           | A gap: the ring wrapped before the collector pulled it                     |
+| The kernel tier stops dead and the API tier carries on | [The agent restarted](#the-agent-restarted-and-the-kernel-tier-stopped)  |
 
 </ScrollTable>
 
@@ -123,6 +124,28 @@ moved into it rather than left to draw an empty graph among the others.
 `mikroscope dashboards check` asks the datasource which measurements it really
 holds and does that sorting for your store:
 [Import and check](/mikroscope/dashboards/import-and-check/).
+
+### The agent restarted and the kernel tier stopped
+
+The agent numbers its samples from 1 at every start, so an agent that restarts
+— an upgrade, a container restart, a reboot — has a newest sequence number far
+below the collector's cursor. The collector notices on its next health read,
+which is once a minute, logs
+
+```text
+agent restarted: its newest sample is 571 and the cursor was 1737212; resuming from 1
+```
+
+and resumes from the new ring's oldest sample, so what the agent took while
+nobody was collecting is picked up rather than skipped. The minute's worth of
+samples between the restart and the health read is lost with the container, not
+by the collector.
+
+Before 1.0.4 it did not notice: the cursor stayed where it was, the agent's ring
+answered an empty batch to every pull, and the kernel tier stopped for good
+while the API tier kept counting and the sinks kept being written — so the run
+looked healthy. If you are on an earlier version, restart the collector after
+restarting the agent; it takes its cursor from the health read at start.
 
 ### A sink is dropping
 

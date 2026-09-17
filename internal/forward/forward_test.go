@@ -330,3 +330,53 @@ func TestDeviceFactsFetchFailureIsAbsence(t *testing.T) {
 		t.Errorf("logs = %v, want the failure named once", logs)
 	}
 }
+
+// TestResyncAfterAgentRestart is the fix for what the reference deployment
+// did on 2026-09-17 when the agent was upgraded: the agent numbers from 1
+// again, the collector kept asking for samples after 1 737 212, the ring
+// answered nothing to that forever, and the kernel tier stopped while the
+// API tier carried on as if all were well.
+func TestResyncAfterAgentRestart(t *testing.T) {
+	t.Parallel()
+	f := &Forwarder{}
+	var logs []string
+	f.Log = func(l string) { logs = append(logs, l) }
+
+	// The ordinary case: the agent is ahead of the cursor, nothing moves.
+	since := uint64(1_737_212)
+	f.resync(transport.Health{Seq: 1_737_300, OldestSeq: 1_734_301}, &since)
+	if since != 1_737_212 || f.stats.Resyncs != 0 {
+		t.Fatalf("a healthy agent moved the cursor to %d (resyncs %d)", since, f.stats.Resyncs)
+	}
+
+	// The restart: newest 571, oldest 1, so the cursor lands on 0 and the
+	// next pull asks for everything from 1 — the samples the new agent has
+	// already taken are collected, not skipped.
+	f.resync(transport.Health{Seq: 571, OldestSeq: 1}, &since)
+	if since != 0 {
+		t.Errorf("cursor = %d, want 0 so the next pull starts at 1", since)
+	}
+	if f.stats.Resyncs != 1 {
+		t.Errorf("resyncs = %d, want 1", f.stats.Resyncs)
+	}
+	if len(logs) != 1 || !strings.Contains(logs[0], "1737212") || !strings.Contains(logs[0], "571") {
+		t.Errorf("logs = %v, want the restart named with both numbers", logs)
+	}
+
+	// A ring that has already rotated: the cursor follows its oldest, so the
+	// collector does not ask for samples the new agent has dropped.
+	since = 99_999
+	f.resync(transport.Health{Seq: 4_000, OldestSeq: 1_001}, &since)
+	if since != 1_000 {
+		t.Errorf("cursor = %d, want 1000 (oldest − 1)", since)
+	}
+
+	// Equal is not a restart: an agent whose newest sample is exactly the
+	// cursor has simply produced nothing since the last pull.
+	since = 4_000
+	before := f.stats.Resyncs
+	f.resync(transport.Health{Seq: 4_000, OldestSeq: 1_001}, &since)
+	if since != 4_000 || f.stats.Resyncs != before {
+		t.Errorf("a quiet agent was taken for a restart: cursor %d, resyncs %d", since, f.stats.Resyncs)
+	}
+}

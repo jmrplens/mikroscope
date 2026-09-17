@@ -52,6 +52,9 @@ type Stats struct {
 	LastSeq           uint64
 	SkewNS            int64
 	SkewJumps         int
+	// Resyncs counts the times the cursor was moved back because the agent
+	// restarted and began numbering its samples from 1 again.
+	Resyncs uint64
 }
 
 // Forwarder runs the loop.
@@ -159,7 +162,7 @@ func (f *Forwarder) Run(ctx context.Context) (Stats, error) {
 			f.stats.API++
 			f.emit(sinks.Event{API: &s, Shares: f.Derive.API(&s)})
 		case <-skewTick.C:
-			f.remeasure(ctx)
+			f.remeasure(ctx, &since)
 		case <-report.C:
 			f.Log(f.report())
 		}
@@ -275,6 +278,15 @@ func (f *Forwarder) emit(e sinks.Event) {
 	}
 }
 
+// deviceEvery is the cadence in force, so a Forwarder built by hand — a test,
+// an embedder — repeats on the same schedule as one Run configured.
+func (f *Forwarder) deviceEvery() time.Duration {
+	if f.Opts.DeviceEvery > 0 {
+		return f.Opts.DeviceEvery
+	}
+	return defaultDeviceEvery
+}
+
 // deviceInfo fetches /capabilities and hands the board facts to every sink
 // as a device event: on the first call, on every capability hash the agent
 // reports that is not the one already emitted, and otherwise no more often
@@ -286,15 +298,6 @@ func (f *Forwarder) emit(e sinks.Event) {
 // that does not contain an emission holds none of them — which is exactly
 // what the four device panels showed on the reference deployment before
 // this existed.
-// deviceEvery is the cadence in force, so a Forwarder built by hand — a test,
-// an embedder — repeats on the same schedule as one Run configured.
-func (f *Forwarder) deviceEvery() time.Duration {
-	if f.Opts.DeviceEvery > 0 {
-		return f.Opts.DeviceEvery
-	}
-	return defaultDeviceEvery
-}
-
 func (f *Forwarder) deviceInfo(ctx context.Context, hash string) {
 	cf, ok := f.Puller.(transport.CapabilityFetcher)
 	if !ok {
@@ -318,13 +321,49 @@ func (f *Forwarder) deviceInfo(ctx context.Context, hash string) {
 	f.emit(sinks.Event{Device: &caps, DeviceRepeat: same})
 }
 
+// resync moves the cursor back when the agent's newest sample is behind it.
+//
+// The agent numbers its samples from 1 at every start, so an agent that
+// restarts — an upgrade, a container restart, a reboot — leaves the collector
+// asking for samples after a number the new ring will not reach for days.
+// Ring.Since answers an empty batch to that, forever: the cursor never moves,
+// the kernel tier stops, and nothing says so, because the API tier keeps
+// counting and the sinks keep being written. MEASURED on the reference
+// deployment on 2026-09-17, upgrading the agent from dev to 1.0.3: the last
+// kernel sample forwarded was seq 1737212 at 11:52, and a minute later the
+// report still read `865 kernel … last seq 1737212` with the API count grown
+// from 109 to 169 and the agent healthy at seq 571. Restarting the collector
+// was the only thing that cleared it, because Run takes its cursor from the
+// health read at start.
+//
+// The cursor lands on the ring's oldest minus one rather than on zero, so the
+// samples the new agent has already taken are collected instead of skipped,
+// and the caller's next pull carries them. A restart is noticed on the
+// following skew tick and not sooner: this is the loop's only health read,
+// and a health read per pull would ask the router for something twice a
+// second to catch an event that happens when an operator causes it.
+func (f *Forwarder) resync(h transport.Health, since *uint64) {
+	if since == nil || *since <= h.Seq {
+		return
+	}
+	was := *since
+	*since = 0
+	if h.OldestSeq > 0 {
+		*since = h.OldestSeq - 1
+	}
+	f.stats.Resyncs++
+	f.Log(fmt.Sprintf("agent restarted: its newest sample is %d and the cursor was %d; resuming from %d", h.Seq, was, *since+1))
+}
+
 // remeasure re-reads the skew; a jump beyond 50 ms is logged (a router
-// clock step, an NTP correction).
-func (f *Forwarder) remeasure(ctx context.Context) {
+// clock step, an NTP correction). It is also where a restarted agent is
+// noticed, because this is the only health read the loop makes.
+func (f *Forwarder) remeasure(ctx context.Context, since *uint64) {
 	h, err := f.Puller.Health(ctx)
 	if err != nil {
 		return
 	}
+	f.resync(h, since)
 	f.deviceInfo(ctx, h.CapabilitiesHash)
 	skew := h.WallNS - time.Now().UnixNano()
 	if d := skew - f.stats.SkewNS; d > 50_000_000 || d < -50_000_000 {
@@ -339,7 +378,7 @@ func (f *Forwarder) remeasure(ctx context.Context) {
 
 func (f *Forwarder) report() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "forwarded %d kernel, %d api, %d gap(s), %d trigger(s), %d detection(s), last seq %d", f.stats.Kernel, f.stats.API, f.stats.Gaps, f.stats.Triggers, f.stats.Detections, f.stats.LastSeq)
+	fmt.Fprintf(&b, "forwarded %d kernel, %d api, %d gap(s), %d trigger(s), %d detection(s), %d agent restart(s), last seq %d", f.stats.Kernel, f.stats.API, f.stats.Gaps, f.stats.Triggers, f.stats.Detections, f.stats.Resyncs, f.stats.LastSeq)
 	for _, sk := range f.Sinks {
 		st := sk.Stats()
 		fmt.Fprintf(&b, "; %s: %d written, %d dropped, %d errors", sk.Name(), st.Written, st.Dropped, st.Errors)
