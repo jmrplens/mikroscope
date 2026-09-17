@@ -18,7 +18,35 @@
 // when it is expanded, and expanding all of them at once asks the store for
 // 171 queries and lands several of them on a timeout.
 //
-// Usage: node scripts/gen-dashboard-captures.mjs [--only <section>]
+// Usage: node scripts/gen-dashboard-captures.mjs [flags]
+//
+//   --only <section>   photograph just the section whose title contains this
+//   --stem <name>      name the file, instead of `<index>-<section slug>`
+//   --annotations      keep the detections and triggers layers on
+//   --from <epoch ms>  override the manifest's window, both ends
+//   --to   <epoch ms>
+//
+// A run with --only or --stem writes its picture and nothing else: it does not
+// rewrite captures.json, which describes the set.
+//
+// The one capture the docs carry WITH annotations — `annotations.webp`, on the
+// dashboards page, showing what a detection marker looks like — is taken this
+// way:
+//
+//   node site/scripts/gen-dashboard-captures.mjs --annotations --stem annotations
+//
+// with one step before it. The canned fake agent fires a detection about every
+// five seconds, so over the fill's 20 minutes the layer draws some 350 markers
+// and the picture is a solid red wash that shows nothing. For that capture the
+// demonstration store's mikroscope_detection table is dropped and rewritten
+// with THREE rows — one ipc-collapse, one microburst, one link-flap, spaced
+// across the window — so the picture shows what a marker is at a density a
+// real deployment produces. The tile beside it reads 3, which is the same
+// three rows: the picture is internally consistent, and the rest of the
+// dashboard is the fill's own data, untouched.
+//
+//   curl -X DELETE "$INFLUX/api/v3/configure/table?db=mikroscope&table=mikroscope_detection"
+//   curl --data-binary @three-detections.lp "$INFLUX/api/v3/write_lp?db=mikroscope&precision=nanosecond"
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
@@ -38,9 +66,24 @@ const UID = "mikroscope-influxdb";
 // empty boxes.
 const VIEWPORT = { width: 1600, height: 3200 };
 
-const only = process.argv.includes("--only")
-	? process.argv[process.argv.indexOf("--only") + 1]
-	: null;
+const arg = (name) =>
+	process.argv.includes(name)
+		? process.argv[process.argv.indexOf(name) + 1]
+		: null;
+
+const only = arg("--only");
+// --annotations keeps the detection and trigger layers on. Off is the default
+// because the fake agent fires both continuously and a long run photographs as
+// a picket fence; one capture of what a marker looks like is worth having, and
+// that is what the flag is for.
+const withAnnotations = process.argv.includes("--annotations");
+// --stem names the file, so an extra capture of a section already photographed
+// does not overwrite the numbered one.
+const stemOverride = arg("--stem");
+// --from / --to override the manifest window, in epoch milliseconds: the
+// manifest is written by the fill step, and a later fill leaves it stale.
+const fromOverride = arg("--from");
+const toOverride = arg("--to");
 
 let manifest;
 try {
@@ -91,8 +134,8 @@ const page = await context.newPage();
 // data draws every graph with an empty half, which reads as an outage rather
 // than as "the capture started here". A second of slack at each end is enough
 // for the last bin.
-const from = manifest.from - 1000;
-const to = manifest.to + 1000;
+const from = fromOverride ? Number(fromOverride) : manifest.from - 1000;
+const to = toOverride ? Number(toOverride) : manifest.to + 1000;
 
 const url = new URL(`/d/${UID}/`, manifest.grafana);
 url.searchParams.set("from", String(from));
@@ -183,7 +226,7 @@ if (rows.length === 0) {
 
 const written = [];
 // The Overview is not a collapsed row: it is what the dashboard opens on.
-await hideAnnotations();
+if (!withAnnotations) await hideAnnotations();
 
 // Only now: the toggles above live in this bar, and hiding it first makes them
 // unclickable. The time picker and the refresh control are chrome, not
@@ -196,16 +239,21 @@ await page.addStyleTag({
 	`,
 });
 await settle();
-const overview = page.locator(".react-grid-layout").first();
-await overview.screenshot({ path: path.join(OUT, "00-overview.png") });
-await encode(
-	path.join(OUT, "00-overview.png"),
-	path.join(OUT, "00-overview.webp"),
-);
-written.push("00-overview.webp");
+if (!only) {
+	const stem = stemOverride ?? "00-overview";
+	const overview = page.locator(".react-grid-layout").first();
+	await overview.screenshot({ path: path.join(OUT, `${stem}.png`) });
+	await encode(path.join(OUT, `${stem}.png`), path.join(OUT, `${stem}.webp`));
+	written.push(`${stem}.webp`);
+	console.log(`[captures] ${stem}.webp`);
+}
+
+// A --stem with no --only is one extra picture of the Overview, taken above:
+// letting the loop run would write every section to that same name.
+const sections = stemOverride && !only ? [] : rows;
 
 let index = 1;
-for (const title of rows) {
+for (const title of sections) {
 	// The Overview is the section the dashboard opens on and is captured above.
 	if (title === "Overview") {
 		index += 1;
@@ -227,7 +275,8 @@ for (const title of rows) {
 		await renderAll(section);
 		await settle();
 	}
-	const stem = `${String(index).padStart(2, "0")}-${slug(title)}`;
+	const stem =
+		stemOverride ?? `${String(index).padStart(2, "0")}-${slug(title)}`;
 	const target = (await section.count()) ? section : page.locator("body");
 	await target.screenshot({ path: path.join(OUT, `${stem}.png`) });
 	await encode(path.join(OUT, `${stem}.png`), path.join(OUT, `${stem}.webp`));
@@ -238,6 +287,14 @@ for (const title of rows) {
 	await header.click();
 	await page.waitForTimeout(500);
 	index += 1;
+}
+
+// A one-section or renamed run is an extra picture, not the set: it must not
+// rewrite the manifest the pages read.
+if (only || stemOverride) {
+	console.log(`[captures] ${written.length} file(s) in ${OUT}`);
+	await browser.close();
+	process.exit(0);
 }
 
 writeFileSync(

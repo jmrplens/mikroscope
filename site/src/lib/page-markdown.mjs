@@ -323,6 +323,17 @@ function renderSelfClosing(name, attributes, expressions, context) {
 					: `One capture per section of the InfluxDB dashboard, over a demonstration database filled by the fake agent, on [the page](${dashboards_}):`;
 			return [intro, "", ...lines].join("\n");
 		}
+		// One screenshot, inline. docs/ is a text file in a checkout with no
+		// images, so the reduction is the caption: the sentence the picture
+		// was put there to make.
+		case "Capture": {
+			if (!attributes.caption) {
+				throw new Error(
+					`${context.file}: <Capture name="${attributes.name}" /> has no caption`,
+				);
+			}
+			return `*${attributes.caption}*`;
+		}
 		// A count the Go source decides, written the way the page writes it:
 		// `as="word"` is prose ("ten"), anything else is digits. The table of
 		// words is Stat.astro's, kept here rather than imported because that

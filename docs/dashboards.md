@@ -303,11 +303,42 @@ and the event panels are marked known-empty so that `check` does not fail on it.
 In "Trigger fires and suppressions per bin", the suppressions are on Prometheus only: they live on
 the agent's `/metrics`.
 
-Every detection, and every trigger marker, is also a dashboard annotation. The **detections**
-annotation (red) is on by default; the **triggers** annotation (orange) is off by default, so a
-quiet dashboard stays quiet. On InfluxDB each annotation is one event row with its message; on
-Prometheus it is `increase(…[1m]) > 0` at a 1-minute step, so an annotation there marks the minute,
-not the instant.
+#### The red dashed lines on every panel
+
+A dashboard with detections in its window draws a vertical red dashed line, with a small triangle
+at the foot of the axis, across **every** panel at the instant of each one. They are annotations,
+not data: not a gap in the record, not a slipped tick, not a break in the series. They are there so
+that whatever panel you happen to be reading can be read next to what the collector flagged at that
+moment — a memory-stall regime on one core, a microburst on one queue, a link that flapped — without
+having to scroll to the Detections section to find out that anything happened at all.
+
+Two layers ship with every dashboard:
+
+| Layer          | Colour | Default | What each marker is                                                                                     |
+| -------------- | ------ | ------- | ------------------------------------------------------------------------------------------------------- |
+| **detections** | red    | on      | one row of `mikroscope_detection`: the rule, its key and its message, from the collector's derive stage |
+| **triggers**   | orange | off     | one capture marker from the agent: the condition that fired, the field and the value                    |
+
+Hovering a marker shows the message the row carries, so the line answers *what* as well as *when*.
+The triggers layer is off by default so that a quiet dashboard stays quiet; turn it on when you are
+working with [triggered captures](https://jmrp.io/docs/mikroscope/record/triggers/).
+
+**Turning them off.** Both layers are checkboxes in the submenu row under the dashboard title — the
+same row a dashboard's variables sit in, which on the InfluxDB, Prometheus and PostgreSQL
+dashboards holds nothing else. Click the layer's name to hide its markers. That is a view setting:
+it lasts for the session, and saving the dashboard keeps it. Nothing about the underlying rows
+changes, and the Detections section still counts them.
+
+On InfluxDB each annotation is one event row with its message; on Prometheus it is
+`increase(…[1m]) > 0` at a 1-minute step, so an annotation there marks the minute, not the instant.
+
+The section captures further up are taken with both layers off, because the canned fake agent that
+fills the demonstration database fires a detection every few seconds and twenty minutes of that
+photographs as a solid red wash. This is the same overview with the detections layer on, over a
+demonstration store carrying three of them — the density a real deployment produces, and the tile
+at the bottom right counts the same three:
+
+*The detections layer, on: one red dashed line per detection, on every panel at once.*
 
 ### Why one of the four looks the way it does
 
