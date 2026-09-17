@@ -80,6 +80,16 @@ func createDatasources(ctx context.Context, tb testing.TB, admin string, stack *
 			nil,
 		},
 		{
+			"e2e-graphite", "e2e-graphite", "graphite", "http://" + stack.GraphiteWeb,
+			map[string]any{"graphiteVersion": "1.1"},
+			nil,
+		},
+		{
+			"e2e-elasticsearch", "e2e-elasticsearch", "elasticsearch", "http://" + stack.Elasticsearch,
+			map[string]any{"timeField": "@timestamp", "index": sweepIndex, "maxConcurrentShardRequests": 5},
+			map[string]any{"database": sweepIndex},
+		},
+		{
 			// The PostgreSQL the SQL sink's script is loaded into, which is
 			// what makes the third dashboard answerable here. sslmode=disable
 			// because this server listens on a container network for one test
@@ -130,10 +140,18 @@ func TestGrafanaDashboards(t *testing.T) {
 	token := grafanaToken(ctx, t, admin)
 	createDatasources(ctx, t, admin, s.stack)
 
-	for _, store := range []struct{ name, uid string }{
-		{"influxdb", "e2e-influxdb"},
-		{"prometheus", "e2e-prometheus"},
-		{"postgres", "e2e-postgres"},
+	for _, store := range []struct {
+		name, uid string
+		// The dashboard variables this store's queries carry, which Grafana
+		// would interpolate in a browser and `dashboards check` has to be
+		// told: Graphite's path prefix and host node, Elasticsearch's host.
+		vars []string
+	}{
+		{"influxdb", "e2e-influxdb", nil},
+		{"prometheus", "e2e-prometheus", nil},
+		{"postgres", "e2e-postgres", nil},
+		{"graphite", "e2e-graphite", []string{"--var", "prefix=" + graphitePfx, "--var", "host=" + sweepHostTag}},
+		{"elasticsearch", "e2e-elasticsearch", []string{"--var", "host=" + sweepHostTag}},
 	} {
 		t.Run(store.name, func(t *testing.T) {
 			if store.name == "postgres" {
@@ -171,9 +189,10 @@ func TestGrafanaDashboards(t *testing.T) {
 			// after the counts, and they are the class of fault this stack
 			// exists to catch — a plugin that cannot decode the type an
 			// aggregate returns, an escaped macro, a field that is not there.
-			out := run("check", false,
+			out := run("check", false, append([]string{
 				"--end", s.End.UTC().Format(time.RFC3339),
-				"--window", "10m")
+				"--window", "10m",
+			}, store.vars...)...)
 			withData, errors := scanCheck(t, out)
 			if withData == 0 {
 				t.Errorf("not one panel returned a row from the store this run just filled:\n%s", out)

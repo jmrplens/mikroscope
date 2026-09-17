@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/jmrplens/mikroscope/internal/dashboards"
@@ -22,10 +23,14 @@ func runDashboards(args []string) error {
 	sub := args[0]
 	fs := flag.NewFlagSet("mikroscope dashboards "+sub, flag.ContinueOnError)
 	var outDir, store, grafanaURL, dsUID, endAt string
+	// Dashboard variables, for the stores whose queries carry them: Graphite's
+	// path prefix and host node, Elasticsearch's host field. Repeatable.
+	vars := map[string]string{}
 	var window time.Duration
 	var noProbe bool
 	fs.StringVar(&outDir, "out", "dashboards", "gen: output directory")
-	fs.StringVar(&store, "store", "influxdb", "import/check: influxdb, prometheus or postgres")
+	fs.StringVar(&store, "store", "influxdb", "import/check: influxdb, prometheus, postgres, graphite or elasticsearch")
+	fs.Func("var", "check: set a dashboard variable, `name=value` (repeatable): --var host=rb5009", setVar(vars))
 	fs.StringVar(&grafanaURL, "grafana", os.Getenv("GRAFANA_URL"), "import/check: Grafana base URL (GRAFANA_URL); token from GRAFANA_TOKEN")
 	fs.StringVar(&dsUID, "datasource-uid", "", "import/check: the datasource uid to bind DS_MIKROSCOPE to")
 	fs.DurationVar(&window, "window", 15*time.Minute, "check: length of the query window")
@@ -75,9 +80,23 @@ func runDashboards(args []string) error {
 				return fmt.Errorf("--end: %w", err)
 			}
 		}
-		return dashboardsCheck(g, b, store, dsUID, window, end)
+		return dashboardsCheck(g, b, store, dsUID, window, end, vars)
 	default:
 		return fmt.Errorf("unknown dashboards subcommand %q", sub)
+	}
+}
+
+// setVar parses one --var name=value into the map the check interpolates
+// with. Grafana resolves a dashboard's variables in the browser; a check that
+// runs the same queries over the API has to be told.
+func setVar(into map[string]string) func(string) error {
+	return func(v string) error {
+		name, value, ok := strings.Cut(v, "=")
+		if !ok || name == "" {
+			return fmt.Errorf("--var wants name=value, got %q", v)
+		}
+		into[name] = value
+		return nil
 	}
 }
 
@@ -92,6 +111,9 @@ func dashboardsGen(outDir string) error {
 			return writeErr
 		}
 		fmt.Printf("%s: %d bytes\n", path, len(b))
+		if !dashboards.HasAlerts(st) {
+			continue
+		}
 		alerts, aerr := dashboards.GenerateAlerts(st)
 		if aerr != nil {
 			return aerr
@@ -105,8 +127,8 @@ func dashboardsGen(outDir string) error {
 	return nil
 }
 
-func dashboardsCheck(g *dashboards.Grafana, b []byte, store, dsUID string, window time.Duration, end time.Time) error {
-	results, err := g.Check(context.Background(), b, store, dsUID, window, end)
+func dashboardsCheck(g *dashboards.Grafana, b []byte, store, dsUID string, window time.Duration, end time.Time, vars map[string]string) error {
+	results, err := g.Check(context.Background(), b, store, dsUID, window, end, vars)
 	if err != nil {
 		return err
 	}

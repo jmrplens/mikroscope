@@ -45,13 +45,15 @@ type Store string
 // PromQL; PostgreSQL is the InfluxDB question rewritten (postgres.go), and it
 // reads what the `--sql` sink writes.
 const (
-	Influx     Store = "influxdb"
-	Prometheus Store = "prometheus"
-	Postgres   Store = "postgres"
+	Influx        Store = "influxdb"
+	Prometheus    Store = "prometheus"
+	Postgres      Store = "postgres"
+	Graphite      Store = "graphite"
+	Elasticsearch Store = "elasticsearch"
 )
 
 // Stores is every store Generate accepts, in the order the files are written.
-var Stores = []Store{Influx, Prometheus, Postgres}
+var Stores = []Store{Influx, Prometheus, Postgres, Graphite, Elasticsearch}
 
 // sqlStores are the stores whose panels carry SQL rather than PromQL.
 func (s Store) sql() bool { return s == Influx || s == Postgres }
@@ -151,6 +153,16 @@ type Panel struct {
 	// Calcs is reduceOptions.calcs for the reducing types (stat, gauge,
 	// bargauge). Empty means lastNotNull.
 	Calcs []string
+
+	// Graphite carries this panel's carbon targets and Elastic its
+	// Elasticsearch queries, in the compact form elasticsearch.go parses.
+	// Both are empty on most panels, and an empty one means the same thing as
+	// an empty PromQL: this store has no query for this panel, so the panel is
+	// not on that dashboard. Neither store is asked in SQL, and neither can be
+	// derived from the SQL: Graphite has no labels and Elasticsearch no joins,
+	// so a panel that needs either is stated for them or not at all.
+	Graphite []string
+	Elastic  []string
 
 	// Legends names the Prometheus series, one entry per Queries entry, and
 	// is ignored for InfluxDB — where the SQL already emits the name in its
@@ -318,6 +330,10 @@ func GenerateFor(store Store, present map[string]bool) ([]byte, error) {
 		// an export naming the wrong plugin imports as a dashboard whose every
 		// panel asks a datasource that does not exist.
 		pluginID, title = "grafana-postgresql-datasource", "mikroscope — RouterOS kernel telemetry (PostgreSQL)"
+	case Graphite:
+		pluginID, title = "graphite", "mikroscope — RouterOS kernel telemetry (Graphite)"
+	case Elasticsearch:
+		pluginID, title = "elasticsearch", "mikroscope — RouterOS kernel telemetry (Elasticsearch)"
 	default:
 		return nil, fmt.Errorf("unknown store %q", store)
 	}
@@ -390,11 +406,56 @@ func GenerateFor(store Store, present map[string]bool) ([]byte, error) {
 		// the Overview's own eight panels read the same at either range.
 		"refresh":     "5m",
 		"time":        map[string]any{"from": "now-3h", "to": "now"},
-		"templating":  map[string]any{"list": []any{}},
 		"annotations": map[string]any{"list": annotationsFor(store, dsUID, pluginID)},
+		"templating":  map[string]any{"list": templatingFor(store, dsUID, pluginID)},
 		"panels":      out,
 	}
 	return json.MarshalIndent(doc, "", "  ")
+}
+
+// templatingFor is the dashboard's variables. The three stores that carry the
+// host as a tag or a column need none: their queries filter on nothing,
+// because a datasource points at one database and the panels are about
+// whatever is in it.
+//
+// Graphite is different in kind. It has no labels: every dimension is a path
+// node, so the prefix and the host ARE the query, and a dashboard with them
+// hard-coded would only work for whoever chose the same --graphite-prefix and
+// --host-tag. Both are variables, each read from Graphite's own metric tree,
+// so the dashboard adapts to the tree it is pointed at.
+//
+// Elasticsearch carries the host as a document field, and one index can hold
+// several routers, so it gets the same variable as a terms aggregation.
+func templatingFor(store Store, dsUID, pluginID string) []any {
+	ds := map[string]any{"type": pluginID, "uid": dsUID}
+	variable := func(name, label, definition string, query any) map[string]any {
+		return map[string]any{
+			"name": name, "label": label, "type": "query", "datasource": ds,
+			"definition": definition, "query": query,
+			"refresh": 1, "sort": 1, "multi": false, "includeAll": false, "hide": 0,
+			"current": map[string]any{"selected": false, "text": "", "value": ""},
+			"options": []any{},
+		}
+	}
+	switch store {
+	case Graphite:
+		return []any{
+			// The first node of every path the Graphite sink writes, which is
+			// --graphite-prefix (default `mikroscope`).
+			variable("prefix", "Prefix", "*", "*"),
+			// The second: --host-tag.
+			variable("host", "Host", "$prefix.*", "$prefix.*"),
+		}
+	case Elasticsearch:
+		return []any{
+			variable("host", "Host", "host.keyword", map[string]any{
+				"find": "terms", "field": "host.keyword", "size": 100,
+			}),
+		}
+	case Influx, Prometheus, Postgres:
+		return []any{}
+	}
+	return []any{}
 }
 
 // annotationsFor draws the collector's detections and the agent's trigger
@@ -600,9 +661,20 @@ func targetsFor(store Store, p Panel, dsUID, pluginID string) []any {
 		if p.MinInterval != "" {
 			t["interval"] = p.MinInterval
 		}
-		if store.sql() {
+		switch {
+		case store.sql():
 			sqlTarget(t, store, p)
-		} else {
+		case store == Graphite:
+			// One carbon target, verbatim: the panel states it in Graphite's
+			// own function language, because nothing else can express
+			// groupByNode or aliasSub.
+			t["target"] = q
+			delete(t, "__query")
+		case store == Elasticsearch:
+			esTarget(t, q, p)
+			delete(t, "__query")
+		default:
+			delete(t, "__query")
 			t["expr"] = q
 			t["legendFormat"] = "__auto"
 			if i < len(p.Legends) && p.Legends[i] != "" {

@@ -133,7 +133,6 @@
       },
       "targets": [
         {
-          "__query": "sum by (cpu) (rate(mikroscope_cpu_ticks_total{mode!~\"idle|iowait|steal\"}[$__rate_interval])) / sum by (cpu) (rate(mikroscope_cpu_ticks_total[$__rate_interval])) * 100",
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_MIKROSCOPE}"
@@ -205,7 +204,6 @@
       },
       "targets": [
         {
-          "__query": "(mikroscope_meminfo_kbytes{field=\"MemTotal\"} - ignoring(field) mikroscope_meminfo_kbytes{field=\"MemAvailable\"}) * 100 / ignoring(field) mikroscope_meminfo_kbytes{field=\"MemTotal\"}",
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_MIKROSCOPE}"
@@ -272,7 +270,6 @@
       },
       "targets": [
         {
-          "__query": "max(mikroscope_slab_active_objects{cache=\"nf_conntrack\"})",
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_MIKROSCOPE}"
@@ -342,7 +339,6 @@
       },
       "targets": [
         {
-          "__query": "mikroscope_api_interface{kind=\"rx_bps\"}",
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_MIKROSCOPE}"
@@ -353,7 +349,6 @@
           "refId": "A"
         },
         {
-          "__query": "-1 * mikroscope_api_interface{kind=\"tx_bps\"}",
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_MIKROSCOPE}"
@@ -422,7 +417,6 @@
       },
       "targets": [
         {
-          "__query": "mikroscope_thermal_celsius",
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_MIKROSCOPE}"
@@ -488,7 +482,6 @@
       },
       "targets": [
         {
-          "__query": "mikroscope_load{period=\"1m\"}",
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_MIKROSCOPE}"
@@ -499,7 +492,6 @@
           "refId": "A"
         },
         {
-          "__query": "count(count by (cpu) (mikroscope_cpu_ticks_total))",
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_MIKROSCOPE}"
@@ -607,7 +599,6 @@
       },
       "targets": [
         {
-          "__query": "clamp_max(2 * clamp_max(resets(mikroscope_samples_total[$__rate_interval]), 1) + clamp_max(increase(mikroscope_collector_gaps_total[$__rate_interval]), 1), 2)",
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_MIKROSCOPE}"
@@ -679,7 +670,6 @@
       },
       "targets": [
         {
-          "__query": "sum(increase(mikroscope_softnet_total{kind=\"dropped\"}[$__interval]))",
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_MIKROSCOPE}"
@@ -750,7 +740,6 @@
       },
       "targets": [
         {
-          "__query": "increase(mikroscope_vm_events_total{event=\"oom_kill\"}[$__range])",
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_MIKROSCOPE}"
@@ -820,7 +809,6 @@
       },
       "targets": [
         {
-          "__query": "resets(mikroscope_api_uptime_seconds[$__range])",
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_MIKROSCOPE}"
@@ -894,7 +882,6 @@
       },
       "targets": [
         {
-          "__query": "sum(increase(mikroscope_collector_detections_total[$__interval]))",
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_MIKROSCOPE}"
@@ -966,7 +953,6 @@
       },
       "targets": [
         {
-          "__query": "increase(mikroscope_collector_gaps_total[$__interval])",
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_MIKROSCOPE}"
@@ -978,7 +964,6 @@
           "refId": "A"
         },
         {
-          "__query": "resets(mikroscope_samples_total[$__interval])",
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_MIKROSCOPE}"
@@ -1059,7 +1044,6 @@
           },
           "targets": [
             {
-              "__query": "sum by (cpu) (rate(mikroscope_cpu_ticks_total{mode!~\"idle|iowait|steal\"}[$__rate_interval])) / sum by (cpu) (rate(mikroscope_cpu_ticks_total[$__rate_interval])) * 100",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -1140,7 +1124,6 @@
           },
           "targets": [
             {
-              "__query": "mikroscope_cpu_busy_ratio_window{window=\"60s\",stat=\"p95\"} * 100",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -1214,7 +1197,6 @@
           },
           "targets": [
             {
-              "__query": "mikroscope_sample_interval_seconds{stat=\"max\"} / on() group_left() (mikroscope_sampled_seconds_total / mikroscope_samples_total)",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -1303,7 +1285,6 @@
           },
           "targets": [
             {
-              "__query": "sum by (cpu) (rate(mikroscope_cpu_ticks_total{mode!~\"idle|iowait|steal\"}[$__rate_interval])) / sum by (cpu) (rate(mikroscope_cpu_ticks_total[$__rate_interval])) * 100",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -1372,7 +1353,6 @@
           },
           "targets": [
             {
-              "__query": "sum(rate(mikroscope_cpu_ticks_total{mode=\"user\"}[$__rate_interval])) / sum(rate(mikroscope_cpu_ticks_total[$__rate_interval])) * 100",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -1383,7 +1363,6 @@
               "refId": "A"
             },
             {
-              "__query": "sum(rate(mikroscope_cpu_ticks_total{mode=\"system\"}[$__rate_interval])) / sum(rate(mikroscope_cpu_ticks_total[$__rate_interval])) * 100",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -1394,7 +1373,6 @@
               "refId": "B"
             },
             {
-              "__query": "sum(rate(mikroscope_cpu_ticks_total{mode=\"softirq\"}[$__rate_interval])) / sum(rate(mikroscope_cpu_ticks_total[$__rate_interval])) * 100",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -1405,7 +1383,6 @@
               "refId": "C"
             },
             {
-              "__query": "sum(rate(mikroscope_cpu_ticks_total{mode=\"irq\"}[$__rate_interval])) / sum(rate(mikroscope_cpu_ticks_total[$__rate_interval])) * 100",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -1416,7 +1393,6 @@
               "refId": "D"
             },
             {
-              "__query": "sum(rate(mikroscope_cpu_ticks_total{mode=\"nice\"}[$__rate_interval])) / sum(rate(mikroscope_cpu_ticks_total[$__rate_interval])) * 100",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -1427,7 +1403,6 @@
               "refId": "E"
             },
             {
-              "__query": "sum(rate(mikroscope_cpu_ticks_total{mode=\"iowait\"}[$__rate_interval])) / sum(rate(mikroscope_cpu_ticks_total[$__rate_interval])) * 100",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -1438,7 +1413,6 @@
               "refId": "F"
             },
             {
-              "__query": "sum(rate(mikroscope_cpu_ticks_total{mode=\"steal\"}[$__rate_interval])) / sum(rate(mikroscope_cpu_ticks_total[$__rate_interval])) * 100",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -1509,7 +1483,6 @@
           },
           "targets": [
             {
-              "__query": "sum by (cpu) (rate(mikroscope_cpu_ticks_total{mode=\"softirq\"}[$__rate_interval])) / sum by (cpu) (rate(mikroscope_cpu_ticks_total{mode!~\"idle|iowait|steal\"}[$__rate_interval])) * 100",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -1591,7 +1564,6 @@
           },
           "targets": [
             {
-              "__query": "sum by (le) (increase(mikroscope_cpu_busy_ticks_bucket[$__rate_interval]))",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -1663,7 +1635,6 @@
           },
           "targets": [
             {
-              "__query": "sum by (cpu) (increase(mikroscope_cpu_busy_ticks_bucket{le=~\"0|0.0\"}[$__rate_interval])) / sum by (cpu) (increase(mikroscope_cpu_busy_ticks_count[$__rate_interval])) * 100",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -1734,7 +1705,6 @@
           },
           "targets": [
             {
-              "__query": "sum(increase(mikroscope_cpu_ticks_total{mode=\"nice\"}[$__range]))",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -1745,7 +1715,6 @@
               "refId": "A"
             },
             {
-              "__query": "sum(increase(mikroscope_cpu_ticks_total{mode=\"irq\"}[$__range]))",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -1756,7 +1725,6 @@
               "refId": "B"
             },
             {
-              "__query": "sum(increase(mikroscope_cpu_ticks_total{mode=\"iowait\"}[$__range]))",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -1842,7 +1810,6 @@
           },
           "targets": [
             {
-              "__query": "(mikroscope_meminfo_kbytes{field=\"MemTotal\"} - ignoring(field) mikroscope_meminfo_kbytes{field=\"MemAvailable\"}) * 100 / ignoring(field) mikroscope_meminfo_kbytes{field=\"MemTotal\"}",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -1910,7 +1877,6 @@
           },
           "targets": [
             {
-              "__query": "mikroscope_load",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -1978,7 +1944,6 @@
           },
           "targets": [
             {
-              "__query": "mikroscope_threads",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -2047,7 +2012,6 @@
           },
           "targets": [
             {
-              "__query": "mikroscope_meminfo_kbytes{field=\"MemFree\"} * 100 / on(instance, job) group_left() mikroscope_meminfo_kbytes{field=\"MemTotal\"}",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -2058,7 +2022,6 @@
               "refId": "A"
             },
             {
-              "__query": "mikroscope_meminfo_kbytes{field=\"Cached\"} * 100 / on(instance, job) group_left() mikroscope_meminfo_kbytes{field=\"MemTotal\"}",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -2069,7 +2032,6 @@
               "refId": "B"
             },
             {
-              "__query": "mikroscope_meminfo_kbytes{field=\"Buffers\"} * 100 / on(instance, job) group_left() mikroscope_meminfo_kbytes{field=\"MemTotal\"}",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -2080,7 +2042,6 @@
               "refId": "C"
             },
             {
-              "__query": "mikroscope_meminfo_kbytes{field=\"SReclaimable\"} * 100 / on(instance, job) group_left() mikroscope_meminfo_kbytes{field=\"MemTotal\"}",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -2091,7 +2052,6 @@
               "refId": "D"
             },
             {
-              "__query": "label_replace((mikroscope_meminfo_kbytes{field=\"Slab\"} - ignoring(field) mikroscope_meminfo_kbytes{field=\"SReclaimable\"}) * 100 / ignoring(field) mikroscope_meminfo_kbytes{field=\"MemTotal\"}, \"field\", \"SUnreclaim\", \"\", \"\")",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -2154,7 +2114,6 @@
           },
           "targets": [
             {
-              "__query": "mikroscope_meminfo_kbytes{field=\"MemTotal\"} * 1024",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -2165,7 +2124,6 @@
               "refId": "A"
             },
             {
-              "__query": "mikroscope_meminfo_kbytes{field=\"MemAvailable\"} * 1024",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -2176,7 +2134,6 @@
               "refId": "B"
             },
             {
-              "__query": "mikroscope_meminfo_kbytes{field=\"MemFree\"} * 1024",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -2187,7 +2144,6 @@
               "refId": "C"
             },
             {
-              "__query": "label_replace((mikroscope_meminfo_kbytes{field=\"MemFree\"} + ignoring(field) mikroscope_meminfo_kbytes{field=\"Cached\"}) * 1024, \"field\", \"MemFree + Cached\", \"\", \"\")",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -2259,7 +2215,6 @@
           },
           "targets": [
             {
-              "__query": "mikroscope_meminfo_kbytes{field=\"Committed_AS\"} * 100 / on(instance, job) group_left() mikroscope_meminfo_kbytes{field=\"CommitLimit\"}",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -2329,7 +2284,6 @@
           },
           "targets": [
             {
-              "__query": "mikroscope_load{period=\"1m\"} / scalar(count(count by (cpu) (mikroscope_cpu_ticks_total)))",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -2386,7 +2340,6 @@
           },
           "targets": [
             {
-              "__query": "mikroscope_threads{state=\"total\"}",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -2455,7 +2408,6 @@
           },
           "targets": [
             {
-              "__query": "label_replace((mikroscope_meminfo_kbytes{field=\"Slab\"} - ignoring(field) mikroscope_meminfo_kbytes{field=\"SReclaimable\"}) * 1024, \"field\", \"SUnreclaim\", \"\", \"\")",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -2466,7 +2418,6 @@
               "refId": "A"
             },
             {
-              "__query": "mikroscope_meminfo_kbytes{field=\"SReclaimable\"} * 1024",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -2477,7 +2428,6 @@
               "refId": "B"
             },
             {
-              "__query": "mikroscope_meminfo_kbytes{field=\"Slab\"} * 1024",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -2560,7 +2510,6 @@
           },
           "targets": [
             {
-              "__query": "mikroscope_api_conntrack_entries",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -2633,7 +2582,6 @@
           },
           "targets": [
             {
-              "__query": "mikroscope_slab_active_objects{cache=\"nf_conntrack\"} * 100 / ignoring(cache) mikroscope_slab_limit_objects{cache=\"nf_conntrack\"}",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -2692,7 +2640,6 @@
           },
           "targets": [
             {
-              "__query": "mikroscope_api_conntrack_entries",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -2775,7 +2722,6 @@
           },
           "targets": [
             {
-              "__query": "mikroscope_api_interface{kind=\"rx_bps\"}",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -2786,7 +2732,6 @@
               "refId": "A"
             },
             {
-              "__query": "-1 * mikroscope_api_interface{kind=\"tx_bps\"}",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -2855,7 +2800,6 @@
           },
           "targets": [
             {
-              "__query": "mikroscope_api_interface{kind=\"rx_pps\"}",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -2866,7 +2810,6 @@
               "refId": "A"
             },
             {
-              "__query": "-1 * mikroscope_api_interface{kind=\"tx_pps\"}",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -2936,7 +2879,6 @@
           },
           "targets": [
             {
-              "__query": "mikroscope_api_interface{kind=\"rx_bps\"} / 8 / ignoring(kind) (mikroscope_api_interface{kind=\"rx_pps\"} \u003e 0)",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -2948,7 +2890,6 @@
               "refId": "A"
             },
             {
-              "__query": "mikroscope_api_interface{kind=\"tx_bps\"} / 8 / ignoring(kind) (mikroscope_api_interface{kind=\"tx_pps\"} \u003e 0)",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -3056,7 +2997,6 @@
           },
           "targets": [
             {
-              "__query": "sum by (interface, counter) (increase(mikroscope_api_interface_counter_total{counter=~\"rx-overflow|rx-fcs-error|rx-fragment|rx-too-short|rx-too-long|rx-jabber|tx-fcs-error|tx-late-collision|tx-excessive-collision\"}[$__interval]))",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -3129,7 +3069,6 @@
           },
           "targets": [
             {
-              "__query": "sum by (interface) (increase(mikroscope_api_interface_counter_total{counter=\"link-downs\"}[$__interval]))",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -3182,7 +3121,6 @@
           },
           "targets": [
             {
-              "__query": "sum by (interface, counter) (increase(mikroscope_api_interface_counter_total{counter=~\"tx-rx-.*\"}[$__range]))",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -3290,7 +3228,6 @@
           },
           "targets": [
             {
-              "__query": "mikroscope_api_interface{kind=~\"rx_drops|tx_drops|tx_queue_drops\"}",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -3342,7 +3279,6 @@
           },
           "targets": [
             {
-              "__query": "max by (interface, type, role, bridge, label, default_name) (last_over_time(mikroscope_api_interface_info[$__range]))",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -3505,7 +3441,6 @@
           },
           "targets": [
             {
-              "__query": "avg_over_time(mikroscope_api_interface[$__range])",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -3576,7 +3511,6 @@
           },
           "targets": [
             {
-              "__query": "mikroscope_api_health",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -3683,7 +3617,6 @@
           },
           "targets": [
             {
-              "__query": "mikroscope_api_up",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -3772,7 +3705,6 @@
           },
           "targets": [
             {
-              "__query": "sum by (rule) (increase(mikroscope_collector_detections_total[$__interval]))",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -3899,7 +3831,6 @@
           },
           "targets": [
             {
-              "__query": "max_over_time(mikroscope_derived_memory_pressure[$__interval])",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -3974,7 +3905,6 @@
           },
           "targets": [
             {
-              "__query": "sum by (condition) (increase(mikroscope_trigger_fired_total[$__interval]))",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -3986,7 +3916,6 @@
               "refId": "A"
             },
             {
-              "__query": "sum by (condition, reason) (increase(mikroscope_trigger_suppressed_total[$__interval]))",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -4053,7 +3982,6 @@
           },
           "targets": [
             {
-              "__query": "mikroscope_captures_held",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -4064,7 +3992,6 @@
               "refId": "A"
             },
             {
-              "__query": "mikroscope_capture_bytes",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -4075,7 +4002,6 @@
               "refId": "B"
             },
             {
-              "__query": "mikroscope_capture_budget_bytes",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -4086,7 +4012,6 @@
               "refId": "C"
             },
             {
-              "__query": "sum(increase(mikroscope_capture_refused_total[$__range]))",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -4169,7 +4094,6 @@
           },
           "targets": [
             {
-              "__query": "sum by (cpu) (rate(mikroscope_softnet_total{kind=\"processed\"}[$__rate_interval]))",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -4238,7 +4162,6 @@
           },
           "targets": [
             {
-              "__query": "sum by (cpu) (rate(mikroscope_softnet_total{kind=\"time_squeeze\"}[$__rate_interval]))",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -4307,7 +4230,6 @@
           },
           "targets": [
             {
-              "__query": "1000 * sum by (cpu) (rate(mikroscope_softnet_total{kind=\"time_squeeze\"}[$__rate_interval])) / sum by (cpu) (rate(mikroscope_softnet_total{kind=\"processed\"}[$__rate_interval]))",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -4371,7 +4293,6 @@
           },
           "targets": [
             {
-              "__query": "sum by (cpu) (rate(mikroscope_softnet_total{kind=\"processed\"}[$__rate_interval])) / scalar(sum(rate(mikroscope_softnet_total{kind=\"processed\"}[$__rate_interval])))",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -4442,7 +4363,6 @@
           },
           "targets": [
             {
-              "__query": "sum(increase(mikroscope_softnet_total{kind=\"dropped\"}[$__interval]))",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -4532,7 +4452,6 @@
           },
           "targets": [
             {
-              "__query": "sum by (cpu) (rate(mikroscope_softnet_total{kind=\"time_squeeze\"}[$__rate_interval])) / scalar(quantile(0.5, avg_over_time(sum by (cpu) (rate(mikroscope_softnet_total{kind=\"time_squeeze\"}[$__rate_interval]))[$__range:$__rate_interval])))",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -4601,7 +4520,6 @@
           },
           "targets": [
             {
-              "__query": "sum by (cpu) (rate(mikroscope_softnet_total{kind=\"processed\"}[$__rate_interval])) / sum by (cpu) (rate(mikroscope_softirq_total{kind=\"NET_RX\"}[$__rate_interval]))",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -4685,7 +4603,6 @@
           },
           "targets": [
             {
-              "__query": "mikroscope_derived_cycles_per_packet",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -4697,7 +4614,6 @@
               "refId": "A"
             },
             {
-              "__query": "mikroscope_derived_instructions_per_packet",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -4709,7 +4625,6 @@
               "refId": "B"
             },
             {
-              "__query": "mikroscope_derived_cache_misses_per_packet",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -4780,7 +4695,6 @@
           },
           "targets": [
             {
-              "__query": "mikroscope_derived_packets_per_interrupt",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -4853,7 +4767,6 @@
           },
           "targets": [
             {
-              "__query": "mikroscope_derived_fastpath_share{direction=\"rx\"}",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -4865,7 +4778,6 @@
               "refId": "A"
             },
             {
-              "__query": "mikroscope_derived_fastpath_share{direction=\"tx\"}",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -4940,7 +4852,6 @@
           },
           "targets": [
             {
-              "__query": "sum by (cpu) (increase(mikroscope_softnet_burst_samples_total[$__interval]))",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -5025,7 +4936,6 @@
           },
           "targets": [
             {
-              "__query": "sum by (irq, device) (label_replace(label_replace(sum by (irq, name) (rate(mikroscope_irq_total[$__rate_interval])), \"device\", \"$1\", \"name\", \"(.*)\"), \"device\", \"$1\", \"name\", \".*[ ][ ]+(.*)\"))",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -5096,7 +5006,6 @@
           },
           "targets": [
             {
-              "__query": "sum by (irq, device) (label_replace(label_replace(sum by (irq, name) (rate(mikroscope_irq_total[$__rate_interval])), \"device\", \"$1\", \"name\", \"(.*)\"), \"device\", \"$1\", \"name\", \".*[ ][ ]+(.*)\")) and on (device) (topk(1, count by (device) (label_replace(label_replace(sum by (irq, name) (rate(mikroscope_irq_total[$__rate_interval])), \"device\", \"$1\", \"name\", \"(.*)\"), \"device\", \"$1\", \"name\", \".*[ ][ ]+(.*)\")) \u003e 1))",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -5166,7 +5075,6 @@
           },
           "targets": [
             {
-              "__query": "(max by (device) (label_replace(label_replace(sum by (irq, name) (rate(mikroscope_irq_total[$__rate_interval])), \"device\", \"$1\", \"name\", \"(.*)\"), \"device\", \"$1\", \"name\", \".*[ ][ ]+(.*)\")) / avg by (device) (label_replace(label_replace(sum by (irq, name) (rate(mikroscope_irq_total[$__rate_interval])), \"device\", \"$1\", \"name\", \"(.*)\"), \"device\", \"$1\", \"name\", \".*[ ][ ]+(.*)\"))) and (count by (device) (label_replace(label_replace(sum by (irq, name) (rate(mikroscope_irq_total[$__rate_interval])), \"device\", \"$1\", \"name\", \"(.*)\"), \"device\", \"$1\", \"name\", \".*[ ][ ]+(.*)\")) \u003e 1)",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -5238,7 +5146,6 @@
           },
           "targets": [
             {
-              "__query": "sum by (cpu, irq, device) (label_replace(label_replace(sum by (cpu, irq, name) (rate(mikroscope_irq_total[$__rate_interval])), \"device\", \"$1\", \"name\", \"(.*)\"), \"device\", \"$1\", \"name\", \".*[ ][ ]+(.*)\"))",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -5309,7 +5216,6 @@
           },
           "targets": [
             {
-              "__query": "sum(rate(mikroscope_irq_total[$__rate_interval])) / sum(rate(mikroscope_interrupts_total[$__rate_interval])) * 100",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -5373,7 +5279,6 @@
           },
           "targets": [
             {
-              "__query": "sum by (irq, device) (label_replace(label_replace(sum by (irq, name) (rate(mikroscope_irq_total[$__rate_interval])), \"device\", \"$1\", \"name\", \"(.*)\"), \"device\", \"$1\", \"name\", \".*[ ][ ]+(.*)\")) / scalar(sum(rate(mikroscope_irq_total[$__rate_interval]))) * 100",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -5443,7 +5348,6 @@
           },
           "targets": [
             {
-              "__query": "sum by (cpu) (rate(mikroscope_softirq_total{kind=\"NET_RX\"}[$__rate_interval]))",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -5512,7 +5416,6 @@
           },
           "targets": [
             {
-              "__query": "sum by (kind) (rate(mikroscope_softirq_total[$__rate_interval]))",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -5581,7 +5484,6 @@
           },
           "targets": [
             {
-              "__query": "sum(rate(mikroscope_cpu_ticks_total{mode=\"softirq\"}[$__rate_interval])) * 1e4 / sum(rate(mikroscope_softirq_total[$__rate_interval]))",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -5673,7 +5575,6 @@
           },
           "targets": [
             {
-              "__query": "sum(rate(mikroscope_softirq_total{kind=\"NET_TX\"}[$__rate_interval]))",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -5684,7 +5585,6 @@
               "refId": "A"
             },
             {
-              "__query": "sum(rate(mikroscope_softirq_total{kind=\"TASKLET\"}[$__rate_interval]))",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -5766,7 +5666,6 @@
           },
           "targets": [
             {
-              "__query": "mikroscope_thermal_celsius",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -5835,7 +5734,6 @@
           },
           "targets": [
             {
-              "__query": "deriv(mikroscope_thermal_celsius[$__rate_interval]) * 60",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -5995,7 +5893,6 @@
           },
           "targets": [
             {
-              "__query": "min((increase(mikroscope_kmsg_records_total{level=\"emerg\"}[$__rate_interval]) \u003e 0) * 0 or (increase(mikroscope_kmsg_records_total{level=\"alert\"}[$__rate_interval]) \u003e 0) * 0 + 1 or (increase(mikroscope_kmsg_records_total{level=\"crit\"}[$__rate_interval]) \u003e 0) * 0 + 2 or (increase(mikroscope_kmsg_records_total{level=\"err\"}[$__rate_interval]) \u003e 0) * 0 + 3 or (increase(mikroscope_kmsg_records_total{level=\"warn\"}[$__rate_interval]) \u003e 0) * 0 + 4 or (increase(mikroscope_kmsg_records_total{level=\"notice\"}[$__rate_interval]) \u003e 0) * 0 + 5 or (increase(mikroscope_kmsg_records_total{level=\"info\"}[$__rate_interval]) \u003e 0) * 0 + 6 or (increase(mikroscope_kmsg_records_total{level=\"debug\"}[$__rate_interval]) \u003e 0) * 0 + 7)",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -6067,7 +5964,6 @@
           },
           "targets": [
             {
-              "__query": "sum by (level) (rate(mikroscope_kmsg_records_total[$__rate_interval]))",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -6125,7 +6021,6 @@
           },
           "targets": [
             {
-              "__query": "sum(rate(mikroscope_kmsg_records_total{level=~\"emerg|alert|crit|err|warn\"}[$__rate_interval]))",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -6136,7 +6031,6 @@
               "refId": "A"
             },
             {
-              "__query": "sum(rate(mikroscope_kmsg_records_total[$__rate_interval]))",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -6200,7 +6094,6 @@
           },
           "targets": [
             {
-              "__query": "sum by (level) (increase(mikroscope_kmsg_records_total[$__range]))",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -6274,7 +6167,6 @@
           },
           "targets": [
             {
-              "__query": "sum by (port, kind) (increase(mikroscope_kmsg_port_records_total[$__interval]))",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -6328,7 +6220,6 @@
           },
           "targets": [
             {
-              "__query": "sum by (port, kind) (increase(mikroscope_kmsg_port_records_total[$__range]))",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -6414,7 +6305,6 @@
           },
           "targets": [
             {
-              "__query": "clamp_max(max by (cpu) (histogram_quantile(1, sum by (cpu, le) (increase(mikroscope_cpu_busy_run_seconds_bucket{threshold=\"0.9\"}[$__interval])))), 60)",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -6485,7 +6375,6 @@
           },
           "targets": [
             {
-              "__query": "clamp_max(max by (cpu) (histogram_quantile(1, sum by (cpu, le) (increase(mikroscope_cpu_busy_run_seconds_bucket{threshold=\"0.5\"}[$__interval])))), 60)",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -6566,7 +6455,6 @@
           },
           "targets": [
             {
-              "__query": "mikroscope_cpu_busy_run_open_seconds",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -6636,7 +6524,6 @@
           },
           "targets": [
             {
-              "__query": "max_over_time(mikroscope_procs_blocked[$__interval])",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -6648,7 +6535,6 @@
               "refId": "A"
             },
             {
-              "__query": "rate(mikroscope_forks_total[$__rate_interval])",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -6733,7 +6619,6 @@
           },
           "targets": [
             {
-              "__query": "sum by (order) (mikroscope_buddy_free_blocks)",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -6809,7 +6694,6 @@
           },
           "targets": [
             {
-              "__query": "sum(rate(mikroscope_vm_events_total{event=~\"pgsteal_kswapd|pgsteal_direct\"}[$__rate_interval])) / clamp_min(sum(rate(mikroscope_vm_events_total{event=~\"pgscan_kswapd|pgscan_direct\"}[$__rate_interval])), 0.0001)",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -6915,7 +6799,6 @@
           },
           "targets": [
             {
-              "__query": "sum(rate(mikroscope_vm_events_total{event=~\"pgscan_kswapd|pgscan_direct\"}[$__rate_interval]))",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -7021,7 +6904,6 @@
           },
           "targets": [
             {
-              "__query": "sum by (event) (rate(mikroscope_vm_events_total{event=~\"allocstall|compact_stall|pswpin|pswpout\"}[$__rate_interval]))",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -7090,7 +6972,6 @@
           },
           "targets": [
             {
-              "__query": "sum by (event) (rate(mikroscope_vm_events_total{event=~\"pgalloc|pgfree\"}[$__rate_interval]))",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -7159,7 +7040,6 @@
           },
           "targets": [
             {
-              "__query": "sum by (event) (rate(mikroscope_vm_events_total{event=~\"pgfault|pgmajfault\"}[$__rate_interval]))",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -7228,7 +7108,6 @@
           },
           "targets": [
             {
-              "__query": "rate(mikroscope_context_switches_total[$__rate_interval])",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -7239,7 +7118,6 @@
               "refId": "A"
             },
             {
-              "__query": "rate(mikroscope_interrupts_total[$__rate_interval])",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -7359,7 +7237,6 @@
           },
           "targets": [
             {
-              "__query": "mikroscope_meminfo_kbytes{field=\"Dirty\"} * 1024",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -7428,7 +7305,6 @@
           },
           "targets": [
             {
-              "__query": "mikroscope_meminfo_kbytes{field=~\"Active|Inactive\"} * 1024",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -7497,7 +7373,6 @@
           },
           "targets": [
             {
-              "__query": "mikroscope_meminfo_kbytes{field=~\"Mapped|KernelStack|PageTables\"} * 1024",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -7580,7 +7455,6 @@
           },
           "targets": [
             {
-              "__query": "sum by (cpu) (rate(mikroscope_perf_events_total{counter=\"instructions\"}[$__rate_interval])) / sum by (cpu) (rate(mikroscope_perf_events_total{counter=\"cycles\"}[$__rate_interval]))",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -7637,7 +7511,6 @@
           },
           "targets": [
             {
-              "__query": "sum by (cpu) (rate(mikroscope_perf_events_total{counter=\"cycles\"}[$__rate_interval])) / sum by (cpu) (rate(mikroscope_perf_events_total{counter=\"bus-cycles\"}[$__rate_interval]))",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -7720,7 +7593,6 @@
           },
           "targets": [
             {
-              "__query": "sum by (cpu) (rate(mikroscope_perf_events_total{counter=\"cycles\"}[$__rate_interval])) / sum by (cpu) (rate(mikroscope_cpu_clock_cycles_total[$__rate_interval])) * 100",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -7790,7 +7662,6 @@
           },
           "targets": [
             {
-              "__query": "sum by (cpu) (rate(mikroscope_perf_events_total{counter=\"cache-misses\"}[$__rate_interval])) / sum by (cpu) (rate(mikroscope_perf_events_total{counter=\"cache-references\"}[$__rate_interval])) * 100",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -7861,7 +7732,6 @@
           },
           "targets": [
             {
-              "__query": "sum by (cpu) (rate(mikroscope_perf_events_total{counter=\"cache-misses\"}[$__rate_interval])) / sum by (cpu) (rate(mikroscope_perf_events_total{counter=\"instructions\"}[$__rate_interval])) * 1000",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -7932,7 +7802,6 @@
           },
           "targets": [
             {
-              "__query": "sum by (cpu) (rate(mikroscope_perf_events_total{counter=\"branch-misses\"}[$__rate_interval])) / sum by (cpu) (rate(mikroscope_perf_events_total{counter=\"instructions\"}[$__rate_interval])) * 1000",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -7985,7 +7854,6 @@
           },
           "targets": [
             {
-              "__query": "count(count by (counter) (mikroscope_perf_events_total))",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -8070,7 +7938,6 @@
           },
           "targets": [
             {
-              "__query": "mikroscope_mtd_ecc_corrected_bits_total",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -8081,7 +7948,6 @@
               "refId": "A"
             },
             {
-              "__query": "mikroscope_mtd_bitflip_threshold",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -8159,7 +8025,6 @@
           },
           "targets": [
             {
-              "__query": "mikroscope_mtd_ecc_failures_total",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -8170,7 +8035,6 @@
               "refId": "A"
             },
             {
-              "__query": "mikroscope_mtd_blocks{kind=\"bad\"}",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -8253,7 +8117,6 @@
           },
           "targets": [
             {
-              "__query": "mikroscope_api_cpu_load",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -8264,7 +8127,6 @@
               "refId": "A"
             },
             {
-              "__query": "label_replace(avg(sum by (cpu) (rate(mikroscope_cpu_ticks_total{mode!~\"idle|iowait\"}[$__rate_interval])) / sum by (cpu) (rate(mikroscope_cpu_ticks_total[$__rate_interval])) * 100), \"tier\", \"kernel busy (mean across cores)\", \"\", \"\")",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -8326,7 +8188,6 @@
           },
           "targets": [
             {
-              "__query": "mikroscope_api_cpu_load - on() group_left() avg(sum by (cpu) (rate(mikroscope_cpu_ticks_total{mode!~\"idle|iowait\"}[$__rate_interval])) / sum by (cpu) (rate(mikroscope_cpu_ticks_total[$__rate_interval])) * 100)",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -8398,7 +8259,6 @@
           },
           "targets": [
             {
-              "__query": "mikroscope_api_core_percent{kind=\"load\"}",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -8462,7 +8322,6 @@
           },
           "targets": [
             {
-              "__query": "avg_over_time(mikroscope_api_core_percent{kind=\"load\"}[$__range])",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -8473,7 +8332,6 @@
               "refId": "A"
             },
             {
-              "__query": "label_replace(sum by (cpu) (rate(mikroscope_cpu_ticks_total{mode!~\"idle|iowait\"}[$__range])) / sum by (cpu) (rate(mikroscope_cpu_ticks_total[$__range])) * 100, \"tier\", \"kernel busy\", \"\", \"\")",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -8542,7 +8400,6 @@
           },
           "targets": [
             {
-              "__query": "mikroscope_api_core_percent{kind=\"irq\"}",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -8553,7 +8410,6 @@
               "refId": "A"
             },
             {
-              "__query": "label_replace(sum by (cpu) (rate(mikroscope_cpu_ticks_total{mode=~\"softirq|system\"}[$__rate_interval])) / sum by (cpu) (rate(mikroscope_cpu_ticks_total[$__rate_interval])) * 100, \"kind\", \"kernel softirq+system\", \"\", \"\")",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -8624,7 +8480,6 @@
           },
           "targets": [
             {
-              "__query": "max(max_over_time(mikroscope_api_core_percent{kind=\"disk\"}[$__range]))",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -8698,7 +8553,6 @@
           },
           "targets": [
             {
-              "__query": "(1 - mikroscope_api_memory_bytes{kind=\"free\"} / ignoring(kind) mikroscope_api_memory_bytes{kind=\"total\"}) * 100",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -8769,7 +8623,6 @@
           },
           "targets": [
             {
-              "__query": "mikroscope_api_memory_bytes{kind=\"free\"}",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -8780,7 +8633,6 @@
               "refId": "A"
             },
             {
-              "__query": "label_replace((mikroscope_meminfo_kbytes{field=\"MemFree\"} + ignoring(field) mikroscope_meminfo_kbytes{field=\"Cached\"}) * 1024, \"field\", \"MemFree + Cached\", \"\", \"\")",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -8791,7 +8643,6 @@
               "refId": "B"
             },
             {
-              "__query": "mikroscope_meminfo_kbytes{field=\"MemAvailable\"} * 1024",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -8848,7 +8699,6 @@
           },
           "targets": [
             {
-              "__query": "mikroscope_api_uptime_seconds",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -8933,7 +8783,6 @@
           },
           "targets": [
             {
-              "__query": "rate(mikroscope_self_cpu_usec_total[$__rate_interval]) / 1e6 * 100",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -8944,7 +8793,6 @@
               "refId": "A"
             },
             {
-              "__query": "vector(2)",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -9013,7 +8861,6 @@
           },
           "targets": [
             {
-              "__query": "rate(mikroscope_self_cpu_usec_total[$__rate_interval]) / (sum by (instance, job) (rate(mikroscope_cpu_ticks_total{mode!~\"idle|iowait|steal\"}[$__rate_interval])) * 10000) * 100",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -9082,7 +8929,6 @@
           },
           "targets": [
             {
-              "__query": "rate(mikroscope_self_cpu_usec_total[$__rate_interval]) / rate(mikroscope_samples_total[$__rate_interval])",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -9151,7 +8997,6 @@
           },
           "targets": [
             {
-              "__query": "mikroscope_self_rss_bytes",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -9162,7 +9007,6 @@
               "refId": "A"
             },
             {
-              "__query": "mikroscope_self_cgroup_memory_bytes",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -9173,7 +9017,6 @@
               "refId": "B"
             },
             {
-              "__query": "mikroscope_self_cgroup_memory_max_bytes",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -9184,7 +9027,6 @@
               "refId": "C"
             },
             {
-              "__query": "vector(16777216)",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -9265,7 +9107,6 @@
           },
           "targets": [
             {
-              "__query": "(mikroscope_self_cgroup_memory_max_bytes - on() group_left() mikroscope_self_rss_bytes) / mikroscope_self_cgroup_memory_max_bytes * 100",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -9276,7 +9117,6 @@
               "refId": "A"
             },
             {
-              "__query": "(mikroscope_self_cgroup_memory_max_bytes - on() group_left() mikroscope_self_cgroup_memory_bytes) / mikroscope_self_cgroup_memory_max_bytes * 100",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -9348,7 +9188,6 @@
           },
           "targets": [
             {
-              "__query": "avg_over_time((rate(mikroscope_self_cpu_usec_total[$__rate_interval]) / 1e6 * 100 / 2 * 100)[$__range:$__rate_interval])",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -9418,7 +9257,6 @@
           },
           "targets": [
             {
-              "__query": "rate(mikroscope_samples_total[$__rate_interval])",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -9527,7 +9365,6 @@
           },
           "targets": [
             {
-              "__query": "clamp_max(2 * clamp_max(resets(mikroscope_samples_total[$__rate_interval]), 1) + clamp_max(increase(mikroscope_collector_gaps_total[$__rate_interval]), 1), 2)",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -9599,7 +9436,6 @@
           },
           "targets": [
             {
-              "__query": "increase(mikroscope_collector_gaps_total[$__interval])",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -9611,7 +9447,6 @@
               "refId": "A"
             },
             {
-              "__query": "resets(mikroscope_samples_total[$__interval])",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -9623,7 +9458,6 @@
               "refId": "B"
             },
             {
-              "__query": "increase(mikroscope_slipped_total[$__interval])",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -9719,7 +9553,6 @@
           },
           "targets": [
             {
-              "__query": "sum by (le) (increase(mikroscope_tick_interval_seconds_bucket[$__rate_interval]))",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -9801,7 +9634,6 @@
           },
           "targets": [
             {
-              "__query": "sum by (le) (increase(mikroscope_tick_wake_latency_seconds_bucket[$__rate_interval]))",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -9883,7 +9715,6 @@
           },
           "targets": [
             {
-              "__query": "sum by (le) (increase(mikroscope_tick_read_seconds_bucket[$__rate_interval]))",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -9955,7 +9786,6 @@
           },
           "targets": [
             {
-              "__query": "increase(mikroscope_counter_resets_total[$__interval])",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -10027,7 +9857,6 @@
           },
           "targets": [
             {
-              "__query": "increase(mikroscope_self_throttled_periods_total[$__interval])",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -10039,7 +9868,6 @@
               "refId": "A"
             },
             {
-              "__query": "increase(mikroscope_self_oom_kills_total[$__interval])",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -10177,7 +10005,6 @@
           },
           "targets": [
             {
-              "__query": "mikroscope_source_cadence_hz",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -10259,7 +10086,6 @@
           },
           "targets": [
             {
-              "__query": "mikroscope_source_age_seconds",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -10442,7 +10268,6 @@
           },
           "targets": [
             {
-              "__query": "mikroscope_device_info",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -10573,7 +10398,6 @@
           },
           "targets": [
             {
-              "__query": "mikroscope_thermal_critical_celsius",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -10728,7 +10552,6 @@
           },
           "targets": [
             {
-              "__query": "mikroscope_cpu_frequency_limit_hertz",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -10815,7 +10638,6 @@
           },
           "targets": [
             {
-              "__query": "sum by (resource, kind) (rate(mikroscope_psi_stall_usec_total[$__rate_interval])) / 1e6 * 100",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -10897,7 +10719,6 @@
           },
           "targets": [
             {
-              "__query": "max by (device) (mikroscope_disk_inflight)",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -10968,7 +10789,6 @@
           },
           "targets": [
             {
-              "__query": "sum by (device, op) (rate(mikroscope_disk_operations_total[$__rate_interval]))",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -11039,7 +10859,6 @@
           },
           "targets": [
             {
-              "__query": "sum by (device) (rate(mikroscope_disk_io_seconds_total[$__rate_interval])) * 100",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
@@ -11110,7 +10929,6 @@
           },
           "targets": [
             {
-              "__query": "sum by (device, op) (rate(mikroscope_disk_sectors_total[$__rate_interval])) * 512",
               "datasource": {
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"

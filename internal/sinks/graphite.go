@@ -26,6 +26,7 @@ import (
 //	<prefix>.<host>.softnet.<cpu>.{processed,dropped,time_squeeze}
 //	<prefix>.<host>.irq.<id>.<name>.count       <prefix>.<host>.softirq.<kind>.count
 //	<prefix>.<host>.mem.<field>_kb              <prefix>.<host>.load.{load1,load5,load15,running,threads}
+//	  (every field the agent reads from /proc/meminfo, not a subset)
 //	<prefix>.<host>.vm.<counter>                <prefix>.<host>.vmg.<gauge>
 //	<prefix>.<host>.self.{cpu_us,rss_bytes,cgroup_mem}
 //	<prefix>.<host>.psi.<resource>_us           <prefix>.<host>.sched.<cpu>.{run_ns,wait_ns}
@@ -315,6 +316,23 @@ func (s *Graphite) kernelMemory(k *sample.Sample, ts int64) {
 	s.putU("mem.sunreclaim_kb", k.Mem.SUnreclaim, ts)
 	s.putU("mem.dirty_kb", k.Mem.Dirty, ts)
 	s.putU("mem.writeback_kb", k.Mem.Writeback, ts)
+	// The rest of what the agent reads from /proc/meminfo, as the InfluxDB and
+	// SQL sinks carry it: the composition (anon, buffers, active, inactive,
+	// shmem, reclaimable slab), what the kernel's own bookkeeping costs
+	// (mapped, kernel stacks, page tables) and the commit headroom. Eight
+	// fields were missing here, and a Graphite dashboard could ask nothing
+	// about any of them.
+	s.putU("mem.anon_kb", k.Mem.AnonPages, ts)
+	s.putU("mem.buffers_kb", k.Mem.Buffers, ts)
+	s.putU("mem.sreclaimable_kb", k.Mem.SReclaimable, ts)
+	s.putU("mem.active_kb", k.Mem.Active, ts)
+	s.putU("mem.inactive_kb", k.Mem.Inactive, ts)
+	s.putU("mem.shmem_kb", k.Mem.Shmem, ts)
+	s.putU("mem.mapped_kb", k.Mem.Mapped, ts)
+	s.putU("mem.kernel_stack_kb", k.Mem.KernelStack, ts)
+	s.putU("mem.page_tables_kb", k.Mem.PageTables, ts)
+	s.putU("mem.committed_kb", k.Mem.CommittedAS, ts)
+	s.putU("mem.commit_limit_kb", k.Mem.CommitLimit, ts)
 	s.putF("load.load1", k.Load.Load1, 2, ts)
 	s.putF("load.load5", k.Load.Load5, 2, ts)
 	s.putF("load.load15", k.Load.Load15, 2, ts)
