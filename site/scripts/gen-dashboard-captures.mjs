@@ -103,17 +103,8 @@ url.searchParams.set("theme", "dark");
 await page.goto(url.href, { waitUntil: "networkidle", timeout: 120_000 });
 await page.waitForTimeout(4000);
 
-// The time picker and the refresh control are chrome, not dashboard, and they
-// are sticky: they sit over the top of whatever is photographed.
-await page.addStyleTag({
-	content: `
-		[data-testid="data-testid dashboard controls"],
-		.dashboard-controls { display: none !important; }
-	`,
-});
-
 // The dashboard carries two annotation layers — detections and triggers — and
-// the fake agent fires both continuously, so on a 20-minute run every graph is
+// the fake agent fires both continuously, so on a long run every graph is
 // behind a picket fence of vertical markers. They are a real feature and they
 // are documented elsewhere; here they hide the data the captures exist to
 // show, so both toggles go off before anything is photographed.
@@ -193,6 +184,17 @@ if (rows.length === 0) {
 const written = [];
 // The Overview is not a collapsed row: it is what the dashboard opens on.
 await hideAnnotations();
+
+// Only now: the toggles above live in this bar, and hiding it first makes them
+// unclickable. The time picker and the refresh control are chrome, not
+// dashboard, and the bar is sticky — it sits over the top of whatever is
+// photographed.
+await page.addStyleTag({
+	content: `
+		[data-testid="data-testid dashboard controls"],
+		.dashboard-controls { display: none !important; }
+	`,
+});
 await settle();
 const overview = page.locator(".react-grid-layout").first();
 await overview.screenshot({ path: path.join(OUT, "00-overview.png") });

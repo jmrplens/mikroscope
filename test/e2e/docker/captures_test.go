@@ -72,7 +72,10 @@ func TestFillStoreForCaptures(t *testing.T) {
 	defer agent.Close()
 
 	started := time.Now()
-	cmd := exec.CommandContext(ctx, bin, "forward",
+	// The binary is the one this function built two dozen lines up, into a
+	// directory under the repository, and every argument is a constant or a
+	// port this process just reserved.
+	cmd := exec.CommandContext(ctx, bin, "forward", // #nosec G204,G702
 		"--subnet", subnet, "--port", strconv.Itoa(port), "--transport", "direct",
 		"--for", forSpan.String(), "--api-mode", "off", "--host-tag", capturesHostTag,
 		"--influx", "http://"+stack.InfluxDB+"/api/v3/write_lp?db="+capturesDB+"&precision=nanosecond",
