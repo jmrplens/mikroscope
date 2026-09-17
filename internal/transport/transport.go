@@ -88,6 +88,17 @@ type CapabilityFetcher interface {
 	Capabilities(ctx context.Context) (agent.Capabilities, error)
 }
 
+// SamplerStatsFetcher is the optional side of a Puller that can read the
+// agent's /sampler: what only the agent can count about itself — ticks taken,
+// ticks slipped, and what the trigger evaluator has fired, suppressed,
+// refused and is holding. The collector reads it on its health cadence and
+// hands it to every sink, which is what keeps those figures from being
+// readable through a Prometheus scrape alone.
+type SamplerStatsFetcher interface {
+	// SamplerStats returns the agent's /sampler.
+	SamplerStats(ctx context.Context) (agent.SamplerStats, error)
+}
+
 // Puller fetches samples in order.
 type Puller interface {
 	// Health returns /healthz.
@@ -186,6 +197,19 @@ func (d *Direct) Capabilities(ctx context.Context) (agent.Capabilities, error) {
 	return c, nil
 }
 
+// SamplerStats implements SamplerStatsFetcher.
+func (d *Direct) SamplerStats(ctx context.Context) (agent.SamplerStats, error) {
+	body, err := d.get(ctx, "/sampler")
+	if err != nil {
+		return agent.SamplerStats{}, err
+	}
+	var st agent.SamplerStats
+	if decErr := json.Unmarshal(body, &st); decErr != nil {
+		return agent.SamplerStats{}, fmt.Errorf("sampler: %w", decErr)
+	}
+	return st, nil
+}
+
 // Pull implements Puller.
 func (d *Direct) Pull(ctx context.Context, since uint64, limit int) ([][]byte, *Gap, error) {
 	body, err := d.get(ctx, "/snapshot?since="+strconv.FormatUint(since, 10)+"&max="+strconv.Itoa(limit))
@@ -263,6 +287,19 @@ func (r *Relay) Capabilities(ctx context.Context) (agent.Capabilities, error) {
 		return agent.Capabilities{}, fmt.Errorf("capabilities via relay: %w", decErr)
 	}
 	return c, nil
+}
+
+// SamplerStats implements SamplerStatsFetcher.
+func (r *Relay) SamplerStats(ctx context.Context) (agent.SamplerStats, error) {
+	data, err := r.Fetcher.Fetch(ctx, r.Base+"/sampler")
+	if err != nil {
+		return agent.SamplerStats{}, err
+	}
+	var st agent.SamplerStats
+	if decErr := json.Unmarshal([]byte(data), &st); decErr != nil {
+		return agent.SamplerStats{}, fmt.Errorf("sampler via relay: %w", decErr)
+	}
+	return st, nil
 }
 
 // relayHeadroomPercent is how much more than the mean line the cap allows

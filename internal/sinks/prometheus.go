@@ -4,16 +4,19 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/jmrplens/mikroscope/internal/agent"
 	"github.com/jmrplens/mikroscope/internal/apitier"
 	"github.com/jmrplens/mikroscope/internal/derive"
+	"github.com/jmrplens/mikroscope/internal/expo"
 )
 
 // Prometheus serves a /metrics on the collector host: the kernel tier's
@@ -23,10 +26,13 @@ import (
 // the collector's own counters.
 type Prometheus struct {
 	mu     sync.Mutex
-	totals *agent.Totals
-	ring   *agent.Ring
-	api    *apitier.Sample
-	ct     *uint64 // last conntrack count: it arrives only every N seconds, the gauge must not blink
+	totals *expo.Totals
+	// sampler is the agent's last account of itself: ticks, slips and what
+	// the trigger evaluator has done. Nil until the first read arrives.
+	sampler *agent.SamplerStats
+	ring    *agent.Ring
+	api     *apitier.Sample
+	ct      *uint64 // last conntrack count: it arrives only every N seconds, the gauge must not blink
 	// ifc is the last per-port counter set, held for the same reason as ct:
 	// it is polled every CountersEvery and would otherwise be absent from
 	// every scrape that lands between two polls — the family-vanishes defect
@@ -61,7 +67,7 @@ func NewPrometheus(ctx context.Context, addr string, rateHz int, version string)
 	// collector has read the connected agent's real rate, because a window
 	// labeled 60s that holds 600 samples covers 12 s against a 50 Hz agent and
 	// 6 s against a 100 Hz one.
-	p := &Prometheus{totals: agent.NewTotals(), ring: agent.NewRing(windowSeconds * rateHz), rateHz: rateHz, start: time.Now(), version: version}
+	p := &Prometheus{totals: expo.NewTotals(), ring: agent.NewRing(windowSeconds * rateHz), rateHz: rateHz, start: time.Now(), version: version}
 	p.totals.SetRateHz(rateHz)
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /metrics", p.metrics)
@@ -105,8 +111,17 @@ func (p *Prometheus) Write(e Event) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	switch {
+	case e.Sampler != nil:
+		p.sampler = e.Sampler
 	case e.Kernel != nil:
 		p.totals.Add(*e.Kernel)
+		// The sampler's own timing rides in the sample now, so the collector
+		// folds the three tick histograms the agent used to render itself.
+		// Always, not only when the two latencies are set: the interval is in
+		// every sample, and an agent old enough to send none of the three
+		// would leave the families missing rather than flat, which reads as a
+		// broken exposition rather than as an old agent.
+		p.totals.AddTiming(e.Kernel.DtNS, e.Kernel.Self.WakeNS, e.Kernel.Self.ReadNS)
 		if err := p.ring.Push(*e.Kernel); err != nil {
 			p.stats.Errors++
 		}
@@ -169,7 +184,14 @@ func (p *Prometheus) metrics(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.totals.Render(w, agent.Exposition{Ring: p.ring, RateHz: p.rateHz, Version: p.version, Start: p.start, Caps: p.caps})
+	// Sampler is true once the agent's own counters have reached us: only
+	// then can this exposition say how many ticks slipped, and a 0 before
+	// that would be a claim about a sampler nobody has asked yet.
+	p.totals.Render(w, expo.Exposition{
+		Ring: p.ring, RateHz: p.rateHz, Version: p.version, Start: p.start, Caps: p.caps,
+		Sampler: p.sampler != nil, Slipped: p.slipped(),
+	})
+	p.writeSampler(w)
 	fmt.Fprintf(w, "# HELP mikroscope_collector_gaps_total Ring gaps the collector saw (samples lost between pulls).\n# TYPE mikroscope_collector_gaps_total counter\nmikroscope_collector_gaps_total %d\n", p.gaps)
 	if len(p.trig) > 0 {
 		fmt.Fprintf(w, "# HELP mikroscope_collector_triggers_total Capture triggers the collector saw the agent fire, per cause; the windows are on the agent under /captures.\n# TYPE mikroscope_collector_triggers_total counter\n")
@@ -326,6 +348,54 @@ func writeAPIInterfaceCounters(w http.ResponseWriter, cs []apitier.IfaceCounters
 		sort.Strings(keys)
 		for _, k := range keys {
 			fmt.Fprintf(w, "mikroscope_api_interface_counter_total{interface=%q,counter=%q} %d\n", c.Name, k, c.Counters[k])
+		}
+	}
+}
+
+// slipped is the agent's slip counter, or 0 before the first read of it.
+func (p *Prometheus) slipped() uint64 {
+	if p.sampler == nil {
+		return 0
+	}
+	return p.sampler.Slipped
+}
+
+// writeSampler renders what only the agent can count about itself. Until
+// 1.0.5 these families existed on the agent's own /metrics and nowhere else,
+// which made them the one part of the project a sink could not carry; the
+// collector now reads them on its health cadence and renders them here, so a
+// deployment that scrapes only the collector has them.
+func (p *Prometheus) writeSampler(w io.Writer) {
+	st := p.sampler
+	if st == nil {
+		return
+	}
+	fmt.Fprintf(w, "# HELP mikroscope_sampler_ticks_total Ticks the agent took since it started, as the agent counts them.\n# TYPE mikroscope_sampler_ticks_total counter\nmikroscope_sampler_ticks_total %d\n", st.Ticks)
+	c := st.Captures
+	if c == nil {
+		return
+	}
+	fmt.Fprintf(w, "# HELP mikroscope_captures_held Captures currently retained on the agent.\n# TYPE mikroscope_captures_held gauge\nmikroscope_captures_held %d\n", c.Held)
+	fmt.Fprintf(w, "# HELP mikroscope_capture_bytes Ring bytes the retained captures pin, against mikroscope_capture_budget_bytes.\n# TYPE mikroscope_capture_bytes gauge\nmikroscope_capture_bytes %d\n", c.Bytes)
+	fmt.Fprintf(w, "# TYPE mikroscope_capture_budget_bytes gauge\nmikroscope_capture_budget_bytes %d\n", c.BudgetBytes)
+	fmt.Fprintf(w, "# HELP mikroscope_capture_bytes_served_total Bytes handed out over /captures/<id>.\n# TYPE mikroscope_capture_bytes_served_total counter\nmikroscope_capture_bytes_served_total %d\n", c.ServedBytes)
+	if len(c.Refused) > 0 {
+		fmt.Fprintf(w, "# HELP mikroscope_capture_refused_total Captures collected and then not kept, by reason.\n# TYPE mikroscope_capture_refused_total counter\n")
+		for _, k := range sortedStrings(c.Refused) {
+			fmt.Fprintf(w, "mikroscope_capture_refused_total{reason=%q} %d\n", k, c.Refused[k])
+		}
+	}
+	if len(c.Fired) > 0 {
+		fmt.Fprintf(w, "# HELP mikroscope_trigger_fired_total Times each condition fired and a capture was armed.\n# TYPE mikroscope_trigger_fired_total counter\n")
+		for _, k := range sortedStrings(c.Fired) {
+			fmt.Fprintf(w, "mikroscope_trigger_fired_total{condition=%q} %d\n", k, c.Fired[k])
+		}
+	}
+	if len(c.Suppressed) > 0 {
+		fmt.Fprintf(w, "# HELP mikroscope_trigger_suppressed_total Times a condition was true and no capture was armed: refractory or pending.\n# TYPE mikroscope_trigger_suppressed_total counter\n")
+		for _, k := range sortedStrings(c.Suppressed) {
+			cond, reason, _ := strings.Cut(k, "\x00")
+			fmt.Fprintf(w, "mikroscope_trigger_suppressed_total{condition=%q,reason=%q} %d\n", cond, reason, c.Suppressed[k])
 		}
 	}
 }

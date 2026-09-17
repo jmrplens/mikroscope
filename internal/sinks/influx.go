@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jmrplens/mikroscope/internal/agent"
 	"github.com/jmrplens/mikroscope/internal/apitier"
 	"github.com/jmrplens/mikroscope/internal/derive"
 	"github.com/jmrplens/mikroscope/internal/procfs"
@@ -97,6 +98,35 @@ func (s *Influx) Write(e Event) {
 		s.writeTrigger(e.Trigger)
 	case e.Device != nil:
 		s.writeDevice(e.Device, strconv.FormatInt(time.Now().UnixNano(), 10))
+	case e.Sampler != nil:
+		s.writeSampler(e.Sampler, strconv.FormatInt(time.Now().UnixNano(), 10))
+	}
+}
+
+// writeSampler renders the agent's own account of itself: the counters only
+// the agent can keep. They carry the collector's clock, like the device
+// facts, because they are read on its cadence and not produced by a tick.
+func (s *Influx) writeSampler(st *agent.SamplerStats, ts string) {
+	fmt.Fprintf(&s.cur, "mikroscope_sampler%s ticks=%du,slipped=%du", s.tag(), st.Ticks, st.Slipped)
+	if c := st.Captures; c != nil {
+		fmt.Fprintf(&s.cur, ",captures_held=%di,capture_bytes=%di,capture_budget_bytes=%di,capture_served_bytes=%du",
+			c.Held, c.Bytes, c.BudgetBytes, c.ServedBytes)
+	}
+	fmt.Fprintf(&s.cur, " %s\n", ts)
+	c := st.Captures
+	if c == nil {
+		return
+	}
+	for _, k := range sortedStrings(c.Refused) {
+		fmt.Fprintf(&s.cur, "mikroscope_capture_refused%s,reason=%s count=%du %s\n", s.tag(), escapeTag(k), c.Refused[k], ts)
+	}
+	for _, k := range sortedStrings(c.Fired) {
+		fmt.Fprintf(&s.cur, "mikroscope_trigger_count%s,condition=%s fired=%du %s\n", s.tag(), escapeTag(k), c.Fired[k], ts)
+	}
+	for _, k := range sortedStrings(c.Suppressed) {
+		cond, reason, _ := strings.Cut(k, "\x00")
+		fmt.Fprintf(&s.cur, "mikroscope_trigger_suppressed%s,condition=%s,reason=%s count=%du %s\n",
+			s.tag(), escapeTag(cond), escapeTag(reason), c.Suppressed[k], ts)
 	}
 }
 

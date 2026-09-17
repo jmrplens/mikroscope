@@ -51,9 +51,9 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.healthz)
 	mux.HandleFunc("GET /capabilities", s.auth(s.capabilities))
+	mux.HandleFunc("GET /sampler", s.auth(s.samplerStats))
 	mux.HandleFunc("GET /snapshot", s.auth(s.snapshot))
 	mux.HandleFunc("GET /stream", s.auth(s.stream))
-	mux.HandleFunc("GET /metrics", s.auth(s.metrics))
 	mux.HandleFunc("GET /captures", s.auth(s.captures))
 	mux.HandleFunc("GET /captures/{id}", s.auth(s.capture))
 	mux.HandleFunc("DELETE /captures/{id}", s.auth(s.deleteCapture))
@@ -85,6 +85,17 @@ func (s *Server) healthz(w http.ResponseWriter, _ *http.Request) {
 		Board: s.Caps.Board,
 	}
 	if err := json.NewEncoder(w).Encode(h); err != nil {
+		return
+	}
+}
+
+// samplerStats answers what only the agent can count about itself, so the
+// collector can carry it to every sink instead of it being readable through a
+// Prometheus scrape alone.
+func (s *Server) samplerStats(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	st := SamplerStats{Ticks: s.Sampler.Ticks(), Slipped: s.Sampler.Slipped(), Captures: s.Captures.Stats()}
+	if err := json.NewEncoder(w).Encode(st); err != nil {
 		return
 	}
 }
@@ -243,12 +254,6 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-}
-
-func (s *Server) metrics(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
-	s.Sampler.Totals().Render(w, Exposition{Ring: s.Ring, RateHz: s.RateHz, Sampler: true, Slipped: s.Sampler.Slipped(), Version: s.Version, Start: s.Start, Caps: &s.Caps})
-	s.Captures.RenderMetrics(w)
 }
 
 // captures serves the index of retained windows.

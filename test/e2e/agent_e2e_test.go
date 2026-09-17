@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jmrplens/mikroscope/internal/agent"
 	"github.com/jmrplens/mikroscope/internal/sample"
 )
 
@@ -75,7 +76,7 @@ func TestRealAgentServesTheFixtureTree(t *testing.T) {
 	checkRealCapabilities(t, a)
 	checkRealSnapshot(t, a)
 	checkSnapshotHonoursMax(t, a)
-	checkRealMetrics(t, a)
+	checkRealSampler(t, a)
 }
 
 // getOK fetches path from the agent and fails the test unless it answered
@@ -200,15 +201,27 @@ func checkSnapshotHonoursMax(t *testing.T, a *agentFixture) {
 	}
 }
 
-// checkRealMetrics: the agent's own exposition, rendered from the same ring.
-func checkRealMetrics(t *testing.T, a *agentFixture) {
+// checkRealSampler: the agent's account of itself, as data. Since 1.0.5 the
+// agent serves no exposition at all — the collector reads this and renders
+// the families for every sink, so this is where the figures only a sampler
+// can keep leave the router.
+func checkRealSampler(t *testing.T, a *agentFixture) {
 	t.Helper()
-	body := getOK(t, a, "/metrics")
-	samples, types := parseExposition(t, body)
-	if len(samples) < 20 {
-		t.Errorf("/metrics served %d series:\n%s", len(samples), body)
+	body := getOK(t, a, "/sampler")
+	var st agent.SamplerStats
+	if err := json.Unmarshal([]byte(body), &st); err != nil {
+		t.Fatalf("/sampler: %v: %s", err, body)
 	}
-	checkPrefixedAndTyped(t, samples, types)
+	if st.Ticks == 0 {
+		t.Errorf("the agent reports no ticks taken: %s", body)
+	}
+	if st.Captures == nil {
+		t.Errorf("no capture stats with the default triggers armed: %s", body)
+	}
+	// And the exposition is gone, which is the whole point of the change.
+	if _, code, _ := httpGet(t.Context(), a.Base()+"/metrics", a.Token); code != http.StatusNotFound {
+		t.Errorf("the agent still serves /metrics: %d", code)
+	}
 }
 
 func TestRealAgentRequiresItsTokenOnEveryPathButHealthz(t *testing.T) {
@@ -221,7 +234,7 @@ func TestRealAgentRequiresItsTokenOnEveryPathButHealthz(t *testing.T) {
 	if _, code, ok := httpGet(t.Context(), a.Base()+"/healthz", ""); !ok || code != http.StatusOK {
 		t.Errorf("/healthz with no token: status %d ok=%v, want 200", code, ok)
 	}
-	for _, path := range []string{"/capabilities", "/snapshot", "/metrics"} {
+	for _, path := range []string{"/capabilities", "/snapshot", "/sampler"} {
 		if _, code, ok := httpGet(t.Context(), a.Base()+path, ""); !ok || code != http.StatusUnauthorized {
 			t.Errorf("%s with no token: status %d ok=%v, want 401", path, code, ok)
 		}

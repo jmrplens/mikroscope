@@ -44,6 +44,12 @@ type Event struct {
 	// is the whole point of it — and the human-facing streams (a log, the
 	// terminal, a recording) skip it, because those are for change.
 	DeviceRepeat bool
+	// Sampler is what only the agent can count about itself: ticks taken and
+	// slipped, and what the trigger evaluator has fired, suppressed, refused
+	// and is holding. The collector reads it on its health cadence, so these
+	// are levels at that instant and counters since the agent started — not
+	// deltas, and not tied to a sample.
+	Sampler *agent.SamplerStats
 }
 
 // Stats counts what a sink did.
