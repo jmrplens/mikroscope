@@ -13,7 +13,7 @@ import (
 )
 
 // runDashboards: `dashboards gen --out dir` writes the two JSON files;
-// `dashboards import|check --store influxdb|prometheus --grafana URL
+// `dashboards import|check --store influxdb|prometheus|postgres --grafana URL
 // --datasource-uid X` use the Grafana API (token in GRAFANA_TOKEN).
 func runDashboards(args []string) error {
 	if len(args) == 0 {
@@ -25,7 +25,7 @@ func runDashboards(args []string) error {
 	var window time.Duration
 	var noProbe bool
 	fs.StringVar(&outDir, "out", "dashboards", "gen: output directory")
-	fs.StringVar(&store, "store", "influxdb", "import/check: influxdb or prometheus")
+	fs.StringVar(&store, "store", "influxdb", "import/check: influxdb, prometheus or postgres")
 	fs.StringVar(&grafanaURL, "grafana", os.Getenv("GRAFANA_URL"), "import/check: Grafana base URL (GRAFANA_URL); token from GRAFANA_TOKEN")
 	fs.StringVar(&dsUID, "datasource-uid", "", "import/check: the datasource uid to bind DS_MIKROSCOPE to")
 	fs.DurationVar(&window, "window", 15*time.Minute, "check: length of the query window")
@@ -82,7 +82,7 @@ func runDashboards(args []string) error {
 }
 
 func dashboardsGen(outDir string) error {
-	for _, st := range []dashboards.Store{dashboards.Influx, dashboards.Prometheus} {
+	for _, st := range dashboards.Stores {
 		b, err := dashboards.Generate(st)
 		if err != nil {
 			return err

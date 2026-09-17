@@ -41,11 +41,20 @@ import (
 // Store selects the query language.
 type Store string
 
-// The two stores 0.1 ships.
+// The stores a dashboard is generated for. The first two are asked in SQL and
+// PromQL; PostgreSQL is the InfluxDB question rewritten (postgres.go), and it
+// reads what the `--sql` sink writes.
 const (
 	Influx     Store = "influxdb"
 	Prometheus Store = "prometheus"
+	Postgres   Store = "postgres"
 )
+
+// Stores is every store Generate accepts, in the order the files are written.
+var Stores = []Store{Influx, Prometheus, Postgres}
+
+// sqlStores are the stores whose panels carry SQL rather than PromQL.
+func (s Store) sql() bool { return s == Influx || s == Postgres }
 
 // Panel types this generator knows how to emit.
 const (
@@ -304,6 +313,11 @@ func GenerateFor(store Store, present map[string]bool) ([]byte, error) {
 		pluginID, title = "influxdb", "mikroscope — RouterOS kernel telemetry (InfluxDB 3)"
 	case Prometheus:
 		pluginID, title = "prometheus", "mikroscope — RouterOS kernel telemetry (Prometheus)"
+	case Postgres:
+		// The plugin id Grafana ships PostgreSQL under. It is not "postgres":
+		// an export naming the wrong plugin imports as a dashboard whose every
+		// panel asks a datasource that does not exist.
+		pluginID, title = "grafana-postgresql-datasource", "mikroscope — RouterOS kernel telemetry (PostgreSQL)"
 	default:
 		return nil, fmt.Errorf("unknown store %q", store)
 	}
@@ -394,16 +408,19 @@ func annotationsFor(store Store, dsUID, pluginID string) []any {
 		target["refId"] = "Anno"
 		return map[string]any{"name": name, "iconColor": color, "enable": enable, "datasource": ds, "target": target}
 	}
-	if store == Influx {
+	if store.sql() {
+		// The same two queries on both SQL stores; only InfluxDB names a
+		// schema in the target.
+		extra := func(sql string) map[string]any {
+			t := map[string]any{"rawSql": sql, "rawQuery": true, "format": "table", "editorMode": "code"}
+			if store == Influx {
+				t["dataset"] = "iox"
+			}
+			return t
+		}
 		return []any{
-			mk("detections", "red", true, map[string]any{
-				"rawSql":   "SELECT time, concat(rule, CASE WHEN key <> '' THEN concat(' ', key) ELSE '' END, ': ', message) AS text, rule AS tags FROM mikroscope_detection WHERE $__timeFilter(time) ORDER BY time",
-				"rawQuery": true, "format": "table", "editorMode": "code", "dataset": "iox",
-			}),
-			mk("triggers", "orange", false, map[string]any{
-				"rawSql":   "SELECT time, concat('capture #', id, ' (', cause, '): ', field, ' = ', value) AS text, cause AS tags FROM mikroscope_trigger WHERE $__timeFilter(time) ORDER BY time",
-				"rawQuery": true, "format": "table", "editorMode": "code", "dataset": "iox",
-			}),
+			mk("detections", "red", true, extra("SELECT time, concat(rule, CASE WHEN key <> '' THEN concat(' ', key) ELSE '' END, ': ', message) AS text, rule AS tags FROM mikroscope_detection WHERE $__timeFilter(time) ORDER BY time")),
+			mk("triggers", "orange", false, extra("SELECT time, concat('capture #', id, ' (', cause, '): ', field, ' = ', value) AS text, cause AS tags FROM mikroscope_trigger WHERE $__timeFilter(time) ORDER BY time")),
 		}
 	}
 	return []any{
@@ -558,23 +575,33 @@ func rowJSON(p Panel, id int) map[string]any {
 	}
 }
 
+// sqlTarget fills in the fields both SQL plugins read. `dataset` is
+// InfluxDB's schema name; PostgreSQL's plugin has no such field and rejects a
+// target that carries it.
+func sqlTarget(t map[string]any, store Store, p Panel) {
+	format := p.Format
+	if format == "" {
+		format = "time_series"
+	}
+	t["rawSql"] = t["__query"]
+	delete(t, "__query")
+	t["rawQuery"] = true
+	t["format"] = format
+	t["editorMode"] = "code"
+	if store == Influx {
+		t["dataset"] = "iox"
+	}
+}
+
 func targetsFor(store Store, p Panel, dsUID, pluginID string) []any {
 	targets := make([]any, 0, len(p.Queries))
 	for i, q := range p.Queries {
-		t := map[string]any{"refId": string(rune('A' + i)), "datasource": map[string]any{"type": pluginID, "uid": dsUID}}
+		t := map[string]any{"refId": string(rune('A' + i)), "datasource": map[string]any{"type": pluginID, "uid": dsUID}, "__query": q}
 		if p.MinInterval != "" {
 			t["interval"] = p.MinInterval
 		}
-		if store == Influx {
-			format := p.Format
-			if format == "" {
-				format = "time_series"
-			}
-			t["rawSql"] = q
-			t["rawQuery"] = true
-			t["format"] = format
-			t["editorMode"] = "code"
-			t["dataset"] = "iox"
+		if store.sql() {
+			sqlTarget(t, store, p)
 		} else {
 			t["expr"] = q
 			t["legendFormat"] = "__auto"
@@ -652,7 +679,7 @@ func displayNameFor(store Store, p Panel, typ string) string {
 	if p.DisplayName != "" {
 		return p.DisplayName
 	}
-	if store != Influx || p.Format == "table" || typ == typeHeatmap || typ == typeTable {
+	if !store.sql() || p.Format == "table" || typ == typeHeatmap || typ == typeTable {
 		return ""
 	}
 	return metricLabel

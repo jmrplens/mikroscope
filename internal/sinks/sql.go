@@ -135,14 +135,21 @@ var sqlSchema = []sqlTable{
 	{"mikroscope_cpu", "host TEXT NOT NULL, cpu INTEGER NOT NULL, user_ticks BIGINT, nice_ticks BIGINT, system_ticks BIGINT, idle_ticks BIGINT, iowait_ticks BIGINT, irq_ticks BIGINT, softirq_ticks BIGINT, steal_ticks BIGINT, busy_ratio DOUBLE PRECISION, dt_ns BIGINT", "time, host, cpu"},
 	{"mikroscope_softnet", "host TEXT NOT NULL, cpu INTEGER NOT NULL, processed BIGINT, dropped BIGINT, time_squeeze BIGINT", "time, host, cpu"},
 	{"mikroscope_irq", "host TEXT NOT NULL, irq TEXT NOT NULL, name TEXT, count BIGINT", "time, host, irq"},
-	{"mikroscope_mem", "host TEXT NOT NULL, free_kb BIGINT, available_kb BIGINT, cached_kb BIGINT, slab_kb BIGINT, sunreclaim_kb BIGINT", "time, host"},
+	// The whole of what the agent reads from /proc/meminfo, as the InfluxDB
+	// sink has carried since 1.0.0. The first five columns were all this
+	// table had until 1.0.3, and a query for the memory composition, the
+	// commit headroom or the writeback backlog had nowhere to read them.
+	{"mikroscope_mem", "host TEXT NOT NULL, free_kb BIGINT, available_kb BIGINT, cached_kb BIGINT, slab_kb BIGINT, sunreclaim_kb BIGINT, total_kb BIGINT, buffers_kb BIGINT, sreclaimable_kb BIGINT, anon_kb BIGINT, mapped_kb BIGINT, dirty_kb BIGINT, writeback_kb BIGINT, kernel_stack_kb BIGINT, page_tables_kb BIGINT, committed_kb BIGINT, commit_limit_kb BIGINT, shmem_kb BIGINT, active_kb BIGINT, inactive_kb BIGINT", "time, host"},
 	{"mikroscope_load", "host TEXT NOT NULL, load1 DOUBLE PRECISION, load5 DOUBLE PRECISION, load15 DOUBLE PRECISION, running BIGINT, threads BIGINT, procs_blocked BIGINT", "time, host"},
 	// /proc/stat's scalars as deltas, with the two page-fault counters that
 	// used to ride on mikroscope_mem beside levels they are not.
 	{"mikroscope_stat", "host TEXT NOT NULL, ctxt BIGINT, intr BIGINT, forks BIGINT, irq_total BIGINT, irq_err BIGINT, pgfault BIGINT, pgmajfault BIGINT", "time, host"},
 	// throttled, throttled_us and oom_kill are the container's own cgroup
 	// events, deltas; NULL when the container has no cgroup2 to ask.
-	{"mikroscope_self", "host TEXT NOT NULL, cpu_us BIGINT, rss BIGINT, cgroup_mem BIGINT, throttled BIGINT, throttled_us BIGINT, oom_kill BIGINT, seq BIGINT", "time, host"},
+	// resets is the agent's own restart counter and kmsg_dropped what the
+	// kernel-log reader had to throw away: both are the observer's honesty
+	// about itself, and both are on the InfluxDB rows already.
+	{"mikroscope_self", "host TEXT NOT NULL, cpu_us BIGINT, rss BIGINT, cgroup_mem BIGINT, throttled BIGINT, throttled_us BIGINT, oom_kill BIGINT, resets BIGINT, kmsg_dropped BIGINT, seq BIGINT", "time, host"},
 	// Long form, one row per (zone, order): free blocks of 2^order pages, a
 	// level. `order` is reserved, hence block_order.
 	{"mikroscope_buddy", "host TEXT NOT NULL, node INTEGER NOT NULL, zone TEXT NOT NULL, block_order INTEGER NOT NULL, free_blocks BIGINT", "time, host, node, zone, block_order"},
@@ -150,6 +157,35 @@ var sqlSchema = []sqlTable{
 	// figures, the rest levels; thresholds NULL where the kernel publishes none.
 	{"mikroscope_mtd", "host TEXT NOT NULL, device TEXT NOT NULL, partition TEXT, corrected_bits BIGINT, ecc_failures BIGINT, bad_blocks BIGINT, bbt_blocks BIGINT, bitflip_threshold BIGINT, ecc_strength BIGINT", "time, host, device"},
 	{"mikroscope_psi", "host TEXT NOT NULL, cpu_some_us BIGINT, mem_some_us BIGINT, mem_full_us BIGINT, io_some_us BIGINT, io_full_us BIGINT", "time, host"},
+	// The sample's own identity, one row per tick: the sequence number a gap
+	// is measured against and the interval every rate in this schema is per.
+	// The InfluxDB sink has carried it since 1.0.0; without it here, a
+	// PostgreSQL reader can compute no rate and see no gap.
+	{"mikroscope_sample", "host TEXT NOT NULL, seq BIGINT NOT NULL, dt_ns BIGINT, mono_ns BIGINT", "time, host"},
+	// /proc/softirqs, per kind and per core. NET_RX is the single most
+	// telling number on a router under load.
+	{"mikroscope_softirq", "host TEXT NOT NULL, kind TEXT NOT NULL, cpu INTEGER NOT NULL, count BIGINT", "time, host, kind, cpu"},
+	// The PMU, per counter and per core, with the two times beside the count:
+	// while enabled_ns and running_ns are equal the count is exact, and
+	// running_ns < enabled_ns means the kernel multiplexed the PMU and the
+	// count is a scaled-down estimate. NULL where the kernel returned no
+	// times. Absent entirely without privileged=yes and a reachable PMU.
+	{"mikroscope_perf", "host TEXT NOT NULL, counter TEXT NOT NULL, cpu INTEGER NOT NULL, count BIGINT, enabled_ns BIGINT, running_ns BIGINT", "time, host, counter, cpu"},
+	// /proc/vmstat's counters as deltas. pgfault and pgmajfault are also on
+	// mikroscope_stat, where they have ridden since 1.0.0: kept on both so a
+	// query written against either measurement finds them.
+	{"mikroscope_vm", "host TEXT NOT NULL, pgfault BIGINT, pgmajfault BIGINT, pgscan_kswapd BIGINT, pgscan_direct BIGINT, pgsteal_kswapd BIGINT, pgsteal_direct BIGINT, pgalloc BIGINT, pgfree BIGINT, allocstall BIGINT, compact_stall BIGINT, oom_kill BIGINT, pswpin BIGINT, pswpout BIGINT", "time, host"},
+	// /proc/vmstat's levels, absolute. Mixing them into mikroscope_vm would
+	// be a lie: nr_dirty going down is pages written back, not a negative
+	// event count.
+	{"mikroscope_vm_level", "host TEXT NOT NULL, nr_free_pages BIGINT, nr_dirty BIGINT, nr_writeback BIGINT, nr_slab_reclaimable BIGINT, nr_slab_unreclaimable BIGINT", "time, host"},
+	// The per-core clock as cpufreq reports it, with the ceiling beside it
+	// where the board publishes one.
+	{"mikroscope_cpufreq", "host TEXT NOT NULL, cpu INTEGER NOT NULL, khz BIGINT, max_khz BIGINT", "time, host, cpu"},
+	// Interrupts per line AND per core, which mikroscope_irq sums away: an
+	// imbalance across cores is a receive path pinned to one of them, and the
+	// sum cannot show it.
+	{"mikroscope_irq_cpu", "host TEXT NOT NULL, irq TEXT NOT NULL, name TEXT, cpu INTEGER NOT NULL, count BIGINT", "time, host, irq, cpu"},
 	{"mikroscope_thermal", "host TEXT NOT NULL, zone TEXT NOT NULL, celsius DOUBLE PRECISION, critical_celsius DOUBLE PRECISION", "time, host, zone"},
 	{"mikroscope_slab", "host TEXT NOT NULL, cache TEXT NOT NULL, active_objs BIGINT, limit_objs BIGINT", "time, host, cache"},
 	{"mikroscope_disk", "host TEXT NOT NULL, device TEXT NOT NULL, reads BIGINT, read_sectors BIGINT, writes BIGINT, write_sectors BIGINT, io_s DOUBLE PRECISION, inflight BIGINT", "time, host, device"},
@@ -314,8 +350,11 @@ func (s *SQL) kernelCore(ts string, k *sample.Sample) {
 		fmt.Fprintf(&s.buf, "INSERT INTO mikroscope_irq (time, host, irq, name, count) VALUES (%s, %s, %s, %s, %d)%s",
 			ts, s.hostLit, sqlQuote(q.ID), sqlQuote(q.Name), total, sqlEnd)
 	}
-	fmt.Fprintf(&s.buf, "INSERT INTO mikroscope_mem (time, host, free_kb, available_kb, cached_kb, slab_kb, sunreclaim_kb) VALUES (%s, %s, %d, %d, %d, %d, %d)%s",
-		ts, s.hostLit, k.Mem.MemFree, k.Mem.MemAvailable, k.Mem.Cached, k.Mem.Slab, k.Mem.SUnreclaim, sqlEnd)
+	m := k.Mem
+	fmt.Fprintf(&s.buf, "INSERT INTO mikroscope_mem (time, host, free_kb, available_kb, cached_kb, slab_kb, sunreclaim_kb, total_kb, buffers_kb, sreclaimable_kb, anon_kb, mapped_kb, dirty_kb, writeback_kb, kernel_stack_kb, page_tables_kb, committed_kb, commit_limit_kb, shmem_kb, active_kb, inactive_kb) VALUES (%s, %s, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d)%s",
+		ts, s.hostLit, m.MemFree, m.MemAvailable, m.Cached, m.Slab, m.SUnreclaim, m.MemTotal, m.Buffers, m.SReclaimable,
+		m.AnonPages, m.Mapped, m.Dirty, m.Writeback, m.KernelStack, m.PageTables, m.CommittedAS, m.CommitLimit,
+		m.Shmem, m.Active, m.Inactive, sqlEnd)
 	fmt.Fprintf(&s.buf, "INSERT INTO mikroscope_load (time, host, load1, load5, load15, running, threads, procs_blocked) VALUES (%s, %s, %s, %s, %s, %d, %d, %d)%s",
 		ts, s.hostLit, sqlFloat(k.Load.Load1, 2), sqlFloat(k.Load.Load5, 2), sqlFloat(k.Load.Load15, 2), k.Load.Running, k.Load.Total, k.ProcsBlocked, sqlEnd)
 	fmt.Fprintf(&s.buf, "INSERT INTO mikroscope_stat (time, host, ctxt, intr, forks, irq_total, irq_err, pgfault, pgmajfault) VALUES (%s, %s, %d, %d, %d, %d, %d, %d, %d)%s",
@@ -324,8 +363,8 @@ func (s *SQL) kernelCore(ts string, k *sample.Sample) {
 	if k.Self.HasCgroup {
 		throttled, throttledUs, oomKill = strconv.FormatUint(k.Self.Throttled, 10), strconv.FormatUint(k.Self.ThrottledUsec, 10), strconv.FormatUint(k.Self.OOMKill, 10)
 	}
-	fmt.Fprintf(&s.buf, "INSERT INTO mikroscope_self (time, host, cpu_us, rss, cgroup_mem, throttled, throttled_us, oom_kill, seq) VALUES (%s, %s, %d, %d, %d, %s, %s, %s, %d)%s",
-		ts, s.hostLit, k.Self.CPUUsec, k.Self.RSSBytes, k.Self.CgroupMem, throttled, throttledUs, oomKill, k.Seq, sqlEnd)
+	fmt.Fprintf(&s.buf, "INSERT INTO mikroscope_self (time, host, cpu_us, rss, cgroup_mem, throttled, throttled_us, oom_kill, resets, kmsg_dropped, seq) VALUES (%s, %s, %d, %d, %d, %s, %s, %s, %d, %d, %d)%s",
+		ts, s.hostLit, k.Self.CPUUsec, k.Self.RSSBytes, k.Self.CgroupMem, throttled, throttledUs, oomKill, k.Resets, k.EventsDropped, k.Seq, sqlEnd)
 	for _, z := range k.Buddy {
 		for o, n := range z.Free {
 			fmt.Fprintf(&s.buf, "INSERT INTO mikroscope_buddy (time, host, node, zone, block_order, free_blocks) VALUES (%s, %s, %d, %s, %d, %d)%s",
@@ -335,6 +374,48 @@ func (s *SQL) kernelCore(ts string, k *sample.Sample) {
 	if k.PSI != nil {
 		fmt.Fprintf(&s.buf, "INSERT INTO mikroscope_psi (time, host, cpu_some_us, mem_some_us, mem_full_us, io_some_us, io_full_us) VALUES (%s, %s, %d, %d, %d, %d, %d)%s",
 			ts, s.hostLit, k.PSI.CPUSome, k.PSI.MemSome, k.PSI.MemFull, k.PSI.IOSome, k.PSI.IOFull, sqlEnd)
+	}
+	// The tick's own identity, and the two vmstat measurements. Written on
+	// every sample, like the rest of this function: a rate needs its
+	// interval, and a gap is a discontinuity in seq.
+	fmt.Fprintf(&s.buf, "INSERT INTO mikroscope_sample (time, host, seq, dt_ns, mono_ns) VALUES (%s, %s, %d, %d, %d)%s",
+		ts, s.hostLit, k.Seq, k.DtNS, k.MonoNS, sqlEnd)
+	fmt.Fprintf(&s.buf, "INSERT INTO mikroscope_vm (time, host, pgfault, pgmajfault, pgscan_kswapd, pgscan_direct, pgsteal_kswapd, pgsteal_direct, pgalloc, pgfree, allocstall, compact_stall, oom_kill, pswpin, pswpout) VALUES (%s, %s, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d)%s",
+		ts, s.hostLit, k.VM.PgFault, k.VM.PgMajFault, k.VM.PgScanKswapd, k.VM.PgScanDirect, k.VM.PgStealKswapd, k.VM.PgStealDirect,
+		k.VM.PgAlloc, k.VM.PgFree, k.VM.AllocStall, k.VM.CompactStall, k.VM.OOMKill, k.VM.PSwpIn, k.VM.PSwpOut, sqlEnd)
+	fmt.Fprintf(&s.buf, "INSERT INTO mikroscope_vm_level (time, host, nr_free_pages, nr_dirty, nr_writeback, nr_slab_reclaimable, nr_slab_unreclaimable) VALUES (%s, %s, %d, %d, %d, %d, %d)%s",
+		ts, s.hostLit, k.VMG.NrFreePages, k.VMG.NrDirty, k.VMG.NrWriteback, k.VMG.NrSlabReclaimable, k.VMG.NrSlabUnreclaimable, sqlEnd)
+	// Softirqs, per kind and per core, and the zero rows are skipped the same
+	// way the InfluxDB sink skips them: a core that ran no NET_RX this tick
+	// is not a measurement, and writing it would be most of the rows.
+	for _, kind := range sqlSortedKeys(k.Softirq) {
+		for cpu, v := range k.Softirq[kind] {
+			if v == 0 {
+				continue
+			}
+			fmt.Fprintf(&s.buf, "INSERT INTO mikroscope_softirq (time, host, kind, cpu, count) VALUES (%s, %s, %s, %d, %d)%s",
+				ts, s.hostLit, sqlQuote(kind), cpu, v, sqlEnd)
+		}
+	}
+	// Per-core interrupt counts, beside the summed mikroscope_irq rows above:
+	// an imbalance across cores is what the sum cannot show.
+	for _, q := range k.IRQ {
+		for cpu, v := range q.PerCPU {
+			if v == 0 {
+				continue
+			}
+			fmt.Fprintf(&s.buf, "INSERT INTO mikroscope_irq_cpu (time, host, irq, name, cpu, count) VALUES (%s, %s, %s, %s, %d, %d)%s",
+				ts, s.hostLit, sqlQuote(q.ID), sqlLabel(q.Name), cpu, v, sqlEnd)
+		}
+	}
+	// The clock, with its ceiling where the board publishes one.
+	for i, f := range k.FreqKHz {
+		maxKHz := "NULL"
+		if v := k.FreqMaxKHz[i]; v > 0 {
+			maxKHz = strconv.FormatUint(v, 10)
+		}
+		fmt.Fprintf(&s.buf, "INSERT INTO mikroscope_cpufreq (time, host, cpu, khz, max_khz) VALUES (%s, %s, %d, %d, %s)%s",
+			ts, s.hostLit, i, f, maxKHz, sqlEnd)
 	}
 }
 
@@ -372,6 +453,22 @@ func (s *SQL) kernelExtra(ts string, k *sample.Sample) {
 	for _, fl := range k.Flash {
 		fmt.Fprintf(&s.buf, "INSERT INTO mikroscope_flash (time, host, device, page_writes, page_reads, erasures, gc_copies, gcs, bad_blocks, free_chunks) VALUES (%s, %s, %s, %d, %d, %d, %d, %d, %d, %d)%s",
 			ts, s.hostLit, sqlQuote(fl.Device), fl.PageWrites, fl.PageReads, fl.Erasures, fl.GCCopies, fl.GCs, fl.BadBlocks, fl.FreeChunks, sqlEnd)
+	}
+	// The PMU, when the deployment has one. enabled_ns and running_ns travel
+	// beside the count rather than being folded into it: a scaled estimate
+	// must never be mistaken for a measurement.
+	for _, c := range k.Perf {
+		for cpu, v := range c.PerCPU {
+			enabled, running := "NULL", "NULL"
+			if cpu < len(c.EnabledNS) {
+				enabled = strconv.FormatUint(c.EnabledNS[cpu], 10)
+			}
+			if cpu < len(c.RunningNS) {
+				running = strconv.FormatUint(c.RunningNS[cpu], 10)
+			}
+			fmt.Fprintf(&s.buf, "INSERT INTO mikroscope_perf (time, host, counter, cpu, count, enabled_ns, running_ns) VALUES (%s, %s, %s, %d, %d, %s, %s)%s",
+				ts, s.hostLit, sqlQuote(string(c.Name)), cpu, v, enabled, running, sqlEnd)
+		}
 	}
 	// Kernel-log markers, not metrics: the message text stays in a TEXT
 	// column (never an identifying column — it is unbounded free text) and

@@ -117,8 +117,15 @@ func GenerateAlerts(store Store) ([]byte, error) {
 	n := 0
 	for _, r := range AlertRules {
 		q := r.PromQL
-		if store == Influx {
+		if store.sql() {
 			q = r.SQL
+			if store == Postgres {
+				translated, ok := toPostgres(q)
+				if !ok {
+					continue
+				}
+				q = translated
+			}
 		}
 		if q == "" {
 			continue
@@ -127,8 +134,14 @@ func GenerateAlerts(store Store) ([]byte, error) {
 		fmt.Fprintf(&b, "      - uid: %s\n        title: %s\n        condition: C\n        for: %s\n        noDataState: %s\n        execErrState: Error\n", r.UID, yamlQuote(r.Title), r.For, r.NoData)
 		fmt.Fprintf(&b, "        labels:\n          severity: %s\n          source: mikroscope\n        annotations:\n          summary: %s\n", r.Severity, yamlQuote(r.Summary))
 		fmt.Fprintf(&b, "        data:\n          - refId: A\n            relativeTimeRange: {from: 600, to: 0}\n            datasourceUid: DS_UID_PLACEHOLDER\n            model:\n              refId: A\n")
-		if store == Influx {
-			fmt.Fprintf(&b, "              rawQuery: true\n              editorMode: code\n              format: table\n              dataset: iox\n              rawSql: %s\n", yamlQuote(q))
+		if store.sql() {
+			// `dataset` is InfluxDB's schema name and PostgreSQL's plugin
+			// rejects a model that carries it.
+			dataset := ""
+			if store == Influx {
+				dataset = "              dataset: iox\n"
+			}
+			fmt.Fprintf(&b, "              rawQuery: true\n              editorMode: code\n              format: table\n%s              rawSql: %s\n", dataset, yamlQuote(q))
 		} else {
 			fmt.Fprintf(&b, "              expr: %s\n              instant: true\n              range: false\n", yamlQuote(q))
 		}

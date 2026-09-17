@@ -37,7 +37,7 @@ import (
 //     not-available row. It is not deleted: it is a panel waiting for a
 //     device that produces the measurement.
 func panelsFor(store Store, present map[string]bool) []Panel {
-	b := qb{sql: store == Influx}
+	b := qb{store: store}
 	out := make([]Panel, 0, 176)
 	var waiting []Panel
 	for _, sec := range sections {
@@ -125,7 +125,7 @@ func resolveAvailability(p Panel, store Store, present map[string]bool) Panel {
 		}
 		missing = append(missing, m)
 	}
-	if store == Influx {
+	if store.sql() {
 		for _, f := range p.RequiresFields {
 			if !present[f] {
 				missing = append(missing, f)
@@ -193,15 +193,27 @@ const notAvailableRowTitle = "Not available on this device — measurements this
 // store needs a different number of queries than the other. A pair whose
 // chosen side is empty is dropped, so a panel with no query for this store
 // is dropped by panelsFor.
-type qb struct{ sql bool }
+type qb struct{ store Store }
 
+// q picks this store's query. The panel list states two — the InfluxDB SQL and
+// the PromQL — and PostgreSQL's is the first one rewritten (postgres.go): a
+// panel whose SQL reads a measurement the SQL sink does not hold in the same
+// shape has no PostgreSQL query at all, and is dropped for that store the same
+// way a panel with no PromQL is dropped for Prometheus.
 func (b qb) q(sqlQ, promQ string) []string {
 	pick := promQ
-	if b.sql {
+	if b.store.sql() {
 		pick = sqlQ
 	}
 	if pick == "" {
 		return nil
+	}
+	if b.store == Postgres {
+		translated, ok := toPostgres(pick)
+		if !ok {
+			return nil
+		}
+		pick = translated
 	}
 	return []string{pick}
 }
@@ -218,16 +230,28 @@ func (b qb) qn(pairs ...string) []string {
 	return out
 }
 
+// qs is q for a panel whose two stores need a different NUMBER of queries.
+// Each entry goes through the same per-store treatment as q, so a PostgreSQL
+// panel loses exactly the queries that could not be rewritten — and, with
+// them, the panel, if that leaves none.
 func (b qb) qs(sqls, proms []string) []string {
 	pick := proms
-	if b.sql {
+	if b.store.sql() {
 		pick = sqls
 	}
 	out := make([]string, 0, len(pick))
 	for _, s := range pick {
-		if s != "" {
-			out = append(out, s)
+		if s == "" {
+			continue
 		}
+		if b.store == Postgres {
+			translated, ok := toPostgres(s)
+			if !ok {
+				continue
+			}
+			s = translated
+		}
+		out = append(out, s)
 	}
 	return out
 }

@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"regexp"
@@ -62,20 +63,42 @@ func createDatasources(ctx context.Context, tb testing.TB, admin string, stack *
 	for _, ds := range []struct {
 		name, uid, kind, url string
 		json                 map[string]any
+		// top is merged into the datasource object itself rather than into
+		// jsonData: `user` and `database` are first-class fields of Grafana's
+		// datasource API, and a SQL datasource that carries them only in
+		// jsonData connects as the Grafana process's own user.
+		top map[string]any
 	}{
 		{
 			"e2e-influxdb", "e2e-influxdb", "influxdb", "http://" + stack.InfluxDB,
 			map[string]any{"version": "SQL", "dbName": sweepDatabase, "httpMode": "POST", "insecureGrpc": true},
+			nil,
 		},
 		{
 			"e2e-prometheus", "e2e-prometheus", "prometheus", "http://" + stack.Prometheus,
 			map[string]any{"httpMethod": "POST"},
+			nil,
+		},
+		{
+			// The PostgreSQL the SQL sink's script is loaded into, which is
+			// what makes the third dashboard answerable here. sslmode=disable
+			// because this server listens on a container network for one test
+			// run; `postgresVersion` is what the plugin uses to decide which
+			// syntax it may emit.
+			"e2e-postgres", "e2e-postgres", "grafana-postgresql-datasource", stack.Postgres,
+			map[string]any{
+				"database": "mikroscope", "sslmode": "disable",
+				"postgresVersion": 1800, "timescaledb": false,
+			},
+			map[string]any{"user": "mikroscope", "database": "mikroscope"},
 		},
 	} {
-		body, err := json.Marshal(map[string]any{
+		payload := map[string]any{
 			"name": ds.name, "uid": ds.uid, "type": ds.kind, "url": ds.url,
 			"access": "proxy", "isDefault": false, "jsonData": ds.json,
-		})
+		}
+		maps.Copy(payload, ds.top)
+		body, err := json.Marshal(payload)
 		if err != nil {
 			tb.Fatal(err)
 		}
@@ -110,8 +133,15 @@ func TestGrafanaDashboards(t *testing.T) {
 	for _, store := range []struct{ name, uid string }{
 		{"influxdb", "e2e-influxdb"},
 		{"prometheus", "e2e-prometheus"},
+		{"postgres", "e2e-postgres"},
 	} {
 		t.Run(store.name, func(t *testing.T) {
+			if store.name == "postgres" {
+				// The SQL sink writes a script, not rows: without applying it
+				// the database has no schema and every panel fails on a
+				// missing relation rather than on its own query.
+				loadSweepIntoPostgres(ctx, t, s)
+			}
 			run := func(sub string, mustSucceed bool, extra ...string) string {
 				t.Helper()
 				args := append([]string{
