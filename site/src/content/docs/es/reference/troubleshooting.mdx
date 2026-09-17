@@ -116,6 +116,7 @@ entre tú y él:
 | `forward` imprime `… dropped` para un destino       | [El destino no pudo seguir el ritmo](#un-destino-está-descartando)         |
 | Loki lo aceptó todo y una consulta no devuelve nada | Un envío no es consultable hasta que se vuelca el trozo                    |
 | Los números paran en un momento redondo y siguen    | Un hueco: el anillo dio la vuelta antes de que el colector tirara de él    |
+| El tier de kernel se para en seco y el de API sigue | [El agente se reinició](#el-agente-se-reinició-y-el-tier-de-kernel-se-paró) |
 
 </ScrollTable>
 
@@ -125,6 +126,30 @@ mueven allí en vez de dejarlos dibujando una gráfica vacía entre los demás.
 `mikroscope dashboards check` le pregunta a la fuente de datos qué medidas tiene
 de verdad y hace esa separación para tu almacén:
 [Importar y comprobar](/mikroscope/es/dashboards/import-and-check/).
+
+### El agente se reinició y el tier de kernel se paró
+
+El agente numera sus muestras desde 1 en cada arranque, así que un agente que se
+reinicia —una actualización, un contenedor que se reinicia, un arranque del
+router— tiene un número de secuencia más alto muy por debajo del cursor del
+colector. El colector se entera en su siguiente lectura de estado, que es una
+vez por minuto, registra
+
+```text
+agent restarted: its newest sample is 571 and the cursor was 1737212; resuming from 1
+```
+
+y sigue desde la muestra más antigua del anillo nuevo, así que lo que el agente
+tomó mientras nadie recogía se recupera en vez de saltárselo. El minuto de
+muestras que va del reinicio a la lectura de estado se pierde con el contenedor,
+no por culpa del colector.
+
+Antes de 1.0.4 no se enteraba: el cursor se quedaba donde estaba, el anillo del
+agente respondía un lote vacío a cada petición, y el tier de kernel se paraba
+para siempre mientras el de API seguía contando y los destinos seguían
+escribiéndose — así que la ejecución parecía sana. Si estás en una versión
+anterior, reinicia el colector después de reiniciar el agente: toma su cursor de
+la lectura de estado del arranque.
 
 ### Un destino está descartando
 
