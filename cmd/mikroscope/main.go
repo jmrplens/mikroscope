@@ -111,7 +111,7 @@ func parse(verb string, args []string) (cli, error) {
 	fs.StringVar(&c.opts.Token, "token", env("TOKEN", ""), "bearer token the agent requires; mandatory with --expose (MIKROSCOPE_TOKEN)")
 	fs.BoolVar(&c.opts.Expose, "expose", false, "dst-nat the agent port on the router's LAN address (adds two tagged firewall rules)")
 	fs.StringVar(&c.opts.MemoryMax, "memory-max", router.Defaults().MemoryMax, "container cgroup memory.max (RouterOS syntax, e.g. 64M)")
-	fs.IntVar(&c.opts.MemLimitMB, "mem-limit-mb", router.Defaults().MemLimitMB, "agent Go soft memory limit in MiB; must fit the ring (rate x buffer x ~2.4 kB) with room for the GC")
+	fs.IntVar(&c.opts.MemLimitMB, "mem-limit-mb", router.Defaults().MemLimitMB, "agent Go soft memory limit in MiB; 0 derives it from the ring (rate x buffer x line, x2.5), which is what you want")
 	fs.IntVar(&c.opts.CaptureMB, "capture-mb", router.Defaults().CaptureMB, "triggered-capture budget in MiB: ring bytes pinned around the samples a trigger fires on (0 = off)")
 	fs.StringVar(&c.opts.Triggers, "triggers", "", "trigger conditions for captures, comma-separated: busy>=X, slip>=X, memfall>=MB, kmsg<=N, softnet-drop, squeeze, oom, reset, irq-err, flash-bad (empty = the agent's default non-zero set)")
 	fs.IntVar(&c.opts.FloorHz, "floor-hz", router.Defaults().FloorHz, "override every per-source sampling floor with one rate in Hz (0 = the measured per-source floors); set it to --rate to read and emit every source every tick, for re-measuring the floors")

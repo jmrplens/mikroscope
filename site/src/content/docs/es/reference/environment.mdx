@@ -197,9 +197,24 @@ este orden, y nada más:
 <Aside type="note" title="Los valores por defecto del agente y los de install no son los mismos">
 
 Un agente arrancado sin ninguna entrada en la envlist usa un límite blando de memoria de 14 MiB.
-`install` siempre escribe `MEM_LIMIT_MB=40`, y el `memory-max` del contenedor es `64M`, porque un
-anillo de 300 s a 10 Hz ocupa unos 7,3 MB y un límite de 14 MiB mantenía al recolector de basura
-funcionando sin parar en el RB5009: <Measured id="gc.tight.cpu" /> de un núcleo frente a <Measured id="gc.roomy.cpu" /> con margen, ambos con el anillo lleno, medidos con RouterOS 7.24.2 el 2026-09-12. `IRQ_TOP_K`,
+`install` **deriva** `MEM_LIMIT_MB` del anillo — ritmo × búfer × tamaño de línea, por 2,5, con suelo
+de 16 MiB y tope en tres cuartos de `memory-max` —, así que la instalación por defecto escribe
+`MEM_LIMIT_MB=25` para un anillo de 300 s a 10 Hz, donde antes escribía un 40 fijo. Un número fijo no
+puede ser correcto para todos los ritmos: ese mismo 40 dejaba 8 MiB sin usar a 10 Hz y queda por
+debajo del propio anillo a 50 Hz.
+
+El factor está medido, no elegido. En el RB5009 de referencia (RouterOS 7.24.2, 10 Hz, 300 s, todas
+las fuentes activas) el 2026-09-17, cuatro límites sobre cuatro ventanas de unas 12 000 muestras cada
+una:
+
+| límite        | múltiplo del anillo | RSS       | CPU por muestra | |
+| ------------- | ------------------- | --------- | --------------- | ------------------------- |
+| 40 MiB        | 4,0×                | 32,9 MiB  | 2 657 µs        | el límite nunca aprieta   |
+| 25 MiB (hoy)  | 2,5×                | ~26 MiB   | ~2 780 µs       | sin coste medible         |
+| 21 MiB        | 2,1×                | 23,5 MiB  | 3 250 µs        | +22 %, y subiendo         |
+| 18 MiB        | 1,8×                | 20,4 MiB  | 14 800 µs       | +457 %, peor tick 52 ms   |
+
+El mismo acantilado se midió desde el otro lado el 2026-09-12: <Measured id="gc.tight.cpu" /> de un núcleo con 14 MiB frente a <Measured id="gc.roomy.cpu" /> con margen, ambos con el anillo lleno. `IRQ_TOP_K`,
 `CAPTURE_PRE_S`, `CAPTURE_POST_S`, `CAPTURE_POLICY`, `TRIGGER_REFRACTORY_S`, `SOURCES`, `PROC_ROOT`
 y `SYS_ROOT` no tienen opción, así que un agente instalado funciona con sus valores por defecto.
 

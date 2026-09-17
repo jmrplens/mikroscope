@@ -6,7 +6,8 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [1.0.5]
 
-The agent stops being a Prometheus exporter. Everything it knows now leaves it
+The agent stops being a Prometheus exporter, and the memory limit stops being
+a number somebody picked. Everything it knows now leaves it
 as data, through the collector, to whichever sinks the operator configured.
 
 ### Changed
@@ -36,6 +37,25 @@ as data, through the collector, to whichever sinks the operator configured.
   and the collector; it now asserts against the collector alone, which is a
   stronger statement. There is no keep list to maintain and nothing left to
   double-count.
+
+- **The agent's memory limit is derived from its ring**, not fixed at 40 MiB:
+  rate × buffer × the line size, times 2.5, floored at 16 MiB and capped at
+  three quarters of the container's `memory-max`. A default install now writes
+  `MEM_LIMIT_MB=25` instead of 40. A fixed number cannot be right for every
+  rate — the same 40 left 8 MiB unused at 10 Hz and is below the ring itself
+  at 50 Hz — and the factor is measured rather than chosen. On the reference
+  RB5009 on 2026-09-17, four limits over four windows of ~12 000 samples:
+  40 MiB gave 32.9 MiB of RSS at 2 657 µs a sample, **25 MiB gives about 26 at
+  no measurable cost**, 21 MiB gives 23.5 at +22 %, and 18 MiB gives 20.4 at
+  **+457 %** with a worst tick of 52 ms. 2.5× is the last comfortable factor
+  and 2.0× — where the agent's own budget warning sits — is already past the
+  knee.
+- **`ApproxLineBytes` was 35 % low.** It said 2 560 B where the reference
+  device's line is 3 230 B, served from the allocator's 3 456 B size class,
+  which is what the heap is charged. That understatement is why the old fixed
+  limit never bound: the budget check thought the ring was 7.3 MiB when it was
+  9.9. Measured on 2026-09-17 and dated in the constant, with the warning that
+  it moves with the board.
 
 ### Added
 
