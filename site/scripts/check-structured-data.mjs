@@ -16,6 +16,8 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import process from "node:process";
 
+import { isRedirectStub } from "./redirect-stub.mjs";
+
 const DIST = resolve(process.argv[2] ?? "dist");
 const PERSON_ID = "https://jmrp.io/#person";
 
@@ -60,6 +62,7 @@ function distPathOf(url) {
 
 let pages = 0;
 for (const file of htmlFiles(DIST)) {
+	if (isRedirectStub(readFileSync(join(DIST, file), "utf8"))) continue;
 	const html = readFileSync(join(DIST, file), "utf8");
 	const page = `/${file.replace(/index\.html$/, "")}`;
 	const report = (message) => problems.push(`${page}: ${message}`);

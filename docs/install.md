@@ -209,7 +209,7 @@ version, rate, sequence and oldest sequence, uptime, slipped ticks and round
 trip, then one line about the board: whether this build knows how to turn the
 kernel's port names (`eth0`, `eth1`, …) into RouterOS's on it. Where it does
 not, the line asks for the measurement that would add the board; [RouterOS ports
-and kernel names](https://jmrp.io/docs/mikroscope/playbooks/port-names/) shows how to take it. If
+and kernel names](https://jmrp.io/docs/mikroscope/reference/port-names/) shows how to take it. If
 the agent does not answer, it prints `agent: not reachable from this host` with
 the error, and no board line; `status` still exits 0.
 

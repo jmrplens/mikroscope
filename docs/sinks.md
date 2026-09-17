@@ -1365,7 +1365,7 @@ counts objects the allocator still holds — but they track: the API said 6 21
 - [The API user](https://jmrp.io/docs/mikroscope/security/api-user/): the RouterOS group and address restriction the
   tier's user needs.
 - [The collector](https://jmrp.io/docs/mikroscope/sinks/): where the API-tier sample joins the kernel timeline.
-- [RouterOS ports and kernel names](https://jmrp.io/docs/mikroscope/playbooks/port-names/): matching the API's
+- [RouterOS ports and kernel names](https://jmrp.io/docs/mikroscope/reference/port-names/): matching the API's
   `ether2` to the kernel's `eth1`.
 - [Conntrack without the API](https://jmrp.io/docs/mikroscope/playbooks/conntrack/): reading the connection count from
   the slab instead.
@@ -1713,7 +1713,7 @@ name where the agent's port table maps the kernel name, and the kernel name othe
 
 **Needs** `privileged=yes`. A RouterOS name needs the board to be in the agent's port
 table, and the current name needs the API tier as well; see [RouterOS ports and kernel
-names](https://jmrp.io/docs/mikroscope/playbooks/port-names/).
+names](https://jmrp.io/docs/mikroscope/reference/port-names/).
 
 **May not claim** a fault. A cable pulled and reseated within a minute is a down and an up
 record, and fires. No provoked flap has been captured with this rule running; the flaps
