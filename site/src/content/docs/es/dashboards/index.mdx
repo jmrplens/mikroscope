@@ -6,6 +6,7 @@ description: Qué contienen los dashboards de InfluxDB 3, Prometheus, PostgreSQL
 import { FileTree } from "@astrojs/starlight/components";
 import DashboardCount from "../../../../components/DashboardCount.astro";
 import DashboardCounts from "../../../../components/DashboardCounts.astro";
+import Capture from "../../../../components/Capture.astro";
 import DashboardCaptures from "../../../../components/DashboardCaptures.astro";
 import DashboardPanels from "../../../../components/DashboardPanels.astro";
 import Measured from "../../../../components/Measured.astro";
@@ -235,11 +236,47 @@ por ello.
 En "Trigger fires and suppressions per bin", las supresiones solo están en Prometheus: viven en el
 `/metrics` del agente.
 
-Cada detección, y cada marcador de disparo, es también una anotación del dashboard. La anotación
-**detections** (roja) está activada por defecto; la anotación **triggers** (naranja) está desactivada
-por defecto, para que un dashboard tranquilo siga tranquilo. En InfluxDB cada anotación es una fila de
-suceso con su mensaje; en Prometheus es `increase(…[1m]) > 0` con un paso de 1 minuto, así que allí
-una anotación marca el minuto, no el instante.
+### Las rayas rojas discontinuas de todos los paneles
+
+Un dashboard con detecciones en su ventana dibuja una raya vertical roja discontinua, con un pequeño
+triángulo al pie del eje, cruzando **todos** los paneles en el instante de cada una. Son anotaciones,
+no datos: no son un hueco en el registro, ni un tick perdido, ni un corte de la serie. Están para que
+el panel que estés mirando, sea cual sea, se pueda leer al lado de lo que el colector señaló en ese
+momento — un régimen de atasco en memoria en un núcleo, una microrráfaga en una cola, un enlace que
+parpadeó — sin tener que bajar a la sección de detecciones para enterarte de que pasó algo.
+
+Cada dashboard trae dos capas:
+
+| Capa           | Color   | Por defecto | Qué es cada marca                                                                                                  |
+| -------------- | ------- | ----------- | ------------------------------------------------------------------------------------------------------------------ |
+| **detections** | rojo    | activada    | una fila de `mikroscope_detection`: la regla, su clave y su mensaje, de la etapa de derivación del colector        |
+| **triggers**   | naranja | desactivada | un marcador de captura del agente: la condición que se disparó, el campo y el valor                                 |
+
+Al pasar el ratón por una marca sale el mensaje que lleva la fila, así que la raya responde al *qué*
+además de al *cuándo*. La capa de disparos viene apagada para que un dashboard tranquilo siga
+tranquilo; actívala cuando estés trabajando con [capturas disparadas](/mikroscope/es/record/triggers/).
+
+**Cómo apagarlas.** Las dos capas son casillas en la fila de submenú de debajo del título del
+dashboard — la misma fila en la que van las variables de un dashboard, que en los de InfluxDB,
+Prometheus y PostgreSQL no lleva nada más. Pulsa el nombre de la capa para ocultar sus marcas. Es un
+ajuste de vista: dura la sesión, y guardar el dashboard lo conserva. No cambia nada de las filas
+subyacentes, y la sección de detecciones las sigue contando.
+
+En InfluxDB cada anotación es una fila de suceso con su mensaje; en Prometheus es
+`increase(…[1m]) > 0` con un paso de 1 minuto, así que allí una anotación marca el minuto, no el
+instante.
+
+Las capturas por sección de más arriba están tomadas con las dos capas apagadas, porque el agente
+simulado que llena la base de demostración dispara una detección cada pocos segundos y veinte minutos
+de eso salen fotografiados como una mancha roja. Esta es la misma vista general con la capa de
+detecciones activada, sobre una base de demostración que lleva tres — la densidad que produce un
+despliegue real, y el recuadro de abajo a la derecha cuenta esas mismas tres:
+
+<Capture
+	name="annotations"
+	alt="La sección de vista general del dashboard de InfluxDB con la capa de anotaciones de detecciones activada: rayas verticales rojas discontinuas, cada una con un triángulo al pie del eje de tiempo, cruzan todos los paneles en el instante de una detección."
+	caption="La capa de detecciones, activada: una raya roja discontinua por detección, en todos los paneles a la vez."
+/>
 
 ## Por qué una de las cuatro tiene el aspecto que tiene
 
