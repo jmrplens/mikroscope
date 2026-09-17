@@ -41,6 +41,13 @@ builds:
       - -X github.com/jmrplens/mikroscope/internal/version.BuildDate={{ .CommitDate }}
     mod_timestamp: "{{ .CommitTimestamp }}"
 
+  # The agent, for everything a MikroTik device can be. The container package
+  # exists for arm, arm64 and x86 only (MikroTik's container documentation),
+  # and 32-bit ARM is two things: the same documentation says devices with the
+  # EN7562CT CPU — the hEX Refresh line — "support only arm32v5 container
+  # images", while MikroTik's other 32-bit ARM boards run an ARMv7 userland.
+  # An ARMv5 binary runs on both and an ARMv7 one does not run on the first,
+  # so both levels are built and published, and the board picks its own.
   - id: mikroscope-agent
     main: ./cmd/mikroscope-agent/
     binary: mikroscope-agent
@@ -48,7 +55,7 @@ builds:
     flags: [-trimpath]
     goos: [linux]
     goarch: [amd64, arm64, arm]
-    goarm: ["7"]
+    goarm: ["5", "7"]
     # The same three stamps as the CLI, and the same three internal/image
     # writes into the agent of every tar the hook above builds, so the
     # archive, the image and the tar of one release report one identity.
@@ -128,14 +135,16 @@ changelog:
 
 # One multi-platform agent image. GoReleaser assembles the manifest itself, so
 # there is no docker_manifests block: on a real release it runs a single
-# `buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 --push`, which
+# `buildx build --platform linux/amd64,linux/arm64,linux/arm/v7,linux/arm/v5 --push`, which
 # is also why the index annotations below are accepted. A local
 # `goreleaser release --snapshot` builds each platform separately with --load
 # instead, and buildx refuses index annotations on a single-platform export,
 # so a local dry run needs `--skip=docker`.
 #
-# linux/arm/v7 is the 32-bit RouterOS userland of the hEX S (2025); the other
-# two are the RB5009 class and x86 CHR.
+# linux/arm/v5 is the EN7562CT boards (hEX Refresh), linux/arm/v7 MikroTik's
+# other 32-bit ARM userland, linux/arm64 the RB5009 class and linux/amd64 x86
+# CHR. A multi-platform index is what lets `--remote-image` work on all of them
+# without the operator knowing which their board is.
 dockers_v2:
   - id: agent
     ids: [mikroscope-agent]
@@ -155,6 +164,7 @@ dockers_v2:
       - linux/amd64
       - linux/arm64
       - linux/arm/v7
+      - linux/arm/v5
     dockerfile: Dockerfile.agent
     # Labels describe each architecture's image; GHCR reads a multi-arch
     # package page's description from the INDEX annotations instead, so the
@@ -197,15 +207,47 @@ release:
     - glob: build/agent-images/*.tar
   footer: |
     ---
+    ## Which file do I need?
+
+    Two different programs are published here, and they run on two different
+    machines. Read the table before downloading anything.
+
+    | I want to… | Download | Runs on |
+    | --- | --- | --- |
+    | **Install and use mikroscope** (the usual case) | `mikroscope_{{ .Version }}_<os>_<arch>.tar.gz` — or `.zip` on Windows | **your own computer**, not the router |
+    | Let the router fetch the agent | nothing: `mikroscope install --remote-image jmrplens/mikroscope-agent:{{ .Version }}` | the router pulls it itself |
+    | Side-load the agent image | one `mikroscope-agent-<arch>.tar` from the table below | uploaded to **the router** |
+    | Run the agent outside a container | `mikroscope-agent_{{ .Version }}_linux_<arch>.tar.gz` | wherever you unpack it |
+
+    The **CLI archive** is picked by the operating system and CPU of the
+    machine you type commands on: `linux_x86_64` for an ordinary PC or server,
+    `darwin_arm64` for an Apple-silicon Mac, `windows_x86_64` for Windows.
+    Nothing about it depends on the router.
+
+    The **agent image tar** is picked by the router's architecture, and only
+    matters if you install with `--agent-tar`:
+
+    | Your MikroTik | `/system/resource` architecture-name | Agent image tar |
+    | --- | --- | --- |
+    | RB5009, CCR2004, hAP ax³, most 64-bit ARM boards | `arm64` | `mikroscope-agent-arm64.tar` |
+    | hEX Refresh / hEX S (2025), any EN7562CT board | `arm` | `mikroscope-agent-armv5.tar` |
+    | Other 32-bit ARM boards (hAP ac², hAP ax², …) | `arm` | `mikroscope-agent-armv7.tar` or the v5 one |
+    | CHR, x86 RouterOS | `x86_64` | `mikroscope-agent-amd64.tar` |
+
+    MikroTik's container package exists for **arm, arm64 and x86 only**, and its
+    documentation states that EN7562CT boards "support only arm32v5 container
+    images" — an ARMv5 image runs on every 32-bit ARM MikroTik ships, an ARMv7
+    one does not run on those. If you are not sure which 32-bit board you have,
+    take the **v5** tar. `--remote-image` avoids the question entirely: the
+    image index carries all four platforms and the router picks its own.
+
+    Run `mikroscope doctor --router user@<address>` first; it reads the
+    architecture off the device and says which of these it wants.
+
     **Agent image:** `jmrplens/mikroscope-agent:{{ .Version }}` on Docker Hub,
     which is the registry a RouterOS device is pointed at out of the box, and
     `ghcr.io/jmrplens/mikroscope-agent:{{ .Version }}`
-    (linux/amd64, linux/arm64, linux/arm/v7). Four ways to install it:
-    `mikroscope install` builds the agent from a checkout;
-    `--agent-tar mikroscope-agent-<arch>.tar` uses the asset below and needs no
-    Go toolchain; `--remote-image ghcr.io/jmrplens/mikroscope-agent:{{ .Version }}`
-    lets the router pull it; and `mikroscope plan --rsc` writes a RouterOS
-    script that installs it from the router itself, with no CLI and no ssh.
+    (linux/amd64, linux/arm64, linux/arm/v7, linux/arm/v5).
 
     **Verify the checksums** (keyless, no key to fetch); `checksums.txt` also
     covers the agent image tars:

@@ -16,11 +16,11 @@ import (
 // be byte-identical — determinism is what lets an operator diff two installs.
 func TestTarShape(t *testing.T) {
 	binary := []byte("fake-elf")
-	img1, err := Tar(binary, "arm64")
+	img1, err := Tar(binary, "arm64", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	img2, _ := Tar(binary, "arm64")
+	img2, _ := Tar(binary, "arm64", "")
 	if !bytes.Equal(img1, img2) {
 		t.Fatal("image tar is not deterministic")
 	}
@@ -72,20 +72,28 @@ func TestTarShape(t *testing.T) {
 	}
 }
 
-// TestArmVariant pins that a 32-bit ARM image declares the variant RouterOS
-// on the hEX refresh line will look for. That line (EN7562CT, ARM64 silicon
-// running a 32-bit RouterOS, so `linux/arm` images) is read from MikroTik's
-// product pages, not measured: mikroscope has run on one device only, the
-// reference RB5009.
+// TestArmVariant pins that a 32-bit ARM image declares the ARM level it was
+// built for, and that no other architecture declares one at all.
+//
+// The level matters on RouterOS: MikroTik's container documentation states
+// that the package exists for arm, arm64 and x86 only, and that "devices with
+// EN7562CT CPU support only arm32v5 container images" — the hEX Refresh line.
+// An OCI consumer matches `linux/arm` on this variant, so an image that says
+// v7 is not one of those boards will run. Read from MikroTik's documentation,
+// not measured: this project has run on one device, the reference RB5009,
+// which is arm64.
 func TestArmVariant(t *testing.T) {
-	img, err := Tar([]byte("x"), "arm")
-	if err != nil {
-		t.Fatal(err)
+	t.Parallel()
+	for goarm, want := range map[string]string{"5": `"variant":"v5"`, "7": `"variant":"v7"`, "": `"variant":"v7"`} {
+		img, err := Tar([]byte("x"), "arm", goarm)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Contains(img, []byte(want)) {
+			t.Errorf("arm image built with GOARM=%q does not declare %s", goarm, want)
+		}
 	}
-	if !bytes.Contains(img, []byte(`"variant":"v7"`)) {
-		t.Fatal("arm image does not declare variant v7")
-	}
-	if img64, _ := Tar([]byte("x"), "arm64"); bytes.Contains(img64, []byte(`"variant"`)) {
+	if img64, _ := Tar([]byte("x"), "arm64", ""); bytes.Contains(img64, []byte(`"variant"`)) {
 		t.Fatal("arm64 image declares a variant")
 	}
 }
@@ -115,7 +123,7 @@ func TestStampLdflags(t *testing.T) {
 func TestInspectReadsBackWhatTarWrote(t *testing.T) {
 	t.Parallel()
 	for _, arch := range []string{"arm64", "arm", "amd64"} {
-		data, err := Tar([]byte("ELF-ish agent bytes"), arch)
+		data, err := Tar([]byte("ELF-ish agent bytes"), arch, "")
 		if err != nil {
 			t.Fatal(err)
 		}

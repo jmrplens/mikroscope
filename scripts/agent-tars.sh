@@ -4,7 +4,7 @@
 # byte-identical to what `mikroscope install` from the same release uploads.
 #
 # Usage: scripts/agent-tars.sh [out-dir]    (default: build/agent-images)
-#        ARCHES="arm" scripts/agent-tars.sh  (a subset; default: arm64 arm amd64)
+#        ARCHES="arm:5" scripts/agent-tars.sh  (a subset; default: arm64 arm:5 arm:7 amd64)
 #
 # Two things this script has to get right, and each once went wrong:
 #
@@ -37,8 +37,27 @@ CGO_ENABLED=0 go build -trimpath \
   -o "${cli_dir}/mikroscope" ./cmd/mikroscope
 "${cli_dir}/mikroscope" version
 
+# One tar per thing a MikroTik device can be. The container package exists for
+# arm, arm64 and x86 only (MikroTik's own container documentation), and 32-bit
+# ARM is two things rather than one: the same documentation says devices with
+# the EN7562CT CPU — the hEX Refresh line — "support only arm32v5 container
+# images", while the rest of MikroTik's 32-bit ARM boards run an ARMv7
+# userland. An ARMv5 binary runs on both; an ARMv7 one does not run on the
+# first. Both are published so that neither kind of board has to know, and the
+# names say which is which rather than leaving `-arm` to mean one of them.
+#
+# Each entry is <arch>[:<goarm>]; the name is the suffix after the colon, or
+# the arch itself.
 mkdir -p "$out_dir"
-for arch in ${ARCHES:-arm64 arm amd64}; do
-  "${cli_dir}/mikroscope" image --arch "$arch" --out "${out_dir}/mikroscope-agent-${arch}.tar"
+for spec in ${ARCHES:-arm64 arm:5 arm:7 amd64}; do
+  arch="${spec%%:*}"
+  goarm="${spec#*:}"
+  if [ "$goarm" = "$spec" ]; then
+    name="$arch"
+    "${cli_dir}/mikroscope" image --arch "$arch" --out "${out_dir}/mikroscope-agent-${name}.tar"
+  else
+    name="armv${goarm}"
+    "${cli_dir}/mikroscope" image --arch "$arch" --goarm "$goarm" --out "${out_dir}/mikroscope-agent-${name}.tar"
+  fi
 done
 ls -la "$out_dir"
