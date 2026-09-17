@@ -241,3 +241,63 @@ func TestLabelPortsUsesTheInventory(t *testing.T) {
 		t.Errorf("without inventory = %+v", s2.Events[0])
 	}
 }
+
+// TestDeviceFactsRepeatOnTheirCadence is the fix for what the dashboards
+// showed on 2026-09-17: the board facts had been emitted once, 26 hours
+// earlier, so the four device panels read "No data" over every window since.
+// They are rows with the collector's clock, and a store holds them only at
+// the instants they were written.
+func TestDeviceFactsRepeatOnTheirCadence(t *testing.T) {
+	p := &backlogPuller{}
+	ms := &memSink{}
+	f := &Forwarder{Puller: p, Sinks: []sinks.Sink{ms}, Opts: Options{DeviceEvery: 50 * time.Millisecond}}
+	f.Log = func(string) {}
+
+	f.deviceInfo(context.Background(), "abc")
+	f.deviceInfo(context.Background(), "abc") // too soon: nothing
+	if f.stats.Devices != 1 {
+		t.Fatalf("device events = %d, want 1 inside one cadence", f.stats.Devices)
+	}
+
+	f.deviceAt = f.deviceAt.Add(-time.Second) // the cadence has elapsed
+	f.deviceInfo(context.Background(), "abc")
+	if f.stats.Devices != 2 {
+		t.Fatalf("device events = %d, want the facts repeated", f.stats.Devices)
+	}
+	// A changed hash is new facts and says so, whatever the cadence.
+	f.deviceInfo(context.Background(), "def")
+	if f.stats.Devices != 3 {
+		t.Fatalf("device events = %d, want a new hash to emit at once", f.stats.Devices)
+	}
+
+	ms.mu.Lock()
+	defer ms.mu.Unlock()
+	if len(ms.events) != 3 {
+		t.Fatalf("%d events reached the sink", len(ms.events))
+	}
+	for i, want := range []bool{false, true, false} {
+		e := ms.events[i]
+		if e.Device == nil {
+			t.Fatalf("event %d carries no device", i)
+		}
+		if e.DeviceRepeat != want {
+			t.Errorf("event %d: DeviceRepeat = %t, want %t", i, e.DeviceRepeat, want)
+		}
+		if e.Device.Board != "RB5009" {
+			t.Errorf("event %d: board = %q", i, e.Device.Board)
+		}
+	}
+}
+
+// TestDeviceFactsDefaultCadence pins the default a Forwarder built by hand
+// runs on, so a repeat is a slow fact and never a per-minute row.
+func TestDeviceFactsDefaultCadence(t *testing.T) {
+	f := &Forwarder{}
+	if got := f.deviceEvery(); got != defaultDeviceEvery {
+		t.Errorf("deviceEvery() = %s, want %s", got, defaultDeviceEvery)
+	}
+	f.Opts.DeviceEvery = time.Hour
+	if got := f.deviceEvery(); got != time.Hour {
+		t.Errorf("deviceEvery() = %s, want the configured hour", got)
+	}
+}

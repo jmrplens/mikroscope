@@ -39,20 +39,36 @@ suelo](/mikroscope/es/limits/source-floors/).
 
 ## Cuándo se envía
 
-Una vez cuando arranca `forward`, y de nuevo cada vez que cambia el hash de capacidades del
-agente — un agente reiniciado con otro conjunto de fuentes, por ejemplo. El colector
-comprueba el hash en la lectura de estado que hace cada minuto para volver a medir el
-desfase de reloj, así que un cambio llega a los destinos en más o menos un minuto. Tanto el
-transporte directo como el relay pueden obtener `/capabilities`; cuando la obtención falla,
-el colector lo registra, no envía nada y lo vuelve a intentar en la siguiente lectura de
-estado. Que no se envíe nada es ausencia, no una placa sin datos.
+Cuando arranca `forward`, cada vez que cambia el hash de capacidades del agente — un agente
+reiniciado con otro conjunto de fuentes, por ejemplo — y, si no, cada cinco minutos. El
+colector comprueba el hash en la lectura de estado que hace cada minuto para volver a medir
+el desfase de reloj, así que un cambio llega a los destinos en más o menos un minuto. Tanto
+el transporte directo como el relay pueden obtener `/capabilities`; cuando la obtención
+falla, el colector lo registra, no envía nada y lo vuelve a intentar en la siguiente lectura
+de estado. Que no se envíe nada es ausencia, no una placa sin datos.
+
+**Por qué se repite.** Estos datos son filas con la marca de tiempo del colector, así que un
+almacén solo los tiene en los instantes en que se enviaron, y una ventana de panel que no
+contiene ningún envío no contiene ningún dato. Enviados una sola vez al arrancar, los cuatro
+paneles del equipo muestran «No data» en toda ventana posterior: medido en el despliegue de
+referencia el 2026-09-17, donde la última fila de equipo tenía 26 horas y esos paneles
+llevaban vacíos otro tanto. Cinco minutos pone los datos dentro de cualquier ventana en la
+que valga la pena leerlos y cuesta doce filas por envío — una de identidad, una por zona
+térmica, una por núcleo con datos de cpufreq, una por fuente de nivel — frente a las 864 000
+filas de muestra al día que produce `--hz 10`.
+
+La repetición va marcada como tal, y los destinos se reparten según eso: los almacenes la
+escriben como cualquier otra fila, que es justo para lo que está, y los flujos pensados para
+que alguien los lea — Loki, stdout, una grabación — la saltan, porque un registro es para lo
+que cambia. Así Loki sigue llevando exactamente una línea `device` por conjunto de datos.
 
 El hash solo cubre la cadena del kernel, el número de núcleos y los nombres de las fuentes
 activas; quedan fuera la placa, `privileged`, cgroup, la procedencia de la tabla de puertos,
 cada techo y cada cadencia. Un agente reiniciado cuyo único cambio es un techo o una cadencia
 — un `--memory-max` nuevo, o un `FLOOR_HZ` con el mismo conjunto de fuentes — conserva su
-hash, y el colector no vuelve a enviar el registro del equipo hasta que se reinicia el propio
-`forward`. Esto está leído en el código (`capsHash` en `internal/agent/source.go`), no
+hash, así que el cambio no es lo que dispara el envío; llega a los destinos en la siguiente
+repetición de cinco minutos, y la fila que lo lleva queda marcada entonces y no cuando
+ocurrió. Esto está leído en el código (`capsHash` en `internal/agent/source.go`), no
 observado.
 
 Son hechos, no muestras. No tienen reloj propio, así que los destinos que ponen marca de

@@ -176,6 +176,11 @@ func (s *Stdout) renderJSON(e Event) {
 	case e.Detection != nil:
 		s.marshal(map[string]any{"detection": e.Detection})
 	case e.Device != nil:
+		// The terminal is for change; the cadence repeat says nothing the
+		// line above it did not.
+		if e.DeviceRepeat {
+			return
+		}
 		s.marshal(map[string]any{"device": e.Device})
 	default:
 	}

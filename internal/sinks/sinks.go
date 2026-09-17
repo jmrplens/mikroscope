@@ -32,10 +32,18 @@ type Event struct {
 	Detection *derive.Detection
 	// Device is the device-info stream: what the agent established about
 	// the board at start (identity, ceilings, cadences), fetched from
-	// /capabilities and handed to every sink once at start and again
-	// whenever the agent's capability hash changes. Facts, not samples:
-	// they carry the collector's clock, because they have none of their own.
+	// /capabilities and handed to every sink at start, whenever the agent's
+	// capability hash changes, and on a slow cadence in between. Facts, not
+	// samples: they carry the collector's clock, because they have none of
+	// their own.
 	Device *agent.Capabilities
+	// DeviceRepeat marks a device event whose facts have not changed since
+	// the last one: the cadence repeat that puts them inside every dashboard
+	// window rather than only inside the window containing the collector's
+	// start. A sink that writes a series writes it like any other row — that
+	// is the whole point of it — and the human-facing streams (a log, the
+	// terminal, a recording) skip it, because those are for change.
+	DeviceRepeat bool
 }
 
 // Stats counts what a sink did.

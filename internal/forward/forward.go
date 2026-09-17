@@ -25,15 +25,30 @@ type Options struct {
 	Poll      time.Duration // kernel pull interval
 	APIEvery  time.Duration // API tier cadence; 0 = disabled
 	SkewEvery time.Duration // how often the clock skew is re-measured
-	For       time.Duration // 0 = until ctx is done
+	// DeviceEvery is how often the board facts are re-emitted when nothing
+	// about them has changed; 0 = the default below.
+	DeviceEvery time.Duration
+	For         time.Duration // 0 = until ctx is done
 }
+
+// defaultDeviceEvery is how often unchanged board facts are repeated into
+// the sinks. They are rows with the collector's timestamp, so a store only
+// holds them at the instants they were emitted: emitted once at start, the
+// four device panels of the dashboards read "No data" over every window that
+// does not contain that instant — measured on the reference deployment on
+// 2026-09-17, where the last device row was 26 hours old and the panels had
+// been empty for as long. Five minutes puts them inside any window worth
+// reading them over, and costs twelve rows an emission (one identity, one
+// per thermal zone, one per core with cpufreq facts, one per level source)
+// against the 864 000 sample rows a day that --hz 10 produces.
+const defaultDeviceEvery = 5 * time.Minute
 
 // Stats is the collector's running count.
 type Stats struct {
 	Kernel, API, Gaps uint64
 	Triggers          uint64
 	Detections        uint64
-	Devices           uint64 // device events emitted (one per capability hash seen)
+	Devices           uint64 // device events emitted (a new capability hash, or the cadence repeat)
 	LastSeq           uint64
 	SkewNS            int64
 	SkewJumps         int
@@ -54,6 +69,9 @@ type Forwarder struct {
 	// emitted for; a different hash on the next health read means the
 	// agent restarted with another source set, and the sinks get told.
 	capsHash string
+	// deviceAt is when the facts were last handed to the sinks, so an
+	// unchanged hash still repeats them on Opts.DeviceEvery.
+	deviceAt time.Time
 }
 
 // Run forwards until ctx is done or Opts.For elapses.
@@ -76,6 +94,9 @@ func (f *Forwarder) Run(ctx context.Context) (Stats, error) {
 	}
 	if f.Opts.SkewEvery <= 0 {
 		f.Opts.SkewEvery = time.Minute
+	}
+	if f.Opts.DeviceEvery <= 0 {
+		f.Opts.DeviceEvery = defaultDeviceEvery
 	}
 	if f.Log == nil {
 		f.Log = func(string) {}
@@ -255,12 +276,35 @@ func (f *Forwarder) emit(e sinks.Event) {
 }
 
 // deviceInfo fetches /capabilities and hands the board facts to every sink
-// as a device event, once per capability hash. A transport that cannot
-// fetch them (a test fake) emits nothing, which is absence, not a board
-// with no facts.
+// as a device event: on the first call, on every capability hash the agent
+// reports that is not the one already emitted, and otherwise no more often
+// than Opts.DeviceEvery. A transport that cannot fetch them (a test fake)
+// emits nothing, which is absence, not a board with no facts.
+//
+// The repeat is what makes the facts readable. They are stamped with the
+// collector's clock and land in each store as ordinary rows, so a window
+// that does not contain an emission holds none of them — which is exactly
+// what the four device panels showed on the reference deployment before
+// this existed.
+// deviceEvery is the cadence in force, so a Forwarder built by hand — a test,
+// an embedder — repeats on the same schedule as one Run configured.
+func (f *Forwarder) deviceEvery() time.Duration {
+	if f.Opts.DeviceEvery > 0 {
+		return f.Opts.DeviceEvery
+	}
+	return defaultDeviceEvery
+}
+
 func (f *Forwarder) deviceInfo(ctx context.Context, hash string) {
 	cf, ok := f.Puller.(transport.CapabilityFetcher)
-	if !ok || hash == f.capsHash {
+	if !ok {
+		return
+	}
+	// The first emission is never a repeat, even for an agent that reports
+	// no hash at all: deviceAt is the zero time until the facts have been
+	// handed over once.
+	same := hash == f.capsHash && !f.deviceAt.IsZero()
+	if same && time.Since(f.deviceAt) < f.deviceEvery() {
 		return
 	}
 	caps, err := cf.Capabilities(ctx)
@@ -269,8 +313,9 @@ func (f *Forwarder) deviceInfo(ctx context.Context, hash string) {
 		return
 	}
 	f.capsHash = hash
+	f.deviceAt = time.Now()
 	f.stats.Devices++
-	f.emit(sinks.Event{Device: &caps})
+	f.emit(sinks.Event{Device: &caps, DeviceRepeat: same})
 }
 
 // remeasure re-reads the skew; a jump beyond 50 ms is logged (a router
