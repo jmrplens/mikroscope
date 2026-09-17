@@ -38,6 +38,17 @@ func promQuery(ctx context.Context, addr, expr string, at time.Time) (*promResul
 // exposed parses the body the collector's exporter served into name → value,
 // for the series that carry no labels. It is a few lines rather than a
 // dependency because that is all this comparison needs.
+// clockGauges follow wall time rather than the samples, so a scrape taken
+// after this process read the exposition legitimately carries a LARGER value.
+// They are excluded from the comparison below, which is about counters that
+// only rise with the data — not about which reader got there last. The
+// ordering used to be guaranteed by accident: an unrelated HTTP fetch sat
+// between the run ending and the internal scraper stopping, and removing it
+// in 1.0.5 made the race visible.
+var clockGauges = map[string]bool{
+	"mikroscope_uptime_seconds": true,
+}
+
 func exposed(body string) map[string]float64 {
 	out := map[string]float64{}
 	for line := range strings.SplitSeq(body, "\n") {
@@ -45,7 +56,7 @@ func exposed(body string) map[string]float64 {
 			continue
 		}
 		name, rest, ok := strings.Cut(line, " ")
-		if !ok || strings.ContainsAny(name, "{}") {
+		if !ok || strings.ContainsAny(name, "{}") || clockGauges[name] {
 			continue
 		}
 		v, err := strconv.ParseFloat(strings.TrimSpace(rest), 64)
@@ -60,7 +71,8 @@ func exposed(body string) map[string]float64 {
 // compareExposedSeries asks Prometheus for every unlabeled mikroscope series
 // the exporter served, and returns how many it compared. A stored value above
 // the served one is the only direction that can be wrong: the exporter's
-// counters only rise, and this process read it after the last scrape.
+// counters only rise with the data they fold. Gauges that follow the clock
+// are not in this set — see clockGauges.
 //
 // last_over_time rather than an instant: the exporter withholds a series in a
 // sample it has no value for — the PMU-derived ones are absent in any sample

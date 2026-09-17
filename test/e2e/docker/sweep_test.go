@@ -55,11 +55,6 @@ type sweep struct {
 	// Log is the collector's combined output, kept because a sink that could
 	// not write still exits zero.
 	Log string
-	// AgentExposition is the fake agent's own /metrics. The Prometheus
-	// dashboard expects two scrape jobs — the collector and the agent — and
-	// the families only the sampler can produce (its tick histograms, the
-	// trigger and capture counters, slipped ticks) are on this one.
-	AgentExposition string
 	// Exposition is the last body the collector's own /metrics served, read
 	// by this process while the run was live. Prometheus scraped the same
 	// endpoint over the same window, so this is the oracle its stored series
@@ -263,11 +258,6 @@ func runSweep(ctx context.Context, tb testing.TB, stack *Stack) (*sweep, error) 
 	go func() { scraped <- pollExporter(scrapeCtx, s.PromAddr) }()
 	runErr := cmd.Wait()
 	s.End = time.Now()
-	// The agent's own exposition, read after the run rather than before it:
-	// the fake publishes nothing until its first request, and its timing
-	// histograms — the families only a sampler with a ticker can produce —
-	// are absent until it has ticked.
-	s.AgentExposition = fetch(ctx, "http://"+agent.Addr()+"/metrics")
 	stopScrape()
 	s.Exposition = <-scraped
 	out := buf.Bytes()
