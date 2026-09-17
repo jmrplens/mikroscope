@@ -25,8 +25,13 @@
 # against the same fake agent with every sink pointed at them, and then asks
 # each store its own question with its own API. It still needs no router: the
 # samples come from the same canned agent, so the run is reproducible on any
-# machine with Docker. It is not on the pull-request path — nine containers —
-# and runs weekly, on dispatch, and on the release gate.
+# machine with Docker. It IS on the pull-request path since 2026-09-18, and also
+# runs weekly, on dispatch, and on the release gate. It was not, on the grounds
+# that nine containers are a lot for a pull request, and that is how 1.0.5
+# reached main with two tests in this suite still reading an endpoint the
+# release had removed: every pull-request check was green and the tag was what
+# found it. Having it there costs 2 min 37 s, measured on the release run that
+# failed — containers included.
 #
 # Duration. Measured on the development machine on 2026-09-12: 15 s for
 # `go test ./test/e2e/`, 18 s with the race detector, 16 s inside the network
