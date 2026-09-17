@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"strconv"
 	"strings"
 	"sync"
@@ -512,40 +511,6 @@ func (c *Captures) MarkersBetween(after, upTo uint64) []Marker {
 		}
 	}
 	return out
-}
-
-// RenderMetrics appends the trigger and capture families to /metrics.
-func (c *Captures) RenderMetrics(w io.Writer) {
-	if c == nil {
-		return
-	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	p := printer{w}
-	p.f("# HELP mikroscope_trigger_fired_total Times each configured condition armed a capture. A capture is a sample of events, never a census: see mikroscope_trigger_suppressed_total for what was not kept.\n# TYPE mikroscope_trigger_fired_total counter\n")
-	for _, cond := range c.cfg.Conditions {
-		p.f("mikroscope_trigger_fired_total{condition=%q} %d\n", cond.Name, c.fired[cond.Name])
-	}
-	if n := c.fired["manual"]; n > 0 {
-		p.f("mikroscope_trigger_fired_total{condition=\"manual\"} %d\n", n)
-	}
-	// Every (condition, reason) pair is rendered, at 0 until it happens: a
-	// family that appears only after the first event is a family a
-	// Prometheus dashboard cannot show as "0 so far".
-	p.f("# HELP mikroscope_trigger_suppressed_total Times a condition was true and no capture was armed: refractory (it had fired within the window) or pending (another capture was still collecting). This is how much of a burst was not seen.\n# TYPE mikroscope_trigger_suppressed_total counter\n")
-	for _, cond := range c.cfg.Conditions {
-		for _, reason := range []string{"refractory", "pending"} {
-			p.f("mikroscope_trigger_suppressed_total{condition=%q,reason=%q} %d\n", cond.Name, reason, c.suppressed[cond.Name+"\x00"+reason])
-		}
-	}
-	p.f("# HELP mikroscope_capture_refused_total Captures collected and then not kept: budget (the byte budget was full under the first policy, or the window alone exceeds it) or empty (the ring no longer held the window).\n# TYPE mikroscope_capture_refused_total counter\n")
-	for _, k := range []string{"budget", "empty"} {
-		p.f("mikroscope_capture_refused_total{reason=%q} %d\n", k, c.refused[k])
-	}
-	p.f("# HELP mikroscope_captures_held Captures currently retained.\n# TYPE mikroscope_captures_held gauge\nmikroscope_captures_held %d\n", len(c.held))
-	p.f("# HELP mikroscope_capture_bytes Ring bytes the retained captures pin, against mikroscope_capture_budget_bytes.\n# TYPE mikroscope_capture_bytes gauge\nmikroscope_capture_bytes %d\n", c.bytes)
-	p.f("# TYPE mikroscope_capture_budget_bytes gauge\nmikroscope_capture_budget_bytes %d\n", c.cfg.Budget)
-	p.f("# HELP mikroscope_capture_bytes_served_total Bytes handed out over /captures/<id>: a download runs on the same core as the sampler, and is charged here as the puller is charged.\n# TYPE mikroscope_capture_bytes_served_total counter\nmikroscope_capture_bytes_served_total %d\n", c.served)
 }
 
 // errNoCaptures is the reply when the feature is off.

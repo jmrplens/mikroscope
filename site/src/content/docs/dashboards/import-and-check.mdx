@@ -27,30 +27,21 @@ set:
 
 Without the second, panels fail with `flightsql: Unauthenticated` (Grafana 12.3.2, 2026-09-12).
 
-## Prometheus: two scrape jobs
+## Prometheus: one scrape job
 
-The Prometheus dashboard expects two scrape jobs. The first scrapes the collector
-(`mikroscope forward --prom :9124`), which carries every family the agent has, recomputed from the
-samples it received, plus the collector's own derived and detection families. The second scrapes the
-agent directly and keeps only the families only the sampler can produce: its tick timing
-histograms, the trigger and capture counters, and slipped ticks.
+The collector's:
 
 ```yaml
 - job_name: "mikroscope"
   scrape_interval: 5s
   static_configs: [{ targets: ["<collector host>:9124"] }]
-- job_name: "mikroscope-agent"
-  scrape_interval: 5s
-  static_configs: [{ targets: ["172.30.10.2:9123"] }]
-  metric_relabel_configs:
-    - source_labels: [__name__]
-      regex: "mikroscope_(tick_.*|trigger_.*|capture.*|captures_held|slipped_total)"
-      action: keep
 ```
 
-Scraping the agent without the keep list would double every counter the collector also exposes.
-`172.30.10.2:9123` is the agent's address on the default install; how a Prometheus host reaches it
-is on [Reaching the agent](/mikroscope/install/reaching-the-agent/).
+`mikroscope forward --prom :9124` carries every family: the kernel tier recomputed from the samples
+it received, the collector's own derived and detection families, and — since 1.0.5 — what only the
+sampler can produce. The agent serves no `/metrics` at all any more; its tick timing rides in the
+samples and its own counters come over `GET /sampler`, which the collector reads every minute. A
+second job would have nothing to add.
 
 ## The PostgreSQL datasource
 

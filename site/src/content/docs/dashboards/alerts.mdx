@@ -116,12 +116,13 @@ Each rule's title, and under it its `summary` annotation verbatim, as generated:
 
 <AlertRules show="queries" store="prometheus" />
 
-`mikroscope_slipped_total` comes from the agent scrape job, the one with the keep list on
-[Import and check](/mikroscope/dashboards/import-and-check/#prometheus-two-scrape-jobs); the other
-ten read the collector's `/metrics`. `mikroscope_kmsg_port_records_total` is among them: both
-expositions are written by the same renderer, and the collector's copy is the one the keep list
-leaves in place, the one that classifies a record the agent did not and names each port as RouterOS
-names it now.
+All eleven read the collector's `/metrics`, which is the only exposition there is since 1.0.5 —
+[Import and check](/mikroscope/dashboards/import-and-check/#prometheus-one-scrape-job) has the one
+scrape job. `mikroscope_slipped_total` is among them and used to come from a second job against the
+agent: the agent still owns the ticker and is still the only thing that can count a slipped tick,
+but it now reports the number over `/sampler` and the collector renders it. So the rule fires on a
+figure that is at most a minute old rather than one scrape old, which for a counter that is 0 on a
+healthy device is the same alert.
 
 </TabItem>
 <TabItem label="InfluxDB 3">

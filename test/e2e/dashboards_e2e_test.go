@@ -339,35 +339,18 @@ func containsAll(s string, subs []string) bool {
 	return true
 }
 
-// servedMetrics is the set of metric names the Prometheus dashboard's two
-// scrape jobs serve between them: the collector, which recomputes every
-// family from the samples it received, and the agent itself, keep-relabelled
-// to the families only a sampler can produce — its tick timing histograms,
-// the trigger and capture counters, slipped ticks (docs/sinks.md). Scraping
-// only the collector would assert against half the deployment. The agent's
-// contribution is filtered through the documented keep list, so a family the
-// collector stopped serving cannot be excused by the agent also serving it.
-func servedMetrics(t *testing.T, a *agentFixture, exposition string, p *proc) map[string]bool {
+// servedMetrics is the set of metric names the Prometheus dashboard's one
+// scrape job serves: the collector's. Since 1.0.5 there is no second job —
+// the agent serves no exposition at all, and what only a sampler can count
+// (its tick timing, slipped ticks, the trigger and capture counters) reaches
+// the collector as data over /sampler and is rendered here with everything
+// else. A family missing from this set is missing from the deployment.
+func servedMetrics(t *testing.T, _ *agentFixture, exposition string, _ *proc) map[string]bool {
 	t.Helper()
 	samples, _ := parseExposition(t, exposition)
 	served := map[string]bool{}
 	for _, s := range samples {
 		served[s.Name] = true
-	}
-	agentBody, up := scrape(t, a.Addr())
-	if !up {
-		t.Fatalf("the agent served no /metrics to scrape:\n%s", p.Output())
-	}
-	agentSamples, _ := parseExposition(t, agentBody)
-	var kept int
-	for _, s := range agentSamples {
-		if agentJobKeep.MatchString(s.Name) {
-			served[s.Name] = true
-			kept++
-		}
-	}
-	if kept == 0 {
-		t.Fatalf("the agent's exposition carried none of the families the agent scrape job keeps (%s)", agentJobKeep)
 	}
 	return served
 }
@@ -408,13 +391,6 @@ func checkPromPanelsReadServedMetrics(t *testing.T, ps []dpane, served map[strin
 		}
 	}
 }
-
-// agentJobKeep is the keep list of the second Prometheus scrape job, copied
-// from docs/sinks.md: the families only the sampler can produce, which the
-// collector's exposition deliberately does not carry. Anything outside it has
-// to come from the collector, so that scraping the agent here widens what the
-// run produces without excusing a collector that stopped producing something.
-var agentJobKeep = regexp.MustCompile(`^mikroscope_(tick_.*|trigger_.*|capture.*|captures_held|slipped_total)$`)
 
 // isAPITier reports whether a name belongs to the RouterOS API tier. The API
 // tier needs a router, so this suite cannot make it emit anything and cannot

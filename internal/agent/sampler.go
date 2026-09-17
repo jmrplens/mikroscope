@@ -21,9 +21,6 @@ type Sampler struct {
 	seq   atomic.Uint64
 	slips atomic.Uint64
 	ticks atomic.Uint64
-	// Totals since start, for /metrics counters: the agent ships cumulative
-	// counters and never a percentage, so rate() over any range is right.
-	totals *Totals
 	// captures evaluates the trigger conditions on every sample and keeps
 	// the windows around the ones that fire; nil when the feature is off.
 	captures *Captures
@@ -34,9 +31,7 @@ func (s *Sampler) SetCaptures(c *Captures) { s.captures = c }
 
 // NewSampler wires a source to a ring at rate Hz.
 func NewSampler(src Source, ring *Ring, rateHz, topK int) *Sampler {
-	t := NewTotals()
-	t.SetRateHz(rateHz)
-	return &Sampler{src: src, ring: ring, rate: rateHz, topK: topK, totals: t}
+	return &Sampler{src: src, ring: ring, rate: rateHz, topK: topK}
 }
 
 // Seq is the newest sequence number produced.
@@ -47,9 +42,6 @@ func (s *Sampler) Slipped() uint64 { return s.slips.Load() }
 
 // Ticks is how many samples were produced.
 func (s *Sampler) Ticks() uint64 { return s.ticks.Load() }
-
-// Totals exposes the cumulative counters.
-func (s *Sampler) Totals() *Totals { return s.totals }
 
 // Run samples until ctx is done. The first read only primes prev; the first
 // sample is produced one period later.
@@ -84,8 +76,11 @@ func (s *Sampler) Run(ctx context.Context) error {
 			}
 			readDur := time.Since(wake)
 			smp := sample.Delta(&prev, &cur, s.seq.Add(1), s.topK)
-			s.totals.Add(smp)
-			s.totals.AddTiming(smp.DtNS, int64(wake.Sub(due)), int64(readDur))
+			// The sampler's own timing travels in the sample: nobody
+			// downstream can measure how late this tick woke or how long its
+			// read took, and a collector that never ran the ticker cannot
+			// recompute either.
+			smp.Self.WakeNS, smp.Self.ReadNS = int64(wake.Sub(due)), int64(readDur)
 			// Trigger evaluation runs here, where the sample is already in
 			// cache, and never in a second goroutine: that would need its own
 			// copy of the sample and would couple the sampler to its lock.

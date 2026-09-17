@@ -189,7 +189,7 @@ func TestTokenGuardsEverythingButHealthz(t *testing.T) {
 	if code, _ := get(t, ts.URL+"/healthz", ""); code != 200 {
 		t.Fatalf("healthz without token: %d", code)
 	}
-	for _, p := range []string{"/capabilities", "/snapshot", "/stream?since=0", "/metrics"} {
+	for _, p := range []string{"/capabilities", "/snapshot", "/stream?since=0", "/sampler"} {
 		if code, _ := get(t, ts.URL+p, ""); code != 401 {
 			t.Fatalf("%s without token: %d", p, code)
 		}
@@ -234,46 +234,26 @@ func TestSnapshotAndMetricsSeeThePlateau(t *testing.T) {
 	if last.Seq != ring.Last() {
 		t.Fatalf("snapshot does not end at the newest sample: %d vs %d", last.Seq, ring.Last())
 	}
-	code, m := get(t, ts.URL+"/metrics", "")
+	// The agent serves no exposition since 1.0.5: what it counts about itself
+	// travels as data on /sampler, and the rendering lives in internal/expo,
+	// where its own tests check it.
+	if metricsCode, _ := get(t, ts.URL+"/metrics", ""); metricsCode != 404 {
+		t.Fatalf("the agent still serves /metrics: %d", metricsCode)
+	}
+	code, body = get(t, ts.URL+"/sampler", "")
 	if code != 200 {
-		t.Fatalf("metrics: %d", code)
+		t.Fatalf("/sampler: %d", code)
 	}
-	for _, want := range []string{
-		`mikroscope_cpu_ticks_total{cpu="0",mode="user"}`,
-		`mikroscope_cpu_busy_ticks_bucket{cpu="0",le="3"}`,
-		`mikroscope_cpu_busy_ratio_window{cpu="0",window="10s",stat="max"} 0.3`,
-		`mikroscope_cpu_busy_ratio_window{cpu="1",window="10s",stat="max"} 0`,
-		`mikroscope_softnet_total{cpu="0",kind="dropped"} 0`,
-		`mikroscope_irq_total{irq="`,
-		`mikroscope_meminfo_kbytes{field="MemTotal"} 999956`,
-		`mikroscope_self_cpu_usec_total`,
-		`mikroscope_slipped_total 0`,
-		`mikroscope_info{version="test",rate_hz="10"} 1`,
-	} {
-		if !strings.Contains(m, want) {
-			t.Fatalf("metrics lack %q:\n%s", want, m)
-		}
+	var st SamplerStats
+	if err := json.Unmarshal([]byte(body), &st); err != nil {
+		t.Fatalf("/sampler: %v: %s", err, body)
 	}
-	// user ticks on core 0: exactly 20 samples × 3.
-	if !strings.Contains(m, `mikroscope_cpu_ticks_total{cpu="0",mode="user"} 60`) {
-		t.Fatalf("user ticks on core 0 are not 60:\n%s", m)
+	if st.Ticks == 0 {
+		t.Fatalf("the agent reports no ticks taken: %s", body)
 	}
-	// Histogram on core 0: exactly the 20 plateau samples carried 3 busy
-	// ticks, i.e. cumulative(3) − cumulative(2) == 20.
-	if d := countLE(m, "3") - countLE(m, "2"); d != 20 {
-		t.Fatalf("histogram le=3 bucket holds %d samples, want 20:\n%s", d, m)
+	if st.Slipped != 0 {
+		t.Errorf("slipped = %d over a canned source, want 0", st.Slipped)
 	}
-}
-
-func countLE(m, le string) int {
-	for l := range strings.SplitSeq(m, "\n") {
-		if strings.HasPrefix(l, `mikroscope_cpu_busy_ticks_bucket{cpu="0",le="`+le+`"}`) {
-			var n int
-			fmt.Sscanf(l[strings.LastIndex(l, " ")+1:], "%d", &n)
-			return n
-		}
-	}
-	return -1
 }
 
 func TestSnapshotSinceIsContiguousBoundedAndReportsGaps(t *testing.T) {

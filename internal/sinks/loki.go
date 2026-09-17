@@ -146,6 +146,12 @@ func (s *Loki) Write(e Event) {
 		c := e.Device
 		line := fmt.Sprintf("device: board=%s kernel=%s cores=%d privileged=%t cgroup=%t sources=%s hash=%s", orUnknown(c.Board), orUnknown(c.Kernel), c.Cores, c.Privileged, c.Cgroup, deviceSources(c), c.Hash)
 		s.cur = append(s.cur, lokiEntry{source: "device", level: "info", ns: time.Now().UnixNano(), line: line})
+	case e.Sampler != nil:
+		// Deliberately nothing. A log stream is for what changed; the agent's
+		// own counters are levels read every minute, and a line a minute
+		// saying "still zero slipped" would bury the lines that matter. Every
+		// store sink carries them instead.
+		return
 	case e.Trigger != nil:
 		t := e.Trigger
 		line := fmt.Sprintf("trigger %s fired on seq %d: %s=%g (threshold %g); capture held on the agent id=%d cause=%s seq=%d", t.Cause, t.Seq, t.Field, t.Value, t.Threshold, t.ID, t.Cause, t.Seq)

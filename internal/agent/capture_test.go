@@ -112,20 +112,36 @@ func assertFirstCaptureComplete(t *testing.T, c *Captures) {
 // the softnet-drop capture, its refractory repeats and the squeeze firing.
 func assertTriggerMetrics(t *testing.T, c *Captures) {
 	t.Helper()
-	var b strings.Builder
-	c.RenderMetrics(&b)
-	for _, want := range []string{
-		`mikroscope_trigger_fired_total{condition="softnet-drop"} 1`,
-		`mikroscope_trigger_fired_total{condition="busy>=0.9"} 0`,
-		`mikroscope_trigger_fired_total{condition="squeeze"} 1`,
-		`mikroscope_trigger_suppressed_total{condition="busy>=0.9",reason="pending"} 1`,
-		`mikroscope_trigger_suppressed_total{condition="softnet-drop",reason="refractory"} 2`,
-		`mikroscope_captures_held 1`,
-		`mikroscope_capture_budget_bytes 1048576`,
+	st := c.Stats()
+	if st == nil {
+		t.Fatal("no capture stats")
+	}
+	for name, want := range map[string]uint64{
+		"softnet-drop fired":                 1,
+		"busy>=0.9 fired":                    0, // configured and never fired: present at 0
+		"squeeze fired":                      1,
+		"busy>=0.9 suppressed pending":       1,
+		"softnet-drop suppressed refractory": 2,
 	} {
-		if !strings.Contains(b.String(), want) {
-			t.Errorf("metrics lack %q:\n%s", want, b.String())
+		got := map[string]uint64{
+			"softnet-drop fired":                 st.Fired["softnet-drop"],
+			"busy>=0.9 fired":                    st.Fired["busy>=0.9"],
+			"squeeze fired":                      st.Fired["squeeze"],
+			"busy>=0.9 suppressed pending":       st.Suppressed["busy>=0.9\x00pending"],
+			"softnet-drop suppressed refractory": st.Suppressed["softnet-drop\x00refractory"],
+		}[name]
+		if got != want {
+			t.Errorf("%s = %d, want %d", name, got, want)
 		}
+	}
+	if _, ok := st.Fired["busy>=0.9"]; !ok {
+		t.Error(`a configured condition that never fired is missing from Fired; it must be present at 0`)
+	}
+	if st.Held != 1 {
+		t.Errorf("held = %d, want 1", st.Held)
+	}
+	if st.BudgetBytes != 1048576 {
+		t.Errorf("budget = %d, want 1048576", st.BudgetBytes)
 	}
 }
 
@@ -161,10 +177,8 @@ func TestCaptureBudgetPolicies(t *testing.T) {
 	if len(last.Captures) != 2 || last.Captures[0].FireSeq != 8 || last.Captures[1].FireSeq != 12 {
 		t.Fatalf("last policy kept %+v", last.Captures)
 	}
-	var b strings.Builder
-	fire("first").RenderMetrics(&b)
-	if !strings.Contains(b.String(), `mikroscope_capture_refused_total{reason="budget"} 1`) {
-		t.Errorf("refusal not counted:\n%s", b.String())
+	if got := fire("first").Stats().Refused["budget"]; got != 1 {
+		t.Errorf("refusals for budget = %d, want 1", got)
 	}
 }
 
@@ -240,9 +254,22 @@ func assertManualCaptureAndDelete(t *testing.T, base string) {
 	if code, _ := get(t, base+"/captures/1", ""); code != 404 {
 		t.Fatalf("deleted capture still served: %d", code)
 	}
-	_, m := get(t, base+"/metrics", "")
-	if !strings.Contains(m, "mikroscope_capture_bytes_served_total ") || !strings.Contains(m, `mikroscope_trigger_fired_total{condition="manual"} 1`) {
-		t.Fatalf("metrics lack the capture families:\n%s", m[strings.LastIndex(m, "mikroscope_trigger"):])
+	// The same counters, now as data on /sampler: since 1.0.5 the agent
+	// serves no exposition and the collector renders these families from
+	// what it reads here.
+	code, body := get(t, base+"/sampler", "")
+	if code != 200 {
+		t.Fatalf("/sampler: %d", code)
+	}
+	var st SamplerStats
+	if decErr := json.Unmarshal([]byte(body), &st); decErr != nil {
+		t.Fatalf("/sampler: %v: %s", decErr, body)
+	}
+	if st.Captures == nil || st.Captures.ServedBytes == 0 {
+		t.Fatalf("no bytes served counted: %s", body)
+	}
+	if st.Captures.Fired["manual"] != 1 {
+		t.Fatalf("manual fire not counted: %s", body)
 	}
 }
 

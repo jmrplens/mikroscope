@@ -127,12 +127,13 @@ El título de cada regla, en inglés como aparece en Grafana, y debajo una tradu
 
 <AlertRules show="queries" store="prometheus" />
 
-`mikroscope_slipped_total` viene del trabajo de scrape del agente, el que tiene la lista `keep` en
-[Importar y comprobar](/mikroscope/es/dashboards/import-and-check/#prometheus-dos-trabajos-de-scrape);
-las otras diez leen el `/metrics` del colector. `mikroscope_kmsg_port_records_total` está entre
-ellas: las dos exposiciones las escribe el mismo renderizador, y la copia del colector es la que la
-lista `keep` deja pasar, la que clasifica el registro que el agente no clasificó y nombra cada puerto
-como lo nombra RouterOS ahora.
+Las once leen el `/metrics` del colector, que desde 1.0.5 es la única exposición que hay —
+[Importar y comprobar](/mikroscope/es/dashboards/import-and-check/#prometheus-un-trabajo-de-scrape)
+tiene el único trabajo de scrape. `mikroscope_slipped_total` está entre ellas y antes venía de un
+segundo trabajo contra el agente: el agente sigue siendo el dueño del ticker y lo único que puede
+contar un tick perdido, pero ahora informa del número por `/sampler` y el colector lo renderiza. Así
+que la regla se dispara sobre una cifra de como mucho un minuto en vez de un scrape, que para un
+contador que vale 0 en un equipo sano es la misma alerta.
 
 </TabItem>
 <TabItem label="InfluxDB 3">

@@ -1,4 +1,4 @@
-package agent
+package expo
 
 import (
 	"bytes"
@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jmrplens/mikroscope/internal/agent"
 	"github.com/jmrplens/mikroscope/internal/procfs"
 	"github.com/jmrplens/mikroscope/internal/sample"
 )
@@ -18,7 +19,7 @@ import (
 // know the scrape window, so it never resets anything on collect. rate() over any range is then correct, two scrapers see the same
 // truth, and a missed scrape loses nothing.
 //
-// The Ring carries deltas, so every counter here is an accumulator: a delta
+// The agent.Ring carries deltas, so every counter here is an accumulator: a delta
 // exported as a counter would be a counter that falls, and rate() over it
 // would be meaningless. Levels are not accumulated at all — they are read
 // off the newest sample in the render pass, which is why last is kept.
@@ -605,7 +606,7 @@ func (t *Totals) foldDevices(s sample.Sample) {
 
 // Exposition holds what Render needs beyond the totals.
 type Exposition struct {
-	Ring   *Ring
+	Ring   *agent.Ring
 	RateHz int
 	// Sampler is true on the agent, which owns the ticker: only it can say
 	// how many ticks slipped. The collector's Prometheus sink leaves it
@@ -620,7 +621,7 @@ type Exposition struct {
 	// each level source's read cadence (renderCadences). The agent passes
 	// its own; the collector's Prometheus sink passes what it fetched from
 	// /capabilities, so both expositions carry the same board facts.
-	Caps *Capabilities
+	Caps *agent.Capabilities
 }
 
 // Render writes the Prometheus text exposition. Trailing-window gauges are
@@ -749,7 +750,7 @@ func (t *Totals) renderTiming(p printer) {
 	hist("mikroscope_tick_read_seconds", "How long reading every source took, per tick. The other half of the smear: a sample's sources are read one after another over this long, and at 100 Hz a 1.4 ms read is 14 % of the period.", latencyBuckets[:], t.readHist, t.readSum)
 }
 
-func (t *Totals) renderBusyWindows(p printer, tail []Entry) {
+func (t *Totals) renderBusyWindows(p printer, tail []agent.Entry) {
 	p.f("# HELP mikroscope_cpu_busy_ratio_window Busy ratio statistics over a trailing wall-clock window, computed at scrape from the ring.\n# TYPE mikroscope_cpu_busy_ratio_window gauge\n")
 	for _, win := range renderWindows {
 		part := trailing(tail, win.d)
@@ -770,7 +771,7 @@ func (t *Totals) renderBusyWindows(p printer, tail []Entry) {
 // the configured rate was actually delivered, and it has to be a window
 // gauge for the same reason the busy ratio does: a level read at scrape time
 // reports only whichever tick the scrape happened to land on.
-func renderIntervalWindows(p printer, tail []Entry) {
+func renderIntervalWindows(p printer, tail []agent.Entry) {
 	p.f("# HELP mikroscope_sample_interval_seconds The sampler's own measured interval between ticks, over a trailing wall-clock window, computed at scrape from the ring.\n# TYPE mikroscope_sample_interval_seconds gauge\n")
 	for _, win := range renderWindows {
 		st := intervalStats(trailing(tail, win.d))
@@ -784,7 +785,7 @@ func renderIntervalWindows(p printer, tail []Entry) {
 }
 
 // trailing is the suffix of entries within d of the newest one.
-func trailing(entries []Entry, d time.Duration) []Entry {
+func trailing(entries []agent.Entry, d time.Duration) []agent.Entry {
 	if len(entries) == 0 {
 		return nil
 	}
@@ -797,7 +798,7 @@ func trailing(entries []Entry, d time.Duration) []Entry {
 }
 
 // windowStats is sample.Stats over the ring's per-core ratios.
-func windowStats(entries []Entry, core int) sample.WindowStats {
+func windowStats(entries []agent.Entry, core int) sample.WindowStats {
 	ratios := make([]float64, 0, len(entries))
 	for i := range entries {
 		if core < len(entries[i].Busy) {
@@ -809,7 +810,7 @@ func windowStats(entries []Entry, core int) sample.WindowStats {
 
 // intervalStats is sample.Stats over the ring's measured tick intervals, in
 // seconds.
-func intervalStats(entries []Entry) sample.WindowStats {
+func intervalStats(entries []agent.Entry) sample.WindowStats {
 	secs := make([]float64, 0, len(entries))
 	for i := range entries {
 		if entries[i].DtNS > 0 {
@@ -1262,7 +1263,7 @@ func (t *Totals) renderMTD(p printer) {
 // start: identity, ceilings and cadences. It is the device-info stream in
 // Prometheus form; the other sinks receive the same facts as a device
 // event from the collector (sinks.Event.Device).
-func renderDevice(p printer, c *Capabilities) {
+func renderDevice(p printer, c *agent.Capabilities) {
 	if c == nil {
 		return
 	}
@@ -1275,7 +1276,7 @@ func renderDevice(p printer, c *Capabilities) {
 // renderCadences exposes each level source's read cadence and the named
 // reason it is not the sampler rate, so a consumer learns the true cadence
 // of a field from the exposition and not by inferring it from the data.
-func renderCadences(p printer, c map[string]Cadence) {
+func renderCadences(p printer, c map[string]agent.Cadence) {
 	if len(c) == 0 {
 		return
 	}

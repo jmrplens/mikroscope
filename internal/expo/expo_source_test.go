@@ -1,10 +1,11 @@
-package agent
+package expo
 
 import (
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/jmrplens/mikroscope/internal/agent"
 	"github.com/jmrplens/mikroscope/internal/procfs"
 	"github.com/jmrplens/mikroscope/internal/sample"
 )
@@ -52,7 +53,7 @@ func fullSample(seq uint64, monoNS int64) sample.Sample {
 
 func renderFull(t *testing.T, samples int) string {
 	t.Helper()
-	tot, ring := NewTotals(), NewRing(64)
+	tot, ring := NewTotals(), agent.NewRing(64)
 	for i := range samples {
 		s := fullSample(uint64(i+1), int64(i+1)*100_000_000)
 		tot.Add(s)
@@ -144,7 +145,7 @@ func TestMetricsRendersEverySource(t *testing.T) {
 
 // TestMetricsCountersAccumulateAcrossSamples is the property that makes these
 // metrics scrapeable at all: an exporter cannot know the scrape window, so it
-// resets nothing on collect. The Ring holds deltas, and a delta exported as a
+// resets nothing on collect. The agent.Ring holds deltas, and a delta exported as a
 // counter would be a counter that falls. Two identical
 // samples must double every counter and leave every level alone.
 func TestMetricsCountersAccumulateAcrossSamples(t *testing.T) {

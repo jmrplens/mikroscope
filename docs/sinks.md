@@ -250,7 +250,7 @@ Measured on RB5009UG+S+ · 4 × 1.4 GHz Cortex-A72 · RouterOS 7.24.2 · 202
 
 ### See also
 
-- [Prometheus](https://jmrp.io/docs/mikroscope/sinks/prometheus/): the collector's `/metrics` and the two scrape jobs
+- [Prometheus](https://jmrp.io/docs/mikroscope/sinks/prometheus/): the collector's `/metrics` and the scrape job
   the dashboard expects.
 - [InfluxDB 3](https://jmrp.io/docs/mikroscope/sinks/influxdb/): the write URL, the measurements and what InfluxDB 3
   Core refuses.
@@ -261,7 +261,7 @@ Measured on RB5009UG+S+ · 4 × 1.4 GHz Cortex-A72 · RouterOS 7.24.2 · 202
 
 ## Prometheus
 
-The collector’s own `/metrics` — every agent family recomputed from the samples, plus the API tier, the derive stage and the collector’s counters — and the two scrape jobs that go with it.
+The collector’s own `/metrics` — every agent family recomputed from the samples, plus the API tier, the derive stage and the collector’s counters — and the one scrape job that goes with it.
 
 Source: <https://jmrp.io/docs/mikroscope/sinks/prometheus/>
 
@@ -295,38 +295,40 @@ families from the agent's `/capabilities`.
 > line is pruned from the top-K families after 36 000 samples out of every top-K: an hour at 10 Hz,
 > 12 min at 50 Hz, 6 min at 100 Hz.
 
-### Two scrape jobs
+### One scrape job
 
-The Prometheus dashboard expects two jobs: the collector, which has every family the
-agent has plus its own, and the agent itself, keep-relabelled to the families only the
-sampler can produce — its tick timing histograms, the trigger and capture counters,
-slipped ticks:
+The collector's, and only the collector's:
 
 ```yaml
 - job_name: "mikroscope"
   scrape_interval: 5s
   static_configs: [{ targets: ["<collector host>:9124"] }]
-- job_name: "mikroscope-agent"
-  scrape_interval: 5s
-  static_configs: [{ targets: ["172.30.10.2:9123"] }]
-  metric_relabel_configs:
-    - source_labels: [__name__]
-      regex: "mikroscope_(tick_.*|trigger_.*|capture.*|captures_held|slipped_total)"
-      action: keep
 ```
 
-Scraping the agent without the keep list would double every counter the collector
-also exposes. Point Prometheus at the collector host, or at the agent directly if it
-can reach the veth.
+Until 1.0.4 there were two, because some families existed only on the agent's own
+`/metrics`. **The agent serves no exposition since 1.0.5.** What only a sampler can
+know reaches the collector as data — the wake latency and read duration of every tick
+ride in the sample itself, and `GET /sampler` answers the counters that are not
+per-tick — so this one job carries every family the dashboard asks for. The end-to-end
+suite asserts exactly that: it used to scrape both and now checks the collector alone.
 
-#### What only the agent can say
+There is nothing left to double-count, and no keep list to maintain.
 
-The collector renders no `mikroscope_slipped_total` and no
-`mikroscope_tick_interval_seconds`, `mikroscope_tick_wake_latency_seconds` or
-`mikroscope_tick_read_seconds`: it never ran the sampler, and a 0 there would be a
-claim about a ticker it does not own. The agent's capture index and its
-`mikroscope_trigger_*` counters live on the agent as well; the collector counts the
-trigger markers it saw in `mikroscope_collector_triggers_total{cause}`.
+#### What the collector knows, and how
+
+| Family                                                         | Where it comes from                                              |
+| -------------------------------------------------------------- | ---------------------------------------------------------------- |
+| every kernel-tier family                                       | folded from the samples, by the same code the agent used to run  |
+| `mikroscope_tick_interval_seconds`, `_wake_latency_`, `_read_` | folded from `dt_ns`, `wake_ns` and `read_ns` in each sample      |
+| `mikroscope_slipped_total`, `mikroscope_sampler_ticks_total`   | the agent's `/sampler`, read every minute                        |
+| `mikroscope_trigger_fired_total`, `_suppressed_total`          | the same, one series per configured condition, present at 0      |
+| `mikroscope_captures_held`, `_capture_bytes`, `_budget_bytes`  | the same: what the agent is holding right now                    |
+| `mikroscope_api_*`, `mikroscope_derived_*`, `_collector_*`     | the collector's own: the API tier, the derive stage, its counters |
+
+The one thing that changed meaning: these figures are now as fresh as the collector's
+health cadence, a minute, rather than as fresh as the scrape. For counters of fired
+triggers and held captures that is the right resolution; for anything per-tick it does
+not apply, because those travel in the samples at full rate.
 
 ### What the collector adds
 
@@ -437,7 +439,7 @@ stream](https://jmrp.io/docs/mikroscope/sinks/device-info/).
 
 - [Prometheus metric families](https://jmrp.io/docs/mikroscope/reference/metrics/): every family the agent and the
   collector render, with its labels.
-- [Import and check](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/): the dashboard these two scrape jobs
+- [Import and check](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/): the dashboard this scrape job
   feed, and how to check it panel by panel.
 - [What the collector derives](https://jmrp.io/docs/mikroscope/sinks/derive/): what the `mikroscope_derived_*` gauges
   mean and when they are absent.

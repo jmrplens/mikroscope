@@ -4,6 +4,53 @@ Notable changes per release. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the versions
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.5]
+
+The agent stops being a Prometheus exporter. Everything it knows now leaves it
+as data, through the collector, to whichever sinks the operator configured.
+
+### Changed
+
+- **The agent serves no `/metrics`.** Not a flag and not a 404 branch: the
+  exposition moved out of the agent's import graph into `internal/expo`, which
+  only the collector's Prometheus sink links, and the sampler no longer folds
+  every tick into cumulative counters, histograms and trailing windows. The
+  arm64 agent is 131 072 bytes smaller (1.9 %). On the reference RB5009, an
+  agent built this way measured **29.2 MiB of container memory against 30.6**
+  and **4.5 MiB less RSS**, over two windows of exactly 12 000 samples on
+  2026-09-17; the CPU difference was +76 µs per sample against a standard
+  deviation of 905 µs, which is the router's own load moving between windows
+  and not the change.
+- **What only a sampler can know travels instead of being scraped.** The wake
+  latency and the read duration of every tick — the two timings that make a
+  tick a smear rather than an instant — ride in the sample's `self` block as
+  `wake_ns` and `read_ns`. `GET /sampler` answers what is not per-tick: ticks
+  taken, ticks slipped, and what the trigger evaluator has fired, suppressed,
+  refused and is holding, with every configured condition present at 0 from
+  the first read. The collector reads it at start and on its one-minute health
+  cadence and fans it out like any other event.
+- **One scrape job, not two.** The collector's exposition now carries every
+  family the Prometheus dashboard asks for, including
+  `mikroscope_slipped_total`, the three `mikroscope_tick_*` histograms and the
+  trigger and capture counters. The end-to-end suite used to scrape the agent
+  and the collector; it now asserts against the collector alone, which is a
+  stronger statement. There is no keep list to maintain and nothing left to
+  double-count.
+
+### Added
+
+- **Every store sink carries the agent's own counters**, which is the point:
+  `mikroscope_sampler`, `mikroscope_trigger_count`,
+  `mikroscope_trigger_suppressed` and `mikroscope_capture_refused` on InfluxDB,
+  four tables in SQL, a path per condition and reason on Graphite, a document
+  on Elasticsearch, sums and gauges on OTLP, a line on stdout and in a
+  recording. Loki deliberately writes nothing: a log stream is for what
+  changed, and these are levels read every minute.
+- **Four observer panels gain an InfluxDB form**, so the InfluxDB dashboard
+  goes from 171 panels to 175: the tick interval (`dt_ns` itself, one row per
+  tick and no buckets at all), the wake latency, the read duration and what
+  the held captures pin. Until now they existed on Prometheus alone.
+
 ## [1.0.4]
 
 One fix, found by deploying 1.0.3 on the reference device and watching what

@@ -55,6 +55,8 @@ type Stats struct {
 	// Resyncs counts the times the cursor was moved back because the agent
 	// restarted and began numbering its samples from 1 again.
 	Resyncs uint64
+	// SamplerReads counts the agent-counter reads that reached the sinks.
+	SamplerReads uint64
 }
 
 // Forwarder runs the loop.
@@ -131,6 +133,11 @@ func (f *Forwarder) Run(ctx context.Context) (Stats, error) {
 		f.Log(warn)
 	}
 	f.deviceInfo(ctx, h.CapabilitiesHash)
+	// Read once at start as well as on the health cadence: a run shorter than
+	// the first skew tick would otherwise carry none of the agent's own
+	// counters, and the families that depend on them would be missing from
+	// the exposition rather than merely stale.
+	f.samplerStats(ctx)
 	// The inventory is read before the first pull, so the first kernel-log
 	// record already carries its port's current name and label. Read repeats
 	// it on its own slow cadence and hands it to the sinks.
@@ -355,6 +362,25 @@ func (f *Forwarder) resync(h transport.Health, since *uint64) {
 	f.Log(fmt.Sprintf("agent restarted: its newest sample is %d and the cursor was %d; resuming from %d", h.Seq, was, *since+1))
 }
 
+// samplerStats reads the agent's own counters and hands them to every sink.
+// They are read on the health cadence rather than per sample because they are
+// what the agent has counted since it started, not something a tick produces:
+// a minute's resolution is what a counter of fired triggers or held captures
+// needs. A transport that cannot fetch them emits nothing.
+func (f *Forwarder) samplerStats(ctx context.Context) {
+	sf, ok := f.Puller.(transport.SamplerStatsFetcher)
+	if !ok {
+		return
+	}
+	st, err := sf.SamplerStats(ctx)
+	if err != nil {
+		f.Log("sampler stats: " + err.Error())
+		return
+	}
+	f.stats.SamplerReads++
+	f.emit(sinks.Event{Sampler: &st})
+}
+
 // remeasure re-reads the skew; a jump beyond 50 ms is logged (a router
 // clock step, an NTP correction). It is also where a restarted agent is
 // noticed, because this is the only health read the loop makes.
@@ -365,6 +391,7 @@ func (f *Forwarder) remeasure(ctx context.Context, since *uint64) {
 	}
 	f.resync(h, since)
 	f.deviceInfo(ctx, h.CapabilitiesHash)
+	f.samplerStats(ctx)
 	skew := h.WallNS - time.Now().UnixNano()
 	if d := skew - f.stats.SkewNS; d > 50_000_000 || d < -50_000_000 {
 		f.stats.SkewJumps++

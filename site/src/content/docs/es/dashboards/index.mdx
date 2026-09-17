@@ -55,13 +55,13 @@ ficheros del repositorio.
 El dashboard de InfluxDB consulta InfluxDB 3 en SQL, y toda consulta está acotada por
 `$__timeFilter`, porque InfluxDB 3 Core rechaza los recorridos sin límite; donde una columna se llama
 `cluster` el SQL la entrecomilla, porque `cluster` es una palabra reservada en DataFusion. El
-dashboard de Prometheus consulta un Prometheus que hace scrape del `/metrics` del colector — que
-lleva todo lo que lleva el del agente, recalculado a partir de las muestras, más las familias
-derivadas y de detección propias del colector — y del propio agente para las pocas familias que solo
-produce el muestreador. Prometheus 3 representa el borde del bucket cero de un histograma como
-`le="0.0"`, así que una consulta que lee ese bucket casa con `le=~"0|0.0"`. Los dos trabajos de
-scrape están en
-[Importar y comprobar](/mikroscope/es/dashboards/import-and-check/#prometheus-dos-trabajos-de-scrape).
+dashboard de Prometheus consulta un Prometheus que hace scrape del `/metrics` del colector, y de
+nada más: lleva el tier de kernel recalculado a partir de las muestras, las familias derivadas y de
+detección propias del colector y —desde 1.0.5, cuando el agente dejó de servir exposición— lo que
+solo el muestreador puede producir, que ahora llega al colector como dato. Prometheus 3 representa
+el borde del bucket cero de un histograma como `le="0.0"`, así que una consulta que lee ese bucket
+casa con `le=~"0|0.0"`. El trabajo de scrape está en
+[Importar y comprobar](/mikroscope/es/dashboards/import-and-check/#prometheus-un-trabajo-de-scrape).
 
 ## Qué aspecto tiene
 

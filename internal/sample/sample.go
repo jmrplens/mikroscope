@@ -242,6 +242,14 @@ type SelfDelta struct {
 	Throttled     uint64 `json:"throttled,omitempty"`    // CPU periods the container's quota stopped it (cpu.stat nr_throttled)
 	ThrottledUsec uint64 `json:"throttled_us,omitempty"` // and for how long
 	OOMKill       uint64 `json:"oom_kill,omitempty"`     // kills the kernel made INSIDE the container (memory.events)
+	// WakeNS and ReadNS are the two timings that make a tick a smear rather
+	// than an instant: how late the loop woke after its ticker fired, and how
+	// long the read of every source took. Only the sampler can measure them —
+	// it owns the ticker — so they ride in the sample rather than being
+	// recomputable from it, and every sink gets them because the collector
+	// does. Nanoseconds, and omitted by a sampler that did not record them.
+	WakeNS int64 `json:"wake_ns,omitempty"`
+	ReadNS int64 `json:"read_ns,omitempty"`
 }
 
 // Sample is one tick. Every numeric field is a delta since the previous

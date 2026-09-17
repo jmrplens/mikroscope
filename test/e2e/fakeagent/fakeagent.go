@@ -93,7 +93,6 @@ type Agent struct {
 	// slipped ticks (docs/sinks.md, "The Prometheus dashboard expects two
 	// scrape jobs") — so a fixture that serves no /metrics leaves those
 	// families with no source at all.
-	totals   *agent.Totals
 	captures *agent.Captures
 	// ring backs the capture collector, which reads its window with
 	// Ring.Tail. It is NOT what /snapshot and /stream serve: agent.Ring
@@ -139,12 +138,10 @@ func NewOn(ln net.Listener, token string) *Agent {
 	a := &Agent{
 		token: token, ln: ln, start: time.Now(),
 		stop: make(chan struct{}), done: make(chan struct{}),
-		totals: agent.NewTotals(),
 		// 60 s of samples: more than the pre+post window below needs, and far
 		// less than the agent's own 300 s ring, which a fixture has no use for.
 		ring: agent.NewRing(RateHz * 60),
 	}
-	a.totals.SetRateHz(RateHz)
 	// The agent's own defaults (agent.Config.FromEnv): DefaultTriggers, a
 	// 4 MiB budget, a 5 s window either side, first-wins, 10 s refractory.
 	// The canned samples drop softnet packets on two cores and carry level-3
@@ -220,17 +217,16 @@ func (a *Agent) appendLocked(due, wake time.Time) {
 	}
 	s := Shapes[a.nextIdx%len(Shapes)].Build(a.seq)
 	a.nextIdx++
+	// The fake's "read" is building the canned sample; it is a real duration
+	// of this process, so the timing the sample carries is measured rather
+	// than invented. It is set BEFORE the sample is marshaled, because the
+	// line the fixture serves is what a collector reads it from.
+	s.Self.WakeNS, s.Self.ReadNS = int64(wake.Sub(due)), int64(time.Since(wake))
 	line, err := json.Marshal(s)
 	if err != nil {
 		return // a canned sample that will not marshal is a bug in Shapes
 	}
-	// The fake's "read" is building and encoding the canned sample; it is a
-	// real duration of this process, so the read histogram carries a measured
-	// number rather than an invented one.
-	build := time.Since(wake)
 	a.entries = append(a.entries, entry{seq: a.seq, line: append(line, '\n')})
-	a.totals.Add(s)
-	a.totals.AddTiming(s.DtNS, int64(wake.Sub(due)), int64(build))
 	a.captures.Observe(&s)
 	_ = a.ring.Push(s)
 	a.captures.AfterPush(a.ring, s.Seq)
@@ -245,26 +241,21 @@ func (a *Agent) handler() http.Handler {
 	mux.HandleFunc("GET /capabilities", a.begin(a.auth(a.capabilities)))
 	mux.HandleFunc("GET /snapshot", a.begin(a.auth(a.snapshot)))
 	mux.HandleFunc("GET /stream", a.begin(a.auth(a.stream)))
-	mux.HandleFunc("GET /metrics", a.begin(a.auth(a.metrics)))
+	mux.HandleFunc("GET /sampler", a.begin(a.auth(a.sampler)))
 	return mux
 }
 
-// metrics is the agent's own exposition, rendered by the agent's own code
-// from the canned samples: Totals.Render with Sampler set — only the side
-// that owns the ticker may claim a slip count — followed by the trigger and
-// capture families. It is the second of the two scrape jobs the Prometheus
-// dashboard is built for (docs/sinks.md).
-func (a *Agent) metrics(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
-	caps := Capabilities()
+// sampler answers what only the agent can count about itself, the way the
+// real agent does since 1.0.5: the exposition left the agent, so these
+// figures travel as data and the collector fans them out to every sink.
+func (a *Agent) sampler(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
 	a.mu.Lock()
-	slipped := a.slips
+	st := agent.SamplerStats{Ticks: a.seq, Slipped: a.slips, Captures: a.captures.Stats()}
 	a.mu.Unlock()
-	a.totals.Render(w, agent.Exposition{
-		Ring: a.ring, RateHz: RateHz, Sampler: true, Slipped: slipped,
-		Version: "fake", Start: a.start, Caps: &caps,
-	})
-	a.captures.RenderMetrics(w)
+	if err := json.NewEncoder(w).Encode(st); err != nil {
+		return
+	}
 }
 
 // begin starts the publisher on the first request of any kind.

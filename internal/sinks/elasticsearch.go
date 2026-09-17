@@ -203,6 +203,8 @@ func (s *Elasticsearch) Write(e Event) {
 			adoc["fastpath"] = e.Shares
 		}
 		s.emit(a.WallNS, "a", "", adoc)
+	case e.Sampler != nil:
+		s.emit(time.Now().UnixNano(), "sampler", "", map[string]any{"kind": "sampler", "sampler": e.Sampler})
 	case e.Device != nil:
 		s.emit(time.Now().UnixNano(), "device", e.Device.Hash, map[string]any{"kind": "device", "device": e.Device})
 	case e.Detection != nil:
