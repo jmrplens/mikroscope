@@ -1879,19 +1879,34 @@ floor](https://jmrp.io/docs/mikroscope/limits/source-floors/).
 
 ### When it is sent
 
-Once when `forward` starts, and again whenever the agent's capability hash changes — an
-agent restarted with another source set, for example. The collector checks the hash on
-the health read it makes every minute to re-measure the clock skew, so a change reaches
-the sinks within about a minute. Both the direct and the relay transport can fetch
-`/capabilities`; when the fetch fails the collector logs it, sends nothing, and tries
-again at the next health read. Nothing sent is absence, not a board with no facts.
+When `forward` starts, whenever the agent's capability hash changes — an agent restarted
+with another source set, for example — and otherwise every five minutes. The collector
+checks the hash on the health read it makes every minute to re-measure the clock skew, so
+a change reaches the sinks within about a minute. Both the direct and the relay transport
+can fetch `/capabilities`; when the fetch fails the collector logs it, sends nothing, and
+tries again at the next health read. Nothing sent is absence, not a board with no facts.
+
+**Why it repeats.** These facts are rows with the collector's timestamp, so a store holds
+them only at the instants they were sent, and a dashboard window that contains no
+emission contains no facts at all. Sent once at start, the four device panels read "No
+data" over every window after it: measured on the reference deployment on 2026-09-17,
+where the last device row was 26 hours old and those panels had been empty for as long.
+Five minutes puts the facts inside any window worth reading them over and costs twelve
+rows an emission — one identity, one per thermal zone, one per core with cpufreq facts,
+one per level source — against the 864 000 sample rows a day that `--hz 10` produces.
+
+The repeat is marked as one, and the sinks split on it: the stores write it like any
+other row, which is the whole point, and the streams meant for a reader — Loki, stdout,
+a recording — skip it, because a log is for change. So Loki still carries exactly one
+`device` line per set of facts.
 
 The hash covers only the kernel string, the core count and the enabled source names; the
 board, `privileged`, cgroup, the port table's provenance, every ceiling and every cadence
 are left out of it. A restarted agent whose only change is a ceiling or a cadence — a new
-`--memory-max`, or a `FLOOR_HZ` with the same source set — keeps its hash, and the
-collector does not send the device record again until `forward` itself restarts. This is
-read from the code (`capsHash` in `internal/agent/source.go`), not observed.
+`--memory-max`, or a `FLOOR_HZ` with the same source set — keeps its hash, so the change
+is not what triggers the send; it reaches the sinks at the next five-minute repeat, and
+the row that carries it is stamped then rather than when it happened. This is read from
+the code (`capsHash` in `internal/agent/source.go`), not observed.
 
 These are facts, not samples. They have no clock of their own, so the sinks that
 timestamp records stamp them with the collector's clock when they were sent; the file and

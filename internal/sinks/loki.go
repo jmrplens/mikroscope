@@ -137,6 +137,12 @@ func (s *Loki) Write(e Event) {
 		line := fmt.Sprintf("detection %s: %s rule=%s key=%s seq=%d value=%g threshold=%g", d.Rule, d.Message, d.Rule, d.Key, d.Seq, d.Value, d.Threshold)
 		s.cur = append(s.cur, lokiEntry{source: "detection", level: "warn", ns: d.WallNS, line: line})
 	case e.Device != nil:
+		// A log is for change: the cadence repeat carries the same facts as
+		// the line already in the stream, and the stores that need it inside
+		// every window are the ones writing series.
+		if e.DeviceRepeat {
+			return
+		}
 		c := e.Device
 		line := fmt.Sprintf("device: board=%s kernel=%s cores=%d privileged=%t cgroup=%t sources=%s hash=%s", orUnknown(c.Board), orUnknown(c.Kernel), c.Cores, c.Privileged, c.Cgroup, deviceSources(c), c.Hash)
 		s.cur = append(s.cur, lokiEntry{source: "device", level: "info", ns: time.Now().UnixNano(), line: line})
