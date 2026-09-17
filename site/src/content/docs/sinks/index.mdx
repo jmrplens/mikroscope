@@ -4,12 +4,15 @@ description: What `mikroscope forward` does between the agent and your stores â€
 ---
 
 import { Aside, Steps } from "@astrojs/starlight/components";
+import Figure from "../../../components/Figure.astro";
 import Measured from "../../../components/Measured.astro";
 import NotClaimed from "../../../components/NotClaimed.astro";
 import Provenance from "../../../components/Provenance.astro";
 import Stat from "../../../components/Stat.astro";
 import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
+
+<Figure name="data-path" />
 
 `mikroscope forward` is the collector. It pulls the kernel tier from the agent,
 samples the RouterOS API tier, stamps both in the agent's clock, runs the derive

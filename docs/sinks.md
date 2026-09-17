@@ -8,6 +8,8 @@ What `mikroscope forward` does between the agent and your stores — pull, merge
 
 Source: <https://jmrp.io/docs/mikroscope/sinks/>
 
+_Where the data comes from and where it goes_ — The router runs the agent in a container that reads the shared kernel and serves it over a veth. The collector on your machine pulls that, merges the RouterOS API tier into it, derives, and writes to every sink you named.
+
 `mikroscope forward` is the collector. It pulls the kernel tier from the agent,
 samples the RouterOS API tier, stamps both in the agent's clock, runs the derive
 stage over them and writes the merged timeline to every sink you name. This page

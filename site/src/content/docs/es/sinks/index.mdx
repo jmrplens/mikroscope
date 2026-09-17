@@ -4,12 +4,15 @@ description: Lo que hace `mikroscope forward` entre el agente y tus almacenes â€
 ---
 
 import { Aside, Steps } from "@astrojs/starlight/components";
+import Figure from "../../../../components/Figure.astro";
 import Measured from "../../../../components/Measured.astro";
 import NotClaimed from "../../../../components/NotClaimed.astro";
 import Provenance from "../../../../components/Provenance.astro";
 import Stat from "../../../../components/Stat.astro";
 import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
+
+<Figure name="data-path" />
 
 `mikroscope forward` es el colector. Tira de la capa del kernel del agente, muestrea
 la capa de la API de RouterOS, marca las dos con el reloj del agente, pasa la etapa

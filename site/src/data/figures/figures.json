@@ -1,0 +1,12 @@
+{
+  "data-path": {
+    "en": {
+      "title": "Where the data comes from and where it goes",
+      "desc": "The router runs the agent in a container that reads the shared kernel and serves it over a veth. The collector on your machine pulls that, merges the RouterOS API tier into it, derives, and writes to every sink you named."
+    },
+    "es": {
+      "title": "De dónde vienen los datos y a dónde van",
+      "desc": "El router ejecuta el agente en un contenedor que lee el kernel compartido y lo sirve por un veth. El colector de tu máquina tira de ahí, le une la capa de la API de RouterOS, deriva y escribe en cada destino que hayas nombrado."
+    }
+  }
+}

@@ -47,6 +47,8 @@ import { doctorChecks, isDoctorCheckId } from "../data/doctor-checks.ts";
 import { cadenceReasons } from "../data/cadence-reasons.ts";
 import * as dashboards from "../data/dashboards.ts";
 import * as home from "../data/home.ts";
+import figureMeta from "../data/figures/figures.json" with { type: "json" };
+
 import stats from "../data/stats.json" with { type: "json" };
 import en from "../content/i18n/en.json" with { type: "json" };
 import es from "../content/i18n/es.json" with { type: "json" };
@@ -285,6 +287,18 @@ function renderSelfClosing(name, attributes, expressions, context) {
 				);
 			}
 			return formatQuantity(measurements[id], lang);
+		}
+		// A generated diagram. docs/ is text, so the reduction is the figure's
+		// own <desc> — the sentence the SVG already carries for a screen
+		// reader, which is the same thing a reader of the plain file needs.
+		case "Figure": {
+			const figure = figureMeta[attributes.name]?.[lang === "es" ? "es" : "en"];
+			if (!figure) {
+				throw new Error(
+					`${context.file}: <Figure name="${attributes.name}" /> is not in src/data/figures/figures.json. Run \`pnpm run figures\` in site/.`,
+				);
+			}
+			return `_${figure.title}_ — ${figure.desc}`;
 		}
 		// The dashboard section captures. docs/ is a text file in a checkout,
 		// with no images and no site to serve them from, so the reduction is

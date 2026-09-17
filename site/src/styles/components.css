@@ -559,3 +559,35 @@ mobile-starlight-toc .dropdown {
 	color: var(--ms-muted);
 	font-size: var(--sl-text-sm);
 }
+
+/* ------------------------------------------------------- Generated diagrams */
+
+/* Figure.astro emits both layouts and lets the viewport choose: the wide one
+ * is a row the width of the prose, the narrow one stacks the same path for a
+ * phone. Switching in CSS rather than in JavaScript keeps the page static and
+ * keeps both in the DOM for a reader who prints it. */
+.ms-figure {
+	margin-block: 1.5rem;
+}
+
+.ms-figure svg {
+	display: block;
+	inline-size: 100%;
+	block-size: auto;
+}
+
+.ms-figure-narrow {
+	display: none;
+	max-inline-size: 22rem;
+	margin-inline: auto;
+}
+
+@media (max-width: 640px) {
+	.ms-figure-wide {
+		display: none;
+	}
+
+	.ms-figure-narrow {
+		display: block;
+	}
+}
