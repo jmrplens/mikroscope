@@ -6,6 +6,7 @@ description: La arquitectura, el paquete container y el paso de device-mode que 
 import { Aside, Steps } from "@astrojs/starlight/components";
 import DoctorChecks from "../../../../components/DoctorChecks.astro";
 import NotClaimed from "../../../../components/NotClaimed.astro";
+import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
 
 Esta página enumera lo que tiene que estar listo antes de que
@@ -40,8 +41,34 @@ oculta el espacio de nombres de usuario del contenedor:
 
 Dile a la CLI cuál con `--arch`: `arm64` (por defecto), `arm` o `amd64`.
 `doctor` la compara con el `architecture-name` del router y, si no coinciden,
-nombra la opción con la que volver a ejecutar. Para `arm` el agente se compila
-con `--goarm`, por defecto `7`, y la imagen declara la variante v7.
+nombra la opción con la que volver a ejecutar.
+
+<ScrollTable label="Arquitecturas de MikroTik en las que existe el paquete container, y la compilación del agente que le toca a cada una">
+
+| Tu equipo                                          | `architecture-name` | `--arch` | La compilación del agente   |
+| -------------------------------------------------- | ------------------- | -------- | --------------------------- |
+| RB5009, CCR2004, hAP ax³ y otros ARM de 64 bits     | `arm64`             | `arm64`  | `linux/arm64`               |
+| hEX Refresh / hEX S (2025), cualquier placa EN7562CT | `arm`              | `arm`    | `linux/arm/v5`              |
+| Otros ARM de 32 bits (hAP ac², hAP ax², …)          | `arm`               | `arm`    | `linux/arm/v5` o `v7`       |
+| CHR y RouterOS x86                                  | `x86_64`            | `amd64`  | `linux/amd64`               |
+
+</ScrollTable>
+
+**El ARM de 32 bits no es una cosa, son dos.** La documentación de contenedores
+de MikroTik dice que los equipos con CPU EN7562CT —la serie hEX Refresh—
+«solo admiten imágenes de contenedor arm32v5», mientras que sus demás placas
+ARM de 32 bits ejecutan un espacio de usuario ARMv7. Un binario ARMv5 funciona
+en las dos; uno ARMv7 no arranca en las primeras, y falla con un
+`exec format error` en el registro del contenedor después de una instalación
+correcta. Por eso `--goarm` vale **5** por defecto, que es el nivel que arranca
+en todas partes, y la imagen declara la variante que le corresponde. `--goarm 7`
+compila la ARMv7 para una placa donde se quiera ese juego de instrucciones; lo
+que cuesta la diferencia no se ha medido, porque este proyecto no tiene
+hardware ARM.
+
+`--remote-image` hace desaparecer la pregunta: el índice publicado lleva
+`linux/amd64`, `linux/arm64`, `linux/arm/v7` y `linux/arm/v5`, y el router elige
+el suyo.
 
 ## El paquete container
 

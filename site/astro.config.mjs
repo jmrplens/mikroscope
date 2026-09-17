@@ -240,6 +240,11 @@ export default defineConfig({
 							slug: "install",
 						},
 						{
+							label: "Getting the CLI",
+							translations: { es: "Tener la CLI" },
+							slug: "install/cli",
+						},
+						{
 							label: "What the router needs",
 							translations: { es: "Lo que necesita el router" },
 							slug: "install/prerequisites",

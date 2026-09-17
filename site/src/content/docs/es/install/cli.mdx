@@ -1,0 +1,211 @@
+---
+title: Tener la CLI en tu máquina
+description: Cómo tener la orden `mikroscope` en Linux, macOS o Windows — qué archivo descargar para tu propio ordenador y no para el router, cómo verificarlo, dónde ponerlo para que el intérprete lo encuentre y cómo comprobar que funciona.
+---
+
+import { Aside, Steps, Tabs, TabItem } from "@astrojs/starlight/components";
+import ScrollTable from "../../../../components/ScrollTable.astro";
+import SeeAlso from "../../../../components/SeeAlso.astro";
+
+Se publican dos programas a la vez y se ejecutan en máquinas distintas:
+
+- **`mikroscope`**, la CLI y el colector, se ejecuta en **tu ordenador** —el
+  portátil o el servidor donde escribes las órdenes—. Esta página va de ese.
+- **`mikroscope-agent`** se ejecuta **en el router**, dentro de un contenedor.
+  `mikroscope install` lo pone allí por ti; tú nunca lo ejecutas, y la única
+  vez que lo descargas a mano es en la ruta `--agent-tar`.
+
+Así que el archivo que quieres aquí lo decide **tu** sistema operativo y tu
+CPU, no los del router. La arquitectura del router decide otra cosa, y esa
+tabla está en [Lo que necesita el router](/mikroscope/es/install/prerequisites/).
+
+## Qué archivo
+
+<ScrollTable label="Qué archivo de la CLI descargar para tu propia máquina">
+
+| Tu máquina                            | Descarga                                       |
+| ------------------------------------- | ---------------------------------------------- |
+| Linux, PC o servidor normal           | `mikroscope_<versión>_linux_x86_64.tar.gz`     |
+| Linux sobre ARM (Raspberry Pi 4/5, …) | `mikroscope_<versión>_linux_arm64.tar.gz`      |
+| macOS, Apple silicon (M1 y posteriores) | `mikroscope_<versión>_darwin_arm64.tar.gz`   |
+| macOS, Intel                          | `mikroscope_<versión>_darwin_x86_64.tar.gz`    |
+| Windows                               | `mikroscope_<versión>_windows_x86_64.zip`      |
+
+</ScrollTable>
+
+Están en la [última publicación](https://github.com/jmrplens/mikroscope/releases/latest).
+Todo lo que empiece por `mikroscope-agent` es el otro programa.
+
+## Instalarla
+
+<Tabs syncKey="os">
+
+<TabItem label="Linux">
+
+<Steps>
+
+1. Descarga el archivo y las sumas de verificación:
+
+   ```sh
+   VERSION=1.0.1
+   curl -fsSLO https://github.com/jmrplens/mikroscope/releases/download/v$VERSION/mikroscope_${VERSION}_linux_x86_64.tar.gz
+   curl -fsSLO https://github.com/jmrplens/mikroscope/releases/download/v$VERSION/checksums.txt
+   ```
+
+2. Compruébalo contra la lista antes de descomprimirlo:
+
+   ```sh
+   sha256sum --ignore-missing -c checksums.txt
+   ```
+
+3. Descomprime y ponlo donde el intérprete mira:
+
+   ```sh
+   tar xzf mikroscope_${VERSION}_linux_x86_64.tar.gz mikroscope
+   sudo install -m 0755 mikroscope /usr/local/bin/mikroscope
+   ```
+
+   Sin `sudo`, `mkdir -p ~/.local/bin && install -m 0755 mikroscope ~/.local/bin/`
+   también vale, siempre que `~/.local/bin` esté en tu `PATH`.
+
+</Steps>
+
+</TabItem>
+
+<TabItem label="macOS">
+
+<Steps>
+
+1. Descarga el archivo de tu CPU —`darwin_arm64` para Apple silicon,
+   `darwin_x86_64` para Intel— y las sumas de verificación:
+
+   ```sh
+   VERSION=1.0.1
+   curl -fsSLO https://github.com/jmrplens/mikroscope/releases/download/v$VERSION/mikroscope_${VERSION}_darwin_arm64.tar.gz
+   curl -fsSLO https://github.com/jmrplens/mikroscope/releases/download/v$VERSION/checksums.txt
+   ```
+
+2. Compruébalo:
+
+   ```sh
+   shasum -a 256 --ignore-missing -c checksums.txt
+   ```
+
+3. Descomprime, quita la marca de cuarentena que le puso la descarga e
+   instálalo:
+
+   ```sh
+   tar xzf mikroscope_${VERSION}_darwin_arm64.tar.gz mikroscope
+   xattr -d com.apple.quarantine mikroscope 2>/dev/null || true
+   sudo install -m 0755 mikroscope /usr/local/bin/mikroscope
+   ```
+
+   El binario no está firmado ni notarizado, así que sin esa línea de `xattr`
+   macOS se niega a ejecutarlo y dice que «no se puede abrir porque no se puede
+   verificar al desarrollador».
+
+</Steps>
+
+</TabItem>
+
+<TabItem label="Windows">
+
+<Steps>
+
+1. Descarga `mikroscope_<versión>_windows_x86_64.zip` y `checksums.txt` de la
+   página de la publicación.
+
+2. Compruébalo en PowerShell, contra la línea de tu archivo en `checksums.txt`:
+
+   ```powershell
+   Get-FileHash .\mikroscope_1.0.1_windows_x86_64.zip -Algorithm SHA256
+   ```
+
+3. Descomprímelo en un sitio permanente y pon esa carpeta en tu `PATH`:
+
+   ```powershell
+   Expand-Archive .\mikroscope_1.0.1_windows_x86_64.zip -DestinationPath $HOME\mikroscope
+   $env:PATH += ";$HOME\mikroscope"
+   ```
+
+   Esa línea dura lo que la sesión. Para conservarla, añade la carpeta en
+   **Configuración → Sistema → Acerca de → Configuración avanzada del sistema →
+   Variables de entorno**, o:
+
+   ```powershell
+   [Environment]::SetEnvironmentVariable("PATH", "$env:PATH;$HOME\mikroscope", "User")
+   ```
+
+</Steps>
+
+<Aside type="note" title="ssh en Windows">
+	Tres de las cuatro rutas de instalación llegan al router por ssh, y la CLI usa el `ssh` y el `scp`
+	que haya en tu `PATH`. Windows 10 y 11 traen OpenSSH: `Get-Command ssh` debería encontrarlo, y
+	**Configuración → Sistema → Características opcionales** lo instala si no. La cuarta ruta,
+	[un script de RouterOS](/mikroscope/es/install/routes/#un-script-de-routeros), no necesita ssh.
+</Aside>
+
+</TabItem>
+
+<TabItem label="Con Go">
+
+Si tienes Go 1.27 o posterior y prefieres compilarla:
+
+```sh
+go install github.com/jmrplens/mikroscope/cmd/mikroscope@latest
+```
+
+Eso deja `mikroscope` en `$(go env GOPATH)/bin`, que es `~/go/bin` salvo que lo
+hayas movido, y ese directorio tiene que estar en tu `PATH`. Un binario
+compilado así informa de la versión del módulo y no del sello de una
+publicación.
+
+Un checkout compila los dos programas de una vez, que es la ruta de quien
+contribuye:
+
+```sh
+git clone https://github.com/jmrplens/mikroscope
+cd mikroscope
+make build          # deja bin/mikroscope y bin/mikroscope-agent
+```
+
+</TabItem>
+
+</Tabs>
+
+## Comprobarla
+
+```sh
+mikroscope version
+```
+
+Imprime la versión, el commit y la fecha de compilación. Después, con un router
+al que apuntar:
+
+```sh
+mikroscope doctor --router user@192.168.88.1
+```
+
+`doctor` no escribe nada. Lee el equipo, imprime qué es y marca cada requisito
+como `ok` o `MISSING` con la orden que lo arregla —incluido el que nadie puede
+hacer en remoto—. Es lo primero que hay que ejecutar, antes de cualquier ruta
+de instalación.
+
+<Aside type="tip" title="Las opciones tienen variables de entorno">
+	`--router`, `--ssh-port`, `--ssh-key`, `--arch` y casi todas las demás leen su valor por defecto de
+	una variable `MIKROSCOPE_*`, así que un intérprete que las exporte convierte cada orden de aquí en
+	`mikroscope doctor`. [Variables de entorno](/mikroscope/es/reference/environment/) es la lista, y
+	`.env.example` en el repositorio es una plantilla.
+</Aside>
+
+<SeeAlso>
+
+## Véase también
+
+- [Lo que necesita el router](/mikroscope/es/install/prerequisites/): los tres
+  requisitos en el equipo, y la tabla de arquitecturas **del router**.
+- [Cuatro formas de instalar](/mikroscope/es/install/routes/): cómo llega la
+  imagen del agente al router una vez tienes la CLI.
+- [Órdenes y opciones](/mikroscope/es/reference/cli/): cada verbo y cada opción.
+
+</SeeAlso>

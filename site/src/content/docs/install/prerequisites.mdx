@@ -6,6 +6,7 @@ description: The architecture, the container package and the device-mode step th
 import { Aside, Steps } from "@astrojs/starlight/components";
 import DoctorChecks from "../../../components/DoctorChecks.astro";
 import NotClaimed from "../../../components/NotClaimed.astro";
+import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
 
 This page lists what has to be in place before `mikroscope install` can write
@@ -37,8 +38,32 @@ at the price of everything the container's user namespace hides:
 
 Tell the CLI which one with `--arch`: `arm64` (the default), `arm` or `amd64`.
 `doctor` compares it with the router's `architecture-name` and, on a mismatch,
-names the flag to re-run with. For `arm` the agent is built with `--goarm`,
-default `7`, and the image declares variant v7.
+names the flag to re-run with.
+
+<ScrollTable label="MikroTik architectures the container package exists for, and the agent build each one takes">
+
+| Your device                                        | `architecture-name` | `--arch` | The agent build             |
+| -------------------------------------------------- | ------------------- | -------- | --------------------------- |
+| RB5009, CCR2004, hAP ax³ and other 64-bit ARM       | `arm64`             | `arm64`  | `linux/arm64`               |
+| hEX Refresh / hEX S (2025), any EN7562CT board      | `arm`               | `arm`    | `linux/arm/v5`              |
+| Other 32-bit ARM (hAP ac², hAP ax², …)              | `arm`               | `arm`    | `linux/arm/v5` or `v7`      |
+| CHR and x86 RouterOS                                | `x86_64`            | `amd64`  | `linux/amd64`               |
+
+</ScrollTable>
+
+**32-bit ARM is two things, not one.** MikroTik's container documentation
+states that devices with the EN7562CT CPU — the hEX Refresh line — "support
+only arm32v5 container images", while its other 32-bit ARM boards run an ARMv7
+userland. An ARMv5 binary runs on both; an ARMv7 one does not run on the first,
+and the way it fails is an `exec format error` in the container log after a
+successful install. So `--goarm` defaults to **5**, the level that starts
+everywhere, and the image declares the matching variant. `--goarm 7` builds the
+ARMv7 one for a board where that instruction set is wanted; what the difference
+costs has not been measured, because this project has no ARM hardware.
+
+`--remote-image` makes the question go away: the published index carries
+`linux/amd64`, `linux/arm64`, `linux/arm/v7` and `linux/arm/v5`, and the router
+picks its own.
 
 ## The container package
 

@@ -99,6 +99,7 @@ const MANIFEST = [
 		title: "Installing the agent",
 		routes: [
 			"install",
+			"install/cli",
 			"install/prerequisites",
 			"install/routes",
 			"install/firewall",
