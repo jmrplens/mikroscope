@@ -104,13 +104,16 @@ func TestPrometheusDashboardMetricsExist(t *testing.T) {
 	if strings.TrimSpace(s.Exposition) == "" {
 		t.Fatal("nothing was read from the collector's own /metrics while it ran")
 	}
-	if strings.TrimSpace(s.AgentExposition) == "" {
-		t.Fatal("nothing was read from the agent's own /metrics")
-	}
+	// One exposition, the collector's. Since 1.0.5 the agent serves none: what
+	// only a sampler can produce reaches the collector as data — the tick
+	// timing in every sample, the slip and trigger counters over /sampler —
+	// and is rendered here with everything else. A family missing from this
+	// set is missing from the deployment.
+	//
 	// The names the exporter served, from the HELP and TYPE lines and from the
 	// samples themselves: a histogram's `_bucket`, `_sum` and `_count` are
 	// separate names a panel may ask for by hand.
-	served := servedNames(s.Exposition + "\n" + s.AgentExposition)
+	served := servedNames(s.Exposition)
 
 	// The API tier was off for this run, so anything it alone produces is
 	// absent from the exposition without being wrong: every mikroscope_api_*
