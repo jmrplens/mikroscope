@@ -42,7 +42,7 @@ Read the idle shape first. Without it, every other page looks like an anomaly.
 | -------------------------------------------------------------------- | ------------------------------------------------ | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
 | [The shape of an idle router](https://jmrp.io/docs/mikroscope/playbooks/idle/)           | 60 s at idle                                     | per-core busy, `time_squeeze`, `events`        | 6–8 % busy across four cores, squeeze never zero, zero kernel events                                                      |
 | [A loop only the kernel could see](https://jmrp.io/docs/mikroscope/playbooks/loop/)      | real, found by accident on the production router | `events` (the `kmsg` source)                   | `events` at 1.49 /s, 2.00–2.01 s apart; the API reported a healthy device |
-| [RouterOS ports and kernel names](https://jmrp.io/docs/mikroscope/playbooks/port-names/) | a dead port toggled off and on                   | `events`                                       | the kernel prints `eth5` where RouterOS says `ether6`                                                                     |
+| [RouterOS ports and kernel names](https://jmrp.io/docs/mikroscope/reference/port-names/) | a dead port toggled off and on                   | `events`                                       | the kernel prints `eth5` where RouterOS says `ether6`                                                                     |
 | [A CPU-bound workload](https://jmrp.io/docs/mikroscope/playbooks/cpu/)                   | a console loop that ends by itself               | per-core busy, temperature, frequency          | ~29 % total, one core at 99.8 %, ~20 s of migration before it settles                                                     |
 | [A packet flood](https://jmrp.io/docs/mikroscope/playbooks/packet-flood/)                | `ping -f` at the router's own LAN address, 10 s  | `switch0` interrupts, softirqs, `time_squeeze` | `switch0` 5.5 k → 34 k per 5 s bucket, all on the one core the IRQ is pinned to                                           |
 | [Flash wear](https://jmrp.io/docs/mikroscope/playbooks/flash-wear/)                      | nothing provoked; the router writes on its own   | the `yaffs` source, MTD ECC counters           | 2 page writes per 30 s at idle, traced to the `dns` topic logging to disk                                                 |
@@ -295,7 +295,7 @@ Both anomalies on the same port.
 
 The kernel log had said `eth1`, not `ether2`. Establishing that those are the
 same port cost real time that day; [RouterOS ports and kernel
-names](https://jmrp.io/docs/mikroscope/playbooks/port-names/) is how to do it in one safe step, and
+names](https://jmrp.io/docs/mikroscope/reference/port-names/) is how to do it in one safe step, and
 why the agent does it for you on this board.
 
 ### Step 5 — make a change that tests the hypothesis
@@ -376,245 +376,12 @@ into place is a fix you can trust.
 
 ### See also
 
-- [RouterOS ports and kernel names](https://jmrp.io/docs/mikroscope/playbooks/port-names/): how `eth1` became `ether2`,
+- [RouterOS ports and kernel names](https://jmrp.io/docs/mikroscope/reference/port-names/): how `eth1` became `ether2`,
   and what the agent ships to spare you the hour.
 - [The shape of an idle router](https://jmrp.io/docs/mikroscope/playbooks/idle/): why zero events is the baseline this
   stream stood out against.
 - [The router's CPU, the container's network](https://jmrp.io/docs/mikroscope/limits/namespaces/): why the kernel log is
   visible from the container and the interface counters are not.
-
-## RouterOS ports and kernel names
-
-The kernel log says eth5 where RouterOS says ether6 — how to measure the mapping on a dead port in one safe step, what the agent ships for the RB5009, and how much of that table was measured.
-
-Source: <https://jmrp.io/docs/mikroscope/playbooks/port-names/>
-
-The kernel log names netdevs (`eth0`, `eth5`), RouterOS names interfaces
-(`ether1`, `sfp-sfpplus1`), and **they do not agree**. This page answers which
-cable a kernel-log record is about. During [the loop case
-study](https://jmrp.io/docs/mikroscope/playbooks/loop/) this cost real time: `eth1` in the log looks
-like it should be `ether1`, and it is not.
-
-Measured on RB5009UG+S+ · 4 × 1.4 GHz Cortex-A72 · RouterOS 7.24.2 · Linux 5.6.3 · 2026-09-12 · agent at 10 Hz in an ephemeral privileged container
-
-Later observations are dated where they appear.
-
-### Why it has to be measured
-
-RouterOS exposes no mapping, and the container cannot read one. Network devices
-are namespaced, so `/sys/class/net` inside the container shows only `lo` and the
-veth; `/sys/class/mdio_bus` holds only `fixed-0` and `/sys/class/phy` is empty.
-`privileged=yes` does not change that. RouterOS's names live in RouterOS's
-configuration, not in the kernel.
-
-### Measure it on a dead port
-
-Pick a port that is definitely carrying nothing, toggle it, and read the name the
-kernel prints. Find a genuinely dead port first — zero packets in both
-directions, for its whole life:
-
-```text
-/interface/print stats where name="ether6" or name="ether7"
-```
-
-Then, with the agent running:
-
-```text
-/interface/ethernet/disable [find name="ether6"]
-:delay 4s
-/interface/ethernet/enable  [find name="ether6"]
-```
-
-The kernel said:
-
-```text
-[6] br0: port 7(eth5) entered blocking state
-[4] eth5: set isolation from 0 to 1
-[4] eth5: set isolation from 1 to 0
-```
-
-So RouterOS `ether6` is kernel `eth5`. Repeating on `ether7` gave `eth6`: a
-**−1 offset**, seen at two points.
-
-### The RB5009 table
-
-The mapping is a shift by one — RouterOS numbers ports from 1 and the kernel
-from 0, the switch chip included (`switch0` is the `switch=switch1` every port
-reports):
-
-| RouterOS            | kernel          | how known                                      |
-| ------------------- | --------------- | ---------------------------------------------- |
-| `ether1`            | `eth0`          | inferred                                       |
-| `ether2`            | `eth1`          | **measured** — the case-study loop, 2026-09-13 |
-| `ether3` … `ether5` | `eth2` … `eth4` | inferred                                       |
-| `ether6`            | `eth5`          | **measured** — flapped 2026-09-15              |
-| `ether7`            | `eth6`          | **measured** — flapped 2026-09-15              |
-| `ether8`            | `eth7`          | inferred                                       |
-| `sfp-sfpplus1`      | `eth8`          | inferred, last in the enumeration              |
-| `switch1`           | `switch0`       | inferred                                       |
-
-The `ether6` and `ether7` pairs were measured on **2026-09-15**. Both ports are
-commented `Unused` and neither was `RUNNING` — no cable, no link — so each was
-disabled and enabled again over the API while the agent read `/dev/kmsg`. The
-kernel logged `br0: port 7(eth5) entered disabled state` inside `ether6`'s
-window and `port 7(eth6)` inside `ether7`'s, nine seconds apart, which is what
-rules out reading one flap twice. No traffic was interrupted and both ports were
-back within four seconds.
-
-That makes three measured pairs, all on the same shift by one, which is what
-the six inferred rows rest on.
-
-The inferred pairs rest on two observations from a read-only
-`/interface/ethernet/print` (2026-09-13, the date the table's own evidence
-string carries): the nine ports carry consecutive MAC addresses, `…:55` for
-`ether1` through `…:5D` for `sfp-sfpplus1`, in RouterOS's own enumeration order;
-and all nine report `switch=switch1` against the kernel's one `switch0`.
-
-### Two cautions
-
-- **The name is reliable; the bridge port number is not.** Both flaps reported
-  `port 7`, because the kernel reuses port slots when a port leaves and rejoins
-  the bridge. Match on `eth5`, never on `port 7`.
-- **The offset is a property of this model's driver, not a rule.** Re-measure on
-  a different device rather than assuming, and be careful with the intuition that
-  the SFP+ must be `eth0` — here it is last, not first. The device tree does not
-  help either: it shows the SoC's `ethernet@0` with three MACs, only `eth0`
-  enabled (the 10 G uplink) and `eth1`/`eth2` disabled, while the nine
-  front-panel ports are netdevs the switch driver creates at runtime (the
-  device tree was parsed on 2026-09-14). The kernel-log names are the runtime
-  ones.
-
-### What the agent does with the table
-
-The agent reads the board model from the device tree at start —
-`/proc/device-tree/model` reads `RB5009` even unprivileged — and, on a board in
-its table, names ports without asking RouterOS:
-
-- every kernel-log record whose text names a port carries both names and what
-  happened to that port: `iface`, `ros_iface` and `kind` on the event, `port`
-  and `kind` tags on the InfluxDB rows, and
-  `iface=eth1 ros_iface=ether2 port_event=own-address` on a Loki line;
-- `/metrics` gains `mikroscope_kmsg_port_records_total{port,kind,level}`, with the
-  RouterOS name as `port` on a board in the table, the kernel name on a board
-  that is not, and no port series at all on a device whose device tree reports
-  no model. It is a
-  subset of `mikroscope_kmsg_records_total`, not a partition of it: records naming
-  no port are absent from it;
-- the collector's `link-flap` detection is keyed by the port name and reads the
-  same classification: a flap is `link-up` and `link-down` records on one port,
-  counted, not the text parsed a second time;
-- `mikroscope status` prints the board and whether it has a map, for example
-  `eth1 (ether2)`; `/healthz` and `/capabilities` carry the board, and
-  `/capabilities` and `mikroscope_device_info` carry the table's evidence string
-  as `ports_from`, so nobody has to take the mapping on trust.
-
-**An unknown board gets no port names, not guessed ones.** The shift by one is
-not applied to a board nobody has measured, because a confidently wrong port name
-sends someone to the wrong cable. On such a board `status` says so and asks for
-the pair: bring one port down, see which `ethN` the log names, and send that pair
-with the board string.
-
-### What kind of event it was
-
-A port name alone does not say what happened to the port, so every record that
-names one is classified as well, by `procfs.KmsgKind` over the record's text.
-The kinds, and the record shapes the RouterOS kernel prints (RB5009, kernel
-5.6.3, records seen 2026-09-12 … 2026-09-15):
-
-| `kind`        | the record                                                                          |
-| ------------- | ----------------------------------------------------------------------------------- |
-| `link-up`     | `eth8: link up, 1Gbps, full-duplex`, `eth1: Link is Up - 1Gbps/Full`, `eth1: phy link up` |
-| `link-down`   | `eth1: link down`                                                                   |
-| `stp-<state>` | `br0: port 2(eth1) entered blocking state` — `blocking`, `listening`, `learning`, `forwarding`, `disabled` |
-| `own-address` | `br0: received packet on eth1 with own address as source address (addr:…, vlan:0)` — the layer-2 loop signature |
-| `other`       | anything else that names a port, including `eth1: link becomes ready`, which is IPv6 address configuration noticing the carrier and not a transition of its own |
-
-The agent classifies at read time and ships `kind` in the record, and a
-collector in front of an older agent whose records carry none classifies them
-itself with the same function. That is the case on the reference router today:
-the agent running there has not been redeployed with this build, so its
-`/metrics` carries no `kind` label yet and the collector does the work.
-
-**Four records are not four faults.** A normal link-up is followed by
-`stp-blocking`, `stp-learning` and `stp-forwarding` as the bridge walks the port
-back into service.
-
-### From the default name to the current one
-
-The table maps to RouterOS's **default** names. A port renamed on the router
-(`ether5` → `WAN`) has a name the table cannot know, so the collector asks the
-API tier instead. Its interface inventory — read once before the first kernel
-pull and again every `--labels-every`, five minutes by default — holds each
-interface's factory default name, its current name, its comment and its
-interface lists, and the collector uses it on every record that names a port to:
-
-- replace the default name with the **current** one, so an operator who renamed
-  `ether5` to `WAN` reads `WAN` on the event, on the InfluxDB `port` tag, on the
-  Loki line and in the `link-flap` key;
-- attach `label`, the port's comment, and `role`, its interface lists — so the
-  `eth5` flap arrives as `ether6`, label `Unused`, rather than as a netdev
-  number somebody has to look up.
-
-Without an API tier the record keeps the board's default name and gets no label,
-which is what it can support.
-
-### Where a kernel message becomes a cable
-
-Two panels in the dashboards' **Kernel log** row are where the name, the kind
-and the comment meet:
-
-- **Port events from the kernel log, per port and kind** — bars per bin, one
-  series per port and kind, from
-  `sum by (port, kind) (increase(mikroscope_kmsg_port_records_total[$__interval]))`
-  on Prometheus and from the `port`/`kind` tags on InfluxDB;
-- **Port events in the window, per port** — a table with one row per port that
-  the log named: the port, its `label` and `role`, and a column per kind (link
-  down, link up, own address (loop), STP blocking, STP disabled, STP learning,
-  STP forwarding, other).
-
-Both are known-empty panels — a quiet set of ports is the healthy state — and
-the Prometheus form of each reads the collector's `/metrics`, whose copy of the
-family carries a `kind` on every port record however the agent shipped it. In an InfluxDB store the `kind` column exists only once a first port
-record classified by kind has been written, so both queries were validated on
-2026-09-16 against a synthetic table in the same InfluxDB 3, the live store
-having no such column yet.
-
-Two alert rules ship beside them, in both provisioning files. Both read
-`/dev/kmsg` through the agent and ask RouterOS nothing:
-
-- `mikroscope-l2-loop`, critical: any `own-address` record in five minutes. On
-  the reference RB5009 that signature ran at 1.49 records/s for hours on
-  2026-09-12 while every RouterOS counter looked healthy.
-- `mikroscope-port-link-down`, warning: any `link-down` record in five minutes —
-  the single event, where `link-flap` covers the repeats.
-
-The InfluxDB form of each needs a store that has already held one port record
-classified by kind; before that the query fails at planning time.
-
-> **Untested**
->
-> Neither port-event rule has been seen firing on a real event: they were written against the
-> record shapes measured on the reference RB5009 and have not been put in front of a live loop or a
-> live link-down. The row-by-row headless render walk of 2026-09-15 covered 168 InfluxDB panels and
-> 130 Prometheus ones and has not been repeated for these two.
-
-The port table all of this rests on carries its own limit.
-
-> **True of this device, not of yours**
->
-> The shift by one, the position of the SFP+ cage and the reuse of `port 7` were observed on one
-> RB5009UG+S+ running RouterOS 7.24.2. They are not claimed for any other board, and the agent does
-> not apply them to one.
-
-### See also
-
-- [A loop only the kernel could see](https://jmrp.io/docs/mikroscope/playbooks/loop/): the fault that made this mapping
-  worth an hour.
-- [The device-info stream](https://jmrp.io/docs/mikroscope/sinks/device-info/): where the board and `ports_from` travel.
-- [Detections](https://jmrp.io/docs/mikroscope/sinks/detections/): the `link-flap` rule, keyed by these names.
-- [The RouterOS API tier](https://jmrp.io/docs/mikroscope/sinks/api-tier/): the interface inventory that turns a default
-  name into the current one, with its comment and its lists.
-- [Alert rules](https://jmrp.io/docs/mikroscope/dashboards/alerts/): the loop and link-down rules these records fire.
 
 ## A CPU-bound workload
 

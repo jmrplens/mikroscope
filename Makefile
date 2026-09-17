@@ -65,8 +65,10 @@ LDFLAGS    := -s -w -X $(MODULE)/internal/version.Version=$(VERSION) -X $(MODULE
 AGENT_MAX_BYTES := 8388608
 AGENT_ARCHES    := arm64 arm amd64
 
-# The platform `make agent-smoke` starts, as Docker names it. linux/arm/v7 is
-# the hEX S (2025): a 32-bit RouterOS userland on an ARM64 chip.
+# The platform `make agent-smoke` starts, as Docker names it. 32-bit ARM is two
+# platforms: linux/arm/v5 is the EN7562CT boards (hEX Refresh), which MikroTik
+# documents as taking arm32v5 images only, and linux/arm/v7 is its other 32-bit
+# ARM userland.
 PLATFORM ?= linux/arm64
 
 # Coverage is one profile that instruments every package under cmd/ and
@@ -174,14 +176,15 @@ agent-smoke: ## Build the agent image tar for PLATFORM, docker load it and start
 	@command -v docker >/dev/null 2>&1 || { echo "make agent-smoke: docker is not installed"; exit 2; }
 	@set -euo pipefail; \
 	case "$(PLATFORM)" in \
-	  linux/amd64) arch=amd64 ;; \
-	  linux/arm64) arch=arm64 ;; \
-	  linux/arm/v7) arch=arm ;; \
-	  *) echo "make agent-smoke: PLATFORM must be linux/amd64, linux/arm64 or linux/arm/v7"; exit 2 ;; \
+	  linux/amd64) spec=amd64; name=amd64 ;; \
+	  linux/arm64) spec=arm64; name=arm64 ;; \
+	  linux/arm/v7) spec=arm:7; name=armv7 ;; \
+	  linux/arm/v5) spec=arm:5; name=armv5 ;; \
+	  *) echo "make agent-smoke: PLATFORM must be linux/amd64, linux/arm64, linux/arm/v7 or linux/arm/v5"; exit 2 ;; \
 	esac; \
 	want="$(VERSION)-smoke"; \
-	ARCHES="$$arch" VERSION="$$want" COMMIT=$(COMMIT) BUILD_DATE=$(BUILD_DATE) ./scripts/agent-tars.sh build/agent-smoke; \
-	docker load -i "build/agent-smoke/mikroscope-agent-$$arch.tar"; \
+	ARCHES="$$spec" VERSION="$$want" COMMIT=$(COMMIT) BUILD_DATE=$(BUILD_DATE) ./scripts/agent-tars.sh build/agent-smoke; \
+	docker load -i "build/agent-smoke/mikroscope-agent-$$name.tar"; \
 	out="$$(docker run --rm --platform "$(PLATFORM)" mikroscope/agent:local -version)"; \
 	echo "$(PLATFORM): $$out"; \
 	case "$$out" in \

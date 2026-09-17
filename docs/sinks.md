@@ -8,6 +8,8 @@ What `mikroscope forward` does between the agent and your stores — pull, merge
 
 Source: <https://jmrp.io/docs/mikroscope/sinks/>
 
+_Where the data comes from and where it goes_ — The router runs the agent in a container that reads the shared kernel and serves it over a veth. The collector on your machine pulls that, merges the RouterOS API tier into it, derives, and writes to every sink you named.
+
 `mikroscope forward` is the collector. It pulls the kernel tier from the agent,
 samples the RouterOS API tier, stamps both in the agent's clock, runs the derive
 stage over them and writes the merged timeline to every sink you name. This page
@@ -96,6 +98,34 @@ receives a gap line instead of the samples, and every sink records the gap.
 | API-tier sample               | the collector's clock plus the measured skew                      |
 | Gap                           | the collector's clock when the pull that found it returned        |
 | Device-info record            | the collector's clock: board facts have no timestamp of their own |
+
+### Which one should I use?
+
+ten destinations, capitalised by the sentence it opens:
+the honest answer is that most readers want one of the first two. The rest exist so that mikroscope fits what you already run rather
+than asking you to run something new.
+
+| If you…                                                    | Use            | It carries                                     | Dashboard |
+| ----------------------------------------------------------- | -------------- | ----------------------------------------------- | --------- |
+| want the whole thing, with the dashboards, and have nothing yet | `--influx`  | every measurement, as line protocol              | **yes**, generated |
+| already run Prometheus                                      | `--prom`       | every family, recomputed from the samples        | **yes**, generated |
+| want to capture a window and look at it later               | `--file`       | the merged timeline as JSONL, nothing to install | no        |
+| keep long-term data in PostgreSQL or TimescaleDB            | `--sql`        | DDL and INSERTs for `psql`, no driver            | no        |
+| want the kernel log and the detections where your logs are  | `--loki`       | **events only** — kmsg, detections, gaps         | no        |
+| already run an OpenTelemetry pipeline                       | `--otlp`       | metrics as OTLP/HTTP                             | no        |
+| already run Graphite, Elasticsearch or Telegraf             | `--graphite`, `--elastic`, `--telegraf` | every measurement, in that product's shape | no |
+| want to pipe it into something of your own                  | `--stdout`     | line protocol or NDJSON on standard output       | no        |
+
+Nothing stops you naming several at once, and that is the normal arrangement:
+`--file` beside a store gives you a capture to go back to, and `--loki` beside
+`--influx` puts the kernel log where a log query can reach it while the numbers
+go to the store the dashboards read.
+
+Two of these do not carry the same thing as the rest. **Loki takes events, not
+metrics** — the kernel-log records, the detections and the gaps — so a Loki-only
+run has no CPU or memory numbers in it at all. **`--prom` is scraped, not
+pushed**: `forward` serves `/metrics` and Prometheus comes to it, which means
+the collector has to be reachable from the Prometheus host.
 
 ### The ten sinks
 
@@ -1365,7 +1395,7 @@ counts objects the allocator still holds — but they track: the API said 6 21
 - [The API user](https://jmrp.io/docs/mikroscope/security/api-user/): the RouterOS group and address restriction the
   tier's user needs.
 - [The collector](https://jmrp.io/docs/mikroscope/sinks/): where the API-tier sample joins the kernel timeline.
-- [RouterOS ports and kernel names](https://jmrp.io/docs/mikroscope/playbooks/port-names/): matching the API's
+- [RouterOS ports and kernel names](https://jmrp.io/docs/mikroscope/reference/port-names/): matching the API's
   `ether2` to the kernel's `eth1`.
 - [Conntrack without the API](https://jmrp.io/docs/mikroscope/playbooks/conntrack/): reading the connection count from
   the slab instead.
@@ -1713,7 +1743,7 @@ name where the agent's port table maps the kernel name, and the kernel name othe
 
 **Needs** `privileged=yes`. A RouterOS name needs the board to be in the agent's port
 table, and the current name needs the API tier as well; see [RouterOS ports and kernel
-names](https://jmrp.io/docs/mikroscope/playbooks/port-names/).
+names](https://jmrp.io/docs/mikroscope/reference/port-names/).
 
 **May not claim** a fault. A cable pulled and reseated within a minute is a down and an up
 record, and fires. No provoked flap has been captured with this rule running; the flaps

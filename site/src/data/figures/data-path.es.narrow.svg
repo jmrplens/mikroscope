@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 316 454" width="100%" role="img" aria-labelledby="data-path-es-narrow-t data-path-es-narrow-d">
+	<title id="data-path-es-narrow-t">De dónde vienen los datos y a dónde van</title>
+	<desc id="data-path-es-narrow-d">El router ejecuta el agente en un contenedor que lee el kernel compartido y lo sirve por un veth. El colector de tu máquina tira de ahí, le une la capa de la API de RouterOS, deriva y escribe en cada destino que hayas nombrado.</desc>
+	<defs>
+		<marker id="data-path-es-narrow-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+			<path d="M 0 0 L 10 5 L 0 10 z" fill="var(--ms-border-strong, #aab4ba)"/>
+		</marker>
+	</defs>
+	<rect x="8" y="8" width="300" height="204" rx="12" fill="var(--ms-surface, #f5f7f8)" stroke="var(--ms-border, #d4dade)" stroke-dasharray="6 4"/>
+	<text x="22" y="28" font-family="ui-sans-serif,system-ui,sans-serif" font-size="12" font-weight="600" fill="var(--ms-body, #2d383f)" letter-spacing="0.03em">EL ROUTER</text>
+	<rect x="24" y="36" width="268" height="50" rx="8" fill="var(--ms-surface-raised, #ffffff)" stroke="var(--ms-border, #d4dade)"/>
+	<text x="158" y="57" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="14" font-weight="600" fill="var(--ms-heading, #10171b)">Kernel compartido</text>
+	<text x="158" y="76" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11.5" fill="var(--ms-muted, #5a666d)">/proc · /sys · /dev/kmsg · PMU</text>
+	<line x1="158" y1="86" x2="158" y2="106" stroke="var(--ms-border-strong, #aab4ba)" stroke-width="1.5" marker-end="url(#data-path-es-narrow-arrow)"/>
+	<rect x="24" y="108" width="268" height="50" rx="8" fill="var(--ms-surface-raised, #ffffff)" stroke="var(--ms-border, #d4dade)"/>
+	<text x="158" y="129" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="14" font-weight="600" fill="var(--ms-heading, #10171b)">mikroscope-agent</text>
+	<text x="158" y="148" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11.5" fill="var(--ms-muted, #5a666d)">1–100 Hz · anillo 300 s · HTTP</text>
+	<rect x="24" y="164" width="268" height="32" rx="8" fill="var(--ms-surface-raised, #ffffff)" stroke="var(--ms-border-strong, #aab4ba)" stroke-dasharray="4 3"/>
+	<text x="158" y="185" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="14" font-weight="600" fill="var(--ms-heading, #10171b)">API de RouterOS</text>
+	<line x1="158" y1="204" x2="158" y2="232" stroke="var(--ms-border-strong, #aab4ba)" stroke-width="1.5" marker-end="url(#data-path-es-narrow-arrow)"/>
+	<text x="166" y="218" text-anchor="start" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="var(--ms-muted, #5a666d)">veth /30</text>
+	<rect x="24" y="240" width="268" height="52" rx="8" fill="var(--ms-surface-raised, #ffffff)" stroke="var(--ms-border, #d4dade)"/>
+	<text x="158" y="262" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="14" font-weight="600" fill="var(--ms-heading, #10171b)">mikroscope forward</text>
+	<text x="158" y="281" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11.5" fill="var(--ms-muted, #5a666d)">tirar · unir · derivar · repartir</text>
+	<line x1="158" y1="292" x2="158" y2="316" stroke="var(--ms-border-strong, #aab4ba)" stroke-width="1.5" marker-end="url(#data-path-es-narrow-arrow)"/>
+	<rect x="8" y="318" width="300" height="128" rx="12" fill="var(--ms-surface, #f5f7f8)" stroke="var(--ms-border, #d4dade)" stroke-dasharray="6 4"/>
+	<text x="22" y="338" font-family="ui-sans-serif,system-ui,sans-serif" font-size="12" font-weight="600" fill="var(--ms-body, #2d383f)" letter-spacing="0.03em">DESTINOS</text>
+	<rect x="22" y="346" width="132" height="24" rx="6" fill="var(--ms-surface-raised, #ffffff)" stroke="var(--ms-border, #d4dade)"/>
+	<text x="88" y="362" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="var(--ms-body, #2d383f)">InfluxDB 3</text>
+	<rect x="162" y="346" width="132" height="24" rx="6" fill="var(--ms-surface-raised, #ffffff)" stroke="var(--ms-border, #d4dade)"/>
+	<text x="228" y="362" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="var(--ms-body, #2d383f)">Prometheus</text>
+	<rect x="22" y="376" width="132" height="24" rx="6" fill="var(--ms-surface-raised, #ffffff)" stroke="var(--ms-border, #d4dade)"/>
+	<text x="88" y="392" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="var(--ms-body, #2d383f)">fichero · SQL</text>
+	<rect x="162" y="376" width="132" height="24" rx="6" fill="var(--ms-surface-raised, #ffffff)" stroke="var(--ms-border, #d4dade)"/>
+	<text x="228" y="392" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="var(--ms-body, #2d383f)">Loki · OTLP</text>
+	<rect x="22" y="406" width="132" height="24" rx="6" fill="var(--ms-surface-raised, #ffffff)" stroke="var(--ms-border, #d4dade)"/>
+	<text x="88" y="422" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="var(--ms-body, #2d383f)">Graphite · Elastic</text>
+	<rect x="162" y="406" width="132" height="24" rx="6" fill="var(--ms-surface-raised, #ffffff)" stroke="var(--ms-border, #d4dade)"/>
+	<text x="228" y="422" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="var(--ms-body, #2d383f)">Telegraf · stdout</text>
+</svg>

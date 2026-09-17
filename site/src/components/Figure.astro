@@ -1,0 +1,48 @@
+---
+/**
+ * A generated diagram, inline, in the page's language and at two layouts.
+ *
+ * `site/scripts/gen-figures.mjs` writes four SVGs per figure — two languages
+ * by two layouts — and `pnpm run figures:check` fails when they disagree with
+ * that script. Inline rather than an `<img>`: inline, the SVG inherits the
+ * site's colour tokens, so it follows the theme toggle instead of guessing
+ * from prefers-color-scheme, and its `<title>`/`<desc>` are read by a screen
+ * reader as part of the document.
+ *
+ * Both layouts are emitted and CSS picks one, because the choice is the
+ * viewport's and this is a static page: a row of boxes that reads on a laptop
+ * is unreadable at 390 px, and the narrow one stacks the same path.
+ */
+import { langOf } from "../lib/lang";
+
+interface Props {
+	/** The figure's file stem, e.g. `data-path`. */
+	name: string;
+}
+
+const { name } = Astro.props as Props;
+const lang = langOf(Astro.locals.starlightRoute) === "es" ? "es" : "en";
+
+const files = import.meta.glob<string>("../data/figures/*.svg", {
+	eager: true,
+	query: "?raw",
+	import: "default",
+});
+
+const pick = (layout: "wide" | "narrow") => {
+	const key = Object.keys(files).find((f) =>
+		f.endsWith(`/${name}.${lang}.${layout}.svg`),
+	);
+	if (!key) {
+		throw new Error(
+			`<Figure name="${name}" />: no ${name}.${lang}.${layout}.svg in src/data/figures. Run \`pnpm run figures\`.`,
+		);
+	}
+	return files[key];
+};
+---
+
+<div class="ms-figure">
+	<div class="ms-figure-wide" set:html={pick("wide")} />
+	<div class="ms-figure-narrow" set:html={pick("narrow")} />
+</div>

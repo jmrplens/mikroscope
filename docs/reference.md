@@ -115,7 +115,7 @@ The checks doctor runs:
 | `--disk`         | empty (internal flash)          | `MIKROSCOPE_DISK`         | `^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$`                         | RouterOS disk for the image tar and the root: `tmpfs`, `disk1`, `usb1` …                                                                                                                                                                                                                                        |
 | `--ephemeral`    | `false`                         | none                      |                                                            | forces `--disk tmpfs` and `start-on-boot=no`: nothing written to flash, nothing survives a reboot                                                                                                                                                                                                               |
 | `--arch`         | `arm64`                         | `MIKROSCOPE_ARCH`         | `^[a-z0-9]{1,16}$`; `doctor` knows `arm64`, `arm`, `amd64` | device architecture, used as `GOARCH` and in the image manifest                                                                                                                                                                                                                                                 |
-| `--goarm`        | `7`                             | none                      |                                                            | `GOARM` level, used only with `--arch arm`                                                                                                                                                                                                                                                                      |
+| `--goarm`        | `5`                             | none                      |                                                            | `GOARM` level, used only with `--arch arm`: 5 runs on every 32-bit ARM MikroTik ships, 7 does not run on EN7562CT boards (hEX Refresh)                                                                                                                                                                                                                                                                      |
 | `--agent-tar`    | empty (build the agent here)    | `MIKROSCOPE_AGENT_TAR`    | a path to an agent image tar                               | `plan`, `install`, `upgrade`, `image`: upload this tar instead of building one, so neither a Go toolchain nor a checkout is needed. The tar is checked first: one that is not a mikroscope agent image, or is built for an architecture other than `--arch`, fails the verb naming the asset to download        |
 | `--remote-image` | empty (upload a tar)            | `MIKROSCOPE_REMOTE_IMAGE` | a registry reference, `owner/name:tag` or `host/owner/name:tag`             | `plan`, `install`, `upgrade`: the router pulls the image itself, so nothing is built and nothing is uploaded, and no tar lands on the device. RouterOS takes the registry host from the global `/container/config registry-url`, which ships as `https://registry-1.docker.io` and which mikroscope never writes; `doctor` checks that setting against a reference that names a host of its own, such as the GHCR one, and names the command to run |
 | `--rsc`          | `false`                         | none                      |                                                            | `plan`: write a RouterOS script that installs from the router itself, instead of the listing                                                                                                                                                                                                                    |
@@ -1681,6 +1681,239 @@ produces in one sample comes near 2^63.
 - [Import and check](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/): the dashboards that query these
   measurements.
 
+## RouterOS ports and kernel names
+
+The kernel log says eth5 where RouterOS says ether6 — how to measure the mapping on a dead port in one safe step, what the agent ships for the RB5009, and how much of that table was measured.
+
+Source: <https://jmrp.io/docs/mikroscope/reference/port-names/>
+
+The kernel log names netdevs (`eth0`, `eth5`), RouterOS names interfaces
+(`ether1`, `sfp-sfpplus1`), and **they do not agree**. This page answers which
+cable a kernel-log record is about. During [the loop case
+study](https://jmrp.io/docs/mikroscope/playbooks/loop/) this cost real time: `eth1` in the log looks
+like it should be `ether1`, and it is not.
+
+Measured on RB5009UG+S+ · 4 × 1.4 GHz Cortex-A72 · RouterOS 7.24.2 · Linux 5.6.3 · 2026-09-12 · agent at 10 Hz in an ephemeral privileged container
+
+Later observations are dated where they appear.
+
+### Why it has to be measured
+
+RouterOS exposes no mapping, and the container cannot read one. Network devices
+are namespaced, so `/sys/class/net` inside the container shows only `lo` and the
+veth; `/sys/class/mdio_bus` holds only `fixed-0` and `/sys/class/phy` is empty.
+`privileged=yes` does not change that. RouterOS's names live in RouterOS's
+configuration, not in the kernel.
+
+### Measure it on a dead port
+
+Pick a port that is definitely carrying nothing, toggle it, and read the name the
+kernel prints. Find a genuinely dead port first — zero packets in both
+directions, for its whole life:
+
+```text
+/interface/print stats where name="ether6" or name="ether7"
+```
+
+Then, with the agent running:
+
+```text
+/interface/ethernet/disable [find name="ether6"]
+:delay 4s
+/interface/ethernet/enable  [find name="ether6"]
+```
+
+The kernel said:
+
+```text
+[6] br0: port 7(eth5) entered blocking state
+[4] eth5: set isolation from 0 to 1
+[4] eth5: set isolation from 1 to 0
+```
+
+So RouterOS `ether6` is kernel `eth5`. Repeating on `ether7` gave `eth6`: a
+**−1 offset**, seen at two points.
+
+### The RB5009 table
+
+The mapping is a shift by one — RouterOS numbers ports from 1 and the kernel
+from 0, the switch chip included (`switch0` is the `switch=switch1` every port
+reports):
+
+| RouterOS            | kernel          | how known                                      |
+| ------------------- | --------------- | ---------------------------------------------- |
+| `ether1`            | `eth0`          | inferred                                       |
+| `ether2`            | `eth1`          | **measured** — the case-study loop, 2026-09-13 |
+| `ether3` … `ether5` | `eth2` … `eth4` | inferred                                       |
+| `ether6`            | `eth5`          | **measured** — flapped 2026-09-15              |
+| `ether7`            | `eth6`          | **measured** — flapped 2026-09-15              |
+| `ether8`            | `eth7`          | inferred                                       |
+| `sfp-sfpplus1`      | `eth8`          | inferred, last in the enumeration              |
+| `switch1`           | `switch0`       | inferred                                       |
+
+The `ether6` and `ether7` pairs were measured on **2026-09-15**. Both ports are
+commented `Unused` and neither was `RUNNING` — no cable, no link — so each was
+disabled and enabled again over the API while the agent read `/dev/kmsg`. The
+kernel logged `br0: port 7(eth5) entered disabled state` inside `ether6`'s
+window and `port 7(eth6)` inside `ether7`'s, nine seconds apart, which is what
+rules out reading one flap twice. No traffic was interrupted and both ports were
+back within four seconds.
+
+That makes three measured pairs, all on the same shift by one, which is what
+the six inferred rows rest on.
+
+The inferred pairs rest on two observations from a read-only
+`/interface/ethernet/print` (2026-09-13, the date the table's own evidence
+string carries): the nine ports carry consecutive MAC addresses, `…:55` for
+`ether1` through `…:5D` for `sfp-sfpplus1`, in RouterOS's own enumeration order;
+and all nine report `switch=switch1` against the kernel's one `switch0`.
+
+### Two cautions
+
+- **The name is reliable; the bridge port number is not.** Both flaps reported
+  `port 7`, because the kernel reuses port slots when a port leaves and rejoins
+  the bridge. Match on `eth5`, never on `port 7`.
+- **The offset is a property of this model's driver, not a rule.** Re-measure on
+  a different device rather than assuming, and be careful with the intuition that
+  the SFP+ must be `eth0` — here it is last, not first. The device tree does not
+  help either: it shows the SoC's `ethernet@0` with three MACs, only `eth0`
+  enabled (the 10 G uplink) and `eth1`/`eth2` disabled, while the nine
+  front-panel ports are netdevs the switch driver creates at runtime (the
+  device tree was parsed on 2026-09-14). The kernel-log names are the runtime
+  ones.
+
+### What the agent does with the table
+
+The agent reads the board model from the device tree at start —
+`/proc/device-tree/model` reads `RB5009` even unprivileged — and, on a board in
+its table, names ports without asking RouterOS:
+
+- every kernel-log record whose text names a port carries both names and what
+  happened to that port: `iface`, `ros_iface` and `kind` on the event, `port`
+  and `kind` tags on the InfluxDB rows, and
+  `iface=eth1 ros_iface=ether2 port_event=own-address` on a Loki line;
+- `/metrics` gains `mikroscope_kmsg_port_records_total{port,kind,level}`, with the
+  RouterOS name as `port` on a board in the table, the kernel name on a board
+  that is not, and no port series at all on a device whose device tree reports
+  no model. It is a
+  subset of `mikroscope_kmsg_records_total`, not a partition of it: records naming
+  no port are absent from it;
+- the collector's `link-flap` detection is keyed by the port name and reads the
+  same classification: a flap is `link-up` and `link-down` records on one port,
+  counted, not the text parsed a second time;
+- `mikroscope status` prints the board and whether it has a map, for example
+  `eth1 (ether2)`; `/healthz` and `/capabilities` carry the board, and
+  `/capabilities` and `mikroscope_device_info` carry the table's evidence string
+  as `ports_from`, so nobody has to take the mapping on trust.
+
+**An unknown board gets no port names, not guessed ones.** The shift by one is
+not applied to a board nobody has measured, because a confidently wrong port name
+sends someone to the wrong cable. On such a board `status` says so and asks for
+the pair: bring one port down, see which `ethN` the log names, and send that pair
+with the board string.
+
+### What kind of event it was
+
+A port name alone does not say what happened to the port, so every record that
+names one is classified as well, by `procfs.KmsgKind` over the record's text.
+The kinds, and the record shapes the RouterOS kernel prints (RB5009, kernel
+5.6.3, records seen 2026-09-12 … 2026-09-15):
+
+| `kind`        | the record                                                                          |
+| ------------- | ----------------------------------------------------------------------------------- |
+| `link-up`     | `eth8: link up, 1Gbps, full-duplex`, `eth1: Link is Up - 1Gbps/Full`, `eth1: phy link up` |
+| `link-down`   | `eth1: link down`                                                                   |
+| `stp-<state>` | `br0: port 2(eth1) entered blocking state` — `blocking`, `listening`, `learning`, `forwarding`, `disabled` |
+| `own-address` | `br0: received packet on eth1 with own address as source address (addr:…, vlan:0)` — the layer-2 loop signature |
+| `other`       | anything else that names a port, including `eth1: link becomes ready`, which is IPv6 address configuration noticing the carrier and not a transition of its own |
+
+The agent classifies at read time and ships `kind` in the record, and a
+collector in front of an older agent whose records carry none classifies them
+itself with the same function. That is the case on the reference router today:
+the agent running there has not been redeployed with this build, so its
+`/metrics` carries no `kind` label yet and the collector does the work.
+
+**Four records are not four faults.** A normal link-up is followed by
+`stp-blocking`, `stp-learning` and `stp-forwarding` as the bridge walks the port
+back into service.
+
+### From the default name to the current one
+
+The table maps to RouterOS's **default** names. A port renamed on the router
+(`ether5` → `WAN`) has a name the table cannot know, so the collector asks the
+API tier instead. Its interface inventory — read once before the first kernel
+pull and again every `--labels-every`, five minutes by default — holds each
+interface's factory default name, its current name, its comment and its
+interface lists, and the collector uses it on every record that names a port to:
+
+- replace the default name with the **current** one, so an operator who renamed
+  `ether5` to `WAN` reads `WAN` on the event, on the InfluxDB `port` tag, on the
+  Loki line and in the `link-flap` key;
+- attach `label`, the port's comment, and `role`, its interface lists — so the
+  `eth5` flap arrives as `ether6`, label `Unused`, rather than as a netdev
+  number somebody has to look up.
+
+Without an API tier the record keeps the board's default name and gets no label,
+which is what it can support.
+
+### Where a kernel message becomes a cable
+
+Two panels in the dashboards' **Kernel log** row are where the name, the kind
+and the comment meet:
+
+- **Port events from the kernel log, per port and kind** — bars per bin, one
+  series per port and kind, from
+  `sum by (port, kind) (increase(mikroscope_kmsg_port_records_total[$__interval]))`
+  on Prometheus and from the `port`/`kind` tags on InfluxDB;
+- **Port events in the window, per port** — a table with one row per port that
+  the log named: the port, its `label` and `role`, and a column per kind (link
+  down, link up, own address (loop), STP blocking, STP disabled, STP learning,
+  STP forwarding, other).
+
+Both are known-empty panels — a quiet set of ports is the healthy state — and
+the Prometheus form of each reads the collector's `/metrics`, whose copy of the
+family carries a `kind` on every port record however the agent shipped it. In an InfluxDB store the `kind` column exists only once a first port
+record classified by kind has been written, so both queries were validated on
+2026-09-16 against a synthetic table in the same InfluxDB 3, the live store
+having no such column yet.
+
+Two alert rules ship beside them, in both provisioning files. Both read
+`/dev/kmsg` through the agent and ask RouterOS nothing:
+
+- `mikroscope-l2-loop`, critical: any `own-address` record in five minutes. On
+  the reference RB5009 that signature ran at 1.49 records/s for hours on
+  2026-09-12 while every RouterOS counter looked healthy.
+- `mikroscope-port-link-down`, warning: any `link-down` record in five minutes —
+  the single event, where `link-flap` covers the repeats.
+
+The InfluxDB form of each needs a store that has already held one port record
+classified by kind; before that the query fails at planning time.
+
+> **Untested**
+>
+> Neither port-event rule has been seen firing on a real event: they were written against the
+> record shapes measured on the reference RB5009 and have not been put in front of a live loop or a
+> live link-down. The row-by-row headless render walk of 2026-09-15 covered 168 InfluxDB panels and
+> 130 Prometheus ones and has not been repeated for these two.
+
+The port table all of this rests on carries its own limit.
+
+> **True of this device, not of yours**
+>
+> The shift by one, the position of the SFP+ cage and the reuse of `port 7` were observed on one
+> RB5009UG+S+ running RouterOS 7.24.2. They are not claimed for any other board, and the agent does
+> not apply them to one.
+
+### See also
+
+- [A loop only the kernel could see](https://jmrp.io/docs/mikroscope/playbooks/loop/): the fault that made this mapping
+  worth an hour.
+- [The device-info stream](https://jmrp.io/docs/mikroscope/sinks/device-info/): where the board and `ports_from` travel.
+- [Detections](https://jmrp.io/docs/mikroscope/sinks/detections/): the `link-flap` rule, keyed by these names.
+- [The RouterOS API tier](https://jmrp.io/docs/mikroscope/sinks/api-tier/): the interface inventory that turns a default
+  name into the current one, with its comment and its lists.
+- [Alert rules](https://jmrp.io/docs/mikroscope/dashboards/alerts/): the loop and link-down rules these records fire.
+
 ## How the project tests itself
 
 The three layers of test — the bytes each sink puts on the wire, whether a real store accepts them, and whether the dashboards' own queries answer — what each one proves, what none of them prove, and the command for each.
@@ -1814,3 +2047,153 @@ nothing.
 - [The collector and its sinks](https://jmrp.io/docs/mikroscope/sinks/): what each sink writes.
 - [Importing and checking the dashboards](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/):
   the same `dashboards check` the third layer runs, against your own store.
+
+## When something does not work
+
+The symptoms this project produces, in the words you actually see — a RouterOS error, a container that exits, an empty panel, a sink that drops — with what each one means and the page that explains it.
+
+Source: <https://jmrp.io/docs/mikroscope/reference/troubleshooting/>
+
+Every page here explains one thing properly. This one is the index you reach
+for when something is already broken: find the line you are looking at, and it
+says what it means and where the explanation lives.
+
+### Installing
+
+| You see                                                              | It means                                                              |
+| --------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `doctor`: `device-mode container=no`                                  | [The one step nobody can do remotely](https://jmrp.io/docs/mikroscope/reference/troubleshooting/#device-mode-containeryes)       |
+| `doctor`: `container package installed and enabled … found=0`         | [The package is not on the router](https://jmrp.io/docs/mikroscope/reference/troubleshooting/#no-container-package)              |
+| `doctor`: `architecture matches --arch … router=arm`                  | Re-run with the `--arch` it names                                      |
+| RouterOS: `unknown parameter privileged`                              | [RouterOS older than 7.24](https://jmrp.io/docs/mikroscope/reference/troubleshooting/#unknown-parameter-privileged)              |
+| Container log: `exec format error`                                    | [The wrong image for the board](https://jmrp.io/docs/mikroscope/reference/troubleshooting/#exec-format-error)                    |
+| `no Go toolchain on PATH`                                             | Install with `--remote-image` or `--agent-tar` instead                 |
+| `--agent-tar …: this is not a mikroscope agent image`                 | The wrong asset — see [which tar](https://jmrp.io/docs/mikroscope/install/routes/#which-tar) |
+| `doctor`: `registry-url is https://ghcr.io … registry-url=…`          | [The registry host is global](https://jmrp.io/docs/mikroscope/reference/troubleshooting/#the-registry-host)                      |
+| `doctor`: `free flash ≥ …` fails                                      | `--disk tmpfs` or `--ephemeral`, or free space on the flash            |
+
+#### device-mode container=yes
+
+MikroTik gates containers behind a switch that cannot be flipped over the
+network. `/system/device-mode/update container=yes` starts it, and then the
+console asks for a physical confirmation — the reset button, or a power cycle —
+within five minutes. No flag, no script and no version of this tool can do that
+step for you. It is the first thing to arrange, because everything else waits
+on it: [What the router needs](https://jmrp.io/docs/mikroscope/install/prerequisites/).
+
+#### No container package
+
+The `container` package is a separate download from mikrotik.com, per
+architecture and per RouterOS version. Upload it, reboot, then
+`/system/package/enable container`. `doctor` counts it as present only when it
+is installed **and** not disabled.
+
+#### unknown parameter privileged
+
+RouterOS 7.24 added `privileged=`, and the container step writes it, so an
+earlier 7.x fails there — after the tar has been uploaded, which is why the
+install then takes it back with it. Either upgrade RouterOS, or install with
+`--privileged=false` and read
+[what privileged buys](https://jmrp.io/docs/mikroscope/limits/privileged/) first: without it the
+agent cannot read `/dev/kmsg`, and the kernel log is where several of this
+project's playbooks start.
+
+#### exec format error
+
+The container starts and dies immediately, and the log says `exec format
+error`. The image is for another architecture than the board — and on 32-bit
+ARM, "arm" is not one architecture.
+
+MikroTik's container documentation says devices with the EN7562CT CPU, the hEX
+Refresh line, "support only arm32v5 container images"; its other 32-bit ARM
+boards run an ARMv7 userland. An ARMv5 image runs on both, an ARMv7 image does
+not run on the first. So:
+
+- With `--remote-image`, this cannot happen: the published index carries all
+  four platforms and the router matches its own.
+- With `--agent-tar`, take `mikroscope-agent-armv5.tar` when the board is
+  32-bit ARM and you are not certain which kind it is.
+- Building from a checkout, `--goarm 5` is the default for the same reason.
+
+[Which tar](https://jmrp.io/docs/mikroscope/install/routes/#which-tar) is the table.
+
+#### The registry host
+
+`/container/config registry-url` is one global RouterOS setting, shared with
+every other container on the device, and mikroscope reads it and never writes
+it. The Docker Hub reference works out of the box because that is what RouterOS
+ships pointing at; the GHCR one needs the setting changed first, which changes
+it for everyone else on that router too.
+
+### The agent is installed and nothing answers
+
+```sh
+mikroscope status
+```
+
+That prints the ownership counts and, if it can reach the agent, its health. If
+the counts are there and the health is not, the container is running and
+something between you and it is not:
+
+- **The firewall.** Two rules commonly eat this traffic, and neither is
+  obvious: [The two firewall traps](https://jmrp.io/docs/mikroscope/install/firewall/) is that page,
+  and `doctor` checks the two list memberships that avoid them.
+- **The route.** The agent answers on its `/30`, on the router's LAN side. A
+  collector elsewhere reaches it the ways
+  [Reaching the agent](https://jmrp.io/docs/mikroscope/install/reaching-the-agent/) lists.
+- **The container never started.** `/container/print detail` on the router, and
+  `/log/print where topics~"container"`.
+
+### Data is arriving and something is empty
+
+| You see                                             | It means                                                                  |
+| ----------------------------------------------------- | -------------------------------------------------------------------------- |
+| No `events` at all, ever                            | `privileged=yes` is what `/dev/kmsg` needs                                 |
+| No PMU panels, no cycles or instructions            | `perf_event_open` is unavailable on that kernel or board                   |
+| A panel says **No data** and the others are fine    | That measurement is not produced on this device; the dashboard has a row for it |
+| A panel shows a red error badge                     | The query failed — the datasource, not the data                            |
+| `forward` prints `… dropped` for a sink             | [The sink could not keep up](https://jmrp.io/docs/mikroscope/reference/troubleshooting/#a-sink-is-dropping)                          |
+| Loki accepted everything and a query returns nothing | A push is not queryable until the chunk flushes                           |
+| Numbers stop at a round moment and resume           | A gap: the ring wrapped before the collector pulled it                     |
+
+The dashboards carry a row named **"Not available on this device"** for exactly
+this: panels whose measurement the kernel or the board does not produce are
+moved into it rather than left to draw an empty graph among the others.
+`mikroscope dashboards check` asks the datasource which measurements it really
+holds and does that sorting for your store:
+[Import and check](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/).
+
+#### A sink is dropping
+
+Every network sink is queued, and the queue is bounded — `--queue-seconds`, 60
+by default. A destination that cannot keep up loses the oldest batch rather
+than stalling the pull loop, and the count is printed at the end of the run and
+exported as a metric. That is a deliberate choice, and
+[the collector](https://jmrp.io/docs/mikroscope/sinks/) explains it: the agent's ring is what
+protects the data, and a collector waiting on a slow store would lose more than
+the store does.
+
+### Reading what it shows
+
+Once the data is arriving, the question changes from "why is this broken" to
+"what is this telling me". That is a different set of pages:
+[How to read what it shows](https://jmrp.io/docs/mikroscope/playbooks/) — the shape of an idle
+router first, then seven faults read against it.
+
+> **Ask the tools before reading further**
+>
+> `mikroscope doctor` names the fix for anything missing on the router, `mikroscope status` says
+> what is installed and whether it answers, and `mikroscope dashboards check` runs every panel's
+> query and prints which ones came back with nothing. Between them they answer most of this page
+> for your own device rather than in general.
+
+### See also
+
+- [What the router needs](https://jmrp.io/docs/mikroscope/install/prerequisites/): the three
+  prerequisites, and what `doctor` checks.
+- [The two firewall traps](https://jmrp.io/docs/mikroscope/install/firewall/): why the agent can be
+  running and unreachable.
+- [What privileged buys](https://jmrp.io/docs/mikroscope/limits/privileged/): what is lost without
+  it, source by source.
+- [How the project tests itself](https://jmrp.io/docs/mikroscope/reference/testing/): what has been
+  proven and how, if you are wondering whether it is you or the project.

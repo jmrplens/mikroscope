@@ -1,0 +1,164 @@
+---
+title: When something does not work
+description: The symptoms this project produces, in the words you actually see — a RouterOS error, a container that exits, an empty panel, a sink that drops — with what each one means and the page that explains it.
+---
+
+import { Aside } from "@astrojs/starlight/components";
+import ScrollTable from "../../../components/ScrollTable.astro";
+import SeeAlso from "../../../components/SeeAlso.astro";
+
+Every page here explains one thing properly. This one is the index you reach
+for when something is already broken: find the line you are looking at, and it
+says what it means and where the explanation lives.
+
+## Installing
+
+<ScrollTable label="What goes wrong while installing, and what each message means">
+
+| You see                                                              | It means                                                              |
+| --------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `doctor`: `device-mode container=no`                                  | [The one step nobody can do remotely](#device-mode-containeryes)       |
+| `doctor`: `container package installed and enabled … found=0`         | [The package is not on the router](#no-container-package)              |
+| `doctor`: `architecture matches --arch … router=arm`                  | Re-run with the `--arch` it names                                      |
+| RouterOS: `unknown parameter privileged`                              | [RouterOS older than 7.24](#unknown-parameter-privileged)              |
+| Container log: `exec format error`                                    | [The wrong image for the board](#exec-format-error)                    |
+| `no Go toolchain on PATH`                                             | Install with `--remote-image` or `--agent-tar` instead                 |
+| `--agent-tar …: this is not a mikroscope agent image`                 | The wrong asset — see [which tar](/mikroscope/install/routes/#which-tar) |
+| `doctor`: `registry-url is https://ghcr.io … registry-url=…`          | [The registry host is global](#the-registry-host)                      |
+| `doctor`: `free flash ≥ …` fails                                      | `--disk tmpfs` or `--ephemeral`, or free space on the flash            |
+
+</ScrollTable>
+
+### device-mode container=yes
+
+MikroTik gates containers behind a switch that cannot be flipped over the
+network. `/system/device-mode/update container=yes` starts it, and then the
+console asks for a physical confirmation — the reset button, or a power cycle —
+within five minutes. No flag, no script and no version of this tool can do that
+step for you. It is the first thing to arrange, because everything else waits
+on it: [What the router needs](/mikroscope/install/prerequisites/).
+
+### No container package
+
+The `container` package is a separate download from mikrotik.com, per
+architecture and per RouterOS version. Upload it, reboot, then
+`/system/package/enable container`. `doctor` counts it as present only when it
+is installed **and** not disabled.
+
+### unknown parameter privileged
+
+RouterOS 7.24 added `privileged=`, and the container step writes it, so an
+earlier 7.x fails there — after the tar has been uploaded, which is why the
+install then takes it back with it. Either upgrade RouterOS, or install with
+`--privileged=false` and read
+[what privileged buys](/mikroscope/limits/privileged/) first: without it the
+agent cannot read `/dev/kmsg`, and the kernel log is where several of this
+project's playbooks start.
+
+### exec format error
+
+The container starts and dies immediately, and the log says `exec format
+error`. The image is for another architecture than the board — and on 32-bit
+ARM, "arm" is not one architecture.
+
+MikroTik's container documentation says devices with the EN7562CT CPU, the hEX
+Refresh line, "support only arm32v5 container images"; its other 32-bit ARM
+boards run an ARMv7 userland. An ARMv5 image runs on both, an ARMv7 image does
+not run on the first. So:
+
+- With `--remote-image`, this cannot happen: the published index carries all
+  four platforms and the router matches its own.
+- With `--agent-tar`, take `mikroscope-agent-armv5.tar` when the board is
+  32-bit ARM and you are not certain which kind it is.
+- Building from a checkout, `--goarm 5` is the default for the same reason.
+
+[Which tar](/mikroscope/install/routes/#which-tar) is the table.
+
+### The registry host
+
+`/container/config registry-url` is one global RouterOS setting, shared with
+every other container on the device, and mikroscope reads it and never writes
+it. The Docker Hub reference works out of the box because that is what RouterOS
+ships pointing at; the GHCR one needs the setting changed first, which changes
+it for everyone else on that router too.
+
+## The agent is installed and nothing answers
+
+```sh
+mikroscope status
+```
+
+That prints the ownership counts and, if it can reach the agent, its health. If
+the counts are there and the health is not, the container is running and
+something between you and it is not:
+
+- **The firewall.** Two rules commonly eat this traffic, and neither is
+  obvious: [The two firewall traps](/mikroscope/install/firewall/) is that page,
+  and `doctor` checks the two list memberships that avoid them.
+- **The route.** The agent answers on its `/30`, on the router's LAN side. A
+  collector elsewhere reaches it the ways
+  [Reaching the agent](/mikroscope/install/reaching-the-agent/) lists.
+- **The container never started.** `/container/print detail` on the router, and
+  `/log/print where topics~"container"`.
+
+## Data is arriving and something is empty
+
+<ScrollTable label="Empty or missing data, by where you are looking">
+
+| You see                                             | It means                                                                  |
+| ----------------------------------------------------- | -------------------------------------------------------------------------- |
+| No `events` at all, ever                            | `privileged=yes` is what `/dev/kmsg` needs                                 |
+| No PMU panels, no cycles or instructions            | `perf_event_open` is unavailable on that kernel or board                   |
+| A panel says **No data** and the others are fine    | That measurement is not produced on this device; the dashboard has a row for it |
+| A panel shows a red error badge                     | The query failed — the datasource, not the data                            |
+| `forward` prints `… dropped` for a sink             | [The sink could not keep up](#a-sink-is-dropping)                          |
+| Loki accepted everything and a query returns nothing | A push is not queryable until the chunk flushes                           |
+| Numbers stop at a round moment and resume           | A gap: the ring wrapped before the collector pulled it                     |
+
+</ScrollTable>
+
+The dashboards carry a row named **"Not available on this device"** for exactly
+this: panels whose measurement the kernel or the board does not produce are
+moved into it rather than left to draw an empty graph among the others.
+`mikroscope dashboards check` asks the datasource which measurements it really
+holds and does that sorting for your store:
+[Import and check](/mikroscope/dashboards/import-and-check/).
+
+### A sink is dropping
+
+Every network sink is queued, and the queue is bounded — `--queue-seconds`, 60
+by default. A destination that cannot keep up loses the oldest batch rather
+than stalling the pull loop, and the count is printed at the end of the run and
+exported as a metric. That is a deliberate choice, and
+[the collector](/mikroscope/sinks/) explains it: the agent's ring is what
+protects the data, and a collector waiting on a slow store would lose more than
+the store does.
+
+## Reading what it shows
+
+Once the data is arriving, the question changes from "why is this broken" to
+"what is this telling me". That is a different set of pages:
+[How to read what it shows](/mikroscope/playbooks/) — the shape of an idle
+router first, then seven faults read against it.
+
+<Aside type="tip" title="Ask the tools before reading further">
+	`mikroscope doctor` names the fix for anything missing on the router, `mikroscope status` says
+	what is installed and whether it answers, and `mikroscope dashboards check` runs every panel's
+	query and prints which ones came back with nothing. Between them they answer most of this page
+	for your own device rather than in general.
+</Aside>
+
+<SeeAlso>
+
+## See also
+
+- [What the router needs](/mikroscope/install/prerequisites/): the three
+  prerequisites, and what `doctor` checks.
+- [The two firewall traps](/mikroscope/install/firewall/): why the agent can be
+  running and unreachable.
+- [What privileged buys](/mikroscope/limits/privileged/): what is lost without
+  it, source by source.
+- [How the project tests itself](/mikroscope/reference/testing/): what has been
+  proven and how, if you are wondering whether it is you or the project.
+
+</SeeAlso>

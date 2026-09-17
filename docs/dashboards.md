@@ -44,6 +44,49 @@ itself for the few families only the sampler produces. Prometheus 3 renders a hi
 bucket boundary as `le="0.0"`, so a query reading that bucket matches `le=~"0|0.0"`. The two scrape
 jobs are on [Import and check](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/#prometheus-two-scrape-jobs).
 
+### What it looks like
+
+One capture per section of the InfluxDB dashboard, in the order the dashboard
+puts them. Each is a link to the file at full size.
+
+> **These are a demonstration database, not a router**
+>
+> Every capture below is the InfluxDB dashboard over a run of the same canned fake agent the
+> end-to-end suites use, written into a container store by
+> `test/e2e/docker`'s fill step and photographed by `site/scripts/gen-dashboard-captures.mjs`.
+> Nothing in them comes from a real device, the host is called `rb5009` because the fake agent
+> imitates that board's captured `/proc`, and the figures are whatever the fake publishes — read
+> them as "this is the shape of the page", never as a measurement. A panel that is empty in a
+> capture is one the fake agent produces nothing for; on a real router with the API tier running,
+> several of them fill in, and two whole sections that the store probe moved into
+> "not available" come back.
+
+One capture per section of the InfluxDB dashboard, over a demonstration database filled by the fake agent, on [the page](https://jmrp.io/docs/mikroscope/dashboards/):
+
+- Overview (12)
+- CPU and scheduler (11)
+- Memory and load (9)
+- Connections (9)
+- Interface traffic (13)
+- Detections and captures (5)
+- Network receive path (9)
+- Forwarding cost (derived) (4)
+- Interrupts and softirqs (12)
+- Temperature and clock (10)
+- Kernel log (7)
+- CPU: how long a core stayed busy (3)
+- Memory: fragmentation (3)
+- Memory: reclaim and page faults (8)
+- Memory: detail and cross-checks (5)
+- Hardware counters (PMU) (11)
+- Flash wear (7)
+- NAND health (ECC) (2)
+- RouterOS API cross-checks — CPU and memory (9)
+- The observer (11)
+- The observer: sampler timing and self events (3)
+- This device (3)
+- Not available on this device (5)
+
 ### One list, two stores
 
 Every panel is declared once, with its SQL and its PromQL side by side, so a panel added to one

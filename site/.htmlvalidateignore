@@ -1,0 +1,8 @@
+# The redirect stubs Astro writes for astro.config.mjs's `movedPages`. Each is
+# a one-line `noindex` document Astro generates verbatim — lowercase doctype,
+# no lang, no title beyond "Redirecting to: …" — and none of that is this
+# site's markup to fix. Everything else under dist/ is validated.
+#
+# A redirect added to `movedPages` needs its old path added here too.
+dist/playbooks/port-names/index.html
+dist/es/playbooks/port-names/index.html

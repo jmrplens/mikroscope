@@ -15,6 +15,8 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import process from "node:process";
 
+import { isRedirectStub } from "./redirect-stub.mjs";
+
 const args = process.argv.slice(2);
 const positional = [];
 let only = "all";
@@ -75,7 +77,11 @@ function* files(dir, matches, prefix = "") {
 const NOT_A_PAGE = new Set(["404.html", "es/404/index.html"]);
 
 const pages = [...files(DIST, (name) => name === "index.html")]
-	.filter((path) => !NOT_A_PAGE.has(path))
+	.filter(
+		(path) =>
+			!NOT_A_PAGE.has(path) &&
+			!isRedirectStub(readFileSync(join(DIST, path), "utf8")),
+	)
 	.map((path) => path.replace(/index\.html$/, ""));
 const twins = new Set([...files(DIST, (name) => name === "index.md")]);
 

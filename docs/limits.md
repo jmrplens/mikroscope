@@ -499,7 +499,7 @@ Namespaces are kernel boundaries, and a filesystem mount does not cross them.
   two it leaves in place.
 - [Conntrack without the API](https://jmrp.io/docs/mikroscope/playbooks/conntrack/): reading the slab count and
   checking it against RouterOS once.
-- [RouterOS ports and kernel names](https://jmrp.io/docs/mikroscope/playbooks/port-names/): naming a port the
+- [RouterOS ports and kernel names](https://jmrp.io/docs/mikroscope/reference/port-names/): naming a port the
   container cannot see as a device.
 
 ## What privileged buys

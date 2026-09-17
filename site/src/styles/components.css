@@ -404,34 +404,93 @@
 
 /* ---------------------------------------------- Expressive Code copy button */
 
-/* Measured with Playwright at 390 × 844, isMobile/hasTouch, dark theme,
- * 2026-09-15: on a pointer without hover Expressive Code renders the
- * copy-to-clipboard button permanently at opacity 0.75, 2.5rem square,
- * absolutely positioned over the top-right of the frame. It is not a hover
- * artefact — the parent `.copy` is visible and the button's own idle opacity
- * is 0.75 in the base rules; the `@media (hover: hover)` block is what hides
- * it until hover on a desktop. Its box starts at x = 325 of a 390 px viewport
- * and code spans intersect it on 140 blocks across 60 built pages. On
- * /playbooks/cpu/ it covered `do{` in the one-line RouterOS command the page
- * exists to hand the reader; on /playbooks/loop/, two characters of a kernel
- * log line; on /record/ and /sinks/, parts of two flags.
+/* Expressive Code ships a copy-to-clipboard button and hides it until the
+ * pointer is over the block, absolutely positioned over the top-right of the
+ * code itself. Both halves of that were wrong here.
  *
- * Expressive Code already reserves room for it — `:nth-child(1 of .ec-line)
- * .code` gets `padding-inline-end: calc(2rem + …)` — but only on the FIRST
- * line and only at the 2rem hover size, while the touch button is 2.5rem tall
- * and so covers the first two lines. Widening that reserve does not fix the
- * worst case either: the frames that matter scroll horizontally, so on a long
- * command the padding sits at the far end of the line and the button still
- * lands on whatever text is under it.
+ * It was invisible. A reader who does not know it exists never hovers to find
+ * out, and on a touch screen there is no hover at all: this file used to hide
+ * the button outright under `(hover: none)`, because at 390 px it sat on top
+ * of the code — measured 2026-09-15, its box started at x = 325 of a 390 px
+ * viewport and code spans ran under it on 140 blocks across 60 pages.
  *
- * So the button is not rendered where it cannot be moved out of the way. A
- * touch reader keeps the code; text selection still copies it. Nothing changes
- * for a mouse or a keyboard: `(hover: hover)` is untouched, and that is where
- * the button was already only visible on hover or focus. */
-@media (hover: none) {
-	.expressive-code .copy {
-		display: none;
-	}
+ * It cannot be moved out of the way by padding either. Expressive Code
+ * reserves room on the FIRST line only, and the frames that matter scroll
+ * horizontally, so on a long command the reserve sits at the far end of the
+ * line and the button still lands on whatever text is under it.
+ *
+ * So the button is given a strip of its own that is not the code:
+ *
+ *   * A terminal frame already has one — the `figcaption.header` bar, 34 px
+ *     tall at the default font size (measured 2026-09-17) — and the button now
+ *     sits in it, against the right edge.
+ *   * A frame with no title and no terminal chrome has its header set to
+ *     `display: none` by Expressive Code, so one is made: the frame gets top
+ *     padding the button lives in, and the code starts below it.
+ *
+ * Either way it is opaque at rest, on every pointer type, and it overlaps
+ * nothing. */
+.expressive-code .copy {
+	/* Undoes the `(hover: none)` rule this file used to carry, and Expressive
+	 * Code's own inset, which positioned the button over the code. */
+	display: flex;
+	inset-block-start: 0;
+	inset-inline-end: 0;
+	block-size: var(--ms-copy-strip, 2.125rem);
+	align-items: center;
+	padding-inline-end: 0.5rem;
+}
+
+/* The strip for a frame that has no header of its own. `:has()` is what tells
+ * the two apart without a class: a terminal frame's figcaption is displayed,
+ * an untitled frame's is not. */
+.expressive-code .frame:not(.is-terminal):not(.has-title) {
+	padding-block-start: var(--ms-copy-strip, 2.125rem);
+}
+
+/* The button itself. Expressive Code draws the clipboard glyph as a masked
+ * ::after on the button and the "Copied!" tooltip as a ::before on a sibling
+ * div, so only the box, the colours and the states are the site's business. */
+.expressive-code .copy button {
+	opacity: 1;
+	inline-size: 1.75rem;
+	block-size: 1.75rem;
+	border: 1px solid var(--ms-border);
+	border-radius: calc(var(--ms-radius) - 0.25rem);
+	background-color: var(--ms-surface-raised);
+	box-shadow: none;
+	transition:
+		background-color 0.15s ease,
+		border-color 0.15s ease;
+}
+
+.expressive-code .copy button::after {
+	/* The glyph, tinted with the body colour rather than Expressive Code's own
+	 * white: on the light theme white on a light surface is invisible. */
+	background-color: var(--ms-body);
+	margin: 0.3rem;
+}
+
+.expressive-code .copy button:hover,
+.expressive-code .copy button:focus-visible {
+	background-color: var(--ms-surface);
+	border-color: var(--ms-border-strong);
+}
+
+.expressive-code .copy button:hover::after,
+.expressive-code .copy button:focus-visible::after {
+	background-color: var(--ms-heading);
+}
+
+.expressive-code .copy button:active {
+	background-color: var(--ms-accent-soft);
+	border-color: var(--ms-accent);
+}
+
+/* The frame's own top-right corner is rounded, and a square button in the
+ * corner of a rounded box reads as a rendering fault. */
+.expressive-code .frame.is-terminal .copy {
+	block-size: 2.125rem;
 }
 
 /* ------------------------------------------------- Inline code, two details */
@@ -465,4 +524,70 @@
  * 2026-09-15). A shadow under its bottom edge is what says "this is in front". */
 mobile-starlight-toc .dropdown {
 	box-shadow: 0 8px 16px -8px var(--ms-shadow);
+}
+
+/* ------------------------------------------------ Dashboard section captures */
+
+/* One capture per dashboard section (DashboardCaptures.astro). They are wide
+ * and tall — a section is up to a dozen panels — so each is a link to the file
+ * at full size, and the thumbnail is capped rather than left to push the page
+ * down by several screens per section. */
+.ms-captures {
+	display: grid;
+	gap: 1.5rem;
+	margin-block: 1.5rem;
+}
+
+.ms-capture {
+	margin: 0;
+}
+
+.ms-capture img {
+	display: block;
+	inline-size: 100%;
+	block-size: auto;
+	max-block-size: 30rem;
+	object-fit: cover;
+	object-position: top center;
+	border: 1px solid var(--ms-border);
+	border-radius: var(--ms-radius);
+	background-color: var(--ms-surface);
+}
+
+.ms-capture figcaption {
+	margin-block-start: 0.5rem;
+	color: var(--ms-muted);
+	font-size: var(--sl-text-sm);
+}
+
+/* ------------------------------------------------------- Generated diagrams */
+
+/* Figure.astro emits both layouts and lets the viewport choose: the wide one
+ * is a row the width of the prose, the narrow one stacks the same path for a
+ * phone. Switching in CSS rather than in JavaScript keeps the page static and
+ * keeps both in the DOM for a reader who prints it. */
+.ms-figure {
+	margin-block: 1.5rem;
+}
+
+.ms-figure svg {
+	display: block;
+	inline-size: 100%;
+	block-size: auto;
+}
+
+.ms-figure-narrow {
+	display: none;
+	max-inline-size: 22rem;
+	margin-inline: auto;
+}
+
+@media (max-width: 640px) {
+	.ms-figure-wide {
+		display: none;
+	}
+
+	.ms-figure-narrow {
+		display: block;
+	}
 }

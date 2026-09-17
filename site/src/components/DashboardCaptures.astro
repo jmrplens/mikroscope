@@ -1,0 +1,84 @@
+---
+/**
+ * The InfluxDB dashboard, section by section, as it renders against a store
+ * with data in it.
+ *
+ * The captures are generated rather than taken by hand:
+ * `site/scripts/gen-dashboard-captures.mjs` drives a real Grafana over a
+ * demonstration database that `test/e2e/docker`'s TestFillStoreForCaptures
+ * fills with a run of the same canned fake agent the end-to-end suites use.
+ * Nothing about a real router is in them, and the header of that script says
+ * how to regenerate the set.
+ *
+ * Each file is named `<index>-<section slug>.webp`, and the section titles
+ * come from the committed dashboard (src/data/dashboards.ts), so a section
+ * renamed by `dashboards gen` renames its caption here — and a section with no
+ * capture, or a capture with no section, is visible as a gap rather than
+ * silently dropped.
+ */
+import { countOf, sectionNames } from "../data/dashboards";
+import { langOf } from "../lib/lang";
+
+const images = import.meta.glob<{ default: ImageMetadata }>(
+	"../assets/dashboards/*.webp",
+	{ eager: true },
+);
+
+/** `Memory and load` → `memory-and-load`, the slug the generator writes. */
+const slug = (title: string) =>
+	title
+		.toLowerCase()
+		.replaceAll(/[^a-z0-9]+/g, "-")
+		.replaceAll(/^-|-$/g, "");
+
+const bySlug = new Map(
+	Object.entries(images).map(([file, module]) => [
+		/\d+-(.+)\.webp$/.exec(file)?.[1] ?? file,
+		module.default,
+	]),
+);
+
+const lang = langOf(Astro.locals.starlightRoute) === "es" ? "es" : "en";
+const strings = {
+	en: {
+		panels: (n: number) => `${n} panels`,
+		alt: (title: string, n: number) =>
+			`The "${title}" section of the InfluxDB dashboard, ${n} panels, rendered over the demonstration database`,
+	},
+	es: {
+		panels: (n: number) => `${n} paneles`,
+		alt: (title: string, n: number) =>
+			`La sección «${title}» del dashboard de InfluxDB, ${n} paneles, dibujada sobre la base de demostración`,
+	},
+}[lang];
+
+const sections = sectionNames
+	.map((title) => ({
+		title,
+		image: bySlug.get(slug(title)),
+		panels: countOf("influxdb", title) ?? 0,
+	}))
+	.filter((s) => s.image);
+---
+
+<div class="ms-captures">
+	{
+		sections.map(({ title, image, panels }) => (
+			<figure class="ms-capture">
+				<a href={image!.src}>
+					<img
+						src={image!.src}
+						width={image!.width}
+						height={image!.height}
+						loading="lazy"
+						decoding="async"
+						alt={strings.alt(title, panels)}
+					/>
+				</a>
+				<figcaption>
+					<strong>{title}</strong> — {strings.panels(panels)}
+				</figcaption>
+			</figure>
+		))
+	}
+</div>

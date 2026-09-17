@@ -22,103 +22,29 @@ route works around it.
 
 | Route                                            | Needs                                                            | Prefer it when                                                    |
 | ------------------------------------------------ | ---------------------------------------------------------------- | ----------------------------------------------------------------- |
+| **[A registry pull](#a-registry-pull)** — start here | the router can reach Docker Hub; nothing else                 | almost always: one command, nothing to choose, nothing uploaded   |
+| [A RouterOS script](#a-routeros-script)          | a terminal on the router; `--remote-image`                       | you reach the router through WinBox or WebFig and not over ssh    |
 | [A checkout, with Go](#a-checkout-with-go)       | Go 1.27 and the repository; ssh to the router                    | you are working on mikroscope and want the agent from your tree   |
-| [The published tar](#the-published-tar)          | the release assets; ssh to the router                            | you are installing a release and would rather upload than pull    |
-| [A registry pull](#a-registry-pull)              | the router reaches the registry; Docker Hub needs no `registry-url` change | you are installing a release and nothing should land on the flash |
-| [A RouterOS script](#a-routeros-script)          | a terminal on the router; `--remote-image`                       | you reach the router only through WinBox or WebFig                |
+| [The published tar](#the-published-tar)          | the release assets, the right one for the board; ssh to the router | the router cannot reach a registry                               |
 
 </ScrollTable>
 
-For a release, the tar and the registry pull are the two to choose between; the
-checkout is the contributor's route, and the script is for a router you reach
-without ssh.
+**Take the first one unless something stops you.** A registry pull is a single
+command with nothing to pick: the published image index carries every platform
+a MikroTik container can be, so the router matches its own and no one has to
+know whether the board is 64-bit ARM or one of the two 32-bit kinds. Nothing
+lands on the flash, and `uninstall` has no file to account for.
 
-## A checkout, with Go
-
-```sh
-git clone https://github.com/jmrplens/mikroscope
-cd mikroscope
-make build
-bin/mikroscope install --router user@192.168.88.1
-```
-
-`plan`, `install`, `upgrade` and `image` build the agent themselves:
-`go build ./cmd/mikroscope-agent` for `linux/<arch>` (`--arch`, default
-`arm64`) with `CGO_ENABLED=0`, packed into an image tar without Docker. The
-build path is relative, so run the CLI from the checkout. This is the only
-route that installs an agent built from your own tree, which is why it is the
-one to use while changing the agent.
-
-`make build` leaves the CLI in `bin/mikroscope`. With no Go toolchain on
-`PATH`, the verb stops before anything is written and names the other two
-routes and the Go version it wanted.
-
-## The published tar
-
-Two assets, from the release page: the CLI archive for the machine you run it
-from, and `mikroscope-agent-<arch>.tar` for the router's architecture. No Go
-toolchain, no checkout.
-
-<Steps>
-
-1. Download `mikroscope_1.0.1_<os>_<arch>.tar.gz` (`.zip` on Windows) and the
-   agent image tar for the router — `mikroscope-agent-arm64.tar`,
-   `mikroscope-agent-arm.tar` or `mikroscope-agent-amd64.tar` — together with
-   `checksums.txt` and `checksums.txt.sigstore.json`.
-
-2. Verify them, below, before unpacking anything.
-
-3. Unpack the CLI and install:
-
-   ```sh
-   tar xzf mikroscope_1.0.1_linux_x86_64.tar.gz
-   ./mikroscope install --router user@192.168.88.1 \
-     --arch arm64 --agent-tar mikroscope-agent-arm64.tar
-   ```
-
-</Steps>
-
-The CLI reads the tar before it uploads it. It wants a one-image
-`manifest.json`, the config that manifest names, one layer, and
-`/mikroscope-agent` as the entrypoint; anything else fails as
-`this is not a mikroscope agent image`. Then the image's architecture has to be
-the one `--arch` says, or the verb fails naming the asset to download instead —
-an `amd64` image on an arm64 board would otherwise install, start, and die with
-`exec format error` in the container log. On a tar it accepts it prints what it
-read, as `using mikroscope-agent-arm64.tar: linux/arm64, agent <size> KiB`.
-
-`--agent-tar` reads its default from `MIKROSCOPE_AGENT_TAR`, and `upgrade` and
-`image` take it too. From here on the install is the upload route: the tar goes
-up with `scp`, RouterOS extracts it at add time, and `install` deletes it.
-
-<Aside type="tip" title="Two assets have similar names">
-	`mikroscope-agent-arm64.tar` is the side-loadable container image, the one `--agent-tar` wants.
-	`mikroscope-agent_1.0.1_linux_arm64.tar.gz` is an archive of the bare agent binary, for reading or
-	running it outside a container; `--agent-tar` rejects it.
-</Aside>
-
-### Verifying the download
-
-`checksums.txt` covers every archive and every agent image tar, and it is the
-one file the signature vouches for. The signature is keyless: the identity is
-the workflow run that produced it, recorded in a public transparency log, so
-there is no key to fetch.
-
-```sh
-cosign verify-blob \
-  --certificate-identity-regexp 'https://github.com/jmrplens/mikroscope/.github/workflows/release.yml@refs/tags/.*' \
-  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  --bundle checksums.txt.sigstore.json \
-  checksums.txt
-sha256sum --ignore-missing -c checksums.txt
-```
-
-`--ignore-missing` is what lets you check the two files you downloaded against
-a list that covers the whole release. Each archive also ships an SPDX SBOM
-(`<archive>.spdx.json`) with a signature bundle of its own, verified the same
-way.
+The tar is last on purpose. It is the right route for a router with no way out
+to a registry, and it is the only one where **you** pick the architecture — the
+way that goes wrong is an image that installs, starts and dies with
+`exec format error` in the container log. If you take it, read
+[which tar](#which-tar) before downloading.
 
 ## A registry pull
+
+The recommended route, and the shortest. One command, nothing to download,
+nothing uploaded:
 
 ```sh
 mikroscope install --router user@192.168.88.1 \
@@ -132,8 +58,9 @@ prints `the router pulls … (nothing is uploaded)` where the upload line would
 be. The release publishes the image twice, as
 `jmrplens/mikroscope-agent:1.0.1` on Docker Hub and as
 `ghcr.io/jmrplens/mikroscope-agent:1.0.1` on GHCR. Both carry `linux/amd64`,
-`linux/arm64` and `linux/arm/v7`, and RouterOS picks the one its architecture
-needs.
+`linux/arm64`, `linux/arm/v7` and `linux/arm/v5`, and RouterOS picks the one its
+architecture needs — which is why this route asks nothing about the board: the
+two kinds of 32-bit ARM MikroTik ships are both in the index.
 
 The reference above is the Docker Hub one, and it carries no registry host: the
 router pulls it from whatever `/container/config registry-url` already names,
@@ -221,6 +148,116 @@ byte-identical to the one taken before them.
 </NotClaimed>
 
 <SeeAlso>
+
+## A checkout, with Go
+
+```sh
+git clone https://github.com/jmrplens/mikroscope
+cd mikroscope
+make build
+bin/mikroscope install --router user@192.168.88.1
+```
+
+`plan`, `install`, `upgrade` and `image` build the agent themselves:
+`go build ./cmd/mikroscope-agent` for `linux/<arch>` (`--arch`, default
+`arm64`) with `CGO_ENABLED=0`, packed into an image tar without Docker. The
+build path is relative, so run the CLI from the checkout. This is the only
+route that installs an agent built from your own tree, which is why it is the
+one to use while changing the agent.
+
+`make build` leaves the CLI in `bin/mikroscope`. With no Go toolchain on
+`PATH`, the verb stops before anything is written and names the other two
+routes and the Go version it wanted.
+
+## The published tar
+
+The route for a router that cannot reach a registry. Two assets: the CLI
+archive for the machine you run it from — which is
+[Getting the CLI](/mikroscope/install/cli/), and has nothing to do with the
+router — and one agent image tar, for the **router's** architecture. No Go
+toolchain, no checkout.
+
+### Which tar
+
+<ScrollTable label="Which agent image tar a board takes, by what RouterOS reports as its architecture">
+
+| Your MikroTik                                  | `architecture-name` | Agent image tar                 |
+| ----------------------------------------------- | ------------------- | ------------------------------- |
+| RB5009, CCR2004, hAP ax³, other 64-bit ARM      | `arm64`             | `mikroscope-agent-arm64.tar`    |
+| hEX Refresh / hEX S (2025), any EN7562CT board  | `arm`               | `mikroscope-agent-armv5.tar`    |
+| Other 32-bit ARM (hAP ac², hAP ax², …)          | `arm`               | `mikroscope-agent-armv7.tar`, or the v5 one |
+| CHR, x86 RouterOS                               | `x86_64`            | `mikroscope-agent-amd64.tar`    |
+
+</ScrollTable>
+
+`mikroscope doctor --router …` prints the architecture off the device, so run
+it first and let it tell you. **If you are not sure which 32-bit ARM board you
+have, take the v5 tar**: MikroTik's container documentation says EN7562CT
+boards "support only arm32v5 container images", and an ARMv5 image runs on
+every 32-bit ARM MikroTik ships, while an ARMv7 one does not run on those.
+
+<Steps>
+
+1. Download `mikroscope_1.0.1_<os>_<arch>.tar.gz` (`.zip` on Windows) and the
+   agent image tar from the table above, together with `checksums.txt` and
+   `checksums.txt.sigstore.json`.
+
+2. Verify them, below, before unpacking anything.
+
+3. Unpack the CLI and install:
+
+   ```sh
+   tar xzf mikroscope_1.0.1_linux_x86_64.tar.gz
+   ./mikroscope install --router user@192.168.88.1 \
+     --arch arm64 --agent-tar mikroscope-agent-arm64.tar
+   ```
+
+</Steps>
+
+The CLI reads the tar before it uploads it, which is what catches the wrong
+download: it prints what it read, as
+`using mikroscope-agent-arm64.tar: linux/arm64, agent <size> KiB`, and on the
+ARMv7 image it adds the note that an EN7562CT board needs the v5 one instead.
+
+It wants a one-image
+`manifest.json`, the config that manifest names, one layer, and
+`/mikroscope-agent` as the entrypoint; anything else fails as
+`this is not a mikroscope agent image`. Then the image's architecture has to be
+the one `--arch` says, or the verb fails naming the asset to download instead —
+an `amd64` image on an arm64 board would otherwise install, start, and die with
+`exec format error` in the container log. On a tar it accepts it prints what it
+read, as `using mikroscope-agent-arm64.tar: linux/arm64, agent <size> KiB`.
+
+`--agent-tar` reads its default from `MIKROSCOPE_AGENT_TAR`, and `upgrade` and
+`image` take it too. From here on the install is the upload route: the tar goes
+up with `scp`, RouterOS extracts it at add time, and `install` deletes it.
+
+<Aside type="tip" title="Two assets have similar names">
+	`mikroscope-agent-arm64.tar` is the side-loadable container image, the one `--agent-tar` wants.
+	`mikroscope-agent_1.0.1_linux_arm64.tar.gz` is an archive of the bare agent binary, for reading or
+	running it outside a container; `--agent-tar` rejects it.
+</Aside>
+
+### Verifying the download
+
+`checksums.txt` covers every archive and every agent image tar, and it is the
+one file the signature vouches for. The signature is keyless: the identity is
+the workflow run that produced it, recorded in a public transparency log, so
+there is no key to fetch.
+
+```sh
+cosign verify-blob \
+  --certificate-identity-regexp 'https://github.com/jmrplens/mikroscope/.github/workflows/release.yml@refs/tags/.*' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --bundle checksums.txt.sigstore.json \
+  checksums.txt
+sha256sum --ignore-missing -c checksums.txt
+```
+
+`--ignore-missing` is what lets you check the two files you downloaded against
+a list that covers the whole release. Each archive also ships an SPDX SBOM
+(`<archive>.spdx.json`) with a signature bundle of its own, verified the same
+way.
 
 ## See also
 

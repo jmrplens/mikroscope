@@ -23,7 +23,8 @@ different claim, and this table keeps the two apart.
 | Device | Architecture | RouterOS | State |
 |---|---|---|---|
 | MikroTik RB5009UG+S+ | arm64, 4 cores, 1 GiB | 7.24.2 | **Verified on hardware** |
-| MikroTik hEX refresh line | arm, 32-bit | 7.24+ | Builds, untested |
+| MikroTik hEX Refresh line (EN7562CT) | arm, 32-bit, **arm32v5 images only** | 7.24+ | Builds, untested |
+| Other 32-bit ARM boards | arm, 32-bit | 7.24+ | Builds, untested |
 | x86 RouterOS (CHR, x86 boards) | amd64 | 7.24+ | Builds, untested |
 
 On the RB5009, verified means: a `doctor` → `install` → `status` → `upgrade` →
@@ -105,37 +106,61 @@ the code, the code is right:
 
 ## Install
 
-**The CLI** runs on your machine. Take the archive for your platform from the
+### 1. Get the CLI onto your machine
+
+`mikroscope` runs on **your** computer, not on the router. Take the archive for
+your own platform from the
 [latest release](https://github.com/jmrplens/mikroscope/releases/latest) —
-linux, macOS, Windows and FreeBSD, on amd64, arm64 and arm — and check it
-against the release's `checksums.txt` (every asset is in there, and the
-checksum file itself is signed with cosign):
+`linux_x86_64`, `darwin_arm64`, `windows_x86_64` and so on — check it against
+the release's `checksums.txt` (every asset is in there, and the checksum file
+itself is signed with cosign), then put it on your `PATH`:
 
 ```sh
-tar xzf mikroscope_1.0.1_linux_amd64.tar.gz
 sha256sum --check --ignore-missing checksums.txt
+tar xzf mikroscope_1.0.1_linux_x86_64.tar.gz mikroscope
+sudo install -m 0755 mikroscope /usr/local/bin/mikroscope
+mikroscope version
 ```
 
-Or build it from a checkout, which is what a contributor does and what
-`install` needs if you want the agent compiled from your own tree:
+macOS needs `xattr -d com.apple.quarantine mikroscope` first; on Windows,
+unpack the `.zip` and add the folder to `PATH`.
+[Getting the CLI](https://jmrp.io/docs/mikroscope/install/cli/) has the three
+platforms step by step, and `go install github.com/jmrplens/mikroscope/cmd/mikroscope@latest`
+is there for a Go toolchain.
 
-```sh
-git clone https://github.com/jmrplens/mikroscope && cd mikroscope
-make build                              # bin/mikroscope; needs Go 1.27
-```
+### 2. Put the agent on the router
 
-**The agent** runs on the router, and there are four ways to put it there.
-Pick one; the documentation walks through each:
+The agent runs on the router, in a container, and there are four ways to get it
+there. **Take the first one unless something stops you**: it is one command,
+there is nothing to pick, and nothing is uploaded.
 
 | Route | Command | What it needs |
 |---|---|---|
-| Build it yourself | `mikroscope install` | Go 1.27 and a checkout — the CLI cross-compiles the agent |
-| The published tar | `mikroscope install --agent-tar mikroscope-agent-arm64.tar` | Only the release assets; the CLI checks the tar's architecture before it uploads it |
-| Let the router pull it | `mikroscope install --remote-image jmrplens/mikroscope-agent:1.0.1` | The router reaching Docker Hub, which `/container/config registry-url` points at out of the box. The image is on GHCR too, and that one needs the registry repointed — a global RouterOS setting mikroscope reads and never writes |
-| On the router, no CLI | `mikroscope plan --rsc --remote-image … --out install.rsc`, then paste or `/import` it | Nothing but the router; the script carries the same commands and the same ownership tags |
+| **A registry pull** — recommended | `mikroscope install --remote-image jmrplens/mikroscope-agent:1.0.1` | The router reaching Docker Hub, which `/container/config registry-url` points at out of the box. The published index carries every platform a MikroTik container can be, so the board matches its own |
+| On the router, no CLI and no ssh | `mikroscope plan --rsc --remote-image … --out install.rsc`, then paste or `/import` it | Nothing but a terminal on the router; the script carries the same commands and the same ownership tags |
+| Build it yourself | `mikroscope install` | Go 1.27 and a checkout — the CLI cross-compiles the agent from your own tree |
+| The published tar | `mikroscope install --agent-tar mikroscope-agent-arm64.tar` | Only the release assets, and **you** pick the one for the board. Last on this list for that reason; the CLI checks the tar's architecture before it uploads it |
 
 Every route ends with the same container, tagged the same way, so `status`,
 `upgrade` and `uninstall` work afterwards regardless of which one you used.
+
+### Which agent image for which board
+
+Only the tar route makes you choose. MikroTik's container package exists for
+**arm, arm64 and x86 only**, and 32-bit ARM is two things rather than one:
+
+| Your MikroTik | `architecture-name` | Agent image tar |
+|---|---|---|
+| RB5009, CCR2004, hAP ax³, other 64-bit ARM | `arm64` | `mikroscope-agent-arm64.tar` |
+| hEX Refresh / hEX S (2025), any EN7562CT board | `arm` | `mikroscope-agent-armv5.tar` |
+| Other 32-bit ARM (hAP ac², hAP ax², …) | `arm` | `mikroscope-agent-armv7.tar`, or the v5 one |
+| CHR, x86 RouterOS | `x86_64` | `mikroscope-agent-amd64.tar` |
+
+MikroTik documents that EN7562CT boards "support only arm32v5 container
+images". An ARMv5 image runs on every 32-bit ARM MikroTik ships and an ARMv7
+one does not run on those, so **if you are unsure, take v5** — or use the
+registry route, where the router picks for itself. `mikroscope doctor` reads
+the architecture off the device and tells you.
 
 ## Try it
 

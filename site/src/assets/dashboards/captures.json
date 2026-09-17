@@ -1,0 +1,32 @@
+{
+  "generated": "2026-09-17T04:46:37.460Z",
+  "window": {
+    "from": 1789618767484,
+    "to": 1789619981026
+  },
+  "files": [
+    "00-overview.webp",
+    "02-cpu-and-scheduler.webp",
+    "03-memory-and-load.webp",
+    "04-connections.webp",
+    "05-detections-and-captures.webp",
+    "06-network-receive-path.webp",
+    "07-forwarding-cost-derived.webp",
+    "08-interrupts-and-softirqs.webp",
+    "09-temperature-and-clock.webp",
+    "10-kernel-log.webp",
+    "11-cpu-how-long-a-core-stayed-busy.webp",
+    "12-memory-fragmentation.webp",
+    "13-memory-reclaim-and-page-faults.webp",
+    "14-memory-detail-and-cross-checks.webp",
+    "15-hardware-counters-pmu.webp",
+    "16-flash-wear.webp",
+    "17-nand-health-ecc.webp",
+    "18-the-observer.webp",
+    "19-the-observer-sampler-timing-and-self-events.webp",
+    "20-this-device.webp",
+    "21-pressure-stall-psi.webp",
+    "22-block-devices.webp",
+    "23-not-available-on-this-device-measurements-this-kernel-or-board-does-not-produce-open-to-read-why.webp"
+  ]
+}

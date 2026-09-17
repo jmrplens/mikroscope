@@ -81,10 +81,37 @@ func BuildAgent(goarch, goarm string, stamp Stamp) ([]byte, error) {
 	return os.ReadFile(out) // #nosec G304 -- reading back the binary written two lines up
 }
 
+// ArmVariant is the OCI variant string for a GOARM level: `v7` for the empty
+// string, because that is the level the toolchain defaults to for a 32-bit ARM
+// build on every platform this project builds from.
+func ArmVariant(goarm string) string {
+	if goarm == "" {
+		return "v7"
+	}
+	return "v" + goarm
+}
+
+// VariantNote is what an operator needs to be told about an image they chose
+// by hand, or the empty string when there is nothing to say.
+//
+// 32-bit ARM is the only case. MikroTik's container documentation states that
+// devices with the EN7562CT CPU — the hEX Refresh line — "support only arm32v5
+// container images", and its other 32-bit ARM boards run an ARMv7 userland. An
+// ARMv5 image runs on both, an ARMv7 one does not run on the first, and the
+// way that fails is an `exec format error` in the container log after an
+// install that reported success. So the v7 image is the one that needs a word,
+// and only when the operator picked it.
+func VariantNote(info Info) string {
+	if info.Arch != "arm" || info.Variant != "v7" {
+		return ""
+	}
+	return "note: this is the ARMv7 image. A board with an EN7562CT CPU (hEX Refresh) needs mikroscope-agent-armv5.tar instead; it runs on every 32-bit ARM MikroTik ships"
+}
+
 // Info is what Inspect could read back out of an image tar.
 type Info struct {
 	Arch    string // the config's `architecture`: arm64, arm, amd64
-	Variant string // `variant` where the config carries one (v7 for arm)
+	Variant string // `variant` where the config carries one (v5 or v7 for arm)
 	Size    int    // the agent binary's size in bytes
 }
 
@@ -179,7 +206,10 @@ func tarFiles(data []byte) (map[string][]byte, error) {
 // tool's heaviest dependency by far, and the format is three JSON files and
 // one layer. Every timestamp is the epoch, so the same binary always yields
 // the same bytes.
-func Tar(binary []byte, arch string) ([]byte, error) {
+//
+// goarm is the ARM level the binary was built for, and it is written into the
+// config as the OCI `variant`. It is ignored for any other architecture.
+func Tar(binary []byte, arch, goarm string) ([]byte, error) {
 	var layer bytes.Buffer
 	lw := tar.NewWriter(&layer)
 	if err := lw.WriteHeader(&tar.Header{
@@ -209,9 +239,14 @@ func Tar(binary []byte, arch string) ([]byte, error) {
 		"created": "1970-01-01T00:00:00Z",
 	}
 	if arch == "arm" {
-		// 32-bit RouterOS on the hEX refresh line runs armv7 userland; the
-		// variant is what an OCI consumer matches on for linux/arm.
-		configMap["variant"] = "v7"
+		// The variant is what an OCI consumer matches on for linux/arm, and on
+		// RouterOS it is not one value. MikroTik's container documentation says
+		// the package exists for arm, arm64 and x86 only, and that "devices
+		// with EN7562CT CPU support only arm32v5 container images" — the hEX
+		// Refresh line. The rest of MikroTik's 32-bit ARM devices run an
+		// ARMv7 userland. So the level the binary was built for is what goes
+		// in, and the release publishes both.
+		configMap["variant"] = ArmVariant(goarm)
 	}
 	config, err := json.Marshal(configMap)
 	if err != nil {

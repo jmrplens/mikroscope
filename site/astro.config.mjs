@@ -81,10 +81,31 @@ function siteMarkdownPlugins() {
 	};
 }
 
+/**
+ * Pages that have moved since the site was published, old path → new one. The
+ * old address keeps working rather than 404ing for anyone who bookmarked it or
+ * linked to it, and the same map is what keeps those redirect stubs out of the
+ * sitemap: they are `noindex` one-line documents, and everything in the
+ * sitemap has to be a real page with a twin and an llms.txt entry.
+ *
+ * The target carries the base, because a redirect is written verbatim into the
+ * stub's `<meta http-equiv="refresh">` and is not resolved against it.
+ *
+ * `RouterOS ports and kernel names` moved out of the fault case studies: it is
+ * a reference — a table, what the agent emits, the kinds of port event — that
+ * the case studies link to as a prerequisite rather than reading as one of
+ * themselves.
+ */
+const movedPages = {
+	"/playbooks/port-names": `${siteBase}/reference/port-names/`,
+	"/es/playbooks/port-names": `${siteBase}/es/reference/port-names/`,
+};
+
 export default defineConfig({
 	site: "https://jmrplens.github.io/mikroscope",
 	base: siteBase,
 	trailingSlash: "always",
+	redirects: movedPages,
 	integrations: [
 		siteMarkdownPlugins(),
 		starlight({
@@ -240,6 +261,11 @@ export default defineConfig({
 							slug: "install",
 						},
 						{
+							label: "Getting the CLI",
+							translations: { es: "Tener la CLI" },
+							slug: "install/cli",
+						},
+						{
 							label: "What the router needs",
 							translations: { es: "Lo que necesita el router" },
 							slug: "install/prerequisites",
@@ -361,11 +387,6 @@ export default defineConfig({
 							slug: "playbooks/loop",
 						},
 						{
-							label: "RouterOS ports and kernel names",
-							translations: { es: "Puertos de RouterOS y nombres del kernel" },
-							slug: "playbooks/port-names",
-						},
-						{
 							label: "A CPU-bound workload",
 							translations: { es: "Una carga limitada por CPU" },
 							slug: "playbooks/cpu",
@@ -470,6 +491,16 @@ export default defineConfig({
 							slug: "reference/measurements",
 						},
 						{
+							label: "RouterOS ports and kernel names",
+							translations: { es: "Puertos de RouterOS y nombres del kernel" },
+							slug: "reference/port-names",
+						},
+						{
+							label: "When something does not work",
+							translations: { es: "Cuando algo no funciona" },
+							slug: "reference/troubleshooting",
+						},
+						{
 							label: "How the project tests itself",
 							translations: { es: "Cómo se prueba el proyecto" },
 							slug: "reference/testing",
@@ -504,7 +535,14 @@ export default defineConfig({
 			// The not-found pages are for a mistyped address, not for an index:
 			// /404/ is what GitHub Pages serves, /es/404/ is its twin for the
 			// language menu.
-			filter: (page) => !/\/404\/?$/.test(new URL(page).pathname),
+			filter: (page) => {
+				const path = new URL(page).pathname.replace(/\/$/, "");
+				if (/\/404$/.test(path)) return false;
+				// The redirect stubs above are not pages.
+				return !Object.keys(movedPages).some(
+					(from) => path === `${siteBase}${from}`,
+				);
+			},
 			serialize: (item) => ({
 				...item,
 				lastmod: getLastmod(new URL(item.url).pathname),

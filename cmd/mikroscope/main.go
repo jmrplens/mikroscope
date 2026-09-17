@@ -94,7 +94,15 @@ func parse(verb string, args []string) (cli, error) {
 	fs.StringVar(&c.opts.Disk, "disk", env("DISK", ""), "RouterOS disk for image and root: empty = internal flash, tmpfs, disk1, usb1 …")
 	fs.BoolVar(&c.opts.Ephemeral, "ephemeral", false, "root on the tmpfs disk, start-on-boot=no: nothing written to flash, nothing survives a reboot")
 	fs.StringVar(&c.opts.Arch, "arch", env("ARCH", c.opts.Arch), "device architecture: arm64, arm, amd64")
-	fs.StringVar(&c.goarm, "goarm", "7", "GOARM level for --arch arm")
+	// 5, not the toolchain's 7. MikroTik's container documentation says the
+	// package exists for arm, arm64 and x86 only, and that "devices with
+	// EN7562CT CPU support only arm32v5 container images" — the hEX Refresh
+	// line. An ARMv5 binary runs on every 32-bit ARM MikroTik ships; an ARMv7
+	// one does not run on those. So the default is the one that starts
+	// everywhere, and --goarm 7 is there for a board where the faster
+	// instruction set is wanted and known to work. What that costs has not
+	// been measured on ARM hardware: this project has none.
+	fs.StringVar(&c.goarm, "goarm", "5", "GOARM level for --arch arm: 5 runs on every 32-bit ARM MikroTik ships, 7 does not run on EN7562CT boards (hEX Refresh)")
 	fs.StringVar(&c.agentTar, "agent-tar", env("AGENT_TAR", ""), "install/upgrade/image: use this agent image tar instead of building one (the release asset; needs no Go toolchain) (MIKROSCOPE_AGENT_TAR)")
 	fs.StringVar(&c.opts.RemoteImage, "remote-image", env("REMOTE_IMAGE", ""), "install/upgrade: let the router pull the agent image itself, e.g. ghcr.io/jmrplens/mikroscope-agent:"+version.Version+" (nothing is uploaded and no Go toolchain is needed)")
 	fs.IntVar(&c.opts.Port, "port", c.opts.Port, "agent HTTP port on the veth")
@@ -244,7 +252,7 @@ func buildImage(c cli) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return image.Tar(binary, c.opts.Arch)
+	return image.Tar(binary, c.opts.Arch, c.goarm)
 }
 
 // goVersionWanted is what the module requires, for the message above; it is
@@ -267,6 +275,9 @@ func loadAgentTar(path, arch string) ([]byte, error) {
 		return nil, fmt.Errorf("--agent-tar %s is a linux/%s image and --arch says %s: download the mikroscope-agent-%s.tar asset instead", path, info.Arch, arch, arch)
 	}
 	fmt.Fprintf(os.Stderr, "using %s: linux/%s%s, agent %d KiB\n", path, info.Arch, info.Variant, info.Size/1024)
+	if note := image.VariantNote(info); note != "" {
+		fmt.Fprintln(os.Stderr, note)
+	}
 	return data, nil
 }
 

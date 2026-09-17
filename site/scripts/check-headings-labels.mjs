@@ -17,6 +17,8 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import process from "node:process";
 
+import { isRedirectStub } from "./redirect-stub.mjs";
+
 const DIST = resolve(process.argv[2] ?? "dist");
 
 // Elements that are landmarks wherever they appear. <section> and <form> are
@@ -96,6 +98,7 @@ let pages = 0;
 
 for (const file of htmlFiles(DIST)) {
 	const html = readFileSync(file, "utf8");
+	if (isRedirectStub(html)) continue;
 	const page = file.slice(DIST.length).replace(/\/index\.html$/, "/");
 	const report = (message) => problems.push(`${page}: ${message}`);
 	pages += 1;

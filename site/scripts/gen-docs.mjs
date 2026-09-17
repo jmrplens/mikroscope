@@ -99,6 +99,7 @@ const MANIFEST = [
 		title: "Installing the agent",
 		routes: [
 			"install",
+			"install/cli",
 			"install/prerequisites",
 			"install/routes",
 			"install/firewall",
@@ -157,7 +158,6 @@ const MANIFEST = [
 			"playbooks",
 			"playbooks/idle",
 			"playbooks/loop",
-			"playbooks/port-names",
 			"playbooks/cpu",
 			"playbooks/packet-flood",
 			"playbooks/flash-wear",
@@ -185,7 +185,9 @@ const MANIFEST = [
 			"reference/http",
 			"reference/metrics",
 			"reference/measurements",
+			"reference/port-names",
 			"reference/testing",
+			"reference/troubleshooting",
 		],
 	},
 	// Where the project stands, what the mark is, and what it was built from.
