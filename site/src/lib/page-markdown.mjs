@@ -47,6 +47,7 @@ import { doctorChecks, isDoctorCheckId } from "../data/doctor-checks.ts";
 import { cadenceReasons } from "../data/cadence-reasons.ts";
 import * as dashboards from "../data/dashboards.ts";
 import * as home from "../data/home.ts";
+import stats from "../data/stats.json" with { type: "json" };
 import en from "../content/i18n/en.json" with { type: "json" };
 import es from "../content/i18n/es.json" with { type: "json" };
 import { formatNumber, formatQuantity } from "./format.ts";
@@ -284,6 +285,92 @@ function renderSelfClosing(name, attributes, expressions, context) {
 				);
 			}
 			return formatQuantity(measurements[id], lang);
+		}
+		// The dashboard section captures. docs/ is a text file in a checkout,
+		// with no images and no site to serve them from, so the reduction is
+		// the list of what the captures show and where they live — which is
+		// what a reader of docs/ can act on.
+		case "DashboardCaptures": {
+			// A site-relative link: gen-docs.mjs absolutises every link in the
+			// page afterwards, the same way it does for the prose.
+			const dashboards_ =
+				lang === "es"
+					? "/mikroscope/es/dashboards/"
+					: "/mikroscope/dashboards/";
+			const lines = dashboards.sectionNames
+				.map((title) => {
+					const count = dashboards.countOf("influxdb", title);
+					return count === null ? null : `- ${title} (${count})`;
+				})
+				.filter(Boolean);
+			const intro =
+				lang === "es"
+					? `Una captura por sección del dashboard de InfluxDB, sobre una base de demostración llenada por el agente simulado, en [la página](${dashboards_}):`
+					: `One capture per section of the InfluxDB dashboard, over a demonstration database filled by the fake agent, on [the page](${dashboards_}):`;
+			return [intro, "", ...lines].join("\n");
+		}
+		// A count the Go source decides, written the way the page writes it:
+		// `as="word"` is prose ("ten"), anything else is digits. The table of
+		// words is Stat.astro's, kept here rather than imported because that
+		// component is an .astro file this plain-node caller cannot load.
+		case "Stat": {
+			const value = stats[attributes.name];
+			if (typeof value !== "number") {
+				throw new Error(
+					`${context.file}: <Stat name="${attributes.name}" /> is not a number in src/data/stats.json`,
+				);
+			}
+			const words = {
+				en: [
+					"zero",
+					"one",
+					"two",
+					"three",
+					"four",
+					"five",
+					"six",
+					"seven",
+					"eight",
+					"nine",
+					"ten",
+					"eleven",
+					"twelve",
+					"thirteen",
+					"fourteen",
+					"fifteen",
+					"sixteen",
+					"seventeen",
+					"eighteen",
+					"nineteen",
+					"twenty",
+				],
+				es: [
+					"cero",
+					"uno",
+					"dos",
+					"tres",
+					"cuatro",
+					"cinco",
+					"seis",
+					"siete",
+					"ocho",
+					"nueve",
+					"diez",
+					"once",
+					"doce",
+					"trece",
+					"catorce",
+					"quince",
+					"dieciséis",
+					"diecisiete",
+					"dieciocho",
+					"diecinueve",
+					"veinte",
+				],
+			}[lang === "es" ? "es" : "en"];
+			return attributes.as === "word" && words[value]
+				? words[value]
+				: String(value);
 		}
 		// The sentence every figure needs beside it: device · CPU · RouterOS ·
 		// [Linux ·] date · conditions, exactly as Provenance.astro composes it.

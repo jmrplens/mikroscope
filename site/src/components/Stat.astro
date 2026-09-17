@@ -1,0 +1,60 @@
+---
+/**
+ * A number the Go source decides, interpolated into prose.
+ *
+ * `site/scripts/gen-stats.mjs` derives src/data/stats.json from the code —
+ * the sinks `forward` can write to, the CLI's verbs, the derive stage's
+ * detection rules, the sources the agent reports — and `pnpm run stats:check`
+ * fails when the file and the code disagree. A page that says
+ * `<Stat name="sinks" as="word" /> sinks` therefore cannot go stale without a
+ * gate saying so, which a literal "ten" could.
+ *
+ * `as="word"` writes it the way prose does: "ten", not "10". Only the range
+ * these counts actually live in is spelled out; anything outside it falls back
+ * to the digits rather than inventing a word, and the check above is what
+ * catches a count that grew past the table.
+ */
+import stats from "../data/stats.json";
+import { langOf } from "../lib/lang";
+
+/** The keys of stats.json whose value is a count. */
+type Counts = {
+	[K in keyof typeof stats as (typeof stats)[K] extends number
+		? K
+		: never]: number;
+};
+
+interface Props {
+	/** A numeric key of stats.json: sinks, verbs, detectionRules, agentSources. */
+	name: keyof Counts;
+	/** `word` writes it out in the page's language; anything else is digits. */
+	as?: "word" | "number";
+}
+
+const { name, as = "number" } = Astro.props as Props;
+const value: number = (stats as Counts)[name];
+if (typeof value !== "number") {
+	throw new Error(
+		`<Stat name="${String(name)}"> is not a number in src/data/stats.json`,
+	);
+}
+
+const WORDS: Record<string, readonly string[]> = {
+	en: [
+		"zero", "one", "two", "three", "four", "five", "six", "seven", "eight",
+		"nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen",
+		"sixteen", "seventeen", "eighteen", "nineteen", "twenty",
+	],
+	es: [
+		"cero", "uno", "dos", "tres", "cuatro", "cinco", "seis", "siete", "ocho",
+		"nueve", "diez", "once", "doce", "trece", "catorce", "quince",
+		"dieciséis", "diecisiete", "dieciocho", "diecinueve", "veinte",
+	],
+};
+
+const lang = langOf(Astro.locals.starlightRoute) === "es" ? "es" : "en";
+const word = WORDS[lang][value];
+const text = as === "word" && word ? word : String(value);
+---
+
+{text}

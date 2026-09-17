@@ -7,6 +7,7 @@ import { Aside, Steps } from "@astrojs/starlight/components";
 import Measured from "../../../../components/Measured.astro";
 import NotClaimed from "../../../../components/NotClaimed.astro";
 import Provenance from "../../../../components/Provenance.astro";
+import Stat from "../../../../components/Stat.astro";
 import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
 
@@ -112,6 +113,39 @@ una línea de hueco en vez de las muestras, y cada destino registra el hueco.
 | Registro de datos del equipo          | el reloj del colector: los datos de la placa no tienen marca de tiempo propia |
 
 </ScrollTable>
+
+## ¿Cuál debería usar?
+
+<Stat name="sinks" as="word" /> destinos, y la respuesta honesta es que casi todo el
+mundo quiere uno de los dos primeros. Los demás existen para que mikroscope encaje con lo que ya
+tienes, en vez de pedirte que montes algo nuevo.
+
+<ScrollTable label="Para qué sirve cada destino, qué lleva y si trae dashboard">
+
+| Si…                                                          | Usa            | Lleva                                             | Dashboard |
+| -------------------------------------------------------------- | -------------- | -------------------------------------------------- | --------- |
+| quieres todo, con los dashboards, y no tienes nada montado    | `--influx`     | todas las medidas, como protocolo de línea          | **sí**, generado |
+| ya tienes Prometheus                                          | `--prom`       | todas las familias, recalculadas de las muestras    | **sí**, generado |
+| quieres capturar una ventana y mirarla después                | `--file`       | la línea temporal unida como JSONL, sin instalar nada | no      |
+| guardas datos a largo plazo en PostgreSQL o TimescaleDB       | `--sql`        | DDL e INSERTs para `psql`, sin driver               | no        |
+| quieres el registro del kernel y las detecciones con tus logs | `--loki`       | **solo eventos**: kmsg, detecciones, huecos         | no        |
+| ya tienes una tubería de OpenTelemetry                        | `--otlp`       | métricas como OTLP/HTTP                             | no        |
+| ya tienes Graphite, Elasticsearch o Telegraf                  | `--graphite`, `--elastic`, `--telegraf` | todas las medidas, con la forma de ese producto | no |
+| quieres canalizarlo hacia algo tuyo                           | `--stdout`     | protocolo de línea o NDJSON por la salida estándar  | no        |
+
+</ScrollTable>
+
+Nada impide nombrar varios a la vez, y esa es la disposición normal: `--file`
+junto a un almacén te deja una captura a la que volver, y `--loki` junto a
+`--influx` pone el registro del kernel donde puede alcanzarlo una consulta de
+logs mientras los números van al almacén que leen los dashboards.
+
+Dos de ellos no llevan lo mismo que el resto. **Loki recibe eventos, no
+métricas** —los registros del kernel, las detecciones y los huecos—, así que
+una ejecución solo con Loki no tiene ni un número de CPU o memoria. Y **`--prom`
+se consulta, no se envía**: `forward` sirve `/metrics` y Prometheus viene a por
+él, lo que significa que el colector tiene que ser alcanzable desde la máquina
+de Prometheus.
 
 ## Los diez destinos
 
