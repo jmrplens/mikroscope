@@ -3,6 +3,7 @@ package forward
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strconv"
 	"strings"
 	"sync"
@@ -299,5 +300,33 @@ func TestDeviceFactsDefaultCadence(t *testing.T) {
 	f.Opts.DeviceEvery = time.Hour
 	if got := f.deviceEvery(); got != time.Hour {
 		t.Errorf("deviceEvery() = %s, want the configured hour", got)
+	}
+}
+
+// errCapsPuller is a backlogPuller whose /capabilities fetch fails.
+type errCapsPuller struct{ backlogPuller }
+
+func (p *errCapsPuller) Capabilities(context.Context) (agent.Capabilities, error) {
+	return agent.Capabilities{}, errors.New("capabilities: 503")
+}
+
+// TestDeviceFactsFetchFailureIsAbsence: a fetch that fails sends nothing and
+// leaves the cadence alone, so the next health read tries again. Nothing sent
+// is absence, not a board with no facts.
+func TestDeviceFactsFetchFailureIsAbsence(t *testing.T) {
+	p := &errCapsPuller{}
+	ms := &memSink{}
+	var logs []string
+	f := &Forwarder{Puller: p, Sinks: []sinks.Sink{ms}, Log: func(l string) { logs = append(logs, l) }}
+
+	f.deviceInfo(context.Background(), "abc")
+	if f.stats.Devices != 0 || len(ms.events) != 0 {
+		t.Fatalf("devices=%d events=%d, want nothing emitted", f.stats.Devices, len(ms.events))
+	}
+	if !f.deviceAt.IsZero() || f.capsHash != "" {
+		t.Errorf("a failed fetch moved the cadence: deviceAt=%v capsHash=%q", f.deviceAt, f.capsHash)
+	}
+	if len(logs) != 1 || !strings.Contains(logs[0], "503") {
+		t.Errorf("logs = %v, want the failure named once", logs)
 	}
 }

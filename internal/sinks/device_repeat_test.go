@@ -43,6 +43,40 @@ func TestDeviceRepeatReachesTheStoresAndNotTheRecording(t *testing.T) {
 		t.Errorf("%d identity rows in line protocol, want both:\n%s", n, lp)
 	}
 
+	var pushed []string
+	lokiSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		pushed = append(pushed, string(b))
+		mu.Unlock()
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer lokiSrv.Close()
+
+	l := NewLoki(lokiSrv.URL+"/loki/api/v1/push", "tok", "", "rb5009", 60, func(string) {})
+	l.Write(first)
+	l.Write(repeat)
+	if err := l.Close(); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	lines := strings.Join(pushed, "")
+	mu.Unlock()
+	if n := strings.Count(lines, "device: board="); n != 1 {
+		t.Errorf("%d device lines pushed to Loki, want only the first:\n%s", n, lines)
+	}
+
+	var term strings.Builder
+	so := newStdout(&term, StdoutJSON, "rb5009", 60, func(string) {})
+	so.Write(first)
+	so.Write(repeat)
+	if err := so.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(term.String(), `{"device":`); n != 1 {
+		t.Errorf("%d device lines on the terminal, want only the first:\n%s", n, term.String())
+	}
+
 	path := filepath.Join(t.TempDir(), "out.jsonl")
 	f, err := NewFile(path)
 	if err != nil {
