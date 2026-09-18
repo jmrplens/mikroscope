@@ -96,8 +96,8 @@ Two things to expect:
   that costs a little more but never slips is telling you the truth; one that
   slips is not.
 
-For scale: at the install default the agent costs 2.85 % of one
-core and 31.3 MiB RSS. That figure was measured on 2026-09-15
+For scale: at the install default the agent costs 2.69 % of one
+core and 13.2 MiB RSS. That figure was measured on 2026-09-15
 with the full source set and three sinks at once, not during the campaign these
 readings come from:
 

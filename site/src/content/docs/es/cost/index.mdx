@@ -20,14 +20,20 @@ otros dos dependen de la cadencia y de cuánto le pidas leer, y la respuesta hon
 un número.
 
 Con los valores por defecto de la instalación — 10 Hz, suelos por fuente por defecto, anillo de
-300 s — el agente cuesta **un <Measured id="run.10hz.cpu" /> de un núcleo y
+60 s — el agente cuesta **un <Measured id="run.10hz.cpu" /> de un núcleo y
 un <Measured id="run.10hz.rss" /> de RSS**, desde su propio cgroup:
 
-<Provenance of="rates-2026-09-15" />
+<Provenance of="rates-2026-09-18" />
 
-Eso está por encima del <Measured id="budget.cpu" /> que pide el presupuesto, con todas las fuentes
-leídas, entre ellas los tiempos de perf, buddyinfo, los contadores ECC de MTD, los eventos de cgroup
-y los contadores de puerto.
+**La memoria está dentro del presupuesto y la CPU no.** <Measured id="run.10hz.rss" /> frente a
+los <Measured id="budget.rss" /> que pide el presupuesto, y un <Measured id="run.10hz.cpu" /> frente
+al <Measured id="budget.cpu" />, con todas las fuentes leídas, entre ellas los tiempos de perf,
+buddyinfo, los contadores ECC de MTD, los eventos de cgroup y los contadores de puerto.
+
+Estuvo por encima de los dos hasta 1.0.6. El anillo guardaba 300 s en vez de 60 y el límite de
+memoria era un 40 MiB fijo que nunca apretaba, lo que dejaba al mismo agente en 31,3 MiB; ninguna de
+las dos cifras decía nada sobre el ritmo. Nada del muestreo cambió: la CPU pasó del 2,85 % al
+2,69 %, que es el ruido entre dos ventanas.
 
 ### Lo que cuesta la alternativa
 

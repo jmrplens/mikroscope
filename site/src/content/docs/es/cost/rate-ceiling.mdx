@@ -24,18 +24,25 @@ una extrapolación desde la cifra de 10 Hz. Son cinco ejecuciones.
 Cada cifra sale del propio cgroup del agente y de `/metrics`, con el conjunto completo de fuentes.
 Cada fila es una ventana con el anillo ya lleno:
 
-<Provenance of="rates-2026-09-15" />
+<Provenance of="rates-2026-09-18" />
 
 <RunsTable />
 
 `FLOOR_HZ` significa que cada fuente se lee en cada tick, sin ningún suelo por
 fuente — el peor caso que se le puede pedir al agente.
 
-La memoria cambia de fila en fila porque el anillo cambia. La fila de 10 Hz es
-la instalación por defecto (anillo de 300 s, <RunFlags run="10hz" />); las filas de 50 Hz
-usaron <RunFlags run="50hz" /> y las de 100 Hz <RunFlags run="100hz" />. Dale sitio al
-recolector de basura del agente o el coste se dispara por motivos que no tienen nada que ver con
-la cadencia.
+**Todas las filas corrieron la configuración que se envía** y no pasaron ninguna
+opción de memoria: el anillo de 60 s es el valor por defecto y el límite se
+deriva de él —16 MiB a 10 y 20 Hz, 25 a 50, 48 a 100— bajo el tope de contenedor
+de serie de 64M. La campaña anterior no podía hacer eso: necesitaba
+`--memory-max 96M` a 50 Hz y `128M` a 100, y su fila de 10 Hz guardaba un anillo
+de 300 s. Mismo equipo, mismas fuentes: **entre un 40 y un 58 % menos de memoria
+por fila, y la CPU sin moverse** —2,85 % de un núcleo a 10 Hz entonces frente a
+2,69 % ahora—.
+
+La memoria sigue cambiando de fila en fila porque el anillo cambia: guarda 60 s
+de muestras sea cual sea el ritmo, así que diez veces el ritmo son diez veces el
+anillo.
 
 <Aside type="tip" title="No se perdió nada a ninguna cadencia, en ninguna configuración">
 	Los segundos muestreados cubrieron el reloj de pared hasta 1,0000 en las cinco ejecuciones, la
@@ -61,49 +68,43 @@ escala linealmente con la cadencia: <Measured id="run.50hz-floor.cpu" />, y lueg
 La muestra se produce igual y se entrega igual, llevando su `dt_ns` real, así
 que cualquier tasa calculada a partir de ella sigue siendo correcta. Es un
 emborronamiento, no un agujero, y se ve en
-`mikroscope_tick_interval_seconds`. A 100 Hz con todo en cada tick, el 99,5 % de
-los ticks cayeron aun así dentro de 11 ms de un período de 10 ms y el peor fue
-de 15 ms.
+`mikroscope_tick_interval_seconds`. A 100 Hz con todo en cada tick, 29 777 de
+29 994 intervalos —el 99,3 %— cayeron aun así dentro de 11 ms de un período de
+10 ms; el percentil 99,5 fue 11,3 ms y el peor intervalo suelto, 21,7 ms.
 
 ## Lo que limita es la lectura, no la CPU
 
 Con los suelos por defecto, todas las fuentes de un tick se leen en menos de
 2 ms en el <Measured id="read.under2ms" /> de las muestras a 100 Hz, holgadamente dentro de un período de
-10 ms. `FLOOR_HZ` empuja un 1,4 % de las lecturas más allá de 5 ms, y esos son
-los ticks que se retrasan. El margen de CPU es mayor que el margen de tiempo,
+10 ms. `FLOOR_HZ` empuja el <Measured id="read.floorOver5ms" /> de las lecturas más allá
+de 5 ms —y ni una sola de 29 994 bajó de 2 ms—, y esos son los ticks que se
+retrasan: el 0,444 % de ellos a 100 Hz con cada fuente en cada tick, frente al
+0,012 % con los suelos por defecto. El margen de CPU es mayor que el margen de tiempo,
 que es por lo que el techo es una afirmación sobre E/S y no sobre el A72.
 
 ## La memoria que cuesta un ritmo, y dónde comprarla
 
-La memoria es el anillo. Todas las demás cifras —el runtime de Go, el margen
-del recolector, la fragmentación del asignador— se derivan de cuántas entradas
+La memoria es el anillo. Todas las demás cifras —el runtime de Go, el margen del
+recolector, la fragmentación del asignador— se derivan de cuántas entradas
 guarda, porque el límite blando de memoria se calcula justo de ahí. Así que la
-pregunta «¿puede esta placa muestrear a 100 Hz?» es sobre todo «¿puede guardar
-100 × tus segundos de búfer en muestras?».
+pregunta «¿puede esta placa muestrear a 100 Hz?» es sobre todo «¿puede guardar
+100 × tus segundos de búfer en muestras?», y la respuesta para toda la tabla de
+arriba es que sí, dentro del tope de serie de 64M.
 
-MEDIDO en el RB5009 de referencia (RouterOS 7.24.2, todas las fuentes activas,
-búfer de 60 s, ventanas de unas 54 000 muestras) el 2026-09-17:
+Dos cosas de ella no son obvias. **El coste por muestra baja al subir el ritmo**
+—1 684 µs a 100 Hz frente a 2 685 a 10— porque las fuentes de nivel se leen a su
+propio suelo y no en cada tick, así que las caras se reparten entre diez veces
+más ticks: diez veces los datos cuestan 6,3 veces la CPU, no diez. Y **los slips
+son culpa de la lectura, no de la CPU**: a 100 Hz la lectura media son 1,2 ms
+contra un período de 10 ms, pero la peor son 17,9 ms. Un tick cuya lectura dura
+más que su período llega tarde por definición, y por eso esa misma fila marca un
+16,8 % de un núcleo y cinco ticks perdidos en vez de un muro de CPU.
 
-| ritmo  | anillo    | RSS          | CPU por muestra | de un núcleo | perdidos              |
-| ------ | --------- | ------------ | --------------- | ------------ | --------------------- |
-| 10 Hz  | 1,98 MiB  | 13 627 392 B | 2 740 µs        | 2,7 %        | 0 de 4 981            |
-| 100 Hz | 19,78 MiB | 50 515 968 B | 1 809 µs        | 18,1 %       | 20 de 72 130 (0,03 %) |
-
-Dos cosas de esa tabla no son obvias. **El coste por muestra baja** al subir el
-ritmo —1 809 µs frente a 2 740— porque las fuentes de nivel se leen a su propio
-suelo y no en cada tick, así que a 100 Hz las caras se reparten entre diez veces
-más ticks: diez veces los datos cuestan 6,6 veces la CPU, no diez. Y **los slips
-son culpa de la lectura, no de la CPU**: la peor lectura de esa ejecución fueron
-21,5 ms contra un período de 10 ms, con la media en 1,27 ms. Un tick cuya lectura
-dura más que su período llega tarde por definición.
-
-A 100 Hz el RSS son 48 MiB contra un `memory-max` de contenedor de 64M, que
-funciona pero va justo. **Compra el margen en segundos de búfer, no en
-ingenio**: a 100 Hz un búfer de 20 s ocupa 6,59 MiB y deriva un límite de 17 MiB,
-que es el mismo alivio que daría comprimir el anillo 4,7× — y la compresión se
-midió en este equipo en **+1 331 µs por muestra**, que a 100 Hz son +74 % de CPU
-y seis veces más ticks perdidos (123 frente a 20). Los segundos son gratis; la
-compresión no.
+**Compra el margen en segundos de búfer, no en ingenio.** A 100 Hz un búfer de
+20 s ocupa 6,59 MiB y deriva un límite de 17 MiB —el mismo alivio que daría
+comprimir el anillo 4,7×, y la compresión se midió en este equipo en
+**+1 331 µs por muestra**, que a 100 Hz son +74 % de CPU y seis veces los ticks
+perdidos—. Los segundos son gratis; la compresión no.
 
 ## Lo que muestrear más rápido compra de verdad
 
@@ -120,9 +121,10 @@ estrecha sobre cuánto puede esconderse una ráfaga entre dos muestras.
 
 <NotClaimed>
 	Cualquier cadencia en una placa que no sea esta, y qué pasa bajo una carga de tráfico mayor que la
-	tarde corriente de este router — unos <Measured id="load.evening" />. Antes de citar un número
-	para tu equipo, vuelve a medirlo allí: dos lecturas de `/metrics` separadas 60 s en régimen
-	estacionario.
+	corriente de este router — unos <Measured id="load.ordinary" /> en la WAN mientras corrían estas
+	ventanas, con picos a 933 Mbit/s. Antes de citar un número para tu equipo, vuelve a medirlo allí:
+	dos lecturas del `/metrics` del colector separadas 60 s en régimen estacionario, o `cpu_us` y
+	`rss` en `mikroscope_self` en el almacén que uses.
 </NotClaimed>
 
 <SeeAlso>

@@ -19,14 +19,21 @@ The budget is **≤ <Measured id="budget.cpu" /> of one core, ≤ <Measured id
 depend on the rate and on how much you ask it to read, and the honest answer is a table rather than
 a number.
 
-At the install default — 10 Hz, default per-source floors, a 300 s ring — the agent costs
+At the install default — 10 Hz, default per-source floors, a 60 s ring — the agent costs
 **<Measured id="run.10hz.cpu" /> of one core and <Measured id="run.10hz.rss" /> RSS**, from its own
 cgroup:
 
-<Provenance of="rates-2026-09-15" />
+<Provenance of="rates-2026-09-18" />
 
-That is above the <Measured id="budget.cpu" /> the budget asks for, with every source read — the
-perf timings, buddyinfo, the MTD ECC counters, the cgroup events and the port counters among them.
+**The memory is inside the budget and the CPU is not.** <Measured id="run.10hz.rss" /> against
+the <Measured id="budget.rss" /> the budget asks for, and <Measured id="run.10hz.cpu" /> against
+the <Measured id="budget.cpu" />, with every source read — the perf timings, buddyinfo, the MTD
+ECC counters, the cgroup events and the port counters among them.
+
+It was over on both until 1.0.6. The ring held 300 s rather than 60 and the memory limit was a
+flat 40 MiB that never bound, which put the same agent at 31.3 MiB; neither number was a statement
+about the rate. Nothing about the sampling changed: the CPU moved from 2.85 % to
+2.69 %, which is the noise between two windows.
 
 ### What the alternative costs
 

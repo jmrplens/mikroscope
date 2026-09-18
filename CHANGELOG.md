@@ -4,6 +4,41 @@ Notable changes per release. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the versions
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.8]
+
+### Changed
+
+- **The rate campaign was re-run at the shipped configuration, and 20 Hz was
+  added.** The table on [the rate ceiling] described a product the project no
+  longer ships: its rows came from 2026-09-15 with a 300 s ring at 10 Hz,
+  hand-set memory limits, and a container cap raised to 96M at 50 Hz and 128M
+  at 100. Six windows of 300 s on 2026-09-18, every one at the defaults — 60 s
+  ring, derived limit, the 64M cap — with the collector forwarding to
+  InfluxDB 3:
+
+  | rate                 | limit | RSS      | of one core | slipped         |
+  | -------------------- | ----- | -------- | ----------- | --------------- |
+  | 10 Hz                | 16    | 13.2 MiB | 2.69 %      | 0 of 3 000      |
+  | 20 Hz                | 16    | 15.4 MiB | 4.61 %      | 0 of 6 000      |
+  | 50 Hz                | 25    | 23.3 MiB | 9.63 %      | 0 of 14 999     |
+  | 100 Hz               | 48    | 45.7 MiB | 16.83 %     | 5 (0.012 %)     |
+  | 50 Hz `FLOOR_HZ`     | 25    | 25.1 MiB | 22.56 %     | 4 (0.020 %)     |
+  | 100 Hz `FLOOR_HZ`    | 48    | 49.5 MiB | 42.70 %     | 178 (0.444 %)   |
+
+  **Zero collector gaps in all six.** Against the old campaign that is 40 to
+  58 % less memory per row with the CPU unmoved, and the whole range — up to
+  every source on every tick at 100 Hz — now fits the default 64M container
+  cap, which the old campaign could not do.
+
+- **The agent is inside the memory budget for the first time.** The project's
+  own budget is ≤ 2 % of one core and ≤ 16 MiB; the install default now
+  measures 2.69 % and **13.2 MiB**. It was over on both until the 60 s ring and
+  the derived limit. The build-time assertion that guarded the sentence "above
+  the budget" is what caught the prose the day it stopped being true — it threw,
+  named the two files to rewrite, and they were rewritten.
+
+[the rate ceiling]: https://jmrp.io/docs/mikroscope/cost/rate-ceiling/
+
 ## [1.0.7]
 
 The release 1.0.6 should have been. **There is no 1.0.6 release**: the tag

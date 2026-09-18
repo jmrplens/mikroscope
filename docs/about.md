@@ -87,7 +87,7 @@ run against the reference RB5009 (RouterOS 7.24.2), not only against fakes:
 ### What the agent costs today
 
 At the install default — 10 Hz, default per-source floors, a 300 s ring — the
-agent costs **2.85 % of one core and 31.3 MiB RSS**,
+agent costs **2.69 % of one core and 13.2 MiB RSS**,
 read from its own cgroup at steady state with the ring full:
 
 Measured on RB5009UG+S+ · 4 × 1.4 GHz Cortex-A72 · RouterOS 7.24.2 · 2026-09-15 · 60 s windows at steady state (ring full), full source set, collector forwarding to a file, a Prometheus exposition and InfluxDB 3 at once
@@ -96,7 +96,7 @@ The measured runs:
 
 | rate | floors | CPU of one core | µs/sample | RSS | slipped ticks | gaps / drops |
 | --- | --- | --- | --- | --- | --- | --- |
-| 10 Hz (default) | default | **2.85 %** | 2 856 | 31.3 MiB | **0** | 0 / 0 |
+| 10 Hz (default) | default | **2.69 %** | 2 685 | 13.2 MiB | **0** | 0 / 0 |
 
 That is above the budget of 2 % of one core and 16 MiB RSS. The
 budget is guidance rather than a contract: cost scales with the device, the
@@ -121,7 +121,7 @@ what each one costs — not what the number was at some earlier point.
 | Ring full, `MEM_LIMIT_MB` 14                          | 9.38 % (9 374 µs/sample) | not recorded                   | 2026-09-12 | a 300 s ring of lines of about 2.4 kB holds ~7.3 MB; the Go GC runs without pause |
 | Ring full, `--mem-limit-mb 40`, `--memory-max 64M`    | 1.39 % (1 388 µs/sample) | 25.13 MiB                      | 2026-09-12 | 0 slipped ticks                                                                                          |
 | PMU counters on, a live `forward` writing to InfluxDB | 1.72 %                                                                | not recorded                   | 2026-09-12 | 0 slipped ticks; 2 400 samples forwarded, 0 gaps, 0 drops                                                |
-| The install default                                   | 2.85 %                                        | 31.3 MiB | 2026-09-15 | the figure above                                                                                         |
+| The install default                                   | 2.69 %                                        | 13.2 MiB | 2026-09-15 | the figure above                                                                                         |
 
 ### One device, one RouterOS version
 

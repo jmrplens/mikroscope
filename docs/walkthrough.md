@@ -46,8 +46,8 @@ when you want the agent built from your own tree.
    `/proc/net/dev`, `/proc/net/snmp` and `nf_conntrack_count` are per network namespace and describe the container; the conntrack count from the slab under `privileged` is the exception, and describes the router. Interface counters come from the
    RouterOS API and are merged, not faked.
 
-4. **The observer costs something, and it is written down.** 2.85 % of
-   one core at 10 Hz on an RB5009, 17.81 % at 100 Hz. [What it
+4. **The observer costs something, and it is written down.** 2.69 % of
+   one core at 10 Hz on an RB5009, 16.83 % at 100 Hz. [What it
    costs](https://jmrp.io/docs/mikroscope/cost/) has the full table and the conditions. Every figure
    on this site comes from that one device, an RB5009UG+S+ on RouterOS 7.24.2,
    arm64: the arm and x86_64 builds are cross-built and checked in CI and have
