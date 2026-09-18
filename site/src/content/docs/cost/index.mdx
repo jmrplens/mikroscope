@@ -73,7 +73,7 @@ The parse is not where the time goes. Parsing the seven global `/proc` files plu
 27 µs and 239 allocations per sample on the amd64 development host (Go 1.27.1, three runs,
 26.7–27.5 µs, 2026-09-11). On the RB5009's Cortex-A72 a whole tick — timers, JSON and the
 garbage collector included — costs <Measured id="run.10hz.usPerSample" /> at 10 Hz with the default
-floors, and [the five runs](/mikroscope/cost/rate-ceiling/) give it at every rate. The parse was not
+floors, and [the six runs](/mikroscope/cost/rate-ceiling/) give it at every rate. The parse was not
 measured on the A72 on its own.
 
 ## Measuring it on your own device
@@ -101,7 +101,7 @@ no Prometheus sink configured, the same two numbers are `cpu_us` and `rss` in
 
 ## See also
 
-- [The rate ceiling](/mikroscope/cost/rate-ceiling/): the five runs, the memory flags each one used,
+- [The rate ceiling](/mikroscope/cost/rate-ceiling/): the six runs, the defaults every one of them used,
   and what sampling faster buys.
 - [What the numbers do not say](/mikroscope/cost/limits/): what these figures cannot tell you about
   another device or another load.

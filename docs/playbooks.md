@@ -74,11 +74,13 @@ pre-encoded lines, about 1.5 MB, and `self.cpu_us` inside those samples
 _includes the cost of serving them_. Reading the agent's cost out of a large
 snapshot therefore overstates it, and doing it repeatedly overstates it more.
 
-Use `/metrics` instead. It is small, its counters are cumulative, and it is
-independent of who scrapes it and when — scrape it twice and divide:
+Use the collector's `/metrics` instead — the agent has served none since 1.0.5,
+and these counters reach the collector in every sample. It is small, its
+counters are cumulative, and it is independent of who scrapes it and when —
+scrape it twice and divide:
 
 ```sh
-U=http://172.30.10.2:9123/metrics
+U=http://<collector host>:9124/metrics
 get() { curl -s "$U" | awk -v k="$1" '$1==k{print $2}'; }
 c0=$(get mikroscope_self_cpu_usec_total); t0=$(date +%s)
 sleep 180

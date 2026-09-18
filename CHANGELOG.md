@@ -25,8 +25,8 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   | 50 Hz `FLOOR_HZ`     | 25    | 25.1 MiB | 22.56 %     | 4 (0.020 %)     |
   | 100 Hz `FLOOR_HZ`    | 48    | 49.5 MiB | 42.70 %     | 178 (0.444 %)   |
 
-  **Zero collector gaps in all six.** Against the old campaign that is 40 to
-  58 % less memory per row with the CPU unmoved, and the whole range — up to
+  **Zero collector gaps in all six.** Against the old campaign that is 38 to
+  59 % less memory per row with the CPU unmoved, and the whole range — up to
   every source on every tick at 100 Hz — now fits the default 64M container
   cap, which the old campaign could not do.
 

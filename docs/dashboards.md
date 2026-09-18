@@ -960,8 +960,9 @@ device itself published. None is a number compiled in for one router.
 | `dashboards/mikroscope-alerts-influxdb.yaml`   |   10 | InfluxDB 3 SQL |
 | `dashboards/mikroscope-alerts-prometheus.yaml` | 11 | PromQL         |
 
-The InfluxDB file has one rule fewer because "The sampler is slipping ticks" has no SQL form: the
-slipped-tick counter is exposed on the agent's `/metrics` and is not written to InfluxDB.
+The InfluxDB file has one rule fewer because "The sampler is slipping ticks" has no SQL form yet.
+The counter itself does reach InfluxDB since 1.0.5 — the collector reads it from the agent's
+`/sampler` and writes `mikroscope_sampler.slipped` — so the rule could be written; it has not been.
 
 Each file is `apiVersion: 1` with one rule group, `mikroscope`, in a folder named `mikroscope`,
 organisation 1, evaluated every minute. The rules are provisioned rather than built into the

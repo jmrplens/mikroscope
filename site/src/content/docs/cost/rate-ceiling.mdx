@@ -1,6 +1,6 @@
 ---
 title: The rate ceiling
-description: Five measured runs at 10, 50 and 100 Hz on an RB5009 — all of them lossless — and what sampling faster actually buys.
+description: Six measured runs at 10, 20, 50 and 100 Hz on an RB5009, at the configuration it ships with — none of them lost a sample — and what sampling faster actually buys.
 ---
 
 import { Aside } from "@astrojs/starlight/components";
@@ -16,11 +16,11 @@ it: **how fast can it sample before it starts losing data?**
 
 On the reference device the answer is that it does not, up to the CLI's own
 100 Hz cap, with every source read on every tick. That is not an extrapolation
-from the 10 Hz figure. It is five runs.
+from the 10 Hz figure. It is six runs.
 
-## The five runs
+## The six runs
 
-Every figure is from the agent's own cgroup and `/metrics`, with the full source set. Each row is
+Every figure is from the agent's own cgroup, carried in every sample and read back from the store, with the full source set. Each row is
 one window with the ring already full:
 
 <Provenance of="rates-2026-09-18" />
@@ -35,16 +35,16 @@ the 60 s ring is the default and the limit is derived from it — 16 MiB at 10
 20 Hz, 25 at 50, 48 at 100 — under the default 64M container cap. The campaign
 before this one could not do that. It needed `--memory-max 96M` at 50 Hz and
 `128M` at 100, and its 10 Hz row held a 300 s ring. Same device, same sources:
-**40 to 58 % less memory per row, and the CPU unmoved** — 2.85 % of one core at
+**38 to 59 % less memory per row, and the CPU unmoved** — 2.85 % of one core at
 10 Hz then against 2.69 % now.
 
 Memory still differs by row because the ring does: it holds 60 s of samples
 whatever the rate, so ten times the rate is ten times the ring.
 
 <Aside type="tip" title="Nothing was lost at any rate, in any configuration">
-	Sampled seconds covered wall clock to 1.0000 in all five runs, the delivered rate was the
-	configured rate to three figures, and every sink — file, Prometheus, InfluxDB — reported 0 gaps
-	and 0 drops.
+	Sampled seconds covered wall clock to 1.0000 in all six runs, and the delivered rate was the
+	configured rate to three figures — 99.98 Hz in the worst of them, 100 Hz with every source on
+	every tick. The collector reported 0 gaps and its InfluxDB 3 sink 0 drops in every window.
 </Aside>
 
 ## Two things in that table worth reading twice

@@ -24,10 +24,11 @@ no solo contra simulaciones:
 
 - **El agente** lee `/proc`, `/sys`, `/dev/kmsg` y los contadores de
   `perf_event_open` del kernel compartido con un temporizador fijo de 1 a
-  100 Hz (10 Hz por defecto; medidos 10, 50 y 100 Hz), guarda las muestras en
-  un anillo y las sirve:
-  `/healthz`, `/capabilities`, `/snapshot`, `/stream`, `/metrics`, y los
-  endpoints de captura por disparo `/captures` y `/capture`.
+  100 Hz (10 Hz por defecto; medidos 10, 20, 50 y 100 Hz), guarda las muestras
+  en un anillo y las sirve:
+  `/healthz`, `/capabilities`, `/snapshot`, `/stream`, `/sampler`, y los
+  endpoints de captura por disparo `/captures` y `/capture`. No sirve ningún
+  `/metrics`: desde 1.0.5 la exposición es solo la del colector.
 - **La CLI de despliegue** lo instala, lo actualiza y lo retira — `doctor`,
   `plan`, `install`, `status`, `upgrade`, `uninstall` — listando cada escritura
   antes de hacerla y verificando cada retirada por recuento de propiedad. El
@@ -114,8 +115,9 @@ Dos reglas mantienen honesta la cifra de coste: esperar a que se llene el
 anillo (`BUFFER_S`) antes de citar una cifra de régimen estacionario — en el
 RB5009, con un límite blando de memoria de 14 MiB, una lectura tomada en el
 primer minuto tras la instalación dio un 1,47 % de un núcleo frente a un 9,38 %
-en régimen estacionario — y leer el coste de `/metrics` en vez de un `/snapshot`
-grande, cuya respuesta de ~1,5 MB tiene que serializar el agente.
+en régimen estacionario — y leer el coste del `/metrics` del colector, o de
+`cpu_us` y `rss` en `mikroscope_self` en el almacén que uses, en vez de un
+`/snapshot` grande, cuya respuesta de ~1,5 MB tiene que serializar el agente.
 
 ### Coste a 10 Hz, por configuración
 
@@ -227,7 +229,7 @@ ejecutado en hardware: en el único RB5009 de arriba.
 
 - [El coste del observador](/mikroscope/es/cost/): el presupuesto, la cifra actual y cómo medirla
   en tu propio equipo.
-- [El techo de muestreo](/mikroscope/es/cost/rate-ceiling/): las cinco ejecuciones medidas a 10, 50 y
+- [El techo de muestreo](/mikroscope/es/cost/rate-ceiling/): las seis ejecuciones medidas a 10, 20, 50 y
   100 Hz.
 - [El fichero y los demás destinos](/mikroscope/es/sinks/other/): los diez destinos en los que
   escribe `forward`.

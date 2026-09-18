@@ -80,7 +80,7 @@ because it never computes one.
 
 - [The cost of the observer](https://jmrp.io/docs/mikroscope/cost/): the budget, the measured result and how to
   measure it on your own device.
-- [The rate ceiling](https://jmrp.io/docs/mikroscope/cost/rate-ceiling/): the five runs behind the figures in point 4.
+- [The rate ceiling](https://jmrp.io/docs/mikroscope/cost/rate-ceiling/): the six runs behind the figures in point 4.
 - [What the numbers do not say](https://jmrp.io/docs/mikroscope/cost/limits/): what one device on one day cannot tell
   you.
 

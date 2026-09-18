@@ -73,7 +73,7 @@ The parse is not where the time goes. Parsing the seven global `/proc` files plu
 27 µs and 239 allocations per sample on the amd64 development host (Go 1.27.1, three runs,
 26.7–27.5 µs, 2026-09-11). On the RB5009's Cortex-A72 a whole tick — timers, JSON and the
 garbage collector included — costs 2 685 µs at 10 Hz with the default
-floors, and [the five runs](https://jmrp.io/docs/mikroscope/cost/rate-ceiling/) give it at every rate. The parse was not
+floors, and [the six runs](https://jmrp.io/docs/mikroscope/cost/rate-ceiling/) give it at every rate. The parse was not
 measured on the A72 on its own.
 
 ### Measuring it on your own device
@@ -99,7 +99,7 @@ no Prometheus sink configured, the same two numbers are `cpu_us` and `rss` in
 
 ### See also
 
-- [The rate ceiling](https://jmrp.io/docs/mikroscope/cost/rate-ceiling/): the five runs, the memory flags each one used,
+- [The rate ceiling](https://jmrp.io/docs/mikroscope/cost/rate-ceiling/): the six runs, the defaults every one of them used,
   and what sampling faster buys.
 - [What the numbers do not say](https://jmrp.io/docs/mikroscope/cost/limits/): what these figures cannot tell you about
   another device or another load.
@@ -107,7 +107,7 @@ no Prometheus sink configured, the same two numbers are `cpu_us` and `rss` in
 
 ## The rate ceiling
 
-Five measured runs at 10, 50 and 100 Hz on an RB5009 — all of them lossless — and what sampling faster actually buys.
+Six measured runs at 10, 20, 50 and 100 Hz on an RB5009, at the configuration it ships with — none of them lost a sample — and what sampling faster actually buys.
 
 Source: <https://jmrp.io/docs/mikroscope/cost/rate-ceiling/>
 
@@ -116,11 +116,11 @@ it: **how fast can it sample before it starts losing data?**
 
 On the reference device the answer is that it does not, up to the CLI's own
 100 Hz cap, with every source read on every tick. That is not an extrapolation
-from the 10 Hz figure. It is five runs.
+from the 10 Hz figure. It is six runs.
 
-### The five runs
+### The six runs
 
-Every figure is from the agent's own cgroup and `/metrics`, with the full source set. Each row is
+Every figure is from the agent's own cgroup, carried in every sample and read back from the store, with the full source set. Each row is
 one window with the ring already full:
 
 Measured on RB5009UG+S+ · 4 × 1.4 GHz Cortex-A72 · RouterOS 7.24.2 · 2026-09-18 · 300 s windows at steady state (ring full), full source set, the shipped configuration — a 60 s ring, the memory limit derived from it and the default 64M container cap — with the collector forwarding to InfluxDB 3
@@ -144,7 +144,7 @@ the 60 s ring is the default and the limit is derived from it — 16 MiB at 10
 20 Hz, 25 at 50, 48 at 100 — under the default 64M container cap. The campaign
 before this one could not do that. It needed `--memory-max 96M` at 50 Hz and
 `128M` at 100, and its 10 Hz row held a 300 s ring. Same device, same sources:
-**40 to 58 % less memory per row, and the CPU unmoved** — 2.85 % of one core at
+**38 to 59 % less memory per row, and the CPU unmoved** — 2.85 % of one core at
 10 Hz then against 2.69 % now.
 
 Memory still differs by row because the ring does: it holds 60 s of samples
@@ -152,9 +152,9 @@ whatever the rate, so ten times the rate is ten times the ring.
 
 > **Nothing was lost at any rate, in any configuration**
 >
-> Sampled seconds covered wall clock to 1.0000 in all five runs, the delivered rate was the
-> configured rate to three figures, and every sink — file, Prometheus, InfluxDB — reported 0 gaps
-> and 0 drops.
+> Sampled seconds covered wall clock to 1.0000 in all six runs, and the delivered rate was the
+> configured rate to three figures — 99.98 Hz in the worst of them, 100 Hz with every source on
+> every tick. The collector reported 0 gaps and its InfluxDB 3 sink 0 drops in every window.
 
 ### Two things in that table worth reading twice
 
@@ -290,7 +290,7 @@ with a hole in it is a chart telling the truth.
 
 ### See also
 
-- [The rate ceiling](https://jmrp.io/docs/mikroscope/cost/rate-ceiling/): the five runs and the conditions they were
+- [The rate ceiling](https://jmrp.io/docs/mikroscope/cost/rate-ceiling/): the six runs and the conditions they were
   taken under.
 - [The cost of the observer](https://jmrp.io/docs/mikroscope/cost/): the budget, and how to measure the cost on a device
   that is not this one.

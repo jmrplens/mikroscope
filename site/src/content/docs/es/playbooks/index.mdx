@@ -83,11 +83,13 @@ muestras _incluye el coste de servirlas_. Leer el coste del agente en una
 instantánea grande lo exagera, por tanto, y hacerlo repetidamente lo exagera
 más.
 
-Usa `/metrics` en su lugar. Es pequeño, sus contadores son acumulados y no
-depende de quién lo lea ni de cuándo — léelo dos veces y divide:
+Usa el `/metrics` del colector en su lugar —el agente no sirve ninguno desde
+1.0.5, y esos contadores llegan al colector en cada muestra—. Es pequeño, sus
+contadores son acumulados y no depende de quién lo lea ni de cuándo: léelo dos
+veces y divide:
 
 ```sh
-U=http://172.30.10.2:9123/metrics
+U=http://<equipo del colector>:9124/metrics
 get() { curl -s "$U" | awk -v k="$1" '$1==k{print $2}'; }
 c0=$(get mikroscope_self_cpu_usec_total); t0=$(date +%s)
 sleep 180
