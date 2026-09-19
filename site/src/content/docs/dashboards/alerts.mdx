@@ -157,7 +157,7 @@ healthy device is the same alert.
   ceiling.
 - **A share of the kernel's own connection limit.** 0.8 of the `nf_conntrack` limit the agent read.
   The occupancy comes from `/proc/slabinfo`, which needs a privileged container.
-- **Zero again, for a counter that _is_ supposed to move — with the judgement in the duration
+- **Zero again, for a counter that *is* supposed to move — with the judgement in the duration
   instead.** The egress queue is the one case here where the healthy reading is not exactly zero on
   every device: dropping is how a full queue tells a sender to slow down, so a link that is briefly
   saturated drops a few packets and is working as designed. A packets-per-second threshold would be

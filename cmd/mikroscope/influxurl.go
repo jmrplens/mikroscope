@@ -69,7 +69,7 @@ func resolveInflux(addr, db string) (influxTarget, error) {
 	// the URL that is actually being written to, never from --influx-db, so
 	// the datasource cannot end up pointed at a different database than the
 	// one the sink fills.
-	if p := strings.Trim(u.Path, "/"); p != "" {
+	if strings.Trim(u.Path, "/") != "" {
 		t := influxTarget{Endpoint: addr}
 		if named := u.Query().Get("db"); named != "" {
 			t.Base = (&url.URL{Scheme: u.Scheme, Host: u.Host}).String()
