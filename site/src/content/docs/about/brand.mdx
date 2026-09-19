@@ -147,6 +147,7 @@ the same host give the same four mark and favicon files.
 | `mark-dark.svg`, `mark-light.svg`                      | `brand/`       | `mark`     | The mark, one per theme                                                                               |
 | `favicon-dark.svg`, `favicon-light.svg`                | `brand/`       | `mark`     | The five-bar variant, one per theme                                                                   |
 | `mark-inline.svg`                                      | `brand/`       | `mark`     | The mark for a page that inlines it: the loud tone is `currentColor`, the quiet one `--ms-mark-quiet` |
+| `favicon-inline.svg`                                   | `brand/`       | `mark`     | The favicon for a page that inlines it, the inline twin of `favicon.svg`                              |
 | `banner.svg` and `.png`                                | `brand/`       | `compose`  | 1280×320, for the README                                                                              |
 | `social.svg` and `.png`                                | `brand/`       | `compose`  | 1280×640, the repository social preview                                                               |
 | `og.svg` and `.png`                                    | `brand/`       | `compose`  | 1200×630, the documentation `og:image`                                                                |
@@ -165,8 +166,9 @@ The last four rows are written for a web app manifest. This site declares none a
 `icon-512.png` and `icon-maskable-512.png` ship without a consumer: no launcher reads the maskable
 inset.
 
-The mark in this site's header is `mark-inline.svg`, painted by the site's own
-palette, so the drawing in the chrome is the drawing in `brand/`.
+The mark in this site's header is `favicon-inline.svg`, the five-bar drawing, painted by the
+site's own palette; `mark-inline.svg` fills the hero slot. Either way the drawing in the chrome is
+the drawing in `brand/`.
 
 ## The background
 

@@ -141,6 +141,10 @@ registros, no cuatro fallos.
 | `mikroscope_device_thermal` | `zone`                                         | `critical_celsius`, `polling_ms`                                                                                 | colector                  |
 | `mikroscope_device_cpufreq` | `cpu`                                          | `cluster`, `min_khz`, `max_khz`, `governor`, `steps`                                                             | colector                  |
 | `mikroscope_device_cadence` | `source`, `reason`                             | `hz`                                                                                                             | colector                  |
+| `mikroscope_sampler`        | —                                              | `ticks`, `slipped`, `captures_held`, `capture_bytes`, `capture_budget_bytes`, `capture_served_bytes`             | colector, desde `GET /sampler`|
+| `mikroscope_trigger_count`  | `condition`                                    | `fired`                                                                                                          | colector, desde `GET /sampler`|
+| `mikroscope_trigger_suppressed`| `condition`, `reason`                          | `count`                                                                                                          | colector, desde `GET /sampler`|
+| `mikroscope_capture_refused`| `reason`                                       | `count`                                                                                                          | colector, desde `GET /sampler`|
 
 </ScrollTable>
 
@@ -161,8 +165,8 @@ puerto físico, una cadena vacía para un bridge, una VLAN o un túnel) como cam
 y `mtu` donde el router informa de uno mayor que cero. Se escribe una vez antes del
 primer sondeo del kernel y de nuevo en cada relectura de `--labels-every`, 5 minutos por
 defecto, y es la tabla con la que un panel cruza para decir qué es una interfaz.
-`mikroscope_api_ifcounters` lleva solo contadores: `mtu`, `l2mtu`, `max-l2mtu` y
-`sfp-shutdown-temperature` se leen como enteros, pero son tamaños y configuración, no
+`mikroscope_api_ifcounters` lleva solo contadores: `mtu`, `actual-mtu`, `l2mtu`,
+`max-l2mtu` y `sfp-shutdown-temperature` se leen como enteros, pero son tamaños y configuración, no
 cuentas, así que no son campos ahí; la MTU está en `mikroscope_api_ifinfo`.
 
 El `fp_rx_share` de `mikroscope_derived_iface` es la proporción del fast path del tráfico
@@ -195,8 +199,10 @@ El datasource de Grafana para InfluxDB 3 necesita dos campos seguros, no uno; co
 [importar y comprobar](/mikroscope/es/dashboards/import-and-check/).
 
 <NotClaimed>
-	Todas las ejecuciones registradas escribieron en InfluxDB 3 Core; no consta ninguna escritura en
-	el `/api/v2/write` de InfluxDB 2 ni en InfluxDB 3 Enterprise. Las filas duplicadas del 2026-09-13
+	No consta ninguna escritura en el `/api/v2/write` de InfluxDB 2. InfluxDB 3 Enterprise sí está
+	medido, pero poco: el 2026-09-19 el colector de referencia pasó a Enterprise 3.11.4 y escribió
+	44 820 filas en 36 tablas en los primeros 19 minutos, 0 descartadas y 0 errores. Todo lo anterior
+	a esa fecha se midió contra Core. Las filas duplicadas del 2026-09-13
 	tienen una explicación principal y sin verificar, y desactivar el reenvío propio del cliente HTTP
 	no se ha medido contra una repetición de aquella ejecución.
 </NotClaimed>

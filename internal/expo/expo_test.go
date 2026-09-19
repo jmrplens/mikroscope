@@ -1,10 +1,11 @@
-package agent
+package expo
 
 import (
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/jmrplens/mikroscope/internal/agent"
 	"github.com/jmrplens/mikroscope/internal/procfs"
 	"github.com/jmrplens/mikroscope/internal/sample"
 )
@@ -128,7 +129,7 @@ func TestBreadthAndLimitsRender(t *testing.T) {
 		CPUFreqRelated: map[int][]int{1: {0, 1}}, CgroupMemoryMaxBytes: 67108864,
 	}
 	var b strings.Builder
-	tot.Render(&b, Exposition{RateHz: 10, Version: "test", Start: time.Now(), Caps: &Capabilities{Board: "RB5009", Kernel: "5.6.3", Cores: 4, Limits: *limits}})
+	tot.Render(&b, Exposition{RateHz: 10, Version: "test", Start: time.Now(), Caps: &agent.Capabilities{Board: "RB5009", Kernel: "5.6.3", Cores: 4, Limits: *limits}})
 	out := b.String()
 	for _, want := range []string{
 		"mikroscope_forks_total 6\n",
@@ -243,7 +244,7 @@ func TestCadencesAgesAndIRQPruning(t *testing.T) {
 		tot.Add(sample.Sample{Seq: seq, DtNS: 100_000_000, CPU: []sample.CPUDelta{{Idle: 10}}, IRQ: []sample.IRQDelta{{ID: "3", Name: "arch_timer", PerCPU: []uint64{9}}}})
 	}
 	var b strings.Builder
-	tot.Render(&b, Exposition{RateHz: 10, Version: "test", Start: time.Now(), Caps: &Capabilities{Cadences: map[string]Cadence{"thermal": {Hz: 1, Reason: "declared"}, "slabinfo": {Hz: 5, Reason: "budget"}}}})
+	tot.Render(&b, Exposition{RateHz: 10, Version: "test", Start: time.Now(), Caps: &agent.Capabilities{Cadences: map[string]agent.Cadence{"thermal": {Hz: 1, Reason: "declared"}, "slabinfo": {Hz: 5, Reason: "budget"}}}})
 	out := b.String()
 	if strings.Contains(out, `mikroscope_irq_total{irq="35"`) || !strings.Contains(out, `mikroscope_irq_total{irq="3"`) {
 		t.Errorf("irq 35 should have been pruned after an hour out of the top-K and irq 3 kept")

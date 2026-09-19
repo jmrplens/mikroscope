@@ -26,11 +26,13 @@ device itself published. None is a number compiled in for one router.
 | ---------------------------------------------- | -----------------------------------------------: | -------------- |
 | `dashboards/mikroscope-alerts-influxdb.yaml`   |   <DashboardCount store="influxdb" of="rules" /> | InfluxDB 3 SQL |
 | `dashboards/mikroscope-alerts-prometheus.yaml` | <DashboardCount store="prometheus" of="rules" /> | PromQL         |
+| `dashboards/mikroscope-alerts-postgres.yaml`   |   <DashboardCount store="postgres" of="rules" /> | PostgreSQL SQL |
 
 </ScrollTable>
 
-The InfluxDB file has one rule fewer because "The sampler is slipping ticks" has no SQL form: the
-slipped-tick counter is exposed on the agent's `/metrics` and is not written to InfluxDB.
+The InfluxDB file has one rule fewer because "The sampler is slipping ticks" has no SQL form yet.
+The counter itself does reach InfluxDB since 1.0.5 — the collector reads it from the agent's
+`/sampler` and writes `mikroscope_sampler.slipped` — so the rule could be written; it has not been.
 
 Each file is `apiVersion: 1` with one rule group, `mikroscope`, in a folder named `mikroscope`,
 organisation 1, evaluated every minute. The rules are provisioned rather than built into the
@@ -116,12 +118,13 @@ Each rule's title, and under it its `summary` annotation verbatim, as generated:
 
 <AlertRules show="queries" store="prometheus" />
 
-`mikroscope_slipped_total` comes from the agent scrape job, the one with the keep list on
-[Import and check](/mikroscope/dashboards/import-and-check/#prometheus-two-scrape-jobs); the other
-ten read the collector's `/metrics`. `mikroscope_kmsg_port_records_total` is among them: both
-expositions are written by the same renderer, and the collector's copy is the one the keep list
-leaves in place, the one that classifies a record the agent did not and names each port as RouterOS
-names it now.
+All eleven read the collector's `/metrics`, which is the only exposition there is since 1.0.5 —
+[Import and check](/mikroscope/dashboards/import-and-check/#prometheus-one-scrape-job) has the one
+scrape job. `mikroscope_slipped_total` is among them and used to come from a second job against the
+agent: the agent still owns the ticker and is still the only thing that can count a slipped tick,
+but it now reports the number over `/sampler` and the collector renders it. So the rule fires on a
+figure that is at most a minute old rather than one scrape old, which for a counter that is 0 on a
+healthy device is the same alert.
 
 </TabItem>
 <TabItem label="InfluxDB 3">
@@ -146,7 +149,7 @@ names it now.
   The occupancy comes from `/proc/slabinfo`, which needs a privileged container.
 
 The rules do not alert on softnet squeezes. Measured on the reference RB5009 on 2026-09-15 over
-3 476 samples, about <Measured id="squeeze.backgroundOne" /> of samples carry one squeeze, and alerting on "squeeze > 0" would page
+3 738 704 per-CPU samples in 24 h, about <Measured id="squeeze.backgroundOne" /> of samples carry one squeeze, and alerting on "squeeze > 0" would page
 forever. What reaches the detections alert instead is the `microburst` detection: three burst
 samples on one CPU within 60 s. A burst sample is one in which a softnet queue dropped a packet, or
 ran out of budget more often than that CPU's trailing 90th percentile and at least three times, while the
@@ -163,9 +166,9 @@ sample's packet count was at or below its trailing median. See
 - **An unprivileged agent's blind spots.** The connection-table and ECC rules read sources that need
   a privileged container. Without one those measurements never reach the store, and on Prometheus a
   query over a missing metric returns no data — which these rules read as OK.
-- **Anything while the silent-agent rule fires.** Every other rule but the slipped-ticks rule, which
-  reads the agent directly, reads the same stream; with no samples arriving they read zero or no
-  data, and both are OK.
+- **Anything while the silent-agent rule fires.** Every rule reads the same stream — including the
+  slipped-ticks rule, whose only query is against the collector, not the agent — so with no samples
+  arriving they read zero or no data, and both are OK.
 
 <NotClaimed variant="untested" title="What has not been tried">
 	These files have not been loaded into Grafana and watched while a rule evaluated, fired or

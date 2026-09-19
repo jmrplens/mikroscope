@@ -159,6 +159,8 @@ func (s *OTLP) Write(e Event) {
 		s.sum("mikroscope.detection", "{event}", d.WallNS, d.WallNS, 1, "rule", d.Rule)
 	case e.Device != nil:
 		s.writeDevice(e.Device)
+	case e.Sampler != nil:
+		s.writeSampler(e.Sampler)
 	case e.Gap != nil:
 		// A gap has no timestamp of its own; the collector noticed it now.
 		// It is counted, never interpolated: the range
@@ -225,7 +227,7 @@ func (s *OTLP) kernelCPU(k *sample.Sample) {
 			{"softirq", c.SoftIRQ},
 			{"steal", c.Steal},
 		} {
-			s.sum("mikroscope.cpu.ticks", "{tick}", start, ts, m.v, "cpu", core, "mode", m.name)
+			s.sum("mikroscope.cpu.ticks", unitTick, start, ts, m.v, "cpu", core, "mode", m.name)
 		}
 		s.gaugeF("mikroscope.cpu.busy_ratio", "1", ts, c.BusyRatio(k.DtNS), "cpu", core)
 	}
@@ -990,4 +992,33 @@ func (s *OTLP) Close() error {
 	close(s.stop)
 	<-s.done
 	return nil
+}
+
+// writeSampler renders the agent's own counters: cumulative ones as sums,
+// what it is holding right now as gauges.
+// unitTick is OpenTelemetry's unit annotation for a count of sampler ticks.
+const unitTick = "{tick}"
+
+func (s *OTLP) writeSampler(st *agent.SamplerStats) {
+	ts := time.Now().UnixNano()
+	s.sum("mikroscope.sampler.ticks", unitTick, 0, ts, st.Ticks)
+	s.sum("mikroscope.sampler.slipped", unitTick, 0, ts, st.Slipped)
+	c := st.Captures
+	if c == nil {
+		return
+	}
+	s.gauge("mikroscope.capture.held", "{capture}", ts, uint64(max(c.Held, 0)))         // #nosec G115 -- a count of held windows
+	s.gauge("mikroscope.capture.bytes", "By", ts, uint64(max(c.Bytes, 0)))              // #nosec G115 -- bytes pinned
+	s.gauge("mikroscope.capture.budget_bytes", "By", ts, uint64(max(c.BudgetBytes, 0))) // #nosec G115 -- the configured budget
+	s.sum("mikroscope.capture.served_bytes", "By", 0, ts, c.ServedBytes)
+	for _, k := range sortedStrings(c.Refused) {
+		s.sum("mikroscope.capture.refused", "{capture}", 0, ts, c.Refused[k], "reason", k)
+	}
+	for _, k := range sortedStrings(c.Fired) {
+		s.sum("mikroscope.sampler.trigger_fired", "{fire}", 0, ts, c.Fired[k], "condition", k)
+	}
+	for _, k := range sortedStrings(c.Suppressed) {
+		cond, reason, _ := strings.Cut(k, "\x00")
+		s.sum("mikroscope.sampler.trigger_suppressed", "{fire}", 0, ts, c.Suppressed[k], "condition", cond, "reason", reason)
+	}
 }

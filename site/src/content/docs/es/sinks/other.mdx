@@ -51,7 +51,7 @@ primera clave dice qué es:
 - `{"derived":…}` — los valores de la etapa de derivación, en la línea siguiente a la
   muestra a la que pertenecen, para que un lector que solo quiere muestras en bruto se
   salte ese tipo;
-- `{"detection":…}`, `{"device":…}`, `{"api":…}` y `{"gap":…}`.
+- `{"detection":…}`, `{"device":…}`, `{"api":…}`, `{"sampler":…}` y `{"gap":…}`.
 
 Las escrituras son síncronas a través de un búfer de 64 KiB, y los contadores van en
 eventos. Una escritura que el sistema de ficheros rechaza cuenta un error y un descarte.
@@ -172,13 +172,12 @@ rechazaría — un byte NUL se elimina, el UTF-8 inválido pasa a U+FFFD — y u
 infinito pasa a NULL. `TIMESTAMPTZ` resuelve a 1 µs, así que dos muestras más cercanas que
 eso chocarían en la clave primaria; a 10 Hz están a 100 ms.
 
-Comparado con InfluxDB, el destino SQL lleva menos fuentes: no hay tablas de frecuencia de
-CPU, PMU, softirq, niveles de `/proc/vmstat`, interrupciones por CPU ni cuentas del log del
-kernel; no hay tabla de contadores de `/proc/vmstat` más allá de `pgfault` y `pgmajfault` (que
-van en `mikroscope_stat`, así que faltan los deltas de `pgscan_*`, `pgsteal_*`, `pgalloc`,
-`pgfree`, `allocstall`, `compact_stall`, `oom_kill`, `pswpin` y `pswpout`); no hay `mikroscope_sample`, y `mikroscope_mem` es más
-estrecha. Lleva dos que InfluxDB no tiene: el texto del
-log del kernel en `mikroscope_event`, y los errores de la capa de la API.
+Comparado con InfluxDB, al destino SQL le falta exactamente una cosa: la tabla de
+**recuentos** del log del kernel. Fue una lista larga hasta que 1.0.3 y 1.0.5 la cerraron:
+frecuencia de CPU, PMU, softirq, niveles y contadores de `/proc/vmstat`, interrupciones por
+CPU, `mikroscope_sample` y la `mikroscope_mem` completa ya tienen tabla. Lleva dos que
+InfluxDB no tiene: el **texto** del log del kernel en `mikroscope_event`, y los errores de
+la capa de la API.
 
 <Aside type="caution" title="Una tubería hacia psql puede bloquear el colector">
 	El destino SQL es síncrono, sin cola. Con `--sql -` alimentando `psql`, un `psql` que se retrasa —
@@ -194,8 +193,9 @@ más la capa de la API a 1 Hz son unos 14 KiB/s de fichero tras una cabecera de 
 Los mismos dos eventos en protocolo de líneas son 716 B y 608 B, unas 1,9× más pequeños,
 aunque parte de eso es contenido que las filas SQL llevan y el protocolo de líneas no. Con
 las fuentes privilegiadas presentes el evento del kernel crece hasta 2 749 B. Esa cabecera es la
-del fixture: la de las treinta y dos tablas que declara el destino, calculada a partir de las
-cadenas del esquema y no medida, son 7 757 B, unos 7,6 KiB.
+del fixture: la de las cuarenta y tres tablas que declara el destino, generada por el propio
+`header()` del destino el 2026-09-19, son 10 482 B, unos 10,2 KiB —13 966 B con las
+sentencias de hypertable de TimescaleDB.
 
 ## Loki
 
@@ -313,6 +313,7 @@ la [etapa de derivación](/mikroscope/es/sinks/derive/) del colector.
 | Gauge | `mikroscope.derived.fastpath_share`                                                                                                                         | `interface`, `direction`                                                           |
 | Gauge | `mikroscope.device.cores`; `mikroscope.device.thermal.critical`, `mikroscope.device.thermal.polling` (s)                                                    | `board`, `kernel`, `hash`; `zone`                                                  |
 | Gauge | `mikroscope.device.cpu.frequency_max`, `mikroscope.device.cpu.frequency_min`; `mikroscope.device.source_cadence`                                            | `cpu`; `source`, `reason`                                                          |
+| Gauge | `mikroscope.sampler.{ticks,slipped,trigger_fired,trigger_suppressed}`; `mikroscope.capture.{held,bytes,budget_bytes,served_bytes,refused}`                  | `condition`, `reason`                                                              |
 
 </ScrollTable>
 
@@ -367,6 +368,7 @@ valor vacío pasa a `none`, así que la profundidad de una ruta nunca cambia.
 | `derived.{mem_pressure,cycles_per_packet,instructions_per_packet,cache_misses_per_packet,packets_per_irq}`                                           | la etapa de derivación                     |
 | `trigger.<cause>`, `detection.<rule>` — el valor 1 en cada evento                                                                                    | disparos y detecciones                     |
 | `device.{cores,conntrack_max,cgroup_mem_max}`, `device.thermal.<zone>.*`, `device.cpufreq.<n>.*`, `device.cadence.<source>.hz`                       | el flujo de datos del equipo               |
+| `sampler.{ticks,slipped,captures_held,capture_bytes,capture_budget_bytes,capture_served_bytes}`                                                      | los contadores del propio agente, en la cadencia de salud|
 | `collector.gap.{samples,from,to}`                                                                                                                    | huecos, con el reloj del colector          |
 
 </ScrollTable>
@@ -426,7 +428,7 @@ Un documento por evento, con `kind` para distinguirlos:
   `label`, `type`, `role` y `bridge`, y cada entrada de `iface_counters` lleva `comment`,
   `type`, `role` y `bridge`, donde el inventario los tiene. Los errores por orden de la
   capa de la API no se escriben;
-- `gap` (`from`, `to`, `lost`), `device`, `detection` y `trigger`.
+- `gap` (`from`, `to`, `lost`), `device`, `detection`, `trigger` y `sampler`.
 
 Cada documento lleva `@timestamp` con el reloj del agente (el del colector para huecos y
 registros del equipo) y `host`. El nombre del índice expande `%Y`, `%m` y `%d` — solo esos

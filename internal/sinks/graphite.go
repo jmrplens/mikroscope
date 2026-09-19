@@ -150,6 +150,8 @@ func (s *Graphite) Write(e Event) {
 		s.putU("detection."+graphiteNode(e.Detection.Rule), 1, e.Detection.WallNS/1e9)
 	case e.Device != nil:
 		s.writeDevice(e.Device)
+	case e.Sampler != nil:
+		s.writeSampler(e.Sampler)
 	}
 }
 
@@ -639,4 +641,31 @@ func (s *Graphite) Close() error {
 		return err
 	}
 	return nil
+}
+
+// writeSampler renders the agent's own counters. A Graphite path has no
+// labels, so each condition and reason becomes a node of its own — the same
+// shape the interface and core series already use here.
+func (s *Graphite) writeSampler(st *agent.SamplerStats) {
+	ts := time.Now().Unix()
+	s.putU("sampler.ticks", st.Ticks, ts)
+	s.putU("sampler.slipped", st.Slipped, ts)
+	c := st.Captures
+	if c == nil {
+		return
+	}
+	s.putI("sampler.captures_held", int64(c.Held), ts)
+	s.putI("sampler.capture_bytes", c.Bytes, ts)
+	s.putI("sampler.capture_budget_bytes", c.BudgetBytes, ts)
+	s.putU("sampler.capture_served_bytes", c.ServedBytes, ts)
+	for _, k := range sortedStrings(c.Refused) {
+		s.putU("sampler.capture_refused."+graphiteNode(k), c.Refused[k], ts)
+	}
+	for _, k := range sortedStrings(c.Fired) {
+		s.putU("sampler.trigger_fired."+graphiteNode(k), c.Fired[k], ts)
+	}
+	for _, k := range sortedStrings(c.Suppressed) {
+		cond, reason, _ := strings.Cut(k, "\x00")
+		s.putU("sampler.trigger_suppressed."+graphiteNode(cond)+"."+graphiteNode(reason), c.Suppressed[k], ts)
+	}
 }

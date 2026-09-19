@@ -107,7 +107,7 @@ and `schedstat` where a kernel has them.
 ## How far back the agent remembers
 
 The other hard bound is depth, not resolution. The agent keeps its samples in a ring of
-`--buffer` seconds, 300 s by default and 10–3600 s allowed, which holds rate × buffer
+`--buffer` seconds, 60 s by default and 10–3600 s allowed, which holds rate × buffer
 samples. Nothing older exists anywhere on the router.
 
 A collector or recorder outage shorter than the ring is backfilled on reconnect: it asks
@@ -118,8 +118,11 @@ samples it still holds; `record` writes it as a marker reading `samples N..M los
 `forward` counts it in `mikroscope_collector_gaps_total` and hands it to every sink.
 
 A longer ring costs memory in the agent, and the agent refuses one that cannot fit. At
-start it estimates the ring at 2 560 bytes a line (the mean line was measured at <Measured id="ring.lineBytes" /> on the RB5009 on 2026-09-12, without the PMU, buddyinfo and MTD sources; a board
-with more cores or interrupt lines, or more sources, costs more), adds the triggered-capture budget, and exits with an error if the total exceeds the
+start it estimates the ring at <Measured id="ring.lineChargedBytes" /> a line — the mean line
+was measured at <Measured id="ring.lineBytes" /> on the RB5009 on 2026-09-17 with every source on,
+and the budget charges the allocator size class it is served from rather than the line itself,
+because that is what the heap pays; a board with more cores or interrupt lines costs more, one with
+no PMU costs 35 % less — adds the triggered-capture budget, and exits with an error if the total exceeds the
 container's `memory.max`. If the total is more than half the Go soft memory limit it starts
 but logs a warning, because a heap that tight keeps the garbage collector running. How to
 size both limits is on [the cost of the observer](/mikroscope/cost/).

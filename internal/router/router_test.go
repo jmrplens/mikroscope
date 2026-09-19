@@ -299,7 +299,7 @@ func TestContainerStepCarriesPhase0Settings(t *testing.T) {
 		// overtime at 9.38 % of one core, against 1.39 % with the limit at
 		// 40 (measured on the reference RB5009, RouterOS 7.24.2, ring full,
 		// 180 s, 0 slipped ticks either way).
-		"memory-max=64M", `key=MEM_LIMIT_MB value="40"`,
+		"memory-max=64M", `key=MEM_LIMIT_MB value="16"`,
 		"logging=yes", "root-dir=mikroscope/mikroscope", "file=mikroscope.tar", "ignore-remote-image-change=yes",
 	} {
 		if !strings.Contains(c, want) {

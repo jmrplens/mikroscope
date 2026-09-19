@@ -13,7 +13,7 @@ import SeeAlso from "../../../components/SeeAlso.astro";
 This page answers what a reader deciding whether to try mikroscope needs first:
 which parts work end to end, on what hardware that was shown, what the
 observer costs today, which defects are known and still open, and whether
-there is anything to download. It is checked against the code as of 2026-09-16.
+there is anything to download. It is checked against the code as of 2026-09-19.
 
 ## What works end to end
 
@@ -22,9 +22,10 @@ run against the reference RB5009 (RouterOS 7.24.2), not only against fakes:
 
 - **The agent** reads the shared kernel's `/proc`, `/sys`, `/dev/kmsg` and
   `perf_event_open` counters on a fixed ticker at 1 to 100 Hz (10 Hz by
-  default; 10, 50 and 100 Hz measured), keeps the samples in a ring, and serves
-  them: `/healthz`, `/capabilities`, `/snapshot`, `/stream`, `/metrics`, and
-  the triggered-capture endpoints `/captures` and `/capture`.
+  default; 10, 20, 50 and 100 Hz measured), keeps the samples in a ring, and
+  serves them: `/healthz`, `/capabilities`, `/snapshot`, `/stream`, `/sampler`,
+  and the triggered-capture endpoints `/captures` and `/capture`. It serves no
+  `/metrics`: since 1.0.5 the exposition is the collector's alone.
 - **The deployment CLI** installs, upgrades and removes it — `doctor`, `plan`,
   `install`, `status`, `upgrade`, `uninstall` — with every write listed before
   it happens and every removal verified by ownership counts. On 2026-09-12,
@@ -53,9 +54,9 @@ run against the reference RB5009 (RouterOS 7.24.2), not only against fakes:
   PostgreSQL, Graphite and Elasticsearch — generated from one panel list, with
   alert rules for the three whose query language the rules are written in. The
   two SQL stores are asked the same question in two dialects: the PostgreSQL
-  panels are the InfluxDB ones rewritten, and every one of its 209 queries is
+  panels are the InfluxDB ones rewritten, and every one of its 216 queries is
   planned by a real PostgreSQL in the container suite. Graphite and
-  Elasticsearch carry fewer panels on purpose (41 and 30 against 171): Graphite
+  Elasticsearch carry fewer panels on purpose (41 and 30 against 175): Graphite
   has no labels and Elasticsearch no nested documents, so what they cannot
   express is absent rather than wrong. All five are imported into a real
   Grafana over the stores the suite filled, and every panel is asked: on
@@ -88,7 +89,7 @@ run against the reference RB5009 (RouterOS 7.24.2), not only against fakes:
 
 ## What the agent costs today
 
-At the install default — 10 Hz, default per-source floors, a 300 s ring — the
+At the install default — 10 Hz, default per-source floors, a 60 s ring — the
 agent costs **<Measured id="run.10hz.cpu" /> of one core and <Measured id="run.10hz.rss" /> RSS**,
 read from its own cgroup at steady state with the ring full:
 
@@ -96,16 +97,19 @@ read from its own cgroup at steady state with the ring full:
 
 <RunsTable only={["10hz"]} />
 
-That is above the budget of <Measured id="budget.cpu" /> of one core and <Measured id="budget.rss" /> RSS. The
-budget is guidance rather than a contract: cost scales with the device, the
+That is above the budget of <Measured id="budget.cpu" /> of one core and inside
+the <Measured id="budget.rss" /> RSS one — it was over on both until the 60 s ring and the derived
+memory limit of 1.0.6. The budget is guidance rather than a contract: cost scales with the device, the
 source set and the ring size. The image budget is <Measured id="budget.image" />; the one image size on
 record is <Measured id="image.size" />, and it carries no date.
 
 Two rules keep the cost figure honest: wait out the ring (`BUFFER_S`) before
 quoting a steady-state figure — on the RB5009, at a 14 MiB soft memory limit, a
 reading taken in the first minute after install came back at 1.47 % of one core
-against a 9.38 % steady state — and read cost from `/metrics` rather than from a
-large `/snapshot`, whose ~1.5 MB response the agent must serialise.
+against a 9.38 % steady state — and read cost from the collector's
+`/metrics`, or from `cpu_us` and `rss` in `mikroscope_self` in whichever store
+you write to, rather than from a large `/snapshot`, whose ~1.9 MB response the
+agent must serialise.
 
 ### Cost at 10 Hz, by configuration
 
@@ -118,7 +122,7 @@ what each one costs — not what the number was at some earlier point.
 | Configuration                                         | CPU of one core                                                       | RSS                            | Measured   | Note                                                                                                     |
 | ----------------------------------------------------- | --------------------------------------------------------------------- | ------------------------------ | ---------- | -------------------------------------------------------------------------------------------------------- |
 | Every source read every tick                          | 2.43 %                                                                | not recorded                   | 2026-09-12 | above the budget                                                                                         |
-| Ring full, `MEM_LIMIT_MB` 14                          | <Measured id="gc.tight.cpu" /> (<Measured id="gc.tight.us" />/sample) | not recorded                   | 2026-09-12 | a 300 s ring of lines of about <Measured id="ring.lineKB" /> holds ~7.3 MB; the Go GC runs without pause |
+| Ring full, `MEM_LIMIT_MB` 14                          | <Measured id="gc.tight.cpu" /> (<Measured id="gc.tight.us" />/sample) | not recorded                   | 2026-09-12 | a 300 s ring of lines of about 2.4 kB, the line of that date, holds ~7.3 MB; the Go GC runs without pause |
 | Ring full, `--mem-limit-mb 40`, `--memory-max 64M`    | <Measured id="gc.roomy.cpu" /> (<Measured id="gc.roomy.us" />/sample) | 25.13 MiB                      | 2026-09-12 | 0 slipped ticks                                                                                          |
 | PMU counters on, a live `forward` writing to InfluxDB | 1.72 %                                                                | not recorded                   | 2026-09-12 | 0 slipped ticks; 2 400 samples forwarded, 0 gaps, 0 drops                                                |
 | The install default                                   | <Measured id="run.10hz.cpu" />                                        | <Measured id="run.10hz.rss" /> | 2026-09-15 | the figure above                                                                                         |
@@ -158,9 +162,6 @@ Checked against the code as of this page:
   Telegraf sinks refuse that replay, so a dead connection is an error the sink
   retries and counts. No run since that night shows whether the duplicates are
   gone.
-- **Graphite names thermal zones by index.** The index is deliberate — a
-  zone's `type` string is not unique across zones — but the path listing at the
-  top of `internal/sinks/graphite.go` reads `thermal.<zone>`.
 
 ### Found on the device and not collected
 
@@ -171,8 +172,10 @@ and the hardware watchdog at `/sys/class/watchdog/watchdog0`.
 
 ## What the release publishes
 
-The current release is **v1.0.0** — the version in `VERSION`, compiled into both
-binaries and reported by `mikroscope version`. A `v*` tag runs the GoReleaser
+`VERSION` is **1.0.10**, compiled into both binaries and reported by
+`mikroscope version`; the latest published release is **v1.0.9**. They differ because
+1.0.10 is not tagged yet, and 1.0.8 never was — the release jumps from v1.0.7 to
+v1.0.9, which carries both. A `v*` tag runs the GoReleaser
 configuration, which publishes:
 
 - **CLI archives** for linux, darwin, windows and freebsd on amd64, arm64 and
@@ -183,8 +186,8 @@ configuration, which publishes:
   `mikroscope-agent-arm64.tar`, `mikroscope-agent-arm.tar`,
   `mikroscope-agent-amd64.tar` — which `install --agent-tar` uploads to the
   router.
-- **The agent image in two registries**, `jmrplens/mikroscope-agent:1.0.0` on
-  Docker Hub and `ghcr.io/jmrplens/mikroscope-agent:1.0.0` on GHCR, each one
+- **The agent image in two registries**, `jmrplens/mikroscope-agent:1.0.9` on
+  Docker Hub and `ghcr.io/jmrplens/mikroscope-agent:1.0.9` on GHCR, each one
   manifest over `linux/amd64`, `linux/arm64` and `linux/arm/v7`, which
   `install --remote-image` makes the router pull. RouterOS takes the registry
   host from the global `/container/config registry-url`, which ships as
@@ -210,7 +213,7 @@ the one RB5009 above.
 
 - [The cost of the observer](/mikroscope/cost/): the budget, the current figure and how to measure
   it on your own device.
-- [The rate ceiling](/mikroscope/cost/rate-ceiling/): the five measured runs at 10, 50 and 100 Hz.
+- [The rate ceiling](/mikroscope/cost/rate-ceiling/): the six measured runs at 10, 20, 50 and 100 Hz.
 - [The file and the other sinks](/mikroscope/sinks/other/): the ten sinks `forward` writes to.
 - [Lineage and licence](/mikroscope/about/lineage/): where the deployment code and the API client
   came from.

@@ -69,23 +69,24 @@ the batch is sized from the agent's rate. A pull is repeated while it comes
 back full — up to 100 times — so the cursor catches up within one poll instead of
 advancing one batch per poll. A short reply is the ring's edge.
 
-The relay transport caps a pull at 18 lines, and the cap is computed rather than chosen:
-`/tool fetch` returns 64 512 B at most, the mean ring line is taken as
-2 560 B (the measured 2 439 B, rounded up), and the cap allows 134 % of
-that mean so a batch of above-average lines still fits — 18 lines, about 46 kB. A reply that
+The relay transport caps a pull at 13 lines, and the cap is computed
+rather than chosen: `/tool fetch` returns 64 512 B at most, the ring
+line is charged at 3 456 B (the
+measured 3 230 B, rounded up to its allocator size class), and the cap allows 134 %
+of that so a batch of above-average lines still fits — about 45 kB. A reply that
 reaches the fetch limit anyway is refused with
 `relay reply hit the 64512-byte fetch limit; lower the batch` rather than parsed truncated. At the
-default 500 ms poll that is 36 samples/s, and above that the collector falls behind. `forward`
+default 500 ms poll that is 26 samples/s, and above that the collector falls behind. `forward`
 computes what the effective batch and the poll allow per second and warns at start when that is
 below the agent's rate — for the relay against an agent at 100 Hz, the arithmetic gives:
 
 ```text
-warning: at most 18 samples per pull every 500ms is 36/s, below the agent's 100 Hz; the collector will fall behind and report gaps. Raise --batch, lower --poll, or use the direct transport
+warning: at most 13 samples per pull every 500ms is 26/s, below the agent's 100 Hz; the collector will fall behind and report gaps. Raise --batch, lower --poll, or use the direct transport
 ```
 
 The cap and the warning are read from the code on 2026-09-15, not re-measured against a device.
 
-A collector that falls further behind than the agent's ring (300 s by default)
+A collector that falls further behind than the agent's ring (60 s by default)
 receives a gap line instead of the samples, and every sink records the gap.
 
 ### Whose clock each record carries
@@ -202,7 +203,7 @@ settings, and the agent's version, rate, sequence number, skew, transport and
 effective batch. Every minute, on standard error, a running report:
 
 ```text
-forwarded <n> kernel, <n> api, <n> gap(s), <n> trigger(s), <n> detection(s), last seq <n>; <sink>: <n> written, <n> dropped, <n> errors
+forwarded <n> kernel, <n> api, <n> gap(s), <n> trigger(s), <n> detection(s), <n> agent restart(s), last seq <n>; <sink>: <n> written, <n> dropped, <n> errors
 ```
 
 On exit, on **standard output**, the totals and one line per sink:
@@ -250,7 +251,7 @@ Measured on RB5009UG+S+ · 4 × 1.4 GHz Cortex-A72 · RouterOS 7.24.2 · 202
 
 ### See also
 
-- [Prometheus](https://jmrp.io/docs/mikroscope/sinks/prometheus/): the collector's `/metrics` and the two scrape jobs
+- [Prometheus](https://jmrp.io/docs/mikroscope/sinks/prometheus/): the collector's `/metrics` and the scrape job
   the dashboard expects.
 - [InfluxDB 3](https://jmrp.io/docs/mikroscope/sinks/influxdb/): the write URL, the measurements and what InfluxDB 3
   Core refuses.
@@ -261,14 +262,14 @@ Measured on RB5009UG+S+ · 4 × 1.4 GHz Cortex-A72 · RouterOS 7.24.2 · 202
 
 ## Prometheus
 
-The collector’s own `/metrics` — every agent family recomputed from the samples, plus the API tier, the derive stage and the collector’s counters — and the two scrape jobs that go with it.
+The collector’s own `/metrics` — every agent family recomputed from the samples, plus the API tier, the derive stage and the collector’s counters — and the one scrape job that goes with it.
 
 Source: <https://jmrp.io/docs/mikroscope/sinks/prometheus/>
 
 `--prom :9124` makes the collector serve Prometheus text on `GET /metrics` at that
-address. This page answers what that exposition carries, what it cannot carry and
-has to come from the agent instead, and how to scrape both without counting anything
-twice.
+address. This page answers what that exposition carries and what no
+store can be given at all. There is only one thing to scrape: the agent has served no
+exposition since 1.0.5.
 
 ### Recomputed from the samples
 
@@ -295,38 +296,40 @@ families from the agent's `/capabilities`.
 > line is pruned from the top-K families after 36 000 samples out of every top-K: an hour at 10 Hz,
 > 12 min at 50 Hz, 6 min at 100 Hz.
 
-### Two scrape jobs
+### One scrape job
 
-The Prometheus dashboard expects two jobs: the collector, which has every family the
-agent has plus its own, and the agent itself, keep-relabelled to the families only the
-sampler can produce — its tick timing histograms, the trigger and capture counters,
-slipped ticks:
+The collector's, and only the collector's:
 
 ```yaml
 - job_name: "mikroscope"
   scrape_interval: 5s
   static_configs: [{ targets: ["<collector host>:9124"] }]
-- job_name: "mikroscope-agent"
-  scrape_interval: 5s
-  static_configs: [{ targets: ["172.30.10.2:9123"] }]
-  metric_relabel_configs:
-    - source_labels: [__name__]
-      regex: "mikroscope_(tick_.*|trigger_.*|capture.*|captures_held|slipped_total)"
-      action: keep
 ```
 
-Scraping the agent without the keep list would double every counter the collector
-also exposes. Point Prometheus at the collector host, or at the agent directly if it
-can reach the veth.
+Until 1.0.4 there were two, because some families existed only on the agent's own
+`/metrics`. **The agent serves no exposition since 1.0.5.** What only a sampler can
+know reaches the collector as data — the wake latency and read duration of every tick
+ride in the sample itself, and `GET /sampler` answers the counters that are not
+per-tick — so this one job carries every family the dashboard asks for. The end-to-end
+suite asserts exactly that: it used to scrape both and now checks the collector alone.
 
-#### What only the agent can say
+There is nothing left to double-count, and no keep list to maintain.
 
-The collector renders no `mikroscope_slipped_total` and no
-`mikroscope_tick_interval_seconds`, `mikroscope_tick_wake_latency_seconds` or
-`mikroscope_tick_read_seconds`: it never ran the sampler, and a 0 there would be a
-claim about a ticker it does not own. The agent's capture index and its
-`mikroscope_trigger_*` counters live on the agent as well; the collector counts the
-trigger markers it saw in `mikroscope_collector_triggers_total{cause}`.
+#### What the collector knows, and how
+
+| Family                                                         | Where it comes from                                              |
+| -------------------------------------------------------------- | ---------------------------------------------------------------- |
+| every kernel-tier family                                       | folded from the samples, by the same code the agent used to run  |
+| `mikroscope_tick_interval_seconds`, `_wake_latency_`, `_read_` | folded from `dt_ns`, `wake_ns` and `read_ns` in each sample      |
+| `mikroscope_slipped_total`, `mikroscope_sampler_ticks_total`   | the agent's `/sampler`, read every minute                        |
+| `mikroscope_trigger_fired_total`, `_suppressed_total`          | the same, one series per configured condition, present at 0      |
+| `mikroscope_captures_held`, `_capture_bytes`, `_budget_bytes`  | the same: what the agent is holding right now                    |
+| `mikroscope_api_*`, `mikroscope_derived_*`, `_collector_*`     | the collector's own: the API tier, the derive stage, its counters |
+
+The one thing that changed meaning: these figures are now as fresh as the collector's
+health cadence, a minute, rather than as fresh as the scrape. For counters of fired
+triggers and held captures that is the right resolution; for anything per-tick it does
+not apply, because those travel in the samples at full rate.
 
 ### What the collector adds
 
@@ -418,8 +421,8 @@ get no counter series; the MTU is part of the inventory. On the RB5009 with Rout
 
 ### Device-info families
 
-The collector's exposition carries the same device-info families as the agent's own
-`/metrics`, from what it fetched from `/capabilities`: `mikroscope_device_info`, the
+The collector's exposition carries the device-info families from what it fetched from
+`/capabilities`: `mikroscope_device_info`, the
 ceilings the board publishes (`mikroscope_thermal_critical_celsius`,
 `mikroscope_thermal_polling_seconds`, `mikroscope_cpu_frequency_limit_hertz`,
 `mikroscope_cpu_frequency_step_hertz`, `mikroscope_cpu_frequency_governor_info`,
@@ -437,8 +440,8 @@ stream](https://jmrp.io/docs/mikroscope/sinks/device-info/).
 
 - [Prometheus metric families](https://jmrp.io/docs/mikroscope/reference/metrics/): every family the agent and the
   collector render, with its labels.
-- [Import and check](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/): the dashboard these two scrape jobs
-  feed, and how to check it panel by panel.
+- [Import and check](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/): the dashboards this scrape job
+  feeds, and how to check them panel by panel.
 - [What the collector derives](https://jmrp.io/docs/mikroscope/sinks/derive/): what the `mikroscope_derived_*` gauges
   mean and when they are absent.
 - [The collector](https://jmrp.io/docs/mikroscope/sinks/): what one `forward` run does before anything reaches
@@ -573,6 +576,10 @@ signature — or `other`. A record that names no port keeps the tagless shape an
 | `mikroscope_device_thermal` | `zone`                                         | `critical_celsius`, `polling_ms`                                                             | collector                 |
 | `mikroscope_device_cpufreq` | `cpu`                                          | `cluster`, `min_khz`, `max_khz`, `governor`, `steps`                                         | collector                 |
 | `mikroscope_device_cadence` | `source`, `reason`                             | `hz`                                                                                         | collector                 |
+| `mikroscope_sampler`        | —                                              | `ticks`, `slipped`, `captures_held`, `capture_bytes`, `capture_budget_bytes`, `capture_served_bytes`| collector, from `GET /sampler`|
+| `mikroscope_trigger_count`  | `condition`                                    | `fired`                                                                                      | collector, from `GET /sampler`|
+| `mikroscope_trigger_suppressed`| `condition`, `reason`                          | `count`                                                                                      | collector, from `GET /sampler`|
+| `mikroscope_capture_refused`| `reason`                                       | `count`                                                                                      | collector, from `GET /sampler`|
 
 Every interface row carries what that interface is: `label` is its RouterOS comment,
 `type` is RouterOS's own type (`ether`, `bridge`, `vlan`, `pppoe-out`, `wg`, `veth`,
@@ -590,7 +597,7 @@ port, an empty string for a bridge, VLAN or tunnel) as a string field and `mtu` 
 the router reports one above zero. It is written once before the first kernel pull and
 again on every `--labels-every` re-read, 5 minutes by default, and it is the table a
 panel joins to say what an interface is. `mikroscope_api_ifcounters` carries counters
-only: `mtu`, `l2mtu`, `max-l2mtu` and `sfp-shutdown-temperature` parse as integers but
+only: `mtu`, `actual-mtu`, `l2mtu`, `max-l2mtu` and `sfp-shutdown-temperature` parse as integers but
 are sizes and configuration, not counts, so they are not fields there; the MTU is in
 `mikroscope_api_ifinfo`.
 
@@ -622,8 +629,10 @@ check](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/).
 
 > **Not measured, so not claimed**
 >
-> Every recorded run wrote to InfluxDB 3 Core; no write to InfluxDB 2's `/api/v2/write` or to
-> InfluxDB 3 Enterprise is recorded. The duplicate rows of 2026-09-13 have an explanation that is
+> No write to InfluxDB 2's `/api/v2/write` is recorded. InfluxDB 3 Enterprise is now measured, but
+> briefly: on 2026-09-19 the reference collector was moved onto Enterprise 3.11.4 and wrote 44 820
+> rows across 36 tables in the first 19 minutes, 0 dropped and 0 errors. Everything before that date
+> was measured against Core. The duplicate rows of 2026-09-13 have an explanation that is
 > leading and unverified, and disabling the HTTP client's own resend has not been measured against a
 > repeat of that run.
 
@@ -680,7 +689,7 @@ and its first key says what it is:
 - `{"trigger":…}` — the agent's capture marker, also verbatim;
 - `{"derived":…}` — the derive stage's values, on the line after the sample they belong
   to, so a reader that wants only raw samples skips that kind;
-- `{"detection":…}`, `{"device":…}`, `{"api":…}` and `{"gap":…}`.
+- `{"detection":…}`, `{"device":…}`, `{"api":…}`, `{"sampler":…}` and `{"gap":…}`.
 
 Writes are synchronous through a 64 KiB buffer, and the counters are in events. A write
 the filesystem refuses counts one error and one drop.
@@ -792,12 +801,12 @@ refuse it — a NUL byte is dropped, invalid UTF-8 becomes U+FFFD — and a NaN 
 float becomes NULL. `TIMESTAMPTZ` resolves to 1 µs, so two samples closer than that
 would collide on the primary key; at 10 Hz they are 100 ms apart.
 
-Compared with InfluxDB the SQL sink carries fewer sources: no CPU frequency, PMU,
-softirq, `/proc/vmstat` level, per-CPU interrupt or kernel-log count tables, no
-`/proc/vmstat` counter table beyond `pgfault` and `pgmajfault` (which ride on
-`mikroscope_stat`, so the `pgscan_*`, `pgsteal_*`, `pgalloc`, `pgfree`, `allocstall`,
-`compact_stall`, `oom_kill`, `pswpin` and `pswpout` deltas are missing), no `mikroscope_sample`, and a narrower `mikroscope_mem`. It carries two that InfluxDB does not: the kernel-log text in
-`mikroscope_event`, and the API tier's errors.
+Compared with InfluxDB the SQL sink is short of exactly one thing: the kernel-log
+**count** table. That was a long list until 1.0.3 and 1.0.5 closed it — CPU frequency,
+the PMU, softirq, `/proc/vmstat` levels and counters, per-CPU interrupts,
+`mikroscope_sample` and the full-width `mikroscope_mem` all have tables now. It carries
+two InfluxDB does not: the kernel-log **text** in `mikroscope_event`, and the API tier's
+errors.
 
 > **A pipe into psql can block the collector**
 >
@@ -812,8 +821,9 @@ of SQL and an API event to 1 138 B, so 10 Hz plus the 1 Hz API tier is about 14
 file after a 5.6 KiB header. The same two events in line protocol are 716 B and 608 B,
 about 1.9× smaller, though part of that is content the SQL rows carry and line protocol
 did not. With the privileged sources present the kernel event grows to 2 749 B. That header
-is the fixture's: the header for all thirty-two tables the sink declares, computed from the
-schema strings rather than measured, is 7 757 B, about 7.6 KiB.
+is the fixture's: the header for all forty-three tables the sink declares, rendered by the
+sink's own `header()` on 2026-09-19, is 10 482 B, about 10.2 KiB — 13 966 B with the
+TimescaleDB hypertable statements.
 
 ### Loki
 
@@ -923,6 +933,7 @@ time. Every level is a **Gauge**. Nothing from the kernel tier is pre-divided ex
 | Gauge | `mikroscope.derived.fastpath_share`                                                                                                                         | `interface`, `direction`                                                            |
 | Gauge | `mikroscope.device.cores`; `mikroscope.device.thermal.critical`, `mikroscope.device.thermal.polling` (s)                                                    | `board`, `kernel`, `hash`; `zone`                                                   |
 | Gauge | `mikroscope.device.cpu.frequency_max`, `mikroscope.device.cpu.frequency_min`; `mikroscope.device.source_cadence`                                            | `cpu`; `source`, `reason`                                                           |
+| Gauge | `mikroscope.sampler.{ticks,slipped,trigger_fired,trigger_suppressed}`; `mikroscope.capture.{held,bytes,budget_bytes,served_bytes,refused}`                  | `condition`, `reason`                                                               |
 
 The reclaim and swap members of `mikroscope.vm.events` are omitted at zero: for a delta
 Sum an absent point and a zero point mean the same. The per-port counters are gauges of a
@@ -971,6 +982,7 @@ value becomes `none`, so a path's depth never changes.
 | `derived.{mem_pressure,cycles_per_packet,instructions_per_packet,cache_misses_per_packet,packets_per_irq}`                                           | the derive stage                  |
 | `trigger.<cause>`, `detection.<rule>` — the value 1 at each event                                                                                    | triggers and detections           |
 | `device.{cores,conntrack_max,cgroup_mem_max}`, `device.thermal.<zone>.*`, `device.cpufreq.<n>.*`, `device.cadence.<source>.hz`                       | the device-info stream            |
+| `sampler.{ticks,slipped,captures_held,capture_bytes,capture_budget_bytes,capture_served_bytes}`                                                      | the agent's own counters, on the health cadence|
 | `collector.gap.{samples,from,to}`                                                                                                                    | gaps, at the collector's clock    |
 
 What the protocol cannot promise, stated because each one changes what a Graphite panel
@@ -1025,7 +1037,7 @@ One document per event, with `kind` telling them apart:
   `role` and `bridge`, and each `iface_counters` entry `comment`, `type`, `role` and
   `bridge`, where the inventory has them. The API tier's per-command errors are not
   written;
-- `gap` (`from`, `to`, `lost`), `device`, `detection` and `trigger`.
+- `gap` (`from`, `to`, `lost`), `device`, `detection`, `trigger` and `sampler`.
 
 Every document carries `@timestamp` from the agent's clock (the collector's for gaps and
 device records) and `host`. The index name expands `%Y`, `%m` and `%d` — only those —
@@ -1158,7 +1170,7 @@ kernel.
 | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
 | `off`  | no API tier: `--api-every 0`                                                                                                                                        | production, when per-interface traffic already comes from somewhere else |
 | `slow` | one round every 10 s, without `/system/health` and without the conntrack count; `/system/resource`, `monitor-traffic` and the port counters still run on each round | production, when you want interface rates too                            |
-| `full` | one round every second, with `/system/health`; port counters every 10 s; the conntrack count only if `--conntrack-every` asks for it                                | experiments and `record` runs                                            |
+| `full` | one round every second, with `/system/health`; port counters every 10 s; the conntrack count only if `--conntrack-every` asks for it                                | experiments and short `forward` runs                                            |
 
 `off` is the mode that gives per-interface traffic up; `slow` is the one that keeps it
 cheaply. Two dashboard panels are blank by configuration under `slow` rather than by
@@ -1257,9 +1269,10 @@ Without the API tier a kernel record keeps the board's default name and gets no 
 | `--conntrack-every` | `0`                            | how often to ask the connection count; `0` never, because it is a table scan                                |
 | `--no-health`       | off                            | skip `/system/health`                                                                                       |
 
-Without `--api`, `--api-user` and `MIKROSCOPE_API_PASSWORD`, or when the session cannot
-be opened within 10 s, `forward` logs `api tier disabled: …` and runs the kernel tier
-alone. That is a warning, not a failure: the kernel tier is the point.
+Without `--api`, `--api-user` and `MIKROSCOPE_API_PASSWORD`, `forward` runs the kernel tier
+alone. When they are given but the session cannot be opened within 10 s it logs
+`api tier: not connected yet, will keep trying: …` and attaches the reader anyway: since
+1.0.9 a failed first dial is a warning, not a tier disabled for the life of the process.
 
 ### The user it needs
 
@@ -1375,6 +1388,50 @@ That is small, and the project still treats the API as the costly path. Per-port
 comes from the container wherever the container can see it, and configuration is read
 at start and on the slow labels cadence, never per poll.
 
+### When the connection dies
+
+The tier holds one socket, so anything that takes the router away takes the
+tier with it: a reboot, a RouterOS upgrade, an operator restarting the API
+service. Since 1.0.9 it reopens the connection itself.
+
+The rule is about who failed, not about what failed. A **transport** error —
+EOF, a broken pipe, a connection reset, a command timeout — means the socket is
+finished, so the tier redials and retries that one command on the new
+connection. A **`!trap`** does not redial: the router is alive and refusing the
+command, and asking again would only spend its CPU on the same bad question. A
+**`!fatal`** does, because that is the word RouterOS sends as it closes the
+session.
+
+Attempts are spaced at five seconds. One round issues four or five commands, so
+a router that is down would otherwise be dialed several times a second, and
+every dial carries a login. The inventory is dropped and re-read after a
+reconnection: an upgrade is exactly when an interface can change its name, type
+or bridge, and stale labels on fresh rates would be worse than a moment's gap.
+
+Measured against the reference RB5009 on 2026-09-19, without touching the
+router: a collector polling all 16 interfaces at 1 Hz had its API socket
+destroyed from the host with `ss -K`, which is what the router's side of a
+reboot looks like to it. The tier reopened the connection and retried inside
+the same round — 0 failed commands, 0 dropped rounds, 16 interfaces in every
+one of the 108 seconds either side of the kill.
+
+A collector that starts while the router is down is the same case seen from the
+other end. The first dial failing is a warning, not a disabled tier — it
+connects on the first round the router answers.
+
+The collector says so, once per event rather than once per failed command:
+
+```text
+api tier: reconnected (1 since start)
+api tier: recovered after 137 failed round(s)
+```
+
+and the minute report carries `api: N failed round(s), N reconnect(s)` while
+either is nonzero. Before 1.0.9 none of this existed, and the outage was
+invisible: `api` counts rounds _attempted_, so the report kept growing through
+a tier in which every command failed. What that cost on the reference device is
+in [Troubleshooting](https://jmrp.io/docs/mikroscope/reference/troubleshooting/#the-api-panels-are-blank-and-the-kernel-panels-are-fine).
+
 ### The conntrack count
 
 `--conntrack-every 10s` asks `/ip/firewall/connection/print count-only` at that
@@ -1477,9 +1534,9 @@ The trailing baselines span ten seconds of wall clock at any rate: 100 samples a
 500 at 50 Hz, 1 000 at 100 Hz, bounded between 10 and 2 000 samples. No sample is flagged
 until its CPU has at least ten samples of history.
 
-Why a percentile and not "any squeeze", measured on the reference RB5009 over 3 476
-samples on 2026-09-15: about 11.2 % of samples carry one squeeze as background and 2 % carry
-two or more. "Any squeeze" would flag the device's norm several times a minute.
+Why a percentile and not "any squeeze", measured on the reference RB5009 over 3 738 704
+per-CPU samples in 24 h: about 11.2 % of samples carry one squeeze as background
+and 1.2 % carry exactly two. "Any squeeze" would flag the device's norm several times a minute.
 
 Three flagged samples on one CPU within 60 s is what raises the `microburst`
 [detection](https://jmrp.io/docs/mikroscope/sinks/detections/#microburst); one flagged sample stays a data
@@ -1661,17 +1718,17 @@ the new sequence number, `threshold` the previous one.
 sequence starts again from 1 on every launch, so this is what a restart looks like from the
 outside.
 
-> **A running forward does not see this today**
+> **Fixed in 1.0.4**
 >
-> From reading the code, not from a run: `forward` keeps its pull cursor, the last sequence number
-> it received, and never resets it. A restarted agent's ring answers
-> `/snapshot?since=<old sequence>` with nothing, and no gap, until its new sequence passes the old cursor; by then every
-> sample it returns has a sequence number above the previous one. So a `forward` that keeps running
-> across an agent restart receives nothing from the new agent for as long as the old one had been
-> running — a day at 10 Hz for an agent that ran a day — and this rule cannot fire in it. The rule is
-> exercised only by the derive stage's unit tests; no forward or end-to-end test covers it.
-> Restarting `forward` after the agent restarts resumes the data, but then there is no previous
-> sequence number and the rule does not fire either.
+> This used to be unreachable in a running collector. `forward` kept its pull cursor and never reset
+> it, so a restarted agent's ring answered `/snapshot?since=<old sequence>` with nothing — and no
+> gap — until its new sequence passed the old cursor: a day at 10 Hz for an agent that had run a
+> day. Since 1.0.4 `resync` rewinds the cursor to the new ring's oldest sample on the next health
+> read, one minute at most, and logs `agent restarted: its newest sample is N and the cursor was M;
+> resuming from 1`. The new agent's low sequence against the stage's previous one is exactly what
+> this rule matches, so it fires. `TestResyncAfterAgentRestart` covers the collector side, and the
+> reference RB5009 exercised it for real on 2026-09-19: the router rebooted at 00:43:30 and the
+> kernel tier resumed at 00:45:03.
 
 **May not claim** why the agent restarted. A collector restarted at the same time has no
 previous sequence number and sees nothing.
@@ -1722,11 +1779,12 @@ previous record's. `value` and `threshold` are the new and previous timestamps i
 
 **Needs** `privileged=yes`, which the kernel log requires, and a collector that keeps
 running across the reboot while the agent comes back. It needs no RouterOS API
-credentials. A collector that keeps running is not enough on its own: the agent that comes
-back after the reboot is a new process, and its samples reach `forward` only once their
-sequence passes the old cursor (see [`agent-restart`](https://jmrp.io/docs/mikroscope/sinks/detections/#agent-restart)). The rule can then
-fire only on a kernel-log record whose since-boot time is still below the last one seen
-before the reboot. This is read from the code, not observed.
+credentials. The agent that comes back after the reboot is a new process; since 1.0.4 the
+collector rewinds its cursor to the new ring within a minute (see
+[`agent-restart`](https://jmrp.io/docs/mikroscope/sinks/detections/#agent-restart)), so its samples do reach `forward`. The rule then fires on
+a kernel-log record whose since-boot time is below the last one seen before the reboot.
+Whether it fired on the reference device's 2026-09-19 reboot was not checked; nothing in the
+tree records it either way.
 
 **May not claim** that every reboot is seen. The agent reads the kernel log from the end at
 start, so the first record after a reboot is one logged after the agent came up; if that
@@ -1771,7 +1829,8 @@ flush of the connection table fires it.
 samples within the last 60 s.
 
 **May not claim** when the table will be full: no time-to-full is attached, on purpose. For
-scale, the reference router's table sat at 0.63 % of its 966 656 ceiling on 2026-09-12.
+scale, the reference router's table sat at 6 287 entries on 2026-09-12,
+0.65 % of the 966 656 ceiling that kernel reported on 2026-09-14.
 
 #### `thermal-high`
 
@@ -1893,7 +1952,7 @@ data" over every window after it: measured on the reference deployment on 2026-0
 where the last device row was 26 hours old and those panels had been empty for as long.
 Five minutes puts the facts inside any window worth reading them over and costs twelve
 rows an emission — one identity, one per thermal zone, one per core with cpufreq facts,
-one per level source — against the 864 000 sample rows a day that `--hz 10` produces.
+one per level source — against the 864 000 sample rows a day that `--rate 10` produces.
 
 The repeat is marked as one, and the sinks split on it: the stores write it like any
 other row, which is the whole point, and the streams meant for a reader — Loki, stdout,
@@ -1924,7 +1983,7 @@ never mixed into a sample row.
 | Graphite                        | the numeric facts under `device.*`; board, kernel and governor have no Graphite form                                                               |
 | OTLP                            | gauges: `mikroscope.device.cores` with board, kernel and hash as attributes, the thermal and cpufreq ceilings, `mikroscope.device.source_cadence`  |
 | Loki                            | one `source="device"`, `level="info"` line: board, kernel, cores, privileged, cgroup, sources, hash                                                |
-| Prometheus                      | the same device-info families the agent's own `/metrics` carries                                                                                   |
+| Prometheus                      | the device-info families, rendered by the collector's exposition                                                                                   |
 
 #### InfluxDB and SQL
 

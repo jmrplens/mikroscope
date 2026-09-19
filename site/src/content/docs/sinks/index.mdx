@@ -77,23 +77,24 @@ the batch is sized from the agent's rate. A pull is repeated while it comes
 back full — up to 100 times — so the cursor catches up within one poll instead of
 advancing one batch per poll. A short reply is the ring's edge.
 
-The relay transport caps a pull at 18 lines, and the cap is computed rather than chosen:
-`/tool fetch` returns <Measured id="relay.replyMaxBytes" /> at most, the mean ring line is taken as
-2 560 B (the measured <Measured id="ring.lineBytes" />, rounded up), and the cap allows 134 % of
-that mean so a batch of above-average lines still fits — 18 lines, about 46 kB. A reply that
+The relay transport caps a pull at <Measured id="relay.maxBatch" /> lines, and the cap is computed
+rather than chosen: `/tool fetch` returns <Measured id="relay.replyMaxBytes" /> at most, the ring
+line is charged at <Measured id="ring.lineChargedBytes" /> (the
+measured <Measured id="ring.lineBytes" />, rounded up to its allocator size class), and the cap allows 134 %
+of that so a batch of above-average lines still fits — about 45 kB. A reply that
 reaches the fetch limit anyway is refused with
 `relay reply hit the 64512-byte fetch limit; lower the batch` rather than parsed truncated. At the
-default 500 ms poll that is 36 samples/s, and above that the collector falls behind. `forward`
+default 500 ms poll that is 26 samples/s, and above that the collector falls behind. `forward`
 computes what the effective batch and the poll allow per second and warns at start when that is
 below the agent's rate — for the relay against an agent at 100 Hz, the arithmetic gives:
 
 ```text
-warning: at most 18 samples per pull every 500ms is 36/s, below the agent's 100 Hz; the collector will fall behind and report gaps. Raise --batch, lower --poll, or use the direct transport
+warning: at most 13 samples per pull every 500ms is 26/s, below the agent's 100 Hz; the collector will fall behind and report gaps. Raise --batch, lower --poll, or use the direct transport
 ```
 
 The cap and the warning are read from the code on 2026-09-15, not re-measured against a device.
 
-A collector that falls further behind than the agent's ring (300 s by default)
+A collector that falls further behind than the agent's ring (60 s by default)
 receives a gap line instead of the samples, and every sink records the gap.
 
 ## Whose clock each record carries
@@ -222,7 +223,7 @@ settings, and the agent's version, rate, sequence number, skew, transport and
 effective batch. Every minute, on standard error, a running report:
 
 ```text
-forwarded <n> kernel, <n> api, <n> gap(s), <n> trigger(s), <n> detection(s), last seq <n>; <sink>: <n> written, <n> dropped, <n> errors
+forwarded <n> kernel, <n> api, <n> gap(s), <n> trigger(s), <n> detection(s), <n> agent restart(s), last seq <n>; <sink>: <n> written, <n> dropped, <n> errors
 ```
 
 On exit, on **standard output**, the totals and one line per sink:
@@ -272,7 +273,7 @@ collector wrote to three sinks at once, and every one reported 0 gaps and 0 drop
 
 ## See also
 
-- [Prometheus](/mikroscope/sinks/prometheus/): the collector's `/metrics` and the two scrape jobs
+- [Prometheus](/mikroscope/sinks/prometheus/): the collector's `/metrics` and the scrape job
   the dashboard expects.
 - [InfluxDB 3](/mikroscope/sinks/influxdb/): the write URL, the measurements and what InfluxDB 3
   Core refuses.

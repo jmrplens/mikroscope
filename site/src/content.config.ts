@@ -72,6 +72,7 @@ export const collections = {
 				"ms.alerts.noData": z.string().optional(),
 				"ms.alerts.stores": z.string().optional(),
 				"ms.alerts.both": z.string().optional(),
+				"ms.alerts.all": z.string().optional(),
 				"ms.breadcrumb.home": z.string().optional(),
 			}),
 		}),

@@ -1,6 +1,6 @@
 ---
 title: Prometheus
-description: El `/metrics` propio del colector — cada familia del agente recalculada a partir de las muestras, más la capa de la API, la etapa de derivación y los contadores del colector — y los dos trabajos de scrape que lo acompañan.
+description: El `/metrics` propio del colector — cada familia del agente recalculada a partir de las muestras, más la capa de la API, la etapa de derivación y los contadores del colector — y el trabajo de scrape que lo acompaña.
 ---
 
 import { Aside } from "@astrojs/starlight/components";
@@ -9,8 +9,9 @@ import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
 
 `--prom :9124` hace que el colector sirva texto de Prometheus en `GET /metrics` en esa
-dirección. Esta página responde a qué lleva esa exposición, qué no puede llevar y tiene
-que venir del agente, y cómo hacer scrape de los dos sin contar nada dos veces.
+dirección. Esta página responde a qué lleva esa exposición y qué no puede
+llevar a ningún destino. Solo hay una cosa a la que hacer scrape: el agente no sirve
+exposición desde 1.0.5.
 
 ## Recalculado a partir de las muestras
 
@@ -39,38 +40,41 @@ de huecos, y las familias de datos del equipo que salen de las `/capabilities` d
 	Hz, 6 min a 100 Hz.
 </Aside>
 
-## Dos trabajos de scrape
+## Un trabajo de scrape
 
-El panel de Prometheus espera dos trabajos: el colector, que tiene todas las familias del
-agente más las suyas, y el propio agente, con un relabel `keep` que lo deja en las
-familias que solo el muestreador puede producir — sus histogramas de temporización de
-ticks, los contadores de disparos y capturas, los ticks perdidos:
+El del colector, y solo el del colector:
 
 ```yaml
 - job_name: "mikroscope"
   scrape_interval: 5s
-  static_configs: [{ targets: ["<máquina del colector>:9124"] }]
-- job_name: "mikroscope-agent"
-  scrape_interval: 5s
-  static_configs: [{ targets: ["172.30.10.2:9123"] }]
-  metric_relabel_configs:
-    - source_labels: [__name__]
-      regex: "mikroscope_(tick_.*|trigger_.*|capture.*|captures_held|slipped_total)"
-      action: keep
+  static_configs: [{ targets: ["<equipo del colector>:9124"] }]
 ```
 
-Hacer scrape del agente sin la lista `keep` duplicaría cada contador que el colector
-también expone. Apunta Prometheus a la máquina del colector, o directamente al agente si
-puede llegar a la veth.
+Hasta 1.0.4 eran dos, porque algunas familias existían únicamente en el `/metrics` del
+propio agente. **Desde 1.0.5 el agente no sirve ninguna exposición.** Lo que solo un
+muestreador puede saber llega al colector como dato — el retraso de despertar y la
+duración de lectura de cada tick viajan en la propia muestra, y `GET /sampler` responde
+los contadores que no son por tick — así que este único trabajo lleva todas las familias
+que pide el dashboard. La suite de extremo a extremo comprueba justo eso: antes
+scrapeaba los dos y ahora contrasta solo contra el colector.
 
-### Lo que solo puede decir el agente
+No queda nada que contar dos veces, ni lista de `keep` que mantener.
 
-El colector no renderiza `mikroscope_slipped_total` ni `mikroscope_tick_interval_seconds`,
-`mikroscope_tick_wake_latency_seconds` o `mikroscope_tick_read_seconds`: nunca ejecutó el
-muestreador, y un 0 ahí sería una afirmación sobre un temporizador que no es suyo. El
-índice de capturas del agente y sus contadores `mikroscope_trigger_*` también viven en el
-agente; el colector cuenta los marcadores de disparo que vio en
-`mikroscope_collector_triggers_total{cause}`.
+### Lo que sabe el colector, y de dónde
+
+| Familia                                                            | De dónde sale                                                             |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------------- |
+| todas las familias del tier de kernel                              | plegadas desde las muestras, con el mismo código que antes corría el agente |
+| `mikroscope_tick_interval_seconds`, `_wake_latency_`, `_read_`     | plegadas desde `dt_ns`, `wake_ns` y `read_ns` de cada muestra             |
+| `mikroscope_slipped_total`, `mikroscope_sampler_ticks_total`       | el `/sampler` del agente, leído cada minuto                               |
+| `mikroscope_trigger_fired_total`, `_suppressed_total`              | lo mismo, una serie por condición configurada, presente a 0               |
+| `mikroscope_captures_held`, `_capture_bytes`, `_budget_bytes`      | lo mismo: lo que el agente retiene ahora mismo                            |
+| `mikroscope_api_*`, `mikroscope_derived_*`, `_collector_*`         | lo propio del colector: el tier de API, la derivación, sus contadores     |
+
+Lo único que cambió de significado: estas cifras son ahora tan frescas como la cadencia
+de salud del colector, un minuto, en vez de tan frescas como el scrape. Para contadores
+de disparos y capturas retenidas esa es la resolución correcta; para cualquier cosa por
+tick no aplica, porque esas viajan en las muestras a ritmo completo.
 
 ## Lo que añade el colector
 
@@ -176,8 +180,8 @@ RB5009 con RouterOS 7.24.2 (2026-09-15) `monitor-traffic` devuelve `rx-drops`,
 
 ## Familias de datos del equipo
 
-La exposición del colector lleva las mismas familias de datos del equipo que el propio
-`/metrics` del agente, a partir de lo que obtuvo de `/capabilities`:
+La exposición del colector lleva las familias de datos del equipo a partir de lo que obtuvo de
+`/capabilities`:
 `mikroscope_device_info`, los techos que publica la placa
 (`mikroscope_thermal_critical_celsius`, `mikroscope_thermal_polling_seconds`,
 `mikroscope_cpu_frequency_limit_hertz`, `mikroscope_cpu_frequency_step_hertz`,
@@ -197,8 +201,8 @@ Consulta [el flujo de datos del equipo](/mikroscope/es/sinks/device-info/).
 
 - [Familias de métricas de Prometheus](/mikroscope/es/reference/metrics/): cada familia que
   renderizan el agente y el colector, con sus etiquetas.
-- [Importar y comprobar](/mikroscope/es/dashboards/import-and-check/): el panel que alimentan estos
-  dos trabajos de scrape, y cómo comprobarlo panel a panel.
+- [Importar y comprobar](/mikroscope/es/dashboards/import-and-check/): los paneles que alimenta este
+  trabajo de scrape, y cómo comprobarlos panel a panel.
 - [Lo que deriva el colector](/mikroscope/es/sinks/derive/): qué significan los gauges
   `mikroscope_derived_*` y cuándo faltan.
 - [El colector](/mikroscope/es/sinks/): lo que hace una ejecución de `forward` antes de que nada

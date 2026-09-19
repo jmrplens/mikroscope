@@ -15,12 +15,12 @@ El **agente** es un binario Go estático en un contenedor scratch dentro del
 router. Un contenedor de RouterOS comparte el kernel del anfitrión, así que el
 `/proc` de dentro es el `/proc` del propio router: `/proc/stat` por núcleo,
 `/proc/interrupts`, `/proc/softirqs`, `/proc/net/softnet_stat`, `/proc/meminfo`,
-`/proc/vmstat`, `/proc/diskstats`, `/dev/kmsg`. Los muestrea con un temporizador de 1 a 100 Hz (10 Hz por defecto; medidos a 10, 50 y 100 Hz), guarda los últimos 300 segundos en un anillo y los sirve. No tiene conexión saliente ni presenta ninguna credencial; el único secreto que guarda es el token opcional que exige a quien lo lea.
+`/proc/vmstat`, `/proc/diskstats`, `/dev/kmsg`. Los muestrea con un temporizador de 1 a 100 Hz (10 Hz por defecto; medidos a 10, 20, 50 y 100 Hz), guarda los últimos 60 segundos en un anillo y los sirve. No tiene conexión saliente ni presenta ninguna credencial; el único secreto que guarda es el token opcional que exige a quien lo lea.
 
 La **CLI** corre en tu máquina. Instala y desinstala el agente, graba una
 ventana con marcadores, dibuja un SVG determinista de ella, y funciona como
 colector que tira del agente, fusiona una capa de la API de RouterOS a 1 Hz y
-reparte a fichero, Prometheus e InfluxDB 3. Se publica como un archivo por
+escribe a diez destinos —fichero, Prometheus e InfluxDB 3 entre ellos. Se publica como un archivo por
 plataforma —linux, macOS, Windows y FreeBSD en amd64, arm64 y arm— y el agente
 a su lado como un tar de imagen por arquitectura y como imagen de registro, en
 Docker Hub como `jmrplens/mikroscope-agent` y en GHCR como
@@ -75,7 +75,7 @@ calcula ninguno.
 
 - [El coste del observador](/mikroscope/es/cost/): el presupuesto, el resultado medido y cómo
   medirlo en tu propio equipo.
-- [El techo de muestreo](/mikroscope/es/cost/rate-ceiling/): las cinco ejecuciones detrás de las
+- [El techo de muestreo](/mikroscope/es/cost/rate-ceiling/): las seis ejecuciones detrás de las
   cifras del punto 4.
 - [Lo que los números no dicen](/mikroscope/es/cost/limits/): lo que un equipo en un día no te
   puede decir.

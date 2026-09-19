@@ -78,16 +78,18 @@ Mide al observador, y mídelo con honradez — incluida la parte en la que medir
 cambia la respuesta.
 
 Descargar un `/snapshot` de 60 segundos no sale gratis: el agente tiene que
-entregar ~600 líneas ya codificadas, unos 1,5 MB, y el `self.cpu_us` de esas
+entregar ~600 líneas ya codificadas, unos 1,9 MB, y el `self.cpu_us` de esas
 muestras _incluye el coste de servirlas_. Leer el coste del agente en una
 instantánea grande lo exagera, por tanto, y hacerlo repetidamente lo exagera
 más.
 
-Usa `/metrics` en su lugar. Es pequeño, sus contadores son acumulados y no
-depende de quién lo lea ni de cuándo — léelo dos veces y divide:
+Usa el `/metrics` del colector en su lugar —el agente no sirve ninguno desde
+1.0.5, y esos contadores llegan al colector en cada muestra—. Es pequeño, sus
+contadores son acumulados y no depende de quién lo lea ni de cuándo: léelo dos
+veces y divide:
 
 ```sh
-U=http://172.30.10.2:9123/metrics
+U=http://<equipo del colector>:9124/metrics
 get() { curl -s "$U" | awk -v k="$1" '$1==k{print $2}'; }
 c0=$(get mikroscope_self_cpu_usec_total); t0=$(date +%s)
 sleep 180
@@ -98,7 +100,7 @@ echo "$c0 $c1 $t0 $t1" | awk '{printf "%.2f %% of one core\n", 100*($2-$1)/1e6/(
 Dos cosas que cabe esperar:
 
 - **El coste y la memoria suben hasta que el anillo se llena.** Con el anillo por
-  defecto de 300 s a 10 Hz, el agente guarda 3 000 muestras ya codificadas; una
+  defecto de 60 s a 10 Hz, el agente guarda 600 muestras ya codificadas; una
   cifra tomada en el primer minuto tras la instalación se mide sobre un heap casi
   vacío y saldrá optimista. Espera a que pase `BUFFER_S` antes de citar un número
   de régimen estacionario.

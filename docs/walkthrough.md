@@ -14,12 +14,12 @@ The **agent** is a static Go binary in a scratch container on the router. A
 RouterOS container shares the host kernel, so `/proc` inside it is the router's
 own `/proc`: `/proc/stat` per core, `/proc/interrupts`, `/proc/softirqs`,
 `/proc/net/softnet_stat`, `/proc/meminfo`, `/proc/vmstat`, `/proc/diskstats`,
-`/dev/kmsg`. It samples them on a ticker at 1 to 100 Hz (10 Hz by default; 10, 50 and 100 Hz measured), keeps the last 300 seconds in a ring, and serves them. It has no outbound connection and presents no credential; the only secret it holds is the optional token it requires of whoever reads it.
+`/dev/kmsg`. It samples them on a ticker at 1 to 100 Hz (10 Hz by default; 10, 20, 50 and 100 Hz measured), keeps the last 60 seconds in a ring, and serves them. It has no outbound connection and presents no credential; the only secret it holds is the optional token it requires of whoever reads it.
 
 The **CLI** runs on your machine. It installs and removes the agent, records a
 window with markers, draws a deterministic SVG of it, and runs as a collector
-that pulls from the agent, merges a RouterOS API tier at 1 Hz, and fans out to
-file, Prometheus and InfluxDB 3. It is released as an archive per platform —
+that pulls from the agent, merges a RouterOS API tier at 1 Hz, and writes to ten
+sinks — file, Prometheus and InfluxDB 3 among them. It is released as an archive per platform —
 linux, macOS, Windows and FreeBSD on amd64, arm64 and arm — and the agent
 beside it as one image tar per architecture and as a registry image, on Docker
 Hub as `jmrplens/mikroscope-agent` and on GHCR as
@@ -46,8 +46,8 @@ when you want the agent built from your own tree.
    `/proc/net/dev`, `/proc/net/snmp` and `nf_conntrack_count` are per network namespace and describe the container; the conntrack count from the slab under `privileged` is the exception, and describes the router. Interface counters come from the
    RouterOS API and are merged, not faked.
 
-4. **The observer costs something, and it is written down.** 2.85 % of
-   one core at 10 Hz on an RB5009, 17.81 % at 100 Hz. [What it
+4. **The observer costs something, and it is written down.** 2.69 % of
+   one core at 10 Hz on an RB5009, 16.83 % at 100 Hz. [What it
    costs](https://jmrp.io/docs/mikroscope/cost/) has the full table and the conditions. Every figure
    on this site comes from that one device, an RB5009UG+S+ on RouterOS 7.24.2,
    arm64: the arm and x86_64 builds are cross-built and checked in CI and have
@@ -80,7 +80,7 @@ because it never computes one.
 
 - [The cost of the observer](https://jmrp.io/docs/mikroscope/cost/): the budget, the measured result and how to
   measure it on your own device.
-- [The rate ceiling](https://jmrp.io/docs/mikroscope/cost/rate-ceiling/): the five runs behind the figures in point 4.
+- [The rate ceiling](https://jmrp.io/docs/mikroscope/cost/rate-ceiling/): the six runs behind the figures in point 4.
 - [What the numbers do not say](https://jmrp.io/docs/mikroscope/cost/limits/): what one device on one day cannot tell
   you.
 
@@ -120,16 +120,17 @@ plain defaults, whatever the CLI's usage text says. Export the variables you nee
 1. **Get mikroscope.**
 
    ```sh wrap
-   tar xzf mikroscope_1.0.0_linux_x86_64.tar.gz   # a .zip on Windows
+   tar xzf mikroscope_1.0.9_linux_x86_64.tar.gz   # a .zip on Windows
    ./mikroscope version
    ```
 
    The release carries the CLI as an archive per platform — linux, macOS, Windows and FreeBSD on
    amd64, arm64 and arm — with `checksums.txt`, cosign signatures and SBOMs beside it. The agent
-   travels separately, as one image tar per architecture (`mikroscope-agent-arm64.tar`,
-   `mikroscope-agent-arm.tar`, `mikroscope-agent-amd64.tar`) and as a registry image, published
-   both as `jmrplens/mikroscope-agent:1.0.0` on Docker Hub and as
-   `ghcr.io/jmrplens/mikroscope-agent:1.0.0` on GHCR; step 2 takes one of the two.
+   travels separately, as four image tars, one per architecture
+   (`mikroscope-agent-amd64.tar`, `-arm64`, `-armv5`, `-armv7` — 32-bit ARM was split in two in
+   1.0.2, and the wrong tar is an `exec format error`) and as a registry image, published both as
+   `jmrplens/mikroscope-agent:1.0.9` on Docker Hub and as
+   `ghcr.io/jmrplens/mikroscope-agent:1.0.9` on GHCR; step 2 takes one of the two.
 
    From a checkout instead:
 
@@ -164,12 +165,12 @@ plain defaults, whatever the CLI's usage text says. Export the variables you nee
      checkout. The CLI reads the tar before it uploads it — it has to be a mikroscope agent image
      and its architecture has to match `--arch`, or the verb stops and names the asset to download
      instead;
-   - **the registry**, `--remote-image jmrplens/mikroscope-agent:1.0.0`: the router pulls the image
+   - **the registry**, `--remote-image jmrplens/mikroscope-agent:1.0.9`: the router pulls the image
      itself, nothing is uploaded, and `uninstall` has no file to account for. RouterOS takes the
      registry host from the global `/container/config registry-url`, which mikroscope never writes
      because every container on the device shares it, and which ships as
      `https://registry-1.docker.io` — so the Docker Hub reference above runs on a stock router as
-     it stands. The GHCR reference, `ghcr.io/jmrplens/mikroscope-agent:1.0.0`, names a host of its
+     it stands. The GHCR reference, `ghcr.io/jmrplens/mikroscope-agent:1.0.9`, names a host of its
      own: `doctor` checks the setting against it and prints
      `/container/config/set registry-url=https://ghcr.io` when it does not match, or points at
      `--agent-tar`. The pull needs the router to reach the registry and the free RAM for the layers.
@@ -179,7 +180,7 @@ plain defaults, whatever the CLI's usage text says. Export the variables you nee
    if they differ.
 
    On a router you only reach through WinBox or WebFig, there is a fourth way with no CLI on your
-   side at all: `mikroscope plan --rsc --remote-image jmrplens/mikroscope-agent:1.0.0 --out install.rsc`
+   side at all: `mikroscope plan --rsc --remote-image jmrplens/mikroscope-agent:1.0.9 --out install.rsc`
    writes the same commands, in the same order and with the same tags, as a RouterOS script to
    paste into the terminal or `/import`. [Installing the agent](https://jmrp.io/docs/mikroscope/install/) has that path
    and its two caveats in full.
@@ -287,8 +288,9 @@ plain defaults, whatever the CLI's usage text says. Export the variables you nee
    [the RouterOS API tier](https://jmrp.io/docs/mikroscope/sinks/api-tier/) says which of those the agent can read
    itself. Without those variables the API tier is disabled with a warning and the kernel tier still runs. Both go to a Prometheus
    exposition on `:9124` and to InfluxDB 3. From there,
-   [import and check](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/) sets up the two Grafana dashboards,
-   the datasource field an InfluxDB 3 import needs and the two Prometheus scrape jobs.
+   [import and check](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/) sets up the Grafana dashboards — five
+   of them, one per store — and the datasource field an InfluxDB 3 import needs. One scrape job is
+   enough: the collector's.
 
 ### What the chart shows
 

@@ -125,7 +125,7 @@ its table, names ports without asking RouterOS:
   no port are absent from it;
 - the collector's `link-flap` detection is keyed by the port name and reads the
   same classification: a flap is `link-up` and `link-down` records on one port,
-  counted, not the text parsed a second time;
+  counted, through the same classifier rather than by re-reading the text;
 - `mikroscope status` prints the board and whether it has a map, for example
   `eth1 (ether2)`; `/healthz` and `/capabilities` carry the board, and
   `/capabilities` and `mikroscope_device_info` carry the table's evidence string
@@ -158,9 +158,10 @@ The kinds, and the record shapes the RouterOS kernel prints (RB5009, kernel
 
 The agent classifies at read time and ships `kind` in the record, and a
 collector in front of an older agent whose records carry none classifies them
-itself with the same function. That is the case on the reference router today:
-the agent running there has not been redeployed with this build, so its
-`/metrics` carries no `kind` label yet and the collector does the work.
+itself with the same function. That path exists for a collector in front of an agent
+older than 1.0.0, which is when `kind` began shipping in the record; the
+reference router's agent has carried it since, and was upgraded to 1.0.9 on
+2026-09-19.
 
 **Four records are not four faults.** A normal link-up is followed by
 `stp-blocking`, `stp-learning` and `stp-forwarding` as the bridge walks the port

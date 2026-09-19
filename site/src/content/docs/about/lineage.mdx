@@ -31,8 +31,8 @@ API client come from that repository, under its MIT licence.
 | `internal/router` tests | cs-routeros-bouncer `cmd/perfmon`, the containment tests              | Adapted to mikroscope's option names and to two rules of its own: quoted ports, and the `--expose` pair as part of the plan                                            |
 | `internal/image`        | cs-routeros-bouncer `cmd/perfmon/image.go`                            | Reworked for the agent's name, the ARM variant (arm images declare `v7`) and a build goreleaser can reuse                                                              |
 | `internal/chart`        | cs-routeros-bouncer `cmd/perfmon/chart.go`                            | The original drew its palette from a docs theme; this one carries its own, validated for the light surface (adjacent-pair CVD ΔE 9.1, normal-vision 22.9)              |
-| `internal/rosapi`       | cs-routeros-bouncer `internal/rosapi`, taken 2026-09-11               | Only the import path                                                                                                                                                   |
-| `.golangci.yml`         | cs-routeros-bouncer, itself based on `maratori/golangci-lint-config`  | The module path                                                                                                                                                        |
+| `internal/rosapi`       | cs-routeros-bouncer `internal/rosapi`, taken 2026-09-11               | The import path; and a Windows-only test skip added in 1.0.1, nothing in the shipped code                                                                                                                                                   |
+| `.golangci.yml`         | ghchronicle and gitlab-mcp-server, themselves based on `maratori/golangci-lint-config` | The module path                                                                                                                                                        |
 
 </ScrollTable>
 
@@ -58,7 +58,8 @@ follows its suite.
 ## The RouterOS API client
 
 `internal/rosapi` has two generations of lineage. mikroscope's copy is
-cs-routeros-bouncer's, with nothing modified for mikroscope; mikroscope uses it
+cs-routeros-bouncer's, with nothing modified in the shipped code — 1.0.1 added one
+Windows-only skip to `client_test.go`, and that is the whole of it. mikroscope uses it
 for the API tier's reads, for `mark --log-markers`, and for the `/tool fetch`
 relay. The bouncer's copy is
 itself a pruned vendoring of

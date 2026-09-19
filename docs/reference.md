@@ -104,7 +104,7 @@ The checks doctor runs:
 
 | Flag             | Default                         | Variable                  | Accepted                                                   | Meaning                                                                                                                                                                                                                                                                                                         |
 | ---------------- | ------------------------------- | ------------------------- | ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--router`       | none, required                  | `MIKROSCOPE_ROUTER`       | `user@host` or an ssh config alias                         | ssh target; every verb but `plan`, `install --dry-run` and `image` fails without it                                                                                                                                                                                                                             |
+| `--router`       | none, required                  | `MIKROSCOPE_ROUTER`       | `user@host` or an ssh config alias                         | ssh target; every verb but `plan`, `install --dry-run`, `upgrade --dry-run` and `image` fails without it                                                                                                                                                                                                                             |
 | `--ssh-port`     | empty (ssh config)              | `MIKROSCOPE_SSH_PORT`     |                                                            | ssh port                                                                                                                                                                                                                                                                                                        |
 | `--ssh-key`      | empty (agent or ssh config)     | `MIKROSCOPE_SSH_KEY`      |                                                            | ssh identity file                                                                                                                                                                                                                                                                                               |
 | `--name`         | `mikroscope`                    | `MIKROSCOPE_NAME`         | `^[A-Za-z0-9][A-Za-z0-9_.-]{0,31}$`                        | container name; tags every object as `mikroscope:<name> (managed by mikroscope)`                                                                                                                                                                                                                                |
@@ -121,9 +121,9 @@ The checks doctor runs:
 | `--rsc`          | `false`                         | none                      |                                                            | `plan`: write a RouterOS script that installs from the router itself, instead of the listing                                                                                                                                                                                                                    |
 | `--port`         | `9123`                          | none                      | 1–65535                                                    | agent HTTP port on the veth                                                                                                                                                                                                                                                                                     |
 | `--rate`         | `10`                            | none                      | 1–100                                                      | sampler rate in Hz (envlist `RATE_HZ`); 10, 50 and 100 Hz measured lossless on the RB5009 ([rate ceiling](https://jmrp.io/docs/mikroscope/cost/rate-ceiling/))                                                                                                                                                                      |
-| `--buffer`       | `300`                           | none                      | 10–3600                                                    | ring buffer in seconds (envlist `BUFFER_S`)                                                                                                                                                                                                                                                                     |
+| `--buffer`       | `60`                            | none                      | 10–3600                                                    | ring buffer in seconds (envlist `BUFFER_S`)                                                                                                                                                                                                                                                                     |
 | `--memory-max`   | `64M`                           | none                      | `^\d{1,6}[KMG]?$`                                          | container cgroup `memory-max`, RouterOS syntax                                                                                                                                                                                                                                                                  |
-| `--mem-limit-mb` | `40`                            | none                      | 8–1024                                                     | agent Go soft memory limit in MiB (envlist `MEM_LIMIT_MB`); must fit the ring, rate × buffer × about 2.4 kB, with room for the garbage collector                                                                                                                                         |
+| `--mem-limit-mb` | `40`                            | none                      | 8–1024                                                     | agent Go soft memory limit in MiB (envlist `MEM_LIMIT_MB`); must fit the ring, rate × buffer × about 3.5 kB, with room for the garbage collector                                                                                                                                         |
 | `--capture-mb`   | `4`                             | none                      | 0–256                                                      | triggered-capture budget in MiB (envlist `CAPTURE_MB`); `0` turns captures off                                                                                                                                                                                                                                  |
 | `--triggers`     | empty (the agent's default set) | none                      | see [triggered capture](https://jmrp.io/docs/mikroscope/record/triggers/)      | trigger conditions, comma-separated (envlist `TRIGGERS`)                                                                                                                                                                                                                                                        |
 | `--floor-hz`     | `0`                             | none                      | 0–1000                                                     | one cadence for every level source, in Hz (envlist `FLOOR_HZ`); `0` keeps the per-source floors; equal to `--rate` reads and emits every source every tick                                                                                                                                                      |
@@ -131,7 +131,7 @@ The checks doctor runs:
 | `--token`        | empty                           | `MIKROSCOPE_TOKEN`        | `^[A-Za-z0-9_.-]{0,128}$`                                  | bearer token the agent requires (envlist `TOKEN`); mandatory with `--expose`                                                                                                                                                                                                                                    |
 | `--expose`       | `false`                         | none                      | needs `--lan-address` and `--token`                        | dst-nat the agent port on the router's LAN address; adds two tagged firewall rules                                                                                                                                                                                                                              |
 | `--lan-address`  | empty                           | `MIKROSCOPE_LAN_ADDRESS`  | an IPv4 address                                            | the router's LAN address for `--expose`                                                                                                                                                                                                                                                                         |
-| `--dry-run`      | `false`                         | none                      |                                                            | `install`: print the listing and write nothing                                                                                                                                                                                                                                                                  |
+| `--dry-run`      | `false`                         | none                      |                                                            | `install` and `upgrade`: print the listing and write nothing                                                                                                                                                                                                                                                                  |
 | `--yes`          | `false`                         | none                      |                                                            | `install`, `upgrade`: do not ask before writing                                                                                                                                                                                                                                                                 |
 | `--no-doctor`    | `false`                         | none                      |                                                            | `install`: skip the preflight checks                                                                                                                                                                                                                                                                            |
 | `--out`          | `mikroscope-agent-<arch>.tar`   | none                      |                                                            | `image`: output path of the tar. `plan --rsc`: where the script is written; empty writes it to standard output                                                                                                                                                                                                  |
@@ -234,7 +234,7 @@ does nothing. The table marks which verb reads each flag.
 | `--for`         | `0` (until Ctrl-C)           | none                  | `record`, `forward`         | run this long, then stop                                                                                                                                                                                                                                                                                               |
 | `--from-start`  | `false`                      | none                  | `record`                    | backfill everything the agent's ring holds before going live                                                                                                                                                                                                                                                           |
 | `--poll`        | `500ms`                      | none                  | `record`, `forward`         | how often the agent's ring is pulled                                                                                                                                                                                                                                                                                   |
-| `--batch`       | `0`                          | none                  | `record`, `forward`         | samples per pull; `0` is twice what one `--poll` produces at the agent's rate, never under 20. The relay caps a pull at 18. A pull repeats until it comes back short                                                                                                                                                   |
+| `--batch`       | `0`                          | none                  | `record`, `forward`         | samples per pull; `0` is twice what one `--poll` produces at the agent's rate, never under 20. The relay caps a pull at 13. A pull repeats until it comes back short                                                                                                                                                   |
 | `--transport`   | `auto`                       | none                  | `record`, `forward`         | `auto` (direct, then relay), `direct` (HTTP to the veth) or `relay` (`/tool fetch` over the RouterOS API; each call returns at most 64 512 B and took either ~3 ms or ~1 s on the RB5009, RouterOS 7.24.2, 2026-09-11; see [reaching the agent](https://jmrp.io/docs/mikroscope/install/reaching-the-agent/)) |
 | `--log-markers` | `false`                      | none                  | `record`, `mark`            | `record`: after recording, pull the router log over the API and append the matching lines to `<out>.markers.csv`. `mark`: add the log lines of the recording's window                                                                                                                                                  |
 | `--topics`      | `system,interface,container` | none                  | `record`, `mark`            | log topics kept as markers with `--log-markers`                                                                                                                                                                                                                                                                        |
@@ -282,8 +282,10 @@ refuses to start without at least one sink.
 | `--labels-every`    | `5m`    | none                    | re-read what each interface is (label from its comment, type, interface lists, bridge, MTU); read once before the first kernel pull and again this often; `0` takes the 5 min default                                                                                                                                                                                                                                                                         |
 | `--no-health`       | `false` | none                    | skip `/system/health`. `slow` sets it                                                                                                                                                                                                                                                                                                                                                                                                                         |
 
-Without `--api` and `--api-user`, `forward` logs `api tier disabled` and runs
-the kernel tier alone; that is a warning, not a failure.
+Without `--api` and `--api-user`, `forward` runs the kernel tier alone. With them,
+a first dial that fails logs `api tier: not connected yet, will keep trying: …`
+and the tier connects on the first round the router answers — since 1.0.9 it is
+never disabled for the life of the process.
 
 #### Sinks
 
@@ -315,8 +317,9 @@ built stops `forward` before it pulls anything.
 On exit `forward` prints the number of kernel samples, API samples, gaps and
 skew jumps, and for each sink how many events it wrote, dropped and failed
 on. While it runs it logs a line on standard error once a minute with the
-kernel, API, gap, trigger and detection counts, the last sequence number, and
-each sink's written, dropped and error counts.
+kernel, API, gap, trigger and detection counts, the agent-restart count, the last
+sequence number, and each sink's written, dropped and error counts. When the API
+tier has failed or reconnected it adds `api: N failed round(s), N reconnect(s)`.
 
 The collector's Prometheus sink sizes its busy-tick histogram for 10 Hz
 whatever rate the agent runs at (`promHistogramRateHz` in
@@ -335,8 +338,8 @@ mikroscope dashboards check  --store influxdb --datasource-uid <uid> --window 1h
 
 | Flag               | Default         | Variable      | Read by           | Meaning                                                                                          |
 | ------------------ | --------------- | ------------- | ----------------- | ------------------------------------------------------------------------------------------------ |
-| `--out`            | `dashboards`    | none          | `gen`             | output directory for `mikroscope-<store>.json` and `mikroscope-alerts-<store>.yaml`, both stores |
-| `--store`          | `influxdb`      | none          | `import`, `check` | `influxdb` or `prometheus`                                                                       |
+| `--out`            | `dashboards`    | none          | `gen`             | output directory for `mikroscope-<store>.json` (five) and `mikroscope-alerts-<store>.yaml` (three) |
+| `--store`          | `influxdb`      | none          | `import`, `check` | `influxdb`, `prometheus`, `postgres`, `graphite` or `elasticsearch`                                                                       |
 | `--grafana`        | empty           | `GRAFANA_URL` | `import`, `check` | Grafana base URL; the token comes only from `GRAFANA_TOKEN`                                      |
 | `--datasource-uid` | empty, required | none          | `import`, `check` | the datasource UID bound to `DS_MIKROSCOPE`                                                      |
 | `--no-probe`       | `false`         | none          | `import`, `check` | do not ask the datasource which measurements it holds; use the compiled defaults                 |
@@ -400,12 +403,12 @@ at all. [Commands and flags](https://jmrp.io/docs/mikroscope/reference/cli/) has
 
 | Variable                  | Flag             | Read by                                               | Default in the code          | Value in `.env.example` |
 | ------------------------- | ---------------- | ----------------------------------------------------- | ---------------------------- | ----------------------- |
-| `MIKROSCOPE_ROUTER`       | `--router`       | `doctor`, `install`, `upgrade`, `uninstall`, `status` | none (required)              | empty                   |
+| `MIKROSCOPE_ROUTER`       | `--router`       | `doctor`, `install`, `upgrade`, `uninstall`, `status` | none (required)              | set                   |
 | `MIKROSCOPE_SSH_PORT`     | `--ssh-port`     | the same                                              | ssh config                   | `22`                    |
 | `MIKROSCOPE_SSH_KEY`      | `--ssh-key`      | the same                                              | ssh agent or config          | empty                   |
 | `MIKROSCOPE_ARCH`         | `--arch`         | the deployment verbs                                  | `arm64`                      | `arm64`                 |
-| `MIKROSCOPE_AGENT_TAR`    | `--agent-tar`    | `plan`, `install`, `upgrade`, `image`                 | empty (build the agent here) | not in the file         |
-| `MIKROSCOPE_REMOTE_IMAGE` | `--remote-image` | `plan`, `install`, `upgrade`                          | empty (upload a tar)         | not in the file         |
+| `MIKROSCOPE_AGENT_TAR`    | `--agent-tar`    | `plan`, `install`, `upgrade`, `image`                 | empty (build the agent here) | commented out           |
+| `MIKROSCOPE_REMOTE_IMAGE` | `--remote-image` | `plan`, `install`, `upgrade`                          | empty (upload a tar)         | commented out           |
 | `MIKROSCOPE_NAME`         | `--name`         | the deployment verbs                                  | `mikroscope`                 | commented out           |
 | `MIKROSCOPE_VETH`         | `--veth`         | the deployment verbs                                  | `veth-mikroscope`            | `veth-mikroscope`       |
 | `MIKROSCOPE_SUBNET`       | `--subnet`       | the deployment verbs, `record`, `forward`             | `172.30.10.0/30`             | `172.30.10.0/30`        |
@@ -452,8 +455,7 @@ user](https://jmrp.io/docs/mikroscope/security/api-user/) has the policy that us
 Setting a sink's URL variable is enough to turn that sink on: `forward` builds
 every sink whose flag ends up non-empty, from the command line or from the
 variable. Every one of these names carries the `MIKROSCOPE_` prefix: a bare
-`LOKI_URL` is read by nothing, and `.env.example` says so beside
-`MIKROSCOPE_LOKI_URL`.
+`LOKI_URL` is read by nothing.
 
 ### Credentials that have no flag
 
@@ -474,9 +476,7 @@ is read from the environment only.
 
 `dashboards import` and `dashboards check` read `GRAFANA_URL` (the default of
 `--grafana`) and `GRAFANA_TOKEN`. Neither has the `MIKROSCOPE_` prefix.
-`.env.example` sets `GRAFANA_URL` twice, once empty in its LAN-services block
-and once commented out in the Grafana block, and says the token never goes in
-the file.
+`.env.example` carries both, commented out, in its Grafana block.
 
 ### The agent's envlist
 
@@ -488,7 +488,7 @@ the `container` topic, and exit with status 2.
 | Variable               | Agent default                                      | Accepted                    | Meaning                                                                                                                                     |
 | ---------------------- | -------------------------------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | `RATE_HZ`              | `10`                                               | 1–100                       | sampler rate                                                                                                                                |
-| `BUFFER_S`             | `300`                                              | 10–3600                     | ring length in seconds                                                                                                                      |
+| `BUFFER_S`             | `60`                                               | 10–3600                     | ring length in seconds                                                                                                                      |
 | `PORT`                 | `9123`                                             | 1–65535                     | HTTP port                                                                                                                                   |
 | `ADDR`                 | empty                                              | an address                  | bind address. Empty binds `:PORT`, every address in the container's network namespace; `install` always sets it to the agent's veth address |
 | `TOKEN`                | empty                                              |                             | when set, every path but `/healthz` requires `Authorization: Bearer <token>`                                                                |
@@ -512,11 +512,11 @@ The names `SOURCES` accepts are the optional sources `/capabilities` reports:
 compares are on [triggered capture](https://jmrp.io/docs/mikroscope/record/triggers/).
 
 Before it listens, the agent checks the ring against the container's own
-`memory.max`: `RATE_HZ × BUFFER_S × 2 560 B` plus `CAPTURE_MB` must fit, or it
+`memory.max`: `RATE_HZ × BUFFER_S × 3 456 B` plus `CAPTURE_MB` must fit, or it
 refuses to start and names the three variables and `--memory-max`. If that
 figure is more than half of `MEM_LIMIT_MB`, it starts and logs a warning with
 the limit to raise to. 2 560 B is not itself a measurement: it is the mean
-line measured on the RB5009 with every source of that date (2 439 B, 4 cores,
+line measured on the RB5009 with every source of that date (3 230 B, 4 cores,
 `IRQ_TOP_K` 8, RouterOS 7.24.2, 2026-09-12) rounded up. A board with more cores
 or more interrupt lines writes longer lines, so the check errs open. When the
 agent cannot read its `memory.max`, the refusal check does not run.
@@ -532,10 +532,10 @@ The entries install writes into the agent's envlist:
 | --- | --- | --- | --- |
 | `MIKROSCOPE_TAG` | always | `--name` | the ownership marker `mikroscope:<name> (managed by mikroscope)`, written first and removed last; the agent ignores it |
 | `RATE_HZ` | always | `--rate`, default `10`, 1–100 | the sampler rate, in Hz |
-| `BUFFER_S` | always | `--buffer`, default `300`, 10–3600 | the ring's length, in seconds |
+| `BUFFER_S` | always | `--buffer`, default `60`, 10–3600 | the ring's length, in seconds |
 | `PORT` | always | `--port`, default `9123`, 1–65535 | the agent's HTTP port |
 | `ADDR` | always | `--subnet` | the agent's address, the `.2` of the /30; the agent binds only there |
-| `MEM_LIMIT_MB` | always | `--mem-limit-mb`, default `40`, 8–1024 | the agent's Go soft memory limit, in MiB |
+| `MEM_LIMIT_MB` | always | `--mem-limit-mb`, 8–1024 | the agent's Go soft memory limit, in MiB; derived from the ring since 1.0.6 (rate × buffer × line, × 2.5, floored at 16 MiB) rather than a flat number |
 | `FLOOR_HZ` | only when above 0 | `--floor-hz`, default `0`, 0–1000 | one cadence for every level source, in Hz |
 | `CAPTURE_MB` | always | `--capture-mb`, default `4`, 0–256 | the triggered-capture budget, in MiB; `0` turns captures off |
 | `TRIGGERS` | only when set | `--triggers` | the trigger conditions; unset, the agent uses its default set |
@@ -543,23 +543,34 @@ The entries install writes into the agent's envlist:
 
 > **The agent's defaults and install's defaults are not the same**
 >
-> An agent started with no envlist entry uses a 14 MiB soft memory limit. `install` always writes
-> `MEM_LIMIT_MB=40`, and the container's `memory-max` is `64M`, because a 300 s ring at 10 Hz holds
-> about 7.3 MB and a 14 MiB limit kept the garbage collector running continuously on the RB5009: 9.38 % of one core against 1.39 % with room, both with the ring full, measured
-> on RouterOS 7.24.2 on 2026-09-12. `IRQ_TOP_K`, `CAPTURE_PRE_S`, `CAPTURE_POST_S`, `CAPTURE_POLICY`,
+> An agent started with no envlist entry uses a 14 MiB soft memory limit. The ring is **60 s** by default, not the 300 it was until 1.0.6. What it buys is how long the
+> collector may be absent before samples are lost, and it is not a window anybody reads — the
+> collector drains it twice a second. Measured on the reference deployment over 24 hours on
+> 2026-09-17: the largest interruption in delivery was 114.5 s, and it was self-inflicted (a
+> container swap plus the minute the collector takes to notice a restarted agent); in ordinary
+> running the collector never falls behind. 60 s covers a restart of either side on a LAN and costs
+> 2.0 MiB of ring at 10 Hz instead of 9.9. A link that drops for longer raises it with `--buffer`,
+> and the memory limit follows because it is derived from the ring.
+>
+> `install` **derives**
+> `MEM_LIMIT_MB` from the ring — rate × buffer × the line size, times 2.5, floored at 16 MiB and
+> capped at three quarters of `memory-max` — so the default install writes `MEM_LIMIT_MB=16` for a
+> 60 s ring at 10 Hz, where it used to write a flat 40. A fixed number cannot be right for every
+> rate: the same 40 left 8 MiB unused at 10 Hz and is below the ring itself at 50 Hz.
+>
+> The factor is measured, not chosen. On the reference RB5009 (RouterOS 7.24.2, 10 Hz, 300 s, every
+> source on) on 2026-09-17, four limits over four windows of about 12 000 samples each:
+>
+> | limit          | ring multiple | RSS       | CPU per sample | |
+> | -------------- | ------------- | --------- | -------------- | ------------------------ |
+> | 40 MiB         | 4.0×          | 32.9 MiB  | 2 657 µs       | the limit never binds    |
+> | 25 MiB (today) | 2.5×          | ~26 MiB   | ~2 780 µs      | no measurable cost       |
+> | 21 MiB         | 2.1×          | 23.5 MiB  | 3 250 µs       | +22 %, and climbing      |
+> | 18 MiB         | 1.8×          | 20.4 MiB  | 14 800 µs      | +457 %, worst tick 52 ms |
+>
+> The same cliff was measured from the other side on 2026-09-12: 9.38 % of one core at 14 MiB against 1.39 % with room, both with the ring full. `IRQ_TOP_K`, `CAPTURE_PRE_S`, `CAPTURE_POST_S`, `CAPTURE_POLICY`,
 > `TRIGGER_REFRACTORY_S`, `SOURCES`, `PROC_ROOT` and `SYS_ROOT` have no flag, so an installed agent
 > runs with their defaults.
-
-### In .env.example but not read by the code
-
-`.env.example` is also the development template for the project's own devices,
-so it carries names that no binary reads. Setting them changes nothing:
-
-- `MIKROSCOPE_ROUTEROS`, the RouterOS version of the reference device.
-- `OPERATOR_HOST_IP`, the operator host for push-sink and probe tests.
-- The `HEXS_*` block (`HEXS_ROUTER`, `HEXS_SSH_PORT`, `HEXS_SSH_KEY`,
-  `HEXS_ARCH`, `HEXS_API_ADDR`, `HEXS_API_USER`, `HEXS_API_PASSWORD`), kept
-  for a hEX S that has not arrived.
 
 ### See also
 
@@ -623,7 +634,7 @@ opens](https://jmrp.io/docs/mikroscope/security/expose/) says why.
 | `GET`    | `/capabilities`  | yes   | JSON: the kernel, the board, the sources, the device's own ceilings and each source's cadence |
 | `GET`    | `/snapshot`      | yes   | NDJSON, then closes: the last N seconds, or up to N samples after a sequence number           |
 | `GET`    | `/stream`        | yes   | NDJSON, chunked and open: backfill from a sequence number, then live                          |
-| `GET`    | `/metrics`       | yes   | Prometheus text exposition, `text/plain; version=0.0.4`                                       |
+| `GET`    | `/sampler`       | yes   | JSON: what only the agent can count about itself — ticks, slips, triggers, captures           |
 | `GET`    | `/captures`      | yes   | JSON: the capture index                                                                       |
 | `GET`    | `/captures/{id}` | yes   | NDJSON: one capture header line, then the sample lines verbatim                               |
 | `DELETE` | `/captures/{id}` | yes   | `204`, and the capture's bytes return to the budget                                           |
@@ -711,13 +722,13 @@ kinds the `seconds` form does not: a gap line first when `since` is older than
 the ring, and a trigger line before each sample a capture condition fired on.
 `max` exists for the relay, because `/tool fetch output=user` returns at
 most 64 512 B on RouterOS 7.24.2 and truncates the rest silently; the relay
-asks for at most 18 lines.
+asks for at most 13 lines.
 
 > **A large /snapshot is not a free way to read the cost**
 >
-> A 60 s `/snapshot` at 10 Hz makes the agent hand over about 600 lines, around 1.5 MB, and the
+> A 60 s `/snapshot` at 10 Hz makes the agent hand over about 600 lines, around 1.9 MB, and the
 > `self.cpu_us` inside those samples includes the cost of serving them. Read the agent's cost from
-> `/metrics` instead: [the cost of the observer](https://jmrp.io/docs/mikroscope/cost/) has the procedure.
+> the collector's `/metrics` instead: [the cost of the observer](https://jmrp.io/docs/mikroscope/cost/) has the procedure.
 
 ### `GET /stream`
 
@@ -812,13 +823,26 @@ and `bus-cycles`. The slab caches it keeps are `nf_conntrack`,
 `sock_inode_cache`, `dst_cache`, `ip_dst_cache`, `kmalloc-1k` and
 `kmalloc-2k`, where the kernel has them.
 
-### `GET /metrics`
+### `GET /sampler`
 
-The Prometheus text exposition, built from cumulative counters that nothing
-resets on a scrape, so `rate()` over any range is correct and two scrapers
-see the same values. The text is built in memory and written after the
-counters' lock is released, so a slow scraper cannot hold up the sampler.
-[Prometheus metric families](https://jmrp.io/docs/mikroscope/reference/metrics/) lists every family.
+What only the agent can count about itself, as JSON: ticks taken, ticks
+slipped, and what the trigger evaluator has fired, suppressed and refused,
+with what it is holding right now and the budget those captures pin. Every
+configured condition is present from the first read, at 0 until it fires — a
+counter that appears with its first event reads as a gap in the series rather
+than as a quiet router.
+
+The collector reads it at start and then on the same one-minute cadence it
+re-measures the clock skew on, and hands it to every sink. That is what makes
+these figures reachable at all: they are not per-tick, so they cannot ride in
+a sample, and until 1.0.5 the only way to see them was to scrape the agent.
+
+**The agent serves no `/metrics`.** It did until 1.0.4, and a Prometheus
+deployment was documented as scraping the agent as well as the collector. It
+no longer does: the exposition is the collector's, built from the samples and
+from this endpoint, and it carries every family the dashboards ask for. The
+agent is a sampler and a ring — rendering is not its job, and not folding
+every sample into counters and histograms is memory it does not spend.
 
 ### Captures
 
@@ -885,56 +909,53 @@ capture](https://jmrp.io/docs/mikroscope/record/triggers/).
 
 - [Reaching the agent](https://jmrp.io/docs/mikroscope/install/reaching-the-agent/): the three ways a host gets to
   these paths.
-- [Prometheus metric families](https://jmrp.io/docs/mikroscope/reference/metrics/): what `/metrics` carries.
+- [Prometheus metric families](https://jmrp.io/docs/mikroscope/reference/metrics/): what the collector's `/metrics` carries.
 - [Triggered capture](https://jmrp.io/docs/mikroscope/record/triggers/): the conditions behind `/captures`.
 - [What --expose opens](https://jmrp.io/docs/mikroscope/security/expose/): when the token becomes mandatory.
 
 ## Prometheus metric families
 
-Every family on the agent’s /metrics and on the collector’s --prom exposition, grouped by source, with its type, its labels and when it is absent.
+Every family on the collector’s --prom exposition, grouped by source, with its type, its labels and when it is absent.
 
 Source: <https://jmrp.io/docs/mikroscope/reference/metrics/>
 
 This page lists every metric family mikroscope exposes in Prometheus text
 format: its name, its type, its labels, what it counts, and when it is not
-there. It is read from `internal/agent/metrics.go`, `internal/agent/capture.go`
+there. It is read from `internal/expo/expo.go`, `internal/agent/capture.go`
 and `internal/sinks/prometheus.go`. A family is listed under the source it
 comes from, because that is what decides whether a given board has it.
 
-### Two expositions, one renderer
+### One exposition, and where each family comes from
 
-The agent serves `/metrics` on the router, and `forward --prom :9124` serves
-one on the collector host. Both are written by the same `Totals` code: the
-collector feeds it the samples it pulled, so a deployment reached only through
-the relay still gets scrape-independent families. They are not identical.
+There is one exposition: the collector's, served by `forward --prom :9124`.
+The agent served one too until 1.0.4; since 1.0.5 it does not, and everything
+below is what the collector carries.
 
-| Families                                                                                                                               | Agent `:9123/metrics`              | Collector `--prom`                                  |
-| -------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- | --------------------------------------------------- |
-| everything recomputed from samples: CPU, windows, runs, receive path, memory, PMU, sensors, flash, disk, kernel log, observer counters | yes                                | yes                                                 |
-| device facts (`mikroscope_device_info`, ceilings, cadences)                                                                            | yes                                | yes, once the collector has fetched `/capabilities` |
-| the sampler's timing histograms and `mikroscope_slipped_total`                                                                         | yes                                | no                                                  |
-| trigger and capture families                                                                                                           | yes, while `CAPTURE_MB` is above 0 | no                                                  |
-| `mikroscope_collector_*`, `mikroscope_derived_*`                                                                                       | no                                 | yes                                                 |
-| `mikroscope_api_*`                                                                                                                     | no                                 | yes, once the API tier has delivered a sample       |
+| Families                                                                                                                              | Where the collector gets them                            |
+| ------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| everything recomputed from samples: CPU, windows, runs, receive path, memory, PMU, sensors, flash, disk, kernel log, observer counters | the samples it pulled, folded by the same `Totals` code   |
+| the sampler's timing histograms (`mikroscope_tick_*`)                                                                                 | `dt_ns`, `wake_ns` and `read_ns`, which ride in each sample |
+| `mikroscope_slipped_total`, `mikroscope_sampler_ticks_total`                                                                          | the agent's `/sampler`, read at start and every minute    |
+| `mikroscope_sampler_ticks_total`                                                                                                      | ticks the agent took since it started, as the agent counts them|
+| trigger and capture families                                                                                                          | the same, while `CAPTURE_MB` is above 0                   |
+| device facts (`mikroscope_device_info`, ceilings, cadences)                                                                           | `/capabilities`, re-read every five minutes               |
+| `mikroscope_collector_*`, `mikroscope_derived_*`                                                                                      | its own: the derive stage and its counters                |
+| `mikroscope_api_*`                                                                                                                    | the API tier, once it has delivered a sample              |
 
-The collector leaves `mikroscope_slipped_total` out rather than writing 0,
-because a 0 there would be a claim about a sampler it never ran. To have both
-sets in one Prometheus, scrape the collector for everything and the agent only
-for what the collector cannot produce. Scraping the agent without the keep
-list doubles every counter the collector also exposes:
+A deployment reached only through the relay gets all of it, because none of it
+depends on scraping the router.
 
 ```yaml
 - job_name: "mikroscope"
   scrape_interval: 5s
   static_configs: [{ targets: ["<collector host>:9124"] }]
-- job_name: "mikroscope-agent"
-  scrape_interval: 5s
-  static_configs: [{ targets: ["172.30.10.2:9123"] }]
-  metric_relabel_configs:
-    - source_labels: [__name__]
-      regex: "mikroscope_(tick_.*|trigger_.*|capture.*|captures_held|slipped_total)"
-      action: keep
 ```
+
+Two things changed with the agent's exposition. `mikroscope_slipped_total` is
+no longer withheld — the collector used to leave it out rather than write a 0
+about a sampler it never ran, and now it reports the number the agent gives
+it. And the counters that are not per-tick are as fresh as that one-minute
+read rather than as fresh as the scrape.
 
 #### What the collector's copy does differently
 
@@ -1027,8 +1048,8 @@ cannot tell those apart.
 
 ### The sampler's own timing
 
-Agent only. A sample is read over a stretch of time, not at an instant, and
-these families measure that stretch.
+Rendered by the collector from each sample's `self` block. A sample is read over
+a stretch of time, not at an instant, and these families measure that stretch.
 
 | Family                                 | Type      | Labels | Meaning                                                                                                                          |
 | -------------------------------------- | --------- | ------ | -------------------------------------------------------------------------------------------------------------------------------- |
@@ -1152,7 +1173,7 @@ record text is never a label.
 | `mikroscope_kmsg_port_records_total` | counter | `port`, `kind`, `level`                                                     | records whose text named a port: a subset of the family above. `kind` is `link-up`, `link-down`, `stp-<state>` (`blocking`, `listening`, `learning`, `forwarding`, `disabled`), `own-address` — the bridge received a frame carrying its own MAC as source address, the layer-2 loop signature — or `other`; only non-zero triples are written |
 
 Both `mikroscope_kmsg_records_total` and `mikroscope_kmsg_dropped_total` are
-rendered from the start, at 0, on both expositions when the capabilities list
+rendered from the start, at 0, on the exposition when the capabilities list
 `kmsg` as a source, so a quiet router reads as silent and not as unreadable.
 Without that, they appear with the first record. The port family appears with
 the first record that names a port.
@@ -1214,7 +1235,7 @@ agent runs shows after it restarts.
 
 ### Triggers and captures
 
-Agent only, and only while `CAPTURE_MB` is above 0. Every
+Rendered by the collector, and only while `CAPTURE_MB` is above 0. Every
 condition-and-reason pair is written from the start at 0.
 
 | Family                                  | Type    | Labels                                         | Meaning                                                                                                       |
@@ -1638,14 +1659,14 @@ produces in one sample comes near 2^63.
 
 | Data                            | InfluxDB                                                                                                                            | SQL                                                                               |
 | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| CPU frequency                   | `mikroscope_cpufreq`                                                                                                                | not written                                                                       |
-| per-CPU interrupts and softirqs | `mikroscope_irq_cpu`, `mikroscope_softirq`                                                                                          | not written; `mikroscope_irq` has the sum only                                    |
-| vmstat events and levels        | `mikroscope_vm`, `mikroscope_vm_level`                                                                                              | only `pgfault` and `pgmajfault`, on `mikroscope_stat`                             |
-| PMU counters                    | `mikroscope_perf`                                                                                                                   | not written                                                                       |
-| sample sequence and clocks      | `mikroscope_sample`                                                                                                                 | `seq` on `mikroscope_self`; `dt_ns` on `mikroscope_cpu`                           |
-| `/proc/meminfo`                 | nineteen fields on `mikroscope_mem`                                                                                                 | five columns on `mikroscope_mem`                                                  |
+| CPU frequency                   | `mikroscope_cpufreq`                                                                                                                | `mikroscope_cpufreq`                                                                       |
+| per-CPU interrupts and softirqs | `mikroscope_irq_cpu`, `mikroscope_softirq`                                                                                          | `mikroscope_irq_cpu`, `mikroscope_softirq`                                    |
+| vmstat events and levels        | `mikroscope_vm`, `mikroscope_vm_level`                                                                                              | `mikroscope_vm`, `mikroscope_vm_level`                             |
+| PMU counters                    | `mikroscope_perf`                                                                                                                   | `mikroscope_perf`                                                                       |
+| sample sequence and clocks      | `mikroscope_sample`                                                                                                                 | `mikroscope_sample`                           |
+| `/proc/meminfo`                 | nineteen fields on `mikroscope_mem`                                                                                                 | nineteen columns on `mikroscope_mem`                                                  |
 | kernel log                      | counts per level, port and kind, `mikroscope_kmsg`; no text                                                                         | every record with its text, `port` and `kind`, `mikroscope_event`; no counts      |
-| observer extras                 | `cgroup_mem_max`, `resets`, `kmsg_dropped` on `mikroscope_self`                                                                     | not written                                                                       |
+| observer extras                 | `cgroup_mem_max`, `resets`, `kmsg_dropped` on `mikroscope_self`                                                                     | all but `cgroup_mem_max`                                                                       |
 | slab ceiling                    | field `limit`                                                                                                                       | column `limit_objs`; population `active` against `active_objs`                    |
 | free lists                      | one row per zone, a field per order                                                                                                 | one row per zone and order                                                        |
 | what an interface is            | `label`, `type`, `role`, `bridge` as tags on `mikroscope_api_iface` and `mikroscope_api_ifcounters`, beside `mikroscope_api_ifinfo` | `label` alone on `mikroscope_api_iface`; the rest through `mikroscope_api_ifinfo` |
@@ -1663,12 +1684,13 @@ produces in one sample comes near 2^63.
 > interrupt line, no privileged sources), not on a router: a kernel event renders to 1 375 B of SQL
 > against 716 B of line protocol, an API event to 1 138 B against 608 B, and 10 Hz plus the 1 Hz API
 > tier writes about 14 KiB/s after a 5.6 KiB header; with the privileged sources the same kernel
-> event grows to 2 749 B. The figures do not cover fourteen of the thirty-two tables the sink
-> writes — `load`, `stat`, `buddy`, `mtd`, `api_ifcounter`, `api_ifinfo`, `trigger`, `derived`,
-> `derived_iface`, `detection` and the four `device` tables — and have not been re-measured, so
-> they predate the `port` and `kind` columns of `mikroscope_event`. The header for all thirty-two,
-> computed from the schema strings in `internal/sinks/sql.go` rather than measured, is 7 757 B,
-> about 7.6 KiB. How `--sql - | psql` behaves when `psql` falls behind a 10 Hz agent is not
+> event grows to 2 749 B. The figures cover eighteen of the forty-three tables the sink now
+> writes: the fixture is from 2026-09-12 and eleven tables were added after it, in 1.0.3 and 1.0.5,
+> and it did not exercise `load`, `stat`, `buddy`, `mtd`, `api_ifcounter`, `api_ifinfo`, `trigger`,
+> `derived`, `derived_iface`, `detection` or the four `device` tables. They have not been
+> re-measured, so they also predate the `port` and `kind` columns of `mikroscope_event`. The header
+> for all forty-three, rendered by the sink's own `header()` on 2026-09-19, is 10 482 B, about
+> 10.2 KiB. How `--sql - | psql` behaves when `psql` falls behind a 10 Hz agent is not
 > measured.
 
 ### See also
@@ -1800,7 +1822,7 @@ its table, names ports without asking RouterOS:
   no port are absent from it;
 - the collector's `link-flap` detection is keyed by the port name and reads the
   same classification: a flap is `link-up` and `link-down` records on one port,
-  counted, not the text parsed a second time;
+  counted, through the same classifier rather than by re-reading the text;
 - `mikroscope status` prints the board and whether it has a map, for example
   `eth1 (ether2)`; `/healthz` and `/capabilities` carry the board, and
   `/capabilities` and `mikroscope_device_info` carry the table's evidence string
@@ -1829,9 +1851,10 @@ The kinds, and the record shapes the RouterOS kernel prints (RB5009, kernel
 
 The agent classifies at read time and ships `kind` in the record, and a
 collector in front of an older agent whose records carry none classifies them
-itself with the same function. That is the case on the reference router today:
-the agent running there has not been redeployed with this build, so its
-`/metrics` carries no `kind` label yet and the collector does the work.
+itself with the same function. That path exists for a collector in front of an agent
+older than 1.0.0, which is when `kind` began shipping in the record; the
+reference router's agent has carried it since, and was upgraded to 1.0.9 on
+2026-09-19.
 
 **Four records are not four faults.** A normal link-up is followed by
 `stp-blocking`, `stp-learning` and `stp-forwarding` as the bridge walks the port
@@ -1991,8 +2014,8 @@ accepts:
 
 ### Layer 3 — the dashboards
 
-The same target then imports both dashboards into a real Grafana, pointed at
-the store the run just filled, and runs every panel's query through Grafana's
+The same target then imports all five dashboards into a real Grafana, each
+pointed at the store the run just filled, and runs every panel's query through Grafana's
 own `/api/ds/query`. That is where a panel fails for reasons no unit test
 reaches: a type an aggregate returns that the datasource plugin cannot decode,
 a macro the plugin escapes, a column the store does not have.
@@ -2014,8 +2037,15 @@ make e2e-docker-down
 
 The package is behind the `dockere2e` build tag, so `make test` and every
 default CI job compile none of it — the tag is how you ask for nine containers.
-`make lint` type-checks it so it cannot rot, and the weekly E2E workflow and
-the release gate run it.
+`make lint` type-checks it so it cannot rot, and **every pull request runs it**,
+along with the weekly workflow and the release gate.
+
+It was not on the pull-request path until 2026-09-18, on the grounds that nine
+containers are a lot to ask of one. That is how 1.0.5 reached `main` with two
+tests in this suite still reading the agent's `/metrics`, which that release
+had removed: every pull-request check was green, and the tag was what found
+it. The cost of having it there is **2 min 37 s**, measured on the release run
+that failed — containers included.
 
 Measured on the development machine on 2026-09-16: the stack comes up in 55 to
 81 s with the images already pulled, and the whole suite takes 75 to 100 s from
@@ -2156,6 +2186,7 @@ something between you and it is not:
 | Loki accepted everything and a query returns nothing | A push is not queryable until the chunk flushes                           |
 | Numbers stop at a round moment and resume           | A gap: the ring wrapped before the collector pulled it                     |
 | The kernel tier stops dead and the API tier carries on | [The agent restarted](https://jmrp.io/docs/mikroscope/reference/troubleshooting/#the-agent-restarted-and-the-kernel-tier-stopped)  |
+| The API panels are blank and the kernel panels are fine | [The API connection died](https://jmrp.io/docs/mikroscope/reference/troubleshooting/#the-api-panels-are-blank-and-the-kernel-panels-are-fine) |
 
 The dashboards carry a row named **"Not available on this device"** for exactly
 this: panels whose measurement the kernel or the board does not produce are
@@ -2186,12 +2217,47 @@ while the API tier kept counting and the sinks kept being written — so the run
 looked healthy. If you are on an earlier version, restart the collector after
 restarting the agent; it takes its cursor from the health read at start.
 
+#### The API panels are blank and the kernel panels are fine
+
+The mirror image of the entry above, and it has the same cause: a reboot.
+
+The API tier holds **one** persistent RouterOS API connection. When the router
+goes away — a reboot, a RouterOS upgrade, an operator restarting the API
+service — that socket dies, and before 1.0.9 nothing reopened it. The kernel
+tier resynced and carried on; the API tier wrote to the dead socket for as long
+as the collector ran. Everything the API feeds went blank: interface throughput
+and packet rate, the per-port counters, RouterOS `cpu-load`, and **"Reboots in
+the window"**, which reads `uptime_s` and so cannot count the very reboot that
+broke its own source.
+
+On the reference RB5009 a RouterOS upgrade on 2026-09-19 rebooted the router at
+00:43:30 CEST. The kernel tier resumed at 00:45:03; the API tier failed every
+command for the next 7 h 24 min, until the collector was restarted by hand.
+
+From 1.0.9 the tier reconnects on its own. A transport failure — EOF, a broken
+pipe, a connection reset, a command timeout — reopens the connection, at most
+once every five seconds, and the round is retried on the new one. A `!trap`
+does not reconnect: that is a live router refusing a command, and asking it
+twice only spends the router's CPU. A `!fatal` does, because that is the word
+RouterOS sends as it closes the session. The inventory is re-read afterwards,
+since an upgrade is exactly when an interface can change its name, type or
+bridge. You will see
+
+```text
+api tier: reconnected (1 since start)
+api tier: recovered after 137 failed round(s)
+```
+
+and the minute report grows an `api: N failed round(s), N reconnect(s)` clause
+for as long as either is nonzero. If you are on an earlier version, restart the
+collector after the router comes back.
+
 #### A sink is dropping
 
 Every network sink is queued, and the queue is bounded — `--queue-seconds`, 60
 by default. A destination that cannot keep up loses the oldest batch rather
-than stalling the pull loop, and the count is printed at the end of the run and
-exported as a metric. That is a deliberate choice, and
+than stalling the pull loop, and the count is printed — in the minute report and
+again at the end of the run. There is no metric family for it. That is a deliberate choice, and
 [the collector](https://jmrp.io/docs/mikroscope/sinks/) explains it: the agent's ring is what
 protects the data, and a collector waiting on a slow store would lose more than
 the store does.

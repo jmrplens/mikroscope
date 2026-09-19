@@ -59,10 +59,10 @@ The entries install writes into the agent's envlist:
 | --- | --- | --- | --- |
 | `MIKROSCOPE_TAG` | always | `--name` | the ownership marker `mikroscope:<name> (managed by mikroscope)`, written first and removed last; the agent ignores it |
 | `RATE_HZ` | always | `--rate`, default `10`, 1–100 | the sampler rate, in Hz |
-| `BUFFER_S` | always | `--buffer`, default `300`, 10–3600 | the ring's length, in seconds |
+| `BUFFER_S` | always | `--buffer`, default `60`, 10–3600 | the ring's length, in seconds |
 | `PORT` | always | `--port`, default `9123`, 1–65535 | the agent's HTTP port |
 | `ADDR` | always | `--subnet` | the agent's address, the `.2` of the /30; the agent binds only there |
-| `MEM_LIMIT_MB` | always | `--mem-limit-mb`, default `40`, 8–1024 | the agent's Go soft memory limit, in MiB |
+| `MEM_LIMIT_MB` | always | `--mem-limit-mb`, 8–1024 | the agent's Go soft memory limit, in MiB; derived from the ring since 1.0.6 (rate × buffer × line, × 2.5, floored at 16 MiB) rather than a flat number |
 | `FLOOR_HZ` | only when above 0 | `--floor-hz`, default `0`, 0–1000 | one cadence for every level source, in Hz |
 | `CAPTURE_MB` | always | `--capture-mb`, default `4`, 0–256 | the triggered-capture budget, in MiB; `0` turns captures off |
 | `TRIGGERS` | only when set | `--triggers` | the trigger conditions; unset, the agent uses its default set |
@@ -200,7 +200,8 @@ run at which cadence is on [the RouterOS API tier](https://jmrp.io/docs/mikrosco
 
 Without an address and a user, each command says so differently:
 
-- `forward` runs the kernel tier alone and logs `api tier disabled: …`.
+- `forward` runs the kernel tier alone. With an address that does not answer it logs
+  `api tier: not connected yet, will keep trying: …` and keeps retrying.
 - `mark --log-markers` and `--transport relay` fail with
   `the RouterOS API needs --api, --api-user and MIKROSCOPE_API_PASSWORD`.
 - `record --log-markers` keeps the recording, prints `log markers: the RouterOS API needs …` on
@@ -346,7 +347,7 @@ Because the agent is no longer reachable only through the veth, the token is man
 refuses `--expose` without one (`--expose makes the agent reachable from the LAN: a token is
 mandatory`). With a token set, every endpoint the agent serves except `/healthz` returns
 `401 token required`, with `WWW-Authenticate: Bearer`, unless the request carries
-`Authorization: Bearer <token>`: `/capabilities`, `/snapshot`, `/stream`, `/metrics`, `/captures`,
+`Authorization: Bearer <token>`: `/capabilities`, `/sampler`, `/snapshot`, `/stream`, `/captures`,
 `/captures/{id}` (including `DELETE`) and `POST /capture`. A path the agent does not serve gets
 `404`, and a wrong method `405`, token or not. The agent strips an optional `"Bearer "` prefix before
 comparing, so a header holding the bare token is accepted too.
@@ -433,13 +434,14 @@ then, in this order:
    `Y` stops it with `not confirmed; nothing written`;
 3. only then writes.
 
-`plan`, and `install --dry-run`, stop after the listing. The listing masks the token as
-`value="(token)"`.
+`plan`, `install --dry-run` and `upgrade --dry-run` stop after the listing — the last of
+those only since 1.0.10, which is when `upgrade` began honouring the flag at all. The
+listing masks the token as `value="(token)"`.
 
 `upgrade` does not get this guarantee. It builds the image, refuses a router where any step of the
 plan built from its own flags is missing (`nothing to upgrade: run install first`), and asks the
-same `write the objects above to the router? [y/N]` — but it prints no listing and runs no `doctor`
-first, so there are no objects above. On `y` it removes the container, the envlist and the image
+same `write the objects above to the router? [y/N]` — and since 1.0.10 it does print a listing of
+its own, the container step alone. It still runs no `doctor` first. On `y` it removes the container, the envlist and the image
 and writes them again, the envlist from the flags given to `upgrade`; [what --expose
 opens](https://jmrp.io/docs/mikroscope/security/expose/) has what that means for the token.
 
@@ -580,7 +582,7 @@ check of its own before anything is written.
   writes that setting.** `doctor` reads it, and when the reference names a host the setting does not
   match it prints the one command to run
   (`/container/config/set registry-url=https://ghcr.io`, for the GHCR copy of the image) or says to
-  use `--agent-tar` instead. The Docker Hub reference `jmrplens/mikroscope-agent:1.0.0` carries no
+  use `--agent-tar` instead. The Docker Hub reference `jmrplens/mikroscope-agent:1.0.9` carries no
   host and leaves the setting as the router has it. Trust in the image is trust in that registry:
   nothing in the CLI verifies what the router pulls.
 

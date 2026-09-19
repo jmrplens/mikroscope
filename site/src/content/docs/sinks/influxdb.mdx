@@ -137,6 +137,10 @@ signature — or `other`. A record that names no port keeps the tagless shape an
 | `mikroscope_device_thermal` | `zone`                                         | `critical_celsius`, `polling_ms`                                                             | collector                 |
 | `mikroscope_device_cpufreq` | `cpu`                                          | `cluster`, `min_khz`, `max_khz`, `governor`, `steps`                                         | collector                 |
 | `mikroscope_device_cadence` | `source`, `reason`                             | `hz`                                                                                         | collector                 |
+| `mikroscope_sampler`        | —                                              | `ticks`, `slipped`, `captures_held`, `capture_bytes`, `capture_budget_bytes`, `capture_served_bytes`| collector, from `GET /sampler`|
+| `mikroscope_trigger_count`  | `condition`                                    | `fired`                                                                                      | collector, from `GET /sampler`|
+| `mikroscope_trigger_suppressed`| `condition`, `reason`                          | `count`                                                                                      | collector, from `GET /sampler`|
+| `mikroscope_capture_refused`| `reason`                                       | `count`                                                                                      | collector, from `GET /sampler`|
 
 </ScrollTable>
 
@@ -156,7 +160,7 @@ port, an empty string for a bridge, VLAN or tunnel) as a string field and `mtu` 
 the router reports one above zero. It is written once before the first kernel pull and
 again on every `--labels-every` re-read, 5 minutes by default, and it is the table a
 panel joins to say what an interface is. `mikroscope_api_ifcounters` carries counters
-only: `mtu`, `l2mtu`, `max-l2mtu` and `sfp-shutdown-temperature` parse as integers but
+only: `mtu`, `actual-mtu`, `l2mtu`, `max-l2mtu` and `sfp-shutdown-temperature` parse as integers but
 are sizes and configuration, not counts, so they are not fields there; the MTU is in
 `mikroscope_api_ifinfo`.
 
@@ -187,8 +191,10 @@ The Grafana datasource for InfluxDB 3 needs two secure fields, not one; see [imp
 check](/mikroscope/dashboards/import-and-check/).
 
 <NotClaimed>
-	Every recorded run wrote to InfluxDB 3 Core; no write to InfluxDB 2's `/api/v2/write` or to
-	InfluxDB 3 Enterprise is recorded. The duplicate rows of 2026-09-13 have an explanation that is
+	No write to InfluxDB 2's `/api/v2/write` is recorded. InfluxDB 3 Enterprise is now measured, but
+	briefly: on 2026-09-19 the reference collector was moved onto Enterprise 3.11.4 and wrote 44 820
+	rows across 36 tables in the first 19 minutes, 0 dropped and 0 errors. Everything before that date
+	was measured against Core. The duplicate rows of 2026-09-13 have an explanation that is
 	leading and unverified, and disabling the HTTP client's own resend has not been measured against a
 	repeat of that run.
 </NotClaimed>

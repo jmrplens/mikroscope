@@ -117,6 +117,7 @@ entre tú y él:
 | Loki lo aceptó todo y una consulta no devuelve nada | Un envío no es consultable hasta que se vuelca el trozo                    |
 | Los números paran en un momento redondo y siguen    | Un hueco: el anillo dio la vuelta antes de que el colector tirara de él    |
 | El tier de kernel se para en seco y el de API sigue | [El agente se reinició](#el-agente-se-reinició-y-el-tier-de-kernel-se-paró) |
+| Los paneles de API están vacíos y los de kernel bien | [La conexión de API murió](#los-paneles-de-api-están-vacíos-y-los-de-kernel-bien) |
 
 </ScrollTable>
 
@@ -151,12 +152,50 @@ escribiéndose — así que la ejecución parecía sana. Si estás en una versi�
 anterior, reinicia el colector después de reiniciar el agente: toma su cursor de
 la lectura de estado del arranque.
 
+### Los paneles de API están vacíos y los de kernel bien
+
+La imagen espejo de la entrada anterior, y con la misma causa: un reinicio.
+
+El tier de API mantiene **una** conexión persistente a la API de RouterOS.
+Cuando el router desaparece — un reinicio, una actualización de RouterOS, un
+operador reiniciando el servicio de API — ese socket muere, y antes de 1.0.9
+nada lo reabría. El tier de kernel resincronizaba y seguía; el de API escribía
+sobre el socket muerto mientras el colector estuviera en marcha. Todo lo que
+alimenta la API se quedaba en blanco: caudal y tasa de paquetes por interfaz,
+los contadores por puerto, el `cpu-load` de RouterOS y **«Reboots in the
+window»**, que lee `uptime_s` y por tanto no puede contar el mismo reinicio que
+rompió su propia fuente.
+
+En el RB5009 de referencia, una actualización de RouterOS el 2026-09-19 reinició
+el router a las 00:43:30 CEST. El tier de kernel se reanudó a las 00:45:03; el
+de API falló todos los comandos durante las 7 h 24 min siguientes, hasta que se
+reinició el colector a mano.
+
+Desde 1.0.9 el tier reconecta solo. Un fallo de transporte — EOF, una tubería
+rota, una conexión reiniciada, un tiempo de espera agotado — reabre la conexión,
+como mucho una vez cada cinco segundos, y la ronda se reintenta sobre la nueva.
+Un `!trap` no reconecta: es un router vivo rechazando un comando, y repetirlo
+solo gasta CPU del router. Un `!fatal` sí, porque es la palabra que RouterOS
+envía al cerrar la sesión. El inventario se vuelve a leer después, porque una
+actualización es justo cuando una interfaz puede cambiar de nombre, tipo o
+puente. Verás
+
+```text
+api tier: reconnected (1 since start)
+api tier: recovered after 137 failed round(s)
+```
+
+y el informe por minuto gana una cláusula `api: N failed round(s), N
+reconnect(s)` mientras alguno de los dos no sea cero. Si estás en una versión
+anterior, reinicia el colector cuando el router vuelva.
+
 ### Un destino está descartando
 
 Todos los destinos de red tienen cola, y la cola está acotada
 —`--queue-seconds`, 60 por defecto—. Un destino que no puede seguir el ritmo
 pierde el lote más viejo en lugar de frenar el bucle de lectura, y la cuenta se
-imprime al final de la ejecución y se exporta como métrica. Es una decisión
+imprime —en el informe por minuto y otra vez al final de la ejecución. No hay
+ninguna familia de métricas para ello. Es una decisión
 deliberada, y [el colector](/mikroscope/es/sinks/) la explica: el anillo del
 agente es lo que protege los datos, y un colector esperando a un almacén lento
 perdería más de lo que pierde el almacén.

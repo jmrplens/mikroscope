@@ -27,30 +27,21 @@ set:
 
 Without the second, panels fail with `flightsql: Unauthenticated` (Grafana 12.3.2, 2026-09-12).
 
-## Prometheus: two scrape jobs
+## Prometheus: one scrape job
 
-The Prometheus dashboard expects two scrape jobs. The first scrapes the collector
-(`mikroscope forward --prom :9124`), which carries every family the agent has, recomputed from the
-samples it received, plus the collector's own derived and detection families. The second scrapes the
-agent directly and keeps only the families only the sampler can produce: its tick timing
-histograms, the trigger and capture counters, and slipped ticks.
+The collector's:
 
 ```yaml
 - job_name: "mikroscope"
   scrape_interval: 5s
   static_configs: [{ targets: ["<collector host>:9124"] }]
-- job_name: "mikroscope-agent"
-  scrape_interval: 5s
-  static_configs: [{ targets: ["172.30.10.2:9123"] }]
-  metric_relabel_configs:
-    - source_labels: [__name__]
-      regex: "mikroscope_(tick_.*|trigger_.*|capture.*|captures_held|slipped_total)"
-      action: keep
 ```
 
-Scraping the agent without the keep list would double every counter the collector also exposes.
-`172.30.10.2:9123` is the agent's address on the default install; how a Prometheus host reaches it
-is on [Reaching the agent](/mikroscope/install/reaching-the-agent/).
+`mikroscope forward --prom :9124` carries every family: the kernel tier recomputed from the samples
+it received, the collector's own derived and detection families, and — since 1.0.5 — what only the
+sampler can produce. The agent serves no `/metrics` at all any more; its tick timing rides in the
+samples and its own counters come over `GET /sampler`, which the collector reads every minute. A
+second job would have nothing to add.
 
 ## The PostgreSQL datasource
 
@@ -64,9 +55,12 @@ script was loaded as. `sslmode` is yours to choose; `postgresVersion` only decid
 plugin may emit, and every query in this dashboard is plain SQL.
 
 The panels are the InfluxDB ones, rewritten: the bucket macro, the percentiles, the casts and the
-column names the SQL sink had to change because `user`, `from` and `to` are reserved words. Ten
-queries are not rewritten and say so — `mikroscope_buddy` and the RouterOS interface counters are
-wide in InfluxDB and long in the SQL schema, and a pivot is a different question.
+column names the SQL sink had to change because `user`, `from` and `to` are reserved words. Fifteen
+panels are not rewritten and are **dropped silently** rather than moved into the "not available"
+row: the kernel-log panels, because the SQL schema has no count table for it, and the panels over
+`mikroscope_buddy` and the RouterOS interface counters, which are wide in InfluxDB and long in SQL,
+where a pivot is a different question. The PostgreSQL dashboard therefore carries 160 panels against
+InfluxDB's 175.
 
 ## The Graphite datasource
 
@@ -119,13 +113,13 @@ mikroscope dashboards check  --store influxdb --datasource-uid <uid> --window 15
 
 | Flag               | Default        | Used by       | What it does                                                              |
 | ------------------ | -------------- | ------------- | ------------------------------------------------------------------------- |
-| `--store`          | `influxdb`     | import, check | `influxdb` or `prometheus`; also the datasource plugin id sent to Grafana |
+| `--store`          | `influxdb`     | import, check | `influxdb`, `prometheus`, `postgres`, `graphite` or `elasticsearch`; also the datasource plugin id sent to Grafana |
 | `--grafana`        | `$GRAFANA_URL` | import, check | Grafana's base URL                                                        |
 | `--datasource-uid` | none, required | import, check | the datasource `DS_MIKROSCOPE` is bound to                                |
 | `--no-probe`       | off            | import, check | skip asking the datasource what it holds; use the compiled defaults       |
 | `--window`         | `15m`          | check         | length of the query window                                                |
 | `--end`            | now            | check         | the window's right edge, RFC 3339                                         |
-| `--out`            | `dashboards`   | gen           | the directory `gen` writes the four files into                            |
+| `--out`            | `dashboards`   | gen           | the directory `gen` writes the eight files into                            |
 
 </ScrollTable>
 
@@ -183,6 +177,13 @@ measurements it holds`, with the reason, and carry on with the compiled defaults
 
 `--no-probe` skips the question and uses the compiled defaults, which is also what plain `gen` does,
 since it has no datasource to ask.
+
+**Only InfluxDB and Prometheus can be probed.** The query above is written per datasource type, and
+`internal/dashboards/grafana.go` has one for those two and `cannot probe a "…" datasource` for the
+rest. With `--store postgres`, `--store graphite` or `--store elasticsearch` the probe therefore
+always fails, always warns, and always ships the compiled defaults — the same result as passing
+`--no-probe`. That is a gap, not a design: those three stores get the dashboard the panel list
+declares rather than the one their data supports.
 
 ## What `check` verifies
 
@@ -302,7 +303,7 @@ every panel returned rows, 228–2 052 over 5 minutes.
   carries each.
 - [Alert rules](/mikroscope/dashboards/alerts/): the provisioning files `gen` writes, which `check`
   does not run.
-- [Prometheus](/mikroscope/sinks/prometheus/): the collector's `/metrics` the first scrape job reads.
+- [Prometheus](/mikroscope/sinks/prometheus/): the collector's `/metrics`, which the scrape job reads.
 - [InfluxDB 3](/mikroscope/sinks/influxdb/): the write URL, the token and the store's own limits.
 
 </SeeAlso>

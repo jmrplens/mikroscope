@@ -60,7 +60,7 @@ otherwise at rest, with three notes typed into `record`'s terminal.
 
 > **Not measured, so not claimed**
 >
-> A recording above 10 Hz. The lossless 50 Hz and 100 Hz runs on [the rate
+> A recording above 10 Hz. The lossless 20, 50 and 100 Hz runs on [the rate
 > ceiling](https://jmrp.io/docs/mikroscope/cost/rate-ceiling/) were the collector's, not `record`'s. Both use the same
 > batch sizing, but a recording at those rates has not been measured on its own. Nor has a recording
 > through the relay at any rate.
@@ -82,19 +82,21 @@ and fail rather than fall back.
 - **relay** runs `/tool fetch output=user` on the router over the binary API, so
   the API user needs the `read,api,test` policies. Each relayed call takes either
   about 3 ms or about 1 s. A reply is capped at 64 512 B, so a relayed pull
-  asks for at most 18 samples, and a reply that reaches the cap is refused rather
+  asks for at most 13 samples, and a reply that reaches the cap is refused rather
   than parsed truncated. The router-side fetch carries no header: an agent
   installed with a token can only be recorded over the direct path.
 
 > **A full relayed pull can still reach the cap**
 >
-> By arithmetic, read from the code on 2026-09-15 and not measured. The cap of 18 samples comes from
-> the 64 512 B fetch limit, a mean line of 2 560 B, and 134 % headroom;
-> the mean is the 2 439 B measured on the RB5009 (RouterOS 7.24.2,
-> 2026-09-12), rounded up. A full pull of mean lines is about 46 kB. A full pull whose lines average
-> more than 134 % of that mean would still reach the limit and be refused, and how long lines run at
-> today's default per-source floors was not measured. At 18 samples a pull and the default 500 ms
-> `--poll` the relay carries 36 samples a second; above that, use the direct path.
+> By arithmetic, computed from the code rather than measured. The cap of 13
+> samples comes from the 64 512 B fetch limit, a charged line
+> of 3 456 B, and 134 % headroom; the line was measured
+> at 3 230 B on the RB5009 (RouterOS 7.24.2, 2026-09-17) and the budget charges
+> the allocator size class above it. A full pull of such lines is about 45 kB. A full pull whose
+> lines average more than 134 % of that would still reach the limit and be refused, and how long
+> lines run at today's default per-source floors was not measured. At 13
+> samples a pull and the default 500 ms `--poll` the relay carries 26 samples a second; above that,
+> use the direct path.
 
 [Reaching the agent](https://jmrp.io/docs/mikroscope/install/reaching-the-agent/) covers which path a
 network allows. The API user is described on [its own
@@ -302,8 +304,10 @@ the news, and what a capture cannot tell you.
 The one lossless thing the agent can do on its own is keep the samples that
 already exist, at full rate, around the moment they matter — and only the agent
 can, because only the agent has every sample. The ring already holds the last
-300 s by default, so the seconds before a fire cost nothing to keep; the seconds after cost
-only the wait.
+60 s by default, so the seconds before a fire cost nothing to keep; the seconds after cost
+only the wait. The default capture window is 5 s either side, so it fits with room; a longer
+`CAPTURE_PRE_S` than the ring holds is a window the ring cannot supply, and `--buffer` is what
+raises it.
 
 It decides nothing about meaning. A condition is a comparison you configured.
 The field it compared and the value that tripped it travel in the capture's
@@ -414,7 +418,7 @@ of the container, an `upgrade` or a reboot loses the ones not yet downloaded.
 #### What a capture weighs
 
 A capture's size is its window's sample count times the line size. The mean line
-measured on the RB5009 (RouterOS 7.24.2, 10 Hz, every source of that date, 2026-09-12) was 2 439 B; lines at the default floors were not
+measured on the RB5009 (RouterOS 7.24.2, 10 Hz, every source of that date, 2026-09-12) was 3 230 B; lines at the default floors were not
 measured. That gives, by arithmetic and not by measuring captures:
 
 | Rate   | Default window (5 s + 5 s)  | Captures in the 4 MiB default |
@@ -492,10 +496,10 @@ instead.
 `forward` recognises the line, never mistakes it for a sample, counts it, and
 hands it to every sink as an annotation: the `mikroscope_trigger` measurement in
 InfluxDB and table in SQL, `mikroscope_collector_triggers_total{cause}` on the
-collector's Prometheus exposition, and the line itself in the file sink. Both
+collector's Prometheus exposition, and the line itself in the file sink. All five
 Grafana dashboards carry a `triggers` annotation, off by default in the toggle
-bar: on InfluxDB it reads the `mikroscope_trigger` rows, on Prometheus the agent's
-`mikroscope_trigger_fired_total`. The capture itself stays on the agent, under
+bar: on the SQL stores it reads the `mikroscope_trigger` rows, on Prometheus the
+collector's `mikroscope_trigger_fired_total`. The capture itself stays on the agent, under
 `/captures/<id>`.
 
 `record` does not recognise the line yet — [Record, mark,
@@ -503,8 +507,8 @@ plot](https://jmrp.io/docs/mikroscope/record/#triggers-during-a-recording) says 
 
 ### Counting what was not captured
 
-The agent's `/metrics` carries the families that say how much the captures did
-not see. Every condition and reason pair is rendered from the start, at 0 until
+The collector's `/metrics` carries the families that say how much the captures
+did not see, built from the agent's `GET /sampler` counters on the health cadence. Every condition and reason pair is rendered from the start, at 0 until
 it happens, so a dashboard can show "0 so far".
 
 | Family                                                  | Type    | Meaning                                                                                                  |
@@ -517,9 +521,10 @@ it happens, so a dashboard can show "0 so far".
 | `mikroscope_capture_budget_bytes`                       | gauge   | The budget, from `CAPTURE_MB`.                                                                           |
 | `mikroscope_capture_bytes_served_total`                 | counter | Bytes handed out over `/captures/<id>`.                                                                  |
 
-The collector cannot recompute these from the samples, so the Prometheus
-dashboard expects a scrape job on the agent itself that keeps only the agent-only
-families; [Prometheus](https://jmrp.io/docs/mikroscope/sinks/prometheus/) has the job.
+The collector cannot recompute these from the samples; it reads them from the
+agent's `GET /sampler` and renders them into its own exposition, so one scrape
+job on the collector carries them. [Prometheus](https://jmrp.io/docs/mikroscope/sinks/prometheus/)
+has the detail.
 
 ### What it cannot do
 

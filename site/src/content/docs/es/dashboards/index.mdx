@@ -13,10 +13,10 @@ import Measured from "../../../../components/Measured.astro";
 import NotClaimed from "../../../../components/NotClaimed.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
 
-`dashboards/` contiene un dashboard de Grafana por almacén, los dos generados por
+`dashboards/` contiene un dashboard de Grafana por almacén —cinco— todos generados por
 `mikroscope dashboards gen` a partir de una única lista de paneles en `internal/dashboards`. Esta
 página responde a qué hay en ellos: qué secciones, qué paneles en cada una, qué muestra el Overview
-antes de desplegar nada y qué paneles existen solo en uno de los dos almacenes. Importarlos y
+antes de desplegar nada y qué paneles no puede llevar cada almacén. Importarlos y
 comprobarlos contra un Grafana en marcha está en
 [Importar y comprobar](/mikroscope/es/dashboards/import-and-check/); las reglas de alerta que se
 generan a su lado, en [Reglas de alerta](/mikroscope/es/dashboards/alerts/).
@@ -41,7 +41,7 @@ Grafana, sin traducir, para que puedas encontrarlos.
 </FileTree>
 
 ```sh
-mikroscope dashboards gen                    # escribe los cuatro ficheros en ./dashboards
+mikroscope dashboards gen                    # escribe los ocho ficheros en ./dashboards
 mikroscope dashboards gen --out /tmp/dash    # o en otro directorio
 ```
 
@@ -55,13 +55,13 @@ ficheros del repositorio.
 El dashboard de InfluxDB consulta InfluxDB 3 en SQL, y toda consulta está acotada por
 `$__timeFilter`, porque InfluxDB 3 Core rechaza los recorridos sin límite; donde una columna se llama
 `cluster` el SQL la entrecomilla, porque `cluster` es una palabra reservada en DataFusion. El
-dashboard de Prometheus consulta un Prometheus que hace scrape del `/metrics` del colector — que
-lleva todo lo que lleva el del agente, recalculado a partir de las muestras, más las familias
-derivadas y de detección propias del colector — y del propio agente para las pocas familias que solo
-produce el muestreador. Prometheus 3 representa el borde del bucket cero de un histograma como
-`le="0.0"`, así que una consulta que lee ese bucket casa con `le=~"0|0.0"`. Los dos trabajos de
-scrape están en
-[Importar y comprobar](/mikroscope/es/dashboards/import-and-check/#prometheus-dos-trabajos-de-scrape).
+dashboard de Prometheus consulta un Prometheus que hace scrape del `/metrics` del colector, y de
+nada más: lleva el tier de kernel recalculado a partir de las muestras, las familias derivadas y de
+detección propias del colector y —desde 1.0.5, cuando el agente dejó de servir exposición— lo que
+solo el muestreador puede producir, que ahora llega al colector como dato. Prometheus 3 representa
+el borde del bucket cero de un histograma como `le="0.0"`, así que una consulta que lee ese bucket
+casa con `le=~"0|0.0"`. El trabajo de scrape está en
+[Importar y comprobar](/mikroscope/es/dashboards/import-and-check/#prometheus-un-trabajo-de-scrape).
 
 ## Qué aspecto tiene
 
@@ -82,7 +82,7 @@ el dashboard. Cada una enlaza al fichero a tamaño completo.
 
 <DashboardCaptures />
 
-## Una lista, dos almacenes
+## Una lista, cinco almacenes
 
 Cada panel se declara una sola vez, con su SQL y su PromQL uno al lado del otro, de modo que un
 panel añadido a un almacén queda añadido al otro. Cuando un panel no tiene consulta para un almacén,
@@ -91,8 +91,9 @@ data" para siempre. Una sección a la que se le quitan todos los paneles no emit
 
 Por eso difieren los recuentos, y difieren en los dos sentidos. Casi toda la familia térmica y de
 reloj, la sección de desgaste de la flash, el censo de slab y varios paneles de memoria tienen SQL y
-no PromQL, así que solo existen en InfluxDB. Los histogramas de temporización del muestreador, las
-supresiones de disparadores y el presupuesto de capturas viven solo en el `/metrics` del agente. La
+no PromQL, así que solo existen en InfluxDB. Las supresiones de disparadores viven solo en el
+`/metrics` del colector; los histogramas de temporización del muestreador y el presupuesto de
+capturas tienen además forma en InfluxDB. La
 racha de ocupación aún en curso y la antigüedad de cada lectura retenida son familias de la
 exposición de Prometheus, también en el `/metrics` del colector, sin campo en InfluxDB. Ninguno de
 los dos grupos se escribe en InfluxDB, así que los paneles que los leen solo existen en Prometheus. Cada panel de abajo que está en un solo
@@ -163,7 +164,7 @@ retraso del muestreador).
 	El 2026-09-14 un Overview de once paneles midió 1 052 px de alto en una ventana de navegador de
 	1 080 px — una pantalla de escritorio sin nada cortado. El Overview tiene doce paneles y la
 	cuadrícula pasa "Ticks never delivered" a su propia línea a todo lo ancho; esa altura no se ha
-	medido en un navegador, aunque el JSON de los dos paneles del repositorio le da 31 unidades de
+	medido en un navegador, aunque el JSON de los cinco dashboards que hay en el repositorio le da 31 unidades de
 	cuadrícula, cabecera de fila incluida. En un móvil no es una pantalla: Grafana apila una fila de
 	24 columnas en una sola columna por debajo de unos 768 px, y un Overview de ocho paneles se
 	renderizó con 2 188 px de alto en una ventana de 844 px el 2026-09-12.
@@ -233,8 +234,8 @@ por ello.
 
 <DashboardPanels section="Detections and captures" />
 
-En "Trigger fires and suppressions per bin", las supresiones solo están en Prometheus: viven en el
-`/metrics` del agente.
+En "Trigger fires and suppressions per bin", las supresiones solo están en Prometheus: las
+representa el colector en su exposición y ningún almacén lleva un campo para ellas.
 
 ### Las rayas rojas discontinuas de todos los paneles
 
@@ -437,8 +438,9 @@ la captura del 2026-09-11/12 de los que el registro de huecos del colector no de
 ### El observador: temporización del muestreador y sucesos propios
 
 El emborronamiento del propio muestreador — con cuánto retraso despertó y cuánto tardó la lectura — y
-los sucesos de cgroup que el agente registra sobre sí mismo. Los tres mapas de calor leen los
-histogramas del agente, que nunca se envían como muestras, así que solo existen en Prometheus.
+los sucesos de cgroup que el agente registra sobre sí mismo. Las temporizaciones viajan en el bloque `self` de cada muestra como
+`wake_ns` y `read_ns`, así que los tres mapas de calor existen también en los paneles de InfluxDB y
+PostgreSQL, no solo en Prometheus.
 
 <DashboardPanels section="The observer: sampler timing and self events" />
 

@@ -30,7 +30,8 @@ solo se guarda cuando hizo algo). Establecido en el RB5009 (RouterOS 7.24.2, ker
 
 Un contenedor normal también lee como los del router estos ficheros, leídos el 2026-09-12: las dos
 zonas térmicas bajo `/sys/class/thermal`, `scaling_cur_freq` por núcleo,
-los contadores de desgaste de la NAND en `/proc/yaffs` y `/proc/buddyinfo`. La cadena `model` del
+los contadores de desgaste de la NAND en `/proc/yaffs`, y las listas de bloques libres del
+asignador de páginas en `/proc/buddyinfo`. La cadena `model` del
 árbol de dispositivos (`RB5009`) tampoco está en un espacio de nombres, y es como el agente
 identifica la placa sin la API de RouterOS.
 

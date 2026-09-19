@@ -10,7 +10,7 @@ Source: <https://jmrp.io/docs/mikroscope/cost/>
 
 An observer that costs 20 % of the thing it observes is not measuring the
 router, it is measuring itself. So this number is a first-class result here, not
-a footnote: it is reported by the agent on every sample and exposed on `/metrics`, and the image-size budget is asserted in CI.
+a footnote: it is reported by the agent on every sample, and the image-size budget is asserted in CI.
 
 ### The budget, and what it actually costs
 
@@ -19,14 +19,22 @@ The budget is **≤ 2 % of one core, ≤ 16 MiB RSS,
 depend on the rate and on how much you ask it to read, and the honest answer is a table rather than
 a number.
 
-At the install default — 10 Hz, default per-source floors, a 300 s ring — the agent costs
-**2.85 % of one core and 31.3 MiB RSS**, from its own
+At the install default — 10 Hz, default per-source floors, a 60 s ring — the agent costs
+**2.69 % of one core and 13.2 MiB RSS**, from its own
 cgroup:
 
-Measured on RB5009UG+S+ · 4 × 1.4 GHz Cortex-A72 · RouterOS 7.24.2 · 2026-09-15 · 60 s windows at steady state (ring full), full source set, collector forwarding to a file, a Prometheus exposition and InfluxDB 3 at once
+Measured on RB5009UG+S+ · 4 × 1.4 GHz Cortex-A72 · RouterOS 7.24.2 · 2026-09-18 · 300 s windows at steady state (ring full), full source set, the shipped configuration — a 60 s ring, the memory limit derived from it and the default 64M container cap — with the collector forwarding to InfluxDB 3
 
-That is above the 2 % the budget asks for, with every source read — the
-perf timings, buddyinfo, the MTD ECC counters, the cgroup events and the port counters among them.
+**The memory is inside the budget and the CPU is not.** 13.2 MiB against
+the 16 MiB the budget asks for, and 2.69 % against
+the 2 %, with every source read — the perf timings, buddyinfo, the MTD
+ECC counters, slabinfo, the kernel log and the cgroup events among them. Per-interface traffic is
+not in that set: the container cannot see it, and it comes from the API tier.
+
+It was over on both until 1.0.6. The ring held 300 s rather than 60 and the memory limit was a
+flat 40 MiB that never bound, which put the same agent at 31.3 MiB; neither number was a statement
+about the rate. Nothing about the sampling changed: the CPU moved from 2.85 % to
+2.69 %, which is the noise between two windows.
 
 #### What the alternative costs
 
@@ -46,9 +54,10 @@ a binary rather than a script.
 > **Where the number comes from**
 >
 > Not from `top`, and not from a snapshot. The agent counts its own CPU microseconds and RSS out of
-> its cgroup and publishes them as `mikroscope_self_cpu_usec_total` and `mikroscope_self_rss_bytes`.
-> Two reads of `/metrics` 60 s apart, at steady state with the ring already full, is the
-> measurement. RouterOS `/tool profile` shows the same process as `mikroscope-agent`.
+> its cgroup and carries them on every sample, in the `self` block, as `cpu_us` and `rss`; the collector renders them
+> as `mikroscope_self_cpu_usec_total` and `mikroscope_self_rss_bytes`. Two reads of the COLLECTOR's
+> `/metrics` 60 s apart, at steady state with the ring already full, is the measurement — the agent
+> has served no exposition of its own since 1.0.5. RouterOS `/tool profile` shows the same process as `mikroscope-agent`.
 
 ### Size the memory limit to the data
 
@@ -65,8 +74,8 @@ listed beside them on [the rate ceiling](https://jmrp.io/docs/mikroscope/cost/ra
 The parse is not where the time goes. Parsing the seven global `/proc` files plus one delta took
 27 µs and 239 allocations per sample on the amd64 development host (Go 1.27.1, three runs,
 26.7–27.5 µs, 2026-09-11). On the RB5009's Cortex-A72 a whole tick — timers, JSON and the
-garbage collector included — costs 2 856 µs at 10 Hz with the default
-floors, and [the five runs](https://jmrp.io/docs/mikroscope/cost/rate-ceiling/) give it at every rate. The parse was not
+garbage collector included — costs 2 685 µs at 10 Hz with the default
+floors, and [the six runs](https://jmrp.io/docs/mikroscope/cost/rate-ceiling/) give it at every rate. The parse was not
 measured on the A72 on its own.
 
 ### Measuring it on your own device
@@ -76,18 +85,23 @@ count, a different clock, a different kernel and a different flash all move it.
 The procedure is three commands and takes a minute:
 
 ```sh
-curl -s http://172.30.10.2:9123/metrics | grep -E 'self_cpu_usec_total|self_rss_bytes'
+curl -s http://<collector host>:9124/metrics | grep -E 'self_cpu_usec_total|self_rss_bytes'
 sleep 60
-curl -s http://172.30.10.2:9123/metrics | grep -E 'self_cpu_usec_total|self_rss_bytes'
+curl -s http://<collector host>:9124/metrics | grep -E 'self_cpu_usec_total|self_rss_bytes'
 ```
 
 The difference in `self_cpu_usec_total` divided by 60 000 000 is the share of
 one core. Take it at steady state, with the ring full: a freshly started agent
 is still filling it and will read low.
 
+The address is the collector's, not the agent's: since 1.0.5 the agent serves
+no `/metrics`, and these two counters reach the collector in every sample. With
+no Prometheus sink configured, the same two numbers are `cpu_us` and `rss` in
+`mikroscope_self`, in whichever store you are writing to.
+
 ### See also
 
-- [The rate ceiling](https://jmrp.io/docs/mikroscope/cost/rate-ceiling/): the five runs, the memory flags each one used,
+- [The rate ceiling](https://jmrp.io/docs/mikroscope/cost/rate-ceiling/): the six runs, the defaults every one of them used,
   and what sampling faster buys.
 - [What the numbers do not say](https://jmrp.io/docs/mikroscope/cost/limits/): what these figures cannot tell you about
   another device or another load.
@@ -95,7 +109,7 @@ is still filling it and will read low.
 
 ## The rate ceiling
 
-Five measured runs at 10, 50 and 100 Hz on an RB5009 — all of them lossless — and what sampling faster actually buys.
+Six measured runs at 10, 20, 50 and 100 Hz on an RB5009, at the configuration it ships with — none of them lost a sample — and what sampling faster actually buys.
 
 Source: <https://jmrp.io/docs/mikroscope/cost/rate-ceiling/>
 
@@ -104,68 +118,102 @@ it: **how fast can it sample before it starts losing data?**
 
 On the reference device the answer is that it does not, up to the CLI's own
 100 Hz cap, with every source read on every tick. That is not an extrapolation
-from the 10 Hz figure. It is five runs.
+from the 10 Hz figure. It is six runs.
 
-### The five runs
+### The six runs
 
-Every figure is from the agent's own cgroup and `/metrics`, with the full source set. Each row is
+Every figure is from the agent's own cgroup, carried in every sample and read back from the store, with the full source set. Each row is
 one window with the ring already full:
 
-Measured on RB5009UG+S+ · 4 × 1.4 GHz Cortex-A72 · RouterOS 7.24.2 · 2026-09-15 · 60 s windows at steady state (ring full), full source set, collector forwarding to a file, a Prometheus exposition and InfluxDB 3 at once
+Measured on RB5009UG+S+ · 4 × 1.4 GHz Cortex-A72 · RouterOS 7.24.2 · 2026-09-18 · 300 s windows at steady state (ring full), full source set, the shipped configuration — a 60 s ring, the memory limit derived from it and the default 64M container cap — with the collector forwarding to InfluxDB 3
 
 The measured runs:
 
 | rate | floors | CPU of one core | µs/sample | RSS | slipped ticks | gaps / drops |
 | --- | --- | --- | --- | --- | --- | --- |
-| 10 Hz (default) | default | **2.85 %** | 2 856 | 31.3 MiB | **0** | 0 / 0 |
-| 50 Hz | default | **10.13 %** | 2 026 | 51.9 MiB | **0** | 0 / 0 |
-| 100 Hz | default | **17.81 %** | 1 781 | 76.5 MiB | 5 (0.08 %) | 0 / 0 |
-| 50 Hz | `FLOOR_HZ=50` | **22.47 %** | 4 494 | 60.6 MiB | 6 (0.20 %) | 0 / 0 |
-| 100 Hz | `FLOOR_HZ=100` | **43.95 %** | 4 395 | 79.6 MiB | 14 (0.23 %) | 0 / 0 |
+| 10 Hz (default) | default | **2.69 %** | 2 685 | 13.2 MiB | **0** | 0 / 0 |
+| 20 Hz | default | **4.61 %** | 2 303 | 15.4 MiB | **0** | 0 / 0 |
+| 50 Hz | default | **9.63 %** | 1 926 | 23.3 MiB | **0** | 0 / 0 |
+| 100 Hz | default | **16.83 %** | 1 684 | 45.7 MiB | 5 (0.02 %) | 0 / 0 |
+| 50 Hz | `FLOOR_HZ=50` | **22.56 %** | 4 511 | 25.1 MiB | 4 (0.03 %) | 0 / 0 |
+| 100 Hz | `FLOOR_HZ=100` | **42.70 %** | 4 270 | 49.5 MiB | 178 (0.59 %) | 0 / 0 |
 
 `FLOOR_HZ` means every source is read on every tick, with no per-source floor at
 all — the worst case the agent can be asked for.
 
-Memory differs by row because the ring does. The 10 Hz row is the install
-default (300 s ring, `--mem-limit-mb 40 --memory-max 64M`); the 50 Hz rows used `--buffer 120 --mem-limit-mb 64 --memory-max 96M` and
-the 100 Hz rows `--buffer 120 --mem-limit-mb 80 --memory-max 128M`. Give the agent's garbage collector room or the cost
-jumps for reasons that have nothing to do with the rate.
+**Every row ran the shipped configuration** and passed no memory flag at all:
+the 60 s ring is the default and the limit is derived from it — 16 MiB at 10 and
+20 Hz, 25 at 50, 48 at 100 — under the default 64M container cap. The campaign
+before this one could not do that. It needed `--memory-max 96M` at 50 Hz and
+`128M` at 100, and its 10 Hz row held a 300 s ring. Same device, same sources:
+**38 to 59 % less memory per row, and the CPU unmoved** — 2.85 % of one core at
+10 Hz then against 2.69 % now.
+
+Memory still differs by row because the ring does: it holds 60 s of samples
+whatever the rate, so ten times the rate is ten times the ring.
 
 > **Nothing was lost at any rate, in any configuration**
 >
-> Sampled seconds covered wall clock to 1.0000 in all five runs, the delivered rate was the
-> configured rate to three figures, and every sink — file, Prometheus, InfluxDB — reported 0 gaps
-> and 0 drops.
+> Sampled seconds covered wall clock to 1.0000 in all six runs, and the delivered rate was the
+> configured rate to three figures — 99.98 Hz in the worst of them, 100 Hz with every source on
+> every tick. The collector reported 0 gaps and its InfluxDB 3 sink 0 drops in every window.
 
 ### Two things in that table worth reading twice
 
 #### Per-sample cost falls as the rate rises
 
-A sample costs 2 856 µs at 10 Hz against 1 781 µs at 100 Hz. That is not a
+A sample costs 2 685 µs at 10 Hz against 1 684 µs at 100 Hz. That is not a
 paradox, it is the floors working: the expensive sources are amortised over more samples.
 `/proc/slabinfo`, one of the expensive sources (13.8 kB), is read every 2nd tick at 10 Hz and every
 17th at 100 Hz, so an average sample costs less while the _rate_ of slabinfo reads
 stays near its 6 Hz floor either way (5 Hz at 10 Hz, about 5.9 Hz at 100 Hz).
 
 With `FLOOR_HZ` there is no amortisation to be had and the per-sample cost is
-flat — 4 494 µs at 50 Hz and 4 395 µs at
-100 Hz — so CPU scales linearly with the rate: 22.47 %, then 43.95 %.
+flat — 4 511 µs at 50 Hz and 4 270 µs at
+100 Hz — so CPU scales linearly with the rate: 22.56 %, then 42.70 %.
 
 #### A slipped tick is not a lost sample
 
 The sample is still produced and still delivered, carrying its real `dt_ns`, so
 any rate computed from it stays correct. It is a smear, not a hole, and
 `mikroscope_tick_interval_seconds` is where you see it. At 100 Hz with
-everything on every tick, 99.5 % of ticks still landed within 11 ms of a 10 ms
-period and the worst was 15 ms.
+everything on every tick, 29 777 of 29 994 intervals — 99.3 % — still landed
+within 11 ms of a 10 ms period; the 99.5th percentile was 11.3 ms and the worst
+single interval 21.7 ms.
 
 ### What binds is the read, not the CPU
 
-At the default floors a whole tick's sources are read in under 2 ms for 97.5 % of
-samples at 100 Hz, comfortably inside a 10 ms period. `FLOOR_HZ` pushes 1.4 %
-of reads past 5 ms, and those are the ticks that slip. The CPU headroom is
+At the default floors a whole tick's sources are read in under 2 ms for 97.7 % of
+samples at 100 Hz, comfortably inside a 10 ms period. `FLOOR_HZ` pushes 1.45 %
+of reads past 5 ms — and not one read of 29 996 came in under 2 ms — and those
+are the ticks that slip: 0.593 % of them at 100 Hz with every
+source on every tick, against 0.017 % at the default floors. The CPU headroom is
 larger than the timing headroom, which is why the ceiling is a statement about
 I/O rather than about the A72.
+
+### The memory a rate costs, and where to buy it
+
+The ring is the memory. Every other figure — the Go runtime, the collector's
+headroom, the allocator's fragmentation — follows from how many entries it
+holds, because the soft memory limit is derived from exactly that. So the
+question "can this board sample at 100 Hz" is mostly "can it hold 100 × your
+buffer seconds of samples", and the answer for the whole table above is yes
+inside the default 64M cap.
+
+Two things in it are not obvious. **The per-sample cost falls as the rate
+rises** — 1 684 µs at 100 Hz against 2 685 at 10 — because the level sources are
+read at their own floors rather than every tick, so the expensive ones are
+spread over ten times as many ticks: ten times the data costs 6.3 times the
+CPU, not ten. And **the slips are the read's fault, not the CPU's**: at 100 Hz
+the mean read is 1.2 ms against a 10 ms period, but the worst is 17.9 ms. A tick
+whose read outlasts its period is late by definition, which is why the same
+row shows 16.8 % of one core and five slipped ticks rather than a CPU wall.
+
+**Buy the room in buffer seconds, not in cleverness.** At 100 Hz a 20 s buffer
+holds 6.59 MiB and derives a 17 MiB limit — the same relief that compressing
+the ring 4.7× would give, and compression was measured on this device at
+**+1 331 µs a sample**, which at 100 Hz is +74 % CPU and six times the slipped
+ticks. The seconds are free; the compression is not.
 
 ### What sampling faster actually buys
 
@@ -181,8 +229,10 @@ and a tighter bound on how long a burst can hide between two samples.
 > **Not measured, so not claimed**
 >
 > Any rate on a board that is not this one, and what happens under a traffic load heavier than this
-> router's ordinary evening — about 30 Mbit/s. Before quoting a number for your
-> device, re-measure it there: two `/metrics` reads 60 s apart at steady state.
+> router's ordinary traffic — about 19 Mbit/s on the WAN while these ran,
+> with peaks to 933 Mbit/s. Before quoting a number for your device, re-measure it there: two reads
+> of the collector's `/metrics` 60 s apart at steady state, or `cpu_us` and `rss` in
+> `mikroscope_self` in whichever store you write to.
 
 ### See also
 
@@ -228,7 +278,7 @@ first.
 
 ### Gaps are reported, never papered over
 
-The agent keeps 300 s by default. A collector outage shorter than that is
+The agent keeps 60 s by default. A collector outage shorter than that is
 backfilled on reconnect through `since=<seq>`; a longer one is reported as a gap
 of known length — a marker in a recording, a counter on the collector. A chart
 with a hole in it is a chart telling the truth.
@@ -236,13 +286,13 @@ with a hole in it is a chart telling the truth.
 > **Not measured, so not claimed**
 >
 > Any board that is not the RB5009 described on [the rate ceiling](https://jmrp.io/docs/mikroscope/cost/rate-ceiling/).
-> Traffic heavier than about 30 Mbit/s. A 32-bit RouterOS build, which is
+> Traffic heavier than about 19 Mbit/s. A 32-bit RouterOS build, which is
 > coming on a hEX S but has not arrived. Sustained operation beyond the windows stated. None of
 > these are claims this project is making, and none of them should be inferred from the ones it is.
 
 ### See also
 
-- [The rate ceiling](https://jmrp.io/docs/mikroscope/cost/rate-ceiling/): the five runs and the conditions they were
+- [The rate ceiling](https://jmrp.io/docs/mikroscope/cost/rate-ceiling/): the six runs and the conditions they were
   taken under.
 - [The cost of the observer](https://jmrp.io/docs/mikroscope/cost/): the budget, and how to measure the cost on a device
   that is not this one.
@@ -352,7 +402,7 @@ and `schedstat` where a kernel has them.
 ### How far back the agent remembers
 
 The other hard bound is depth, not resolution. The agent keeps its samples in a ring of
-`--buffer` seconds, 300 s by default and 10–3600 s allowed, which holds rate × buffer
+`--buffer` seconds, 60 s by default and 10–3600 s allowed, which holds rate × buffer
 samples. Nothing older exists anywhere on the router.
 
 A collector or recorder outage shorter than the ring is backfilled on reconnect: it asks
@@ -363,8 +413,11 @@ samples it still holds; `record` writes it as a marker reading `samples N..M los
 `forward` counts it in `mikroscope_collector_gaps_total` and hands it to every sink.
 
 A longer ring costs memory in the agent, and the agent refuses one that cannot fit. At
-start it estimates the ring at 2 560 bytes a line (the mean line was measured at 2 439 B on the RB5009 on 2026-09-12, without the PMU, buddyinfo and MTD sources; a board
-with more cores or interrupt lines, or more sources, costs more), adds the triggered-capture budget, and exits with an error if the total exceeds the
+start it estimates the ring at 3 456 B a line — the mean line
+was measured at 3 230 B on the RB5009 on 2026-09-17 with every source on,
+and the budget charges the allocator size class it is served from rather than the line itself,
+because that is what the heap pays; a board with more cores or interrupt lines costs more, one with
+no PMU costs 35 % less — adds the triggered-capture budget, and exits with an error if the total exceeds the
 container's `memory.max`. If the total is more than half the Go soft memory limit it starts
 but logs a warning, because a heap that tight keeps the garbage collector running. How to
 size both limits is on [the cost of the observer](https://jmrp.io/docs/mikroscope/cost/).
@@ -407,7 +460,8 @@ when it did something). Established on the RB5009 (RouterOS 7.24.2, kernel 5.6.3
 
 An ordinary container also reads these files as the router's, read on 2026-09-12: the two
 thermal zones under `/sys/class/thermal`, `scaling_cur_freq` per core,
-the NAND wear counters in `/proc/yaffs` and `/proc/buddyinfo`. The device tree's `model`
+the NAND wear counters in `/proc/yaffs`, and the page allocator's free lists in
+`/proc/buddyinfo`. The device tree's `model`
 string (`RB5009`) is not namespaced either, and it is how the agent identifies the board
 without the RouterOS API.
 

@@ -47,7 +47,7 @@ Todo lo que empiece por `mikroscope-agent` es el otro programa.
 1. Descarga el archivo y las sumas de verificación:
 
    ```sh
-   VERSION=1.0.4
+   VERSION=1.0.9
    curl -fsSLO https://github.com/jmrplens/mikroscope/releases/download/v$VERSION/mikroscope_${VERSION}_linux_x86_64.tar.gz
    curl -fsSLO https://github.com/jmrplens/mikroscope/releases/download/v$VERSION/checksums.txt
    ```
@@ -80,7 +80,7 @@ Todo lo que empiece por `mikroscope-agent` es el otro programa.
    `darwin_x86_64` para Intel— y las sumas de verificación:
 
    ```sh
-   VERSION=1.0.4
+   VERSION=1.0.9
    curl -fsSLO https://github.com/jmrplens/mikroscope/releases/download/v$VERSION/mikroscope_${VERSION}_darwin_arm64.tar.gz
    curl -fsSLO https://github.com/jmrplens/mikroscope/releases/download/v$VERSION/checksums.txt
    ```
@@ -118,13 +118,13 @@ Todo lo que empiece por `mikroscope-agent` es el otro programa.
 2. Compruébalo en PowerShell, contra la línea de tu archivo en `checksums.txt`:
 
    ```powershell
-   Get-FileHash .\mikroscope_1.0.4_windows_x86_64.zip -Algorithm SHA256
+   Get-FileHash .\mikroscope_1.0.9_windows_x86_64.zip -Algorithm SHA256
    ```
 
 3. Descomprímelo en un sitio permanente y pon esa carpeta en tu `PATH`:
 
    ```powershell
-   Expand-Archive .\mikroscope_1.0.4_windows_x86_64.zip -DestinationPath $HOME\mikroscope
+   Expand-Archive .\mikroscope_1.0.9_windows_x86_64.zip -DestinationPath $HOME\mikroscope
    $env:PATH += ";$HOME\mikroscope"
    ```
 
@@ -160,13 +160,14 @@ hayas movido, y ese directorio tiene que estar en tu `PATH`. Un binario
 compilado así informa de la versión del módulo y no del sello de una
 publicación.
 
-Un checkout compila los dos programas de una vez, que es la ruta de quien
+Un checkout compila cualquiera de los dos programas, que es la ruta de quien
 contribuye:
 
 ```sh
 git clone https://github.com/jmrplens/mikroscope
 cd mikroscope
-make build          # deja bin/mikroscope y bin/mikroscope-agent
+make build          # deja bin/mikroscope
+make build-agent    # deja bin/mikroscope-agent-<goarch>
 ```
 
 </TabItem>

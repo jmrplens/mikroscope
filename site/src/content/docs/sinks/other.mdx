@@ -49,7 +49,7 @@ and its first key says what it is:
 - `{"trigger":…}` — the agent's capture marker, also verbatim;
 - `{"derived":…}` — the derive stage's values, on the line after the sample they belong
   to, so a reader that wants only raw samples skips that kind;
-- `{"detection":…}`, `{"device":…}`, `{"api":…}` and `{"gap":…}`.
+- `{"detection":…}`, `{"device":…}`, `{"api":…}`, `{"sampler":…}` and `{"gap":…}`.
 
 Writes are synchronous through a 64 KiB buffer, and the counters are in events. A write
 the filesystem refuses counts one error and one drop.
@@ -165,12 +165,12 @@ refuse it — a NUL byte is dropped, invalid UTF-8 becomes U+FFFD — and a NaN 
 float becomes NULL. `TIMESTAMPTZ` resolves to 1 µs, so two samples closer than that
 would collide on the primary key; at 10 Hz they are 100 ms apart.
 
-Compared with InfluxDB the SQL sink carries fewer sources: no CPU frequency, PMU,
-softirq, `/proc/vmstat` level, per-CPU interrupt or kernel-log count tables, no
-`/proc/vmstat` counter table beyond `pgfault` and `pgmajfault` (which ride on
-`mikroscope_stat`, so the `pgscan_*`, `pgsteal_*`, `pgalloc`, `pgfree`, `allocstall`,
-`compact_stall`, `oom_kill`, `pswpin` and `pswpout` deltas are missing), no `mikroscope_sample`, and a narrower `mikroscope_mem`. It carries two that InfluxDB does not: the kernel-log text in
-`mikroscope_event`, and the API tier's errors.
+Compared with InfluxDB the SQL sink is short of exactly one thing: the kernel-log
+**count** table. That was a long list until 1.0.3 and 1.0.5 closed it — CPU frequency,
+the PMU, softirq, `/proc/vmstat` levels and counters, per-CPU interrupts,
+`mikroscope_sample` and the full-width `mikroscope_mem` all have tables now. It carries
+two InfluxDB does not: the kernel-log **text** in `mikroscope_event`, and the API tier's
+errors.
 
 <Aside type="caution" title="A pipe into psql can block the collector">
 	The SQL sink is synchronous, with no queue. With `--sql -` feeding `psql`, a `psql` that falls
@@ -185,8 +185,9 @@ of SQL and an API event to 1 138 B, so 10 Hz plus the 1 Hz API tier is about 14
 file after a 5.6 KiB header. The same two events in line protocol are 716 B and 608 B,
 about 1.9× smaller, though part of that is content the SQL rows carry and line protocol
 did not. With the privileged sources present the kernel event grows to 2 749 B. That header
-is the fixture's: the header for all thirty-two tables the sink declares, computed from the
-schema strings rather than measured, is 7 757 B, about 7.6 KiB.
+is the fixture's: the header for all forty-three tables the sink declares, rendered by the
+sink's own `header()` on 2026-09-19, is 10 482 B, about 10.2 KiB — 13 966 B with the
+TimescaleDB hypertable statements.
 
 ## Loki
 
@@ -302,6 +303,7 @@ time. Every level is a **Gauge**. Nothing from the kernel tier is pre-divided ex
 | Gauge | `mikroscope.derived.fastpath_share`                                                                                                                         | `interface`, `direction`                                                            |
 | Gauge | `mikroscope.device.cores`; `mikroscope.device.thermal.critical`, `mikroscope.device.thermal.polling` (s)                                                    | `board`, `kernel`, `hash`; `zone`                                                   |
 | Gauge | `mikroscope.device.cpu.frequency_max`, `mikroscope.device.cpu.frequency_min`; `mikroscope.device.source_cadence`                                            | `cpu`; `source`, `reason`                                                           |
+| Gauge | `mikroscope.sampler.{ticks,slipped,trigger_fired,trigger_suppressed}`; `mikroscope.capture.{held,bytes,budget_bytes,served_bytes,refused}`                  | `condition`, `reason`                                                               |
 
 </ScrollTable>
 
@@ -354,6 +356,7 @@ value becomes `none`, so a path's depth never changes.
 | `derived.{mem_pressure,cycles_per_packet,instructions_per_packet,cache_misses_per_packet,packets_per_irq}`                                           | the derive stage                  |
 | `trigger.<cause>`, `detection.<rule>` — the value 1 at each event                                                                                    | triggers and detections           |
 | `device.{cores,conntrack_max,cgroup_mem_max}`, `device.thermal.<zone>.*`, `device.cpufreq.<n>.*`, `device.cadence.<source>.hz`                       | the device-info stream            |
+| `sampler.{ticks,slipped,captures_held,capture_bytes,capture_budget_bytes,capture_served_bytes}`                                                      | the agent's own counters, on the health cadence|
 | `collector.gap.{samples,from,to}`                                                                                                                    | gaps, at the collector's clock    |
 
 </ScrollTable>
@@ -410,7 +413,7 @@ One document per event, with `kind` telling them apart:
   `role` and `bridge`, and each `iface_counters` entry `comment`, `type`, `role` and
   `bridge`, where the inventory has them. The API tier's per-command errors are not
   written;
-- `gap` (`from`, `to`, `lost`), `device`, `detection` and `trigger`.
+- `gap` (`from`, `to`, `lost`), `device`, `detection`, `trigger` and `sampler`.
 
 Every document carries `@timestamp` from the agent's clock (the collector's for gaps and
 device records) and `host`. The index name expands `%Y`, `%m` and `%d` — only those —

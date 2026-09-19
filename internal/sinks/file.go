@@ -45,6 +45,8 @@ func (s *File) Write(e Event) {
 		}
 	case e.Detection != nil:
 		err = json.NewEncoder(s.w).Encode(map[string]any{"detection": e.Detection})
+	case e.Sampler != nil:
+		err = json.NewEncoder(s.w).Encode(map[string]any{"sampler": e.Sampler})
 	case e.Device != nil:
 		// A recording is replayed from its first line: the facts are already
 		// in it, and the cadence repeat would only make the file bigger.

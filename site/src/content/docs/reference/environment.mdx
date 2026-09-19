@@ -42,12 +42,12 @@ at all. [Commands and flags](/mikroscope/reference/cli/) has every flag.
 
 | Variable                  | Flag             | Read by                                               | Default in the code          | Value in `.env.example` |
 | ------------------------- | ---------------- | ----------------------------------------------------- | ---------------------------- | ----------------------- |
-| `MIKROSCOPE_ROUTER`       | `--router`       | `doctor`, `install`, `upgrade`, `uninstall`, `status` | none (required)              | empty                   |
+| `MIKROSCOPE_ROUTER`       | `--router`       | `doctor`, `install`, `upgrade`, `uninstall`, `status` | none (required)              | set                   |
 | `MIKROSCOPE_SSH_PORT`     | `--ssh-port`     | the same                                              | ssh config                   | `22`                    |
 | `MIKROSCOPE_SSH_KEY`      | `--ssh-key`      | the same                                              | ssh agent or config          | empty                   |
 | `MIKROSCOPE_ARCH`         | `--arch`         | the deployment verbs                                  | `arm64`                      | `arm64`                 |
-| `MIKROSCOPE_AGENT_TAR`    | `--agent-tar`    | `plan`, `install`, `upgrade`, `image`                 | empty (build the agent here) | not in the file         |
-| `MIKROSCOPE_REMOTE_IMAGE` | `--remote-image` | `plan`, `install`, `upgrade`                          | empty (upload a tar)         | not in the file         |
+| `MIKROSCOPE_AGENT_TAR`    | `--agent-tar`    | `plan`, `install`, `upgrade`, `image`                 | empty (build the agent here) | commented out           |
+| `MIKROSCOPE_REMOTE_IMAGE` | `--remote-image` | `plan`, `install`, `upgrade`                          | empty (upload a tar)         | commented out           |
 | `MIKROSCOPE_NAME`         | `--name`         | the deployment verbs                                  | `mikroscope`                 | commented out           |
 | `MIKROSCOPE_VETH`         | `--veth`         | the deployment verbs                                  | `veth-mikroscope`            | `veth-mikroscope`       |
 | `MIKROSCOPE_SUBNET`       | `--subnet`       | the deployment verbs, `record`, `forward`             | `172.30.10.0/30`             | `172.30.10.0/30`        |
@@ -104,8 +104,7 @@ user](/mikroscope/security/api-user/) has the policy that user needs.
 Setting a sink's URL variable is enough to turn that sink on: `forward` builds
 every sink whose flag ends up non-empty, from the command line or from the
 variable. Every one of these names carries the `MIKROSCOPE_` prefix: a bare
-`LOKI_URL` is read by nothing, and `.env.example` says so beside
-`MIKROSCOPE_LOKI_URL`.
+`LOKI_URL` is read by nothing.
 
 ## Credentials that have no flag
 
@@ -130,9 +129,7 @@ is read from the environment only.
 
 `dashboards import` and `dashboards check` read `GRAFANA_URL` (the default of
 `--grafana`) and `GRAFANA_TOKEN`. Neither has the `MIKROSCOPE_` prefix.
-`.env.example` sets `GRAFANA_URL` twice, once empty in its LAN-services block
-and once commented out in the Grafana block, and says the token never goes in
-the file.
+`.env.example` carries both, commented out, in its Grafana block.
 
 ## The agent's envlist
 
@@ -146,7 +143,7 @@ the `container` topic, and exit with status 2.
 | Variable               | Agent default                                      | Accepted                    | Meaning                                                                                                                                     |
 | ---------------------- | -------------------------------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | `RATE_HZ`              | `10`                                               | 1–100                       | sampler rate                                                                                                                                |
-| `BUFFER_S`             | `300`                                              | 10–3600                     | ring length in seconds                                                                                                                      |
+| `BUFFER_S`             | `60`                                               | 10–3600                     | ring length in seconds                                                                                                                      |
 | `PORT`                 | `9123`                                             | 1–65535                     | HTTP port                                                                                                                                   |
 | `ADDR`                 | empty                                              | an address                  | bind address. Empty binds `:PORT`, every address in the container's network namespace; `install` always sets it to the agent's veth address |
 | `TOKEN`                | empty                                              |                             | when set, every path but `/healthz` requires `Authorization: Bearer <token>`                                                                |
@@ -172,7 +169,7 @@ The names `SOURCES` accepts are the optional sources `/capabilities` reports:
 compares are on [triggered capture](/mikroscope/record/triggers/).
 
 Before it listens, the agent checks the ring against the container's own
-`memory.max`: `RATE_HZ × BUFFER_S × 2 560 B` plus `CAPTURE_MB` must fit, or it
+`memory.max`: `RATE_HZ × BUFFER_S × 3 456 B` plus `CAPTURE_MB` must fit, or it
 refuses to start and names the three variables and `--memory-max`. If that
 figure is more than half of `MEM_LIMIT_MB`, it starts and logs a warning with
 the limit to raise to. 2 560 B is not itself a measurement: it is the mean
@@ -190,25 +187,36 @@ this order, and nothing else:
 
 <Aside type="note" title="The agent's defaults and install's defaults are not the same">
 
-An agent started with no envlist entry uses a 14 MiB soft memory limit. `install` always writes
-`MEM_LIMIT_MB=40`, and the container's `memory-max` is `64M`, because a 300 s ring at 10 Hz holds
-about 7.3 MB and a 14 MiB limit kept the garbage collector running continuously on the RB5009: <Measured id="gc.tight.cpu" /> of one core against <Measured id="gc.roomy.cpu" /> with room, both with the ring full, measured
-on RouterOS 7.24.2 on 2026-09-12. `IRQ_TOP_K`, `CAPTURE_PRE_S`, `CAPTURE_POST_S`, `CAPTURE_POLICY`,
+An agent started with no envlist entry uses a 14 MiB soft memory limit. The ring is **60 s** by default, not the 300 it was until 1.0.6. What it buys is how long the
+collector may be absent before samples are lost, and it is not a window anybody reads — the
+collector drains it twice a second. Measured on the reference deployment over 24 hours on
+2026-09-17: the largest interruption in delivery was 114.5 s, and it was self-inflicted (a
+container swap plus the minute the collector takes to notice a restarted agent); in ordinary
+running the collector never falls behind. 60 s covers a restart of either side on a LAN and costs
+2.0 MiB of ring at 10 Hz instead of 9.9. A link that drops for longer raises it with `--buffer`,
+and the memory limit follows because it is derived from the ring.
+
+`install` **derives**
+`MEM_LIMIT_MB` from the ring — rate × buffer × the line size, times 2.5, floored at 16 MiB and
+capped at three quarters of `memory-max` — so the default install writes `MEM_LIMIT_MB=16` for a
+60 s ring at 10 Hz, where it used to write a flat 40. A fixed number cannot be right for every
+rate: the same 40 left 8 MiB unused at 10 Hz and is below the ring itself at 50 Hz.
+
+The factor is measured, not chosen. On the reference RB5009 (RouterOS 7.24.2, 10 Hz, 300 s, every
+source on) on 2026-09-17, four limits over four windows of about 12 000 samples each:
+
+| limit          | ring multiple | RSS       | CPU per sample | |
+| -------------- | ------------- | --------- | -------------- | ------------------------ |
+| 40 MiB         | 4.0×          | 32.9 MiB  | 2 657 µs       | the limit never binds    |
+| 25 MiB (today) | 2.5×          | ~26 MiB   | ~2 780 µs      | no measurable cost       |
+| 21 MiB         | 2.1×          | 23.5 MiB  | 3 250 µs       | +22 %, and climbing      |
+| 18 MiB         | 1.8×          | 20.4 MiB  | 14 800 µs      | +457 %, worst tick 52 ms |
+
+The same cliff was measured from the other side on 2026-09-12: <Measured id="gc.tight.cpu" /> of one core at 14 MiB against <Measured id="gc.roomy.cpu" /> with room, both with the ring full. `IRQ_TOP_K`, `CAPTURE_PRE_S`, `CAPTURE_POST_S`, `CAPTURE_POLICY`,
 `TRIGGER_REFRACTORY_S`, `SOURCES`, `PROC_ROOT` and `SYS_ROOT` have no flag, so an installed agent
 runs with their defaults.
 
 </Aside>
-
-## In .env.example but not read by the code
-
-`.env.example` is also the development template for the project's own devices,
-so it carries names that no binary reads. Setting them changes nothing:
-
-- `MIKROSCOPE_ROUTEROS`, the RouterOS version of the reference device.
-- `OPERATOR_HOST_IP`, the operator host for push-sink and probe tests.
-- The `HEXS_*` block (`HEXS_ROUTER`, `HEXS_SSH_PORT`, `HEXS_SSH_KEY`,
-  `HEXS_ARCH`, `HEXS_API_ADDR`, `HEXS_API_USER`, `HEXS_API_PASSWORD`), kept
-  for a hEX S that has not arrived.
 
 <SeeAlso>
 

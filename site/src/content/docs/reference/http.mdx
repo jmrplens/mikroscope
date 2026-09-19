@@ -60,7 +60,7 @@ opens](/mikroscope/security/expose/) says why.
 | `GET`    | `/capabilities`  | yes   | JSON: the kernel, the board, the sources, the device's own ceilings and each source's cadence |
 | `GET`    | `/snapshot`      | yes   | NDJSON, then closes: the last N seconds, or up to N samples after a sequence number           |
 | `GET`    | `/stream`        | yes   | NDJSON, chunked and open: backfill from a sequence number, then live                          |
-| `GET`    | `/metrics`       | yes   | Prometheus text exposition, `text/plain; version=0.0.4`                                       |
+| `GET`    | `/sampler`       | yes   | JSON: what only the agent can count about itself — ticks, slips, triggers, captures           |
 | `GET`    | `/captures`      | yes   | JSON: the capture index                                                                       |
 | `GET`    | `/captures/{id}` | yes   | NDJSON: one capture header line, then the sample lines verbatim                               |
 | `DELETE` | `/captures/{id}` | yes   | `204`, and the capture's bytes return to the budget                                           |
@@ -162,12 +162,12 @@ kinds the `seconds` form does not: a gap line first when `since` is older than
 the ring, and a trigger line before each sample a capture condition fired on.
 `max` exists for the relay, because `/tool fetch output=user` returns at
 most <Measured id="relay.replyMaxBytes" /> on RouterOS 7.24.2 and truncates the rest silently; the relay
-asks for at most 18 lines.
+asks for at most <Measured id="relay.maxBatch" /> lines.
 
 <Aside type="caution" title="A large /snapshot is not a free way to read the cost">
-	A 60 s `/snapshot` at 10 Hz makes the agent hand over about 600 lines, around 1.5 MB, and the
+	A 60 s `/snapshot` at 10 Hz makes the agent hand over about 600 lines, around 1.9 MB, and the
 	`self.cpu_us` inside those samples includes the cost of serving them. Read the agent's cost from
-	`/metrics` instead: [the cost of the observer](/mikroscope/cost/) has the procedure.
+	the collector's `/metrics` instead: [the cost of the observer](/mikroscope/cost/) has the procedure.
 </Aside>
 
 ## `GET /stream`
@@ -271,13 +271,26 @@ and `bus-cycles`. The slab caches it keeps are `nf_conntrack`,
 `sock_inode_cache`, `dst_cache`, `ip_dst_cache`, `kmalloc-1k` and
 `kmalloc-2k`, where the kernel has them.
 
-## `GET /metrics`
+## `GET /sampler`
 
-The Prometheus text exposition, built from cumulative counters that nothing
-resets on a scrape, so `rate()` over any range is correct and two scrapers
-see the same values. The text is built in memory and written after the
-counters' lock is released, so a slow scraper cannot hold up the sampler.
-[Prometheus metric families](/mikroscope/reference/metrics/) lists every family.
+What only the agent can count about itself, as JSON: ticks taken, ticks
+slipped, and what the trigger evaluator has fired, suppressed and refused,
+with what it is holding right now and the budget those captures pin. Every
+configured condition is present from the first read, at 0 until it fires — a
+counter that appears with its first event reads as a gap in the series rather
+than as a quiet router.
+
+The collector reads it at start and then on the same one-minute cadence it
+re-measures the clock skew on, and hands it to every sink. That is what makes
+these figures reachable at all: they are not per-tick, so they cannot ride in
+a sample, and until 1.0.5 the only way to see them was to scrape the agent.
+
+**The agent serves no `/metrics`.** It did until 1.0.4, and a Prometheus
+deployment was documented as scraping the agent as well as the collector. It
+no longer does: the exposition is the collector's, built from the samples and
+from this endpoint, and it carries every family the dashboards ask for. The
+agent is a sampler and a ring — rendering is not its job, and not folding
+every sample into counters and histograms is memory it does not spend.
 
 ## Captures
 
@@ -354,7 +367,7 @@ capture](/mikroscope/record/triggers/).
 
 - [Reaching the agent](/mikroscope/install/reaching-the-agent/): the three ways a host gets to
   these paths.
-- [Prometheus metric families](/mikroscope/reference/metrics/): what `/metrics` carries.
+- [Prometheus metric families](/mikroscope/reference/metrics/): what the collector's `/metrics` carries.
 - [Triggered capture](/mikroscope/record/triggers/): the conditions behind `/captures`.
 - [What --expose opens](/mikroscope/security/expose/): when the token becomes mandatory.
 

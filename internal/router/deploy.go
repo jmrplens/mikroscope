@@ -30,6 +30,32 @@ func Listing(o Options, imageSize int, w io.Writer) {
 	fmt.Fprintln(w, "nothing above has been written yet")
 }
 
+// UpgradeListing prints the writes `upgrade` performs, and only those: it
+// replaces the container and leaves the veth, the router address and the two
+// list memberships alone. Install's Listing is the wrong text here — it names
+// four objects upgrade will not touch, which invites an operator to expect
+// writes that never come.
+//
+// It exists because until 1.0.10 `upgrade --dry-run` printed NOTHING and then
+// asked for confirmation: the flag documented as "print the plan and write
+// nothing" did neither half, so `upgrade --dry-run --yes` replaced the
+// container on a live router while promising it would not.
+func UpgradeListing(o Options, imageSize int, w io.Writer) {
+	plan := Plan(o)
+	c := plan[len(plan)-1]
+	fmt.Fprintf(w, "mikroscope upgrade plan for %s\n", o.Name)
+	fmt.Fprintf(w, "  options: %s\n", o.String())
+	fmt.Fprintf(w, "  keeps:   the veth, the router address and the list memberships are not touched\n")
+	fmt.Fprintf(w, "   1. remove %s\n      %s\n", c.Name, c.Remove)
+	if o.UsesRemoteImage() {
+		fmt.Fprintf(w, "   2. the router pulls %s (nothing is uploaded)\n", o.RemoteImage)
+	} else {
+		fmt.Fprintf(w, "   2. upload %s (%d KiB) with scp\n", o.ImageFile(), imageSize/1024)
+	}
+	fmt.Fprintf(w, "   3. %s\n      %s\n", c.Name, mask(c.Create, o.Token))
+	fmt.Fprintln(w, "nothing above has been written yet")
+}
+
 // Script renders the install as a RouterOS script the operator runs ON the
 // router — the path that needs neither this CLI nor ssh from another machine:
 // paste it into a terminal, or upload it and `/import`.

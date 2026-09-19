@@ -38,14 +38,14 @@ first.
 
 ## Gaps are reported, never papered over
 
-The agent keeps 300 s by default. A collector outage shorter than that is
+The agent keeps 60 s by default. A collector outage shorter than that is
 backfilled on reconnect through `since=<seq>`; a longer one is reported as a gap
 of known length — a marker in a recording, a counter on the collector. A chart
 with a hole in it is a chart telling the truth.
 
 <NotClaimed>
 	Any board that is not the RB5009 described on [the rate ceiling](/mikroscope/cost/rate-ceiling/).
-	Traffic heavier than about <Measured id="load.evening" />. A 32-bit RouterOS build, which is
+	Traffic heavier than about <Measured id="load.ordinary" />. A 32-bit RouterOS build, which is
 	coming on a hEX S but has not arrived. Sustained operation beyond the windows stated. None of
 	these are claims this project is making, and none of them should be inferred from the ones it is.
 </NotClaimed>
@@ -54,7 +54,7 @@ with a hole in it is a chart telling the truth.
 
 ## See also
 
-- [The rate ceiling](/mikroscope/cost/rate-ceiling/): the five runs and the conditions they were
+- [The rate ceiling](/mikroscope/cost/rate-ceiling/): the six runs and the conditions they were
   taken under.
 - [The cost of the observer](/mikroscope/cost/): the budget, and how to measure the cost on a device
   that is not this one.

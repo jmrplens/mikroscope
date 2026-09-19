@@ -36,13 +36,25 @@ func Run(ctx context.Context, cfg Config, version string, log func(string)) erro
 	return RunWith(ctx, cfg, src, version, log)
 }
 
-// ApproxLineBytes is what one ring entry costs: the mean pre-encoded NDJSON
-// line with every source on, measured at 2 439 B on the reference RB5009
-// (RouterOS 7.24.2, 4 cores, K=8 interrupts, privileged, slow tier at 1 Hz)
-// on 2026-09-12, and rounded up. Without the slow tier the same line was
-// 2 473 B. A bigger board — more cores, more IRQ
-// lines — costs more per line, so this is a floor and the check errs open.
-const ApproxLineBytes = 2560
+// ApproxLineBytes is what one ring entry costs. Not the line's length: the
+// size class the allocator rounds it up to, because that is what the heap is
+// actually charged.
+//
+// MEASURED on the reference RB5009 (RouterOS 7.24.2, 4 cores, K=8 interrupts,
+// privileged, every source on) on 2026-09-17: one line is 3 230 B, which Go's
+// allocator serves from the 3 456 B size class. The old figure here was
+// 2 560 B, taken from a 2 439 B line on 2026-09-12 before the PMU and the
+// sampler's own timing were in it, and it understated the ring by 35 %: a
+// budget check that passed on paper let the default memory limit sit so far
+// above the real heap that it never bound, and the agent ran at 32.9 MiB of
+// RSS where 24.3 was available for the asking.
+//
+// It is still an estimate and still device-dependent — a board with more
+// cores or more interrupt lines pays more per line, one with no PMU pays 35 %
+// less, and a line one byte either side of a size class boundary moves by a
+// whole class. The check errs open on the small side and the operator can
+// always read the real figure: it is the length of any line /snapshot serves.
+const ApproxLineBytes = 3456
 
 // checkRingBudget refuses a ring that cannot fit, and warns about one that
 // will make the collector thrash.

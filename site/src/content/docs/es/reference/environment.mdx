@@ -45,12 +45,12 @@ opciones](/mikroscope/es/reference/cli/) tiene todas las opciones.
 
 | Variable                  | Opción           | La leen                                               | Por defecto en el código        | Valor en `.env.example` |
 | ------------------------- | ---------------- | ----------------------------------------------------- | ------------------------------- | ----------------------- |
-| `MIKROSCOPE_ROUTER`       | `--router`       | `doctor`, `install`, `upgrade`, `uninstall`, `status` | ninguno (obligatoria)           | vacío                   |
+| `MIKROSCOPE_ROUTER`       | `--router`       | `doctor`, `install`, `upgrade`, `uninstall`, `status` | ninguno (obligatoria)           | definida                |
 | `MIKROSCOPE_SSH_PORT`     | `--ssh-port`     | los mismos                                            | configuración de ssh            | `22`                    |
 | `MIKROSCOPE_SSH_KEY`      | `--ssh-key`      | los mismos                                            | agente o configuración de ssh   | vacío                   |
 | `MIKROSCOPE_ARCH`         | `--arch`         | los verbos de despliegue                              | `arm64`                         | `arm64`                 |
-| `MIKROSCOPE_AGENT_TAR`    | `--agent-tar`    | `plan`, `install`, `upgrade`, `image`                 | vacío (compilar el agente aquí) | no está en el fichero   |
-| `MIKROSCOPE_REMOTE_IMAGE` | `--remote-image` | `plan`, `install`, `upgrade`                          | vacío (subir un tar)            | no está en el fichero   |
+| `MIKROSCOPE_AGENT_TAR`    | `--agent-tar`    | `plan`, `install`, `upgrade`, `image`                 | vacío (compilar el agente aquí) | comentada               |
+| `MIKROSCOPE_REMOTE_IMAGE` | `--remote-image` | `plan`, `install`, `upgrade`                          | vacío (subir un tar)            | comentada               |
 | `MIKROSCOPE_NAME`         | `--name`         | los verbos de despliegue                              | `mikroscope`                    | comentada               |
 | `MIKROSCOPE_VETH`         | `--veth`         | los verbos de despliegue                              | `veth-mikroscope`               | `veth-mikroscope`       |
 | `MIKROSCOPE_SUBNET`       | `--subnet`       | los verbos de despliegue, `record`, `forward`         | `172.30.10.0/30`                | `172.30.10.0/30`        |
@@ -108,8 +108,7 @@ usuario.
 Basta con definir la variable de URL de un destino para activarlo: `forward`
 construye todos los destinos cuya opción acaba no vacía, venga de la línea de
 órdenes o de la variable. Todos estos nombres llevan el prefijo `MIKROSCOPE_`:
-un `LOKI_URL` a secas no lo lee nada, y `.env.example` lo dice junto a
-`MIKROSCOPE_LOKI_URL`.
+un `LOKI_URL` a secas no lo lee nada.
 
 ## Credenciales que no tienen opción
 
@@ -134,9 +133,7 @@ secretos que usa la CLI se leen solo del entorno.
 
 `dashboards import` y `dashboards check` leen `GRAFANA_URL` (el valor por
 defecto de `--grafana`) y `GRAFANA_TOKEN`. Ninguna de las dos lleva el prefijo
-`MIKROSCOPE_`. `.env.example` define `GRAFANA_URL` dos veces, una vacía en su
-bloque de servicios de la LAN y otra comentada en el bloque de Grafana, y dice
-que el token nunca va en el fichero.
+`MIKROSCOPE_`. `.env.example` lleva las dos, comentadas, en su bloque de Grafana.
 
 ## La envlist del agente
 
@@ -150,7 +147,7 @@ tema `container`, y salir con estado 2.
 | Variable               | Por defecto en el agente                           | Acepta                           | Significado                                                                                                                                                                        |
 | ---------------------- | -------------------------------------------------- | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `RATE_HZ`              | `10`                                               | 1–100                            | cadencia del muestreador                                                                                                                                                           |
-| `BUFFER_S`             | `300`                                              | 10–3600                          | longitud del anillo en segundos                                                                                                                                                    |
+| `BUFFER_S`             | `60`                                               | 10–3600                          | longitud del anillo en segundos                                                                                                                                                    |
 | `PORT`                 | `9123`                                             | 1–65535                          | puerto HTTP                                                                                                                                                                        |
 | `ADDR`                 | vacío                                              | una dirección                    | dirección de escucha. Vacía escucha en `:PORT`, todas las direcciones del espacio de nombres de red del contenedor; `install` siempre la fija a la dirección de la veth del agente |
 | `TOKEN`                | vacío                                              |                                  | cuando está definida, todas las rutas salvo `/healthz` exigen `Authorization: Bearer <token>`                                                                                      |
@@ -177,7 +174,7 @@ disparo y qué compara cada una están en [captura por
 disparo](/mikroscope/es/record/triggers/).
 
 Antes de escuchar, el agente compara el anillo con el propio `memory.max` del
-contenedor: `RATE_HZ × BUFFER_S × 2 560 B` más `CAPTURE_MB` tiene que caber, o
+contenedor: `RATE_HZ × BUFFER_S × 3 456 B` más `CAPTURE_MB` tiene que caber, o
 se niega a arrancar y nombra las tres variables y `--memory-max`. Si esa cifra
 supera la mitad de `MEM_LIMIT_MB`, arranca y registra un aviso con el límite al
 que subir. 2 560 B no es una medida en sí: es la línea media medida en el
@@ -196,27 +193,38 @@ este orden, y nada más:
 
 <Aside type="note" title="Los valores por defecto del agente y los de install no son los mismos">
 
+El anillo son **60 s** por defecto, no los 300 que fueron hasta 1.0.6. Lo que compra es cuánto tiempo
+puede estar ausente el colector antes de que se pierdan muestras, y no es una ventana que nadie lea
+— el colector lo vacía dos veces por segundo. Medido en el despliegue de referencia sobre 24 horas
+el 2026-09-17: la mayor interrupción en la entrega fueron 114,5 s, y fue autoinfligida (un cambio de
+contenedor más el minuto que tarda el colector en notar un agente reiniciado); en operación normal
+el colector nunca se queda atrás. 60 s cubren el reinicio de cualquiera de las dos partes en una LAN
+y cuestan 2,0 MiB de anillo a 10 Hz en vez de 9,9. Un enlace que caiga más tiempo lo sube con
+`--buffer`, y el límite de memoria lo sigue porque se deriva del anillo.
+
 Un agente arrancado sin ninguna entrada en la envlist usa un límite blando de memoria de 14 MiB.
-`install` siempre escribe `MEM_LIMIT_MB=40`, y el `memory-max` del contenedor es `64M`, porque un
-anillo de 300 s a 10 Hz ocupa unos 7,3 MB y un límite de 14 MiB mantenía al recolector de basura
-funcionando sin parar en el RB5009: <Measured id="gc.tight.cpu" /> de un núcleo frente a <Measured id="gc.roomy.cpu" /> con margen, ambos con el anillo lleno, medidos con RouterOS 7.24.2 el 2026-09-12. `IRQ_TOP_K`,
+`install` **deriva** `MEM_LIMIT_MB` del anillo — ritmo × búfer × tamaño de línea, por 2,5, con suelo
+de 16 MiB y tope en tres cuartos de `memory-max` —, así que la instalación por defecto escribe
+`MEM_LIMIT_MB=16` para un anillo de 60 s a 10 Hz, donde antes escribía un 40 fijo. Un número fijo no
+puede ser correcto para todos los ritmos: ese mismo 40 dejaba 8 MiB sin usar a 10 Hz y queda por
+debajo del propio anillo a 50 Hz.
+
+El factor está medido, no elegido. En el RB5009 de referencia (RouterOS 7.24.2, 10 Hz, 300 s, todas
+las fuentes activas) el 2026-09-17, cuatro límites sobre cuatro ventanas de unas 12 000 muestras cada
+una:
+
+| límite        | múltiplo del anillo | RSS       | CPU por muestra | |
+| ------------- | ------------------- | --------- | --------------- | ------------------------- |
+| 40 MiB        | 4,0×                | 32,9 MiB  | 2 657 µs        | el límite nunca aprieta   |
+| 25 MiB (hoy)  | 2,5×                | ~26 MiB   | ~2 780 µs       | sin coste medible         |
+| 21 MiB        | 2,1×                | 23,5 MiB  | 3 250 µs        | +22 %, y subiendo         |
+| 18 MiB        | 1,8×                | 20,4 MiB  | 14 800 µs       | +457 %, peor tick 52 ms   |
+
+El mismo acantilado se midió desde el otro lado el 2026-09-12: <Measured id="gc.tight.cpu" /> de un núcleo con 14 MiB frente a <Measured id="gc.roomy.cpu" /> con margen, ambos con el anillo lleno. `IRQ_TOP_K`,
 `CAPTURE_PRE_S`, `CAPTURE_POST_S`, `CAPTURE_POLICY`, `TRIGGER_REFRACTORY_S`, `SOURCES`, `PROC_ROOT`
 y `SYS_ROOT` no tienen opción, así que un agente instalado funciona con sus valores por defecto.
 
 </Aside>
-
-## En .env.example pero sin que el código las lea
-
-`.env.example` es también la plantilla de desarrollo para los equipos del
-propio proyecto, así que lleva nombres que ningún binario lee. Definirlos no
-cambia nada:
-
-- `MIKROSCOPE_ROUTEROS`, la versión de RouterOS del equipo de referencia.
-- `OPERATOR_HOST_IP`, el equipo del operador para las pruebas de destinos push
-  y de sondeo.
-- El bloque `HEXS_*` (`HEXS_ROUTER`, `HEXS_SSH_PORT`, `HEXS_SSH_KEY`,
-  `HEXS_ARCH`, `HEXS_API_ADDR`, `HEXS_API_USER`, `HEXS_API_PASSWORD`), guardado
-  para un hEX S que todavía no ha llegado.
 
 <SeeAlso>
 

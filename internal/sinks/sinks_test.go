@@ -77,6 +77,21 @@ func device() Event {
 	}}
 }
 
+// samplerEvent is the agent's account of itself as the collector reads it
+// from /sampler: counters since the agent started, every configured condition
+// present even at 0, and what the evaluator is holding now.
+func samplerEvent() Event {
+	return Event{Sampler: &agent.SamplerStats{
+		Ticks: 172_800, Slipped: 0,
+		Captures: &agent.CaptureStats{
+			Held: 1, Bytes: 262_144, BudgetBytes: 4 << 20, ServedBytes: 131_072,
+			Refused:    map[string]uint64{"budget": 1, "empty": 0},
+			Fired:      map[string]uint64{"softnet-drop": 2, "oom": 0},
+			Suppressed: map[string]uint64{"softnet-drop\x00refractory": 3, "softnet-drop\x00pending": 0},
+		},
+	}}
+}
+
 // trigger is the agent's capture marker as the forwarder hands it on: the
 // decoded header and the raw line.
 func trigger() Event {

@@ -26,13 +26,14 @@ después, en este orden:
    que no sea `y` o `Y` lo detiene con `not confirmed; nothing written`;
 3. solo entonces escribe.
 
-`plan`, e `install --dry-run`, se detienen después del listado. El listado enmascara el token como
+`plan`, `install --dry-run` y `upgrade --dry-run` se detienen después del listado —el último
+solo desde 1.0.10, que es cuando `upgrade` empezó a respetar el flag. El listado enmascara el token como
 `value="(token)"`.
 
 `upgrade` no tiene esta garantía. Construye la imagen, rechaza un router en el que falte cualquier
 paso del plan construido con sus propias opciones (`nothing to upgrade: run install first`) y hace
-la misma pregunta `write the objects above to the router? [y/N]` — pero antes no imprime ningún
-listado ni ejecuta `doctor`, así que no hay objetos arriba. Con `y` quita el contenedor, la envlist y
+la misma pregunta `write the objects above to the router? [y/N]` —y desde 1.0.10 sí imprime un
+listado propio, solo el paso del contenedor. Sigue sin ejecutar `doctor` antes. Con `y` quita el contenedor, la envlist y
 la imagen y los vuelve a escribir, la envlist a partir de las opciones dadas a `upgrade`; [lo que abre
 --expose](/mikroscope/es/security/expose/) explica lo que eso supone para el token.
 
@@ -173,7 +174,7 @@ una tiene su propia comprobación antes de que se escriba nada.
   lo lee y, cuando la referencia nombra un host que no coincide con el ajuste, imprime la única
   orden que hay que ejecutar (`/container/config/set registry-url=https://ghcr.io`, para la copia
   de la imagen en GHCR) o dice que uses `--agent-tar` en su lugar. La referencia de Docker Hub
-  `jmrplens/mikroscope-agent:1.0.0` no lleva host y deja el ajuste como lo tenga el router. Confiar
+  `jmrplens/mikroscope-agent:1.0.9` no lleva host y deja el ajuste como lo tenga el router. Confiar
   en la imagen es confiar en ese registro: nada en la CLI verifica lo que el router se descarga.
 
 ## Un script .rsc generado es una credencial

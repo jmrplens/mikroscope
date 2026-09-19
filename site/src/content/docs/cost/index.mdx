@@ -10,7 +10,7 @@ import SeeAlso from "../../../components/SeeAlso.astro";
 
 An observer that costs 20 % of the thing it observes is not measuring the
 router, it is measuring itself. So this number is a first-class result here, not
-a footnote: it is reported by the agent on every sample and exposed on `/metrics`, and the image-size budget is asserted in CI.
+a footnote: it is reported by the agent on every sample, and the image-size budget is asserted in CI.
 
 ## The budget, and what it actually costs
 
@@ -19,14 +19,22 @@ The budget is **≤ <Measured id="budget.cpu" /> of one core, ≤ <Measured id
 depend on the rate and on how much you ask it to read, and the honest answer is a table rather than
 a number.
 
-At the install default — 10 Hz, default per-source floors, a 300 s ring — the agent costs
+At the install default — 10 Hz, default per-source floors, a 60 s ring — the agent costs
 **<Measured id="run.10hz.cpu" /> of one core and <Measured id="run.10hz.rss" /> RSS**, from its own
 cgroup:
 
-<Provenance of="rates-2026-09-15" />
+<Provenance of="rates-2026-09-18" />
 
-That is above the <Measured id="budget.cpu" /> the budget asks for, with every source read — the
-perf timings, buddyinfo, the MTD ECC counters, the cgroup events and the port counters among them.
+**The memory is inside the budget and the CPU is not.** <Measured id="run.10hz.rss" /> against
+the <Measured id="budget.rss" /> the budget asks for, and <Measured id="run.10hz.cpu" /> against
+the <Measured id="budget.cpu" />, with every source read — the perf timings, buddyinfo, the MTD
+ECC counters, slabinfo, the kernel log and the cgroup events among them. Per-interface traffic is
+not in that set: the container cannot see it, and it comes from the API tier.
+
+It was over on both until 1.0.6. The ring held 300 s rather than 60 and the memory limit was a
+flat 40 MiB that never bound, which put the same agent at 31.3 MiB; neither number was a statement
+about the rate. Nothing about the sampling changed: the CPU moved from 2.85 % to
+2.69 %, which is the noise between two windows.
 
 ### What the alternative costs
 
@@ -45,9 +53,10 @@ a binary rather than a script.
 
 <Aside type="note" title="Where the number comes from">
 	Not from `top`, and not from a snapshot. The agent counts its own CPU microseconds and RSS out of
-	its cgroup and publishes them as `mikroscope_self_cpu_usec_total` and `mikroscope_self_rss_bytes`.
-	Two reads of `/metrics` 60 s apart, at steady state with the ring already full, is the
-	measurement. RouterOS `/tool profile` shows the same process as `mikroscope-agent`.
+	its cgroup and carries them on every sample, in the `self` block, as `cpu_us` and `rss`; the collector renders them
+	as `mikroscope_self_cpu_usec_total` and `mikroscope_self_rss_bytes`. Two reads of the COLLECTOR's
+	`/metrics` 60 s apart, at steady state with the ring already full, is the measurement — the agent
+	has served no exposition of its own since 1.0.5. RouterOS `/tool profile` shows the same process as `mikroscope-agent`.
 </Aside>
 
 ## Size the memory limit to the data
@@ -66,7 +75,7 @@ The parse is not where the time goes. Parsing the seven global `/proc` files plu
 27 µs and 239 allocations per sample on the amd64 development host (Go 1.27.1, three runs,
 26.7–27.5 µs, 2026-09-11). On the RB5009's Cortex-A72 a whole tick — timers, JSON and the
 garbage collector included — costs <Measured id="run.10hz.usPerSample" /> at 10 Hz with the default
-floors, and [the five runs](/mikroscope/cost/rate-ceiling/) give it at every rate. The parse was not
+floors, and [the six runs](/mikroscope/cost/rate-ceiling/) give it at every rate. The parse was not
 measured on the A72 on its own.
 
 ## Measuring it on your own device
@@ -76,20 +85,25 @@ count, a different clock, a different kernel and a different flash all move it.
 The procedure is three commands and takes a minute:
 
 ```sh
-curl -s http://172.30.10.2:9123/metrics | grep -E 'self_cpu_usec_total|self_rss_bytes'
+curl -s http://<collector host>:9124/metrics | grep -E 'self_cpu_usec_total|self_rss_bytes'
 sleep 60
-curl -s http://172.30.10.2:9123/metrics | grep -E 'self_cpu_usec_total|self_rss_bytes'
+curl -s http://<collector host>:9124/metrics | grep -E 'self_cpu_usec_total|self_rss_bytes'
 ```
 
 The difference in `self_cpu_usec_total` divided by 60 000 000 is the share of
 one core. Take it at steady state, with the ring full: a freshly started agent
 is still filling it and will read low.
 
+The address is the collector's, not the agent's: since 1.0.5 the agent serves
+no `/metrics`, and these two counters reach the collector in every sample. With
+no Prometheus sink configured, the same two numbers are `cpu_us` and `rss` in
+`mikroscope_self`, in whichever store you are writing to.
+
 <SeeAlso>
 
 ## See also
 
-- [The rate ceiling](/mikroscope/cost/rate-ceiling/): the five runs, the memory flags each one used,
+- [The rate ceiling](/mikroscope/cost/rate-ceiling/): the six runs, the defaults every one of them used,
   and what sampling faster buys.
 - [What the numbers do not say](/mikroscope/cost/limits/): what these figures cannot tell you about
   another device or another load.

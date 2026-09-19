@@ -20,8 +20,10 @@ the news, and what a capture cannot tell you.
 The one lossless thing the agent can do on its own is keep the samples that
 already exist, at full rate, around the moment they matter — and only the agent
 can, because only the agent has every sample. The ring already holds the last
-300 s by default, so the seconds before a fire cost nothing to keep; the seconds after cost
-only the wait.
+60 s by default, so the seconds before a fire cost nothing to keep; the seconds after cost
+only the wait. The default capture window is 5 s either side, so it fits with room; a longer
+`CAPTURE_PRE_S` than the ring holds is a window the ring cannot supply, and `--buffer` is what
+raises it.
 
 It decides nothing about meaning. A condition is a comparison you configured.
 The field it compared and the value that tripped it travel in the capture's
@@ -228,10 +230,10 @@ instead.
 `forward` recognises the line, never mistakes it for a sample, counts it, and
 hands it to every sink as an annotation: the `mikroscope_trigger` measurement in
 InfluxDB and table in SQL, `mikroscope_collector_triggers_total{cause}` on the
-collector's Prometheus exposition, and the line itself in the file sink. Both
+collector's Prometheus exposition, and the line itself in the file sink. All five
 Grafana dashboards carry a `triggers` annotation, off by default in the toggle
-bar: on InfluxDB it reads the `mikroscope_trigger` rows, on Prometheus the agent's
-`mikroscope_trigger_fired_total`. The capture itself stays on the agent, under
+bar: on the SQL stores it reads the `mikroscope_trigger` rows, on Prometheus the
+collector's `mikroscope_trigger_fired_total`. The capture itself stays on the agent, under
 `/captures/<id>`.
 
 `record` does not recognise the line yet — [Record, mark,
@@ -239,8 +241,8 @@ plot](/mikroscope/record/#triggers-during-a-recording) says what it does with it
 
 ## Counting what was not captured
 
-The agent's `/metrics` carries the families that say how much the captures did
-not see. Every condition and reason pair is rendered from the start, at 0 until
+The collector's `/metrics` carries the families that say how much the captures
+did not see, built from the agent's `GET /sampler` counters on the health cadence. Every condition and reason pair is rendered from the start, at 0 until
 it happens, so a dashboard can show "0 so far".
 
 <ScrollTable label="Trigger and capture metric families">
@@ -257,9 +259,10 @@ it happens, so a dashboard can show "0 so far".
 
 </ScrollTable>
 
-The collector cannot recompute these from the samples, so the Prometheus
-dashboard expects a scrape job on the agent itself that keeps only the agent-only
-families; [Prometheus](/mikroscope/sinks/prometheus/) has the job.
+The collector cannot recompute these from the samples; it reads them from the
+agent's `GET /sampler` and renders them into its own exposition, so one scrape
+job on the collector carries them. [Prometheus](/mikroscope/sinks/prometheus/)
+has the detail.
 
 ## What it cannot do
 

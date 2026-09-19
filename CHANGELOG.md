@@ -4,6 +4,425 @@ Notable changes per release. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the versions
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.10]
+
+### Fixed
+
+- **Three interface panels were unusable, and `dashboards check` called all
+  three "ok".** Found by looking at the reference deployment rather than at the
+  query results — the check verifies that a query returns rows, not that the
+  rows are legible or the numbers sane.
+
+  - **"Port errors per bin" drew 187 rows** — every interface against every
+    typed error counter — in a nine-unit panel, which renders as a grey smear
+    of overlapping labels. It now lists only the pairs that actually had an
+    error in the window, and says `no port errors in this window` when none
+    did. On the reference RB5009 that is one row, `ether1 rx overflow`, which
+    the smear had made unreadable.
+  - **"Where a port's receive bytes went" peaked at 1.5 EB/s.** The slow-path
+    term is `driver_rx_byte - fp_rx_byte`, both `UInt64`, and the two counters
+    come from the same command without being perfectly consistent: on a handful
+    of samples the second exceeds the first, the subtraction wraps to ~1.8e19,
+    and the real traffic — single-digit MB/s — is flattened to an invisible
+    line. Both subtractions are now signed and floored at zero.
+  - **"Interface drops" said `No data`** where the truth is that there were no
+    drops: the router reports the loss keys for `bridge` alone, and that one
+    reads 0. It says `no drops`.
+
+- **A `greatest()` over an aggregate makes Grafana's InfluxDB plugin answer
+  500** — `An error occurred within the plugin` — while the store answers the
+  same SQL correctly over `/api/v3/query_sql`. The panel then renders its
+  no-value text, so a broken query looks like a quiet device: the port-error
+  panel claimed "no port errors" while `ether1` was overflowing. Casting the
+  result (`::DOUBLE`) fixes it, and a test now fails the build for any
+  uncast one.
+
+### Documentation
+
+- **The bilingual site was audited page by page against the code, and the first
+  three passes of the result are applied.** Fifty-three English pages and their
+  Spanish twins were read against the source; 234 findings were proposed and 206
+  survived an adversarial refutation pass. The documentation had been updated
+  release by release rather than by sweep, so every change since 1.0.3 left a
+  trail of pages behind. Fixed here:
+
+  - **The agent's `/metrics`.** 1.0.5 removed the exposition from the agent
+    entirely, and sixteen page pairs still attributed one to it — telling a
+    reader to scrape the agent, to take "two reads of `/metrics` 60 s apart" on
+    it, or reasoning from a two-exposition world that no longer exists. Among
+    them `reference/metrics.mdx` cited `internal/agent/metrics.go`, a file
+    renamed to `internal/expo/expo.go`, in a page whose own voice is "no claim
+    without its evidence".
+  - **The ring's default.** 1.0.6 made it 60 s; ten page pairs still said 300,
+    including the conditions line of `about/status.mdx`, which quoted figures
+    measured with a 60 s ring under a sentence promising 300.
+  - **The line size.** `ApproxLineBytes` has been 3 456 B since 2026-09-17;
+    `site/src/data/measurements.ts` still carried the 2 439 B of 2026-09-12, so
+    a dozen pages rendered the old number from the data file rather than from
+    stale prose. The data now carries the measured line (3 230 B) and the
+    charged size class (3 456 B) as separate ids, because they stopped being the
+    same number.
+  - **Provenance.** Every `run.*` measurement was attributed to campaign
+    `rates-2026-09-15` while the table it reads is the six-run campaign of
+    2026-09-18, and the landing page cited the superseded campaign while its own
+    data file used the current one.
+  - **`MEM_LIMIT_MB`** is derived from the ring, not a flat 40, and `BUFFER_S`
+    defaults to 60 — both wrong in `site/src/data/envlist.ts`, which feeds three
+    pages in two languages.
+  - **InfluxDB 3 Enterprise is now measured.** `sinks/influxdb.mdx` said no
+    write to it was recorded; on 2026-09-19 the reference collector moved onto
+    Enterprise 3.11.4 and wrote 44 820 rows across 36 tables in nineteen
+    minutes, 0 dropped and 0 errors.
+
+- **The audit's remaining passes.** The reference tier, the five-dashboards
+  sweep and the 1.0.9/1.0.10 strays, measured rather than assumed at every step:
+
+  - **The SQL sink declares 43 tables, not 32.** `reference/measurements.mdx`
+    carried seven "not written" rows for data that has had a table since 1.0.3 —
+    CPU frequency, per-CPU interrupts and softirqs, vmstat events and levels, the
+    PMU, `mikroscope_sample` — and described `mikroscope_mem` as five columns
+    when it has nineteen. `sinks/other.mdx` asserted eight absences of which
+    exactly one, the kernel-log count table, is real. The header for all 43
+    tables is **10 482 B**, not 7 757: rendered by the sink's own `header()`
+    rather than estimated.
+  - **Five dashboards, eight generated files, three alert files.** Pages said
+    two, four and two. `reference/testing.mdx` said the suite imports "both"
+    dashboards; it loops over five. `about/status.mdx` quoted 209 PostgreSQL
+    queries and 171 InfluxDB panels; counted from the committed JSON they are
+    **216** and **175**.
+  - **`AlertRules.astro` printed "InfluxDB only" for rules all three stores
+    carry.** `storesText` handled one store or two, so the eight rules in every
+    alert file fell through to the InfluxDB branch — on a page that shows their
+    PromQL directly underneath. The component now names the stores it was given,
+    and `alertUids` unions all three files instead of two.
+  - **The probe covers InfluxDB and Prometheus only.** `--store postgres`,
+    `graphite` or `elasticsearch` always fails the probe, always warns and always
+    ships the compiled defaults — the same as `--no-probe`. Neither twin said so.
+  - **The PostgreSQL dashboard drops 15 panels silently**, not ten queries "that
+    say so", and the kernel-log panels are among them.
+  - **`api tier disabled` no longer exists**; 1.0.9 replaced it with a tier that
+    keeps retrying. Four pages still told operators to expect it.
+  - **`sinks/detections.mdx` carried two Asides built on a premise 1.0.4
+    removed** — that a running collector never sees a restarted agent. It does,
+    within a minute, and the reference device exercised it for real on
+    2026-09-19.
+
+- **The twin-drift list and the factual low-severity findings.** Where the two
+  languages disagreed, each needed both files opened: a sentence the 1.0.10
+  commit deleted in English and left standing in Spanish, "las cinco
+  ejecuciones" against "the six runs", two table rows present in English and
+  missing in Spanish (`/system/resource/cpu/print` and `--api-user`), the
+  project's "sub-second" claim dropped from the Spanish head title, and a
+  half-finished 1.0.5 edit that left a different broken plural in each language.
+
+  Among the small ones, four were plainly wrong rather than merely dated:
+  `/proc/buddyinfo` was described as a NAND wear counter (it is the page
+  allocator's free lists), `--hz 10` is not a flag (`--rate`), the token-guarded
+  endpoint list still named `/metrics` and omitted `GET /sampler`, and the
+  InfluxDB page listed four of the five fields `notCounters` drops.
+
+- **The rest of the audit, and three numbers put behind assertions so they
+  cannot drift again.** What kept going wrong was not prose but arithmetic
+  written by hand:
+
+  - **The relay cap is 13, not 18.** It is
+    `RelayMax x 100 / (line x headroom)`, so it fell when the line grew to
+    3 456 B in 1.0.5 and the shipped binary has printed 13 ever since — while
+    six pages went on saying 18, with "about 46 kB" and "36 samples a second"
+    behind it. It now renders from `measurements.ts`, which recomputes it from
+    the same line size and **throws** if the two disagree.
+  - **Three slipped percentages were a consistent x0.75 out**: 5/30 000 is
+    0.017 %, not 0.012; 4/15 000 is 0.027 %, not 0.020; 178/29 996 is 0.593 %,
+    not 0.444. The campaign's own denominators are now in the data, and a
+    build-time assertion divides them.
+  - **`about/status.mdx`, the page whose job is the honest state, was the least
+    current page on the site**: "the current release is v1.0.0", images pinned
+    at `:1.0.0`, and "above the budget" on both axes when the install default
+    has been inside the memory one since 1.0.6.
+  - **The install pages named a release that does not exist.** Bumping `VERSION`
+    to 1.0.10 took them with it; v1.0.10 is not tagged. They name v1.0.9, the
+    latest published release, and should move at release time rather than at
+    version-bump time.
+  - **`install/routes.mdx` rendered two whole sections inside its "See also"
+    nav**, headings shrunk to `h4`, because the wrapper opened 110 lines early.
+  - **`reference/environment.mdx` documented nine environment variables that
+    exist nowhere in the repository** — `OPERATOR_HOST_IP` and the whole
+    `HEXS_*` block. Section deleted.
+  - **The agent cannot read port counters**, which `cost/index.mdx` listed among
+    the sources it reads; **`mikroscope-agent-arm.tar` has not existed since
+    1.0.2**, and naming it sends an armv5 board the armv7 image; and the squeeze
+    figure was attributed to a 3 476-sample run when it comes from 3 738 704
+    samples over 24 h, leaving one campaign backing no measurement at all.
+
+- **The audit's last pass: the tables that promised completeness, and the
+  landing page's grammar.**
+
+  - **The landing page rendered "the one sinks the collector forwarded to"** —
+    and "los uno destinos" in Spanish — because a spelled count met a fixed
+    plural the day the campaign came down to one sink. The sinks are named now,
+    not counted.
+  - **`sinks/influxdb.mdx` promised "every measurement it writes" and omitted
+    the four 1.0.5 added**: `mikroscope_sampler`, `mikroscope_trigger_count`,
+    `mikroscope_trigger_suppressed`, `mikroscope_capture_refused`. The OTLP,
+    Graphite, Elasticsearch and file-sink listings had the same gap.
+  - **The site header inlines `favicon-inline.svg`, not `mark-inline.svg`** —
+    the brand page named the wrong drawing for its own chrome.
+  - **`make build` builds the CLI alone**; the page said it leaves both
+    binaries, and a bare `bin/mikroscope-agent` is a path this build never
+    produces.
+  - A `/snapshot` of 600 lines is **~1.9 MB**, not 1.5: the same ×0.75 the line
+    size left behind, in three pages.
+  - A sink's drop count is **not exported as a metric**, no family exists for
+    it; a Graphite defect listed as *found and not fixed* was fixed; the
+    conntrack occupancy quoted 0.63 % where the recorded reading gives 0.65 %;
+    and the squeeze figure quoted a hand-typed 2 % beside a `<Measured>` that
+    says 1.2 %.
+  - `about/lineage.mdx` credited the wrong project for `.golangci.yml` — the
+    file's own header names two others — and both it and
+    `internal/rosapi/README.md` said "nothing modified" when 1.0.1 added one
+    Windows-only test skip.
+
+  The audit is closed.
+
+### Fixed
+
+- **`upgrade --dry-run` wrote to the router.** The flag is documented as "print
+  the plan and write nothing"; `upgrade` never read it. It printed no plan and
+  fell through to the confirmation prompt, so the only thing standing between a
+  dry run and a replaced container was answering `n` — and **`upgrade --dry-run
+  --yes` replaced it outright**, on a live router, while promising it would not.
+  Found on 2026-09-19 while upgrading the reference RB5009's agent to 1.0.9:
+  the dry run printed nothing but the prompt, which is what gave it away.
+
+  `upgrade` now prints its own plan and `--dry-run` returns before the runner
+  is built, so a dry run opens no connection at all. The plan is the container
+  step alone — `install`'s listing names the veth, the router address and the
+  two list memberships, which an upgrade does not touch, and printing them
+  would promise writes that never come.
+
+## [1.0.9]
+
+### Fixed
+
+- **The API tier now reconnects.** It holds one persistent RouterOS API
+  connection, and nothing ever reopened it. On the reference RB5009 a RouterOS
+  upgrade on 2026-09-19 rebooted the router at 00:43:30 CEST; the kernel tier
+  resynced at 00:45:03 and carried on, and the API tier wrote to the dead
+  socket for the next **7 h 24 min** — 10 800 failures an hour, one per
+  command — until the collector was restarted by hand at 08:07:49. Every panel
+  the API feeds was blank for that window: interface throughput and packet
+  rate, per-port counters, RouterOS cpu-load, and "Reboots in the window",
+  which reads `uptime_s` and so could not count the very reboot that broke it.
+  A transport failure now reopens the connection, at most once every 5 s, and
+  the round is retried on the new one. A `!trap` does not: that is a live
+  router refusing a command, and repeating it would only spend its CPU. A
+  `!fatal` does, because that is the word RouterOS sends as it closes the
+  session. The inventory is re-read after a reconnection, since an upgrade is
+  exactly when an interface can change its name, type or bridge.
+
+  Verified against the reference RB5009 on 2026-09-19 without touching the
+  router: a collector polling all 16 interfaces at 1 Hz had its API socket
+  destroyed from the host (`ss -K`), which is what the router's side of a
+  reboot looks like to it. It reopened the connection and retried inside the
+  same round — **0 failed commands, 0 dropped rounds, 16 interfaces in every
+  one of the 108 seconds** either side of the kill. Not one sample was lost.
+
+- **A collector that starts while the router is down no longer gives up on the
+  API for the life of the process.** The first dial failing is a warning now,
+  not a disabled tier; the reader connects on the first round the router
+  answers. With `Restart=always` in the unit, a reboot could otherwise leave a
+  restarted collector permanently without an API tier.
+
+- **A kernel-only run no longer panics one hour in.** `forward` arms the API
+  ticker at an hour and resets it to the real cadence only when there is a
+  tier, but it never stopped it — so with `--api-every 0`, or with no API
+  credentials, the first tick dereferenced a nil reader. Any run past the hour
+  mark crashed. Found by reading the loop while fixing the reconnection, not by
+  hitting it: the reference deployment has always run the API tier.
+
+- **The report no longer hides an API outage.** `api` counts rounds
+  *attempted*, so through those 7 h 24 min the summary line read a healthy,
+  growing `82 610 api`. It now carries `api: N failed round(s), N
+  reconnect(s)` when either is nonzero, and nothing when both are zero.
+
+- **The failure is logged once, not once per command per second.** The outage
+  put **44 257 identical lines** into three hours of journal, which buried the
+  first one — the only one that said what happened. The first failed round is
+  logged, the rounds after it are silent, and the recovery is logged with the
+  count of what it closed.
+
+## [1.0.8]
+
+### Changed
+
+- **The rate campaign was re-run at the shipped configuration, and 20 Hz was
+  added.** The table on [the rate ceiling] described a product the project no
+  longer ships: its rows came from 2026-09-15 with a 300 s ring at 10 Hz,
+  hand-set memory limits, and a container cap raised to 96M at 50 Hz and 128M
+  at 100. Six windows of 300 s on 2026-09-18, every one at the defaults — 60 s
+  ring, derived limit, the 64M cap — with the collector forwarding to
+  InfluxDB 3:
+
+  | rate                 | limit | RSS      | of one core | slipped         |
+  | -------------------- | ----- | -------- | ----------- | --------------- |
+  | 10 Hz                | 16    | 13.2 MiB | 2.69 %      | 0 of 3 000      |
+  | 20 Hz                | 16    | 15.4 MiB | 4.61 %      | 0 of 6 000      |
+  | 50 Hz                | 25    | 23.3 MiB | 9.63 %      | 0 of 14 999     |
+  | 100 Hz               | 48    | 45.7 MiB | 16.83 %     | 5 (0.017 %)     |
+  | 50 Hz `FLOOR_HZ`     | 25    | 25.1 MiB | 22.56 %     | 4 (0.027 %)     |
+  | 100 Hz `FLOOR_HZ`    | 48    | 49.5 MiB | 42.70 %     | 178 (0.593 %)   |
+
+  **Zero collector gaps in all six.** Against the old campaign that is 38 to
+  59 % less memory per row with the CPU unmoved, and the whole range — up to
+  every source on every tick at 100 Hz — now fits the default 64M container
+  cap, which the old campaign could not do.
+
+- **The agent is inside the memory budget for the first time.** The project's
+  own budget is ≤ 2 % of one core and ≤ 16 MiB; the install default now
+  measures 2.69 % and **13.2 MiB**. It was over on both until the 60 s ring and
+  the derived limit. The build-time assertion that guarded the sentence "above
+  the budget" is what caught the prose the day it stopped being true — it threw,
+  named the two files to rewrite, and they were rewritten.
+
+[the rate ceiling]: https://jmrp.io/docs/mikroscope/cost/rate-ceiling/
+
+## [1.0.7]
+
+The release 1.0.6 should have been. **There is no 1.0.6 release**: the tag
+exists and points at a commit that is in this one, but its release run failed
+and releases here are immutable, so the tag was left where it was and the
+artefacts come out under this number instead.
+
+### Fixed
+
+- **Two tests in the containerised suite still read the agent's `/metrics`**,
+  which 1.0.5 removed. That suite is skipped on a pull request and runs on a
+  tag, so every check on the three pull requests that made 1.0.5 and 1.0.6 was
+  green and the release run was what found it.
+  `TestPrometheusDashboardMetricsExist` now checks the dashboard's names
+  against the collector's exposition alone — the stronger statement, and the
+  one the other end-to-end suite already made — and the sweep no longer
+  fetches an exposition nothing serves.
+- **A race that the removed fetch had been hiding.** `TestPrometheus` compares
+  every unlabeled series Prometheus stored against the last body the test read,
+  on the grounds that the exporter's counters only rise and the read came
+  last; the agent fetch was the delay that made the read come last.
+  `mikroscope_uptime_seconds` is not one of those counters — it follows the
+  clock — so a scrape taken after the read legitimately carries a larger
+  value. It is excluded by name, with the reason.
+
+### Changed
+
+- **The stores suite runs on every pull request.** It ran weekly, on dispatch
+  and on the release gate, on the grounds that nine containers are a lot to
+  ask of a pull request; the cost of that was one failed release. MEASURED on
+  the pull request that introduced this: **2 min 22 s**, containers included,
+  in parallel with the two end-to-end jobs that take about a minute each.
+
+## [1.0.6]
+
+### Changed
+
+- **The ring holds 60 s by default, not 300.** What it buys is how long the
+  collector may be absent before samples are lost — it is not a window anybody
+  reads, because the collector drains it twice a second — and the 300 was in
+  the code with no recorded reason. MEASURED on the reference deployment over
+  24 hours on 2026-09-17: the largest interruption in delivery was **114.5 s**,
+  and it was self-inflicted, a container swap plus the minute the collector
+  takes to notice a restarted agent; in ordinary running the collector never
+  falls behind, and `mikroscope_gap` has recorded nothing since the 50 Hz
+  experiments of 2026-09-13.
+
+  60 s covers a restart of either side on a LAN and costs **2.0 MiB of ring at
+  10 Hz instead of 9.9**. Because the memory limit is derived from the ring, a
+  default install now writes `MEM_LIMIT_MB=16` instead of 25. A deployment
+  whose collector disappears for longer — a flaky link, a host that reboots
+  slowly — raises it with `--buffer`, and the limit follows.
+
+  On the reference device the whole change is **13 627 392 B of RSS against
+  33 042 432 this morning, a 57 % cut, with the CPU unmoved** (2 740 µs a
+  sample against 2 657) and 0 slipped ticks.
+
+### Added
+
+- **[The rate ceiling](https://jmrp.io/docs/mikroscope/cost/rate-ceiling/)
+  gains the memory a rate costs**, with 10 Hz and 100 Hz measured side by side
+  over windows of about 54 000 samples: 100 Hz holds a 19.78 MiB ring at 48 MiB
+  of RSS and 18.1 % of one core, slipping 0.03 % of ticks — and the per-sample
+  cost *falls* with the rate, because the level sources are read at their own
+  floors rather than every tick. The guidance that comes out of it: the ring is
+  the memory, and it is bought in buffer seconds. At 100 Hz a 20 s buffer gives
+  the same relief as compressing the ring 4.7×, and compression was measured on
+  this device at +1 331 µs a sample — at 100 Hz, +74 % CPU and six times the
+  slipped ticks. The seconds are free; the compression is not.
+
+## [1.0.5]
+
+The agent stops being a Prometheus exporter, and the memory limit stops being
+a number somebody picked. Everything it knows now leaves it
+as data, through the collector, to whichever sinks the operator configured.
+
+### Changed
+
+- **The agent serves no `/metrics`.** Not a flag and not a 404 branch: the
+  exposition moved out of the agent's import graph into `internal/expo`, which
+  only the collector's Prometheus sink links, and the sampler no longer folds
+  every tick into cumulative counters, histograms and trailing windows. The
+  arm64 agent is 131 072 bytes smaller (1.9 %). On the reference RB5009, an
+  agent built this way measured **29.2 MiB of container memory against 30.6**
+  and **4.5 MiB less RSS**, over two windows of exactly 12 000 samples on
+  2026-09-17; the CPU difference was +76 µs per sample against a standard
+  deviation of 905 µs, which is the router's own load moving between windows
+  and not the change.
+- **What only a sampler can know travels instead of being scraped.** The wake
+  latency and the read duration of every tick — the two timings that make a
+  tick a smear rather than an instant — ride in the sample's `self` block as
+  `wake_ns` and `read_ns`. `GET /sampler` answers what is not per-tick: ticks
+  taken, ticks slipped, and what the trigger evaluator has fired, suppressed,
+  refused and is holding, with every configured condition present at 0 from
+  the first read. The collector reads it at start and on its one-minute health
+  cadence and fans it out like any other event.
+- **One scrape job, not two.** The collector's exposition now carries every
+  family the Prometheus dashboard asks for, including
+  `mikroscope_slipped_total`, the three `mikroscope_tick_*` histograms and the
+  trigger and capture counters. The end-to-end suite used to scrape the agent
+  and the collector; it now asserts against the collector alone, which is a
+  stronger statement. There is no keep list to maintain and nothing left to
+  double-count.
+
+- **The agent's memory limit is derived from its ring**, not fixed at 40 MiB:
+  rate × buffer × the line size, times 2.5, floored at 16 MiB and capped at
+  three quarters of the container's `memory-max`. A default install now writes
+  `MEM_LIMIT_MB=25` instead of 40. A fixed number cannot be right for every
+  rate — the same 40 left 8 MiB unused at 10 Hz and is below the ring itself
+  at 50 Hz — and the factor is measured rather than chosen. On the reference
+  RB5009 on 2026-09-17, four limits over four windows of ~12 000 samples:
+  40 MiB gave 32.9 MiB of RSS at 2 657 µs a sample, **25 MiB gives about 26 at
+  no measurable cost**, 21 MiB gives 23.5 at +22 %, and 18 MiB gives 20.4 at
+  **+457 %** with a worst tick of 52 ms. 2.5× is the last comfortable factor
+  and 2.0× — where the agent's own budget warning sits — is already past the
+  knee.
+- **`ApproxLineBytes` was 35 % low.** It said 2 560 B where the reference
+  device's line is 3 230 B, served from the allocator's 3 456 B size class,
+  which is what the heap is charged. That understatement is why the old fixed
+  limit never bound: the budget check thought the ring was 7.3 MiB when it was
+  9.9. Measured on 2026-09-17 and dated in the constant, with the warning that
+  it moves with the board.
+
+### Added
+
+- **Every store sink carries the agent's own counters**, which is the point:
+  `mikroscope_sampler`, `mikroscope_trigger_count`,
+  `mikroscope_trigger_suppressed` and `mikroscope_capture_refused` on InfluxDB,
+  four tables in SQL, a path per condition and reason on Graphite, a document
+  on Elasticsearch, sums and gauges on OTLP, a line on stdout and in a
+  recording. Loki deliberately writes nothing: a log stream is for what
+  changed, and these are levels read every minute.
+- **Four observer panels gain an InfluxDB form**, so the InfluxDB dashboard
+  goes from 171 panels to 175: the tick interval (`dt_ns` itself, one row per
+  tick and no buckets at all), the wake latency, the read duration and what
+  the held captures pin. Until now they existed on Prometheus alone.
+
 ## [1.0.4]
 
 One fix, found by deploying 1.0.3 on the reference device and watching what

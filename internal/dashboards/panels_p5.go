@@ -82,9 +82,14 @@ func detectionPanels(b qb) []Panel {
 		{
 			Title: "Captures held on the agent, and the budget they pin", Type: typeStat, Unit: "short", W: 12, H: 8, ShowName: true, GraphMode: "none",
 			Legends:     []string{"captures held", "budget used (bytes)", "budget (bytes)", "refused (window)"},
-			Description: "What the agent is holding right now under /captures: the number of full-rate windows retained, the ring bytes they pin, the byte budget (CAPTURE_MB), and how many captures were collected and refused in this window because the budget was full (policy first) or the ring no longer held the window. Prometheus only — these are the agent's own gauges. A capture is downloaded with GET /captures/<id> and is byte-identical to a /snapshot of the same samples, so record's tooling reads it unchanged.",
+			Description: "What the agent is holding right now under /captures: the number of full-rate windows retained, the ring bytes they pin, the byte budget (CAPTURE_MB), and how many captures were collected and refused in this window because the budget was full (policy first) or the ring no longer held the window. Prometheus only — these are the agent's own gauges. A capture is downloaded with GET /captures/<id> and is byte-identical to a /snapshot of the same samples, so record's tooling reads it unchanged. Since 1.0.5 these are no longer Prometheus-only: the collector reads them from the agent's /sampler on its health cadence and every store sink writes them.",
 			Thresholds:  thresholds("text"),
-			Queries: b.qs(nil, []string{
+			Queries: b.qs([]string{
+				`SELECT time, captures_held AS value FROM mikroscope_sampler WHERE $__timeFilter(time) ORDER BY time`,
+				`SELECT time, capture_bytes AS value FROM mikroscope_sampler WHERE $__timeFilter(time) ORDER BY time`,
+				`SELECT time, capture_budget_bytes AS value FROM mikroscope_sampler WHERE $__timeFilter(time) ORDER BY time`,
+				`SELECT $__dateBin(time) AS time, max(count) - min(count) AS value FROM mikroscope_capture_refused WHERE $__timeFilter(time) GROUP BY 1 ORDER BY 1`,
+			}, []string{
 				`mikroscope_captures_held`,
 				`mikroscope_capture_bytes`,
 				`mikroscope_capture_budget_bytes`,
@@ -305,18 +310,21 @@ func samplerTimingPanels(b qb) []Panel {
 	return []Panel{
 		{
 			Title: "Tick interval distribution, relative to the nominal period", Type: typeHeatmap, Unit: "s", W: 8, H: 8, MinInterval: "1m",
-			Description: "The measured interval between consecutive samples, from the agent's own histogram (mikroscope_tick_interval_seconds), bucketed around the nominal period at 0.5x, 0.9x, 0.95x, 0.99x, 1.01x, 1.05x, 1.1x, 1.25x, 1.5x, 2x and 5x. Every counter in a sample is a delta over THIS interval, not the nominal one; the mass outside the 0.99x-1.01x band is how often that matters. Prometheus only: the agent's histograms are not shipped as samples.",
-			Queries:     b.q(``, `sum by (le) (increase(mikroscope_tick_interval_seconds_bucket[$__rate_interval]))`),
+			Description: "The measured interval between consecutive samples, bucketed around the nominal period at 0.5x, 0.9x, 0.95x, 0.99x, 1.01x, 1.05x, 1.1x, 1.25x, 1.5x, 2x and 5x. Every counter in a sample is a delta over THIS interval, not the nominal one; the mass outside the 0.99x-1.01x band is how often that matters. On Prometheus this is the histogram the collector folds from every sample's dt_ns; on InfluxDB it is dt_ns itself, one row per tick and no buckets at all, which is the same quantity at fifty times the resolution.",
+			Queries: b.q(`SELECT $__dateBin(time) AS time, avg(dt_ns) / 1e9 AS value FROM mikroscope_sample WHERE $__timeFilter(time) GROUP BY 1 ORDER BY 1`,
+				`sum by (le) (increase(mikroscope_tick_interval_seconds_bucket[$__rate_interval]))`),
 		},
 		{
 			Title: "Wake latency: how late the sampler ran after its ticker", Type: typeHeatmap, Unit: "s", W: 8, H: 8, MinInterval: "1m",
-			Description: "The kernel's scheduling latency for the agent, per tick: from the ticker firing to the loop running. One of the two things that turn a tick into a smear rather than an instant. Buckets from 100 µs to 100 ms. Prometheus only.",
-			Queries:     b.q(``, `sum by (le) (increase(mikroscope_tick_wake_latency_seconds_bucket[$__rate_interval]))`),
+			Description: "The kernel's scheduling latency for the agent, per tick: from the ticker firing to the loop running. One of the two things that turn a tick into a smear rather than an instant. Buckets from 100 µs to 100 ms on Prometheus; on InfluxDB the raw wake_ns of every sample, which the agent has shipped since 1.0.5 — before that it existed only in the agent's own exposition and no store had it.",
+			Queries: b.q(`SELECT $__dateBin(time) AS time, avg(wake_ns) / 1e9 AS value FROM mikroscope_self WHERE $__timeFilter(time) GROUP BY 1 ORDER BY 1`,
+				`sum by (le) (increase(mikroscope_tick_wake_latency_seconds_bucket[$__rate_interval]))`),
 		},
 		{
 			Title: "Read duration: how long every source took to read", Type: typeHeatmap, Unit: "s", W: 8, H: 8, MinInterval: "1m",
-			Description: "The other half of the smear: a sample's sources are read one after another over this long, so /proc/stat and /proc/softnet_stat in one sample are not from the same instant. At 100 Hz a 1.4 ms read is 14 % of the period, and 1.4 ms is what a whole tick's sources cost on the reference RB5009 (1 388 µs/sample at 10 Hz, RouterOS 7.24.2, measured 2026-09-12). Buckets from 100 µs to 100 ms. Prometheus only.",
-			Queries:     b.q(``, `sum by (le) (increase(mikroscope_tick_read_seconds_bucket[$__rate_interval]))`),
+			Description: "The other half of the smear: a sample's sources are read one after another over this long, so /proc/stat and /proc/softnet_stat in one sample are not from the same instant. At 100 Hz a 1.4 ms read is 14 % of the period, and 1.4 ms is what a whole tick's sources cost on the reference RB5009 (1 388 µs/sample at 10 Hz, RouterOS 7.24.2, measured 2026-09-12). Buckets from 100 µs to 100 ms on Prometheus; on InfluxDB the raw read_ns of every sample, shipped since 1.0.5.",
+			Queries: b.q(`SELECT $__dateBin(time) AS time, avg(read_ns) / 1e9 AS value FROM mikroscope_self WHERE $__timeFilter(time) GROUP BY 1 ORDER BY 1`,
+				`sum by (le) (increase(mikroscope_tick_read_seconds_bucket[$__rate_interval]))`),
 		},
 		{
 			Title: "Counter resets the agent saw", Type: typeStat, Unit: "short", W: 6, H: 6, Calcs: []string{"sum"}, GraphMode: "none", MinInterval: "1m",

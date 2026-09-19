@@ -75,15 +75,17 @@ Measure the observer, and measure it honestly — including the part where
 measuring changes the answer.
 
 Pulling a 60-second `/snapshot` is not free: the agent has to hand over ~600
-pre-encoded lines, about 1.5 MB, and `self.cpu_us` inside those samples
+pre-encoded lines, about 1.9 MB, and `self.cpu_us` inside those samples
 _includes the cost of serving them_. Reading the agent's cost out of a large
 snapshot therefore overstates it, and doing it repeatedly overstates it more.
 
-Use `/metrics` instead. It is small, its counters are cumulative, and it is
-independent of who scrapes it and when — scrape it twice and divide:
+Use the collector's `/metrics` instead — the agent has served none since 1.0.5,
+and these counters reach the collector in every sample. It is small, its
+counters are cumulative, and it is independent of who scrapes it and when —
+scrape it twice and divide:
 
 ```sh
-U=http://172.30.10.2:9123/metrics
+U=http://<collector host>:9124/metrics
 get() { curl -s "$U" | awk -v k="$1" '$1==k{print $2}'; }
 c0=$(get mikroscope_self_cpu_usec_total); t0=$(date +%s)
 sleep 180
@@ -93,8 +95,8 @@ echo "$c0 $c1 $t0 $t1" | awk '{printf "%.2f %% of one core\n", 100*($2-$1)/1e6/(
 
 Two things to expect:
 
-- **Cost and memory rise until the ring fills.** With the default 300 s ring at
-  10 Hz the agent holds 3 000 pre-encoded samples; a figure taken in the first
+- **Cost and memory rise until the ring fills.** With the default 60 s ring at
+  10 Hz the agent holds 600 pre-encoded samples; a figure taken in the first
   minute after install is measured on a nearly empty heap and will be
   optimistic. Wait out `BUFFER_S` before quoting a steady-state number.
 - **`mikroscope_slipped_total` is the number that actually matters.** A sampler

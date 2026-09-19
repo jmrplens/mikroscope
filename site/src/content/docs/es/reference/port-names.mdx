@@ -128,7 +128,7 @@ que está en su tabla, nombra los puertos sin preguntar a RouterOS:
   ningún puerto no aparecen en él;
 - la detección `link-flap` del colector usa el nombre de puerto como clave y lee
   esa misma clasificación: un parpadeo son registros `link-up` y `link-down` de un
-  puerto, contados, no el texto analizado por segunda vez;
+  puerto, contados, con el mismo clasificador y no releyendo el texto;
 - `mikroscope status` muestra la placa y si tiene correspondencia, por ejemplo
   `eth1 (ether2)`; `/healthz` y `/capabilities` llevan la placa, y
   `/capabilities` y `mikroscope_device_info` llevan la cadena de evidencia de la
@@ -162,10 +162,10 @@ registro. Las clases, y las formas de registro que escribe el kernel de RouterOS
 
 El agente clasifica en el momento de leer y envía `kind` dentro del registro, y
 un colector que tiene delante un agente más antiguo cuyos registros no lo llevan
-los clasifica él mismo, con la misma función. Es lo que pasa hoy en el router de
-referencia: el agente que corre allí no se ha vuelto a desplegar con esta
-compilación, así que su `/metrics` todavía no lleva la etiqueta `kind` y el
-trabajo lo hace el colector.
+los clasifica él mismo, con la misma función. Ese camino existe para un colector que tenga delante un
+agente anterior a 1.0.0, que es cuando `kind` empezó a viajar en el registro; el
+agente del router de referencia lo lleva desde entonces, y se actualizó a 1.0.9
+el 2026-09-19.
 
 **Cuatro registros no son cuatro fallos.** A un `link-up` normal le siguen
 `stp-blocking`, `stp-learning` y `stp-forwarding` mientras el bridge devuelve el

@@ -63,7 +63,7 @@ func TestStdoutSinkPrintsNDJSON(t *testing.T) {
 		// The collector's own line kinds ride beside the samples: derived
 		// values after each sample, detections and trigger markers as they
 		// happen. A consumer that wants raw samples skips them by key.
-		if m["derived"] != nil || m["detection"] != nil || m["trigger"] != nil || m["device"] != nil {
+		if m["derived"] != nil || m["detection"] != nil || m["trigger"] != nil || m["device"] != nil || m["sampler"] != nil {
 			continue
 		}
 		if _, ok := m["seq"]; !ok {

@@ -59,5 +59,6 @@
   "ms.alerts.noData": "Sin datos significa",
   "ms.alerts.stores": "Almacenes",
   "ms.alerts.both": "los dos",
-  "ms.breadcrumb.home": "Inicio"
+  "ms.breadcrumb.home": "Inicio",
+  "ms.alerts.all": "los tres"
 }

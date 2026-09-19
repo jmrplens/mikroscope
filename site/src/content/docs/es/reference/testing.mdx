@@ -91,8 +91,8 @@ acepta:
 
 ## Capa 3 — los paneles
 
-La misma orden importa después los dos dashboards en un Grafana real, apuntado
-al almacén que la ejecución acaba de llenar, y pasa la consulta de cada panel
+La misma orden importa después los cinco dashboards en un Grafana real, cada uno
+apuntado al almacén que la ejecución acaba de llenar, y pasa la consulta de cada panel
 por la propia `/api/ds/query` de Grafana. Ahí es donde un panel falla por
 motivos a los que ninguna prueba unitaria llega: un tipo que devuelve una
 agregación y el complemento de la fuente de datos no sabe decodificar, una
@@ -116,8 +116,15 @@ make e2e-docker-down
 El paquete está tras la etiqueta de compilación `dockere2e`, así que `make
 test` y todos los trabajos por defecto de la CI no compilan nada de él: la
 etiqueta es la forma de pedir nueve contenedores. `make lint` lo comprueba de
-tipos para que no se pudra, y el flujo semanal de E2E y la puerta de publicación
-lo ejecutan.
+tipos para que no se pudra, y **lo ejecuta cada pull request**, además del flujo
+semanal y la puerta de publicación.
+
+No estuvo en la ruta de los pull requests hasta el 2026-09-18, con el argumento
+de que nueve contenedores son mucho pedirle a uno. Así es como 1.0.5 llegó a
+`main` con dos tests de esta suite leyendo todavía el `/metrics` del agente, que
+esa misma versión había quitado: todos los checks del pull request estaban en
+verde, y lo encontró la etiqueta. Tenerlo ahí cuesta **2 min 37 s**, medidos en
+la ejecución de release que falló — contenedores incluidos.
 
 Medido en la máquina de desarrollo el 2026-09-16: la pila se levanta en 55 a
 81 s con las imágenes ya descargadas, y la batería entera tarda de 75 a 100 s

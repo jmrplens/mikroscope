@@ -70,15 +70,17 @@ Measure the observer, and measure it honestly — including the part where
 measuring changes the answer.
 
 Pulling a 60-second `/snapshot` is not free: the agent has to hand over ~600
-pre-encoded lines, about 1.5 MB, and `self.cpu_us` inside those samples
+pre-encoded lines, about 1.9 MB, and `self.cpu_us` inside those samples
 _includes the cost of serving them_. Reading the agent's cost out of a large
 snapshot therefore overstates it, and doing it repeatedly overstates it more.
 
-Use `/metrics` instead. It is small, its counters are cumulative, and it is
-independent of who scrapes it and when — scrape it twice and divide:
+Use the collector's `/metrics` instead — the agent has served none since 1.0.5,
+and these counters reach the collector in every sample. It is small, its
+counters are cumulative, and it is independent of who scrapes it and when —
+scrape it twice and divide:
 
 ```sh
-U=http://172.30.10.2:9123/metrics
+U=http://<collector host>:9124/metrics
 get() { curl -s "$U" | awk -v k="$1" '$1==k{print $2}'; }
 c0=$(get mikroscope_self_cpu_usec_total); t0=$(date +%s)
 sleep 180
@@ -88,16 +90,16 @@ echo "$c0 $c1 $t0 $t1" | awk '{printf "%.2f %% of one core\n", 100*($2-$1)/1e6/(
 
 Two things to expect:
 
-- **Cost and memory rise until the ring fills.** With the default 300 s ring at
-  10 Hz the agent holds 3 000 pre-encoded samples; a figure taken in the first
+- **Cost and memory rise until the ring fills.** With the default 60 s ring at
+  10 Hz the agent holds 600 pre-encoded samples; a figure taken in the first
   minute after install is measured on a nearly empty heap and will be
   optimistic. Wait out `BUFFER_S` before quoting a steady-state number.
 - **`mikroscope_slipped_total` is the number that actually matters.** A sampler
   that costs a little more but never slips is telling you the truth; one that
   slips is not.
 
-For scale: at the install default the agent costs 2.85 % of one
-core and 31.3 MiB RSS. That figure was measured on 2026-09-15
+For scale: at the install default the agent costs 2.69 % of one
+core and 13.2 MiB RSS. That figure was measured on 2026-09-15
 with the full source set and three sinks at once, not during the campaign these
 readings come from:
 
@@ -155,7 +157,7 @@ deltas the agent ships; the agent never turns them into percentages.
 ### The background squeeze and the burst flag
 
 The squeeze floor was measured again on 2026-09-15, on the same device, over
-3 476 samples: about 11.2 % of samples carry one squeeze as background, and 2 %
+3 738 704 per-CPU samples in 24 h: about 11.2 % of samples carry one squeeze as background, and 2 %
 carry two or more. Measured on this router that day: a rule that flags any
 squeeze fires 92 times in twenty minutes, and means nothing.
 
@@ -230,7 +232,7 @@ for k,v in c.most_common(): print(f"  {v:5d}  {k}")'
 ```
 
 `?seconds=` takes 1 to 3600, and the agent can only return what its ring still
-holds — 300 s at the default `BUFFER_S`. The window's length comes from summing
+holds — 60 s at the default `BUFFER_S`. The window's length comes from summing
 each sample's own `dt_ns`, not from the number you asked for.
 
 ### Step 2 — read the timing, not just the text

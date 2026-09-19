@@ -67,6 +67,7 @@ type Options struct {
 	// sample, RSS 20.50 MiB, 0 slipped ticks at MEM_LIMIT_MB 14; 1.39 % of
 	// one core, 1 388 µs per sample, RSS 25.13 MiB, 0 slipped ticks at 40.
 	// 6.7x better for nothing but headroom.
+	// 0 means: derive it from the ring, which is what Finish does.
 	MemLimitMB int
 	FloorHz    int // global override of every per-source sampling floor, in Hz; 0 keeps the measured floors
 	// Triggers is the agent's TRIGGERS value (empty = the agent's default set)
@@ -123,9 +124,9 @@ func Defaults() Options {
 		Arch:            "arm64",
 		Port:            9123,
 		RateHz:          10,
-		BufferS:         300,
+		BufferS:         defaultBufferS,
 		MemoryMax:       "64M",
-		MemLimitMB:      40,
+		MemLimitMB:      0, // derived from the ring in Finish
 		FloorHz:         0,
 		CaptureMB:       4,
 		RestartMaxCount: 5,
@@ -137,6 +138,7 @@ func Defaults() Options {
 // Finish validates every field and derives the /30 ends. It is the only
 // gate between operator input and a RouterOS command.
 func (o *Options) Finish() error {
+	o.deriveMemLimit()
 	if err := o.validateNames(); err != nil {
 		return err
 	}
@@ -355,4 +357,76 @@ func (o *Options) mustBeFinished() {
 	if o.GatewayIP == "" || o.ContainerIP == "" {
 		panic("router: Plan called on options without Finish")
 	}
+}
+
+// defaultBufferS is how many seconds of samples the ring keeps, and what it
+// really buys is this: how long the collector may be absent before samples
+// are lost. It is not a window anybody reads — the collector drains the ring
+// twice a second — so every second of it is 34.5 kB on the reference device
+// (10 Hz x ApproxLineBytes) bought purely against an outage.
+//
+// It was 300 s for no recorded reason. MEASURED on the reference deployment on
+// 2026-09-17, over 24 hours: the largest interruption in delivery was 114.5 s,
+// and it was self-inflicted — a container swap plus the minute the collector
+// takes to notice a restarted agent. In ordinary running the collector never
+// falls behind at all, and mikroscope_gap has recorded nothing since the 50 Hz
+// experiments of 2026-09-13.
+//
+// 60 s covers a restart of either side on a LAN and costs 2.0 MiB of ring at
+// 10 Hz instead of 9.9. A deployment whose collector disappears for longer —
+// a flaky link, a host that reboots slowly — raises it with --buffer, and the
+// memory limit follows because it is derived from the ring.
+const defaultBufferS = 60
+
+// memLimitRingFactor is how much room the Go runtime needs above the ring's
+// live bytes, and it is measured rather than chosen. On the reference RB5009
+// (RouterOS 7.24.2, 10 Hz, 300 s, every source on) on 2026-09-17, with a ring
+// of about 9.9 MiB, four limits over four windows of ~12 000 samples each:
+//
+//	40 MiB (4.0x)  RSS 32.9 MiB  2 657 µs/sample   the limit never binds
+//	24 MiB (2.4x)  RSS 26.3 MiB  2 780 µs/sample   no measurable cost
+//	21 MiB (2.1x)  RSS 23.5 MiB  3 250 µs/sample   +22 %, and climbing
+//	18 MiB (1.8x)  RSS 20.4 MiB 14 800 µs/sample   +457 %, worst tick 52 ms
+//
+// So 2.5 is the last comfortable factor and 2.0 — which is where the agent's
+// own budget warning sits — is already past the knee. The same cliff was
+// measured on 2026-09-12 from the other side: 14 MiB against a 7.3 MiB ring
+// cost 9 374 µs/sample where 40 MiB cost 1 388.
+const memLimitRingFactor = 5 // halves, so 2.5x
+
+// minMemLimitMB is the floor under the derivation: a small ring still needs
+// room for the parse's own garbage, which is ~19.5 kB per tick.
+const minMemLimitMB = 16
+
+// deriveMemLimit fills MemLimitMB from the ring when the operator did not ask
+// for a number. A fixed default cannot be right for every rate: the same
+// 40 MiB that left 8 MiB unused at 10 Hz is below the ring itself at 50 Hz.
+//
+// It is capped at three quarters of the container's memory.max, because the
+// soft limit is a promise the Go runtime makes about its own heap and the
+// cgroup is a promise the kernel keeps with a kill.
+func (o *Options) deriveMemLimit() {
+	if o.MemLimitMB != 0 {
+		return
+	}
+	// In bytes and rounded up, not in truncated megabytes: at 10 Hz over
+	// 300 s the ring is 9.89 MiB, and truncating it to 9 before applying the
+	// factor lands on 22 — a figure measured at +22 % CPU on the reference
+	// device, where the 25 the exact arithmetic gives is free.
+	const mib = 1 << 20
+	ringBytes := int64(o.RateHz) * int64(o.BufferS) * agent.ApproxLineBytes
+	limit := (ringBytes*memLimitRingFactor/2 + mib - 1) / mib
+	limit = max(limit, minMemLimitMB)
+	// The cap only applies while it still leaves the ring room to exist. A
+	// limit below the live set is not a budget, it is a promise to thrash,
+	// and a ring that big against that memory.max is a deployment the agent's
+	// own budget check refuses or warns about by name — which is a better
+	// thing for the operator to read than a quietly impossible number.
+	if maxBytes := memoryMaxBytes(o.MemoryMax); maxBytes > 0 {
+		ceiling := maxBytes * 3 / 4 / mib
+		if ceiling > ringBytes/mib && limit > ceiling {
+			limit = ceiling
+		}
+	}
+	o.MemLimitMB = int(limit)
 }

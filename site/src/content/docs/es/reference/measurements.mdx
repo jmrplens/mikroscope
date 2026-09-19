@@ -376,14 +376,14 @@ bits sin signo y ningún delta que produzca un router en una muestra se acerca a
 
 | Dato                              | InfluxDB                                                                                                                                   | SQL                                                                                   |
 | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
-| frecuencia de CPU                 | `mikroscope_cpufreq`                                                                                                                       | no se escribe                                                                         |
-| interrupciones y softirqs por CPU | `mikroscope_irq_cpu`, `mikroscope_softirq`                                                                                                 | no se escriben; `mikroscope_irq` solo tiene la suma                                   |
-| eventos y niveles de vmstat       | `mikroscope_vm`, `mikroscope_vm_level`                                                                                                     | solo `pgfault` y `pgmajfault`, en `mikroscope_stat`                                   |
-| contadores del PMU                | `mikroscope_perf`                                                                                                                          | no se escriben                                                                        |
-| secuencia y relojes de la muestra | `mikroscope_sample`                                                                                                                        | `seq` en `mikroscope_self`; `dt_ns` en `mikroscope_cpu`                               |
-| `/proc/meminfo`                   | diecinueve campos en `mikroscope_mem`                                                                                                      | cinco columnas en `mikroscope_mem`                                                    |
+| frecuencia de CPU                 | `mikroscope_cpufreq`                                                                                                                       | `mikroscope_cpufreq`                                                                         |
+| interrupciones y softirqs por CPU | `mikroscope_irq_cpu`, `mikroscope_softirq`                                                                                                 | `mikroscope_irq_cpu`, `mikroscope_softirq`                                   |
+| eventos y niveles de vmstat       | `mikroscope_vm`, `mikroscope_vm_level`                                                                                                     | `mikroscope_vm`, `mikroscope_vm_level`                                   |
+| contadores del PMU                | `mikroscope_perf`                                                                                                                          | `mikroscope_perf`                                                                        |
+| secuencia y relojes de la muestra | `mikroscope_sample`                                                                                                                        | `mikroscope_sample`                               |
+| `/proc/meminfo`                   | diecinueve campos en `mikroscope_mem`                                                                                                      | diecinueve columnas en `mikroscope_mem`                                                    |
 | log del kernel                    | recuentos por nivel, puerto y kind, `mikroscope_kmsg`; sin texto                                                                           | cada registro con su texto, `port` y `kind`, `mikroscope_event`; sin recuentos        |
-| extras del observador             | `cgroup_mem_max`, `resets`, `kmsg_dropped` en `mikroscope_self`                                                                            | no se escriben                                                                        |
+| extras del observador             | `cgroup_mem_max`, `resets`, `kmsg_dropped` en `mikroscope_self`                                                                            | todos salvo `cgroup_mem_max`                                                                        |
 | techo de slab                     | campo `limit`                                                                                                                              | columna `limit_objs`; población `active` frente a `active_objs`                       |
 | listas libres                     | una fila por zona, un campo por orden                                                                                                      | una fila por zona y orden                                                             |
 | qué es una interfaz               | `label`, `type`, `role` y `bridge` como etiquetas en `mikroscope_api_iface` y `mikroscope_api_ifcounters`, junto a `mikroscope_api_ifinfo` | solo `label` en `mikroscope_api_iface`; el resto, a través de `mikroscope_api_ifinfo` |
@@ -403,11 +403,12 @@ bits sin signo y ningún delta que produzca un router en una muestra se acerca a
 	kernel se renderiza en 1 375 B de SQL frente a 716 B de line protocol, un evento de la API en
 	1 138 B frente a 608 B, y 10 Hz más la capa de la API a 1 Hz escriben unos 14 KiB/s tras una
 	cabecera de 5,6 KiB; con las fuentes privileged el mismo evento del kernel crece hasta 2 749 B.
-	Las cifras no cubren catorce de las treinta y dos tablas que escribe el destino — `load`, `stat`,
-	`buddy`, `mtd`, `api_ifcounter`, `api_ifinfo`, `trigger`, `derived`, `derived_iface`, `detection`
-	y las cuatro tablas `device` — y no se han vuelto a medir, así que son anteriores a las columnas
-	`port` y `kind` de `mikroscope_event`. La cabecera de las treinta y dos, calculada a partir de
-	las cadenas del esquema de `internal/sinks/sql.go` y no medida, ocupa 7 757 B, unos 7,6 KiB. No
+	Las cifras cubren dieciocho de las cuarenta y tres tablas que escribe hoy el destino: el fixture
+	es del 2026-09-12 y once tablas se añadieron después, en 1.0.3 y 1.0.5, y no ejercitó `load`,
+	`stat`, `buddy`, `mtd`, `api_ifcounter`, `api_ifinfo`, `trigger`, `derived`, `derived_iface`,
+	`detection` ni las cuatro tablas `device`. No se han vuelto a medir, así que son además anteriores
+	a las columnas `port` y `kind` de `mikroscope_event`. La cabecera de las cuarenta y tres, generada
+	por el propio `header()` del destino el 2026-09-19, ocupa 10 482 B, unos 10,2 KiB. No
 	se ha medido cómo se comporta `--sql - | psql` cuando `psql` se queda atrás frente a un agente a
 	10 Hz.
 </NotClaimed>

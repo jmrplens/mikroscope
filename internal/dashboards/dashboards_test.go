@@ -128,11 +128,15 @@ func assertStoreDashboard(t *testing.T, store Store) {
 	// not-available row on a store written before it.
 	// 171 with the per-port audit (2026-09-16): +2 kernel-log port events
 	// (per bin, per port) and +1 interface inventory.
+	// 175 when the agent stopped serving its own exposition (1.0.5): the four
+	// observer panels that were Prometheus-only — the tick interval, the wake
+	// latency, the read duration and what the captures pin — now have an
+	// InfluxDB form too, because the figures behind them travel as data.
 	// Prometheus keeps fewer: every panel whose promQL is empty is
 	// dropped, and a section all of whose panels go that way emits no row
 	// at all.
 	ps := charts(top)
-	want := map[Store]int{Influx: 171, Prometheus: 133}[store]
+	want := map[Store]int{Influx: 175, Prometheus: 133}[store]
 	if len(ps) != want {
 		t.Fatalf("%s: %d panels, want %d", store, len(ps), want)
 	}
@@ -639,6 +643,60 @@ func TestAlertRulesProvisionForBothStores(t *testing.T) {
 		for _, r := range AlertRules {
 			if r.Threshold != 0 && r.Threshold != 0.8 && r.Threshold != 1 {
 				t.Fatalf("rule %s carries a threshold the device did not publish: %v", r.UID, r.Threshold)
+			}
+		}
+	}
+}
+
+// TestGreatestIsCastForTheInfluxPlugin: `greatest()` over an aggregate
+// returns a type Grafana's InfluxDB datasource plugin cannot map, and the
+// panel gets a 500 — "An error occurred within the plugin" — with no error on
+// the store's side at all. Measured on 2026-09-19 against the reference
+// deployment: the same SQL that `/api/v3/query_sql` answered correctly made
+// `/api/ds/query` fail, and the panel rendered its no-value text, hiding the
+// very errors it exists to show. A division by a float rescues it by accident,
+// so the rule is: cast, or divide.
+//
+// Only a greatest() around an AGGREGATE is checked. One inside a subquery,
+// feeding max()/min() further out, never reaches the plugin as a column.
+// closingParen returns the index of the paren that closes a call whose
+// arguments start at the beginning of s, or -1.
+func closingParen(s string) int {
+	depth := 1
+	for i, r := range s {
+		switch r {
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+func TestGreatestIsCastForTheInfluxPlugin(t *testing.T) {
+	t.Parallel()
+	aggregate := regexp.MustCompile(`^(max|min|sum|avg|count)\(`)
+	for _, p := range panelsFor(Influx, nil) {
+		for _, q := range p.Queries {
+			for arm := range strings.SplitSeq(q, "greatest(") {
+				if !aggregate.MatchString(arm) {
+					continue
+				}
+				end := closingParen(arm)
+				if end < 0 {
+					continue
+				}
+				rest := arm[end+1:]
+				if strings.HasPrefix(rest, "::") || strings.HasPrefix(rest, " / ") {
+					continue
+				}
+				t.Errorf("panel %q: a greatest() over an aggregate reaches the plugin uncast (%q…). "+
+					"Grafana's InfluxDB plugin answers 500 for it while the store answers fine; "+
+					"append ::DOUBLE, or divide by a float.", p.Title, rest[:min(len(rest), 60)])
 			}
 		}
 	}

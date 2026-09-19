@@ -11,7 +11,7 @@ Source: <https://jmrp.io/docs/mikroscope/about/status/>
 This page answers what a reader deciding whether to try mikroscope needs first:
 which parts work end to end, on what hardware that was shown, what the
 observer costs today, which defects are known and still open, and whether
-there is anything to download. It is checked against the code as of 2026-09-16.
+there is anything to download. It is checked against the code as of 2026-09-19.
 
 ### What works end to end
 
@@ -20,9 +20,10 @@ run against the reference RB5009 (RouterOS 7.24.2), not only against fakes:
 
 - **The agent** reads the shared kernel's `/proc`, `/sys`, `/dev/kmsg` and
   `perf_event_open` counters on a fixed ticker at 1 to 100 Hz (10 Hz by
-  default; 10, 50 and 100 Hz measured), keeps the samples in a ring, and serves
-  them: `/healthz`, `/capabilities`, `/snapshot`, `/stream`, `/metrics`, and
-  the triggered-capture endpoints `/captures` and `/capture`.
+  default; 10, 20, 50 and 100 Hz measured), keeps the samples in a ring, and
+  serves them: `/healthz`, `/capabilities`, `/snapshot`, `/stream`, `/sampler`,
+  and the triggered-capture endpoints `/captures` and `/capture`. It serves no
+  `/metrics`: since 1.0.5 the exposition is the collector's alone.
 - **The deployment CLI** installs, upgrades and removes it — `doctor`, `plan`,
   `install`, `status`, `upgrade`, `uninstall` — with every write listed before
   it happens and every removal verified by ownership counts. On 2026-09-12,
@@ -51,9 +52,9 @@ run against the reference RB5009 (RouterOS 7.24.2), not only against fakes:
   PostgreSQL, Graphite and Elasticsearch — generated from one panel list, with
   alert rules for the three whose query language the rules are written in. The
   two SQL stores are asked the same question in two dialects: the PostgreSQL
-  panels are the InfluxDB ones rewritten, and every one of its 209 queries is
+  panels are the InfluxDB ones rewritten, and every one of its 216 queries is
   planned by a real PostgreSQL in the container suite. Graphite and
-  Elasticsearch carry fewer panels on purpose (41 and 30 against 171): Graphite
+  Elasticsearch carry fewer panels on purpose (41 and 30 against 175): Graphite
   has no labels and Elasticsearch no nested documents, so what they cannot
   express is absent rather than wrong. All five are imported into a real
   Grafana over the stores the suite filled, and every panel is asked: on
@@ -86,8 +87,8 @@ run against the reference RB5009 (RouterOS 7.24.2), not only against fakes:
 
 ### What the agent costs today
 
-At the install default — 10 Hz, default per-source floors, a 300 s ring — the
-agent costs **2.85 % of one core and 31.3 MiB RSS**,
+At the install default — 10 Hz, default per-source floors, a 60 s ring — the
+agent costs **2.69 % of one core and 13.2 MiB RSS**,
 read from its own cgroup at steady state with the ring full:
 
 Measured on RB5009UG+S+ · 4 × 1.4 GHz Cortex-A72 · RouterOS 7.24.2 · 2026-09-15 · 60 s windows at steady state (ring full), full source set, collector forwarding to a file, a Prometheus exposition and InfluxDB 3 at once
@@ -96,18 +97,21 @@ The measured runs:
 
 | rate | floors | CPU of one core | µs/sample | RSS | slipped ticks | gaps / drops |
 | --- | --- | --- | --- | --- | --- | --- |
-| 10 Hz (default) | default | **2.85 %** | 2 856 | 31.3 MiB | **0** | 0 / 0 |
+| 10 Hz (default) | default | **2.69 %** | 2 685 | 13.2 MiB | **0** | 0 / 0 |
 
-That is above the budget of 2 % of one core and 16 MiB RSS. The
-budget is guidance rather than a contract: cost scales with the device, the
+That is above the budget of 2 % of one core and inside
+the 16 MiB RSS one — it was over on both until the 60 s ring and the derived
+memory limit of 1.0.6. The budget is guidance rather than a contract: cost scales with the device, the
 source set and the ring size. The image budget is 8 MiB; the one image size on
 record is 6.1 MiB, and it carries no date.
 
 Two rules keep the cost figure honest: wait out the ring (`BUFFER_S`) before
 quoting a steady-state figure — on the RB5009, at a 14 MiB soft memory limit, a
 reading taken in the first minute after install came back at 1.47 % of one core
-against a 9.38 % steady state — and read cost from `/metrics` rather than from a
-large `/snapshot`, whose ~1.5 MB response the agent must serialise.
+against a 9.38 % steady state — and read cost from the collector's
+`/metrics`, or from `cpu_us` and `rss` in `mikroscope_self` in whichever store
+you write to, rather than from a large `/snapshot`, whose ~1.9 MB response the
+agent must serialise.
 
 #### Cost at 10 Hz, by configuration
 
@@ -118,10 +122,10 @@ what each one costs — not what the number was at some earlier point.
 | Configuration                                         | CPU of one core                                                       | RSS                            | Measured   | Note                                                                                                     |
 | ----------------------------------------------------- | --------------------------------------------------------------------- | ------------------------------ | ---------- | -------------------------------------------------------------------------------------------------------- |
 | Every source read every tick                          | 2.43 %                                                                | not recorded                   | 2026-09-12 | above the budget                                                                                         |
-| Ring full, `MEM_LIMIT_MB` 14                          | 9.38 % (9 374 µs/sample) | not recorded                   | 2026-09-12 | a 300 s ring of lines of about 2.4 kB holds ~7.3 MB; the Go GC runs without pause |
+| Ring full, `MEM_LIMIT_MB` 14                          | 9.38 % (9 374 µs/sample) | not recorded                   | 2026-09-12 | a 300 s ring of lines of about 2.4 kB, the line of that date, holds ~7.3 MB; the Go GC runs without pause |
 | Ring full, `--mem-limit-mb 40`, `--memory-max 64M`    | 1.39 % (1 388 µs/sample) | 25.13 MiB                      | 2026-09-12 | 0 slipped ticks                                                                                          |
 | PMU counters on, a live `forward` writing to InfluxDB | 1.72 %                                                                | not recorded                   | 2026-09-12 | 0 slipped ticks; 2 400 samples forwarded, 0 gaps, 0 drops                                                |
-| The install default                                   | 2.85 %                                        | 31.3 MiB | 2026-09-15 | the figure above                                                                                         |
+| The install default                                   | 2.69 %                                        | 13.2 MiB | 2026-09-15 | the figure above                                                                                         |
 
 ### One device, one RouterOS version
 
@@ -156,9 +160,6 @@ Checked against the code as of this page:
   Telegraf sinks refuse that replay, so a dead connection is an error the sink
   retries and counts. No run since that night shows whether the duplicates are
   gone.
-- **Graphite names thermal zones by index.** The index is deliberate — a
-  zone's `type` string is not unique across zones — but the path listing at the
-  top of `internal/sinks/graphite.go` reads `thermal.<zone>`.
 
 #### Found on the device and not collected
 
@@ -169,8 +170,10 @@ and the hardware watchdog at `/sys/class/watchdog/watchdog0`.
 
 ### What the release publishes
 
-The current release is **v1.0.0** — the version in `VERSION`, compiled into both
-binaries and reported by `mikroscope version`. A `v*` tag runs the GoReleaser
+`VERSION` is **1.0.10**, compiled into both binaries and reported by
+`mikroscope version`; the latest published release is **v1.0.9**. They differ because
+1.0.10 is not tagged yet, and 1.0.8 never was — the release jumps from v1.0.7 to
+v1.0.9, which carries both. A `v*` tag runs the GoReleaser
 configuration, which publishes:
 
 - **CLI archives** for linux, darwin, windows and freebsd on amd64, arm64 and
@@ -181,8 +184,8 @@ configuration, which publishes:
   `mikroscope-agent-arm64.tar`, `mikroscope-agent-arm.tar`,
   `mikroscope-agent-amd64.tar` — which `install --agent-tar` uploads to the
   router.
-- **The agent image in two registries**, `jmrplens/mikroscope-agent:1.0.0` on
-  Docker Hub and `ghcr.io/jmrplens/mikroscope-agent:1.0.0` on GHCR, each one
+- **The agent image in two registries**, `jmrplens/mikroscope-agent:1.0.9` on
+  Docker Hub and `ghcr.io/jmrplens/mikroscope-agent:1.0.9` on GHCR, each one
   manifest over `linux/amd64`, `linux/arm64` and `linux/arm/v7`, which
   `install --remote-image` makes the router pull. RouterOS takes the registry
   host from the global `/container/config registry-url`, which ships as
@@ -206,7 +209,7 @@ the one RB5009 above.
 
 - [The cost of the observer](https://jmrp.io/docs/mikroscope/cost/): the budget, the current figure and how to measure
   it on your own device.
-- [The rate ceiling](https://jmrp.io/docs/mikroscope/cost/rate-ceiling/): the five measured runs at 10, 50 and 100 Hz.
+- [The rate ceiling](https://jmrp.io/docs/mikroscope/cost/rate-ceiling/): the six measured runs at 10, 20, 50 and 100 Hz.
 - [The file and the other sinks](https://jmrp.io/docs/mikroscope/sinks/other/): the ten sinks `forward` writes to.
 - [Lineage and licence](https://jmrp.io/docs/mikroscope/about/lineage/): where the deployment code and the API client
   came from.
@@ -344,6 +347,7 @@ the same host give the same four mark and favicon files.
 | `mark-dark.svg`, `mark-light.svg`                      | `brand/`       | `mark`     | The mark, one per theme                                                                               |
 | `favicon-dark.svg`, `favicon-light.svg`                | `brand/`       | `mark`     | The five-bar variant, one per theme                                                                   |
 | `mark-inline.svg`                                      | `brand/`       | `mark`     | The mark for a page that inlines it: the loud tone is `currentColor`, the quiet one `--ms-mark-quiet` |
+| `favicon-inline.svg`                                   | `brand/`       | `mark`     | The favicon for a page that inlines it, the inline twin of `favicon.svg`                              |
 | `banner.svg` and `.png`                                | `brand/`       | `compose`  | 1280×320, for the README                                                                              |
 | `social.svg` and `.png`                                | `brand/`       | `compose`  | 1280×640, the repository social preview                                                               |
 | `og.svg` and `.png`                                    | `brand/`       | `compose`  | 1200×630, the documentation `og:image`                                                                |
@@ -360,8 +364,9 @@ The last four rows are written for a web app manifest. This site declares none a
 `icon-512.png` and `icon-maskable-512.png` ship without a consumer: no launcher reads the maskable
 inset.
 
-The mark in this site's header is `mark-inline.svg`, painted by the site's own
-palette, so the drawing in the chrome is the drawing in `brand/`.
+The mark in this site's header is `favicon-inline.svg`, the five-bar drawing, painted by the
+site's own palette; `mark-inline.svg` fills the hero slot. Either way the drawing in the chrome is
+the drawing in `brand/`.
 
 ### The background
 
@@ -429,8 +434,8 @@ API client come from that repository, under its MIT licence.
 | `internal/router` tests | cs-routeros-bouncer `cmd/perfmon`, the containment tests              | Adapted to mikroscope's option names and to two rules of its own: quoted ports, and the `--expose` pair as part of the plan                                            |
 | `internal/image`        | cs-routeros-bouncer `cmd/perfmon/image.go`                            | Reworked for the agent's name, the ARM variant (arm images declare `v7`) and a build goreleaser can reuse                                                              |
 | `internal/chart`        | cs-routeros-bouncer `cmd/perfmon/chart.go`                            | The original drew its palette from a docs theme; this one carries its own, validated for the light surface (adjacent-pair CVD ΔE 9.1, normal-vision 22.9)              |
-| `internal/rosapi`       | cs-routeros-bouncer `internal/rosapi`, taken 2026-09-11               | Only the import path                                                                                                                                                   |
-| `.golangci.yml`         | cs-routeros-bouncer, itself based on `maratori/golangci-lint-config`  | The module path                                                                                                                                                        |
+| `internal/rosapi`       | cs-routeros-bouncer `internal/rosapi`, taken 2026-09-11               | The import path; and a Windows-only test skip added in 1.0.1, nothing in the shipped code                                                                                                                                                   |
+| `.golangci.yml`         | ghchronicle and gitlab-mcp-server, themselves based on `maratori/golangci-lint-config` | The module path                                                                                                                                                        |
 
 What PR #123 brought, and what mikroscope's installer keeps from it, is the
 containment rule: every object created carries one exact comment tag, every
@@ -454,7 +459,8 @@ follows its suite.
 ### The RouterOS API client
 
 `internal/rosapi` has two generations of lineage. mikroscope's copy is
-cs-routeros-bouncer's, with nothing modified for mikroscope; mikroscope uses it
+cs-routeros-bouncer's, with nothing modified in the shipped code — 1.0.1 added one
+Windows-only skip to `client_test.go`, and that is the whole of it. mikroscope uses it
 for the API tier's reads, for `mark --log-markers`, and for the `/tool fetch`
 relay. The bouncer's copy is
 itself a pruned vendoring of

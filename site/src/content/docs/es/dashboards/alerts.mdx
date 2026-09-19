@@ -27,12 +27,14 @@ para un router concreto.
 | ---------------------------------------------- | -----------------------------------------------: | -------------------- |
 | `dashboards/mikroscope-alerts-influxdb.yaml`   |   <DashboardCount store="influxdb" of="rules" /> | SQL de InfluxDB 3    |
 | `dashboards/mikroscope-alerts-prometheus.yaml` | <DashboardCount store="prometheus" of="rules" /> | PromQL               |
+| `dashboards/mikroscope-alerts-postgres.yaml`   |   <DashboardCount store="postgres" of="rules" /> | SQL de PostgreSQL    |
 
 </ScrollTable>
 
-El fichero de InfluxDB tiene una regla menos porque "The sampler is slipping ticks" no tiene forma en
-SQL: el contador de ticks perdidos por retraso se expone en el `/metrics` del agente y no se escribe
-en InfluxDB.
+El fichero de InfluxDB tiene una regla menos porque "The sampler is slipping ticks" todavía no tiene
+forma en SQL. El contador sí llega a InfluxDB desde 1.0.5 —el colector lo lee del `/sampler` del
+agente y escribe `mikroscope_sampler.slipped`—, así que la regla se podría escribir; no se ha
+escrito.
 
 Cada fichero es `apiVersion: 1` con un grupo de reglas, `mikroscope`, en una carpeta llamada
 `mikroscope`, organización 1, evaluado cada minuto. Las reglas se aprovisionan en vez de ir dentro de
@@ -127,12 +129,13 @@ El título de cada regla, en inglés como aparece en Grafana, y debajo una tradu
 
 <AlertRules show="queries" store="prometheus" />
 
-`mikroscope_slipped_total` viene del trabajo de scrape del agente, el que tiene la lista `keep` en
-[Importar y comprobar](/mikroscope/es/dashboards/import-and-check/#prometheus-dos-trabajos-de-scrape);
-las otras diez leen el `/metrics` del colector. `mikroscope_kmsg_port_records_total` está entre
-ellas: las dos exposiciones las escribe el mismo renderizador, y la copia del colector es la que la
-lista `keep` deja pasar, la que clasifica el registro que el agente no clasificó y nombra cada puerto
-como lo nombra RouterOS ahora.
+Las once leen el `/metrics` del colector, que desde 1.0.5 es la única exposición que hay —
+[Importar y comprobar](/mikroscope/es/dashboards/import-and-check/#prometheus-un-trabajo-de-scrape)
+tiene el único trabajo de scrape. `mikroscope_slipped_total` está entre ellas y antes venía de un
+segundo trabajo contra el agente: el agente sigue siendo el dueño del ticker y lo único que puede
+contar un tick perdido, pero ahora informa del número por `/sampler` y el colector lo renderiza. Así
+que la regla se dispara sobre una cifra de como mucho un minuto en vez de un scrape, que para un
+contador que vale 0 en un equipo sano es la misma alerta.
 
 </TabItem>
 <TabItem label="InfluxDB 3">
@@ -158,7 +161,7 @@ como lo nombra RouterOS ahora.
   leyó el agente. La ocupación sale de `/proc/slabinfo`, que necesita un contenedor privilegiado.
 
 Las reglas no alertan por squeezes de softnet. Medido en el RB5009 de referencia el 2026-09-15 sobre
-3 476 muestras, alrededor del <Measured id="squeeze.backgroundOne" /> de las muestras llevan un squeeze, y alertar con "squeeze > 0" te
+3 738 704 muestras por CPU en 24 h, alrededor del <Measured id="squeeze.backgroundOne" /> de las muestras llevan un squeeze, y alertar con "squeeze > 0" te
 despertaría para siempre. Lo que llega en su lugar a la alerta de detecciones es la detección
 `microburst`: tres muestras de ráfaga en una CPU en 60 s. Una muestra de ráfaga es aquella en la que
 una cola de softnet descartó un paquete, o agotó su presupuesto más veces que el percentil 90 móvil
@@ -178,9 +181,9 @@ o por debajo. Consulta
   leen fuentes que necesitan un contenedor privilegiado. Sin él esas medidas nunca llegan al almacén,
   y en Prometheus una consulta sobre una métrica inexistente no devuelve datos — lo que estas reglas
   leen como OK.
-- **Nada mientras salta la regla del agente en silencio.** Todas las demás reglas salvo la de ticks
-  perdidos por retraso, que lee directamente el agente, leen el mismo flujo; sin muestras llegando
-  leen cero o ningún dato, y las dos cosas son OK.
+- **Nada mientras salta la regla del agente en silencio.** Todas las reglas leen el mismo flujo —
+  incluida la de ticks perdidos por retraso, cuya única consulta va contra el colector, no contra el
+  agente—, así que sin muestras llegando leen cero o ningún dato, y las dos cosas son OK.
 
 <NotClaimed variant="untested" title="Lo que no se ha probado">
 	Estos ficheros no se han cargado en Grafana para observar una regla evaluarse, saltar o
