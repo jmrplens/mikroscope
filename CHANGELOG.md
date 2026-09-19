@@ -4,6 +4,24 @@ Notable changes per release. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the versions
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.10]
+
+### Fixed
+
+- **`upgrade --dry-run` wrote to the router.** The flag is documented as "print
+  the plan and write nothing"; `upgrade` never read it. It printed no plan and
+  fell through to the confirmation prompt, so the only thing standing between a
+  dry run and a replaced container was answering `n` — and **`upgrade --dry-run
+  --yes` replaced it outright**, on a live router, while promising it would not.
+  Found on 2026-09-19 while upgrading the reference RB5009's agent to 1.0.9:
+  the dry run printed nothing but the prompt, which is what gave it away.
+
+  `upgrade` now prints its own plan and `--dry-run` returns before the runner
+  is built, so a dry run opens no connection at all. The plan is the container
+  step alone — `install`'s listing names the veth, the router address and the
+  two list memberships, which an upgrade does not touch, and printing them
+  would promise writes that never come.
+
 ## [1.0.9]
 
 ### Fixed

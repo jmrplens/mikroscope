@@ -130,9 +130,18 @@ el checkout, con `--agent-tar`, o con `--remote-image` y ninguna imagen—,
 comprueba que todos los pasos están
 (si no, `nothing to upgrade: run install first`), pide confirmación, quita el
 paso del contenedor, espera a la eliminación asíncrona de RouterOS, vuelve a
-crear el paso con la imagen nueva y sondea el agente. A diferencia de
-`install`, no imprime ningún plan ni ejecuta `doctor`: su pregunta es la misma
-`write the objects above to the router? [y/N]` sin nada listado encima.
+crear el paso con la imagen nueva y sondea el agente.
+
+Antes imprime su propio plan —solo el paso del contenedor, con la línea
+`keeps: the veth, the router address and the list memberships are not touched`,
+porque esos cuatro objetos son justo los que una actualización NO escribe— y
+`--dry-run` se detiene ahí, antes incluso de abrir una conexión con el router.
+A diferencia de `install` sigue sin ejecutar `doctor`; ejecútalo tú si quieres
+las comprobaciones de espacio libre y device-mode antes de actualizar.
+
+Hasta 1.0.10 `upgrade` ignoraba `--dry-run` por completo: no imprimía nada e iba
+directo a la confirmación, así que `upgrade --dry-run --yes` reemplazaba el
+contenedor en un router vivo mientras el flag prometía no escribir nada.
 `mikroscope plan` con las mismas opciones muestra la orden del contenedor que va
 a escribir.
 
