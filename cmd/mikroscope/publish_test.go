@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -20,6 +21,13 @@ func TestStoresToPublishFollowsTheSinksThatWereAskedFor(t *testing.T) {
 	s := &sinkFlags{file: "out.jsonl", loki: "http://l:3100", otlp: "http://o:4318", telegraf: "http://t:8186", stdout: "lp"}
 	if got := storesToPublish(s); len(got) != 0 {
 		t.Fatalf("storesToPublish = %v, want nothing", got)
+	}
+	// Either SQL sink puts the postgres store on the list.
+	for _, only := range []*sinkFlags{{sqlPath: "out.sql"}, {postgres: "postgres://u@h/d"}} {
+		got := storesToPublish(only)
+		if len(got) != 1 || got[0] != dashboards.Postgres {
+			t.Errorf("storesToPublish(%+v) = %v, want just postgres", only, got)
+		}
 	}
 	s = &sinkFlags{influx: "http://i:8181", prom: ":9124", graph: "g:2003"}
 	want := []dashboards.Store{dashboards.Influx, dashboards.Prometheus, dashboards.Graphite}
@@ -41,7 +49,7 @@ func TestStoresToPublishFollowsTheSinksThatWereAskedFor(t *testing.T) {
 func TestInfluxDatasourceCarriesTheTokenInBothPlaces(t *testing.T) {
 	t.Parallel()
 	s := &sinkFlags{influx: "http://192.168.0.40:50106", influxDB: "mikroscope", influxToken: "apiv3_secret"}
-	got, err := datasourceFor(dashboards.Influx, s, "")
+	got, err := datasourceFor(dashboards.Influx, s, &publishFlags{}, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +87,7 @@ func TestInfluxDatasourceCarriesTheTokenInBothPlaces(t *testing.T) {
 func TestInfluxOverHTTPSDoesNotAskForPlaintextGRPC(t *testing.T) {
 	t.Parallel()
 	s := &sinkFlags{influx: "https://influx.example:8181", influxDB: "mikroscope"}
-	got, err := datasourceFor(dashboards.Influx, s, "")
+	got, err := datasourceFor(dashboards.Influx, s, &publishFlags{}, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,24 +96,69 @@ func TestInfluxOverHTTPSDoesNotAskForPlaintextGRPC(t *testing.T) {
 	}
 }
 
-// The three sinks that cannot describe a datasource must say so rather than
-// build one pointed at a port that answers nothing.
-func TestTheThreeSinksThatCannotDescribeADatasourceSaySo(t *testing.T) {
+// Two of the five cannot KNOW the address Grafana queries, and must say so
+// rather than build one pointed at a port that answers nothing — and must name
+// the flag that resolves it.
+func TestTheSinksThatCannotKnowTheAddressSaySo(t *testing.T) {
 	t.Parallel()
-	s := &sinkFlags{prom: ":9124", sqlPath: "out.sql", graph: "graphite:2003"}
-	for _, store := range []dashboards.Store{dashboards.Prometheus, dashboards.Postgres, dashboards.Graphite} {
-		_, err := datasourceFor(store, s, "")
+	s := &sinkFlags{prom: ":9124", graph: "graphite:2003"}
+	for _, store := range []dashboards.Store{dashboards.Prometheus, dashboards.Graphite} {
+		_, err := datasourceFor(store, s, &publishFlags{}, io.Discard)
 		if err == nil {
 			t.Errorf("datasourceFor(%s): want an error naming the sink", store)
 			continue
 		}
-		if !strings.Contains(err.Error(), "--grafana-datasource-uid") {
+		if !strings.Contains(err.Error(), "--grafana-datasource-url") {
 			t.Errorf("datasourceFor(%s) = %q, want it to name the flag that resolves it", store, err)
 		}
 	}
-	// And with one adopted, all three are fine and nothing is described.
+}
+
+// ...and told the address, there is nothing else to derive: a Prometheus
+// datasource is a URL, and so is a Graphite one.
+func TestPrometheusAndGraphiteAreDescribedOnceTheyAreToldTheAddress(t *testing.T) {
+	t.Parallel()
+	s := &sinkFlags{prom: ":9124", graph: "graphite:2003"}
+	p := &publishFlags{dsURL: "http://query.example:9090"}
+	for store, wantKey := range map[dashboards.Store]string{
+		dashboards.Prometheus: "httpMethod",
+		dashboards.Graphite:   "graphiteVersion",
+	} {
+		got, err := datasourceFor(store, s, p, io.Discard)
+		if err != nil {
+			t.Errorf("datasourceFor(%s): %v", store, err)
+			continue
+		}
+		if got.URL != p.dsURL {
+			t.Errorf("%s url = %q, want the address it was told", store, got.URL)
+		}
+		if got.JSON[wantKey] == nil {
+			t.Errorf("%s jsonData = %v, want %s set", store, got.JSON, wantKey)
+		}
+	}
+}
+
+// The file sink is the ONE that can never be described, and its message has to
+// send the reader to the sink that can rather than to Grafana.
+func TestTheFileSQLSinkNamesTheSinkThatCanDescribeItself(t *testing.T) {
+	t.Parallel()
+	_, err := datasourceFor(dashboards.Postgres, &sinkFlags{sqlPath: "out.sql"}, &publishFlags{}, io.Discard)
+	if err == nil {
+		t.Fatal("want an error: a file sink never connects")
+	}
+	for _, want := range []string{"--postgres", "never connects"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error = %q, want it to carry %q", err, want)
+		}
+	}
+}
+
+// An adopted uid is taken for any store, and nothing is described.
+func TestAnAdoptedUIDNeedsNothingDescribed(t *testing.T) {
+	t.Parallel()
+	s := &sinkFlags{prom: ":9124", sqlPath: "out.sql", graph: "graphite:2003"}
 	for _, store := range []dashboards.Store{dashboards.Prometheus, dashboards.Postgres, dashboards.Graphite} {
-		got, err := datasourceFor(store, s, "adopted-uid")
+		got, err := datasourceFor(store, s, &publishFlags{dsUID: "adopted-uid"}, io.Discard)
 		if err != nil {
 			t.Errorf("datasourceFor(%s) with an adopted uid: %v", store, err)
 		}
@@ -231,7 +284,7 @@ func TestPublishWritesTheFolderTheDatasourceAndTheDashboard(t *testing.T) {
 func TestElasticsearchDatasourceAsksForEveryDaysIndex(t *testing.T) {
 	t.Parallel()
 	s := &sinkFlags{elastic: "http://elastic:9200/", elIndex: "mikroscope-%Y.%m.%d", elasticAuth: "ApiKey abc"}
-	got, err := datasourceFor(dashboards.Elasticsearch, s, "")
+	got, err := datasourceFor(dashboards.Elasticsearch, s, &publishFlags{}, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -256,7 +309,7 @@ func TestElasticsearchDatasourceAsksForEveryDaysIndex(t *testing.T) {
 // header that would make the datasource send `Authorization: `.
 func TestElasticsearchDatasourceWithNoCredentialSendsNoHeader(t *testing.T) {
 	t.Parallel()
-	got, err := datasourceFor(dashboards.Elasticsearch, &sinkFlags{elastic: "http://elastic:9200"}, "")
+	got, err := datasourceFor(dashboards.Elasticsearch, &sinkFlags{elastic: "http://elastic:9200"}, &publishFlags{}, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}

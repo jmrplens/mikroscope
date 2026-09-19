@@ -24,6 +24,8 @@ type publishFlags struct {
 	url    string
 	folder string
 	dsUID  string
+	dsURL  string
+	dsSSL  string
 	dryRun bool
 }
 
@@ -31,6 +33,8 @@ func (p *publishFlags) register(fs *flag.FlagSet) {
 	fs.StringVar(&p.url, "grafana", env("GRAFANA_URL", ""), "publish the dashboards to this Grafana at start; token from GRAFANA_TOKEN (MIKROSCOPE_GRAFANA_URL)")
 	fs.StringVar(&p.folder, "grafana-folder", env("GRAFANA_FOLDER", "mikroscope"), "the Grafana folder to publish into; empty means the General folder")
 	fs.StringVar(&p.dsUID, "grafana-datasource-uid", env("GRAFANA_DATASOURCE_UID", ""), "adopt this existing datasource instead of creating one — required for the stores that cannot describe their own")
+	fs.StringVar(&p.dsURL, "grafana-datasource-url", env("GRAFANA_DATASOURCE_URL", ""), "the address Grafana queries, for the sinks that cannot know it: --prom, --graphite. It also overrides the address a sink does know")
+	fs.StringVar(&p.dsSSL, "grafana-datasource-sslmode", env("GRAFANA_DATASOURCE_SSLMODE", ""), "sslmode for the PostgreSQL datasource: disable, require, verify-ca or verify-full. Read from --postgres when it names one Grafana understands")
 	fs.BoolVar(&p.dryRun, "grafana-dry-run", false, "print the datasource and dashboard --grafana would write, write nothing, and stop before collecting")
 }
 
@@ -77,7 +81,7 @@ func (p *publishFlags) publish(ctx context.Context, s *sinkFlags, out io.Writer)
 func (p *publishFlags) publishOne(ctx context.Context, g *dashboards.Grafana,
 	s *sinkFlags, store dashboards.Store, folderUID string, out io.Writer,
 ) error {
-	want, err := datasourceFor(store, s, p.dsUID)
+	want, err := datasourceFor(store, s, p, out)
 	if err != nil {
 		return err
 	}
@@ -139,7 +143,13 @@ func storesToPublish(s *sinkFlags) []dashboards.Store {
 		{dashboards.Influx, s.influx != ""},
 		{dashboards.Elasticsearch, s.elastic != ""},
 		{dashboards.Prometheus, s.prom != ""},
-		{dashboards.Postgres, s.sqlPath != ""},
+		// EITHER SQL SINK puts the postgres store on the list. --postgres was
+		// added in 1.1.0 and this check still only knew --sql, so a collector
+		// writing to a live PostgreSQL and nothing else published nothing at
+		// all and said there was nothing to publish. Caught by the end-to-end
+		// run that publishes all five, not by any unit test: storesToPublish
+		// was right about the four stores its own test covered.
+		{dashboards.Postgres, s.sqlPath != "" || s.postgres != ""},
 		{dashboards.Graphite, s.graph != ""},
 	} {
 		if named.configured {
@@ -160,20 +170,36 @@ func storesToPublish(s *sinkFlags) []dashboards.Store {
 // queries. Those three are adopted through --grafana-datasource-uid or they
 // are not published, and saying so is better than creating a datasource
 // pointed at a port that answers nothing.
-func datasourceFor(store dashboards.Store, s *sinkFlags, adopt string) (dashboards.Datasource, error) {
+// datasourceFor describes the datasource a store's dashboard reads from.
+//
+// FIVE OF FIVE, by two different routes. Three sinks KNOW the address Grafana
+// queries, because it is the address they write to or dial: --influx,
+// --elastic and --postgres. The other two cannot know it and no amount of
+// reading their flags would find it — --prom SERVES /metrics and is scraped,
+// so the Prometheus Grafana asks is one this has never heard of; --graphite
+// speaks the carbon ingest port, which is not the web API Grafana queries and
+// is usually not even the same port. Told the address in
+// --grafana-datasource-url, though, there is nothing else to derive: a
+// Prometheus datasource is a URL, and so is a Graphite one.
+//
+// That leaves exactly one that can never be described: --sql, which writes
+// statements to a file and never connects, so there is no host, port, user or
+// password anywhere in the flags to build one out of. It says so, and names
+// --postgres, which is the sink that can.
+func datasourceFor(store dashboards.Store, s *sinkFlags, p *publishFlags, out io.Writer) (dashboards.Datasource, error) {
 	want := dashboards.Datasource{
-		UID:  adopt,
+		UID:  p.dsUID,
 		Name: "mikroscope-" + string(store),
 		Type: dashboards.PluginID(store),
 	}
 	if want.UID == "" {
 		want.UID = "mikroscope-" + string(store)
 	}
-	if adopt != "" {
+	if p.dsUID != "" {
 		return want, nil
 	}
-	switch store {
-	case dashboards.Influx:
+	switch {
+	case store == dashboards.Influx:
 		t, err := resolveInflux(s.influx, s.influxDB)
 		if err != nil {
 			return want, err
@@ -183,7 +209,7 @@ func datasourceFor(store dashboards.Store, s *sinkFlags, adopt string) (dashboar
 				"datasource: pass the server in --influx and the database in --influx-db, or name an existing "+
 				"datasource in --grafana-datasource-uid (%s)", s.influx)
 		}
-		want.URL = t.Base
+		want.URL = firstNonEmpty(p.dsURL, t.Base)
 		// dbName, NOT the top-level `database` field: the InfluxDB 3 SQL
 		// plugin reads the database out of jsonData, and the datasource that
 		// works against the reference store leaves `database` empty.
@@ -201,7 +227,7 @@ func datasourceFor(store dashboards.Store, s *sinkFlags, adopt string) (dashboar
 			// on 2026-09-19 against the reference store, by creating the
 			// datasource without it. A store reached over https gets the TLS
 			// handshake it is expecting, so the flag is not simply always on.
-			"insecureGrpc": strings.HasPrefix(t.Base, "http://"),
+			"insecureGrpc": strings.HasPrefix(want.URL, "http://"),
 		}
 		// BOTH PLACES. This plugin reads the token from one and the header
 		// from the other depending on the call: with only httpHeaderValue1
@@ -215,8 +241,8 @@ func datasourceFor(store dashboards.Store, s *sinkFlags, adopt string) (dashboar
 				"httpHeaderValue1": "Bearer " + s.influxToken,
 			}
 		}
-	case dashboards.Elasticsearch:
-		want.URL = strings.TrimRight(s.elastic, "/")
+	case store == dashboards.Elasticsearch:
+		want.URL = firstNonEmpty(p.dsURL, strings.TrimRight(s.elastic, "/"))
 		want.JSON = map[string]any{
 			"index":     elasticIndexPattern(s.elIndex),
 			"timeField": "time",
@@ -225,11 +251,55 @@ func datasourceFor(store dashboards.Store, s *sinkFlags, adopt string) (dashboar
 			want.Secret = map[string]string{"httpHeaderValue1": s.elasticAuth}
 			want.JSON["httpHeaderName1"] = "Authorization"
 		}
+	case store == dashboards.Postgres && s.postgres != "":
+		// The connecting sink knows the server, because it dials it. Everything
+		// Grafana needs is in the connection string.
+		if err := fromDSN(&want, s.postgres, p.dsURL, p.dsSSL, out); err != nil {
+			return want, err
+		}
+	case store == dashboards.Prometheus && p.dsURL != "":
+		// Told rather than derived: the sink is scraped rather than written
+		// to, so it has no idea where the Prometheus server is. Told the
+		// address, there is nothing else to know — a Prometheus datasource is
+		// a URL.
+		want.URL = p.dsURL
+		want.JSON = map[string]any{"httpMethod": "POST"}
+	case store == dashboards.Graphite && p.dsURL != "":
+		// Also told, and for a sharper reason: the sink speaks the ingest port
+		// while Grafana queries the web API, which is a different port on the
+		// same host.
+		want.URL = p.dsURL
+		want.JSON = map[string]any{"graphiteVersion": "1.1"}
+	case store == dashboards.Postgres:
+		// Only the file sink is configured. It writes statements and never
+		// connects, so there is no host, port, user or password anywhere in
+		// the flags to build a datasource out of.
+		return want, errors.New(
+			"--sql writes statements to a file and never connects, so nothing here knows the " +
+				"server Grafana would query: use --postgres instead, which does, or create the " +
+				"datasource in Grafana and name it in --grafana-datasource-uid",
+		)
 	default:
-		return want, fmt.Errorf("the %s sink does not know the address Grafana would query, so it cannot "+
-			"describe a datasource: create one in Grafana and name it in --grafana-datasource-uid", store)
+		return want, fmt.Errorf(
+			"the %s sink does not know the address Grafana would query: pass it in "+
+				"--grafana-datasource-url, or create the datasource in Grafana and name it in "+
+				"--grafana-datasource-uid", store,
+		)
+	}
+	if want.URL == "" {
+		return want, fmt.Errorf("the %s sink names no address, so pass --grafana-datasource-url", store)
 	}
 	return want, nil
+}
+
+// firstNonEmpty is the first of these that says something.
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // elasticIndexPattern turns --elastic-index into the wildcard a datasource

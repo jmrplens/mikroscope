@@ -144,6 +144,8 @@ is read from the environment only.
 | `MIKROSCOPE_GRAFANA_URL`           | `--grafana`                | empty               | publish to this Grafana at start; empty publishes nothing  |
 | `MIKROSCOPE_GRAFANA_FOLDER`        | `--grafana-folder`         | `mikroscope`        | folder to publish into; empty is Grafana's General folder  |
 | `MIKROSCOPE_GRAFANA_DATASOURCE_UID` | `--grafana-datasource-uid` | empty               | adopt this datasource instead of creating one              |
+| `MIKROSCOPE_GRAFANA_DATASOURCE_URL` | `--grafana-datasource-url` | empty               | the address Grafana queries, for the sinks that cannot know it |
+| `MIKROSCOPE_GRAFANA_DATASOURCE_SSLMODE` | `--grafana-datasource-sslmode` | empty        | sslmode for the PostgreSQL datasource                      |
 
 </ScrollTable>
 

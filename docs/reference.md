@@ -351,6 +351,8 @@ as whoever an anonymous request is to that server.
 | `--grafana`                | empty        | `MIKROSCOPE_GRAFANA_URL`            | publish to this Grafana at start; empty publishes nothing                                |
 | `--grafana-folder`         | `mikroscope` | `MIKROSCOPE_GRAFANA_FOLDER`         | the folder to publish into; empty is Grafana's General folder                            |
 | `--grafana-datasource-uid` | empty        | `MIKROSCOPE_GRAFANA_DATASOURCE_UID` | adopt an existing datasource by uid instead of creating one, and leave it untouched      |
+| `--grafana-datasource-url` | empty        | `MIKROSCOPE_GRAFANA_DATASOURCE_URL` | the address Grafana queries, for `--prom` and `--graphite`; also overrides a derived one |
+| `--grafana-datasource-sslmode` | empty    | `MIKROSCOPE_GRAFANA_DATASOURCE_SSLMODE` | `disable`, `require`, `verify-ca` or `verify-full` for the PostgreSQL datasource     |
 | `--grafana-dry-run`        | `false`      | none                                | print what it would write, write nothing, and stop before collecting                     |
 
 A failure here is a warning and not a refusal to start: the samples of an hour
@@ -521,6 +523,8 @@ is read from the environment only.
 | `MIKROSCOPE_GRAFANA_URL`           | `--grafana`                | empty               | publish to this Grafana at start; empty publishes nothing  |
 | `MIKROSCOPE_GRAFANA_FOLDER`        | `--grafana-folder`         | `mikroscope`        | folder to publish into; empty is Grafana's General folder  |
 | `MIKROSCOPE_GRAFANA_DATASOURCE_UID` | `--grafana-datasource-uid` | empty               | adopt this datasource instead of creating one              |
+| `MIKROSCOPE_GRAFANA_DATASOURCE_URL` | `--grafana-datasource-url` | empty               | the address Grafana queries, for the sinks that cannot know it |
+| `MIKROSCOPE_GRAFANA_DATASOURCE_SSLMODE` | `--grafana-datasource-sslmode` | empty        | sslmode for the PostgreSQL datasource                      |
 
 The token is `GRAFANA_TOKEN`, the same one, with no prefix. `forward --grafana`
 refuses to publish without it: some Grafanas accept an anonymous request, and

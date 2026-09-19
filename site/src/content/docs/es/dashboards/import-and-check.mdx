@@ -159,7 +159,9 @@ grafana: influxdb: dashboard http://grafana:3000/d/mikroscope-influxdb/…
 | -------------------------- | ------------ | ------------------------------------------------------------------------------------------ |
 | `--grafana`                | vacío        | el Grafana en el que publicar al arrancar. Vacío — lo normal — no publica nada              |
 | `--grafana-folder`         | `mikroscope` | la carpeta donde publicar; vacío es la carpeta General de Grafana                           |
-| `--grafana-datasource-uid` | vacío        | adoptar una fuente de datos existente por uid en lugar de crear una                         |
+| `--grafana-datasource-uid` | vacío        | adoptar una fuente de datos existente por uid en lugar de crear una, y dejarla intacta      |
+| `--grafana-datasource-url` | vacío        | la dirección que consulta Grafana, para los dos destinos que no pueden saberla; también sustituye la que un destino sí sabe |
+| `--grafana-datasource-sslmode` | vacío    | `disable`, `require`, `verify-ca` o `verify-full` para la fuente de datos de PostgreSQL     |
 | `--grafana-dry-run`        | apagado      | imprimir la fuente de datos y el dashboard que escribiría, no escribir nada y parar antes de recoger |
 
 </ScrollTable>
@@ -178,25 +180,56 @@ pasó sin funcionar — por lo que sí, un dashboard publicado en el siguiente a
 nadie se quedan donde están. Borrar el dashboard de alguien sin que lo pida no es algo que deba
 hacer un colector, ni siquiera con uno que hizo él, porque puede ser la copia que está mirando.
 
-### Dos de los cinco sinks saben describir su propia fuente de datos
+### Cinco de cinco, por dos caminos distintos
 
-Son los dos cuya dirección de escritura **es** la dirección que consulta Grafana.
+**Tres destinos conocen la dirección que consulta Grafana**, porque es la
+dirección a la que escriben o a la que marcan. **Dos no pueden conocerla**, y
+por mucho que se leyeran sus opciones no aparecería — pero dicha la dirección
+en `--grafana-datasource-url`, no queda nada que derivar: una fuente de datos
+de Prometheus es una URL, y una de Graphite también.
 
-<ScrollTable label="qué sinks pueden describir una fuente de datos de Grafana">
+<ScrollTable label="qué destinos pueden describir una fuente de datos de Grafana">
 
-| Sink         | Fuente de datos | Por qué                                                                       |
-| ------------ | --------------- | ------------------------------------------------------------------------------ |
-| `--influx`   | creada          | el servidor al que escribe es el que consulta Grafana; `--influx-db` nombra la base de datos |
-| `--elastic`  | creada          | la URL base a la que hace `_bulk` es la que consulta Grafana; `--elastic-index` da el patrón de índice |
-| `--prom`     | adoptar         | **sirve** `/metrics` y lo raspan; el Prometheus que consulta Grafana es uno del que él no ha oído hablar |
-| `--sql`      | adoptar         | escribe sentencias a un fichero, no a un servidor                              |
-| `--graphite` | adoptar         | habla el puerto de ingesta de carbon, que no es la API que consulta Grafana    |
+| Destino      | Fuente de datos   | Por qué                                                                                       |
+| ------------ | ----------------- | ----------------------------------------------------------------------------------------------- |
+| `--influx`   | derivada          | el servidor al que escribe es el que consulta Grafana; `--influx-db` nombra la base de datos    |
+| `--elastic`  | derivada          | la URL base a la que hace `_bulk` es la que consulta Grafana; `--elastic-index` da el patrón    |
+| `--postgres` | derivada          | marca al servidor, así que la cadena de conexión tiene host, puerto, base, usuario y sslmode    |
+| `--prom`     | se le dice la URL | **sirve** `/metrics` y lo raspan: el Prometheus que consulta Grafana es uno del que no ha oído hablar |
+| `--graphite` | se le dice la URL | habla el puerto de ingesta de carbon, que no es la API web que consulta Grafana — suele ser otro puerto del mismo host |
+| `--sql`      | **nunca**         | escribe sentencias a un fichero y no conecta nunca, así que no hay host, puerto, usuario ni contraseña en ninguna opción |
 
 </ScrollTable>
 
-Los tres marcados como *adoptar* necesitan `--grafana-datasource-uid`, y lo dicen por su nombre si
-lo omites. Una fuente de datos adoptada es de otro y la describe otro, así que tampoco se corrige:
-conciliar una que no hizo él sobrescribiría ajustes que nadie le pidió tener.
+`--sql` es el único que no se puede describir jamás, y lo dice nombrando
+`--postgres` —el destino que sí puede— en vez de mandarte a Grafana. Cualquiera
+de ellos se puede adoptar con `--grafana-datasource-uid`, y una fuente de datos
+adoptada tampoco se corrige: conciliar una que no hizo él sobrescribiría
+ajustes que nadie le pidió tener.
+
+<Aside type="note" title="La fuente de datos de PostgreSQL, y dos cosas que no hará">
+  La cadena de conexión se analiza con **el propio parser de pgx**, el mismo con
+  el que marca el destino, y no con un segundo escrito aquí — un parser propio
+  discreparía del destino sobre lo que dice la opción justo en las entradas
+  donde equivocarse importa. Acepta igual la forma URL y la forma de palabras
+  clave.
+
+  **Solo copia una contraseña que lleve la propia cadena de conexión.** pgx lee
+  `PGPASSWORD`, `~/.pgpass` y el fichero de servicio igual que libpq, que es
+  exactamente lo que el destino quiere — pero una fuente de datos se escribe en
+  un Grafana que otros ven, y una credencial que vino de la máquina que publica
+  y no de la configuración es una que nadie pidió poner ahí. Cuando encuentra
+  una así lo dice y no la copia.
+
+  **`sslmode` se lee, no se adivina.** El valor por defecto de libpq es `prefer`
+  —intenta TLS y sigue sin él— y la fuente de datos de Grafana no tiene ese
+  modo: o insiste o se niega. Una cadena que nombra uno de los cuatro de Grafana
+  (`disable`, `require`, `verify-ca`, `verify-full`) se cree. Una que nombra
+  `prefer`, `allow` o nada en absoluto recibe `disable` **y una línea diciéndolo**,
+  porque adivinar `require` rompería a la otra mitad de los lectores dejándoles
+  una fuente de datos que no puede conectar en absoluto.
+  `--grafana-datasource-sslmode` lo decide de plano.
+</Aside>
 
 <Aside type="note" title="Qué lleva la fuente de datos de InfluxDB que crea">
   Tres ajustes fáciles de olvidar a mano, y aquí se olvidaron los tres primero. El token va en
@@ -376,6 +409,22 @@ y del agente directamente para las familias que el colector no puede recalcular.
 El SQL de los dos paneles de eventos de puerto se validó ese mismo día contra una tabla sintética en
 ese mismo InfluxDB 3, porque el almacén en vivo no tiene columna `kind` hasta que se le escribe el
 primer registro de puerto ya clasificado.
+
+**2026-09-20**, en la suite de extremo a extremo con docker, para el propio `forward --grafana`: se
+apuntó el colector a un Grafana real y a cada uno de los cinco stores por turno, se le dejó crear la
+fuente de datos, y luego se ejecutó `dashboards check` **contra la fuente de datos que el colector
+acababa de construir** — la consulta de cada panel, por la propia API de consultas de Grafana.
+
+Esa es la forma que tiene que tomar la comprobación aquí, porque lo que sale mal nunca es el JSON.
+Grafana acepta una fuente de datos y el camino de consulta la rechaza después: las dos trampas de
+InfluxDB con las que ha tropezado este proyecto fueron exactamente eso, una respondiendo
+`flightsql: Unauthenticated` y la otra `tls: first record does not look like a TLS handshake` desde
+una fuente de datos que la API había guardado sin queja. Los dashboards de los cinco stores
+respondieron desde lo que construyó el colector, sin error de fuente de datos en ningún panel.
+
+La misma ejecución encontró un defecto que ninguna prueba unitaria tenía: un colector que escribe a
+un PostgreSQL vivo por `--postgres` y a nada más no publicaba nada y decía «no hay nada que
+publicar», porque la lista de stores todavía solo conocía `--sql`.
 
 El recorrido fila a fila sin interfaz de los dos dashboards en Chromium a 1600x1000 — 0 insignias de
 error y 0 "No data" — es del **2026-09-15** y cubre 168 paneles de InfluxDB y 130 de Prometheus. No

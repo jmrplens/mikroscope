@@ -326,6 +326,8 @@ escribiría como aquel por quien el servidor tome a quien pregunta.
 | `--grafana`                | vacío        | `MIKROSCOPE_GRAFANA_URL`            | publicar en este Grafana al arrancar; vacío no publica nada                               |
 | `--grafana-folder`         | `mikroscope` | `MIKROSCOPE_GRAFANA_FOLDER`         | la carpeta donde publicar; vacío es la carpeta General de Grafana                         |
 | `--grafana-datasource-uid` | vacío        | `MIKROSCOPE_GRAFANA_DATASOURCE_UID` | adoptar una fuente de datos existente por uid en vez de crear una, y dejarla intacta      |
+| `--grafana-datasource-url` | vacío        | `MIKROSCOPE_GRAFANA_DATASOURCE_URL` | la dirección que consulta Grafana, para `--prom` y `--graphite`; también sustituye una derivada |
+| `--grafana-datasource-sslmode` | vacío    | `MIKROSCOPE_GRAFANA_DATASOURCE_SSLMODE` | `disable`, `require`, `verify-ca` o `verify-full` para la fuente de datos de PostgreSQL |
 | `--grafana-dry-run`        | `false`      | ninguna                             | imprimir lo que escribiría, no escribir nada y parar antes de recoger                     |
 
 </ScrollTable>

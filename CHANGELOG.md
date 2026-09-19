@@ -63,6 +63,44 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `mikroscope-port-errors` also reaches the alerts page, which 1.0.10 added
   the rule without.
 
+- **Five datasources of five, by two routes.** `forward --grafana` derived two
+  in 1.1.0's first cut; it derives three now and is told the other two.
+
+  - **`--postgres` derives its own**, from the connection string it dials
+    with, parsed by **pgx's own parser** rather than a second one written
+    here: a parser of this project's own would disagree with the sink about
+    what the flag says on exactly the inputs where being wrong matters. Host,
+    port, database, user and `sslmode` all come out of it, in the URL form and
+    the keyword form alike.
+  - **`--prom` and `--graphite` are told the address** with
+    `--grafana-datasource-url`, because neither can know it — one is scraped
+    rather than written to, the other speaks the ingest port and not the web
+    API. Told it, there is nothing else to derive: a Prometheus datasource is
+    a URL, and so is a Graphite one. Before this they could only be adopted.
+  - **`--sql` is the one that can never be described**, and it now says so by
+    naming `--postgres`, the sink that can, instead of sending the reader to
+    Grafana.
+
+  Two decisions in the PostgreSQL one are worth stating. It copies **only a
+  password the connection string itself carries**: pgx reads `PGPASSWORD`,
+  `~/.pgpass` and the service file the way libpq does, which is what the sink
+  wants, but a datasource is written into a Grafana other people can see, and a
+  credential that came from the publishing machine rather than from the
+  configuration is one nobody asked to put there — it says so and declines. And
+  `sslmode` is read rather than guessed: libpq's default `prefer` has no
+  Grafana equivalent, so a connection string that says `prefer`, `allow` or
+  nothing gets `disable` **and a line saying so**, because guessing `require`
+  would leave the other half of readers with a datasource that cannot connect
+  at all. `--grafana-datasource-sslmode` decides it outright.
+
+  Verified in the docker suite on 2026-09-20 the only way that means anything
+  here: the collector created each of the five datasources against a real
+  Grafana, and then `dashboards check` ran every panel's query **against the
+  datasource the collector had built**. What goes wrong is never the JSON —
+  Grafana stores a datasource happily and the query path then answers
+  `flightsql: Unauthenticated` or `tls: first record does not look like a TLS
+  handshake`, which is how both of this project's InfluxDB traps presented.
+
 - **`--postgres`: the SQL sink's other half, down a connection.** The
   collector can write to a PostgreSQL that is running instead of to a file
   somebody replays later. `--sql` and `--postgres` are ONE RENDERER with two
@@ -109,6 +147,12 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   rather than building one that answers nothing.
 
 ### Fixed
+
+- **A collector writing only to `--postgres` published nothing.** The store
+  list that decides which dashboards to publish still only knew `--sql`, so a
+  deployment using the connecting sink alone was told "there is nothing to
+  publish". Found by the end-to-end run that publishes all five, not by any
+  unit test: the list was right about the four stores its own test covered.
 
 - **One event, ten timestamps.** Every sink called `time.Now()` while
   rendering the events that have no clock of their own — a gap, the device
