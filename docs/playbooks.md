@@ -839,7 +839,7 @@ Measured on RB5009UG+S+ · 4 × 1.4 GHz Cortex-A72 · RouterOS 7.24.2 · 202
 ### From the tile to the port
 
 The tile sums every typed MAC error on every port. It deliberately says nothing
-about which: open **Interface traffic** and read *Port errors per bin*, which
+about which: open **Interface traffic** and read _Port errors per bin_, which
 draws one row per `(port, error type)` pair that had an error in the window and
 nothing for the pairs that did not. On a healthy router it says
 `no port errors in this window`.
@@ -927,7 +927,7 @@ observed was 70 Mbit/s against a 900 Mbit cap.
 
 **A real fault, not provoked** · 2026-09-19
 
-- **Port errors in the window** red, and *Port errors per bin* drawing one row:
+- **Port errors in the window** red, and _Port errors per bin_ drawing one row:
   a `rx overflow` on one port and nothing else.
 - The intervals that overflow carry a small fraction of the link's capacity —
   a burst, not a load.

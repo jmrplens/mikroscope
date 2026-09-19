@@ -22,7 +22,7 @@ La página entera es un fallo real del RB5009 de referencia, encontrado el
 ## De la tesela al puerto
 
 La tesela suma todos los errores tipificados del MAC de todos los puertos. A
-propósito no dice cuál: abre **Interface traffic** y lee *Port errors per bin*,
+propósito no dice cuál: abre **Interface traffic** y lee _Port errors per bin_,
 que dibuja una fila por cada par `(puerto, tipo de error)` que tuvo un error en
 la ventana y nada por los que no. En un router sano dice
 `no port errors in this window`.
@@ -117,7 +117,7 @@ observado fue de 70 Mbit/s contra un tope de 900.
 
 <FaultSignature origin="real" date="2026-09-19">
 
-- **Port errors in the window** en rojo, y *Port errors per bin* dibujando una
+- **Port errors in the window** en rojo, y _Port errors per bin_ dibujando una
   fila: un `rx overflow` en un puerto y nada más.
 - Los intervalos que desbordan llevan una fracción pequeña de la capacidad del
   enlace: una ráfaga, no carga.
