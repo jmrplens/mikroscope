@@ -443,7 +443,8 @@ user](https://jmrp.io/docs/mikroscope/security/api-user/) has the policy that us
 
 | Variable                   | Flag            | Default in the code | Meaning                                                                          |
 | -------------------------- | --------------- | ------------------- | -------------------------------------------------------------------------------- |
-| `MIKROSCOPE_INFLUX_URL`    | `--influx`      | empty               | InfluxDB 3 write URL                                                             |
+| `MIKROSCOPE_INFLUX_URL`    | `--influx`      | empty               | InfluxDB 3 server, `http://host:8181`; a full write URL is still taken verbatim  |
+| `MIKROSCOPE_INFLUX_DB`     | `--influx-db`   | empty               | the database `--influx` writes to, when `--influx` is a bare server               |
 | `MIKROSCOPE_LOKI_URL`      | `--loki`        | empty               | Loki push URL                                                                    |
 | `MIKROSCOPE_LOKI_TENANT`   | `--loki-tenant` | empty               | `X-Scope-OrgID`                                                                  |
 | `MIKROSCOPE_OTLP_URL`      | `--otlp`        | empty               | OTLP/HTTP metrics endpoint                                                       |
@@ -470,13 +471,27 @@ is read from the environment only.
 | `MIKROSCOPE_OTLP_TOKEN`     | the OTLP endpoint                                 |
 | `MIKROSCOPE_ELASTIC_AUTH`   | Elasticsearch or OpenSearch                       |
 | `MIKROSCOPE_TELEGRAF_TOKEN` | the Telegraf HTTP listener                        |
-| `GRAFANA_TOKEN`             | `dashboards import` and `dashboards check`        |
+| `GRAFANA_TOKEN`             | `dashboards import`, `dashboards check` and `forward --grafana` |
 
 ### Grafana
 
 `dashboards import` and `dashboards check` read `GRAFANA_URL` (the default of
 `--grafana`) and `GRAFANA_TOKEN`. Neither has the `MIKROSCOPE_` prefix.
 `.env.example` carries both, commented out, in its Grafana block.
+
+`forward` has its own `--grafana`, which publishes at start, and its variables
+**do** carry the prefix, because they are collector settings rather than the
+`dashboards` verb's:
+
+| Variable                           | Flag                       | Default in the code | Meaning                                                    |
+| ---------------------------------- | -------------------------- | ------------------- | ---------------------------------------------------------- |
+| `MIKROSCOPE_GRAFANA_URL`           | `--grafana`                | empty               | publish to this Grafana at start; empty publishes nothing  |
+| `MIKROSCOPE_GRAFANA_FOLDER`        | `--grafana-folder`         | `mikroscope`        | folder to publish into; empty is Grafana's General folder  |
+| `MIKROSCOPE_GRAFANA_DATASOURCE_UID` | `--grafana-datasource-uid` | empty               | adopt this datasource instead of creating one              |
+
+The token is `GRAFANA_TOKEN`, the same one, with no prefix. `forward --grafana`
+refuses to publish without it: some Grafanas accept an anonymous request, and
+one that did would write as whoever the server thinks is asking.
 
 ### The agent's envlist
 

@@ -315,26 +315,52 @@ func Generate(store Store) ([]byte, error) { return GenerateFor(store, nil) }
 // GenerateFor is Generate with the answer to "what does this store actually
 // hold", from Grafana.Measurements. A nil map keeps the compiled defaults;
 // see resolveAvailability for what a probe changes and why.
-func GenerateFor(store Store, present map[string]bool) ([]byte, error) {
-	panels := layout(panelsFor(store, present))
-	dsUID := "${DS_MIKROSCOPE}"
-	dsInput := map[string]any{"name": "DS_MIKROSCOPE", "label": "mikroscope datasource", "type": "datasource"}
-	var pluginID, title string
+// PluginID is the Grafana plugin a store's dashboard asks its datasource to
+// be, and "" for a store this builds nothing for. It is what the import input
+// is resolved against and what a datasource created for the store must be
+// typed as, which is why the two read it from one place.
+func PluginID(store Store) string {
 	switch store {
 	case Influx:
-		pluginID, title = "influxdb", "mikroscope — RouterOS kernel telemetry (InfluxDB 3)"
+		return "influxdb"
 	case Prometheus:
-		pluginID, title = "prometheus", "mikroscope — RouterOS kernel telemetry (Prometheus)"
+		return "prometheus"
 	case Postgres:
 		// The plugin id Grafana ships PostgreSQL under. It is not "postgres":
 		// an export naming the wrong plugin imports as a dashboard whose every
 		// panel asks a datasource that does not exist.
-		pluginID, title = "grafana-postgresql-datasource", "mikroscope — RouterOS kernel telemetry (PostgreSQL)"
+		return "grafana-postgresql-datasource"
 	case Graphite:
-		pluginID, title = "graphite", "mikroscope — RouterOS kernel telemetry (Graphite)"
+		return "graphite"
 	case Elasticsearch:
-		pluginID, title = "elasticsearch", "mikroscope — RouterOS kernel telemetry (Elasticsearch)"
-	default:
+		return "elasticsearch"
+	}
+	return ""
+}
+
+// Title is the dashboard's name in Grafana, per store.
+func Title(store Store) string {
+	switch store {
+	case Influx:
+		return "mikroscope — RouterOS kernel telemetry (InfluxDB 3)"
+	case Prometheus:
+		return "mikroscope — RouterOS kernel telemetry (Prometheus)"
+	case Postgres:
+		return "mikroscope — RouterOS kernel telemetry (PostgreSQL)"
+	case Graphite:
+		return "mikroscope — RouterOS kernel telemetry (Graphite)"
+	case Elasticsearch:
+		return "mikroscope — RouterOS kernel telemetry (Elasticsearch)"
+	}
+	return ""
+}
+
+func GenerateFor(store Store, present map[string]bool) ([]byte, error) {
+	panels := layout(panelsFor(store, present))
+	dsUID := "${DS_MIKROSCOPE}"
+	dsInput := map[string]any{"name": "DS_MIKROSCOPE", "label": "mikroscope datasource", "type": "datasource"}
+	pluginID, title := PluginID(store), Title(store)
+	if pluginID == "" {
 		return nil, fmt.Errorf("unknown store %q", store)
 	}
 	dsInput["pluginId"] = pluginID

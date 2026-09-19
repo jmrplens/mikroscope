@@ -94,7 +94,8 @@ usuario.
 
 | Variable                   | Opción          | Por defecto en el código | Significado                                                                             |
 | -------------------------- | --------------- | ------------------------ | --------------------------------------------------------------------------------------- |
-| `MIKROSCOPE_INFLUX_URL`    | `--influx`      | vacío                    | URL de escritura de InfluxDB 3                                                          |
+| `MIKROSCOPE_INFLUX_URL`    | `--influx`      | vacío                    | servidor de InfluxDB 3, `http://host:8181`; una URL de escritura completa se toma tal cual |
+| `MIKROSCOPE_INFLUX_DB`     | `--influx-db`   | vacío                    | la base de datos a la que escribe `--influx`, cuando `--influx` es solo un servidor      |
 | `MIKROSCOPE_LOKI_URL`      | `--loki`        | vacío                    | URL de push de Loki                                                                     |
 | `MIKROSCOPE_LOKI_TENANT`   | `--loki-tenant` | vacío                    | `X-Scope-OrgID`                                                                         |
 | `MIKROSCOPE_OTLP_URL`      | `--otlp`        | vacío                    | endpoint de métricas OTLP/HTTP                                                          |
@@ -125,7 +126,7 @@ secretos que usa la CLI se leen solo del entorno.
 | `MIKROSCOPE_OTLP_TOKEN`     | el endpoint OTLP                                       |
 | `MIKROSCOPE_ELASTIC_AUTH`   | Elasticsearch u OpenSearch                             |
 | `MIKROSCOPE_TELEGRAF_TOKEN` | el receptor HTTP de Telegraf                           |
-| `GRAFANA_TOKEN`             | `dashboards import` y `dashboards check`               |
+| `GRAFANA_TOKEN`             | `dashboards import`, `dashboards check` y `forward --grafana` |
 
 </ScrollTable>
 
@@ -134,6 +135,24 @@ secretos que usa la CLI se leen solo del entorno.
 `dashboards import` y `dashboards check` leen `GRAFANA_URL` (el valor por
 defecto de `--grafana`) y `GRAFANA_TOKEN`. Ninguna de las dos lleva el prefijo
 `MIKROSCOPE_`. `.env.example` lleva las dos, comentadas, en su bloque de Grafana.
+
+`forward` tiene su propio `--grafana`, que publica al arrancar, y sus variables
+**sí** llevan el prefijo, porque son ajustes del colector y no del verbo
+`dashboards`:
+
+<ScrollTable label="Variables MIKROSCOPE_* de forward --grafana">
+
+| Variable                            | Opción                     | Valor por defecto | Significado                                                    |
+| ----------------------------------- | -------------------------- | ----------------- | -------------------------------------------------------------- |
+| `MIKROSCOPE_GRAFANA_URL`            | `--grafana`                | vacío             | publicar en este Grafana al arrancar; vacío no publica nada    |
+| `MIKROSCOPE_GRAFANA_FOLDER`         | `--grafana-folder`         | `mikroscope`      | carpeta donde publicar; vacío es la carpeta General de Grafana |
+| `MIKROSCOPE_GRAFANA_DATASOURCE_UID` | `--grafana-datasource-uid` | vacío             | adoptar este datasource en lugar de crear uno                  |
+
+</ScrollTable>
+
+El token es `GRAFANA_TOKEN`, el mismo, sin prefijo. `forward --grafana` se niega
+a publicar sin él: hay Grafanas que aceptan una petición anónima, y uno que lo
+hiciera escribiría como aquel por quien el servidor tome a quien pregunta.
 
 ## La envlist del agente
 

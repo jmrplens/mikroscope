@@ -57,6 +57,14 @@ func (g *Grafana) do(ctx context.Context, method, path string, body any) ([]byte
 // to dsUID; overwrite keeps the fixed uid's URL stable. It returns the
 // dashboard URL path.
 func (g *Grafana) Import(ctx context.Context, dashboard []byte, pluginID, dsUID string) (string, error) {
+	return g.ImportInto(ctx, dashboard, pluginID, dsUID, "")
+}
+
+// ImportInto is Import into a named folder. An empty folderUID is Grafana's
+// General folder, which is what `dashboards import` has always used and stays
+// the default: moving somebody's dashboard between folders on an overwrite is
+// not a thing an import should do unless it was asked to.
+func (g *Grafana) ImportInto(ctx context.Context, dashboard []byte, pluginID, dsUID, folderUID string) (string, error) {
 	var doc map[string]any
 	if err := json.Unmarshal(dashboard, &doc); err != nil {
 		return "", err
@@ -64,6 +72,12 @@ func (g *Grafana) Import(ctx context.Context, dashboard []byte, pluginID, dsUID 
 	body := map[string]any{
 		"dashboard": doc, "overwrite": true, "folderId": 0,
 		"inputs": []any{map[string]any{"name": "DS_MIKROSCOPE", "type": "datasource", "pluginId": pluginID, "value": dsUID}},
+	}
+	if folderUID != "" {
+		// folderUid wins over folderId in Grafana's import handler; both are
+		// sent because a server old enough to ignore the uid still reads the
+		// id, and 0 there is the General folder rather than a wrong one.
+		body["folderUid"] = folderUID
 	}
 	out, err := g.do(ctx, http.MethodPost, "/api/dashboards/import", body)
 	if err != nil {

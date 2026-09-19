@@ -134,6 +134,98 @@ datos resuelta a tu UID, `overwrite` activado, a la carpeta General (`folderId` 
 dashboard es fijo, así que importar de nuevo sustituye el mismo dashboard en la misma URL. Imprime esa
 URL.
 
+## Que lo haga el colector: `forward --grafana`
+
+Desde 1.1.0 el colector puede configurar Grafana por su cuenta. Apunta `forward` a un Grafana y
+concilia una fuente de datos y un dashboard por cada store al que escribe, una vez, al arrancar,
+antes de la primera muestra:
+
+```sh
+export GRAFANA_TOKEN=…
+mikroscope forward \
+  --influx http://influx:8181 --influx-db mikroscope \
+  --grafana http://grafana:3000
+```
+
+```text
+grafana: folder "mikroscope" (bfyr3khdp41z4b) created
+grafana: influxdb: datasource mikroscope-influxdb (influxdb) created
+grafana: influxdb: dashboard http://grafana:3000/d/mikroscope-influxdb/…
+```
+
+<ScrollTable label="opciones de forward --grafana">
+
+| Opción                     | Por defecto  | Qué hace                                                                                  |
+| -------------------------- | ------------ | ------------------------------------------------------------------------------------------ |
+| `--grafana`                | vacío        | el Grafana en el que publicar al arrancar. Vacío — lo normal — no publica nada              |
+| `--grafana-folder`         | `mikroscope` | la carpeta donde publicar; vacío es la carpeta General de Grafana                           |
+| `--grafana-datasource-uid` | vacío        | adoptar una fuente de datos existente por uid en lugar de crear una                         |
+| `--grafana-dry-run`        | apagado      | imprimir la fuente de datos y el dashboard que escribiría, no escribir nada y parar antes de recoger |
+
+</ScrollTable>
+
+**Está apagado si no lo pides.** Un colector que escribiera en el Grafana de alguien porque puede no
+es un colector que nadie deba ejecutar. `GRAFANA_TOKEN` es obligatorio por lo mismo: hay Grafanas
+que aceptan una petición anónima, y uno que lo hiciera escribiría como aquel por quien el servidor
+tome a quien pregunta.
+
+**Un fallo aquí no detiene al colector.** Un Grafana inalcanzable, un token rechazado o una fuente
+de datos que el servidor no acepta son cada uno un aviso y un colector que sigue recogiendo.
+Negarse a arrancar cambiaría lo que no se puede recuperar después — las muestras de la hora que
+pasó sin funcionar — por lo que sí, un dashboard publicado en el siguiente arranque.
+
+**Nunca se borra nada.** Un dashboard o una fuente de datos bajo un uid en el que ya no escribe
+nadie se quedan donde están. Borrar el dashboard de alguien sin que lo pida no es algo que deba
+hacer un colector, ni siquiera con uno que hizo él, porque puede ser la copia que está mirando.
+
+### Dos de los cinco sinks saben describir su propia fuente de datos
+
+Son los dos cuya dirección de escritura **es** la dirección que consulta Grafana.
+
+<ScrollTable label="qué sinks pueden describir una fuente de datos de Grafana">
+
+| Sink         | Fuente de datos | Por qué                                                                       |
+| ------------ | --------------- | ------------------------------------------------------------------------------ |
+| `--influx`   | creada          | el servidor al que escribe es el que consulta Grafana; `--influx-db` nombra la base de datos |
+| `--elastic`  | creada          | la URL base a la que hace `_bulk` es la que consulta Grafana; `--elastic-index` da el patrón de índice |
+| `--prom`     | adoptar         | **sirve** `/metrics` y lo raspan; el Prometheus que consulta Grafana es uno del que él no ha oído hablar |
+| `--sql`      | adoptar         | escribe sentencias a un fichero, no a un servidor                              |
+| `--graphite` | adoptar         | habla el puerto de ingesta de carbon, que no es la API que consulta Grafana    |
+
+</ScrollTable>
+
+Los tres marcados como *adoptar* necesitan `--grafana-datasource-uid`, y lo dicen por su nombre si
+lo omites. Una fuente de datos adoptada es de otro y la describe otro, así que tampoco se corrige:
+conciliar una que no hizo él sobrescribiría ajustes que nadie le pidió tener.
+
+<Aside type="note" title="Qué lleva la fuente de datos de InfluxDB que crea">
+  Tres ajustes fáciles de olvidar a mano, y aquí se olvidaron los tres primero. El token va en
+  `token` **y** en `httpHeaderValue1` (`Bearer <token>`), porque el plugin lee uno en el camino de
+  FlightSQL y el otro en el de HTTP. `insecureGrpc` sigue al esquema: contra un store en HTTP
+  plano, una fuente de datos sin él responde a todos los paneles `tls: first record does not look
+  like a TLS handshake` mientras el store está perfectamente (medido el 2026-09-19). Y la base de
+  datos va en `jsonData.dbName`, no en el campo `database` de arriba, que este plugin ignora.
+</Aside>
+
+### La URL, y los campos
+
+`--influx` era la URL de escritura entera, con su query string. Lo sigue siendo si es lo que le
+pasas: todos los despliegues de 1.0.x tienen una en `MIKROSCOPE_INFLUX_URL` y siguen funcionando
+byte a byte. Pero una URL de escritura es la forma que quiere el sink y la forma equivocada para
+todo lo demás — Grafana quiere el servidor y la base de datos por separado, y no acepta una ruta de
+escritura. Así que ahora la interfaz son los campos:
+
+```sh
+--influx http://influx:8181 --influx-db mikroscope   # la URL se monta
+--influx "http://influx:8181/api/v3/write_lp?db=mikroscope&precision=nanosecond"  # se toma tal cual
+```
+
+Cuando `--influx` lleva una ruta, la base de datos de la fuente de datos se lee de **esa URL**,
+nunca de `--influx-db`: una fuente de datos apuntando a una base distinta de la que llena el sink es
+peor que ninguna. Una URL de escritura que esto no sabe desmontar — un `/api/v2/write` de v2, por
+ejemplo — escribe igual de bien y sencillamente no puede describir una fuente de datos, y
+`forward --grafana` lo dice en vez de construir una que no responda a nada.
+
 ## El sondeo
 
 Antes de generar, `import` y `check` preguntan a la fuente de datos cuáles de las medidas de

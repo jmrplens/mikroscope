@@ -790,6 +790,88 @@ GRAFANA_TOKEN and --datasource-uid`.
 resolved to your UID, `overwrite` on, into the General folder (`folderId` 0). The dashboard's `uid`
 is fixed, so importing again replaces the same dashboard at the same URL. It prints that URL.
 
+### Letting the collector do it: `forward --grafana`
+
+Since 1.1.0 the collector can set Grafana up itself. Point `forward` at a Grafana and it reconciles
+one datasource and one dashboard per store it writes to, once, at start, before the first sample:
+
+```sh
+export GRAFANA_TOKEN=…
+mikroscope forward \
+  --influx http://influx:8181 --influx-db mikroscope \
+  --grafana http://grafana:3000
+```
+
+```text
+grafana: folder "mikroscope" (bfyr3khdp41z4b) created
+grafana: influxdb: datasource mikroscope-influxdb (influxdb) created
+grafana: influxdb: dashboard http://grafana:3000/d/mikroscope-influxdb/…
+```
+
+| Flag                       | Default      | What it does                                                                             |
+| -------------------------- | ------------ | ---------------------------------------------------------------------------------------- |
+| `--grafana`                | empty        | the Grafana to publish to at start. Empty — the default — publishes nothing               |
+| `--grafana-folder`         | `mikroscope` | the folder to publish into; empty is Grafana's General folder                             |
+| `--grafana-datasource-uid` | empty        | adopt an existing datasource by uid instead of creating one                               |
+| `--grafana-dry-run`        | off          | print the datasource and dashboard it would write, write nothing, and stop before collecting |
+
+**It is off unless you ask.** A collector that wrote to somebody's Grafana because it could is not
+a collector anyone should run. `GRAFANA_TOKEN` is required for the same reason: some Grafanas
+accept an anonymous request, and one that did would write as whoever the server thinks is asking.
+
+**A failure here does not stop the collector.** An unreachable Grafana, a rejected token and a
+datasource the server will not take are each one warning and a collector that goes on collecting.
+Refusing to start would trade the thing that cannot be recovered later — the samples of the hour
+spent not running — for the thing that can, a dashboard published on the next restart.
+
+**Nothing is ever deleted.** A dashboard or datasource under a uid nothing writes to any more is
+left where it is. Removing somebody's dashboard unasked is not a thing a collector should do, even
+one it made, because it may be the copy they are looking at.
+
+#### Two of the five sinks can describe their own datasource
+
+They are the two whose write address **is** the address Grafana queries.
+
+| Sink        | Datasource | Why                                                                              |
+| ----------- | ---------- | -------------------------------------------------------------------------------- |
+| `--influx`  | created    | the server it writes to is the server Grafana asks; `--influx-db` names the database |
+| `--elastic` | created    | the base URL it `_bulk`s to is the one Grafana asks; `--elastic-index` gives the index pattern |
+| `--prom`    | adopt      | it **serves** `/metrics` and is scraped; the Prometheus Grafana asks is one it has never heard of |
+| `--sql`     | adopt      | it writes statements to a file, not to a server                                  |
+| `--graphite`| adopt      | it speaks the carbon ingest port, which is not the API Grafana queries           |
+
+The three marked *adopt* need `--grafana-datasource-uid`, and say so by name if you leave it out.
+An adopted datasource is somebody else's to describe, so it is never corrected either: reconciling
+one this did not make would overwrite settings nobody asked it to have.
+
+> **What the created InfluxDB datasource carries**
+>
+> Three settings that are easy to miss by hand, and each of them was missed here first. The token
+> goes in **both** `token` and `httpHeaderValue1` (`Bearer <token>`), because the plugin reads one
+> on the FlightSQL path and the other on the HTTP path. `insecureGrpc` follows the scheme: against
+> a plain-HTTP store, a datasource without it answers every panel `tls: first record does not look
+> like a TLS handshake` while the store itself is fine (measured 2026-09-19). And the database goes
+> in `jsonData.dbName`, not in the top-level `database` field, which this plugin ignores.
+
+#### The URL, and the fields
+
+`--influx` used to be the whole write URL, query string and all. It still is, if that is what you
+pass: every 1.0.x deployment has one in `MIKROSCOPE_INFLUX_URL` and it keeps working byte for byte.
+But a write URL is the sink's shape and the wrong shape for everything else — Grafana wants the
+server and the database apart, and it will not take a write path at all. So the fields are the
+interface now:
+
+```sh
+--influx http://influx:8181 --influx-db mikroscope   # the URL is assembled
+--influx "http://influx:8181/api/v3/write_lp?db=mikroscope&precision=nanosecond"  # taken as it is
+```
+
+When `--influx` carries a path, the datasource's database is read back out of **that URL**, never
+from `--influx-db`: a datasource pointed at a different database than the one the sink fills is
+worse than no datasource. A write URL this cannot take apart — a v2 `/api/v2/write`, say — still
+writes fine and simply cannot describe a datasource, and `forward --grafana` says so instead of
+building one that answers nothing.
+
 ### The probe
 
 Before generating, `import` and `check` ask the datasource which of mikroscope's measurements it
