@@ -327,6 +327,13 @@ se vuelve a leer tras una reconexión: una actualización es justo cuando una
 interfaz puede cambiar de nombre, tipo o puente, y etiquetas viejas sobre tasas
 nuevas serían peor que un hueco de un momento.
 
+Medido contra el RB5009 de referencia el 2026-09-19, sin tocar el router: a un
+colector que sondeaba las 16 interfaces a 1 Hz se le destruyó el socket de la
+API desde el host con `ss -K`, que es como se ve desde él el lado del router en
+un reinicio. La capa reabrió la conexión y reintentó dentro de la misma ronda:
+0 comandos fallidos, 0 rondas perdidas, 16 interfaces en cada uno de los 108
+segundos a ambos lados de la muerte del socket.
+
 Un colector que arranca con el router caído es el mismo caso visto desde el otro
 lado. Que la primera marcación falle es un aviso, no una capa deshabilitada:
 conecta en la primera ronda que el router responda.

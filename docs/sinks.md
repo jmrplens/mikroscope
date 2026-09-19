@@ -1397,6 +1397,13 @@ every dial carries a login. The inventory is dropped and re-read after a
 reconnection: an upgrade is exactly when an interface can change its name, type
 or bridge, and stale labels on fresh rates would be worse than a moment's gap.
 
+Measured against the reference RB5009 on 2026-09-19, without touching the
+router: a collector polling all 16 interfaces at 1 Hz had its API socket
+destroyed from the host with `ss -K`, which is what the router's side of a
+reboot looks like to it. The tier reopened the connection and retried inside
+the same round — 0 failed commands, 0 dropped rounds, 16 interfaces in every
+one of the 108 seconds either side of the kill.
+
 A collector that starts while the router is down is the same case seen from the
 other end. The first dial failing is a warning, not a disabled tier — it
 connects on the first round the router answers.

@@ -24,6 +24,13 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   session. The inventory is re-read after a reconnection, since an upgrade is
   exactly when an interface can change its name, type or bridge.
 
+  Verified against the reference RB5009 on 2026-09-19 without touching the
+  router: a collector polling all 16 interfaces at 1 Hz had its API socket
+  destroyed from the host (`ss -K`), which is what the router's side of a
+  reboot looks like to it. It reopened the connection and retried inside the
+  same round — **0 failed commands, 0 dropped rounds, 16 interfaces in every
+  one of the 108 seconds** either side of the kill. Not one sample was lost.
+
 - **A collector that starts while the router is down no longer gives up on the
   API for the life of the process.** The first dial failing is a warning now,
   not a disabled tier; the reader connects on the first round the router
