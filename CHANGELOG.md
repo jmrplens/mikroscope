@@ -90,8 +90,41 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   endpoint list still named `/metrics` and omitted `GET /sampler`, and the
   InfluxDB page listed four of the five fields `notCounters` drops.
 
-  What is left is the remaining low-severity editorial sweep — wording, a dead
-  attribution, dates to refresh — and the report in `plan/` lists it.
+- **The rest of the audit, and three numbers put behind assertions so they
+  cannot drift again.** What kept going wrong was not prose but arithmetic
+  written by hand:
+
+  - **The relay cap is 13, not 18.** It is
+    `RelayMax x 100 / (line x headroom)`, so it fell when the line grew to
+    3 456 B in 1.0.5 and the shipped binary has printed 13 ever since — while
+    six pages went on saying 18, with "about 46 kB" and "36 samples a second"
+    behind it. It now renders from `measurements.ts`, which recomputes it from
+    the same line size and **throws** if the two disagree.
+  - **Three slipped percentages were a consistent x0.75 out**: 5/30 000 is
+    0.017 %, not 0.012; 4/15 000 is 0.027 %, not 0.020; 178/29 996 is 0.593 %,
+    not 0.444. The campaign's own denominators are now in the data, and a
+    build-time assertion divides them.
+  - **`about/status.mdx`, the page whose job is the honest state, was the least
+    current page on the site**: "the current release is v1.0.0", images pinned
+    at `:1.0.0`, and "above the budget" on both axes when the install default
+    has been inside the memory one since 1.0.6.
+  - **The install pages named a release that does not exist.** Bumping `VERSION`
+    to 1.0.10 took them with it; v1.0.10 is not tagged. They name v1.0.9, the
+    latest published release, and should move at release time rather than at
+    version-bump time.
+  - **`install/routes.mdx` rendered two whole sections inside its "See also"
+    nav**, headings shrunk to `h4`, because the wrapper opened 110 lines early.
+  - **`reference/environment.mdx` documented nine environment variables that
+    exist nowhere in the repository** — `OPERATOR_HOST_IP` and the whole
+    `HEXS_*` block. Section deleted.
+  - **The agent cannot read port counters**, which `cost/index.mdx` listed among
+    the sources it reads; **`mikroscope-agent-arm.tar` has not existed since
+    1.0.2**, and naming it sends an armv5 board the armv7 image; and the squeeze
+    figure was attributed to a 3 476-sample run when it comes from 3 738 704
+    samples over 24 h, leaving one campaign backing no measurement at all.
+
+  The audit is closed. What remains is editorial: some wording, one attribution
+  to reconcile in `about/lineage.mdx`, and the report in `plan/` lists it.
 
 ### Fixed
 
@@ -177,9 +210,9 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   | 10 Hz                | 16    | 13.2 MiB | 2.69 %      | 0 of 3 000      |
   | 20 Hz                | 16    | 15.4 MiB | 4.61 %      | 0 of 6 000      |
   | 50 Hz                | 25    | 23.3 MiB | 9.63 %      | 0 of 14 999     |
-  | 100 Hz               | 48    | 45.7 MiB | 16.83 %     | 5 (0.012 %)     |
-  | 50 Hz `FLOOR_HZ`     | 25    | 25.1 MiB | 22.56 %     | 4 (0.020 %)     |
-  | 100 Hz `FLOOR_HZ`    | 48    | 49.5 MiB | 42.70 %     | 178 (0.444 %)   |
+  | 100 Hz               | 48    | 45.7 MiB | 16.83 %     | 5 (0.017 %)     |
+  | 50 Hz `FLOOR_HZ`     | 25    | 25.1 MiB | 22.56 %     | 4 (0.027 %)     |
+  | 100 Hz `FLOOR_HZ`    | 48    | 49.5 MiB | 42.70 %     | 178 (0.593 %)   |
 
   **Zero collector gaps in all six.** Against the old campaign that is 38 to
   59 % less memory per row with the CPU unmoved, and the whole range — up to

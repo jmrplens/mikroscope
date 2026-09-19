@@ -28,6 +28,7 @@ below is what the collector carries.
 | everything recomputed from samples: CPU, windows, runs, receive path, memory, PMU, sensors, flash, disk, kernel log, observer counters | the samples it pulled, folded by the same `Totals` code   |
 | the sampler's timing histograms (`mikroscope_tick_*`)                                                                                 | `dt_ns`, `wake_ns` and `read_ns`, which ride in each sample |
 | `mikroscope_slipped_total`, `mikroscope_sampler_ticks_total`                                                                          | the agent's `/sampler`, read at start and every minute    |
+| `mikroscope_sampler_ticks_total`                                                                                                      | ticks the agent took since it started, as the agent counts them|
 | trigger and capture families                                                                                                          | the same, while `CAPTURE_MB` is above 0                   |
 | device facts (`mikroscope_device_info`, ceilings, cadences)                                                                           | `/capabilities`, re-read every five minutes               |
 | `mikroscope_collector_*`, `mikroscope_derived_*`                                                                                      | its own: the derive stage and its counters                |

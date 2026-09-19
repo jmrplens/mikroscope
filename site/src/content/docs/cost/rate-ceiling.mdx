@@ -73,9 +73,9 @@ single interval 21.7 ms.
 
 At the default floors a whole tick's sources are read in under 2 ms for <Measured id="read.under2ms" /> of
 samples at 100 Hz, comfortably inside a 10 ms period. `FLOOR_HZ` pushes <Measured id="read.floorOver5ms" />
-of reads past 5 ms — and not one read of 29 994 came in under 2 ms — and those
-are the ticks that slip: 0.444 % of them at 100 Hz with every source on every
-tick, against 0.012 % at the default floors. The CPU headroom is
+of reads past 5 ms — and not one read of 29 996 came in under 2 ms — and those
+are the ticks that slip: <Measured id="run.100hz-floor.slippedPct" /> of them at 100 Hz with every
+source on every tick, against <Measured id="run.100hz.slippedPct" /> at the default floors. The CPU headroom is
 larger than the timing headroom, which is why the ceiling is a statement about
 I/O rather than about the A72.
 

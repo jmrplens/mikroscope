@@ -51,10 +51,11 @@ necesites, o copia `.env.example` a `.env` y carga el fichero con `set -a; . ./.
 
    La versión publicada trae la CLI como un archivo por plataforma —linux, macOS, Windows y
    FreeBSD en amd64, arm64 y arm— con `checksums.txt`, las firmas de cosign y los SBOM al lado. El
-   agente viaja aparte, como un tar de imagen por arquitectura (`mikroscope-agent-arm64.tar`,
-   `mikroscope-agent-arm.tar`, `mikroscope-agent-amd64.tar`) y como imagen de registro, publicada
-   tanto como `jmrplens/mikroscope-agent:1.0.0` en Docker Hub como
-   `ghcr.io/jmrplens/mikroscope-agent:1.0.0` en GHCR; el paso 2 toma uno de los dos.
+   agente viaja aparte, como cuatro tars de imagen, uno por arquitectura
+   (`mikroscope-agent-amd64.tar`, `-arm64`, `-armv5`, `-armv7` —el ARM de 32 bits se partió en dos
+   en 1.0.2, y el tar equivocado da `exec format error`) y como imagen de registro, publicada tanto
+   como `jmrplens/mikroscope-agent:1.0.9` en Docker Hub como
+   `ghcr.io/jmrplens/mikroscope-agent:1.0.9` en GHCR; el paso 2 toma uno de los dos.
 
    Desde una copia del repositorio, en cambio:
 

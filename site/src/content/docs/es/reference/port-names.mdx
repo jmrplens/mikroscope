@@ -128,7 +128,7 @@ que está en su tabla, nombra los puertos sin preguntar a RouterOS:
   ningún puerto no aparecen en él;
 - la detección `link-flap` del colector usa el nombre de puerto como clave y lee
   esa misma clasificación: un parpadeo son registros `link-up` y `link-down` de un
-  puerto, contados, no el texto analizado por segunda vez;
+  puerto, contados, con el mismo clasificador y no releyendo el texto;
 - `mikroscope status` muestra la placa y si tiene correspondencia, por ejemplo
   `eth1 (ether2)`; `/healthz` y `/capabilities` llevan la placa, y
   `/capabilities` y `mikroscope_device_info` llevan la cadena de evidencia de la

@@ -82,8 +82,8 @@ The trailing baselines span ten seconds of wall clock at any rate: 100 samples a
 500 at 50 Hz, 1 000 at 100 Hz, bounded between 10 and 2 000 samples. No sample is flagged
 until its CPU has at least ten samples of history.
 
-Why a percentile and not "any squeeze", measured on the reference RB5009 over 3 476
-samples on 2026-09-15: about <Measured id="squeeze.backgroundOne" /> of samples carry one squeeze as background and 2 % carry
+Why a percentile and not "any squeeze", measured on the reference RB5009 over 3 738 704
+per-CPU samples in 24 h: about <Measured id="squeeze.backgroundOne" /> of samples carry one squeeze as background and 2 % carry
 two or more. "Any squeeze" would flag the device's norm several times a minute.
 
 Three flagged samples on one CPU within 60 s is what raises the `microburst`

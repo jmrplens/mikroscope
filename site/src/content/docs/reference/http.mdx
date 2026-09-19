@@ -162,7 +162,7 @@ kinds the `seconds` form does not: a gap line first when `since` is older than
 the ring, and a trigger line before each sample a capture condition fired on.
 `max` exists for the relay, because `/tool fetch output=user` returns at
 most <Measured id="relay.replyMaxBytes" /> on RouterOS 7.24.2 and truncates the rest silently; the relay
-asks for at most 18 lines.
+asks for at most <Measured id="relay.maxBatch" /> lines.
 
 <Aside type="caution" title="A large /snapshot is not a free way to read the cost">
 	A 60 s `/snapshot` at 10 Hz makes the agent hand over about 600 lines, around 1.5 MB, and the

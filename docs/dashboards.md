@@ -771,7 +771,7 @@ mikroscope dashboards check  --store influxdb --datasource-uid <uid> --window 15
 
 | Flag               | Default        | Used by       | What it does                                                              |
 | ------------------ | -------------- | ------------- | ------------------------------------------------------------------------- |
-| `--store`          | `influxdb`     | import, check | `influxdb` or `prometheus`; also the datasource plugin id sent to Grafana |
+| `--store`          | `influxdb`     | import, check | `influxdb`, `prometheus`, `postgres`, `graphite` or `elasticsearch`; also the datasource plugin id sent to Grafana |
 | `--grafana`        | `$GRAFANA_URL` | import, check | Grafana's base URL                                                        |
 | `--datasource-uid` | none, required | import, check | the datasource `DS_MIKROSCOPE` is bound to                                |
 | `--no-probe`       | off            | import, check | skip asking the datasource what it holds; use the compiled defaults       |
@@ -948,7 +948,7 @@ every panel returned rows, 228–2 052 over 5 minutes.
   carries each.
 - [Alert rules](https://jmrp.io/docs/mikroscope/dashboards/alerts/): the provisioning files `gen` writes, which `check`
   does not run.
-- [Prometheus](https://jmrp.io/docs/mikroscope/sinks/prometheus/): the collector's `/metrics` the first scrape job reads.
+- [Prometheus](https://jmrp.io/docs/mikroscope/sinks/prometheus/): the collector's `/metrics`, which the scrape job reads.
 - [InfluxDB 3](https://jmrp.io/docs/mikroscope/sinks/influxdb/): the write URL, the token and the store's own limits.
 
 ## Alert rules
@@ -1144,7 +1144,7 @@ Each rule's title, and under it its `summary` annotation verbatim, as generated:
   The occupancy comes from `/proc/slabinfo`, which needs a privileged container.
 
 The rules do not alert on softnet squeezes. Measured on the reference RB5009 on 2026-09-15 over
-3 476 samples, about 11.2 % of samples carry one squeeze, and alerting on "squeeze > 0" would page
+3 738 704 per-CPU samples in 24 h, about 11.2 % of samples carry one squeeze, and alerting on "squeeze > 0" would page
 forever. What reaches the detections alert instead is the `microburst` detection: three burst
 samples on one CPU within 60 s. A burst sample is one in which a softnet queue dropped a packet, or
 ran out of budget more often than that CPU's trailing 90th percentile and at least three times, while the

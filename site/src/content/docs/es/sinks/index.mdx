@@ -82,19 +82,20 @@ repite mientras vuelva llena — hasta 100 veces — para que el cursor se ponga
 dentro de un sondeo en vez de avanzar un lote por sondeo. Una respuesta corta es el
 borde del anillo.
 
-El transporte por relay limita una extracción a 18 líneas, y el límite se calcula en vez de
-elegirse: `/tool fetch` devuelve como mucho <Measured id="relay.replyMaxBytes" />, la línea media del
-anillo se toma como 2 560 B (los <Measured id="ring.lineBytes" /> medidos, redondeados hacia
-arriba) y el límite deja un 134 % de esa media para que también quepa un lote de líneas por encima
-de la media: 18 líneas, unos 46 kB. Una respuesta que aun así llega al límite de fetch se rechaza
+El transporte por relay limita una extracción a <Measured id="relay.maxBatch" /> líneas, y el límite
+se calcula en vez de elegirse: `/tool fetch` devuelve como
+mucho <Measured id="relay.replyMaxBytes" />, la línea del anillo se cobra
+a <Measured id="ring.lineChargedBytes" /> (los <Measured id="ring.lineBytes" /> medidos, redondeados a
+su clase de tamaño del asignador) y el límite deja un 134 % de eso para que también quepa un lote de
+líneas por encima de la media: unos 45 kB. Una respuesta que aun así llega al límite de fetch se rechaza
 con `relay reply hit the 64512-byte fetch limit; lower the batch` en vez de analizarse truncada.
-Con el sondeo por defecto de 500 ms eso son 36 muestras/s, y por encima el colector se queda atrás.
+Con el sondeo por defecto de 500 ms eso son 26 muestras/s, y por encima el colector se queda atrás.
 `forward` calcula lo que el lote efectivo y el sondeo permiten por segundo y avisa al arrancar
 cuando queda por debajo de la cadencia del agente — para el relay contra un agente a 100 Hz, la
 aritmética da:
 
 ```text
-warning: at most 18 samples per pull every 500ms is 36/s, below the agent's 100 Hz; the collector will fall behind and report gaps. Raise --batch, lower --poll, or use the direct transport
+warning: at most 13 samples per pull every 500ms is 26/s, below the agent's 100 Hz; the collector will fall behind and report gaps. Raise --batch, lower --poll, or use the direct transport
 ```
 
 El límite y el aviso están leídos del código el 2026-09-15, no vueltos a medir en un equipo.

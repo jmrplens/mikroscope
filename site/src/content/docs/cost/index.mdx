@@ -28,7 +28,8 @@ cgroup:
 **The memory is inside the budget and the CPU is not.** <Measured id="run.10hz.rss" /> against
 the <Measured id="budget.rss" /> the budget asks for, and <Measured id="run.10hz.cpu" /> against
 the <Measured id="budget.cpu" />, with every source read — the perf timings, buddyinfo, the MTD
-ECC counters, the cgroup events and the port counters among them.
+ECC counters, slabinfo, the kernel log and the cgroup events among them. Per-interface traffic is
+not in that set: the container cannot see it, and it comes from the API tier.
 
 It was over on both until 1.0.6. The ring held 300 s rather than 60 and the memory limit was a
 flat 40 MiB that never bound, which put the same agent at 31.3 MiB; neither number was a statement

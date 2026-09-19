@@ -328,7 +328,7 @@ Anything whose name starts with `mikroscope-agent` is the other program.
   1. Download the archive and the checksums:
 
      ```sh
-     VERSION=1.0.10
+     VERSION=1.0.9
      curl -fsSLO https://github.com/jmrplens/mikroscope/releases/download/v$VERSION/mikroscope_${VERSION}_linux_x86_64.tar.gz
      curl -fsSLO https://github.com/jmrplens/mikroscope/releases/download/v$VERSION/checksums.txt
      ```
@@ -355,7 +355,7 @@ Anything whose name starts with `mikroscope-agent` is the other program.
      `darwin_x86_64` for Intel — and the checksums:
 
      ```sh
-     VERSION=1.0.10
+     VERSION=1.0.9
      curl -fsSLO https://github.com/jmrplens/mikroscope/releases/download/v$VERSION/mikroscope_${VERSION}_darwin_arm64.tar.gz
      curl -fsSLO https://github.com/jmrplens/mikroscope/releases/download/v$VERSION/checksums.txt
      ```
@@ -386,13 +386,13 @@ Anything whose name starts with `mikroscope-agent` is the other program.
   2. Check it in PowerShell, against the line for your file in `checksums.txt`:
 
      ```powershell
-     Get-FileHash .\mikroscope_1.0.10_windows_x86_64.zip -Algorithm SHA256
+     Get-FileHash .\mikroscope_1.0.9_windows_x86_64.zip -Algorithm SHA256
      ```
 
   3. Unpack it somewhere permanent and put that folder on your `PATH`:
 
      ```powershell
-     Expand-Archive .\mikroscope_1.0.10_windows_x86_64.zip -DestinationPath $HOME\mikroscope
+     Expand-Archive .\mikroscope_1.0.9_windows_x86_64.zip -DestinationPath $HOME\mikroscope
      $env:PATH += ";$HOME\mikroscope"
      ```
 
@@ -588,7 +588,7 @@ The `registry-url` check runs only with `--remote-image`, and only when the
 reference carries a registry host. `/container/config` is global to the device
 and shared with every other container on it, so mikroscope reads that setting
 and never writes it. RouterOS ships it as `https://registry-1.docker.io`, so the
-Docker Hub reference, `--remote-image jmrplens/mikroscope-agent:1.0.0`, needs
+Docker Hub reference, `--remote-image jmrplens/mikroscope-agent:1.0.9`, needs
 nothing set there on an untouched router, and the GHCR reference is the one that
 needs the setting changed first.
 [Four ways to install](https://jmrp.io/docs/mikroscope/install/routes/#a-registry-pull) has the
@@ -682,16 +682,16 @@ nothing uploaded:
 
 ```sh
 mikroscope install --router user@192.168.88.1 \
-  --remote-image jmrplens/mikroscope-agent:1.0.10
+  --remote-image jmrplens/mikroscope-agent:1.0.9
 ```
 
 Nothing is uploaded, no tar lands on the device, and `uninstall` has no file to
 account for: the container step becomes
-`/container/add remote-image="jmrplens/mikroscope-agent:1.0.10" …` and the plan
+`/container/add remote-image="jmrplens/mikroscope-agent:1.0.9" …` and the plan
 prints `the router pulls … (nothing is uploaded)` where the upload line would
 be. The release publishes the image twice, as
-`jmrplens/mikroscope-agent:1.0.10` on Docker Hub and as
-`ghcr.io/jmrplens/mikroscope-agent:1.0.10` on GHCR. Both carry `linux/amd64`,
+`jmrplens/mikroscope-agent:1.0.9` on Docker Hub and as
+`ghcr.io/jmrplens/mikroscope-agent:1.0.9` on GHCR. Both carry `linux/amd64`,
 `linux/arm64`, `linux/arm/v7` and `linux/arm/v5`, and RouterOS picks the one its
 architecture needs — which is why this route asks nothing about the board: the
 two kinds of 32-bit ARM MikroTik ships are both in the index.
@@ -718,7 +718,7 @@ registry, and it has to have room in RAM for the layers while it extracts them.
 > to run — `/container/config/set registry-url=https://ghcr.io` for the GHCR reference. Install
 > with `--agent-tar` if you would rather not change it.
 
-A reference with no host — `jmrplens/mikroscope-agent:1.0.10` — leaves the
+A reference with no host — `jmrplens/mikroscope-agent:1.0.9` — leaves the
 registry to whatever the router is already configured for, and `doctor` then
 checks nothing about it. `--remote-image` reads its default from
 `MIKROSCOPE_REMOTE_IMAGE`, and `upgrade` takes it too; `image` refuses it,
@@ -731,7 +731,7 @@ from another machine at all:
 
 ```sh
 mikroscope plan --rsc \
-  --remote-image jmrplens/mikroscope-agent:1.0.10 \
+  --remote-image jmrplens/mikroscope-agent:1.0.9 \
   --out install.rsc
 ```
 
@@ -766,7 +766,7 @@ under its own name, veth and `/30` so that nothing already on the device was
 touched, and each removed again before the next. In every one the agent
 answered `/healthz` from the collector host: the checkout build and the
 published `mikroscope-agent-arm64.tar` at a 2 ms round trip, the router's own
-pull of `jmrplens/mikroscope-agent:1.0.10` from Docker Hub at 2 ms, and the
+pull of `jmrplens/mikroscope-agent:1.0.9` from Docker Hub at 2 ms, and the
 `plan --rsc` script — uploaded and `/import`ed, with no CLI involved in the
 install itself — at 15 ms on its first samples. `uninstall` then verified by
 ownership count in each case, and the router's `/export` after all four was
@@ -824,7 +824,7 @@ have, take the v5 tar**: MikroTik's container documentation says EN7562CT
 boards "support only arm32v5 container images", and an ARMv5 image runs on
 every 32-bit ARM MikroTik ships, while an ARMv7 one does not run on those.
 
-1. Download `mikroscope_1.0.10_<os>_<arch>.tar.gz` (`.zip` on Windows) and the
+1. Download `mikroscope_1.0.9_<os>_<arch>.tar.gz` (`.zip` on Windows) and the
    agent image tar from the table above, together with `checksums.txt` and
    `checksums.txt.sigstore.json`.
 
@@ -833,7 +833,7 @@ every 32-bit ARM MikroTik ships, while an ARMv7 one does not run on those.
 3. Unpack the CLI and install:
 
    ```sh
-   tar xzf mikroscope_1.0.10_linux_x86_64.tar.gz
+   tar xzf mikroscope_1.0.9_linux_x86_64.tar.gz
    ./mikroscope install --router user@192.168.88.1 \
      --arch arm64 --agent-tar mikroscope-agent-arm64.tar
    ```
@@ -859,7 +859,7 @@ up with `scp`, RouterOS extracts it at add time, and `install` deletes it.
 > **Two assets have similar names**
 >
 > `mikroscope-agent-arm64.tar` is the side-loadable container image, the one `--agent-tar` wants.
-> `mikroscope-agent_1.0.10_linux_arm64.tar.gz` is an archive of the bare agent binary, for reading or
+> `mikroscope-agent_1.0.9_linux_arm64.tar.gz` is an archive of the bare agent binary, for reading or
 > running it outside a container; `--agent-tar` rejects it.
 
 #### Verifying the download
@@ -1203,7 +1203,7 @@ permissions (9)` rather than empty. [The API user](https://jmrp.io/docs/mikrosco
   `--api-user` (`MIKROSCOPE_API_USER`) and the password from
   `MIKROSCOPE_API_PASSWORD` only, never from a flag.
 - Each call returns at most 64 512 B; anything longer is truncated silently
-  by RouterOS. The relay therefore asks for at most 18 samples per pull and
+  by RouterOS. The relay therefore asks for at most 13 samples per pull and
   refuses a reply that reaches the cap rather than parse it truncated. `forward`
   warns at start when that cannot keep up with the agent's rate.
 - Each call takes either ~3 ms or ~1 s; about half the calls took ~1 s
@@ -1251,7 +1251,7 @@ What a LAN-wide listener opens is on
 | Way        | Needs                                                           | Costs and limits                                                                                      |
 | ---------- | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
 | direct     | a route from your host to the /30 through the router            | only the two list memberships `install` already adds                                                  |
-| relay      | an API user with `read,api,test`; `--transport relay` or `auto` | 64 512 B and 18 samples per call, ~1 s in about half the calls, no token |
+| relay      | an API user with `read,api,test`; `--transport relay` or `auto` | 64 512 B and 13 samples per call, ~1 s in about half the calls, no token |
 | `--expose` | `--lan-address` and a token; two firewall rules on the router   | reachable from the whole LAN; not used by `record`, `forward` or the probe                            |
 
 > **True of this device, not of yours**

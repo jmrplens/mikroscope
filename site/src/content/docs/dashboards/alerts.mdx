@@ -149,7 +149,7 @@ healthy device is the same alert.
   The occupancy comes from `/proc/slabinfo`, which needs a privileged container.
 
 The rules do not alert on softnet squeezes. Measured on the reference RB5009 on 2026-09-15 over
-3 476 samples, about <Measured id="squeeze.backgroundOne" /> of samples carry one squeeze, and alerting on "squeeze > 0" would page
+3 738 704 per-CPU samples in 24 h, about <Measured id="squeeze.backgroundOne" /> of samples carry one squeeze, and alerting on "squeeze > 0" would page
 forever. What reaches the detections alert instead is the `microburst` detection: three burst
 samples on one CPU within 60 s. A burst sample is one in which a softnet queue dropped a packet, or
 ran out of budget more often than that CPU's trailing 90th percentile and at least three times, while the

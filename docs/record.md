@@ -60,7 +60,7 @@ otherwise at rest, with three notes typed into `record`'s terminal.
 
 > **Not measured, so not claimed**
 >
-> A recording above 10 Hz. The lossless 50 Hz and 100 Hz runs on [the rate
+> A recording above 10 Hz. The lossless 20, 50 and 100 Hz runs on [the rate
 > ceiling](https://jmrp.io/docs/mikroscope/cost/rate-ceiling/) were the collector's, not `record`'s. Both use the same
 > batch sizing, but a recording at those rates has not been measured on its own. Nor has a recording
 > through the relay at any rate.
@@ -82,19 +82,21 @@ and fail rather than fall back.
 - **relay** runs `/tool fetch output=user` on the router over the binary API, so
   the API user needs the `read,api,test` policies. Each relayed call takes either
   about 3 ms or about 1 s. A reply is capped at 64 512 B, so a relayed pull
-  asks for at most 18 samples, and a reply that reaches the cap is refused rather
+  asks for at most 13 samples, and a reply that reaches the cap is refused rather
   than parsed truncated. The router-side fetch carries no header: an agent
   installed with a token can only be recorded over the direct path.
 
 > **A full relayed pull can still reach the cap**
 >
-> By arithmetic, read from the code on 2026-09-15 and not measured. The cap of 18 samples comes from
-> the 64 512 B fetch limit, a mean line of 2 560 B, and 134 % headroom;
-> the mean is the 3 230 B measured on the RB5009 (RouterOS 7.24.2,
-> 2026-09-12), rounded up. A full pull of mean lines is about 46 kB. A full pull whose lines average
-> more than 134 % of that mean would still reach the limit and be refused, and how long lines run at
-> today's default per-source floors was not measured. At 18 samples a pull and the default 500 ms
-> `--poll` the relay carries 36 samples a second; above that, use the direct path.
+> By arithmetic, computed from the code rather than measured. The cap of 13
+> samples comes from the 64 512 B fetch limit, a charged line
+> of 3 456 B, and 134 % headroom; the line was measured
+> at 3 230 B on the RB5009 (RouterOS 7.24.2, 2026-09-17) and the budget charges
+> the allocator size class above it. A full pull of such lines is about 45 kB. A full pull whose
+> lines average more than 134 % of that would still reach the limit and be refused, and how long
+> lines run at today's default per-source floors was not measured. At 13
+> samples a pull and the default 500 ms `--poll` the relay carries 26 samples a second; above that,
+> use the direct path.
 
 [Reaching the agent](https://jmrp.io/docs/mikroscope/install/reaching-the-agent/) covers which path a
 network allows. The API user is described on [its own
