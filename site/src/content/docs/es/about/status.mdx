@@ -59,10 +59,10 @@ no solo contra simulaciones:
   PostgreSQL, Graphite y Elasticsearch—, generados a partir de una sola lista de
   paneles, con reglas de alerta para los tres cuyo lenguaje de consulta es el de
   las reglas. A los dos almacenes SQL se les hace la misma pregunta en dos
-  dialectos: los paneles de PostgreSQL son los de InfluxDB reescritos, y las 209
+  dialectos: los paneles de PostgreSQL son los de InfluxDB reescritos, y las 216
   consultas las planifica un PostgreSQL real en la batería de contenedores.
   Graphite y Elasticsearch llevan menos paneles a propósito (41 y 30 frente a
-  171): Graphite no tiene etiquetas y Elasticsearch no tiene documentos
+  175): Graphite no tiene etiquetas y Elasticsearch no tiene documentos
   anidados, así que lo que no pueden expresar está ausente en vez de
   equivocado. Los cinco se importan en un Grafana real sobre los almacenes que
   llenó la batería, y se le pregunta a cada panel: el 2026-09-17 devolvieron

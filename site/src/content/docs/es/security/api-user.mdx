@@ -43,7 +43,8 @@ defecto. Qué llamadas se ejecutan y con qué cadencia está en
 
 Sin dirección y usuario, cada orden lo dice de una manera distinta:
 
-- `forward` funciona solo con la capa del kernel y registra `api tier disabled: …`.
+- `forward` funciona solo con la capa del kernel. Con una dirección que no responde
+  registra `api tier: not connected yet, will keep trying: …` y sigue reintentando.
 - `mark --log-markers` y `--transport relay` fallan con
   `the RouterOS API needs --api, --api-user and MIKROSCOPE_API_PASSWORD`.
 - `record --log-markers` conserva la grabación, imprime `log markers: the RouterOS API needs …` en

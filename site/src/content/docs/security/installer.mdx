@@ -25,8 +25,9 @@ then, in this order:
    `Y` stops it with `not confirmed; nothing written`;
 3. only then writes.
 
-`plan`, and `install --dry-run`, stop after the listing. The listing masks the token as
-`value="(token)"`.
+`plan`, `install --dry-run` and `upgrade --dry-run` stop after the listing — the last of
+those only since 1.0.10, which is when `upgrade` began honouring the flag at all. The
+listing masks the token as `value="(token)"`.
 
 `upgrade` does not get this guarantee. It builds the image, refuses a router where any step of the
 plan built from its own flags is missing (`nothing to upgrade: run install first`), and asks the

@@ -796,12 +796,12 @@ refuse it — a NUL byte is dropped, invalid UTF-8 becomes U+FFFD — and a NaN 
 float becomes NULL. `TIMESTAMPTZ` resolves to 1 µs, so two samples closer than that
 would collide on the primary key; at 10 Hz they are 100 ms apart.
 
-Compared with InfluxDB the SQL sink carries fewer sources: no CPU frequency, PMU,
-softirq, `/proc/vmstat` level, per-CPU interrupt or kernel-log count tables, no
-`/proc/vmstat` counter table beyond `pgfault` and `pgmajfault` (which ride on
-`mikroscope_stat`, so the `pgscan_*`, `pgsteal_*`, `pgalloc`, `pgfree`, `allocstall`,
-`compact_stall`, `oom_kill`, `pswpin` and `pswpout` deltas are missing), no `mikroscope_sample`, and a narrower `mikroscope_mem`. It carries two that InfluxDB does not: the kernel-log text in
-`mikroscope_event`, and the API tier's errors.
+Compared with InfluxDB the SQL sink is short of exactly one thing: the kernel-log
+**count** table. That was a long list until 1.0.3 and 1.0.5 closed it — CPU frequency,
+the PMU, softirq, `/proc/vmstat` levels and counters, per-CPU interrupts,
+`mikroscope_sample` and the full-width `mikroscope_mem` all have tables now. It carries
+two InfluxDB does not: the kernel-log **text** in `mikroscope_event`, and the API tier's
+errors.
 
 > **A pipe into psql can block the collector**
 >
@@ -816,8 +816,9 @@ of SQL and an API event to 1 138 B, so 10 Hz plus the 1 Hz API tier is about 14
 file after a 5.6 KiB header. The same two events in line protocol are 716 B and 608 B,
 about 1.9× smaller, though part of that is content the SQL rows carry and line protocol
 did not. With the privileged sources present the kernel event grows to 2 749 B. That header
-is the fixture's: the header for all thirty-two tables the sink declares, computed from the
-schema strings rather than measured, is 7 757 B, about 7.6 KiB.
+is the fixture's: the header for all forty-three tables the sink declares, rendered by the
+sink's own `header()` on 2026-09-19, is 10 482 B, about 10.2 KiB — 13 966 B with the
+TimescaleDB hypertable statements.
 
 ### Loki
 
@@ -1261,9 +1262,10 @@ Without the API tier a kernel record keeps the board's default name and gets no 
 | `--conntrack-every` | `0`                            | how often to ask the connection count; `0` never, because it is a table scan                                |
 | `--no-health`       | off                            | skip `/system/health`                                                                                       |
 
-Without `--api`, `--api-user` and `MIKROSCOPE_API_PASSWORD`, or when the session cannot
-be opened within 10 s, `forward` logs `api tier disabled: …` and runs the kernel tier
-alone. That is a warning, not a failure: the kernel tier is the point.
+Without `--api`, `--api-user` and `MIKROSCOPE_API_PASSWORD`, `forward` runs the kernel tier
+alone. When they are given but the session cannot be opened within 10 s it logs
+`api tier: not connected yet, will keep trying: …` and attaches the reader anyway: since
+1.0.9 a failed first dial is a warning, not a tier disabled for the life of the process.
 
 ### The user it needs
 
@@ -1709,17 +1711,17 @@ the new sequence number, `threshold` the previous one.
 sequence starts again from 1 on every launch, so this is what a restart looks like from the
 outside.
 
-> **A running forward does not see this today**
+> **Fixed in 1.0.4**
 >
-> From reading the code, not from a run: `forward` keeps its pull cursor, the last sequence number
-> it received, and never resets it. A restarted agent's ring answers
-> `/snapshot?since=<old sequence>` with nothing, and no gap, until its new sequence passes the old cursor; by then every
-> sample it returns has a sequence number above the previous one. So a `forward` that keeps running
-> across an agent restart receives nothing from the new agent for as long as the old one had been
-> running — a day at 10 Hz for an agent that ran a day — and this rule cannot fire in it. The rule is
-> exercised only by the derive stage's unit tests; no forward or end-to-end test covers it.
-> Restarting `forward` after the agent restarts resumes the data, but then there is no previous
-> sequence number and the rule does not fire either.
+> This used to be unreachable in a running collector. `forward` kept its pull cursor and never reset
+> it, so a restarted agent's ring answered `/snapshot?since=<old sequence>` with nothing — and no
+> gap — until its new sequence passed the old cursor: a day at 10 Hz for an agent that had run a
+> day. Since 1.0.4 `resync` rewinds the cursor to the new ring's oldest sample on the next health
+> read, one minute at most, and logs `agent restarted: its newest sample is N and the cursor was M;
+> resuming from 1`. The new agent's low sequence against the stage's previous one is exactly what
+> this rule matches, so it fires. `TestResyncAfterAgentRestart` covers the collector side, and the
+> reference RB5009 exercised it for real on 2026-09-19: the router rebooted at 00:43:30 and the
+> kernel tier resumed at 00:45:03.
 
 **May not claim** why the agent restarted. A collector restarted at the same time has no
 previous sequence number and sees nothing.
@@ -1770,11 +1772,12 @@ previous record's. `value` and `threshold` are the new and previous timestamps i
 
 **Needs** `privileged=yes`, which the kernel log requires, and a collector that keeps
 running across the reboot while the agent comes back. It needs no RouterOS API
-credentials. A collector that keeps running is not enough on its own: the agent that comes
-back after the reboot is a new process, and its samples reach `forward` only once their
-sequence passes the old cursor (see [`agent-restart`](https://jmrp.io/docs/mikroscope/sinks/detections/#agent-restart)). The rule can then
-fire only on a kernel-log record whose since-boot time is still below the last one seen
-before the reboot. This is read from the code, not observed.
+credentials. The agent that comes back after the reboot is a new process; since 1.0.4 the
+collector rewinds its cursor to the new ring within a minute (see
+[`agent-restart`](https://jmrp.io/docs/mikroscope/sinks/detections/#agent-restart)), so its samples do reach `forward`. The rule then fires on
+a kernel-log record whose since-boot time is below the last one seen before the reboot.
+Whether it fired on the reference device's 2026-09-19 reboot was not checked; nothing in the
+tree records it either way.
 
 **May not claim** that every reboot is seen. The agent reads the kernel log from the end at
 start, so the first record after a reboot is one logged after the agent came up; if that

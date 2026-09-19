@@ -43,9 +43,40 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     Enterprise 3.11.4 and wrote 44 820 rows across 36 tables in nineteen
     minutes, 0 dropped and 0 errors.
 
-  The remaining four passes — the reference tier's SQL tables, the
-  five-dashboards sweep, the 1.0.9/1.0.10 strays and the twin-drift list — are
-  not in this release.
+- **The audit's remaining passes.** The reference tier, the five-dashboards
+  sweep and the 1.0.9/1.0.10 strays, measured rather than assumed at every step:
+
+  - **The SQL sink declares 43 tables, not 32.** `reference/measurements.mdx`
+    carried seven "not written" rows for data that has had a table since 1.0.3 —
+    CPU frequency, per-CPU interrupts and softirqs, vmstat events and levels, the
+    PMU, `mikroscope_sample` — and described `mikroscope_mem` as five columns
+    when it has nineteen. `sinks/other.mdx` asserted eight absences of which
+    exactly one, the kernel-log count table, is real. The header for all 43
+    tables is **10 482 B**, not 7 757: rendered by the sink's own `header()`
+    rather than estimated.
+  - **Five dashboards, eight generated files, three alert files.** Pages said
+    two, four and two. `reference/testing.mdx` said the suite imports "both"
+    dashboards; it loops over five. `about/status.mdx` quoted 209 PostgreSQL
+    queries and 171 InfluxDB panels; counted from the committed JSON they are
+    **216** and **175**.
+  - **`AlertRules.astro` printed "InfluxDB only" for rules all three stores
+    carry.** `storesText` handled one store or two, so the eight rules in every
+    alert file fell through to the InfluxDB branch — on a page that shows their
+    PromQL directly underneath. The component now names the stores it was given,
+    and `alertUids` unions all three files instead of two.
+  - **The probe covers InfluxDB and Prometheus only.** `--store postgres`,
+    `graphite` or `elasticsearch` always fails the probe, always warns and always
+    ships the compiled defaults — the same as `--no-probe`. Neither twin said so.
+  - **The PostgreSQL dashboard drops 15 panels silently**, not ten queries "that
+    say so", and the kernel-log panels are among them.
+  - **`api tier disabled` no longer exists**; 1.0.9 replaced it with a tier that
+    keeps retrying. Four pages still told operators to expect it.
+  - **`sinks/detections.mdx` carried two Asides built on a premise 1.0.4
+    removed** — that a running collector never sees a restarted agent. It does,
+    within a minute, and the reference device exercised it for real on
+    2026-09-19.
+
+  What is left is the twin-drift list and the low-severity editorial sweep.
 
 ### Fixed
 

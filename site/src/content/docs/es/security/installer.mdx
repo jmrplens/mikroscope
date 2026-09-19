@@ -26,7 +26,8 @@ después, en este orden:
    que no sea `y` o `Y` lo detiene con `not confirmed; nothing written`;
 3. solo entonces escribe.
 
-`plan`, e `install --dry-run`, se detienen después del listado. El listado enmascara el token como
+`plan`, `install --dry-run` y `upgrade --dry-run` se detienen después del listado —el último
+solo desde 1.0.10, que es cuando `upgrade` empezó a respetar el flag. El listado enmascara el token como
 `value="(token)"`.
 
 `upgrade` no tiene esta garantía. Construye la imagen, rechaza un router en el que falte cualquier

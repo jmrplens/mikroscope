@@ -303,11 +303,14 @@ export const alertFiresWhen: Record<string, Record<Lang, string>> = {
 	},
 };
 
-/** Every rule uid, in the order the Prometheus file (the larger) lists them. */
+/**
+ * Every rule uid, in the order the Prometheus file (the largest) lists them.
+ * All three alert files are unioned, not two: a rule that only PostgreSQL
+ * carried would otherwise be missing from the table that claims to list them
+ * all.
+ */
 export const alertUids: readonly string[] = [
-	...new Set(
-		[...alertRules.prometheus, ...alertRules.influxdb].map((r) => r.uid),
-	),
+	...new Set(ALERT_STORES.flatMap((s) => alertRules[s]).map((r) => r.uid)),
 ];
 
 for (const uid of alertUids) {

@@ -92,16 +92,16 @@ the new sequence number, `threshold` the previous one.
 sequence starts again from 1 on every launch, so this is what a restart looks like from the
 outside.
 
-<Aside type="caution" title="A running forward does not see this today">
-	From reading the code, not from a run: `forward` keeps its pull cursor, the last sequence number
-	it received, and never resets it. A restarted agent's ring answers
-	`/snapshot?since=<old sequence>` with nothing, and no gap, until its new sequence passes the old cursor; by then every
-	sample it returns has a sequence number above the previous one. So a `forward` that keeps running
-	across an agent restart receives nothing from the new agent for as long as the old one had been
-	running — a day at 10 Hz for an agent that ran a day — and this rule cannot fire in it. The rule is
-	exercised only by the derive stage's unit tests; no forward or end-to-end test covers it.
-	Restarting `forward` after the agent restarts resumes the data, but then there is no previous
-	sequence number and the rule does not fire either.
+<Aside type="note" title="Fixed in 1.0.4">
+	This used to be unreachable in a running collector. `forward` kept its pull cursor and never reset
+	it, so a restarted agent's ring answered `/snapshot?since=<old sequence>` with nothing — and no
+	gap — until its new sequence passed the old cursor: a day at 10 Hz for an agent that had run a
+	day. Since 1.0.4 `resync` rewinds the cursor to the new ring's oldest sample on the next health
+	read, one minute at most, and logs `agent restarted: its newest sample is N and the cursor was M;
+	resuming from 1`. The new agent's low sequence against the stage's previous one is exactly what
+	this rule matches, so it fires. `TestResyncAfterAgentRestart` covers the collector side, and the
+	reference RB5009 exercised it for real on 2026-09-19: the router rebooted at 00:43:30 and the
+	kernel tier resumed at 00:45:03.
 </Aside>
 
 **May not claim** why the agent restarted. A collector restarted at the same time has no
@@ -153,11 +153,12 @@ previous record's. `value` and `threshold` are the new and previous timestamps i
 
 **Needs** `privileged=yes`, which the kernel log requires, and a collector that keeps
 running across the reboot while the agent comes back. It needs no RouterOS API
-credentials. A collector that keeps running is not enough on its own: the agent that comes
-back after the reboot is a new process, and its samples reach `forward` only once their
-sequence passes the old cursor (see [`agent-restart`](#agent-restart)). The rule can then
-fire only on a kernel-log record whose since-boot time is still below the last one seen
-before the reboot. This is read from the code, not observed.
+credentials. The agent that comes back after the reboot is a new process; since 1.0.4 the
+collector rewinds its cursor to the new ring within a minute (see
+[`agent-restart`](#agent-restart)), so its samples do reach `forward`. The rule then fires on
+a kernel-log record whose since-boot time is below the last one seen before the reboot.
+Whether it fired on the reference device's 2026-09-19 reboot was not checked; nothing in the
+tree records it either way.
 
 **May not claim** that every reboot is seen. The agent reads the kernel log from the end at
 start, so the first record after a reboot is one logged after the agent came up; if that
