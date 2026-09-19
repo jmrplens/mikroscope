@@ -1142,7 +1142,15 @@ func interruptPanels(b qb) []Panel {
 		},
 		{
 			Title: "Which core takes each interrupt", Unit: "cps", W: 24, H: 8,
-			MinInterval: "1m", FillOpacity: fi(0), Stacked: true, DrawStyle: "bars",
+			// NO FillOpacity HERE. A bar with fill 0 is a bar with nothing in
+			// it: this panel carried `FillOpacity: fi(0)` and drew an empty
+			// plot with a 21-entry legend and an axis auto-scaled to the
+			// stacked total, which is what data looks like when it is
+			// invisible (measured on the reference device 2026-09-19: 4 300
+			// interrupts/s across 21 series, not one bar drawn). Left unset it
+			// takes the 40 the Stacked case gives, the same fill the other
+			// stacked bar panel on this dashboard has always rendered with.
+			MinInterval: "1m", Stacked: true, DrawStyle: "bars",
 			Description: "The per-core interrupt distribution, measured rather than inferred: /proc/interrupts' per-CPU columns are written per CPU rather than summed into one count. On the reference device switch0 is four lines pinned one per CPU and arch_timer skews to CPU0. Stacked bars per core per source, so a line that migrates between cores — or an affinity change — shows as the stack redistributing while its total stays flat. Cores come from GROUP BY cpu and sources from GROUP BY irq, so the panel has no fixed core count or line count in it. A core that took nothing emits no row, by design: three zero rows per IRQ per tick is pure payload. Measured on the reference device (RB5009, RouterOS 7.24.2, kernel 5.6.3 arm64, 4 cores) 2026-09-12: 22 bins, 21 (cpu, line) series, with each switch0 line's traffic landing essentially entirely on one CPU and arch_timer present on all four at 113–760/s. Your device will show its own affinity map. WHAT IT CANNOT TELL YOU: why the distribution is what it is — /proc/irq/*/smp_affinity is not a mikroscope source, so a deliberate affinity change and a driver re-steering its queues look the same here. No thresholds: stacked bars of an absolute rate, and any step would be a per-board interrupt budget mikroscope does not know. PORTABILITY: the series name carries the trimmed device alongside the cpu and irq number, so a reader does not have to know that 'irq 38' is the NIC.",
 			Queries: b.q(
 				`SELECT $__dateBin(time) AS time, concat('cpu', cpu, ' ', regexp_replace(name, '^.*\s{2,}', '')) AS metric, sum("count") / ($__interval_ms / 1000.0) AS value FROM mikroscope_irq_cpu WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1`,
