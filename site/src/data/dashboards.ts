@@ -261,6 +261,10 @@ export const alertFiresWhen: Record<string, Record<Lang, string>> = {
 		en: "fewer than 1 new sample reached the store in the last 2 minutes",
 		es: "llegó al almacén menos de 1 muestra nueva en los últimos 2 minutos",
 	},
+	"mikroscope-egress-queue-drops": {
+		en: "any port's own egress queue dropped a packet in every one of the last 10 minutes — sustained congestion, never a single burst",
+		es: "la cola de salida de algún puerto descartó un paquete en cada uno de los últimos 10 minutos: congestión sostenida, nunca una ráfaga suelta",
+	},
 	"mikroscope-port-errors": {
 		en: "any port's MAC counted a typed error — overflow, FCS, collision — for 5 minutes running",
 		es: "el MAC de algún puerto contó un error tipificado —desbordamiento, FCS, colisión— durante 5 minutos seguidos",

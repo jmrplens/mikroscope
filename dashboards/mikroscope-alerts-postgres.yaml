@@ -198,6 +198,33 @@ groups:
           - refId: C
             datasourceUid: __expr__
             model: {refId: C, type: threshold, expression: B, conditions: [{evaluator: {type: gt, params: [0]}}]}
+      - uid: mikroscope-egress-queue-drops
+        title: "A port's egress queue has been dropping every minute for ten minutes"
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          source: mikroscope
+        annotations:
+          summary: "A port's own egress queue has dropped packets in every one of the last ten minutes. UNLIKE THE OTHER COUNTER RULES, THIS ONE'S COUNTER IS SUPPOSED TO MOVE: dropping is how a full queue tells a sender to slow down, so a link that is briefly saturated drops a few packets and is working as designed. That is why the threshold stays at zero and the ten-minute pending period carries the judgement — it takes ten consecutive minutes of dropping to fire, and no single burst can do it however large. On the reference RB5009 a 1 GbE port to a server lost 3 337 packets in six one-second bursts over 6.5 h, peaking at 436 packets/s (measured 2026-09-19): real, visible on the egress queue panel, and correctly not an alert. What fires this is a link that is simply too small for what it is being asked to carry, or a shaper set below the traffic. What it cannot tell you is which: queue discipline, buffer exhaustion and a policer all land in this one counter, and the port and the shape of the dropping are in the dashboard's Interface traffic section. This is a different fault from the typed MAC errors of mikroscope-port-errors, which are frames the hardware could not take rather than frames the router chose not to send. Needs the API tier: monitor-traffic is not visible from inside the container."
+        data:
+          - refId: A
+            relativeTimeRange: {from: 600, to: 0}
+            datasourceUid: DS_UID_PLACEHOLDER
+            model:
+              refId: A
+              rawQuery: true
+              editorMode: code
+              format: table
+              rawSql: "SELECT coalesce(max(tx_queue_drops), 0) AS value FROM mikroscope_api_iface WHERE time >= now() - interval '1 minute'"
+          - refId: B
+            datasourceUid: __expr__
+            model: {refId: B, type: reduce, expression: A, reducer: last, settings: {mode: dropNN}}
+          - refId: C
+            datasourceUid: __expr__
+            model: {refId: C, type: threshold, expression: B, conditions: [{evaluator: {type: gt, params: [0]}}]}
       - uid: mikroscope-ecc-failure
         title: "The NAND reported an uncorrectable ECC failure"
         condition: C

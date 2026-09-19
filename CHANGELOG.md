@@ -43,6 +43,26 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   returned rows for every panel but the two the device had nothing to say
   about in the window.
 
+- **`mikroscope-egress-queue-drops`**, the twelfth alert rule and the first
+  whose counter is *supposed* to move. Dropping is how a full queue tells a
+  sender to slow down, so "any drop" is not a fault on any device, and a
+  packets-per-second threshold would be a number the device did not publish.
+  It keeps the zero threshold and puts the judgement in the duration instead:
+  a **one-minute** window with a **ten-minute** pending period, so it takes ten
+  consecutive minutes of dropping to fire and no single burst can do it,
+  however large. On the reference RB5009 a 1 GbE port lost 3 337 packets in
+  six one-second bursts over 6.5 h, peaking at 436 packets/s (2026-09-19):
+  real, visible on the egress queue panel, and correctly not an alert.
+
+  The five-minute window every other counter rule uses would have fired on
+  that: with a one-minute evaluation interval a single burst keeps the query
+  non-zero for the five evaluations that still see it, which is exactly the
+  pending period. The file's own note about thresholds now carries this as the
+  shape to copy for anything whose healthy reading is not exactly zero.
+
+  `mikroscope-port-errors` also reaches the alerts page, which 1.0.10 added
+  the rule without.
+
 - **`--influx-db`.** `--influx` is the server now and the write URL is
   assembled from the fields: `--influx http://influx:8181 --influx-db
   mikroscope`. A write URL is the sink's shape and the wrong shape for
