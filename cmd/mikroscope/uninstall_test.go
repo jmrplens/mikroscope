@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/jmrplens/mikroscope/internal/router"
 )
 
 func TestParseTargetsTakesTheNamesAndRefusesTheRest(t *testing.T) {
@@ -185,5 +187,36 @@ func TestAnAdoptedDatasourceIsNotRemoved(t *testing.T) {
 		if strings.Contains(item.what, "datasource") {
 			t.Errorf("an adopted datasource was listed for removal: %s", item.what)
 		}
+	}
+}
+
+// The router half lists rather than removes without --yes, and the listing is
+// the install plan backwards, because an object goes after whatever depends on
+// it. No router is reached: a listing is built from the options alone.
+func TestTheRouterHalfListsWithoutTouchingTheRouter(t *testing.T) {
+	t.Parallel()
+	c := &cli{opts: router.Defaults()}
+	if err := c.opts.Finish(); err != nil {
+		t.Fatal(err)
+	}
+	var out strings.Builder
+	if err := removeRouterObjects(c, false, &out); err != nil {
+		t.Fatal(err)
+	}
+	said := out.String()
+	if !strings.Contains(said, "add --yes to remove them") {
+		t.Errorf("said %q, want it to say nothing was removed", said)
+	}
+	for _, want := range []string{"container ", "veth interface "} {
+		if !strings.Contains(said, want) {
+			t.Errorf("the listing does not name %q:\n%s", want, said)
+		}
+	}
+	// The container is created first and so goes last in the install plan; the
+	// listing is that plan reversed, so it comes first here.
+	container := strings.Index(said, "container ")
+	veth := strings.Index(said, "veth interface ")
+	if container > veth {
+		t.Errorf("the listing is not the plan backwards:\n%s", said)
 	}
 }
