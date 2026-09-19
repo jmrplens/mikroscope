@@ -201,3 +201,92 @@ func TestEnsureFolderDoesNothingForTheGeneralFolder(t *testing.T) {
 		t.Errorf("EnsureFolder(\"\") = %q, %v, %v, want the zero answer", uid, outcome, err)
 	}
 }
+
+// The outcome words go straight into the collector's log lines, so they are
+// the API here as much as the integer is.
+func TestOutcomeNamesItself(t *testing.T) {
+	t.Parallel()
+	for outcome, want := range map[Outcome]string{
+		Unchanged:  "unchanged",
+		Created:    "created",
+		Updated:    "updated",
+		Outcome(9): "unchanged",
+	} {
+		if got := outcome.String(); got != want {
+			t.Errorf("Outcome(%d).String() = %q, want %q", outcome, got, want)
+		}
+	}
+}
+
+// What the server said is the only thing an operator gets when publishing
+// fails, so an empty body still has to say something, and a server that
+// answers with a megabyte of HTML must not put a megabyte in a log line.
+func TestSaidQuotesTheServerAndBoundsIt(t *testing.T) {
+	t.Parallel()
+	if got := said(answer{Status: http.StatusNotFound}); got != "Not Found" {
+		t.Errorf("said(empty 404) = %q, want the status text", got)
+	}
+	if got := said(answer{Status: 409, Body: []byte(`{"message":"exists"}`)}); got != `409 {"message":"exists"}` {
+		t.Errorf("said = %q, want the status and the body", got)
+	}
+	long := said(answer{Status: 500, Body: []byte(strings.Repeat("x", 5000))})
+	if len(long) > 450 || !strings.HasSuffix(long, "…") {
+		t.Errorf("said(5 kB body) is %d bytes and ends %q, want it cut and marked", len(long), long[max(0, len(long)-1):])
+	}
+}
+
+// A jsonData setting that differs is a datasource that differs, even when the
+// name, type and url all match — that is how a version or a header name gets
+// corrected on an upgrade.
+func TestADatasourceDiffersWhenOnlyItsPluginSettingsDo(t *testing.T) {
+	t.Parallel()
+	f := &fakeGrafana{existing: map[string]any{
+		"name": "mikroscope-influxdb", "type": "influxdb", "url": "http://store:8181",
+		"database": "mikroscope", "jsonData": map[string]any{"version": "InfluxQL", "dbName": "mikroscope"},
+	}}
+	got, err := f.serve(t).EnsureDatasource(context.Background(), want())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != Updated {
+		t.Errorf("outcome = %v, want updated: version InfluxQL is not version SQL", got)
+	}
+}
+
+// A body that is not the JSON this expects must not read as "already correct",
+// because that would leave a broken datasource in place forever.
+func TestADatasourceThatCannotBeParsedIsNotTakenAsCorrect(t *testing.T) {
+	t.Parallel()
+	if sameDatasource([]byte("<html>not json</html>"), want()) {
+		t.Error("sameDatasource said yes to a body it could not read")
+	}
+}
+
+// Both halves of EnsureFolder have to report what the server said rather than
+// return an empty uid that the import would then send as "General".
+func TestEnsureFolderReportsAServerThatRefuses(t *testing.T) {
+	t.Parallel()
+	for name, status := range map[string]int{"listing": http.StatusForbidden, "creating": http.StatusUnprocessableEntity} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodGet && status == http.StatusForbidden {
+				w.WriteHeader(status)
+				_, _ = w.Write([]byte(`{"message":"no"}`))
+				return
+			}
+			if r.Method == http.MethodGet {
+				_, _ = w.Write([]byte(`[]`))
+				return
+			}
+			w.WriteHeader(status)
+			_, _ = w.Write([]byte(`{"message":"no"}`))
+		}))
+		uid, _, err := (&Grafana{URL: srv.URL}).EnsureFolder(context.Background(), "mikroscope")
+		srv.Close()
+		if err == nil {
+			t.Errorf("%s: want an error", name)
+		}
+		if uid != "" {
+			t.Errorf("%s: uid = %q, want empty rather than something the import would use", name, uid)
+		}
+	}
+}

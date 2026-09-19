@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -220,5 +221,214 @@ func TestPublishWritesTheFolderTheDatasourceAndTheDashboard(t *testing.T) {
 	}
 	if wrote["access"] != "proxy" {
 		t.Errorf("access = %v, want proxy", wrote["access"])
+	}
+}
+
+// Elasticsearch is the other sink that can describe itself, and the index
+// pattern is the part that is not just the URL: the sink expands %Y %m %d per
+// event, so a datasource asking for the literal name would find one day's
+// index and miss every other.
+func TestElasticsearchDatasourceAsksForEveryDaysIndex(t *testing.T) {
+	t.Parallel()
+	s := &sinkFlags{elastic: "http://elastic:9200/", elIndex: "mikroscope-%Y.%m.%d", elasticAuth: "ApiKey abc"}
+	got, err := datasourceFor(dashboards.Elasticsearch, s, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.URL != "http://elastic:9200" {
+		t.Errorf("url = %q, want the trailing slash gone", got.URL)
+	}
+	if got.JSON["index"] != "mikroscope*" {
+		t.Errorf("index = %v, want the wildcard that covers every day", got.JSON["index"])
+	}
+	if got.JSON["timeField"] != "time" {
+		t.Errorf("timeField = %v, want time", got.JSON["timeField"])
+	}
+	if got.Secret["httpHeaderValue1"] != "ApiKey abc" {
+		t.Errorf("secret = %v, want the credential verbatim — the sink sends it as given", got.Secret)
+	}
+	if got.JSON["httpHeaderName1"] != "Authorization" {
+		t.Errorf("httpHeaderName1 = %v, want Authorization", got.JSON["httpHeaderName1"])
+	}
+}
+
+// Without a credential nothing secret is sent at all, rather than an empty
+// header that would make the datasource send `Authorization: `.
+func TestElasticsearchDatasourceWithNoCredentialSendsNoHeader(t *testing.T) {
+	t.Parallel()
+	got, err := datasourceFor(dashboards.Elasticsearch, &sinkFlags{elastic: "http://elastic:9200"}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Secret) != 0 || got.JSON["httpHeaderName1"] != nil {
+		t.Errorf("secret = %v, jsonData = %v, want neither set", got.Secret, got.JSON)
+	}
+}
+
+// --grafana is the whole on/off switch: nothing happens unless a URL was
+// named, whatever else is configured.
+func TestPublishingIsOffUnlessAGrafanaIsNamed(t *testing.T) {
+	t.Parallel()
+	if (&publishFlags{folder: "mikroscope", dsUID: "x", dryRun: true}).asked() {
+		t.Error("asked() is true with no --grafana; every other flag must be inert without it")
+	}
+	if !(&publishFlags{url: "http://grafana:3000"}).asked() {
+		t.Error("asked() is false with --grafana set")
+	}
+}
+
+// A datasource the server refuses must name the store and carry what the
+// server said, because that text is the only thing an operator has: the
+// collector goes on collecting and the reason scrolls past once.
+func TestPublishReportsWhatTheServerSaidAboutTheDatasource(t *testing.T) {
+	t.Setenv("GRAFANA_TOKEN", "t")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.URL.Path == "/api/folders" && r.Method == http.MethodGet:
+			_, _ = w.Write([]byte(`[{"uid":"f","title":"mikroscope"}]`))
+		case r.Method == http.MethodGet:
+			w.WriteHeader(http.StatusNotFound)
+		default:
+			w.WriteHeader(http.StatusConflict)
+			_, _ = w.Write([]byte(`{"message":"data source with the same name already exists"}`))
+		}
+	}))
+	defer srv.Close()
+	pf := &publishFlags{url: srv.URL, folder: "mikroscope"}
+	err := pf.publish(context.Background(), &sinkFlags{influx: "http://i:8181", influxDB: "mikroscope"}, &strings.Builder{})
+	if err == nil {
+		t.Fatal("a refused datasource must be reported")
+	}
+	for _, want := range []string{"influxdb", "already exists"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error = %q, want it to carry %q", err, want)
+		}
+	}
+}
+
+// The flag names and defaults are the documented interface — the environment
+// reference and the import-and-check page both list this table — so they are
+// asserted rather than left to drift.
+func TestPublishFlagsAreTheOnesDocumented(t *testing.T) {
+	t.Setenv("MIKROSCOPE_GRAFANA_URL", "")
+	t.Setenv("MIKROSCOPE_GRAFANA_FOLDER", "")
+	t.Setenv("MIKROSCOPE_GRAFANA_DATASOURCE_UID", "")
+	fs := flag.NewFlagSet("t", flag.ContinueOnError)
+	var pf publishFlags
+	pf.register(fs)
+	for name, want := range map[string]string{
+		"grafana":                "",
+		"grafana-folder":         "mikroscope",
+		"grafana-datasource-uid": "",
+		"grafana-dry-run":        "false",
+	} {
+		f := fs.Lookup(name)
+		if f == nil {
+			t.Errorf("--%s is not registered", name)
+			continue
+		}
+		if f.DefValue != want {
+			t.Errorf("--%s default = %q, want %q", name, f.DefValue, want)
+		}
+	}
+	// And the environment is where the defaults come from, with the prefix.
+	t.Setenv("MIKROSCOPE_GRAFANA_URL", "http://from-env:3000")
+	var withEnv publishFlags
+	withEnv.register(flag.NewFlagSet("t2", flag.ContinueOnError))
+	if withEnv.url != "http://from-env:3000" {
+		t.Errorf("--grafana default = %q, want it read from MIKROSCOPE_GRAFANA_URL", withEnv.url)
+	}
+}
+
+// A Grafana that is not there at all is the commonest failure of the lot, and
+// it must come back as an error the caller can log rather than as a panic or
+// a hang. publishOrCarryOn is what turns it into a warning.
+func TestPublishReportsAGrafanaThatIsNotThere(t *testing.T) {
+	t.Setenv("GRAFANA_TOKEN", "t")
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	url := srv.URL
+	srv.Close() // nothing is listening now
+	pf := &publishFlags{url: url, folder: "mikroscope"}
+	err := pf.publish(context.Background(), &sinkFlags{influx: "http://i:8181", influxDB: "mikroscope"}, &strings.Builder{})
+	if err == nil {
+		t.Fatal("an unreachable Grafana must be reported, not swallowed")
+	}
+	if !strings.Contains(err.Error(), "folder") {
+		t.Errorf("error = %q, want it to say which step failed", err)
+	}
+}
+
+// The guarantee the collector makes: a Grafana that will not take the
+// dashboard costs a warning and nothing else. Refusing to start would trade
+// the samples of the hour spent not running, which cannot be recovered, for a
+// dashboard published on the next restart, which can.
+func TestAFailedPublishIsAWarningAndNotAStop(t *testing.T) {
+	t.Setenv("GRAFANA_TOKEN", "t")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"message":"grafana is having a day"}`))
+	}))
+	defer srv.Close()
+	var said []string
+	publishOrCarryOn(context.Background(),
+		&publishFlags{url: srv.URL, folder: "mikroscope"},
+		&sinkFlags{influx: "http://i:8181", influxDB: "mikroscope"},
+		func(s string) { said = append(said, s) })
+	joined := strings.Join(said, "\n")
+	if !strings.Contains(joined, "carrying on without it") {
+		t.Errorf("logged %q, want it to say the collector goes on", joined)
+	}
+	if !strings.Contains(joined, "having a day") {
+		t.Errorf("logged %q, want what the server said", joined)
+	}
+	// And with no --grafana it says nothing at all.
+	said = nil
+	publishOrCarryOn(context.Background(), &publishFlags{}, &sinkFlags{influx: "http://i:8181"}, func(s string) { said = append(said, s) })
+	if len(said) != 0 {
+		t.Errorf("logged %q with no --grafana, want silence", said)
+	}
+}
+
+// An adopted datasource is somebody else's to describe: it is bound to the
+// dashboard and never written to.
+func TestAnAdoptedDatasourceIsNeverWritten(t *testing.T) {
+	t.Setenv("GRAFANA_TOKEN", "t")
+	var bound string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/api/datasources"):
+			t.Errorf("reached the datasource API for an adopted uid: %s %s", r.Method, r.URL.Path)
+		case r.URL.Path == "/api/folders" && r.Method == http.MethodGet:
+			_, _ = w.Write([]byte(`[{"uid":"f","title":"mikroscope"}]`))
+		case r.URL.Path == "/api/ds/query":
+			_, _ = w.Write([]byte(`{"results":{"A":{"frames":[]}}}`))
+		case r.URL.Path == "/api/dashboards/import":
+			var body map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			if inputs, isList := body["inputs"].([]any); isList && len(inputs) > 0 {
+				if in, isMap := inputs[0].(map[string]any); isMap {
+					bound, _ = in["value"].(string)
+				}
+			}
+			_, _ = w.Write([]byte(`{"importedUrl":"/d/x/y"}`))
+		default:
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+	// Graphite is one of the three that cannot describe itself, so adopting is
+	// the only way it publishes at all.
+	pf := &publishFlags{url: srv.URL, folder: "mikroscope", dsUID: "someone-elses"}
+	var out strings.Builder
+	if err := pf.publish(context.Background(), &sinkFlags{graph: "graphite:2003"}, &out); err != nil {
+		t.Fatal(err, out.String())
+	}
+	if !strings.Contains(out.String(), "adopted as configured, left as it is") {
+		t.Errorf("said %q, want it to report the adoption", out.String())
+	}
+	if bound != "someone-elses" {
+		t.Errorf("dashboard bound to %q, want the adopted uid", bound)
 	}
 }
