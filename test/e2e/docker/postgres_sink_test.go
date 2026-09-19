@@ -5,6 +5,7 @@ package docker
 import (
 	"context"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -150,6 +151,78 @@ func TestPostgresSinkDeclaresTheSameSchema(t *testing.T) {
 	if strings.Count(fromConn, "\n") < 100 {
 		t.Errorf("only %d columns were declared; the schema is bigger than that",
 			strings.Count(fromConn, "\n")+1)
+	}
+
+	// AND THE KEYS, which information_schema.columns does not carry. Two
+	// transports could declare the same columns under different primary keys,
+	// and the key is not an implementation detail here: it is what makes a
+	// re-applied batch converge instead of duplicating, and what every
+	// generated PostgreSQL panel groups by. Borrowed from ghchronicle, whose
+	// own suite asserts its key for the same reason.
+	const keys = `SELECT t.relname || ' (' || string_agg(a.attname, ', ' ORDER BY k.ord) || ')'
+		FROM pg_index i
+		JOIN pg_class t ON t.oid = i.indrelid
+		JOIN unnest(i.indkey) WITH ORDINALITY AS k(attnum, ord) ON true
+		JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = k.attnum
+		WHERE i.indisprimary AND t.relname LIKE 'mikroscope\_%'
+		GROUP BY t.relname ORDER BY t.relname`
+	keysConn, err := psqlAs(ctx, directDatabase, nil, "-c", keys)
+	if err != nil {
+		t.Fatalf("reading the connection's keys: %v", err)
+	}
+	keysFile, err := psqlAs(ctx, "mikroscope", nil, "-c", keys)
+	if err != nil {
+		t.Fatalf("reading the script's keys: %v", err)
+	}
+	if keysConn != keysFile {
+		t.Errorf("the two transports declared different primary keys.\nconnection:\n%s\n\nscript:\n%s",
+			keysConn, keysFile)
+	}
+	// Every key starts with time, because create_hypertable needs the
+	// partitioning column in every unique index.
+	for line := range strings.SplitSeq(keysConn, "\n") {
+		if line = strings.TrimSpace(line); line == "" {
+			continue
+		}
+		if !strings.Contains(line, "(time,") && !strings.HasSuffix(line, "(time)") {
+			t.Errorf("a primary key does not lead with time: %s", line)
+		}
+	}
+}
+
+// TestPostgresSinkIsIdempotent: applying the same batch twice adds nothing.
+// Every INSERT ends in ON CONFLICT DO NOTHING because a row is one immutable
+// instant of a counter delta, and the connecting sink retries a whole batch
+// after a failure — so a batch the server had already taken must not double
+// the rows. Borrowed from ghchronicle's own convergence test, which asserts
+// the opposite outcome for the opposite reason: its points are mutable facts
+// and rewrite, these are instants and do not.
+func TestPostgresSinkIsIdempotent(t *testing.T) {
+	s := Sweep(t)
+	ctx := t.Context()
+	loadSweepIntoPostgres(ctx, t, s)
+
+	const table = "mikroscope_cpu"
+	before := pgRowsIn(ctx, t, directDatabase, table)
+	if before == 0 {
+		t.Fatalf("%s is empty; there is nothing to re-apply", table)
+	}
+	// The script again, into the database the CONNECTION filled: the same
+	// statements the connection sent, from the other transport, against rows
+	// that are already there.
+	body, err := os.ReadFile(s.SQL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body = append([]byte("SET client_min_messages = warning;\n"), body...)
+	if out, applyErr := psqlAs(ctx, directDatabase, body, "-f", "-"); applyErr != nil {
+		t.Fatalf("re-applying the sink's statements: %v", applyErr)
+	} else if strings.Contains(out, "ERROR:") {
+		t.Fatalf("re-applying reported an error:\n%s", out)
+	}
+	if after := pgRowsIn(ctx, t, directDatabase, table); after != before {
+		t.Errorf("%s went from %d rows to %d: the same batch twice duplicated instead of doing nothing",
+			table, before, after)
 	}
 }
 

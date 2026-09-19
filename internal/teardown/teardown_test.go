@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 // THE ONE PROPERTY EVERYTHING HERE HANGS ON: only what this project wrote.
@@ -90,8 +91,53 @@ func TestInfluxDropsWithAHardDeleteAndRefusesWhatIsNotOurs(t *testing.T) {
 	if len(deleted) != 1 || deleted[0] != Prefix+"cpu hard=now" {
 		t.Errorf("deleted %v, want the table and hard_delete_at=now", deleted)
 	}
+	// AND THE SERVER IS NOT CALLED AT ALL. Checking only the error would pass
+	// on an implementation that asks the store and lets the store refuse,
+	// which is a different and much worse thing.
+	before := len(deleted)
 	if err := i.Drop(context.Background(), "someone_elses_table"); err == nil {
 		t.Error("dropped a table this project did not write")
+	}
+	if len(deleted) != before {
+		t.Errorf("it called the store anyway: %v", deleted[before:])
+	}
+}
+
+// THE DESIGN CLAIM OF THIS PACKAGE, and the one thing the prefix tests above do
+// not say: a table NOBODY WRITES ANY MORE is found. A compiled list would be
+// the measurements this version emits, and those are exactly the ones an
+// uninstall does not need help with — what an earlier version collected, or a
+// source switched off since, is what gets left behind. Asking finds it.
+//
+// Ported from ghchronicle, which states the same claim about its own store.
+func TestAskingTheStoreFindsWhatACompiledListWouldMiss(t *testing.T) {
+	t.Parallel()
+	// Not in internal/sinks/sql.go's schema, not in the InfluxDB writer, not
+	// in any dashboard: a name only an older collector ever wrote.
+	const retired = Prefix + "retired_in_1_0"
+	srv := influxServer(t, []string{retired}, nil)
+	held, err := (&influx{url: srv.URL, token: "tok", database: "mikroscope"}).Holds(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(held) != 1 || held[0] != retired {
+		t.Errorf("Holds = %v, want the measurement no current collector writes", held)
+	}
+}
+
+// A table already gone is the outcome that was asked for, not a failure:
+// InfluxDB answers a second delete with a conflict, and what was wanted is for
+// it to be gone.
+func TestATableAlreadyGoneIsTheOutcomeAskedFor(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+		_, _ = w.Write([]byte(`{"error":"table not found"}`))
+	}))
+	defer srv.Close()
+	i := &influx{url: srv.URL, token: "tok", database: "mikroscope"}
+	if err := i.Drop(context.Background(), Prefix+"cpu"); err != nil {
+		t.Errorf("a table already deleted was reported as a failure: %v", err)
 	}
 }
 
@@ -344,3 +390,44 @@ func TestTrimKeepsAComplaintToOneLinesWorth(t *testing.T) {
 		t.Errorf("trim(500) is %d bytes ending %q, want it cut and marked", len(long), long[len(long)-3:])
 	}
 }
+
+// The prefix check comes BEFORE the connection, on purpose: a name that is not
+// this project's is refused whether or not there is a server to refuse it at,
+// and a run with the database down still says the right thing about it.
+//
+// The DSN points at a port nothing listens on with a one-second timeout, so
+// reaching the connection would cost that second — which is also how this test
+// says which of the two happened.
+func TestThePostgresStoreRefusesWhatIsNotOursBeforeConnecting(t *testing.T) {
+	t.Parallel()
+	p := &postgres{dsn: deadDSN}
+	started := time.Now()
+	err := p.Drop(context.Background(), "someone_elses_table")
+	if err == nil || !strings.Contains(err.Error(), "not one of this project's tables") {
+		t.Fatalf("err = %v, want the refusal rather than a connection error", err)
+	}
+	if time.Since(started) > 500*time.Millisecond {
+		t.Error("it tried to connect before refusing")
+	}
+}
+
+// A database that cannot be reached is reported rather than read as a database
+// holding nothing, which would say there is nothing to remove.
+func TestThePostgresStoreReportsADatabaseItCannotReach(t *testing.T) {
+	t.Parallel()
+	p := &postgres{dsn: deadDSN}
+	if _, err := p.Holds(context.Background()); err == nil {
+		t.Error("a database that cannot be reached was read as holding nothing")
+	}
+	if err := p.Drop(context.Background(), Prefix+"cpu"); err == nil {
+		t.Error("a drop against a database that is not there reported success")
+	}
+	if p.Name() != "--postgres" {
+		t.Errorf("Name() = %q", p.Name())
+	}
+}
+
+// deadDSN points at a port nothing listens on, with a timeout short enough
+// that a test waiting on it is a test that failed rather than a test that
+// hangs.
+const deadDSN = "postgres://u:p@127.0.0.1:1/d?sslmode=disable&connect_timeout=1"
