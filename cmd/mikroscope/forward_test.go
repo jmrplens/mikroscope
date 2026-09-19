@@ -2,10 +2,14 @@ package main
 
 import (
 	"context"
+	"io"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/jmrplens/mikroscope/internal/forward"
+	"github.com/jmrplens/mikroscope/internal/router"
 )
 
 // TestAttachAPITierSurvivesARouterThatIsDown: before 1.0.9 a failed first dial
@@ -63,5 +67,52 @@ func TestAttachAPITierParsesTheInterfaceList(t *testing.T) {
 	}
 	if fw.API.Opts.ConntrackEvery != 10*time.Second {
 		t.Errorf("ConntrackEvery = %s, want 10s", fw.API.Opts.ConntrackEvery)
+	}
+}
+
+// TestUpgradeDryRunWritesNothingAndNeedsNoRouter is the regression for the
+// defect this version fixes: `upgrade --dry-run` ignored the flag, printed no
+// plan and fell through to the confirmation, so `--dry-run --yes` replaced the
+// container on a live router. The proof that it now writes nothing is that it
+// succeeds with NO router configured at all — the runner is never built, so no
+// connection can be opened.
+func TestUpgradeDryRunWritesNothingAndNeedsNoRouter(t *testing.T) {
+	c := cli{dryRun: true, opts: router.Defaults()}
+	c.opts.RemoteImage = "jmrplens/mikroscope-agent:1.0.10" // so no image is built
+	if err := c.opts.Finish(); err != nil {
+		t.Fatal(err)
+	}
+	if c.router != "" {
+		t.Fatal("this test is only meaningful with no router set")
+	}
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved := os.Stdout
+	os.Stdout = w
+	upErr := upgrade(c)
+	os.Stdout = saved
+	_ = w.Close()
+	out, _ := io.ReadAll(r)
+
+	if upErr != nil {
+		t.Fatalf("upgrade --dry-run failed with no router: %v", upErr)
+	}
+	got := string(out)
+	for _, want := range []string{
+		"mikroscope upgrade plan for",
+		"remove container",
+		"jmrplens/mikroscope-agent:1.0.10",
+		"nothing above has been written yet",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the dry run did not print %q:\n%s", want, got)
+		}
+	}
+	// The four objects an upgrade keeps are not writes and must not be listed.
+	if strings.Contains(got, "/interface/veth/add") {
+		t.Errorf("the dry run listed the veth, which upgrade does not write:\n%s", got)
 	}
 }
