@@ -203,7 +203,7 @@ settings, and the agent's version, rate, sequence number, skew, transport and
 effective batch. Every minute, on standard error, a running report:
 
 ```text
-forwarded <n> kernel, <n> api, <n> gap(s), <n> trigger(s), <n> detection(s), last seq <n>; <sink>: <n> written, <n> dropped, <n> errors
+forwarded <n> kernel, <n> api, <n> gap(s), <n> trigger(s), <n> detection(s), <n> agent restart(s), last seq <n>; <sink>: <n> written, <n> dropped, <n> errors
 ```
 
 On exit, on **standard output**, the totals and one line per sink:
@@ -421,8 +421,8 @@ get no counter series; the MTU is part of the inventory. On the RB5009 with Rout
 
 ### Device-info families
 
-The collector's exposition carries the same device-info families as the agent's own
-`/metrics`, from what it fetched from `/capabilities`: `mikroscope_device_info`, the
+The collector's exposition carries the device-info families from what it fetched from
+`/capabilities`: `mikroscope_device_info`, the
 ceilings the board publishes (`mikroscope_thermal_critical_celsius`,
 `mikroscope_thermal_polling_seconds`, `mikroscope_cpu_frequency_limit_hertz`,
 `mikroscope_cpu_frequency_step_hertz`, `mikroscope_cpu_frequency_governor_info`,
@@ -576,6 +576,10 @@ signature — or `other`. A record that names no port keeps the tagless shape an
 | `mikroscope_device_thermal` | `zone`                                         | `critical_celsius`, `polling_ms`                                                             | collector                 |
 | `mikroscope_device_cpufreq` | `cpu`                                          | `cluster`, `min_khz`, `max_khz`, `governor`, `steps`                                         | collector                 |
 | `mikroscope_device_cadence` | `source`, `reason`                             | `hz`                                                                                         | collector                 |
+| `mikroscope_sampler`        | —                                              | `ticks`, `slipped`, `captures_held`, `capture_bytes`, `capture_budget_bytes`, `capture_served_bytes`| collector, from `GET /sampler`|
+| `mikroscope_trigger_count`  | `condition`                                    | `fired`                                                                                      | collector, from `GET /sampler`|
+| `mikroscope_trigger_suppressed`| `condition`, `reason`                          | `count`                                                                                      | collector, from `GET /sampler`|
+| `mikroscope_capture_refused`| `reason`                                       | `count`                                                                                      | collector, from `GET /sampler`|
 
 Every interface row carries what that interface is: `label` is its RouterOS comment,
 `type` is RouterOS's own type (`ether`, `bridge`, `vlan`, `pppoe-out`, `wg`, `veth`,
@@ -685,7 +689,7 @@ and its first key says what it is:
 - `{"trigger":…}` — the agent's capture marker, also verbatim;
 - `{"derived":…}` — the derive stage's values, on the line after the sample they belong
   to, so a reader that wants only raw samples skips that kind;
-- `{"detection":…}`, `{"device":…}`, `{"api":…}` and `{"gap":…}`.
+- `{"detection":…}`, `{"device":…}`, `{"api":…}`, `{"sampler":…}` and `{"gap":…}`.
 
 Writes are synchronous through a 64 KiB buffer, and the counters are in events. A write
 the filesystem refuses counts one error and one drop.
@@ -929,6 +933,7 @@ time. Every level is a **Gauge**. Nothing from the kernel tier is pre-divided ex
 | Gauge | `mikroscope.derived.fastpath_share`                                                                                                                         | `interface`, `direction`                                                            |
 | Gauge | `mikroscope.device.cores`; `mikroscope.device.thermal.critical`, `mikroscope.device.thermal.polling` (s)                                                    | `board`, `kernel`, `hash`; `zone`                                                   |
 | Gauge | `mikroscope.device.cpu.frequency_max`, `mikroscope.device.cpu.frequency_min`; `mikroscope.device.source_cadence`                                            | `cpu`; `source`, `reason`                                                           |
+| Gauge | `mikroscope.sampler.{ticks,slipped,trigger_fired,trigger_suppressed}`; `mikroscope.capture.{held,bytes,budget_bytes,served_bytes,refused}`                  | `condition`, `reason`                                                               |
 
 The reclaim and swap members of `mikroscope.vm.events` are omitted at zero: for a delta
 Sum an absent point and a zero point mean the same. The per-port counters are gauges of a
@@ -977,6 +982,7 @@ value becomes `none`, so a path's depth never changes.
 | `derived.{mem_pressure,cycles_per_packet,instructions_per_packet,cache_misses_per_packet,packets_per_irq}`                                           | the derive stage                  |
 | `trigger.<cause>`, `detection.<rule>` — the value 1 at each event                                                                                    | triggers and detections           |
 | `device.{cores,conntrack_max,cgroup_mem_max}`, `device.thermal.<zone>.*`, `device.cpufreq.<n>.*`, `device.cadence.<source>.hz`                       | the device-info stream            |
+| `sampler.{ticks,slipped,captures_held,capture_bytes,capture_budget_bytes,capture_served_bytes}`                                                      | the agent's own counters, on the health cadence|
 | `collector.gap.{samples,from,to}`                                                                                                                    | gaps, at the collector's clock    |
 
 What the protocol cannot promise, stated because each one changes what a Graphite panel
@@ -1031,7 +1037,7 @@ One document per event, with `kind` telling them apart:
   `role` and `bridge`, and each `iface_counters` entry `comment`, `type`, `role` and
   `bridge`, where the inventory has them. The API tier's per-command errors are not
   written;
-- `gap` (`from`, `to`, `lost`), `device`, `detection` and `trigger`.
+- `gap` (`from`, `to`, `lost`), `device`, `detection`, `trigger` and `sampler`.
 
 Every document carries `@timestamp` from the agent's clock (the collector's for gaps and
 device records) and `host`. The index name expands `%Y`, `%m` and `%d` — only those —
@@ -1529,8 +1535,8 @@ The trailing baselines span ten seconds of wall clock at any rate: 100 samples a
 until its CPU has at least ten samples of history.
 
 Why a percentile and not "any squeeze", measured on the reference RB5009 over 3 738 704
-per-CPU samples in 24 h: about 11.2 % of samples carry one squeeze as background and 2 % carry
-two or more. "Any squeeze" would flag the device's norm several times a minute.
+per-CPU samples in 24 h: about 11.2 % of samples carry one squeeze as background
+and 1.2 % carry exactly two. "Any squeeze" would flag the device's norm several times a minute.
 
 Three flagged samples on one CPU within 60 s is what raises the `microburst`
 [detection](https://jmrp.io/docs/mikroscope/sinks/detections/#microburst); one flagged sample stays a data
@@ -1823,7 +1829,8 @@ flush of the connection table fires it.
 samples within the last 60 s.
 
 **May not claim** when the table will be full: no time-to-full is attached, on purpose. For
-scale, the reference router's table sat at 0.63 % of its 966 656 ceiling on 2026-09-12.
+scale, the reference router's table sat at 6 287 entries on 2026-09-12,
+0.65 % of the 966 656 ceiling that kernel reported on 2026-09-14.
 
 #### `thermal-high`
 

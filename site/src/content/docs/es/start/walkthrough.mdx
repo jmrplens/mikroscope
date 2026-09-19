@@ -45,7 +45,7 @@ necesites, o copia `.env.example` a `.env` y carga el fichero con `set -a; . ./.
 1. **Conseguir mikroscope.**
 
    ```sh wrap
-   tar xzf mikroscope_1.0.0_linux_x86_64.tar.gz   # un .zip en Windows
+   tar xzf mikroscope_1.0.9_linux_x86_64.tar.gz   # un .zip en Windows
    ./mikroscope version
    ```
 
@@ -89,13 +89,13 @@ necesites, o copia `.env.example` a `.env` y carga el fichero con `set -a; . ./.
      copia del repositorio. La CLI lee el tar antes de subirlo —tiene que ser una imagen del agente
      de mikroscope y su arquitectura tiene que coincidir con `--arch`—, o el verbo se detiene y
      nombra el fichero que hay que descargar;
-   - **el registro**, `--remote-image jmrplens/mikroscope-agent:1.0.0`: el router se descarga la
+   - **el registro**, `--remote-image jmrplens/mikroscope-agent:1.0.9`: el router se descarga la
      imagen él mismo, no se sube nada y `uninstall` no tiene ningún fichero del que responder.
      RouterOS toma el host del registro del ajuste global `/container/config registry-url`, que
      mikroscope nunca escribe porque lo comparten todos los contenedores del equipo, y que viene
      puesto en `https://registry-1.docker.io`: por eso la referencia de Docker Hub de arriba
      funciona tal cual en un router sin tocar. La referencia de GHCR,
-     `ghcr.io/jmrplens/mikroscope-agent:1.0.0`, nombra un host propio: `doctor` compara el ajuste
+     `ghcr.io/jmrplens/mikroscope-agent:1.0.9`, nombra un host propio: `doctor` compara el ajuste
      con él e imprime `/container/config/set registry-url=https://ghcr.io` cuando no coincide, o
      remite a `--agent-tar`. La descarga necesita que el router llegue al registro y que haya RAM
      libre para las capas.
@@ -105,7 +105,7 @@ necesites, o copia `.env.example` a `.env` y carga el fichero con `set -a; . ./.
    el que volver a ejecutar si no coinciden.
 
    En un router al que solo llegas por WinBox o WebFig hay una cuarta vía, sin CLI de tu lado:
-   `mikroscope plan --rsc --remote-image jmrplens/mikroscope-agent:1.0.0 --out install.rsc`
+   `mikroscope plan --rsc --remote-image jmrplens/mikroscope-agent:1.0.9 --out install.rsc`
    escribe las mismas órdenes, en el mismo orden y con las mismas etiquetas, como un script de
    RouterOS para pegar en el terminal o hacerle `/import`.
    [Instalar el agente](/mikroscope/es/install/) tiene esa vía y sus dos advertencias al completo.

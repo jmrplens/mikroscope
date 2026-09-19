@@ -187,8 +187,8 @@ collector after the router comes back.
 
 Every network sink is queued, and the queue is bounded — `--queue-seconds`, 60
 by default. A destination that cannot keep up loses the oldest batch rather
-than stalling the pull loop, and the count is printed at the end of the run and
-exported as a metric. That is a deliberate choice, and
+than stalling the pull loop, and the count is printed — in the minute report and
+again at the end of the run. There is no metric family for it. That is a deliberate choice, and
 [the collector](/mikroscope/sinks/) explains it: the agent's ring is what
 protects the data, and a collector waiting on a slow store would lose more than
 the store does.

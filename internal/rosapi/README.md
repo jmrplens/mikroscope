@@ -2,7 +2,8 @@
 
 > Lineage: this package is a copy of `internal/rosapi` from
 > [jmrplens/cs-routeros-bouncer](https://github.com/jmrplens/cs-routeros-bouncer)
-> (MIT), taken 2026-09-11, with only the import path changed. That copy is
+> (MIT), taken 2026-09-11, with only the import path changed in the shipped code;
+> 1.0.1 added one Windows-only skip to `client_test.go`. That copy is
 > itself the pruned vendoring of `go-routeros/routeros/v3` described below.
 > mikroscope uses it for the API tier (1 Hz reads) and the `/tool fetch`
 > relay; nothing here was modified for mikroscope.

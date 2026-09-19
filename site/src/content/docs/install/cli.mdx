@@ -157,12 +157,13 @@ That puts `mikroscope` in `$(go env GOPATH)/bin`, which is `~/go/bin` unless
 you moved it, and that directory has to be on your `PATH`. A binary built this
 way reports the module version rather than a release stamp.
 
-A checkout builds both programs at once, which is the contributor's route:
+A checkout builds either program, which is the contributor's route:
 
 ```sh
 git clone https://github.com/jmrplens/mikroscope
 cd mikroscope
-make build          # leaves bin/mikroscope and bin/mikroscope-agent
+make build          # leaves bin/mikroscope
+make build-agent    # leaves bin/mikroscope-agent-<goarch>
 ```
 
 </TabItem>

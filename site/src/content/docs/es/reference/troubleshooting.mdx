@@ -194,7 +194,8 @@ anterior, reinicia el colector cuando el router vuelva.
 Todos los destinos de red tienen cola, y la cola está acotada
 —`--queue-seconds`, 60 por defecto—. Un destino que no puede seguir el ritmo
 pierde el lote más viejo en lugar de frenar el bucle de lectura, y la cuenta se
-imprime al final de la ejecución y se exporta como métrica. Es una decisión
+imprime —en el informe por minuto y otra vez al final de la ejecución. No hay
+ninguna familia de métricas para ello. Es una decisión
 deliberada, y [el colector](/mikroscope/es/sinks/) la explica: el anillo del
 agente es lo que protege los datos, y un colector esperando a un almacén lento
 perdería más de lo que pierde el almacén.

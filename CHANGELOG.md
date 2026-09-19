@@ -123,8 +123,35 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     figure was attributed to a 3 476-sample run when it comes from 3 738 704
     samples over 24 h, leaving one campaign backing no measurement at all.
 
-  The audit is closed. What remains is editorial: some wording, one attribution
-  to reconcile in `about/lineage.mdx`, and the report in `plan/` lists it.
+- **The audit's last pass: the tables that promised completeness, and the
+  landing page's grammar.**
+
+  - **The landing page rendered "the one sinks the collector forwarded to"** —
+    and "los uno destinos" in Spanish — because a spelled count met a fixed
+    plural the day the campaign came down to one sink. The sinks are named now,
+    not counted.
+  - **`sinks/influxdb.mdx` promised "every measurement it writes" and omitted
+    the four 1.0.5 added**: `mikroscope_sampler`, `mikroscope_trigger_count`,
+    `mikroscope_trigger_suppressed`, `mikroscope_capture_refused`. The OTLP,
+    Graphite, Elasticsearch and file-sink listings had the same gap.
+  - **The site header inlines `favicon-inline.svg`, not `mark-inline.svg`** —
+    the brand page named the wrong drawing for its own chrome.
+  - **`make build` builds the CLI alone**; the page said it leaves both
+    binaries, and a bare `bin/mikroscope-agent` is a path this build never
+    produces.
+  - A `/snapshot` of 600 lines is **~1.9 MB**, not 1.5: the same ×0.75 the line
+    size left behind, in three pages.
+  - A sink's drop count is **not exported as a metric**, no family exists for
+    it; a Graphite defect listed as *found and not fixed* was fixed; the
+    conntrack occupancy quoted 0.63 % where the recorded reading gives 0.65 %;
+    and the squeeze figure quoted a hand-typed 2 % beside a `<Measured>` that
+    says 1.2 %.
+  - `about/lineage.mdx` credited the wrong project for `.golangci.yml` — the
+    file's own header names two others — and both it and
+    `internal/rosapi/README.md` said "nothing modified" when 1.0.1 added one
+    Windows-only test skip.
+
+  The audit is closed.
 
 ### Fixed
 

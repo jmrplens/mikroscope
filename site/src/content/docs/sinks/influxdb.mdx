@@ -137,6 +137,10 @@ signature — or `other`. A record that names no port keeps the tagless shape an
 | `mikroscope_device_thermal` | `zone`                                         | `critical_celsius`, `polling_ms`                                                             | collector                 |
 | `mikroscope_device_cpufreq` | `cpu`                                          | `cluster`, `min_khz`, `max_khz`, `governor`, `steps`                                         | collector                 |
 | `mikroscope_device_cadence` | `source`, `reason`                             | `hz`                                                                                         | collector                 |
+| `mikroscope_sampler`        | —                                              | `ticks`, `slipped`, `captures_held`, `capture_bytes`, `capture_budget_bytes`, `capture_served_bytes`| collector, from `GET /sampler`|
+| `mikroscope_trigger_count`  | `condition`                                    | `fired`                                                                                      | collector, from `GET /sampler`|
+| `mikroscope_trigger_suppressed`| `condition`, `reason`                          | `count`                                                                                      | collector, from `GET /sampler`|
+| `mikroscope_capture_refused`| `reason`                                       | `count`                                                                                      | collector, from `GET /sampler`|
 
 </ScrollTable>
 

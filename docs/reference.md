@@ -726,7 +726,7 @@ asks for at most 13 lines.
 
 > **A large /snapshot is not a free way to read the cost**
 >
-> A 60 s `/snapshot` at 10 Hz makes the agent hand over about 600 lines, around 1.5 MB, and the
+> A 60 s `/snapshot` at 10 Hz makes the agent hand over about 600 lines, around 1.9 MB, and the
 > `self.cpu_us` inside those samples includes the cost of serving them. Read the agent's cost from
 > the collector's `/metrics` instead: [the cost of the observer](https://jmrp.io/docs/mikroscope/cost/) has the procedure.
 
@@ -1173,7 +1173,7 @@ record text is never a label.
 | `mikroscope_kmsg_port_records_total` | counter | `port`, `kind`, `level`                                                     | records whose text named a port: a subset of the family above. `kind` is `link-up`, `link-down`, `stp-<state>` (`blocking`, `listening`, `learning`, `forwarding`, `disabled`), `own-address` — the bridge received a frame carrying its own MAC as source address, the layer-2 loop signature — or `other`; only non-zero triples are written |
 
 Both `mikroscope_kmsg_records_total` and `mikroscope_kmsg_dropped_total` are
-rendered from the start, at 0, on both expositions when the capabilities list
+rendered from the start, at 0, on the exposition when the capabilities list
 `kmsg` as a source, so a quiet router reads as silent and not as unreadable.
 Without that, they appear with the first record. The port family appears with
 the first record that names a port.
@@ -2256,8 +2256,8 @@ collector after the router comes back.
 
 Every network sink is queued, and the queue is bounded — `--queue-seconds`, 60
 by default. A destination that cannot keep up loses the oldest batch rather
-than stalling the pull loop, and the count is printed at the end of the run and
-exported as a metric. That is a deliberate choice, and
+than stalling the pull loop, and the count is printed — in the minute report and
+again at the end of the run. There is no metric family for it. That is a deliberate choice, and
 [the collector](https://jmrp.io/docs/mikroscope/sinks/) explains it: the agent's ring is what
 protects the data, and a collector waiting on a slow store would lose more than
 the store does.

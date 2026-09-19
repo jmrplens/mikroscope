@@ -160,13 +160,14 @@ hayas movido, y ese directorio tiene que estar en tu `PATH`. Un binario
 compilado así informa de la versión del módulo y no del sello de una
 publicación.
 
-Un checkout compila los dos programas de una vez, que es la ruta de quien
+Un checkout compila cualquiera de los dos programas, que es la ruta de quien
 contribuye:
 
 ```sh
 git clone https://github.com/jmrplens/mikroscope
 cd mikroscope
-make build          # deja bin/mikroscope y bin/mikroscope-agent
+make build          # deja bin/mikroscope
+make build-agent    # deja bin/mikroscope-agent-<goarch>
 ```
 
 </TabItem>
