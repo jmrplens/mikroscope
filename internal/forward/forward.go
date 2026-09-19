@@ -303,6 +303,12 @@ func (f *Forwarder) labelPorts(s *sample.Sample) {
 }
 
 func (f *Forwarder) emit(e sinks.Event) {
+	// One clock reading per event, here, rather than one per sink while it
+	// renders: see sinks.Event.At. A sample that carries its own wall clock
+	// leaves this unused.
+	if e.At == 0 {
+		e.At = time.Now().UnixNano()
+	}
 	for _, s := range f.Sinks {
 		s.Write(e)
 	}

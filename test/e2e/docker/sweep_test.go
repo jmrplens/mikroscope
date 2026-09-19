@@ -40,9 +40,12 @@ const (
 var (
 	runID        = strconv.FormatInt(time.Now().UnixNano()%1e9, 36)
 	sweepHostTag = "e2e-rb5009-" + runID
-	sweepIndex   = "mikroscope-e2e-" + runID // lowercase: Elasticsearch refuses anything else
-	graphitePfx  = "mikroscope_e2e"
-	promJob      = "mikroscope-" + runID
+	// directDatabase is where --postgres writes; config/postgres-init.sql
+	// creates it and postgres_sink_test compares it against the script.
+	directDatabase = "mikroscope_direct"
+	sweepIndex     = "mikroscope-e2e-" + runID // lowercase: Elasticsearch refuses anything else
+	graphitePfx    = "mikroscope_e2e"
+	promJob        = "mikroscope-" + runID
 )
 
 type sweep struct {
@@ -221,6 +224,10 @@ func runSweep(ctx context.Context, tb testing.TB, stack *Stack) (*sweep, error) 
 		"--host-tag", sweepHostTag,
 		"--file", s.File,
 		"--sql", s.SQL,
+		// The same statements down a connection, into a database of their own
+		// so postgres_sink_test can compare the two transports rather than
+		// watch them merge under ON CONFLICT DO NOTHING.
+		"--postgres", "postgres://mikroscope@" + stack.Postgres + "/" + directDatabase + "?sslmode=disable",
 		"--prom", s.PromAddr,
 		"--influx", "http://" + stack.InfluxDB + "/api/v3/write_lp?db=" + sweepDatabase + "&precision=nanosecond",
 		"--loki", "http://" + stack.Loki + "/loki/api/v1/push",

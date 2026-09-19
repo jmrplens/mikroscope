@@ -41,7 +41,7 @@ run against the reference RB5009 (RouterOS 7.24.2), not only against fakes:
 - **`record`, `mark` and `plot`** work end to end. A 60 s recording at 10 Hz on
   2026-09-12 yielded exactly 600 samples, 0 gaps and −7 ms of clock skew.
 - **`forward`**, the collector, merges the kernel tier with the RouterOS API
-  tier and writes to ten sinks. File, Prometheus and InfluxDB 3 have run from
+  tier and writes to eleven sinks. File, Prometheus and InfluxDB 3 have run from
   the RB5009; Loki, OTLP, Graphite, Elasticsearch, SQL, Telegraf and stdout
   have not yet had router samples pushed through them, but every one of them
   now writes into the real product — InfluxDB 3, PostgreSQL, Elasticsearch,
@@ -214,7 +214,7 @@ the one RB5009 above.
 - [The cost of the observer](/mikroscope/cost/): the budget, the current figure and how to measure
   it on your own device.
 - [The rate ceiling](/mikroscope/cost/rate-ceiling/): the six measured runs at 10, 20, 50 and 100 Hz.
-- [The file and the other sinks](/mikroscope/sinks/other/): the ten sinks `forward` writes to.
+- [The file and the other sinks](/mikroscope/sinks/other/): the eleven sinks `forward` writes to.
 - [Lineage and licence](/mikroscope/about/lineage/): where the deployment code and the API client
   came from.
 

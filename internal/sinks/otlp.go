@@ -158,17 +158,16 @@ func (s *OTLP) Write(e Event) {
 		d := e.Detection
 		s.sum("mikroscope.detection", "{event}", d.WallNS, d.WallNS, 1, "rule", d.Rule)
 	case e.Device != nil:
-		s.writeDevice(e.Device)
+		s.writeDevice(e.At, e.Device)
 	case e.Sampler != nil:
-		s.writeSampler(e.Sampler)
+		s.writeSampler(e.At, e.Sampler)
 	case e.Gap != nil:
-		// A gap has no timestamp of its own; the collector noticed it now.
-		// It is counted, never interpolated: the range
-		// itself would be unbounded-cardinality as an attribute.
-		now := time.Now().UnixNano()
-		s.sum("mikroscope.collector.gaps", "{gap}", 0, now, 1)
+		// A gap has no timestamp of its own, so it carries the collector's: e.At,
+		// read once by the forwarder for every sink. It is counted, never
+		// interpolated: the range would be unbounded-cardinality as an attribute.
+		s.sum("mikroscope.collector.gaps", "{gap}", 0, e.At, 1)
 		if e.Gap.To >= e.Gap.From {
-			s.sum("mikroscope.collector.gap.samples", "{sample}", 0, now, e.Gap.To-e.Gap.From+1)
+			s.sum("mikroscope.collector.gap.samples", "{sample}", 0, e.At, e.Gap.To-e.Gap.From+1)
 		}
 	}
 }
@@ -485,8 +484,8 @@ func (s *OTLP) kernelIO(k *sample.Sample) {
 
 // writeDevice emits the board's numeric facts as gauges with the identity
 // as attributes; the ceilings under their own names and units.
-func (s *OTLP) writeDevice(c *agent.Capabilities) {
-	ts := time.Now().UnixNano()
+func (s *OTLP) writeDevice(at int64, c *agent.Capabilities) {
+	ts := at
 	s.gauge("mikroscope.device.cores", "{core}", ts, uint64(c.Cores), "board", orUnknown(c.Board), "kernel", orUnknown(c.Kernel), "hash", c.Hash) // #nosec G115 -- a core count
 	for _, z := range deviceZones(c) {
 		if v := c.Limits.ThermalCriticalMilliC[z]; v > 0 {
@@ -999,8 +998,8 @@ func (s *OTLP) Close() error {
 // unitTick is OpenTelemetry's unit annotation for a count of sampler ticks.
 const unitTick = "{tick}"
 
-func (s *OTLP) writeSampler(st *agent.SamplerStats) {
-	ts := time.Now().UnixNano()
+func (s *OTLP) writeSampler(at int64, st *agent.SamplerStats) {
+	ts := at
 	s.sum("mikroscope.sampler.ticks", unitTick, 0, ts, st.Ticks)
 	s.sum("mikroscope.sampler.slipped", unitTick, 0, ts, st.Slipped)
 	c := st.Captures

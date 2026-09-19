@@ -3,7 +3,7 @@
 Sub-second kernel-level telemetry for container-capable RouterOS devices: an
 agent that runs on the router in a scratch container and reads the shared
 kernel's `/proc`, `/sys`, `/dev/kmsg` and `perf_event_open`, plus a
-CLI/collector that installs it, records, plots and forwards to ten sinks.
+CLI/collector that installs it, records, plots and forwards to eleven sinks.
 Released: 1.0.0. Go 1.27, one module, MIT.
 
 ## Read first, in this order

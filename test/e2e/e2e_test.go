@@ -6,7 +6,7 @@
 //
 // What the unit tests in internal/ already prove is that each sink renders
 // its own fixture correctly. What they cannot prove is the wiring: that
-// `forward`'s flags reach the constructors, that ten sinks running at once
+// `forward`'s flags reach the constructors, that eleven sinks running at once
 // do not interfere, that the bytes a sink puts on a socket are the bytes a
 // receiver of that protocol accepts, and that the dashboards only ask for
 // measurements some sink actually writes. That is this package.
@@ -83,7 +83,7 @@ func TestMain(m *testing.M) {
 // both succeeded. The build is not instrumented with -race even under
 // `go test -race`: the race detector belongs on the code under test in the
 // unit suites, and an instrumented 10 Hz agent plus an instrumented
-// collector plus ten sinks on one runner is a timing test, not a race test.
+// collector plus eleven sinks on one runner is a timing test, not a race test.
 func buildBoth(goTool, dir string) bool {
 	for _, b := range []struct {
 		dst *string

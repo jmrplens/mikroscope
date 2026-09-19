@@ -42,6 +42,9 @@ services:
       POSTGRES_USER: mikroscope
       POSTGRES_DB: mikroscope
       POSTGRES_INITDB_ARGS: --nosync
+    volumes:
+      # mikroscope_direct, for the connecting sink; see the file's own comment.
+      - ./config/postgres-init.sql:/docker-entrypoint-initdb.d/10-direct.sql:ro
     # Nothing here survives the run, so durability is a waste of the runner's
     # disk and of the suite's time.
     command: ["postgres", "-c", "fsync=off", "-c", "full_page_writes=off", "-c", "synchronous_commit=off"]

@@ -97,7 +97,7 @@ the code, the code is right:
 - [`docs/install.md`](docs/install.md) — prerequisites, the device-mode step, the two firewall traps, where things go, reaching the agent
 - [`docs/limits.md`](docs/limits.md) — what the observer costs, [the five measured runs at 10, 50 and 100 Hz](https://jmrp.io/docs/mikroscope/cost/rate-ceiling/), the tick floor, namespaces, per-source floors
 - [`docs/record.md`](docs/record.md) — recording, markers, plotting, triggered capture
-- [`docs/sinks.md`](docs/sinks.md) — the collector, its ten sinks, the RouterOS API tier, the derive stage and its detections
+- [`docs/sinks.md`](docs/sinks.md) — the collector, its eleven sinks, the RouterOS API tier, the derive stage and its detections
 - [`docs/dashboards.md`](docs/dashboards.md) — the five dashboards, importing and checking them, alert rules
 - [`docs/playbooks.md`](docs/playbooks.md) — reading what it shows: a real fault the RouterOS API could not see, provoked faults and the signature each leaves, kernel `ethN` against RouterOS port names
 - [`docs/security.md`](docs/security.md) — what runs where, the API user, what `--expose` opens, what the installer refuses

@@ -204,9 +204,9 @@ func (s *Elasticsearch) Write(e Event) {
 		}
 		s.emit(a.WallNS, "a", "", adoc)
 	case e.Sampler != nil:
-		s.emit(time.Now().UnixNano(), "sampler", "", map[string]any{"kind": "sampler", "sampler": e.Sampler})
+		s.emit(e.At, "sampler", "", map[string]any{"kind": "sampler", "sampler": e.Sampler})
 	case e.Device != nil:
-		s.emit(time.Now().UnixNano(), "device", e.Device.Hash, map[string]any{"kind": "device", "device": e.Device})
+		s.emit(e.At, "device", e.Device.Hash, map[string]any{"kind": "device", "device": e.Device})
 	case e.Detection != nil:
 		d := e.Detection
 		s.emit(d.WallNS, "detection", d.Rule+"-"+strconv.FormatUint(d.Seq, 10), map[string]any{
@@ -218,11 +218,10 @@ func (s *Elasticsearch) Write(e Event) {
 			"kind": "trigger", "id": t.ID, "cause": t.Cause, "field": t.Field, "value": t.Value, "threshold": t.Threshold, "seq": t.Seq,
 		})
 	case e.Gap != nil:
-		// A gap carries no timestamp of its own. Stamping it now is the only
-		// honest option: interpolating it into the sampled timeline would
-		// hide the very thing it records.
-		ns := time.Now().UnixNano()
-		s.emit(ns, "g", strconv.FormatUint(e.Gap.From, 10)+"-"+strconv.FormatUint(e.Gap.To, 10), esGapDoc(e.Gap))
+		// A gap carries no timestamp of its own, so it carries the collector's:
+		// e.At, read once by the forwarder for every sink. Interpolating it
+		// into the sampled timeline would hide the very thing it records.
+		s.emit(e.At, "g", strconv.FormatUint(e.Gap.From, 10)+"-"+strconv.FormatUint(e.Gap.To, 10), esGapDoc(e.Gap))
 	default:
 		return
 	}

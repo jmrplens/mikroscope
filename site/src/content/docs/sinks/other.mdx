@@ -106,6 +106,60 @@ Every `INSERT` ends in `ON CONFLICT DO NOTHING`, so applying the same file twice
 no-op rather than a duplicate-key abort. A row is one immutable instant of a counter
 delta, never a running total a later file revises.
 
+### `--postgres`: the same statements, down a connection
+
+```sh
+mikroscope forward --postgres 'postgres://user@host/mikroscope?sslmode=require'
+```
+
+Since 1.1.0 the collector can write to a PostgreSQL that is **running**, instead of to a
+file somebody replays later. `--sql` and `--postgres` are the same sink twice: the
+connecting one sends the statements the file one produces, from one renderer. Not two
+that agree today — the dashboards this project generates for the postgres store have to
+be true of a deployment that used either, and a second renderer would pass a row count
+and still drift a column.
+
+The file is still what you want when the database is somewhere the collector cannot
+reach, when the load is meant to happen later or under review, or when the reader is not
+PostgreSQL at all: the statements are ordinary SQL and another engine can take them.
+Both can run at once, into different databases or the same one — `ON CONFLICT DO NOTHING`
+makes the overlap a no-op.
+
+What the connection can do that a file cannot:
+
+- **It knows whether a row was stored.** A batch goes inside a transaction and lands
+  whole or not at all, so a retry after a failure cannot leave half an event behind.
+- **It checks the assumption the header can only ask for.** `SET
+  standard_conforming_strings = on` is advice in a file the operator may run without it.
+  Over a connection the setting can be read back, so it is — and a server that answers
+  `off` is refused with the reason rather than written to, because a kernel message
+  ending in a backslash would escape its own closing quote and everything after it would
+  be parsed as string content.
+- **It can describe its own Grafana datasource**, which the file sink can never do: see
+  [import and check](/mikroscope/dashboards/import-and-check/).
+
+What it gives up: nothing about the schema, and one dependency. `--postgres` links pgx
+into the collector binary. The **agent** does not link it — the agent links `procfs`,
+`sample`, `agent` and the standard library, and its image budget is unchanged at 6.5 MiB
+for arm64.
+
+The DSN is a flag rather than an environment-only secret because libpq's own conventions
+are the point: pgx reads `PGPASSWORD`, `~/.pgpass` and the service file the way `psql`
+does, so a DSN with no password in it works the same way every other PostgreSQL client
+does. `MIKROSCOPE_POSTGRES_DSN` sets the default.
+
+<Aside type="caution" title="A password in a DSN is visible in `ps`">
+  A connection string passed on the command line is readable by any process on the
+  machine. Put the password in `~/.pgpass` or `PGPASSWORD`, or in
+  `MIKROSCOPE_POSTGRES_DSN` in an environment file, rather than in the flag.
+</Aside>
+
+**Verified against a real server**: the docker end-to-end suite runs the sweep with both
+sinks at once, the script into one database and the connection into another, then asks
+PostgreSQL whether the two hold the same thing. On 2026-09-20 that was **34 tables
+matching byte for byte** — every column of every row, hashed per row and summed — plus
+identical `information_schema.columns` for the whole schema.
+
 <ScrollTable label="Tables the SQL sink declares">
 
 | Table                                                                                                      | Key after `time, host`     | Holds                                                                                  |

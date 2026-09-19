@@ -15,6 +15,19 @@ import (
 
 // Event is one item of the timeline. Exactly one of Kernel, API, Gap is set.
 type Event struct {
+	// At is the collector's clock, in nanoseconds, for the events that have
+	// no clock of their own: a gap, the device facts, the sampler's counters.
+	// A kernel or API sample carries its own WallNS and leaves this zero.
+	//
+	// IT IS STAMPED ONCE, BY THE FORWARDER, AND NOT BY EACH SINK. Until 1.1.0
+	// every sink called time.Now() while rendering, so one gap reached ten
+	// stores with ten different timestamps — microseconds apart, which nobody
+	// would notice, and different, which makes two stores disagree about when
+	// it happened. The Postgres sink is what brought it out: it and the SQL
+	// sink are one renderer, so their rows are comparable byte for byte, and
+	// nine of thirty-four tables did not compare.
+	At int64
+
 	Kernel *sample.Sample
 	Line   []byte // the kernel sample's (or trigger marker's) NDJSON line, verbatim
 	API    *apitier.Sample

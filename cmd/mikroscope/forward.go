@@ -43,7 +43,7 @@ func runForward(args []string, c cli) error {
 		return modeErr
 	}
 	if !sf.any() {
-		return errors.New("forward needs at least one sink: --file, --prom, --influx, --loki, --otlp, --graphite, --elastic, --sql, --telegraf or --stdout")
+		return errors.New("forward needs at least one sink: --file, --prom, --influx, --loki, --otlp, --graphite, --elastic, --sql, --postgres, --telegraf or --stdout")
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

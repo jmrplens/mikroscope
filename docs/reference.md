@@ -445,6 +445,7 @@ user](https://jmrp.io/docs/mikroscope/security/api-user/) has the policy that us
 | -------------------------- | --------------- | ------------------- | -------------------------------------------------------------------------------- |
 | `MIKROSCOPE_INFLUX_URL`    | `--influx`      | empty               | InfluxDB 3 server, `http://host:8181`; a full write URL is still taken verbatim  |
 | `MIKROSCOPE_INFLUX_DB`     | `--influx-db`   | empty               | the database `--influx` writes to, when `--influx` is a bare server               |
+| `MIKROSCOPE_POSTGRES_DSN`  | `--postgres`    | empty               | PostgreSQL connection string for the connecting SQL sink                          |
 | `MIKROSCOPE_LOKI_URL`      | `--loki`        | empty               | Loki push URL                                                                    |
 | `MIKROSCOPE_LOKI_TENANT`   | `--loki-tenant` | empty               | `X-Scope-OrgID`                                                                  |
 | `MIKROSCOPE_OTLP_URL`      | `--otlp`        | empty               | OTLP/HTTP metrics endpoint                                                       |

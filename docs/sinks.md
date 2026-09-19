@@ -102,7 +102,7 @@ receives a gap line instead of the samples, and every sink records the gap.
 
 ### Which one should I use?
 
-ten destinations, capitalised by the sentence it opens:
+eleven destinations, capitalised by the sentence it opens:
 the honest answer is that most readers want one of the first two. The rest exist so that mikroscope fits what you already run rather
 than asking you to run something new.
 
@@ -129,7 +129,7 @@ run has no CPU or memory numbers in it at all. **`--prom` is scraped, not
 pushed**: `forward` serves `/metrics` and Prometheus comes to it, which means
 the collector has to be reachable from the Prometheus host.
 
-### The ten sinks
+### The eleven sinks
 
 | Flag                             | Destination                                     | URL or credential from the environment                                   | Shape       | Page                                                                   |
 | -------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------ | ----------- | ---------------------------------------------------------------------- |
@@ -137,6 +137,7 @@ the collector has to be reachable from the Prometheus host.
 | `--prom :9124`                   | Prometheus `/metrics` on the collector host     | —                                                                        | in memory   | [Prometheus](https://jmrp.io/docs/mikroscope/sinks/prometheus/)                            |
 | `--influx URL`                   | InfluxDB 3 line protocol                        | `MIKROSCOPE_INFLUX_URL`, `MIKROSCOPE_INFLUX_TOKEN`                       | queued      | [InfluxDB 3](https://jmrp.io/docs/mikroscope/sinks/influxdb/)                              |
 | `--sql path` or `--sql -`        | PostgreSQL / TimescaleDB statements, for `psql` | —                                                                        | synchronous | [SQL](https://jmrp.io/docs/mikroscope/sinks/other/#sql-for-postgresql-and-timescaledb)     |
+| `--postgres DSN`                 | the same statements, into a running PostgreSQL  | `MIKROSCOPE_POSTGRES_DSN`                                                | queued      | [`--postgres`](https://jmrp.io/docs/mikroscope/sinks/other/#--postgres-the-same-statements-down-a-connection) |
 | `--stdout lp` or `--stdout json` | standard output                                 | —                                                                        | queued      | [stdout](https://jmrp.io/docs/mikroscope/sinks/other/#standard-output)                     |
 | `--loki URL`                     | Loki push API: events, not metrics              | `MIKROSCOPE_LOKI_URL`, `MIKROSCOPE_LOKI_TOKEN`, `MIKROSCOPE_LOKI_TENANT` | queued      | [Loki](https://jmrp.io/docs/mikroscope/sinks/other/#loki)                                  |
 | `--otlp URL`                     | OTLP/HTTP metrics, JSON encoding                | `MIKROSCOPE_OTLP_URL`, `MIKROSCOPE_OTLP_TOKEN`                           | queued      | [OTLP](https://jmrp.io/docs/mikroscope/sinks/other/#otlp)                                  |
@@ -745,6 +746,60 @@ The header is applyable on its own and idempotent:
 Every `INSERT` ends in `ON CONFLICT DO NOTHING`, so applying the same file twice is a
 no-op rather than a duplicate-key abort. A row is one immutable instant of a counter
 delta, never a running total a later file revises.
+
+#### `--postgres`: the same statements, down a connection
+
+```sh
+mikroscope forward --postgres 'postgres://user@host/mikroscope?sslmode=require'
+```
+
+Since 1.1.0 the collector can write to a PostgreSQL that is **running**, instead of to a
+file somebody replays later. `--sql` and `--postgres` are the same sink twice: the
+connecting one sends the statements the file one produces, from one renderer. Not two
+that agree today — the dashboards this project generates for the postgres store have to
+be true of a deployment that used either, and a second renderer would pass a row count
+and still drift a column.
+
+The file is still what you want when the database is somewhere the collector cannot
+reach, when the load is meant to happen later or under review, or when the reader is not
+PostgreSQL at all: the statements are ordinary SQL and another engine can take them.
+Both can run at once, into different databases or the same one — `ON CONFLICT DO NOTHING`
+makes the overlap a no-op.
+
+What the connection can do that a file cannot:
+
+- **It knows whether a row was stored.** A batch goes inside a transaction and lands
+  whole or not at all, so a retry after a failure cannot leave half an event behind.
+- **It checks the assumption the header can only ask for.** `SET
+  standard_conforming_strings = on` is advice in a file the operator may run without it.
+  Over a connection the setting can be read back, so it is — and a server that answers
+  `off` is refused with the reason rather than written to, because a kernel message
+  ending in a backslash would escape its own closing quote and everything after it would
+  be parsed as string content.
+- **It can describe its own Grafana datasource**, which the file sink can never do: see
+  [import and check](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/).
+
+What it gives up: nothing about the schema, and one dependency. `--postgres` links pgx
+into the collector binary. The **agent** does not link it — the agent links `procfs`,
+`sample`, `agent` and the standard library, and its image budget is unchanged at 6.5 MiB
+for arm64.
+
+The DSN is a flag rather than an environment-only secret because libpq's own conventions
+are the point: pgx reads `PGPASSWORD`, `~/.pgpass` and the service file the way `psql`
+does, so a DSN with no password in it works the same way every other PostgreSQL client
+does. `MIKROSCOPE_POSTGRES_DSN` sets the default.
+
+> **A password in a DSN is visible in `ps`**
+>
+> A connection string passed on the command line is readable by any process on the
+> machine. Put the password in `~/.pgpass` or `PGPASSWORD`, or in
+> `MIKROSCOPE_POSTGRES_DSN` in an environment file, rather than in the flag.
+
+**Verified against a real server**: the docker end-to-end suite runs the sweep with both
+sinks at once, the script into one database and the connection into another, then asks
+PostgreSQL whether the two hold the same thing. On 2026-09-20 that was **34 tables
+matching byte for byte** — every column of every row, hashed per row and summed — plus
+identical `information_schema.columns` for the whole schema.
 
 | Table                                                                                                      | Key after `time, host`     | Holds                                                                                  |
 | ---------------------------------------------------------------------------------------------------------- | -------------------------- | -------------------------------------------------------------------------------------- |

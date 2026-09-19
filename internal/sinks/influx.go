@@ -85,7 +85,7 @@ func (s *Influx) Write(e Event) {
 	case e.API != nil:
 		s.writeAPI(e)
 	case e.Gap != nil:
-		fmt.Fprintf(&s.cur, "mikroscope_gap%s from=%du,to=%du %s\n", s.tag(), e.Gap.From, e.Gap.To, strconv.FormatInt(time.Now().UnixNano(), 10))
+		fmt.Fprintf(&s.cur, "mikroscope_gap%s from=%du,to=%du %s\n", s.tag(), e.Gap.From, e.Gap.To, strconv.FormatInt(e.At, 10))
 	case e.Detection != nil:
 		d := e.Detection
 		keyTag := ""
@@ -97,9 +97,9 @@ func (s *Influx) Write(e Event) {
 	case e.Trigger != nil:
 		s.writeTrigger(e.Trigger)
 	case e.Device != nil:
-		s.writeDevice(e.Device, strconv.FormatInt(time.Now().UnixNano(), 10))
+		s.writeDevice(e.Device, strconv.FormatInt(e.At, 10))
 	case e.Sampler != nil:
-		s.writeSampler(e.Sampler, strconv.FormatInt(time.Now().UnixNano(), 10))
+		s.writeSampler(e.Sampler, strconv.FormatInt(e.At, 10))
 	}
 }
 

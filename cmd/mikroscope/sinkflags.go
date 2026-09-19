@@ -40,6 +40,7 @@ type sinkFlags struct {
 	elIndex  string
 	sqlPath  string
 	sqlHyper bool
+	postgres string
 	telegraf string
 	stdout   string
 
@@ -66,6 +67,7 @@ func (s *sinkFlags) register(fs *flag.FlagSet) {
 	fs.StringVar(&s.elIndex, "elastic-index", "mikroscope-%Y.%m.%d", "sink: Elasticsearch index name; %Y %m %d expand to the event's date")
 	fs.StringVar(&s.sqlPath, "sql", "", "sink: write PostgreSQL/TimescaleDB statements to this path (deliberately driverless: pipe the file into psql)")
 	fs.BoolVar(&s.sqlHyper, "sql-hypertable", false, "sink: emit TimescaleDB create_hypertable in the SQL header")
+	fs.StringVar(&s.postgres, "postgres", env("POSTGRES_DSN", ""), "sink: send the same statements to a PostgreSQL that is running, e.g. postgres://user@host/db?sslmode=require (MIKROSCOPE_POSTGRES_DSN)")
 	fs.StringVar(&s.telegraf, "telegraf", env("TELEGRAF_URL", ""), "sink: Telegraf listener — http://host:8186/telegraf, tcp://host:8094 or udp://host:8094 (MIKROSCOPE_TELEGRAF_URL)")
 	fs.StringVar(&s.stdout, "stdout", "", "sink: write to stdout as `lp` (InfluxDB line protocol) or `json` (NDJSON)")
 	fs.StringVar(&s.hostTag, "host-tag", env("HOST_TAG", "router"), "host tag or label on every point, in every sink (MIKROSCOPE_HOST_TAG)")
@@ -83,7 +85,8 @@ func (s *sinkFlags) register(fs *flag.FlagSet) {
 // meant, so it is an error rather than a silent no-op.
 func (s *sinkFlags) any() bool {
 	return s.file != "" || s.prom != "" || s.influx != "" || s.loki != "" || s.otlp != "" ||
-		s.graph != "" || s.elastic != "" || s.sqlPath != "" || s.telegraf != "" || s.stdout != ""
+		s.graph != "" || s.elastic != "" || s.sqlPath != "" || s.postgres != "" ||
+		s.telegraf != "" || s.stdout != ""
 }
 
 // build constructs every sink that was asked for, in a fixed order so the
@@ -112,13 +115,11 @@ func (s *sinkFlags) build(ctx context.Context, rateHz int, logf func(string)) ([
 		}
 		add(p)
 	}
-	if s.sqlPath != "" {
-		q, err := sinks.NewSQL(s.sqlPath, s.hostTag, s.sqlHyper, logf)
-		if err != nil {
-			return nil, err
-		}
-		add(q)
+	sqlSide, err := s.buildSQL(q, logf)
+	if err != nil {
+		return nil, err
 	}
+	out = append(out, sqlSide...)
 	if s.stdout != "" {
 		if s.stdout != "lp" && s.stdout != "json" {
 			return nil, fmt.Errorf("--stdout must be lp or json, got %q", s.stdout)
@@ -126,9 +127,9 @@ func (s *sinkFlags) build(ctx context.Context, rateHz int, logf func(string)) ([
 		add(sinks.NewStdout(s.stdout, s.hostTag, q, logf))
 	}
 	if s.influx != "" {
-		t, err := resolveInflux(s.influx, s.influxDB)
-		if err != nil {
-			return nil, err
+		t, influxErr := resolveInflux(s.influx, s.influxDB)
+		if influxErr != nil {
+			return nil, influxErr
 		}
 		add(sinks.NewInflux(t.Endpoint, s.influxToken, s.hostTag, q, logf))
 	}
@@ -153,6 +154,30 @@ func (s *sinkFlags) build(ctx context.Context, rateHz int, logf func(string)) ([
 	}
 	if len(out) == 0 {
 		return nil, errors.New("no sink was constructed")
+	}
+	return out, nil
+}
+
+// buildSQL is the two sinks that share a renderer: the file the SQL sink
+// writes and the connection the Postgres sink sends the same statements down.
+// They are built together because --sql-hypertable applies to both, and apart
+// from build because a third `if err != nil` in there put it over the
+// complexity the linter allows.
+func (s *sinkFlags) buildSQL(queueSeconds int, logf func(string)) ([]sinks.Sink, error) {
+	var out []sinks.Sink
+	if s.sqlPath != "" {
+		f, err := sinks.NewSQL(s.sqlPath, s.hostTag, s.sqlHyper, logf)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, f)
+	}
+	if s.postgres != "" {
+		pg, err := sinks.NewPostgres(s.postgres, s.hostTag, s.sqlHyper, queueSeconds, logf)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, pg)
 	}
 	return out, nil
 }

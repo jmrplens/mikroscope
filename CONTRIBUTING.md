@@ -16,7 +16,7 @@ links only this module's `procfs`, `sample`, `agent` and `version` packages and
 the standard library, and it makes no outbound connection. `mikroscope` runs on
 your machine: it installs, upgrades and removes the agent with every write
 listed first, records and plots a window, and runs as a collector that merges
-the kernel tier with the RouterOS API tier into ten sinks. The agent ships raw
+the kernel tier with the RouterOS API tier into eleven sinks. The agent ships raw
 tick deltas, never percentages; the window is the reader's choice.
 
 ## The layout
