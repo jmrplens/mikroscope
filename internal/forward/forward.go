@@ -57,6 +57,13 @@ type Stats struct {
 	Resyncs uint64
 	// SamplerReads counts the agent-counter reads that reached the sinks.
 	SamplerReads uint64
+	// APIFailed counts the API rounds that carried at least one error, and
+	// APIReconnects the times the tier reopened its connection. API above
+	// counts rounds ATTEMPTED, which is why it alone cannot show an outage:
+	// on 2026-09-19 the reference collector reported a growing api count for
+	// seven and a half hours in which every single command failed.
+	APIFailed     uint64
+	APIReconnects uint64
 }
 
 // Forwarder runs the loop.
@@ -77,6 +84,15 @@ type Forwarder struct {
 	// deviceAt is when the facts were last handed to the sinks, so an
 	// unchanged hash still repeats them on Opts.DeviceEvery.
 	deviceAt time.Time
+	// apiFailing is whether the last API round failed, and apiFailedRun how
+	// many rounds have failed in a row. Together they throttle the log: a
+	// tier polled at 1 Hz whose every command fails writes one line per
+	// command per second, which on 2026-09-19 was 44 257 identical lines in
+	// three hours — enough to bury the reason in the journal it was meant to
+	// explain. The first failure is logged, the recovery is logged with the
+	// count, and the rounds between are silent.
+	apiFailing   bool
+	apiFailedRun uint64
 }
 
 // Run forwards until ctx is done or Opts.For elapses.
@@ -148,6 +164,12 @@ func (f *Forwarder) Run(ctx context.Context) (Stats, error) {
 	apiTick := time.NewTicker(time.Hour)
 	if f.API != nil && f.Opts.APIEvery > 0 {
 		apiTick.Reset(f.Opts.APIEvery)
+	} else {
+		// Stopped, not left at an hour. The branch below dereferences f.API,
+		// so a kernel-only run — `--api-every 0`, or no API credentials —
+		// would panic on the first tick, one hour in. A stopped ticker never
+		// delivers.
+		apiTick.Stop()
 	}
 	defer apiTick.Stop()
 	skewTick := time.NewTicker(f.Opts.SkewEvery)
@@ -162,10 +184,11 @@ func (f *Forwarder) Run(ctx context.Context) (Stats, error) {
 		case <-poll.C:
 			f.pull(ctx, &since)
 		case <-apiTick.C:
-			s := f.API.Read(ctx)
-			for _, e := range s.Errors {
-				f.Log("api tier: " + e)
+			if f.API == nil {
+				continue
 			}
+			s := f.API.Read(ctx)
+			f.noteAPI(&s)
 			f.stats.API++
 			f.emit(sinks.Event{API: &s, Shares: f.Derive.API(&s)})
 		case <-skewTick.C:
@@ -403,9 +426,41 @@ func (f *Forwarder) remeasure(ctx context.Context, since *uint64) {
 	}
 }
 
+// noteAPI logs what one API round is worth logging and counts it. It says a
+// failure once rather than once per command per second, and it says the
+// recovery — which is the line an operator actually needs, because it is the
+// one that closes the window the graphs are missing.
+func (f *Forwarder) noteAPI(s *apitier.Sample) {
+	if r := f.API.Redials(); r > f.stats.APIReconnects {
+		f.Log(fmt.Sprintf("api tier: reconnected (%d since start)", r))
+		f.stats.APIReconnects = r
+	}
+	if len(s.Errors) == 0 {
+		if f.apiFailing {
+			f.Log(fmt.Sprintf("api tier: recovered after %d failed round(s)", f.apiFailedRun))
+			f.apiFailing, f.apiFailedRun = false, 0
+		}
+		return
+	}
+	f.stats.APIFailed++
+	f.apiFailedRun++
+	if f.apiFailing {
+		return
+	}
+	f.apiFailing = true
+	for _, e := range s.Errors {
+		f.Log("api tier: " + e)
+	}
+}
+
 func (f *Forwarder) report() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "forwarded %d kernel, %d api, %d gap(s), %d trigger(s), %d detection(s), %d agent restart(s), last seq %d", f.stats.Kernel, f.stats.API, f.stats.Gaps, f.stats.Triggers, f.stats.Detections, f.stats.Resyncs, f.stats.LastSeq)
+	// Only when nonzero: a healthy run's report should not carry two zeroes
+	// that an operator has to read past every minute.
+	if f.stats.APIFailed > 0 {
+		fmt.Fprintf(&b, "; api: %d failed round(s), %d reconnect(s)", f.stats.APIFailed, f.stats.APIReconnects)
+	}
 	for _, sk := range f.Sinks {
 		st := sk.Stats()
 		fmt.Fprintf(&b, "; %s: %d written, %d dropped, %d errors", sk.Name(), st.Written, st.Dropped, st.Errors)

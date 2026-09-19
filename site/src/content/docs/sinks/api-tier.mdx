@@ -296,6 +296,50 @@ That is small, and the project still treats the API as the costly path. Per-port
 comes from the container wherever the container can see it, and configuration is read
 at start and on the slow labels cadence, never per poll.
 
+## When the connection dies
+
+The tier holds one socket, so anything that takes the router away takes the
+tier with it: a reboot, a RouterOS upgrade, an operator restarting the API
+service. Since 1.0.9 it reopens the connection itself.
+
+The rule is about who failed, not about what failed. A **transport** error —
+EOF, a broken pipe, a connection reset, a command timeout — means the socket is
+finished, so the tier redials and retries that one command on the new
+connection. A **`!trap`** does not redial: the router is alive and refusing the
+command, and asking again would only spend its CPU on the same bad question. A
+**`!fatal`** does, because that is the word RouterOS sends as it closes the
+session.
+
+Attempts are spaced at five seconds. One round issues four or five commands, so
+a router that is down would otherwise be dialed several times a second, and
+every dial carries a login. The inventory is dropped and re-read after a
+reconnection: an upgrade is exactly when an interface can change its name, type
+or bridge, and stale labels on fresh rates would be worse than a moment's gap.
+
+Measured against the reference RB5009 on 2026-09-19, without touching the
+router: a collector polling all 16 interfaces at 1 Hz had its API socket
+destroyed from the host with `ss -K`, which is what the router's side of a
+reboot looks like to it. The tier reopened the connection and retried inside
+the same round — 0 failed commands, 0 dropped rounds, 16 interfaces in every
+one of the 108 seconds either side of the kill.
+
+A collector that starts while the router is down is the same case seen from the
+other end. The first dial failing is a warning, not a disabled tier — it
+connects on the first round the router answers.
+
+The collector says so, once per event rather than once per failed command:
+
+```text
+api tier: reconnected (1 since start)
+api tier: recovered after 137 failed round(s)
+```
+
+and the minute report carries `api: N failed round(s), N reconnect(s)` while
+either is nonzero. Before 1.0.9 none of this existed, and the outage was
+invisible: `api` counts rounds _attempted_, so the report kept growing through
+a tier in which every command failed. What that cost on the reference device is
+in [Troubleshooting](/mikroscope/reference/troubleshooting/#the-api-panels-are-blank-and-the-kernel-panels-are-fine).
+
 ## The conntrack count
 
 `--conntrack-every 10s` asks `/ip/firewall/connection/print count-only` at that

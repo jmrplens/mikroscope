@@ -14,6 +14,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"slices"
 	"strconv"
 	"strings"
@@ -186,9 +187,30 @@ type Options struct {
 // Reader runs the commands. Skew is added to the host clock so samples are
 // stamped in the agent's time.
 type Reader struct {
-	Client        Client
-	Opts          Options
-	SkewNS        int64
+	Client Client
+	Opts   Options
+	SkewNS int64
+	// Redial reopens the connection after the current one dies. The tier
+	// holds ONE persistent TCP connection, so a router that reboots — or an
+	// operator who restarts the API service — leaves every later command
+	// writing to a dead socket, forever, with no path back. On the reference
+	// RB5009 a RouterOS upgrade on 2026-09-19 did exactly that: the kernel
+	// tier resynced two minutes after the reboot and carried on, while the
+	// API tier failed every command for the next seven and a half hours,
+	// until the collector was restarted by hand. Every panel fed by the API
+	// — interface throughput, per-port counters, RouterOS cpu-load, and the
+	// reboot count itself — was blank for that window.
+	//
+	// nil keeps the old behavior: no reconnection.
+	Redial func(context.Context) (Client, error)
+	// RedialEvery spaces the attempts. 0 means defaultRedialEvery. It matters
+	// because Read issues four or five commands per round at 1 Hz: unspaced,
+	// a router that is down would be dialed several times a second, and a
+	// dial carries a login.
+	RedialEvery time.Duration
+
+	lastRedial    time.Time
+	redials       uint64
 	lastConntrack time.Time
 	// inv maps interface name to its configuration. It is re-read on a slow
 	// cadence (LabelsEvery, default 5 min) rather than every poll — but it IS
@@ -267,7 +289,7 @@ func (r *Reader) inventory(ctx context.Context, s *Sample) {
 }
 
 func (r *Reader) run(ctx context.Context, words ...string) (*rosapi.Reply, error) {
-	reply, err := r.Client.RunArgsContext(ctx, words)
+	reply, err := r.exec(ctx, words)
 	if err != nil {
 		return nil, err
 	}
@@ -276,6 +298,94 @@ func (r *Reader) run(ctx context.Context, words ...string) (*rosapi.Reply, error
 	}
 	return reply, nil
 }
+
+// ErrNotConnected is what every command returns while the tier has no
+// connection: the collector started before the router was reachable, or the
+// last reconnection attempt has not come round yet.
+var ErrNotConnected = errors.New("not connected")
+
+// defaultRedialEvery is the minimum spacing between reconnection attempts.
+// Five seconds is short enough that a reboot costs a handful of samples and
+// long enough that a router which is down is not dialed once per command.
+const defaultRedialEvery = 5 * time.Second
+
+// exec runs one sentence and, when the failure came from the transport
+// rather than from the router, reopens the connection and runs it once more.
+// A command the router ANSWERED is never repeated: a !trap is a live device
+// refusing a question, and asking it twice only spends the router's CPU.
+func (r *Reader) exec(ctx context.Context, words []string) (*rosapi.Reply, error) {
+	// No client at all is the collector having started while the router was
+	// down — a reboot plus systemd's Restart=always is enough to arrange it.
+	// The tier is not disabled for the life of the process for that: it
+	// connects on the first round the router answers.
+	if r.Client == nil {
+		if !r.redial(ctx) {
+			return nil, ErrNotConnected
+		}
+	}
+	reply, err := r.Client.RunArgsContext(ctx, words)
+	if err == nil || !r.shouldRedial(err) || !r.redial(ctx) {
+		return reply, err
+	}
+	return r.Client.RunArgsContext(ctx, words)
+}
+
+// shouldRedial separates a dead socket from a live router's refusal.
+// A *DeviceError is the router answering, so the connection is healthy and
+// the command was wrong — except for !fatal, which is the word RouterOS
+// sends as it closes the session, and after which the socket is finished.
+// Everything else (EOF, broken pipe, connection reset, a command timeout)
+// reached us from the transport, and this tier's single connection cannot be
+// trusted once it has.
+func (r *Reader) shouldRedial(err error) bool {
+	if r.Redial == nil {
+		return false
+	}
+	if dev, ok := errors.AsType[*rosapi.DeviceError](err); ok {
+		return dev.Sentence != nil && dev.Sentence.Word == "!fatal"
+	}
+	_, unknown := errors.AsType[*rosapi.UnknownReplyError](err)
+	return !unknown
+}
+
+// redial reopens the connection, at most once per RedialEvery. It reports
+// whether the caller now holds a usable client.
+func (r *Reader) redial(ctx context.Context) bool {
+	// Checked before the spacing clock is touched: a reader with no Redial
+	// must not consume the window a reader that gains one would need.
+	if r.Redial == nil {
+		return false
+	}
+	every := r.RedialEvery
+	if every <= 0 {
+		every = defaultRedialEvery
+	}
+	if !r.lastRedial.IsZero() && time.Since(r.lastRedial) < every {
+		return false
+	}
+	r.lastRedial = time.Now()
+	c, err := r.Redial(ctx)
+	if err != nil {
+		return false
+	}
+	if closer, ok := r.Client.(io.Closer); ok {
+		_ = closer.Close()
+	}
+	r.Client = c
+	r.redials++
+	// The inventory is dropped rather than kept, so the next round re-reads
+	// it: a reconnection usually follows a reboot or an upgrade, and an
+	// upgrade is exactly when an interface can change its name, type or
+	// bridge. Stale labels on fresh rates would be worse than a moment's gap.
+	r.inv, r.byDefault = nil, nil
+	r.lastInv, r.triedInv = time.Time{}, false
+	return true
+}
+
+// Redials is how many times the connection has been reopened. The collector
+// reports it, because a tier that silently reconnects every minute is a
+// different fault from one that has reconnected once after a reboot.
+func (r *Reader) Redials() uint64 { return r.redials }
 
 // LossKeys are the monitor-traffic per-second loss keys a router MAY return,
 // in the order the sinks render them. Read through numPresent, never num:
@@ -399,7 +509,7 @@ func (r *Reader) inventoryDue() bool {
 func (r *Reader) LoadInventory(ctx context.Context) error {
 	r.triedInv = true
 	r.lastInv = time.Now()
-	reply, err := r.Client.RunArgsContext(ctx, []string{"/interface/print", "=.proplist=name,default-name,type,comment,actual-mtu"})
+	reply, err := r.exec(ctx, []string{"/interface/print", "=.proplist=name,default-name,type,comment,actual-mtu"})
 	if err != nil {
 		return err
 	}
@@ -448,7 +558,7 @@ func parseInterfaces(reply *rosapi.Reply) (inv map[string]IfaceInfo, byDefault m
 // Best effort: without it the inventory still has names, types and comments.
 func (r *Reader) readListMembers(ctx context.Context) map[string][]string {
 	lists := map[string][]string{}
-	lr, err := r.Client.RunArgsContext(ctx, []string{"/interface/list/member/print", "=.proplist=list,interface"})
+	lr, err := r.exec(ctx, []string{"/interface/list/member/print", "=.proplist=list,interface"})
 	if err != nil || lr == nil {
 		return lists
 	}
@@ -463,7 +573,7 @@ func (r *Reader) readListMembers(ctx context.Context) map[string][]string {
 // readBridgePorts fills in each interface's bridge. A bridge port can name an
 // interface LIST instead of an interface; that is not a port to label.
 func (r *Reader) readBridgePorts(ctx context.Context, inv map[string]IfaceInfo) {
-	br, err := r.Client.RunArgsContext(ctx, []string{"/interface/bridge/port/print", "=.proplist=interface,bridge"})
+	br, err := r.exec(ctx, []string{"/interface/bridge/port/print", "=.proplist=interface,bridge"})
 	if err != nil || br == nil {
 		return
 	}
@@ -584,7 +694,7 @@ func numericField(key, value string) (uint64, bool) {
 }
 
 func (r *Reader) conntrack(ctx context.Context) (uint64, error) {
-	reply, err := r.Client.RunArgsContext(ctx, []string{"/ip/firewall/connection/print", "=count-only="})
+	reply, err := r.exec(ctx, []string{"/ip/firewall/connection/print", "=count-only="})
 	if err != nil {
 		return 0, err
 	}

@@ -306,6 +306,52 @@ Es poco, y aun así el proyecto sigue tratando la API como el camino caro. Los d
 puerto salen del contenedor siempre que el contenedor pueda verlos, y la configuración se
 lee al arrancar y con la cadencia lenta de las etiquetas, nunca en cada sondeo.
 
+## Cuando la conexión muere
+
+La capa mantiene un solo socket, así que cualquier cosa que se lleve al router
+se la lleva a ella: un reinicio, una actualización de RouterOS, un operador
+reiniciando el servicio de API. Desde 1.0.9 reabre la conexión ella sola.
+
+La regla va de quién falló, no de qué falló. Un error de **transporte** — EOF,
+una tubería rota, una conexión reiniciada, un tiempo de espera agotado —
+significa que el socket está acabado, así que la capa vuelve a marcar y
+reintenta ese comando sobre la conexión nueva. Un **`!trap`** no vuelve a
+marcar: el router está vivo y rechaza el comando, y repetirlo solo gastaría su
+CPU en la misma pregunta mala. Un **`!fatal`** sí, porque es la palabra que
+RouterOS envía al cerrar la sesión.
+
+Los intentos van espaciados cinco segundos. Una ronda lanza cuatro o cinco
+comandos, así que a un router caído se le marcaría si no varias veces por
+segundo, y cada marcación lleva un inicio de sesión. El inventario se descarta y
+se vuelve a leer tras una reconexión: una actualización es justo cuando una
+interfaz puede cambiar de nombre, tipo o puente, y etiquetas viejas sobre tasas
+nuevas serían peor que un hueco de un momento.
+
+Medido contra el RB5009 de referencia el 2026-09-19, sin tocar el router: a un
+colector que sondeaba las 16 interfaces a 1 Hz se le destruyó el socket de la
+API desde el host con `ss -K`, que es como se ve desde él el lado del router en
+un reinicio. La capa reabrió la conexión y reintentó dentro de la misma ronda:
+0 comandos fallidos, 0 rondas perdidas, 16 interfaces en cada uno de los 108
+segundos a ambos lados de la muerte del socket.
+
+Un colector que arranca con el router caído es el mismo caso visto desde el otro
+lado. Que la primera marcación falle es un aviso, no una capa deshabilitada:
+conecta en la primera ronda que el router responda.
+
+El colector lo dice, una vez por suceso y no una vez por comando fallido:
+
+```text
+api tier: reconnected (1 since start)
+api tier: recovered after 137 failed round(s)
+```
+
+y el informe por minuto lleva `api: N failed round(s), N reconnect(s)` mientras
+alguno no sea cero. Antes de 1.0.9 nada de esto existía, y la caída era
+invisible: `api` cuenta rondas _intentadas_, así que el informe seguía creciendo
+con una capa en la que fallaban todos los comandos. Lo que eso costó en el
+equipo de referencia está en
+[Resolución de problemas](/mikroscope/es/reference/troubleshooting/#los-paneles-de-api-están-vacíos-y-los-de-kernel-bien).
+
 ## El número de conexiones
 
 `--conntrack-every 10s` pregunta `/ip/firewall/connection/print count-only` con esa

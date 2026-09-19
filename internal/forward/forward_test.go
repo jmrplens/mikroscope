@@ -380,3 +380,84 @@ func TestResyncAfterAgentRestart(t *testing.T) {
 		t.Errorf("a quiet agent was taken for a restart: cursor %d, resyncs %d", since, f.stats.Resyncs)
 	}
 }
+
+// TestAPIFailuresAreLoggedOnceAndRecoveryIsSaid is the journal side of the
+// 2026-09-19 outage: the tier wrote one line per failed command per second,
+// 44 257 of them in three hours, all identical. The first failure is worth a
+// line; the 44 256 repeats are not; and the recovery — the line that closes
+// the window the graphs are missing — was never written at all.
+func TestAPIFailuresAreLoggedOnceAndRecoveryIsSaid(t *testing.T) {
+	var lines []string
+	f := &Forwarder{API: &apitier.Reader{}, Log: func(s string) { lines = append(lines, s) }}
+	broken := apitier.Sample{Errors: []string{"resource: broken pipe", "monitor-traffic: broken pipe"}}
+	for range 100 {
+		s := broken
+		f.noteAPI(&s)
+	}
+	if len(lines) != 2 {
+		t.Fatalf("logged %d lines for 100 identical failed rounds, want the 2 of the first round: %v", len(lines), lines)
+	}
+	if f.stats.APIFailed != 100 {
+		t.Errorf("APIFailed = %d, want 100: every failed round is counted even though it is not logged", f.stats.APIFailed)
+	}
+	ok := apitier.Sample{}
+	f.noteAPI(&ok)
+	if len(lines) != 3 || !strings.Contains(lines[2], "recovered after 100 failed round(s)") {
+		t.Fatalf("the recovery was not reported with its count: %v", lines)
+	}
+	// And the report stops hiding it. Before this, `api` counted rounds
+	// ATTEMPTED, so a tier whose every command failed reported a growing
+	// count and looked healthy.
+	if got := f.report(); !strings.Contains(got, "api: 100 failed round(s)") {
+		t.Errorf("report() hides the failures: %q", got)
+	}
+	// A healthy run carries no such clause: an operator should not read past
+	// two zeroes every minute.
+	clean := &Forwarder{API: &apitier.Reader{}, Log: func(string) {}}
+	if got := clean.report(); strings.Contains(got, "failed round(s)") {
+		t.Errorf("a clean report should not mention API failures: %q", got)
+	}
+}
+
+// downClient is a router that answers nothing.
+type downClient struct{}
+
+func (downClient) RunArgsContext(context.Context, []string) (*rosapi.Reply, error) {
+	return nil, errors.New("write: broken pipe")
+}
+
+// TestReconnectIsReportedOnce: a tier that silently reconnects every minute is
+// a different fault from one that reconnected once after a reboot, so the
+// collector says which, and says it per event rather than per round.
+func TestReconnectIsReportedOnce(t *testing.T) {
+	var lines []string
+	// No client and a Redial that works: the first round connects, and the
+	// round still fails because the router answers nothing. That is the
+	// collector-visible shape of a reboot.
+	r := &apitier.Reader{Redial: func(context.Context) (apitier.Client, error) { return downClient{}, nil }}
+	f := &Forwarder{API: r, Log: func(s string) { lines = append(lines, s) }}
+	s := r.Read(context.Background())
+	f.noteAPI(&s)
+	if f.stats.APIReconnects != 1 {
+		t.Fatalf("APIReconnects = %d, want 1", f.stats.APIReconnects)
+	}
+	var reconnects int
+	for _, l := range lines {
+		if strings.Contains(l, "reconnected (1 since start)") {
+			reconnects++
+		}
+	}
+	if reconnects != 1 {
+		t.Fatalf("the reconnection was reported %d times, want once: %v", reconnects, lines)
+	}
+	// A second failed round must not repeat it: the count has not moved.
+	before := len(lines)
+	s2 := apitier.Sample{Errors: []string{"resource: broken pipe"}}
+	f.noteAPI(&s2)
+	if len(lines) != before {
+		t.Errorf("a second failed round logged again: %v", lines[before:])
+	}
+	if got := f.report(); !strings.Contains(got, "reconnect(s)") {
+		t.Errorf("report() does not carry the reconnection: %q", got)
+	}
+}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"strings"
@@ -126,10 +127,12 @@ func applyAPIMode(mode string, fs *flag.FlagSet, apiEvery, conntrackEvery *time.
 func attachAPITier(ctx context.Context, fw *forward.Forwarder, ro recordOptions, ifaces string,
 	apiEvery, conntrackEvery, commentsEvery, countersEvery time.Duration, noHealth bool, logf func(string),
 ) func() {
+	// A failed first dial is a warning, not a disabled tier: the reader
+	// carries a Redial, so a router that is rebooting when the collector
+	// starts is connected on the first round it answers rather than never.
 	api, apiErr := ro.apiClient(ctx)
 	if apiErr != nil {
-		logf("api tier disabled: " + apiErr.Error())
-		return nil
+		logf("api tier: not connected yet, will keep trying: " + apiErr.Error())
 	}
 	var list []string
 	for i := range strings.SplitSeq(ifaces, ",") {
@@ -137,7 +140,16 @@ func attachAPITier(ctx context.Context, fw *forward.Forwarder, ro recordOptions,
 			list = append(list, i)
 		}
 	}
-	fw.API = &apitier.Reader{Client: api, Opts: apitier.Options{Interfaces: list, Health: !noHealth, ConntrackEvery: conntrackEvery, LabelsEvery: commentsEvery, CountersEvery: countersEvery}}
+	reader := &apitier.Reader{Opts: apitier.Options{Interfaces: list, Health: !noHealth, ConntrackEvery: conntrackEvery, LabelsEvery: commentsEvery, CountersEvery: countersEvery}}
+	if apiErr == nil {
+		reader.Client = api
+	}
+	reader.Redial = func(ctx context.Context) (apitier.Client, error) { return ro.apiClient(ctx) }
+	fw.API = reader
 	logf(fmt.Sprintf("api tier: every %s, interfaces %v, health %v, conntrack every %s, port counters every %s", apiEvery, list, !noHealth, conntrackEvery, countersEvery))
-	return func() { api.Close() }
+	return func() {
+		if closer, ok := reader.Client.(io.Closer); ok {
+			_ = closer.Close()
+		}
+	}
 }

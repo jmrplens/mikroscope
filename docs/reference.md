@@ -2194,6 +2194,7 @@ something between you and it is not:
 | Loki accepted everything and a query returns nothing | A push is not queryable until the chunk flushes                           |
 | Numbers stop at a round moment and resume           | A gap: the ring wrapped before the collector pulled it                     |
 | The kernel tier stops dead and the API tier carries on | [The agent restarted](https://jmrp.io/docs/mikroscope/reference/troubleshooting/#the-agent-restarted-and-the-kernel-tier-stopped)  |
+| The API panels are blank and the kernel panels are fine | [The API connection died](https://jmrp.io/docs/mikroscope/reference/troubleshooting/#the-api-panels-are-blank-and-the-kernel-panels-are-fine) |
 
 The dashboards carry a row named **"Not available on this device"** for exactly
 this: panels whose measurement the kernel or the board does not produce are
@@ -2223,6 +2224,41 @@ answered an empty batch to every pull, and the kernel tier stopped for good
 while the API tier kept counting and the sinks kept being written — so the run
 looked healthy. If you are on an earlier version, restart the collector after
 restarting the agent; it takes its cursor from the health read at start.
+
+#### The API panels are blank and the kernel panels are fine
+
+The mirror image of the entry above, and it has the same cause: a reboot.
+
+The API tier holds **one** persistent RouterOS API connection. When the router
+goes away — a reboot, a RouterOS upgrade, an operator restarting the API
+service — that socket dies, and before 1.0.9 nothing reopened it. The kernel
+tier resynced and carried on; the API tier wrote to the dead socket for as long
+as the collector ran. Everything the API feeds went blank: interface throughput
+and packet rate, the per-port counters, RouterOS `cpu-load`, and **"Reboots in
+the window"**, which reads `uptime_s` and so cannot count the very reboot that
+broke its own source.
+
+On the reference RB5009 a RouterOS upgrade on 2026-09-19 rebooted the router at
+00:43:30 CEST. The kernel tier resumed at 00:45:03; the API tier failed every
+command for the next 7 h 24 min, until the collector was restarted by hand.
+
+From 1.0.9 the tier reconnects on its own. A transport failure — EOF, a broken
+pipe, a connection reset, a command timeout — reopens the connection, at most
+once every five seconds, and the round is retried on the new one. A `!trap`
+does not reconnect: that is a live router refusing a command, and asking it
+twice only spends the router's CPU. A `!fatal` does, because that is the word
+RouterOS sends as it closes the session. The inventory is re-read afterwards,
+since an upgrade is exactly when an interface can change its name, type or
+bridge. You will see
+
+```text
+api tier: reconnected (1 since start)
+api tier: recovered after 137 failed round(s)
+```
+
+and the minute report grows an `api: N failed round(s), N reconnect(s)` clause
+for as long as either is nonzero. If you are on an earlier version, restart the
+collector after the router comes back.
 
 #### A sink is dropping
 
