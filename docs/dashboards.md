@@ -877,6 +877,9 @@ overwrite settings nobody asked it to have.
 > readers into a datasource that cannot connect at all.
 > `--grafana-datasource-sslmode` decides it outright.
 
+The InfluxDB one carries its own three, and they are the ones this project got
+wrong first:
+
 > **What the created InfluxDB datasource carries**
 >
 > Three settings that are easy to miss by hand, and each of them was missed here first. The token

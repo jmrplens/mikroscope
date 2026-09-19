@@ -228,6 +228,9 @@ overwrite settings nobody asked it to have.
   `--grafana-datasource-sslmode` decides it outright.
 </Aside>
 
+The InfluxDB one carries its own three, and they are the ones this project got
+wrong first:
+
 <Aside type="note" title="What the created InfluxDB datasource carries">
   Three settings that are easy to miss by hand, and each of them was missed here first. The token
   goes in **both** `token` and `httpHeaderValue1` (`Bearer <token>`), because the plugin reads one

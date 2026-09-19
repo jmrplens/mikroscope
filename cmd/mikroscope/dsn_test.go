@@ -119,7 +119,14 @@ func TestAnSSLModeGrafanaCannotSayBecomesDisableAndIsReported(t *testing.T) {
 
 // And the operator's own answer is believed over everything, including a DSN
 // that names a mode Grafana does understand.
-func TestTheSSLModeOverrideWinsAndSaysNothing(t *testing.T) {
+//
+// It asserts that nothing was said ABOUT SSLMODE rather than that nothing was
+// said at all. The other thing fromDSN can print is the password note, and
+// whether that fires depends on the machine: pgx reads libpq's environment and
+// its password file, so a runner with a pgpass or PGPASSWORD set produces one
+// — which is the documented behavior and has nothing to do with this test.
+// Measured on a Windows CI runner, where it did.
+func TestTheSSLModeOverrideWinsAndSaysNothingAboutIt(t *testing.T) {
 	t.Parallel()
 	var said strings.Builder
 	got, err := datasourceFor(dashboards.Postgres,
@@ -131,8 +138,8 @@ func TestTheSSLModeOverrideWinsAndSaysNothing(t *testing.T) {
 	if got.JSON["sslmode"] != "verify-ca" {
 		t.Errorf("sslmode = %v, want the override", got.JSON["sslmode"])
 	}
-	if said.String() != "" {
-		t.Errorf("said %q, want silence: nothing had to be chosen", said.String())
+	if strings.Contains(said.String(), "sslmode") {
+		t.Errorf("said %q, want silence about sslmode: nothing had to be chosen", said.String())
 	}
 }
 

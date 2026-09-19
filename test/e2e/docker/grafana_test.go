@@ -39,9 +39,9 @@ func grafanaPassword() string {
 // walk), and any number of them should be able to.
 func grafanaToken(ctx context.Context, tb testing.TB, admin string) string {
 	tb.Helper()
-	tokenOnce.Do(func() { sharedToken, tokenErr = makeGrafanaToken(ctx, admin) })
-	if tokenErr != nil {
-		tb.Fatalf("creating a service account token: %v", tokenErr)
+	tokenOnce.Do(func() { sharedToken, errToken = makeGrafanaToken(ctx, admin) })
+	if errToken != nil {
+		tb.Fatalf("creating a service account token: %v", errToken)
 	}
 	return sharedToken
 }
@@ -49,7 +49,7 @@ func grafanaToken(ctx context.Context, tb testing.TB, admin string) string {
 var (
 	tokenOnce   sync.Once
 	sharedToken string
-	tokenErr    error
+	errToken    error
 )
 
 func makeGrafanaToken(ctx context.Context, admin string) (string, error) {
