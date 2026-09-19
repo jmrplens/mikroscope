@@ -47,7 +47,7 @@ Todo lo que empiece por `mikroscope-agent` es el otro programa.
 1. Descarga el archivo y las sumas de verificación:
 
    ```sh
-   VERSION=1.0.7
+   VERSION=1.0.8
    curl -fsSLO https://github.com/jmrplens/mikroscope/releases/download/v$VERSION/mikroscope_${VERSION}_linux_x86_64.tar.gz
    curl -fsSLO https://github.com/jmrplens/mikroscope/releases/download/v$VERSION/checksums.txt
    ```
@@ -80,7 +80,7 @@ Todo lo que empiece por `mikroscope-agent` es el otro programa.
    `darwin_x86_64` para Intel— y las sumas de verificación:
 
    ```sh
-   VERSION=1.0.7
+   VERSION=1.0.8
    curl -fsSLO https://github.com/jmrplens/mikroscope/releases/download/v$VERSION/mikroscope_${VERSION}_darwin_arm64.tar.gz
    curl -fsSLO https://github.com/jmrplens/mikroscope/releases/download/v$VERSION/checksums.txt
    ```
@@ -118,13 +118,13 @@ Todo lo que empiece por `mikroscope-agent` es el otro programa.
 2. Compruébalo en PowerShell, contra la línea de tu archivo en `checksums.txt`:
 
    ```powershell
-   Get-FileHash .\mikroscope_1.0.7_windows_x86_64.zip -Algorithm SHA256
+   Get-FileHash .\mikroscope_1.0.8_windows_x86_64.zip -Algorithm SHA256
    ```
 
 3. Descomprímelo en un sitio permanente y pon esa carpeta en tu `PATH`:
 
    ```powershell
-   Expand-Archive .\mikroscope_1.0.7_windows_x86_64.zip -DestinationPath $HOME\mikroscope
+   Expand-Archive .\mikroscope_1.0.8_windows_x86_64.zip -DestinationPath $HOME\mikroscope
    $env:PATH += ";$HOME\mikroscope"
    ```
 

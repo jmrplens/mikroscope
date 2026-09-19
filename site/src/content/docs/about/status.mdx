@@ -22,9 +22,10 @@ run against the reference RB5009 (RouterOS 7.24.2), not only against fakes:
 
 - **The agent** reads the shared kernel's `/proc`, `/sys`, `/dev/kmsg` and
   `perf_event_open` counters on a fixed ticker at 1 to 100 Hz (10 Hz by
-  default; 10, 50 and 100 Hz measured), keeps the samples in a ring, and serves
-  them: `/healthz`, `/capabilities`, `/snapshot`, `/stream`, `/metrics`, and
-  the triggered-capture endpoints `/captures` and `/capture`.
+  default; 10, 20, 50 and 100 Hz measured), keeps the samples in a ring, and
+  serves them: `/healthz`, `/capabilities`, `/snapshot`, `/stream`, `/sampler`,
+  and the triggered-capture endpoints `/captures` and `/capture`. It serves no
+  `/metrics`: since 1.0.5 the exposition is the collector's alone.
 - **The deployment CLI** installs, upgrades and removes it — `doctor`, `plan`,
   `install`, `status`, `upgrade`, `uninstall` — with every write listed before
   it happens and every removal verified by ownership counts. On 2026-09-12,
@@ -104,8 +105,10 @@ record is <Measured id="image.size" />, and it carries no date.
 Two rules keep the cost figure honest: wait out the ring (`BUFFER_S`) before
 quoting a steady-state figure — on the RB5009, at a 14 MiB soft memory limit, a
 reading taken in the first minute after install came back at 1.47 % of one core
-against a 9.38 % steady state — and read cost from `/metrics` rather than from a
-large `/snapshot`, whose ~1.5 MB response the agent must serialise.
+against a 9.38 % steady state — and read cost from the collector's
+`/metrics`, or from `cpu_us` and `rss` in `mikroscope_self` in whichever store
+you write to, rather than from a large `/snapshot`, whose ~1.5 MB response the
+agent must serialise.
 
 ### Cost at 10 Hz, by configuration
 
@@ -210,7 +213,7 @@ the one RB5009 above.
 
 - [The cost of the observer](/mikroscope/cost/): the budget, the current figure and how to measure
   it on your own device.
-- [The rate ceiling](/mikroscope/cost/rate-ceiling/): the five measured runs at 10, 50 and 100 Hz.
+- [The rate ceiling](/mikroscope/cost/rate-ceiling/): the six measured runs at 10, 20, 50 and 100 Hz.
 - [The file and the other sinks](/mikroscope/sinks/other/): the ten sinks `forward` writes to.
 - [Lineage and licence](/mikroscope/about/lineage/): where the deployment code and the API client
   came from.

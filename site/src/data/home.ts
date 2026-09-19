@@ -79,7 +79,7 @@ export function gapsDrops(lang: Lang): string {
 	return `${formatNumber(totalGaps, lang, 0)} / ${formatNumber(totalDrops, lang, 0)}`;
 }
 
-const rates = campaigns["rates-2026-09-15"];
+const rates = campaigns["rates-2026-09-18"];
 const kernel = campaigns["kernel-2026-09-11"];
 const netns = campaigns["netns-2026-09-12"];
 
@@ -130,7 +130,7 @@ const installDefault = runs.find((r) => r.installDefault);
 if (installDefault === undefined)
 	throw new Error("home.ts: no run is the install default");
 if (rates.windowS === undefined)
-	throw new Error("home.ts: rates-2026-09-15 records no window");
+	throw new Error("home.ts: rates-2026-09-18 records no window");
 const windowS = rates.windowS;
 const win = (lang: Lang) =>
 	formatQuantity({ value: windowS, unit: "s", digits: 0 }, lang);
@@ -186,7 +186,7 @@ export const en: HomeContent = {
 				href: "/mikroscope/cost/rate-ceiling/",
 			},
 		],
-		claim: `The first three from the agent's own cgroup and <code>/metrics</code>, the fourth from the ${spellCount(rates.sinks.length, "en")} sinks the collector forwarded to, on an RB5009 (${describeCpu(rates, "en")}, RouterOS ${rates.routeros}), ${win("en")} windows at steady state, ${rates.date}. The ${hz(run10.rateHz, "en")} figures are above the ≤ ${q("budget.cpu", "en")} and ≤ ${q("budget.rss", "en")} budget.`,
+		claim: `The first three from the agent's own cgroup and <code>/metrics</code>, the fourth from the ${spellCount(rates.sinks.length, "en")} sinks the collector forwarded to, on an RB5009 (${describeCpu(rates, "en")}, RouterOS ${rates.routeros}), ${win("en")} windows at steady state, ${rates.date}. At ${hz(run10.rateHz, "en")} the memory is inside the ≤ ${q("budget.rss", "en")} the budget asks for and the CPU is above the ≤ ${q("budget.cpu", "en")}.`,
 	},
 	hides: {
 		title: "A one-second average is a report about a second",
@@ -235,7 +235,7 @@ export const en: HomeContent = {
 	},
 	notClaimed: {
 		title: "What is not claimed",
-		body: `Any rate on a board that is not this RB5009, and any traffic load heavier than this router's ordinary evening, about ${q("load.evening", "en")}. Cost scales with core speed, source set and ring size: measure it on your own device before you budget for it. The project has run on one device, an RB5009UG+S+ on RouterOS ${RB5009.routeros}, arm64; the arm and x86_64 builds are cross-built and checked in CI and have never run on hardware, and seven of the ten sinks are exercised only against fakes.`,
+		body: `Any rate on a board that is not this RB5009, and any traffic load heavier than this router's ordinary traffic, about ${q("load.ordinary", "en")} on the WAN. Cost scales with core speed, source set and ring size: measure it on your own device before you budget for it. The project has run on one device, an RB5009UG+S+ on RouterOS ${RB5009.routeros}, arm64; the arm and x86_64 builds are cross-built and checked in CI and have never run on hardware, and seven of the ten sinks are exercised only against fakes.`,
 	},
 	next: {
 		title: "Where to go next",
@@ -300,7 +300,7 @@ export const es: HomeContent = {
 				href: "/mikroscope/es/cost/rate-ceiling/",
 			},
 		],
-		claim: `Las tres primeras, desde el propio cgroup del agente y <code>/metrics</code>; la cuarta, desde los ${spellCount(rates.sinks.length, "es")} destinos a los que reenviaba el colector; en un RB5009 (${describeCpu(rates, "es")}, RouterOS ${rates.routeros}), ventanas de ${win("es")} en régimen estacionario, ${rates.date}. Las cifras a ${hz(run10.rateHz, "es")} superan el presupuesto de ≤ ${q("budget.cpu", "es")} y ≤ ${q("budget.rss", "es")}.`,
+		claim: `Las tres primeras, desde el propio cgroup del agente y <code>/metrics</code>; la cuarta, desde los ${spellCount(rates.sinks.length, "es")} destinos a los que reenviaba el colector; en un RB5009 (${describeCpu(rates, "es")}, RouterOS ${rates.routeros}), ventanas de ${win("es")} en régimen estacionario, ${rates.date}. A ${hz(run10.rateHz, "es")} la memoria está dentro de los ≤ ${q("budget.rss", "es")} que pide el presupuesto y la CPU por encima del ≤ ${q("budget.cpu", "es")}.`,
 	},
 	hides: {
 		title: "Una media de un segundo es un informe sobre un segundo",
@@ -349,7 +349,7 @@ export const es: HomeContent = {
 	},
 	notClaimed: {
 		title: "Lo que no se afirma",
-		body: `Cualquier cadencia en una placa que no sea este RB5009, y cualquier carga de tráfico mayor que la de una tarde normal de este router, unos ${q("load.evening", "es")}. El coste depende de la velocidad del núcleo, del conjunto de fuentes y del tamaño del anillo: mídelo en tu propio equipo antes de presupuestarlo. El proyecto ha corrido en un equipo, un RB5009UG+S+ con RouterOS ${RB5009.routeros}, arm64; las compilaciones para arm y x86_64 son cruzadas y pasan por CI, pero no han corrido nunca en hardware, y siete de los diez destinos solo se ejercitan contra dobles.`,
+		body: `Cualquier cadencia en una placa que no sea este RB5009, y cualquier carga de tráfico mayor que el tráfico corriente de este router, unos ${q("load.ordinary", "es")} en la WAN. El coste depende de la velocidad del núcleo, del conjunto de fuentes y del tamaño del anillo: mídelo en tu propio equipo antes de presupuestarlo. El proyecto ha corrido en un equipo, un RB5009UG+S+ con RouterOS ${RB5009.routeros}, arm64; las compilaciones para arm y x86_64 son cruzadas y pasan por CI, pero no han corrido nunca en hardware, y siete de los diez destinos solo se ejercitan contra dobles.`,
 	},
 	next: {
 		title: "Por dónde seguir",

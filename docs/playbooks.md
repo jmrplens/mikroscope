@@ -74,11 +74,13 @@ pre-encoded lines, about 1.5 MB, and `self.cpu_us` inside those samples
 _includes the cost of serving them_. Reading the agent's cost out of a large
 snapshot therefore overstates it, and doing it repeatedly overstates it more.
 
-Use `/metrics` instead. It is small, its counters are cumulative, and it is
-independent of who scrapes it and when — scrape it twice and divide:
+Use the collector's `/metrics` instead — the agent has served none since 1.0.5,
+and these counters reach the collector in every sample. It is small, its
+counters are cumulative, and it is independent of who scrapes it and when —
+scrape it twice and divide:
 
 ```sh
-U=http://172.30.10.2:9123/metrics
+U=http://<collector host>:9124/metrics
 get() { curl -s "$U" | awk -v k="$1" '$1==k{print $2}'; }
 c0=$(get mikroscope_self_cpu_usec_total); t0=$(date +%s)
 sleep 180
@@ -96,8 +98,8 @@ Two things to expect:
   that costs a little more but never slips is telling you the truth; one that
   slips is not.
 
-For scale: at the install default the agent costs 2.85 % of one
-core and 31.3 MiB RSS. That figure was measured on 2026-09-15
+For scale: at the install default the agent costs 2.69 % of one
+core and 13.2 MiB RSS. That figure was measured on 2026-09-15
 with the full source set and three sinks at once, not during the campaign these
 readings come from:
 

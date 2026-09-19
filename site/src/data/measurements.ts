@@ -56,6 +56,17 @@ export const RB5009 = {
 } as const;
 
 export const campaigns = {
+	"rates-2026-09-18": {
+		...RB5009,
+		date: "2026-09-18",
+		windowS: 300,
+		conditions: {
+			en: "300 s windows at steady state (ring full), full source set, the shipped configuration — a 60 s ring, the memory limit derived from it and the default 64M container cap — with the collector forwarding to InfluxDB 3",
+			es: "ventanas de 300 s en régimen estacionario (con el anillo ya lleno), conjunto completo de fuentes, la configuración que se envía —anillo de 60 s, límite de memoria derivado de él y el tope de contenedor de serie de 64M— con el colector reenviando a InfluxDB 3",
+		},
+		sinks: ["InfluxDB 3"],
+		source: "site/src/content/docs/cost/rate-ceiling.mdx",
+	},
 	"rates-2026-09-15": {
 		...RB5009,
 		date: "2026-09-15",
@@ -315,7 +326,7 @@ export type Measurement = {
 );
 
 export interface Run {
-	key: "10hz" | "50hz" | "100hz" | "50hz-floor" | "100hz-floor";
+	key: "10hz" | "20hz" | "50hz" | "100hz" | "50hz-floor" | "100hz-floor";
 	rateHz: number;
 	/** 0 is the default per-source floors; otherwise every source at FLOOR_HZ. */
 	floorHz: 0 | number;
@@ -331,82 +342,99 @@ export interface Run {
 	flags: string;
 }
 
-// The 10 Hz row ran the install default ring (300 s), so it passes no --buffer.
-const FLAGS_10 = "--mem-limit-mb 40 --memory-max 64M";
-const FLAGS_50 = "--buffer 120 --mem-limit-mb 64 --memory-max 96M";
-const FLAGS_100 = "--buffer 120 --mem-limit-mb 80 --memory-max 128M";
+// Every row of the 2026-09-18 campaign ran the shipped configuration and
+// passed no memory flag at all: the 60 s ring is the default and the limit is
+// derived from it (16 MiB at 10 and 20 Hz, 25 at 50, 48 at 100). The container
+// cap stayed at the default 64M for all six, which the previous campaign could
+// not do — it needed --memory-max 96M at 50 Hz and 128M at 100.
+const FLAGS_DEFAULT =
+	"(the defaults: --buffer 60, the derived --mem-limit-mb, --memory-max 64M)";
 
-/** site/src/content/docs/cost/rate-ceiling.mdx, all from campaign rates-2026-09-15. */
+/** site/src/content/docs/cost/rate-ceiling.mdx, all from campaign rates-2026-09-18. */
 export const runs: readonly Run[] = [
 	{
 		key: "10hz",
 		rateHz: 10,
 		floorHz: 0,
 		installDefault: true,
-		cpuPct: 2.85,
-		usPerSample: 2856,
-		rssMiB: 31.3,
+		cpuPct: 2.69,
+		usPerSample: 2685,
+		rssMiB: 13.2,
 		slipped: 0,
-		slippedPct: 0,
+		slippedPct: 0.0,
 		gaps: 0,
 		drops: 0,
-		flags: FLAGS_10,
+		flags: FLAGS_DEFAULT,
+	},
+	{
+		key: "20hz",
+		rateHz: 20,
+		floorHz: 0,
+		installDefault: false,
+		cpuPct: 4.61,
+		usPerSample: 2303,
+		rssMiB: 15.4,
+		slipped: 0,
+		slippedPct: 0.0,
+		gaps: 0,
+		drops: 0,
+		flags: FLAGS_DEFAULT,
 	},
 	{
 		key: "50hz",
 		rateHz: 50,
 		floorHz: 0,
 		installDefault: false,
-		cpuPct: 10.13,
-		usPerSample: 2026,
-		rssMiB: 51.9,
+		cpuPct: 9.63,
+		usPerSample: 1926,
+		rssMiB: 23.3,
 		slipped: 0,
-		slippedPct: 0,
+		slippedPct: 0.0,
 		gaps: 0,
 		drops: 0,
-		flags: FLAGS_50,
+		flags: FLAGS_DEFAULT,
 	},
 	{
 		key: "100hz",
 		rateHz: 100,
 		floorHz: 0,
 		installDefault: false,
-		cpuPct: 17.81,
-		usPerSample: 1781,
-		rssMiB: 76.5,
+		cpuPct: 16.83,
+		usPerSample: 1684,
+		rssMiB: 45.7,
 		slipped: 5,
-		slippedPct: 0.08,
+		slippedPct: 0.012,
 		gaps: 0,
 		drops: 0,
-		flags: FLAGS_100,
+		flags: FLAGS_DEFAULT,
 	},
 	{
 		key: "50hz-floor",
 		rateHz: 50,
 		floorHz: 50,
 		installDefault: false,
-		cpuPct: 22.47,
-		usPerSample: 4494,
-		rssMiB: 60.6,
-		slipped: 6,
-		slippedPct: 0.2,
+		cpuPct: 22.56,
+		usPerSample: 4511,
+		rssMiB: 25.1,
+		slipped: 4,
+		slippedPct: 0.02,
 		gaps: 0,
 		drops: 0,
-		flags: FLAGS_50,
+		flags: FLAGS_DEFAULT,
 	},
 	{
 		key: "100hz-floor",
 		rateHz: 100,
 		floorHz: 100,
 		installDefault: false,
-		cpuPct: 43.95,
-		usPerSample: 4395,
-		rssMiB: 79.6,
-		slipped: 14,
-		slippedPct: 0.23,
+		cpuPct: 42.7,
+		usPerSample: 4270,
+		rssMiB: 49.5,
+		slipped: 178,
+		slippedPct: 0.444,
 		gaps: 0,
 		drops: 0,
-		flags: FLAGS_100,
+		flags: FLAGS_DEFAULT,
 	},
 ];
 
@@ -466,18 +494,32 @@ const fixed = {
 	// sources, so the copy must not say "every source".
 	"read.under2ms": {
 		kind: "reading",
-		value: 97.5,
+		value: 97.7,
 		unit: "%",
 		digits: 1,
-		campaign: "rates-2026-09-15",
+		campaign: "rates-2026-09-18",
 	},
-	// site/src/content/docs/cost/rate-ceiling.mdx; the source says "about", and so must the copy around it.
-	"load.evening": {
+	// site/src/content/docs/cost/rate-ceiling.mdx: the same 100 Hz window with
+	// FLOOR_HZ, where not one read of 29 994 came in under 2 ms.
+	"read.floorOver5ms": {
 		kind: "reading",
-		value: 30,
+		value: 1.45,
+		unit: "%",
+		digits: 2,
+		campaign: "rates-2026-09-18",
+	},
+	// The traffic the measurement campaigns ran under, so a reader knows what
+	// "ordinary" meant here: the mean WAN receive rate over the 2026-09-18
+	// campaign's 44 minutes, peaks to 933 Mbit/s. The 2026-09-15 campaign ran
+	// in the evening at about 30 Mbit/s; the name lost the time of day when
+	// the campaign moved to the morning. The source says "about", and so must
+	// the copy around it.
+	"load.ordinary": {
+		kind: "reading",
+		value: 19,
 		unit: "Mbit/s",
 		digits: 0,
-		campaign: "rates-2026-09-15",
+		campaign: "rates-2026-09-18",
 	},
 	// Arithmetic from USER_HZ = 100 (site/src/content/docs/limits/index.mdx): one tick is 10 ms, so a
 	// 100 ms sample holds 10 ticks per core and resolves one core in 10 % steps.
@@ -717,13 +759,18 @@ export const isMeasurementId = (id: string): id is MeasurementId =>
 const installDefault = runs.find((r) => r.installDefault);
 if (installDefault === undefined)
 	throw new Error("measurements.ts: no run is the install default");
-// "above the budget": cost/index.mdx (both locales), src/data/home.ts readout.claim.
-if (!(
-	installDefault.cpuPct > measurements["budget.cpu"].value &&
-	installDefault.rssMiB > measurements["budget.rss"].value
-)) {
+// "inside on memory, over on CPU": cost/index.mdx (both locales),
+// src/data/home.ts readout.claim. It was over on both until the 60 s ring and
+// the derived memory limit of 1.0.6, and the assertion that guarded the older
+// sentence is what caught the day the prose stopped being true.
+if (!(installDefault.cpuPct > measurements["budget.cpu"].value)) {
 	throw new Error(
-		"measurements.ts: the install-default run is no longer above the design budget; rewrite cost/index.mdx and home.ts, which say it is",
+		"measurements.ts: the install-default run is no longer above the CPU budget; rewrite cost/index.mdx and home.ts, which say it is",
+	);
+}
+if (!(installDefault.rssMiB <= measurements["budget.rss"].value)) {
+	throw new Error(
+		"measurements.ts: the install-default run no longer fits the memory budget; rewrite cost/index.mdx and home.ts, which say it does",
 	);
 }
 // "nothing was lost": cost/rate-ceiling.mdx (both locales), src/data/home.ts cost.after.

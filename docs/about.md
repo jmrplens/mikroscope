@@ -20,9 +20,10 @@ run against the reference RB5009 (RouterOS 7.24.2), not only against fakes:
 
 - **The agent** reads the shared kernel's `/proc`, `/sys`, `/dev/kmsg` and
   `perf_event_open` counters on a fixed ticker at 1 to 100 Hz (10 Hz by
-  default; 10, 50 and 100 Hz measured), keeps the samples in a ring, and serves
-  them: `/healthz`, `/capabilities`, `/snapshot`, `/stream`, `/metrics`, and
-  the triggered-capture endpoints `/captures` and `/capture`.
+  default; 10, 20, 50 and 100 Hz measured), keeps the samples in a ring, and
+  serves them: `/healthz`, `/capabilities`, `/snapshot`, `/stream`, `/sampler`,
+  and the triggered-capture endpoints `/captures` and `/capture`. It serves no
+  `/metrics`: since 1.0.5 the exposition is the collector's alone.
 - **The deployment CLI** installs, upgrades and removes it — `doctor`, `plan`,
   `install`, `status`, `upgrade`, `uninstall` — with every write listed before
   it happens and every removal verified by ownership counts. On 2026-09-12,
@@ -87,7 +88,7 @@ run against the reference RB5009 (RouterOS 7.24.2), not only against fakes:
 ### What the agent costs today
 
 At the install default — 10 Hz, default per-source floors, a 300 s ring — the
-agent costs **2.85 % of one core and 31.3 MiB RSS**,
+agent costs **2.69 % of one core and 13.2 MiB RSS**,
 read from its own cgroup at steady state with the ring full:
 
 Measured on RB5009UG+S+ · 4 × 1.4 GHz Cortex-A72 · RouterOS 7.24.2 · 2026-09-15 · 60 s windows at steady state (ring full), full source set, collector forwarding to a file, a Prometheus exposition and InfluxDB 3 at once
@@ -96,7 +97,7 @@ The measured runs:
 
 | rate | floors | CPU of one core | µs/sample | RSS | slipped ticks | gaps / drops |
 | --- | --- | --- | --- | --- | --- | --- |
-| 10 Hz (default) | default | **2.85 %** | 2 856 | 31.3 MiB | **0** | 0 / 0 |
+| 10 Hz (default) | default | **2.69 %** | 2 685 | 13.2 MiB | **0** | 0 / 0 |
 
 That is above the budget of 2 % of one core and 16 MiB RSS. The
 budget is guidance rather than a contract: cost scales with the device, the
@@ -106,8 +107,10 @@ record is 6.1 MiB, and it carries no date.
 Two rules keep the cost figure honest: wait out the ring (`BUFFER_S`) before
 quoting a steady-state figure — on the RB5009, at a 14 MiB soft memory limit, a
 reading taken in the first minute after install came back at 1.47 % of one core
-against a 9.38 % steady state — and read cost from `/metrics` rather than from a
-large `/snapshot`, whose ~1.5 MB response the agent must serialise.
+against a 9.38 % steady state — and read cost from the collector's
+`/metrics`, or from `cpu_us` and `rss` in `mikroscope_self` in whichever store
+you write to, rather than from a large `/snapshot`, whose ~1.5 MB response the
+agent must serialise.
 
 #### Cost at 10 Hz, by configuration
 
@@ -121,7 +124,7 @@ what each one costs — not what the number was at some earlier point.
 | Ring full, `MEM_LIMIT_MB` 14                          | 9.38 % (9 374 µs/sample) | not recorded                   | 2026-09-12 | a 300 s ring of lines of about 2.4 kB holds ~7.3 MB; the Go GC runs without pause |
 | Ring full, `--mem-limit-mb 40`, `--memory-max 64M`    | 1.39 % (1 388 µs/sample) | 25.13 MiB                      | 2026-09-12 | 0 slipped ticks                                                                                          |
 | PMU counters on, a live `forward` writing to InfluxDB | 1.72 %                                                                | not recorded                   | 2026-09-12 | 0 slipped ticks; 2 400 samples forwarded, 0 gaps, 0 drops                                                |
-| The install default                                   | 2.85 %                                        | 31.3 MiB | 2026-09-15 | the figure above                                                                                         |
+| The install default                                   | 2.69 %                                        | 13.2 MiB | 2026-09-15 | the figure above                                                                                         |
 
 ### One device, one RouterOS version
 
@@ -206,7 +209,7 @@ the one RB5009 above.
 
 - [The cost of the observer](https://jmrp.io/docs/mikroscope/cost/): the budget, the current figure and how to measure
   it on your own device.
-- [The rate ceiling](https://jmrp.io/docs/mikroscope/cost/rate-ceiling/): the five measured runs at 10, 50 and 100 Hz.
+- [The rate ceiling](https://jmrp.io/docs/mikroscope/cost/rate-ceiling/): the six measured runs at 10, 20, 50 and 100 Hz.
 - [The file and the other sinks](https://jmrp.io/docs/mikroscope/sinks/other/): the ten sinks `forward` writes to.
 - [Lineage and licence](https://jmrp.io/docs/mikroscope/about/lineage/): where the deployment code and the API client
   came from.

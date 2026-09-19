@@ -30,9 +30,10 @@ para un router concreto.
 
 </ScrollTable>
 
-El fichero de InfluxDB tiene una regla menos porque "The sampler is slipping ticks" no tiene forma en
-SQL: el contador de ticks perdidos por retraso se expone en el `/metrics` del agente y no se escribe
-en InfluxDB.
+El fichero de InfluxDB tiene una regla menos porque "The sampler is slipping ticks" todavía no tiene
+forma en SQL. El contador sí llega a InfluxDB desde 1.0.5 —el colector lo lee del `/sampler` del
+agente y escribe `mikroscope_sampler.slipped`—, así que la regla se podría escribir; no se ha
+escrito.
 
 Cada fichero es `apiVersion: 1` con un grupo de reglas, `mikroscope`, en una carpeta llamada
 `mikroscope`, organización 1, evaluado cada minuto. Las reglas se aprovisionan en vez de ir dentro de
