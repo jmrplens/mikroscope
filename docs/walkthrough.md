@@ -292,6 +292,21 @@ plain defaults, whatever the CLI's usage text says. Export the variables you nee
    of them, one per store — and the datasource field an InfluxDB 3 import needs. One scrape job is
    enough: the collector's.
 
+7. **Let it set Grafana up for you (optional).**
+
+   ```sh wrap
+   export GRAFANA_TOKEN=…
+   bin/mikroscope forward --influx http://influx:8181 --influx-db mikroscope --grafana http://grafana:3000
+   ```
+
+   Since 1.1.0 the collector can do step 6's last sentence itself: point it at a Grafana and it
+   creates the datasource and publishes the dashboard, once, at start, before the first sample.
+   It does nothing unless `--grafana` is passed, a Grafana that will not take it is a warning
+   rather than a reason not to collect, and it never deletes anything. `--grafana-dry-run` prints
+   what it would write and stops before the router is touched, so you can read it first.
+   [Import and check](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/) says which sinks can describe
+   their own datasource and which have to be told the address.
+
 ### What the chart shows
 
 [![RB5009UG+S+, 70 s at 10 Hz: 700 samples over 69.9 s on four cores, with three dashed markers — “baseline, router idle” at 12 s, “dashboards check started” at 30 s and “check finished” at 50 s. Per-core busy stays low with single-sample excursions to 100 %; the softnet panel shows time squeezes and a flat zero for dropped; memory available stays between 662 and 671 MiB.](../site/src/assets/walkthrough/rb5009-walkthrough.svg)](../../../assets/walkthrough/rb5009-walkthrough.svg)

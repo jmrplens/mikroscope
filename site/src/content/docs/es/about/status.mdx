@@ -48,7 +48,7 @@ no solo contra simulaciones:
 - **`forward`**, el colector, une la capa del kernel con la capa de la API de
   RouterOS y escribe en once destinos. Fichero, Prometheus e InfluxDB 3 se han
   ejecutado desde el RB5009; por Loki, OTLP, Graphite, Elasticsearch, SQL,
-  Telegraf y stdout todavía no han pasado muestras del router, pero todos ellos
+  PostgreSQL, Telegraf y stdout todavía no han pasado muestras del router, pero todos ellos
   escriben ya en el producto real — InfluxDB 3, PostgreSQL, Elasticsearch,
   Graphite, Loki, un OpenTelemetry Collector, Telegraf y Prometheus en
   contenedores — y la batería vuelve a leer cada uno por su propia API
@@ -62,7 +62,7 @@ no solo contra simulaciones:
   dialectos: los paneles de PostgreSQL son los de InfluxDB reescritos, y las 216
   consultas las planifica un PostgreSQL real en la batería de contenedores.
   Graphite y Elasticsearch llevan menos paneles a propósito (41 y 30 frente a
-  176): Graphite no tiene etiquetas y Elasticsearch no tiene documentos
+  177): Graphite no tiene etiquetas y Elasticsearch no tiene documentos
   anidados, así que lo que no pueden expresar está ausente en vez de
   equivocado. Los cinco se importan en un Grafana real sobre los almacenes que
   llenó la batería, y se le pregunta a cada panel: el 2026-09-17 devolvieron
@@ -78,6 +78,23 @@ no solo contra simulaciones:
   interfaces, que no cubre. Un recorrido del 2026-09-14, contra una captura de
   10,5 h del mismo equipo, renderizó 140 paneles de InfluxDB con el mismo
   resultado.
+- **`forward --grafana`** concilia una fuente de datos y un dashboard por cada
+  store al que escribe el colector, al arrancar, antes de la primera muestra. Se
+  ha ejecutado contra el Grafana del dueño (2026-09-19, InfluxDB 3) y contra el
+  de la batería de contenedores para los cinco stores (2026-09-20), donde
+  después se preguntó cada panel de cada dashboard por la propia API de Grafana
+  **contra la fuente de datos que el colector había construido**. Tres stores
+  derivan la suya y a dos se les dice la dirección; `--sql` no puede describir
+  ninguna jamás y lo dice. No se publica nada si no se pasa `--grafana`, un
+  fallo es un aviso y no una negativa a arrancar, y esto no borra nada nunca.
+- **`uninstall --targets`** retira lo que esto puso en cualquier sitio: los
+  objetos del router (el valor por defecto, como antes), el dashboard y la
+  fuente de datos que publicó, y las tablas, índices y ficheros que escribieron
+  los destinos. A los almacenes se les pregunta qué tienen en vez de decírselo
+  desde una lista compilada, no se borra nada sin `--yes`, y la batería de
+  contenedores comprueba que una tabla que este proyecto no escribió, en la
+  misma base de datos y el mismo esquema, ni se lista ni se borra (2026-09-20).
+  NO se ha ejecutado contra el almacén de producción del dueño.
 - **Una batería de extremo a extremo** compila los dos binarios y los ejecuta
   contra un árbol `/proc` capturado del equipo de referencia y contra un agente
   simulado, con un receptor por cada protocolo de destino que comprueba los
@@ -94,7 +111,12 @@ no solo contra simulaciones:
   Grafana. Necesita Docker y ningún router: las muestras son las mismas
   enlatadas, así que la ejecución es reproducible en cualquier máquina. La
   primera ejecución completa, el 2026-09-16, encontró un panel que nombraba dos
-  columnas que el almacén solo tiene cuando se ejecutó la capa de la API.
+  columnas que el almacén solo tiene cuando se ejecutó la capa de la API. Ahora
+  también ejecuta el destino SQL y el destino PostgreSQL que conecta en paralelo
+  hacia dos bases de datos y le pregunta al servidor si tienen lo mismo —34
+  tablas coincidiendo byte a byte el 2026-09-20—, publica las cinco fuentes de
+  datos y comprueba sus dashboards contra ellas, y vuelve a vaciar los almacenes
+  con `uninstall --targets data`.
 
 ## Lo que cuesta hoy el agente
 

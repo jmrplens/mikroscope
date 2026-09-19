@@ -40,8 +40,8 @@ run against the reference RB5009 (RouterOS 7.24.2), not only against fakes:
   2026-09-12 yielded exactly 600 samples, 0 gaps and −7 ms of clock skew.
 - **`forward`**, the collector, merges the kernel tier with the RouterOS API
   tier and writes to eleven sinks. File, Prometheus and InfluxDB 3 have run from
-  the RB5009; Loki, OTLP, Graphite, Elasticsearch, SQL, Telegraf and stdout
-  have not yet had router samples pushed through them, but every one of them
+  the RB5009; Loki, OTLP, Graphite, Elasticsearch, SQL, PostgreSQL, Telegraf
+  and stdout have not yet had router samples pushed through them, but every one of them
   now writes into the real product — InfluxDB 3, PostgreSQL, Elasticsearch,
   Graphite, Loki, an OpenTelemetry Collector, Telegraf and Prometheus in
   containers — and the suite reads each one back through its own API
@@ -54,7 +54,7 @@ run against the reference RB5009 (RouterOS 7.24.2), not only against fakes:
   two SQL stores are asked the same question in two dialects: the PostgreSQL
   panels are the InfluxDB ones rewritten, and every one of its 216 queries is
   planned by a real PostgreSQL in the container suite. Graphite and
-  Elasticsearch carry fewer panels on purpose (41 and 30 against 176): Graphite
+  Elasticsearch carry fewer panels on purpose (41 and 30 against 177): Graphite
   has no labels and Elasticsearch no nested documents, so what they cannot
   express is absent rather than wrong. All five are imported into a real
   Grafana over the stores the suite filled, and every panel is asked: on
@@ -68,6 +68,22 @@ run against the reference RB5009 (RouterOS 7.24.2), not only against fakes:
   repeated for the two port-event panels and the interface-inventory table it
   does not cover. A walk on 2026-09-14, against a 10.5 h capture from the same
   device, rendered 140 InfluxDB panels with the same result.
+- **`forward --grafana`** reconciles a datasource and a dashboard per store the
+  collector writes to, at start, before the first sample. It has run against
+  the owner's Grafana (2026-09-19, InfluxDB 3) and against the container suite's
+  for all five stores (2026-09-20), where every panel of every dashboard was
+  then asked through Grafana's own API **against the datasource the collector
+  had built**. Three stores derive their own datasource and two are told the
+  address; `--sql` can never describe one and says so. Nothing is published
+  unless `--grafana` is passed, a failure is a warning rather than a refusal to
+  start, and nothing is ever deleted by it.
+- **`uninstall --targets`** takes away what this put anywhere: the router
+  objects (the default, as before), the dashboard and datasource it published,
+  and the tables, indices and files the sinks wrote. The stores are asked what
+  they hold rather than told from a compiled list, nothing is removed without
+  `--yes`, and the container suite asserts that a table this project did not
+  write, in the same database and schema, is neither listed nor removed
+  (2026-09-20). It has NOT been run against the owner's production store.
 - **An end-to-end suite** builds both binaries and drives them against a
   captured `/proc` tree of the reference device and against a fake agent, with
   one receiver per sink protocol asserting the bytes. It needs no router, no
@@ -83,7 +99,11 @@ run against the reference RB5009 (RouterOS 7.24.2), not only against fakes:
   every panel's query through Grafana's own API. It needs Docker and no router:
   the samples are the same canned ones, so the run is reproducible anywhere.
   The first full run, on 2026-09-16, found a panel that named two columns the
-  store only has when the API tier ran.
+  store only has when the API tier ran. It now also runs the SQL sink and the
+  connecting PostgreSQL sink side by side into two databases and asks the
+  server whether they hold the same thing — 34 tables matching byte for byte
+  on 2026-09-20 — publishes all five datasources and checks their dashboards
+  against them, and empties the stores again with `uninstall --targets data`.
 
 ### What the agent costs today
 

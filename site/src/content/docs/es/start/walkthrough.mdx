@@ -222,6 +222,21 @@ necesites, o copia `.env.example` a `.env` y carga el fichero con `set -a; . ./.
    —cinco, uno por destino— y el campo del origen de datos que necesita una importación de
    InfluxDB 3. Basta con un trabajo de scrape: el del colector.
 
+7. **Deja que monte Grafana por ti (opcional).**
+
+   ```sh wrap
+   export GRAFANA_TOKEN=…
+   bin/mikroscope forward --influx http://influx:8181 --influx-db mikroscope --grafana http://grafana:3000
+   ```
+
+   Desde la 1.1.0 el colector puede hacer él mismo la última frase del paso 6: apúntalo a un
+   Grafana y crea la fuente de datos y publica el dashboard, una vez, al arrancar, antes de la
+   primera muestra. No hace nada si no se pasa `--grafana`, un Grafana que no lo acepte es un
+   aviso y no un motivo para no recoger, y no borra nunca nada. `--grafana-dry-run` imprime lo
+   que escribiría y para antes de tocar el router, así que puedes leerlo primero.
+   [Importar y comprobar](/mikroscope/es/dashboards/import-and-check/) dice qué destinos saben
+   describir su propia fuente de datos y a cuáles hay que decirles la dirección.
+
 </Steps>
 
 ## Lo que muestra el gráfico
