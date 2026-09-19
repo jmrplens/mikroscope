@@ -200,6 +200,84 @@ deliberada, y [el colector](/mikroscope/es/sinks/) la explica: el anillo del
 agente es lo que protege los datos, y un colector esperando a un almacén lento
 perdería más de lo que pierde el almacén.
 
+## El almacén y el dashboard
+
+### `flightsql: Unauthenticated`, de una fuente de datos de InfluxDB
+
+El plugin de InfluxDB tiene dos transportes y lee la credencial de un sitio
+distinto en cada uno: las llamadas HTTP toman la cabecera `Authorization`, las
+de FlightSQL toman `token`. Una fuente de datos con solo uno de los dos puesto
+responde esto en todos los paneles mientras el almacén está perfectamente.
+Pon **los dos** campos secretos — `token` = el token, `httpHeaderValue1` =
+`Bearer <token>` — o deja que `forward --grafana` construya la fuente de datos,
+que pone los dos.
+
+### `tls: first record does not look like a TLS handshake`
+
+El mismo plugin, los mismos dos transportes, y la otra mitad de la misma
+trampa: el lado de FlightSQL intenta TLS salvo que esté `insecureGrpc`, así que
+una fuente de datos apuntada a un InfluxDB en **HTTP plano** responde esto en
+todos los paneles. Pon `insecureGrpc` en la fuente de datos, o usa
+`forward --grafana`, que sigue el esquema de la URL a la que escribe el
+destino. Medido contra el almacén de referencia el 2026-09-19, creando la
+fuente de datos sin él.
+
+### Los paneles están vacíos y el SQL funciona en `psql`
+
+El plugin de InfluxDB rechaza un resultado cuyas columnas son todas numéricas y
+ninguna es de tipo tiempo, así que un panel cuya consulta devuelve una fila de
+números pinta su texto de «sin valor» — que es exactamente lo que parece un
+equipo tranquilo. Si estás escribiendo un panel, dale una columna `time` aunque
+el panel no la dibuje; `mikroscope dashboards check` pasa la consulta de cada
+panel por la propia API de Grafana y es la forma más rápida de distinguir una
+consulta rota de una tranquila.
+
+### `the <nombre> sink does not know the address Grafana would query`
+
+`forward --grafana` construye una fuente de datos solo para los destinos cuya
+**dirección de escritura es la que consulta Grafana**: `--influx` y
+`--elastic`. Los otros tres no pueden, y cada uno por su motivo — `--prom`
+sirve `/metrics` y lo raspan, así que el Prometheus que consulta Grafana es uno
+del que el colector no ha oído hablar; `--sql` escribe sentencias a un fichero
+y nunca conecta; `--graphite` habla el puerto de ingesta de carbon, que no es
+la API que consulta Grafana. Crea esas en Grafana y nómbralas en
+`--grafana-datasource-uid`, que además le dice a `forward` que no la toque.
+
+### `--influx is a write URL this cannot take apart`
+
+`--influx` puede ser un servidor (`http://host:8181`, con `--influx-db`) o una
+URL de escritura completa, y una completa se usa tal cual. Una URL cuya forma
+no es la `/api/v3/write_lp?db=…` de InfluxDB 3 —un `/api/v2/write` de v2, por
+ejemplo— escribe igual de bien y sencillamente no puede describir una fuente de
+datos, porque nada puede leer de vuelta el nombre de la base de datos. Pasa los
+campos, o adopta una fuente de datos por uid.
+
+### `standard_conforming_strings = off`
+
+`--postgres` rechaza un servidor que responde esto, en vez de escribir en él.
+Las sentencias entrecomillan duplicando la comilla simple y nada más, así que
+con el ajuste apagado un mensaje del kernel terminado en barra invertida escapa
+su propia comilla de cierre y toda sentencia posterior se interpreta como
+contenido de cadena. Enciéndelo para la conexión —`ALTER ROLE … SET
+standard_conforming_strings = on`— o usa `--sql` y aplica el fichero, cuya
+cabecera lo pone ella misma.
+
+### `database "…" does not exist`
+
+`--postgres` conecta a una base de datos; no la crea. El destino declara sus
+**tablas** en el primer lote y nada más, porque crear bases de datos no es
+trabajo de un colector. Haz `createdb mikroscope` antes. El colector sigue
+recogiendo mientras tanto: el fallo se cuenta contra el destino y se registra
+una vez por minuto, y los demás destinos no se ven afectados.
+
+### El colector dice `grafana: could not publish, carrying on without it`
+
+Eso es el comportamiento diseñado, no un fallo a medias que perseguir. Negarse
+a arrancar cambiaría las muestras de la hora que pasó sin funcionar, que no se
+recuperan, por un dashboard publicado en el siguiente arranque, que sí. La
+línea lleva lo que dijo el servidor. `--grafana-dry-run` imprime lo que
+escribiría sin escribir nada, y se ejecuta antes de tocar el router.
+
 ## Leer lo que muestra
 
 Cuando los datos ya llegan, la pregunta cambia de «por qué está roto esto» a
