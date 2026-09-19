@@ -418,3 +418,46 @@ func TestAPIFailuresAreLoggedOnceAndRecoveryIsSaid(t *testing.T) {
 		t.Errorf("a clean report should not mention API failures: %q", got)
 	}
 }
+
+// downClient is a router that answers nothing.
+type downClient struct{}
+
+func (downClient) RunArgsContext(context.Context, []string) (*rosapi.Reply, error) {
+	return nil, errors.New("write: broken pipe")
+}
+
+// TestReconnectIsReportedOnce: a tier that silently reconnects every minute is
+// a different fault from one that reconnected once after a reboot, so the
+// collector says which, and says it per event rather than per round.
+func TestReconnectIsReportedOnce(t *testing.T) {
+	var lines []string
+	// No client and a Redial that works: the first round connects, and the
+	// round still fails because the router answers nothing. That is the
+	// collector-visible shape of a reboot.
+	r := &apitier.Reader{Redial: func(context.Context) (apitier.Client, error) { return downClient{}, nil }}
+	f := &Forwarder{API: r, Log: func(s string) { lines = append(lines, s) }}
+	s := r.Read(context.Background())
+	f.noteAPI(&s)
+	if f.stats.APIReconnects != 1 {
+		t.Fatalf("APIReconnects = %d, want 1", f.stats.APIReconnects)
+	}
+	var reconnects int
+	for _, l := range lines {
+		if strings.Contains(l, "reconnected (1 since start)") {
+			reconnects++
+		}
+	}
+	if reconnects != 1 {
+		t.Fatalf("the reconnection was reported %d times, want once: %v", reconnects, lines)
+	}
+	// A second failed round must not repeat it: the count has not moved.
+	before := len(lines)
+	s2 := apitier.Sample{Errors: []string{"resource: broken pipe"}}
+	f.noteAPI(&s2)
+	if len(lines) != before {
+		t.Errorf("a second failed round logged again: %v", lines[before:])
+	}
+	if got := f.report(); !strings.Contains(got, "reconnect(s)") {
+		t.Errorf("report() does not carry the reconnection: %q", got)
+	}
+}
