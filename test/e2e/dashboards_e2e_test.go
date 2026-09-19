@@ -314,6 +314,19 @@ func awaitEveryFamily(t *testing.T, promAddr string, p *proc) string {
 		`mikroscope_kmsg_records_total{`,  // the kernel-log shape
 		`mikroscope_buddy_free_blocks{`,   // the floored shape
 		`mikroscope_mtd_blocks{`,          // the floored shape
+		// The derive stage's per-packet PMU ratios. These are not "a family
+		// that appears once and stays": they are gauges AT THE NEWEST SAMPLE,
+		// so a scrape landing on a sample with no PMU counters or no packets
+		// serves none of the three, and a scrape one tick later serves all
+		// three. Without this marker the walk can take an exposition from the
+		// wrong tick and fail the three PMU-per-packet panels for a race
+		// rather than for a gap — a Windows runner did exactly that on
+		// 2026-09-20 while Linux never has, which is what a race that depends
+		// on how fast the machine is looks like.
+		//
+		// NO BRACE, unlike the four above: this family carries no labels, so
+		// the line is the name, a space and the value.
+		"\nmikroscope_derived_cycles_per_packet ",
 	}
 	var exposition string
 	if !waitFor(60*time.Second, func() bool {
