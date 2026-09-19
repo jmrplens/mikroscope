@@ -6,6 +6,37 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [1.0.10]
 
+### Fixed
+
+- **Three interface panels were unusable, and `dashboards check` called all
+  three "ok".** Found by looking at the reference deployment rather than at the
+  query results — the check verifies that a query returns rows, not that the
+  rows are legible or the numbers sane.
+
+  - **"Port errors per bin" drew 187 rows** — every interface against every
+    typed error counter — in a nine-unit panel, which renders as a grey smear
+    of overlapping labels. It now lists only the pairs that actually had an
+    error in the window, and says `no port errors in this window` when none
+    did. On the reference RB5009 that is one row, `ether1 rx overflow`, which
+    the smear had made unreadable.
+  - **"Where a port's receive bytes went" peaked at 1.5 EB/s.** The slow-path
+    term is `driver_rx_byte - fp_rx_byte`, both `UInt64`, and the two counters
+    come from the same command without being perfectly consistent: on a handful
+    of samples the second exceeds the first, the subtraction wraps to ~1.8e19,
+    and the real traffic — single-digit MB/s — is flattened to an invisible
+    line. Both subtractions are now signed and floored at zero.
+  - **"Interface drops" said `No data`** where the truth is that there were no
+    drops: the router reports the loss keys for `bridge` alone, and that one
+    reads 0. It says `no drops`.
+
+- **A `greatest()` over an aggregate makes Grafana's InfluxDB plugin answer
+  500** — `An error occurred within the plugin` — while the store answers the
+  same SQL correctly over `/api/v3/query_sql`. The panel then renders its
+  no-value text, so a broken query looks like a quiet device: the port-error
+  panel claimed "no port errors" while `ether1` was overflowing. Casting the
+  result (`::DOUBLE`) fixes it, and a test now fails the build for any
+  uncast one.
+
 ### Documentation
 
 - **The bilingual site was audited page by page against the code, and the first

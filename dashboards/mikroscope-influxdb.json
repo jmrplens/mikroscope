@@ -3689,6 +3689,7 @@
                 }
               ],
               "min": 0,
+              "noValue": "no port errors in this window",
               "thresholds": {
                 "mode": "absolute",
                 "steps": [
@@ -3741,7 +3742,7 @@
               "format": "time_series",
               "interval": "1m",
               "rawQuery": true,
-              "rawSql": "SELECT $__dateBin(time) AS time, concat(interface, ' ', kind) AS metric, max(v) - min(v) AS value FROM (SELECT time, interface, 'rx overflow' AS kind, rx_overflow AS v FROM mikroscope_api_ifcounters WHERE $__timeFilter(time) UNION ALL SELECT time, interface, 'rx fcs error' AS kind, rx_fcs_error AS v FROM mikroscope_api_ifcounters WHERE $__timeFilter(time) UNION ALL SELECT time, interface, 'rx fragment' AS kind, rx_fragment AS v FROM mikroscope_api_ifcounters WHERE $__timeFilter(time) UNION ALL SELECT time, interface, 'rx too short' AS kind, rx_too_short AS v FROM mikroscope_api_ifcounters WHERE $__timeFilter(time) UNION ALL SELECT time, interface, 'rx too long' AS kind, rx_too_long AS v FROM mikroscope_api_ifcounters WHERE $__timeFilter(time) UNION ALL SELECT time, interface, 'rx jabber' AS kind, rx_jabber AS v FROM mikroscope_api_ifcounters WHERE $__timeFilter(time) UNION ALL SELECT time, interface, 'tx fcs error' AS kind, tx_fcs_error AS v FROM mikroscope_api_ifcounters WHERE $__timeFilter(time) UNION ALL SELECT time, interface, 'tx late collision' AS kind, tx_late_collision AS v FROM mikroscope_api_ifcounters WHERE $__timeFilter(time) UNION ALL SELECT time, interface, 'tx excessive collision' AS kind, tx_excessive_collision AS v FROM mikroscope_api_ifcounters WHERE $__timeFilter(time)) GROUP BY 1, 2 ORDER BY 1",
+              "rawSql": "SELECT time, metric, value FROM (SELECT time, metric, value, max(value) OVER (PARTITION BY metric) AS worst FROM (SELECT $__dateBin(time) AS time, concat(interface, ' ', kind) AS metric, greatest(max(v) - min(v), 0)::DOUBLE AS value FROM (SELECT time, interface, 'rx overflow' AS kind, rx_overflow AS v FROM mikroscope_api_ifcounters WHERE $__timeFilter(time) UNION ALL SELECT time, interface, 'rx fcs error' AS kind, rx_fcs_error AS v FROM mikroscope_api_ifcounters WHERE $__timeFilter(time) UNION ALL SELECT time, interface, 'rx fragment' AS kind, rx_fragment AS v FROM mikroscope_api_ifcounters WHERE $__timeFilter(time) UNION ALL SELECT time, interface, 'rx too short' AS kind, rx_too_short AS v FROM mikroscope_api_ifcounters WHERE $__timeFilter(time) UNION ALL SELECT time, interface, 'rx too long' AS kind, rx_too_long AS v FROM mikroscope_api_ifcounters WHERE $__timeFilter(time) UNION ALL SELECT time, interface, 'rx jabber' AS kind, rx_jabber AS v FROM mikroscope_api_ifcounters WHERE $__timeFilter(time) UNION ALL SELECT time, interface, 'tx fcs error' AS kind, tx_fcs_error AS v FROM mikroscope_api_ifcounters WHERE $__timeFilter(time) UNION ALL SELECT time, interface, 'tx late collision' AS kind, tx_late_collision AS v FROM mikroscope_api_ifcounters WHERE $__timeFilter(time) UNION ALL SELECT time, interface, 'tx excessive collision' AS kind, tx_excessive_collision AS v FROM mikroscope_api_ifcounters WHERE $__timeFilter(time)) GROUP BY 1, 2 ORDER BY 1) ) WHERE worst \u003e 0 ORDER BY 1",
               "refId": "A"
             }
           ],
@@ -3814,7 +3815,7 @@
               "format": "time_series",
               "interval": "1m",
               "rawQuery": true,
-              "rawSql": "SELECT $__dateBin(time) AS time, concat(interface, ' ', kind) AS metric, (max(v) - min(v)) / ($__interval_ms / 1000.0) AS value FROM (SELECT time, interface, 'switched in hardware' AS kind, rx_bytes - driver_rx_byte AS v FROM mikroscope_api_ifcounters WHERE $__timeFilter(time) AND driver_rx_byte IS NOT NULL UNION ALL SELECT time, interface, 'CPU fast path', fp_rx_byte FROM mikroscope_api_ifcounters WHERE $__timeFilter(time) AND driver_rx_byte IS NOT NULL UNION ALL SELECT time, interface, 'CPU slow path', driver_rx_byte - fp_rx_byte FROM mikroscope_api_ifcounters WHERE $__timeFilter(time) AND driver_rx_byte IS NOT NULL) GROUP BY 1, 2 ORDER BY 1",
+              "rawSql": "SELECT $__dateBin(time) AS time, concat(interface, ' ', kind) AS metric, greatest(max(v) - min(v), 0) / ($__interval_ms / 1000.0) AS value FROM (SELECT time, interface, 'switched in hardware' AS kind, greatest(rx_bytes::BIGINT - driver_rx_byte::BIGINT, 0) AS v FROM mikroscope_api_ifcounters WHERE $__timeFilter(time) AND driver_rx_byte IS NOT NULL UNION ALL SELECT time, interface, 'CPU fast path', fp_rx_byte::BIGINT FROM mikroscope_api_ifcounters WHERE $__timeFilter(time) AND driver_rx_byte IS NOT NULL UNION ALL SELECT time, interface, 'CPU slow path', greatest(driver_rx_byte::BIGINT - fp_rx_byte::BIGINT, 0) FROM mikroscope_api_ifcounters WHERE $__timeFilter(time) AND driver_rx_byte IS NOT NULL) GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
             }
           ],
@@ -4000,6 +4001,7 @@
                 }
               ],
               "min": 0,
+              "noValue": "no drops",
               "thresholds": {
                 "mode": "absolute",
                 "steps": [

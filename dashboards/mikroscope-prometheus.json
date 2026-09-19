@@ -2954,6 +2954,7 @@
                 }
               ],
               "min": 0,
+              "noValue": "no port errors in this window",
               "thresholds": {
                 "mode": "absolute",
                 "steps": [
@@ -3001,7 +3002,7 @@
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
               },
-              "expr": "sum by (interface, counter) (increase(mikroscope_api_interface_counter_total{counter=~\"rx-overflow|rx-fcs-error|rx-fragment|rx-too-short|rx-too-long|rx-jabber|tx-fcs-error|tx-late-collision|tx-excessive-collision\"}[$__interval]))",
+              "expr": "sum by (interface, counter) (increase(mikroscope_api_interface_counter_total{counter=~\"rx-overflow|rx-fcs-error|rx-fragment|rx-too-short|rx-too-long|rx-jabber|tx-fcs-error|tx-late-collision|tx-excessive-collision\"}[$__interval])) \u003e 0",
               "interval": "1m",
               "legendFormat": "__auto",
               "range": true,
@@ -3186,6 +3187,7 @@
                 }
               ],
               "min": 0,
+              "noValue": "no drops",
               "thresholds": {
                 "mode": "absolute",
                 "steps": [
