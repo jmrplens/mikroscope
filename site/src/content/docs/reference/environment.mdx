@@ -42,12 +42,12 @@ at all. [Commands and flags](/mikroscope/reference/cli/) has every flag.
 
 | Variable                  | Flag             | Read by                                               | Default in the code          | Value in `.env.example` |
 | ------------------------- | ---------------- | ----------------------------------------------------- | ---------------------------- | ----------------------- |
-| `MIKROSCOPE_ROUTER`       | `--router`       | `doctor`, `install`, `upgrade`, `uninstall`, `status` | none (required)              | empty                   |
+| `MIKROSCOPE_ROUTER`       | `--router`       | `doctor`, `install`, `upgrade`, `uninstall`, `status` | none (required)              | set                   |
 | `MIKROSCOPE_SSH_PORT`     | `--ssh-port`     | the same                                              | ssh config                   | `22`                    |
 | `MIKROSCOPE_SSH_KEY`      | `--ssh-key`      | the same                                              | ssh agent or config          | empty                   |
 | `MIKROSCOPE_ARCH`         | `--arch`         | the deployment verbs                                  | `arm64`                      | `arm64`                 |
-| `MIKROSCOPE_AGENT_TAR`    | `--agent-tar`    | `plan`, `install`, `upgrade`, `image`                 | empty (build the agent here) | not in the file         |
-| `MIKROSCOPE_REMOTE_IMAGE` | `--remote-image` | `plan`, `install`, `upgrade`                          | empty (upload a tar)         | not in the file         |
+| `MIKROSCOPE_AGENT_TAR`    | `--agent-tar`    | `plan`, `install`, `upgrade`, `image`                 | empty (build the agent here) | commented out           |
+| `MIKROSCOPE_REMOTE_IMAGE` | `--remote-image` | `plan`, `install`, `upgrade`                          | empty (upload a tar)         | commented out           |
 | `MIKROSCOPE_NAME`         | `--name`         | the deployment verbs                                  | `mikroscope`                 | commented out           |
 | `MIKROSCOPE_VETH`         | `--veth`         | the deployment verbs                                  | `veth-mikroscope`            | `veth-mikroscope`       |
 | `MIKROSCOPE_SUBNET`       | `--subnet`       | the deployment verbs, `record`, `forward`             | `172.30.10.0/30`             | `172.30.10.0/30`        |
@@ -104,8 +104,7 @@ user](/mikroscope/security/api-user/) has the policy that user needs.
 Setting a sink's URL variable is enough to turn that sink on: `forward` builds
 every sink whose flag ends up non-empty, from the command line or from the
 variable. Every one of these names carries the `MIKROSCOPE_` prefix: a bare
-`LOKI_URL` is read by nothing, and `.env.example` says so beside
-`MIKROSCOPE_LOKI_URL`.
+`LOKI_URL` is read by nothing.
 
 ## Credentials that have no flag
 
@@ -130,9 +129,7 @@ is read from the environment only.
 
 `dashboards import` and `dashboards check` read `GRAFANA_URL` (the default of
 `--grafana`) and `GRAFANA_TOKEN`. Neither has the `MIKROSCOPE_` prefix.
-`.env.example` sets `GRAFANA_URL` twice, once empty in its LAN-services block
-and once commented out in the Grafana block, and says the token never goes in
-the file.
+`.env.example` carries both, commented out, in its Grafana block.
 
 ## The agent's envlist
 
@@ -220,17 +217,6 @@ The same cliff was measured from the other side on 2026-09-12: <Measured id="gc.
 runs with their defaults.
 
 </Aside>
-
-## In .env.example but not read by the code
-
-`.env.example` is also the development template for the project's own devices,
-so it carries names that no binary reads. Setting them changes nothing:
-
-- `MIKROSCOPE_ROUTEROS`, the RouterOS version of the reference device.
-- `OPERATOR_HOST_IP`, the operator host for push-sink and probe tests.
-- The `HEXS_*` block (`HEXS_ROUTER`, `HEXS_SSH_PORT`, `HEXS_SSH_KEY`,
-  `HEXS_ARCH`, `HEXS_API_ADDR`, `HEXS_API_USER`, `HEXS_API_PASSWORD`), kept
-  for a hEX S that has not arrived.
 
 <SeeAlso>
 

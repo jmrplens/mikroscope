@@ -45,12 +45,12 @@ opciones](/mikroscope/es/reference/cli/) tiene todas las opciones.
 
 | Variable                  | Opción           | La leen                                               | Por defecto en el código        | Valor en `.env.example` |
 | ------------------------- | ---------------- | ----------------------------------------------------- | ------------------------------- | ----------------------- |
-| `MIKROSCOPE_ROUTER`       | `--router`       | `doctor`, `install`, `upgrade`, `uninstall`, `status` | ninguno (obligatoria)           | vacío                   |
+| `MIKROSCOPE_ROUTER`       | `--router`       | `doctor`, `install`, `upgrade`, `uninstall`, `status` | ninguno (obligatoria)           | definida                |
 | `MIKROSCOPE_SSH_PORT`     | `--ssh-port`     | los mismos                                            | configuración de ssh            | `22`                    |
 | `MIKROSCOPE_SSH_KEY`      | `--ssh-key`      | los mismos                                            | agente o configuración de ssh   | vacío                   |
 | `MIKROSCOPE_ARCH`         | `--arch`         | los verbos de despliegue                              | `arm64`                         | `arm64`                 |
-| `MIKROSCOPE_AGENT_TAR`    | `--agent-tar`    | `plan`, `install`, `upgrade`, `image`                 | vacío (compilar el agente aquí) | no está en el fichero   |
-| `MIKROSCOPE_REMOTE_IMAGE` | `--remote-image` | `plan`, `install`, `upgrade`                          | vacío (subir un tar)            | no está en el fichero   |
+| `MIKROSCOPE_AGENT_TAR`    | `--agent-tar`    | `plan`, `install`, `upgrade`, `image`                 | vacío (compilar el agente aquí) | comentada               |
+| `MIKROSCOPE_REMOTE_IMAGE` | `--remote-image` | `plan`, `install`, `upgrade`                          | vacío (subir un tar)            | comentada               |
 | `MIKROSCOPE_NAME`         | `--name`         | los verbos de despliegue                              | `mikroscope`                    | comentada               |
 | `MIKROSCOPE_VETH`         | `--veth`         | los verbos de despliegue                              | `veth-mikroscope`               | `veth-mikroscope`       |
 | `MIKROSCOPE_SUBNET`       | `--subnet`       | los verbos de despliegue, `record`, `forward`         | `172.30.10.0/30`                | `172.30.10.0/30`        |
@@ -108,8 +108,7 @@ usuario.
 Basta con definir la variable de URL de un destino para activarlo: `forward`
 construye todos los destinos cuya opción acaba no vacía, venga de la línea de
 órdenes o de la variable. Todos estos nombres llevan el prefijo `MIKROSCOPE_`:
-un `LOKI_URL` a secas no lo lee nada, y `.env.example` lo dice junto a
-`MIKROSCOPE_LOKI_URL`.
+un `LOKI_URL` a secas no lo lee nada.
 
 ## Credenciales que no tienen opción
 
@@ -134,9 +133,7 @@ secretos que usa la CLI se leen solo del entorno.
 
 `dashboards import` y `dashboards check` leen `GRAFANA_URL` (el valor por
 defecto de `--grafana`) y `GRAFANA_TOKEN`. Ninguna de las dos lleva el prefijo
-`MIKROSCOPE_`. `.env.example` define `GRAFANA_URL` dos veces, una vacía en su
-bloque de servicios de la LAN y otra comentada en el bloque de Grafana, y dice
-que el token nunca va en el fichero.
+`MIKROSCOPE_`. `.env.example` lleva las dos, comentadas, en su bloque de Grafana.
 
 ## La envlist del agente
 
@@ -228,19 +225,6 @@ El mismo acantilado se midió desde el otro lado el 2026-09-12: <Measured id="gc
 y `SYS_ROOT` no tienen opción, así que un agente instalado funciona con sus valores por defecto.
 
 </Aside>
-
-## En .env.example pero sin que el código las lea
-
-`.env.example` es también la plantilla de desarrollo para los equipos del
-propio proyecto, así que lleva nombres que ningún binario lee. Definirlos no
-cambia nada:
-
-- `MIKROSCOPE_ROUTEROS`, la versión de RouterOS del equipo de referencia.
-- `OPERATOR_HOST_IP`, el equipo del operador para las pruebas de destinos push
-  y de sondeo.
-- El bloque `HEXS_*` (`HEXS_ROUTER`, `HEXS_SSH_PORT`, `HEXS_SSH_KEY`,
-  `HEXS_ARCH`, `HEXS_API_ADDR`, `HEXS_API_USER`, `HEXS_API_PASSWORD`), guardado
-  para un hEX S que todavía no ha llegado.
 
 <SeeAlso>
 

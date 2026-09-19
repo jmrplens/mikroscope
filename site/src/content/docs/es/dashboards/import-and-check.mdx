@@ -113,7 +113,7 @@ mikroscope dashboards check  --store influxdb --datasource-uid <uid> --window 15
 
 | Opción             | Por defecto          | La usa        | Qué hace                                                                                      |
 | ------------------ | -------------------- | ------------- | --------------------------------------------------------------------------------------------- |
-| `--store`          | `influxdb`           | import, check | `influxdb` o `prometheus`; también el id del plugin de fuente de datos que se envía a Grafana |
+| `--store`          | `influxdb`           | import, check | `influxdb`, `prometheus`, `postgres`, `graphite` o `elasticsearch`; también el id del plugin de fuente de datos que se envía a Grafana |
 | `--grafana`        | `$GRAFANA_URL`       | import, check | la URL base de Grafana                                                                        |
 | `--datasource-uid` | ninguno, obligatoria | import, check | la fuente de datos a la que se enlaza `DS_MIKROSCOPE`                                         |
 | `--no-probe`       | desactivada          | import, check | no preguntar a la fuente de datos qué contiene; usar los valores compilados por defecto       |
@@ -312,7 +312,7 @@ scrape del colector cada 5 s: todos los paneles devolvieron filas, entre 228 y 2
   lleva cada uno.
 - [Reglas de alerta](/mikroscope/es/dashboards/alerts/): los ficheros de aprovisionamiento que
   escribe `gen`, que `check` no ejecuta.
-- [Prometheus](/mikroscope/es/sinks/prometheus/): el `/metrics` del colector que lee el primer trabajo
+- [Prometheus](/mikroscope/es/sinks/prometheus/): el `/metrics` del colector, que es lo que lee el trabajo
   de scrape.
 - [InfluxDB 3](/mikroscope/es/sinks/influxdb/): la URL de escritura, el token y los límites propios
   del almacén.

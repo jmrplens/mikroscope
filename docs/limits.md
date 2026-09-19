@@ -28,7 +28,8 @@ Measured on RB5009UG+S+ · 4 × 1.4 GHz Cortex-A72 · RouterOS 7.24.2 · 202
 **The memory is inside the budget and the CPU is not.** 13.2 MiB against
 the 16 MiB the budget asks for, and 2.69 % against
 the 2 %, with every source read — the perf timings, buddyinfo, the MTD
-ECC counters, the cgroup events and the port counters among them.
+ECC counters, slabinfo, the kernel log and the cgroup events among them. Per-interface traffic is
+not in that set: the container cannot see it, and it comes from the API tier.
 
 It was over on both until 1.0.6. The ring held 300 s rather than 60 and the memory limit was a
 flat 40 MiB that never bound, which put the same agent at 31.3 MiB; neither number was a statement
@@ -133,9 +134,9 @@ The measured runs:
 | 10 Hz (default) | default | **2.69 %** | 2 685 | 13.2 MiB | **0** | 0 / 0 |
 | 20 Hz | default | **4.61 %** | 2 303 | 15.4 MiB | **0** | 0 / 0 |
 | 50 Hz | default | **9.63 %** | 1 926 | 23.3 MiB | **0** | 0 / 0 |
-| 100 Hz | default | **16.83 %** | 1 684 | 45.7 MiB | 5 (0.01 %) | 0 / 0 |
-| 50 Hz | `FLOOR_HZ=50` | **22.56 %** | 4 511 | 25.1 MiB | 4 (0.02 %) | 0 / 0 |
-| 100 Hz | `FLOOR_HZ=100` | **42.70 %** | 4 270 | 49.5 MiB | 178 (0.44 %) | 0 / 0 |
+| 100 Hz | default | **16.83 %** | 1 684 | 45.7 MiB | 5 (0.02 %) | 0 / 0 |
+| 50 Hz | `FLOOR_HZ=50` | **22.56 %** | 4 511 | 25.1 MiB | 4 (0.03 %) | 0 / 0 |
+| 100 Hz | `FLOOR_HZ=100` | **42.70 %** | 4 270 | 49.5 MiB | 178 (0.59 %) | 0 / 0 |
 
 `FLOOR_HZ` means every source is read on every tick, with no per-source floor at
 all — the worst case the agent can be asked for.
@@ -184,9 +185,9 @@ single interval 21.7 ms.
 
 At the default floors a whole tick's sources are read in under 2 ms for 97.7 % of
 samples at 100 Hz, comfortably inside a 10 ms period. `FLOOR_HZ` pushes 1.45 %
-of reads past 5 ms — and not one read of 29 994 came in under 2 ms — and those
-are the ticks that slip: 0.444 % of them at 100 Hz with every source on every
-tick, against 0.012 % at the default floors. The CPU headroom is
+of reads past 5 ms — and not one read of 29 996 came in under 2 ms — and those
+are the ticks that slip: 0.593 % of them at 100 Hz with every
+source on every tick, against 0.017 % at the default floors. The CPU headroom is
 larger than the timing headroom, which is why the ceiling is a statement about
 I/O rather than about the A72.
 

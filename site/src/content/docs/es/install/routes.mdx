@@ -50,16 +50,16 @@ subir:
 
 ```sh
 mikroscope install --router usuario@192.168.88.1 \
-  --remote-image jmrplens/mikroscope-agent:1.0.10
+  --remote-image jmrplens/mikroscope-agent:1.0.9
 ```
 
 No se sube nada, ningún tar aterriza en el equipo, y `uninstall` no tiene
 ningún fichero del que dar cuenta: el paso del contenedor pasa a ser
-`/container/add remote-image="jmrplens/mikroscope-agent:1.0.10" …` y el plan
+`/container/add remote-image="jmrplens/mikroscope-agent:1.0.9" …` y el plan
 imprime `the router pulls … (nothing is uploaded)` donde iría la línea de
 subida. La release publica la imagen dos veces, como
-`jmrplens/mikroscope-agent:1.0.10` en Docker Hub y como
-`ghcr.io/jmrplens/mikroscope-agent:1.0.10` en GHCR. Las dos llevan `linux/amd64`,
+`jmrplens/mikroscope-agent:1.0.9` en Docker Hub y como
+`ghcr.io/jmrplens/mikroscope-agent:1.0.9` en GHCR. Las dos llevan `linux/amd64`,
 `linux/arm64`, `linux/arm/v7` y `linux/arm/v5`, y RouterOS toma la que necesita
 su arquitectura —que es la razón de que esta ruta no pregunte nada sobre la
 placa: las dos clases de ARM de 32 bits que vende MikroTik están en el índice.
@@ -86,7 +86,7 @@ que tenga sitio en RAM para las capas mientras las extrae.
 	referencia de GHCR. Instala con `--agent-tar` si prefieres no tocarlo.
 </Aside>
 
-Una referencia sin host —`jmrplens/mikroscope-agent:1.0.10`— deja el registro a
+Una referencia sin host —`jmrplens/mikroscope-agent:1.0.9`— deja el registro a
 lo que el router ya tenga configurado, y entonces `doctor` no comprueba nada al
 respecto. `--remote-image` toma su valor por defecto de
 `MIKROSCOPE_REMOTE_IMAGE`, y `upgrade` también lo acepta; `image` lo rechaza,
@@ -99,7 +99,7 @@ otra máquina en absoluto:
 
 ```sh
 mikroscope plan --rsc \
-  --remote-image jmrplens/mikroscope-agent:1.0.10 \
+  --remote-image jmrplens/mikroscope-agent:1.0.9 \
   --out install.rsc
 ```
 
@@ -135,7 +135,7 @@ había en el equipo, y cada una retirada antes de la siguiente. En todas ellas
 el agente respondió a `/healthz` desde el equipo del colector: la compilación
 desde el checkout y el `mikroscope-agent-arm64.tar` publicado con 2 ms de ida y
 vuelta, la descarga que el propio router hizo de
-`jmrplens/mikroscope-agent:1.0.10` desde Docker Hub con 2 ms, y el script de
+`jmrplens/mikroscope-agent:1.0.9` desde Docker Hub con 2 ms, y el script de
 `plan --rsc` — subido e importado con `/import`, sin CLI ninguna en la
 instalación misma — con 15 ms en sus primeras muestras. `uninstall` verificó
 después por recuento de propiedad en cada caso, y el `/export` del router tras
@@ -150,7 +150,6 @@ las cuatro era idéntico byte a byte al tomado antes de ellas.
 	ninguna ruta en hardware arm ni x86_64.
 </NotClaimed>
 
-<SeeAlso>
 
 ## Un checkout, con Go
 
@@ -202,7 +201,7 @@ mientras que una ARMv7 no arranca en aquellas.
 
 <Steps>
 
-1. Descarga `mikroscope_1.0.10_<so>_<arch>.tar.gz` (`.zip` en Windows) y el tar
+1. Descarga `mikroscope_1.0.9_<so>_<arch>.tar.gz` (`.zip` en Windows) y el tar
    de la imagen del agente de la tabla de arriba, junto con `checksums.txt` y
    `checksums.txt.sigstore.json`.
 
@@ -211,7 +210,7 @@ mientras que una ARMv7 no arranca en aquellas.
 3. Desempaqueta la CLI e instala:
 
    ```sh
-   tar xzf mikroscope_1.0.10_linux_x86_64.tar.gz
+   tar xzf mikroscope_1.0.9_linux_x86_64.tar.gz
    ./mikroscope install --router usuario@192.168.88.1 \
      --arch arm64 --agent-tar mikroscope-agent-arm64.tar
    ```
@@ -238,7 +237,7 @@ subida: el tar sube con `scp`, RouterOS lo extrae al añadir el contenedor, e
 
 <Aside type="tip" title="Dos artefactos con nombres parecidos">
 	`mikroscope-agent-arm64.tar` es la imagen de contenedor para cargar de lado, la que quiere
-	`--agent-tar`. `mikroscope-agent_1.0.10_linux_arm64.tar.gz` es un archivo con el binario del agente
+	`--agent-tar`. `mikroscope-agent_1.0.9_linux_arm64.tar.gz` es un archivo con el binario del agente
 	a secas, para leerlo o ejecutarlo fuera de un contenedor; `--agent-tar` lo rechaza.
 </Aside>
 
@@ -263,6 +262,7 @@ descargado contra una lista que cubre toda la release. Cada archivo lleva ademá
 un SBOM en SPDX (`<archivo>.spdx.json`) con su propio paquete de firma, que se
 verifica igual.
 
+<SeeAlso>
 ## Véase también
 
 - [Lo que necesita el router](/mikroscope/es/install/prerequisites/): los tres requisitos que

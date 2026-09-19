@@ -188,16 +188,6 @@ export const campaigns = {
 		},
 		source: "site/src/content/docs/limits/source-floors.mdx (undated there)",
 	},
-	"squeeze-2026-09-15": {
-		...RB5009,
-		date: "2026-09-15",
-		conditions: {
-			en: "3 476 samples, softnet `time_squeeze` per sample",
-			es: "3 476 muestras, `time_squeeze` de softnet por muestra",
-		},
-		source:
-			"site/src/content/docs/sinks/derive.mdx (the share, the date and the sample count); the date and the sample count are also the comment on Derived.Burst, internal/derive/derive.go",
-	},
 	"squeeze-2026-09-16": {
 		...RB5009,
 		date: "2026-09-16",
@@ -345,6 +335,8 @@ export interface Run {
 	usPerSample: number;
 	rssMiB: number;
 	slipped: number;
+	/** Samples the window actually delivered — slippedPct's denominator. */
+	samples: number;
 	slippedPct: number;
 	gaps: number;
 	drops: number;
@@ -371,6 +363,7 @@ export const runs: readonly Run[] = [
 		usPerSample: 2685,
 		rssMiB: 13.2,
 		slipped: 0,
+		samples: 3000,
 		slippedPct: 0.0,
 		gaps: 0,
 		drops: 0,
@@ -385,6 +378,7 @@ export const runs: readonly Run[] = [
 		usPerSample: 2303,
 		rssMiB: 15.4,
 		slipped: 0,
+		samples: 6000,
 		slippedPct: 0.0,
 		gaps: 0,
 		drops: 0,
@@ -399,6 +393,7 @@ export const runs: readonly Run[] = [
 		usPerSample: 1926,
 		rssMiB: 23.3,
 		slipped: 0,
+		samples: 14999,
 		slippedPct: 0.0,
 		gaps: 0,
 		drops: 0,
@@ -413,7 +408,8 @@ export const runs: readonly Run[] = [
 		usPerSample: 1684,
 		rssMiB: 45.7,
 		slipped: 5,
-		slippedPct: 0.012,
+		samples: 30000,
+		slippedPct: 0.017,
 		gaps: 0,
 		drops: 0,
 		flags: FLAGS_DEFAULT,
@@ -427,7 +423,8 @@ export const runs: readonly Run[] = [
 		usPerSample: 4511,
 		rssMiB: 25.1,
 		slipped: 4,
-		slippedPct: 0.02,
+		samples: 15000,
+		slippedPct: 0.027,
 		gaps: 0,
 		drops: 0,
 		flags: FLAGS_DEFAULT,
@@ -441,7 +438,8 @@ export const runs: readonly Run[] = [
 		usPerSample: 4270,
 		rssMiB: 49.5,
 		slipped: 178,
-		slippedPct: 0.444,
+		samples: 29996,
+		slippedPct: 0.593,
 		gaps: 0,
 		drops: 0,
 		flags: FLAGS_DEFAULT,
@@ -741,9 +739,21 @@ const fixed = {
 		digits: 0,
 		campaign: "line-size-2026-09-17",
 	},
+	// How many samples one relay pull may carry. NOT measured: it is
+	// RelayMax x 100 / (line x headroom), and it moves whenever the line does.
+	// It is here, with the assertion below, because it drifted silently once:
+	// the line grew from 2 560 B to 3 456 B in 1.0.5, the binary began printing
+	// 13, and six pages went on saying 18 until the 2026-09-19 audit.
+	"relay.maxBatch": {
+		kind: "reading",
+		value: 13,
+		unit: "",
+		digits: 0,
+		campaign: "line-size-2026-09-17",
+	},
 } satisfies Record<string, Measurement>;
 
-type RunMetric = "cpu" | "rss" | "usPerSample";
+type RunMetric = "cpu" | "rss" | "usPerSample" | "slippedPct";
 
 export type MeasurementId = keyof typeof fixed | `run.${RunKey}.${RunMetric}`;
 
@@ -759,6 +769,12 @@ const fromRuns = Object.fromEntries(
 			[
 				`run.${r.key}.usPerSample`,
 				{ ...base, value: r.usPerSample, unit: "µs", digits: 0 },
+			],
+			// Rendered rather than typed into prose: the three published
+			// percentages were a consistent x0.75 out until 2026-09-19.
+			[
+				`run.${r.key}.slippedPct`,
+				{ ...base, value: r.slippedPct, unit: "%", digits: 3 },
 			],
 		];
 	}),
@@ -793,6 +809,34 @@ if (!(installDefault.rssMiB <= measurements["budget.rss"].value)) {
 	throw new Error(
 		"measurements.ts: the install-default run no longer fits the memory budget; rewrite cost/index.mdx and home.ts, which say it does",
 	);
+}
+// Every slipped percentage is its own count over its own window. Stated because
+// it was wrong: 0e5321c published three percentages computed against a 400 s
+// denominator for 300 s windows, a consistent x0.75, and the page printed a
+// count and a percentage that did not divide to each other.
+for (const r of runs) {
+	const pct = Math.round((r.slipped / r.samples) * 100 * 1000) / 1000;
+	if (Math.abs(pct - r.slippedPct) > 0.001) {
+		throw new Error(
+			`measurements.ts: run ${r.key} reports ${r.slippedPct} % slipped but ${r.slipped}/${r.samples} is ${pct} %`,
+		);
+	}
+}
+// The relay cap follows the line size, and the pages quote it. internal/transport
+// /transport.go: RelayMax 64 512 B, relayHeadroomPercent 134. Recomputed here so
+// that growing the line cannot leave the prose behind a second time.
+{
+	const relayMax = 64512;
+	const headroomPercent = 134;
+	const cap = Math.floor(
+		(relayMax * 100) /
+			(measurements["ring.lineChargedBytes"].value * headroomPercent),
+	);
+	if (cap !== measurements["relay.maxBatch"].value) {
+		throw new Error(
+			`measurements.ts: the relay cap is now ${cap}, not ${measurements["relay.maxBatch"].value}. Update relay.maxBatch and the pages that quote it: install/reaching-the-agent, record/index, reference/cli, reference/http and sinks/index, in both locales.`,
+		);
+	}
 }
 // "nothing was lost": cost/rate-ceiling.mdx (both locales), src/data/home.ts cost.after.
 if (runs.some((r) => r.gaps !== 0 || r.drops !== 0)) {

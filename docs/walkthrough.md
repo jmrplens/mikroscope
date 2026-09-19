@@ -18,8 +18,8 @@ own `/proc`: `/proc/stat` per core, `/proc/interrupts`, `/proc/softirqs`,
 
 The **CLI** runs on your machine. It installs and removes the agent, records a
 window with markers, draws a deterministic SVG of it, and runs as a collector
-that pulls from the agent, merges a RouterOS API tier at 1 Hz, and fans out to
-file, Prometheus and InfluxDB 3. It is released as an archive per platform —
+that pulls from the agent, merges a RouterOS API tier at 1 Hz, and writes to ten
+sinks — file, Prometheus and InfluxDB 3 among them. It is released as an archive per platform —
 linux, macOS, Windows and FreeBSD on amd64, arm64 and arm — and the agent
 beside it as one image tar per architecture and as a registry image, on Docker
 Hub as `jmrplens/mikroscope-agent` and on GHCR as
@@ -126,10 +126,11 @@ plain defaults, whatever the CLI's usage text says. Export the variables you nee
 
    The release carries the CLI as an archive per platform — linux, macOS, Windows and FreeBSD on
    amd64, arm64 and arm — with `checksums.txt`, cosign signatures and SBOMs beside it. The agent
-   travels separately, as one image tar per architecture (`mikroscope-agent-arm64.tar`,
-   `mikroscope-agent-arm.tar`, `mikroscope-agent-amd64.tar`) and as a registry image, published
-   both as `jmrplens/mikroscope-agent:1.0.0` on Docker Hub and as
-   `ghcr.io/jmrplens/mikroscope-agent:1.0.0` on GHCR; step 2 takes one of the two.
+   travels separately, as four image tars, one per architecture
+   (`mikroscope-agent-amd64.tar`, `-arm64`, `-armv5`, `-armv7` — 32-bit ARM was split in two in
+   1.0.2, and the wrong tar is an `exec format error`) and as a registry image, published both as
+   `jmrplens/mikroscope-agent:1.0.9` on Docker Hub and as
+   `ghcr.io/jmrplens/mikroscope-agent:1.0.9` on GHCR; step 2 takes one of the two.
 
    From a checkout instead:
 

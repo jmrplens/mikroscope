@@ -234,7 +234,7 @@ does nothing. The table marks which verb reads each flag.
 | `--for`         | `0` (until Ctrl-C)           | none                  | `record`, `forward`         | run this long, then stop                                                                                                                                                                                                                                                                                               |
 | `--from-start`  | `false`                      | none                  | `record`                    | backfill everything the agent's ring holds before going live                                                                                                                                                                                                                                                           |
 | `--poll`        | `500ms`                      | none                  | `record`, `forward`         | how often the agent's ring is pulled                                                                                                                                                                                                                                                                                   |
-| `--batch`       | `0`                          | none                  | `record`, `forward`         | samples per pull; `0` is twice what one `--poll` produces at the agent's rate, never under 20. The relay caps a pull at 18. A pull repeats until it comes back short                                                                                                                                                   |
+| `--batch`       | `0`                          | none                  | `record`, `forward`         | samples per pull; `0` is twice what one `--poll` produces at the agent's rate, never under 20. The relay caps a pull at 13. A pull repeats until it comes back short                                                                                                                                                   |
 | `--transport`   | `auto`                       | none                  | `record`, `forward`         | `auto` (direct, then relay), `direct` (HTTP to the veth) or `relay` (`/tool fetch` over the RouterOS API; each call returns at most 64 512 B and took either ~3 ms or ~1 s on the RB5009, RouterOS 7.24.2, 2026-09-11; see [reaching the agent](https://jmrp.io/docs/mikroscope/install/reaching-the-agent/)) |
 | `--log-markers` | `false`                      | none                  | `record`, `mark`            | `record`: after recording, pull the router log over the API and append the matching lines to `<out>.markers.csv`. `mark`: add the log lines of the recording's window                                                                                                                                                  |
 | `--topics`      | `system,interface,container` | none                  | `record`, `mark`            | log topics kept as markers with `--log-markers`                                                                                                                                                                                                                                                                        |
@@ -403,12 +403,12 @@ at all. [Commands and flags](https://jmrp.io/docs/mikroscope/reference/cli/) has
 
 | Variable                  | Flag             | Read by                                               | Default in the code          | Value in `.env.example` |
 | ------------------------- | ---------------- | ----------------------------------------------------- | ---------------------------- | ----------------------- |
-| `MIKROSCOPE_ROUTER`       | `--router`       | `doctor`, `install`, `upgrade`, `uninstall`, `status` | none (required)              | empty                   |
+| `MIKROSCOPE_ROUTER`       | `--router`       | `doctor`, `install`, `upgrade`, `uninstall`, `status` | none (required)              | set                   |
 | `MIKROSCOPE_SSH_PORT`     | `--ssh-port`     | the same                                              | ssh config                   | `22`                    |
 | `MIKROSCOPE_SSH_KEY`      | `--ssh-key`      | the same                                              | ssh agent or config          | empty                   |
 | `MIKROSCOPE_ARCH`         | `--arch`         | the deployment verbs                                  | `arm64`                      | `arm64`                 |
-| `MIKROSCOPE_AGENT_TAR`    | `--agent-tar`    | `plan`, `install`, `upgrade`, `image`                 | empty (build the agent here) | not in the file         |
-| `MIKROSCOPE_REMOTE_IMAGE` | `--remote-image` | `plan`, `install`, `upgrade`                          | empty (upload a tar)         | not in the file         |
+| `MIKROSCOPE_AGENT_TAR`    | `--agent-tar`    | `plan`, `install`, `upgrade`, `image`                 | empty (build the agent here) | commented out           |
+| `MIKROSCOPE_REMOTE_IMAGE` | `--remote-image` | `plan`, `install`, `upgrade`                          | empty (upload a tar)         | commented out           |
 | `MIKROSCOPE_NAME`         | `--name`         | the deployment verbs                                  | `mikroscope`                 | commented out           |
 | `MIKROSCOPE_VETH`         | `--veth`         | the deployment verbs                                  | `veth-mikroscope`            | `veth-mikroscope`       |
 | `MIKROSCOPE_SUBNET`       | `--subnet`       | the deployment verbs, `record`, `forward`             | `172.30.10.0/30`             | `172.30.10.0/30`        |
@@ -455,8 +455,7 @@ user](https://jmrp.io/docs/mikroscope/security/api-user/) has the policy that us
 Setting a sink's URL variable is enough to turn that sink on: `forward` builds
 every sink whose flag ends up non-empty, from the command line or from the
 variable. Every one of these names carries the `MIKROSCOPE_` prefix: a bare
-`LOKI_URL` is read by nothing, and `.env.example` says so beside
-`MIKROSCOPE_LOKI_URL`.
+`LOKI_URL` is read by nothing.
 
 ### Credentials that have no flag
 
@@ -477,9 +476,7 @@ is read from the environment only.
 
 `dashboards import` and `dashboards check` read `GRAFANA_URL` (the default of
 `--grafana`) and `GRAFANA_TOKEN`. Neither has the `MIKROSCOPE_` prefix.
-`.env.example` sets `GRAFANA_URL` twice, once empty in its LAN-services block
-and once commented out in the Grafana block, and says the token never goes in
-the file.
+`.env.example` carries both, commented out, in its Grafana block.
 
 ### The agent's envlist
 
@@ -574,17 +571,6 @@ The entries install writes into the agent's envlist:
 > The same cliff was measured from the other side on 2026-09-12: 9.38 % of one core at 14 MiB against 1.39 % with room, both with the ring full. `IRQ_TOP_K`, `CAPTURE_PRE_S`, `CAPTURE_POST_S`, `CAPTURE_POLICY`,
 > `TRIGGER_REFRACTORY_S`, `SOURCES`, `PROC_ROOT` and `SYS_ROOT` have no flag, so an installed agent
 > runs with their defaults.
-
-### In .env.example but not read by the code
-
-`.env.example` is also the development template for the project's own devices,
-so it carries names that no binary reads. Setting them changes nothing:
-
-- `MIKROSCOPE_ROUTEROS`, the RouterOS version of the reference device.
-- `OPERATOR_HOST_IP`, the operator host for push-sink and probe tests.
-- The `HEXS_*` block (`HEXS_ROUTER`, `HEXS_SSH_PORT`, `HEXS_SSH_KEY`,
-  `HEXS_ARCH`, `HEXS_API_ADDR`, `HEXS_API_USER`, `HEXS_API_PASSWORD`), kept
-  for a hEX S that has not arrived.
 
 ### See also
 
@@ -736,7 +722,7 @@ kinds the `seconds` form does not: a gap line first when `since` is older than
 the ring, and a trigger line before each sample a capture condition fired on.
 `max` exists for the relay, because `/tool fetch output=user` returns at
 most 64 512 B on RouterOS 7.24.2 and truncates the rest silently; the relay
-asks for at most 18 lines.
+asks for at most 13 lines.
 
 > **A large /snapshot is not a free way to read the cost**
 >
@@ -950,6 +936,7 @@ below is what the collector carries.
 | everything recomputed from samples: CPU, windows, runs, receive path, memory, PMU, sensors, flash, disk, kernel log, observer counters | the samples it pulled, folded by the same `Totals` code   |
 | the sampler's timing histograms (`mikroscope_tick_*`)                                                                                 | `dt_ns`, `wake_ns` and `read_ns`, which ride in each sample |
 | `mikroscope_slipped_total`, `mikroscope_sampler_ticks_total`                                                                          | the agent's `/sampler`, read at start and every minute    |
+| `mikroscope_sampler_ticks_total`                                                                                                      | ticks the agent took since it started, as the agent counts them|
 | trigger and capture families                                                                                                          | the same, while `CAPTURE_MB` is above 0                   |
 | device facts (`mikroscope_device_info`, ceilings, cadences)                                                                           | `/capabilities`, re-read every five minutes               |
 | `mikroscope_collector_*`, `mikroscope_derived_*`                                                                                      | its own: the derive stage and its counters                |
@@ -1835,7 +1822,7 @@ its table, names ports without asking RouterOS:
   no port are absent from it;
 - the collector's `link-flap` detection is keyed by the port name and reads the
   same classification: a flap is `link-up` and `link-down` records on one port,
-  counted, not the text parsed a second time;
+  counted, through the same classifier rather than by re-reading the text;
 - `mikroscope status` prints the board and whether it has a map, for example
   `eth1 (ether2)`; `/healthz` and `/capabilities` carry the board, and
   `/capabilities` and `mikroscope_device_info` carry the table's evidence string

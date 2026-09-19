@@ -74,7 +74,7 @@ permissions (9)` en vez de venir vacía.
   (`MIKROSCOPE_API_USER`) y la contraseña solo desde
   `MIKROSCOPE_API_PASSWORD`, nunca desde una opción.
 - Cada llamada devuelve como mucho <Measured id="relay.replyMaxBytes" />; RouterOS trunca en silencio lo
-  que sea más largo. Por eso el relay pide como mucho 18 muestras por petición y
+  que sea más largo. Por eso el relay pide como mucho <Measured id="relay.maxBatch" /> muestras por petición y
   rechaza una respuesta que llegue al tope en vez de interpretarla truncada.
   `forward` avisa al arrancar cuando eso no puede seguir la cadencia del agente.
 - Cada llamada tarda o ~3 ms o ~1 s; más o menos la mitad de las llamadas
@@ -118,7 +118,7 @@ Lo que abre un servicio escuchando para toda la LAN está en
 | Vía        | Necesita                                                               | Costes y límites                                                                                                         |
 | ---------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
 | directa    | una ruta desde tu máquina a la /30 a través del router                 | solo las dos pertenencias a listas que ya añade `install`                                                                |
-| relay      | un usuario de la API con `read,api,test`; `--transport relay` o `auto` | <Measured id="relay.replyMaxBytes" /> y 18 muestras por llamada, ~1 s en más o menos la mitad de las llamadas, sin token |
+| relay      | un usuario de la API con `read,api,test`; `--transport relay` o `auto` | <Measured id="relay.replyMaxBytes" /> y <Measured id="relay.maxBatch" /> muestras por llamada, ~1 s en más o menos la mitad de las llamadas, sin token |
 | `--expose` | `--lan-address` y un token; dos reglas de cortafuegos en el router     | alcanzable desde toda la LAN; no lo usan `record`, `forward` ni el sondeo                                                |
 
 </ScrollTable>

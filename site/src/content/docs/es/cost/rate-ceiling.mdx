@@ -77,9 +77,9 @@ emborronamiento, no un agujero, y se ve en
 Con los suelos por defecto, todas las fuentes de un tick se leen en menos de
 2 ms en el <Measured id="read.under2ms" /> de las muestras a 100 Hz, holgadamente dentro de un período de
 10 ms. `FLOOR_HZ` empuja el <Measured id="read.floorOver5ms" /> de las lecturas más allá
-de 5 ms —y ni una sola de 29 994 bajó de 2 ms—, y esos son los ticks que se
-retrasan: el 0,444 % de ellos a 100 Hz con cada fuente en cada tick, frente al
-0,012 % con los suelos por defecto. El margen de CPU es mayor que el margen de tiempo,
+de 5 ms —y ni una sola de 29 996 bajó de 2 ms—, y esos son los ticks que se
+retrasan: el <Measured id="run.100hz-floor.slippedPct" /> de ellos a 100 Hz con cada fuente en cada
+tick, frente al <Measured id="run.100hz.slippedPct" /> con los suelos por defecto. El margen de CPU es mayor que el margen de tiempo,
 que es por lo que el techo es una afirmación sobre E/S y no sobre el A72.
 
 ## La memoria que cuesta un ritmo, y dónde comprarla

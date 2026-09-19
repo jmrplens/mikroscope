@@ -20,7 +20,7 @@ router. Un contenedor de RouterOS comparte el kernel del anfitrión, así que el
 La **CLI** corre en tu máquina. Instala y desinstala el agente, graba una
 ventana con marcadores, dibuja un SVG determinista de ella, y funciona como
 colector que tira del agente, fusiona una capa de la API de RouterOS a 1 Hz y
-reparte a fichero, Prometheus e InfluxDB 3. Se publica como un archivo por
+escribe a diez destinos —fichero, Prometheus e InfluxDB 3 entre ellos. Se publica como un archivo por
 plataforma —linux, macOS, Windows y FreeBSD en amd64, arm64 y arm— y el agente
 a su lado como un tar de imagen por arquitectura y como imagen de registro, en
 Docker Hub como `jmrplens/mikroscope-agent` y en GHCR como

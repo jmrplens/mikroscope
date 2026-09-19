@@ -11,7 +11,7 @@ Source: <https://jmrp.io/docs/mikroscope/about/status/>
 This page answers what a reader deciding whether to try mikroscope needs first:
 which parts work end to end, on what hardware that was shown, what the
 observer costs today, which defects are known and still open, and whether
-there is anything to download. It is checked against the code as of 2026-09-16.
+there is anything to download. It is checked against the code as of 2026-09-19.
 
 ### What works end to end
 
@@ -99,8 +99,9 @@ The measured runs:
 | --- | --- | --- | --- | --- | --- | --- |
 | 10 Hz (default) | default | **2.69 %** | 2 685 | 13.2 MiB | **0** | 0 / 0 |
 
-That is above the budget of 2 % of one core and 16 MiB RSS. The
-budget is guidance rather than a contract: cost scales with the device, the
+That is above the budget of 2 % of one core and inside
+the 16 MiB RSS one — it was over on both until the 60 s ring and the derived
+memory limit of 1.0.6. The budget is guidance rather than a contract: cost scales with the device, the
 source set and the ring size. The image budget is 8 MiB; the one image size on
 record is 6.1 MiB, and it carries no date.
 
@@ -172,8 +173,10 @@ and the hardware watchdog at `/sys/class/watchdog/watchdog0`.
 
 ### What the release publishes
 
-The current release is **v1.0.0** — the version in `VERSION`, compiled into both
-binaries and reported by `mikroscope version`. A `v*` tag runs the GoReleaser
+`VERSION` is **1.0.10**, compiled into both binaries and reported by
+`mikroscope version`; the latest published release is **v1.0.9**. They differ because
+1.0.10 is not tagged yet, and 1.0.8 never was — the release jumps from v1.0.7 to
+v1.0.9, which carries both. A `v*` tag runs the GoReleaser
 configuration, which publishes:
 
 - **CLI archives** for linux, darwin, windows and freebsd on amd64, arm64 and
@@ -184,8 +187,8 @@ configuration, which publishes:
   `mikroscope-agent-arm64.tar`, `mikroscope-agent-arm.tar`,
   `mikroscope-agent-amd64.tar` — which `install --agent-tar` uploads to the
   router.
-- **The agent image in two registries**, `jmrplens/mikroscope-agent:1.0.0` on
-  Docker Hub and `ghcr.io/jmrplens/mikroscope-agent:1.0.0` on GHCR, each one
+- **The agent image in two registries**, `jmrplens/mikroscope-agent:1.0.9` on
+  Docker Hub and `ghcr.io/jmrplens/mikroscope-agent:1.0.9` on GHCR, each one
   manifest over `linux/amd64`, `linux/arm64` and `linux/arm/v7`, which
   `install --remote-image` makes the router pull. RouterOS takes the registry
   host from the global `/container/config registry-url`, which ships as
@@ -347,6 +350,7 @@ the same host give the same four mark and favicon files.
 | `mark-dark.svg`, `mark-light.svg`                      | `brand/`       | `mark`     | The mark, one per theme                                                                               |
 | `favicon-dark.svg`, `favicon-light.svg`                | `brand/`       | `mark`     | The five-bar variant, one per theme                                                                   |
 | `mark-inline.svg`                                      | `brand/`       | `mark`     | The mark for a page that inlines it: the loud tone is `currentColor`, the quiet one `--ms-mark-quiet` |
+| `favicon-inline.svg`                                   | `brand/`       | `mark`     | The favicon for a page that inlines it, the inline twin of `favicon.svg`                              |
 | `banner.svg` and `.png`                                | `brand/`       | `compose`  | 1280×320, for the README                                                                              |
 | `social.svg` and `.png`                                | `brand/`       | `compose`  | 1280×640, the repository social preview                                                               |
 | `og.svg` and `.png`                                    | `brand/`       | `compose`  | 1200×630, the documentation `og:image`                                                                |

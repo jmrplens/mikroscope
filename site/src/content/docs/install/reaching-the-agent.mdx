@@ -68,7 +68,7 @@ permissions (9)` rather than empty. [The API user](/mikroscope/security/api-user
   `--api-user` (`MIKROSCOPE_API_USER`) and the password from
   `MIKROSCOPE_API_PASSWORD` only, never from a flag.
 - Each call returns at most <Measured id="relay.replyMaxBytes" />; anything longer is truncated silently
-  by RouterOS. The relay therefore asks for at most 18 samples per pull and
+  by RouterOS. The relay therefore asks for at most <Measured id="relay.maxBatch" /> samples per pull and
   refuses a reply that reaches the cap rather than parse it truncated. `forward`
   warns at start when that cannot keep up with the agent's rate.
 - Each call takes either ~3 ms or ~1 s; about half the calls took ~1 s
@@ -110,7 +110,7 @@ What a LAN-wide listener opens is on
 | Way        | Needs                                                           | Costs and limits                                                                                      |
 | ---------- | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
 | direct     | a route from your host to the /30 through the router            | only the two list memberships `install` already adds                                                  |
-| relay      | an API user with `read,api,test`; `--transport relay` or `auto` | <Measured id="relay.replyMaxBytes" /> and 18 samples per call, ~1 s in about half the calls, no token |
+| relay      | an API user with `read,api,test`; `--transport relay` or `auto` | <Measured id="relay.replyMaxBytes" /> and <Measured id="relay.maxBatch" /> samples per call, ~1 s in about half the calls, no token |
 | `--expose` | `--lan-address` and a token; two firewall rules on the router   | reachable from the whole LAN; not used by `record`, `forward` or the probe                            |
 
 </ScrollTable>

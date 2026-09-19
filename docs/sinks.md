@@ -69,18 +69,19 @@ the batch is sized from the agent's rate. A pull is repeated while it comes
 back full — up to 100 times — so the cursor catches up within one poll instead of
 advancing one batch per poll. A short reply is the ring's edge.
 
-The relay transport caps a pull at 18 lines, and the cap is computed rather than chosen:
-`/tool fetch` returns 64 512 B at most, the mean ring line is taken as
-2 560 B (the measured 3 230 B, rounded up), and the cap allows 134 % of
-that mean so a batch of above-average lines still fits — 18 lines, about 46 kB. A reply that
+The relay transport caps a pull at 13 lines, and the cap is computed
+rather than chosen: `/tool fetch` returns 64 512 B at most, the ring
+line is charged at 3 456 B (the
+measured 3 230 B, rounded up to its allocator size class), and the cap allows 134 %
+of that so a batch of above-average lines still fits — about 45 kB. A reply that
 reaches the fetch limit anyway is refused with
 `relay reply hit the 64512-byte fetch limit; lower the batch` rather than parsed truncated. At the
-default 500 ms poll that is 36 samples/s, and above that the collector falls behind. `forward`
+default 500 ms poll that is 26 samples/s, and above that the collector falls behind. `forward`
 computes what the effective batch and the poll allow per second and warns at start when that is
 below the agent's rate — for the relay against an agent at 100 Hz, the arithmetic gives:
 
 ```text
-warning: at most 18 samples per pull every 500ms is 36/s, below the agent's 100 Hz; the collector will fall behind and report gaps. Raise --batch, lower --poll, or use the direct transport
+warning: at most 13 samples per pull every 500ms is 26/s, below the agent's 100 Hz; the collector will fall behind and report gaps. Raise --batch, lower --poll, or use the direct transport
 ```
 
 The cap and the warning are read from the code on 2026-09-15, not re-measured against a device.
@@ -1527,8 +1528,8 @@ The trailing baselines span ten seconds of wall clock at any rate: 100 samples a
 500 at 50 Hz, 1 000 at 100 Hz, bounded between 10 and 2 000 samples. No sample is flagged
 until its CPU has at least ten samples of history.
 
-Why a percentile and not "any squeeze", measured on the reference RB5009 over 3 476
-samples on 2026-09-15: about 11.2 % of samples carry one squeeze as background and 2 % carry
+Why a percentile and not "any squeeze", measured on the reference RB5009 over 3 738 704
+per-CPU samples in 24 h: about 11.2 % of samples carry one squeeze as background and 2 % carry
 two or more. "Any squeeze" would flag the device's norm several times a minute.
 
 Three flagged samples on one CPU within 60 s is what raises the `microburst`

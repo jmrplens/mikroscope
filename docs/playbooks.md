@@ -157,7 +157,7 @@ deltas the agent ships; the agent never turns them into percentages.
 ### The background squeeze and the burst flag
 
 The squeeze floor was measured again on 2026-09-15, on the same device, over
-3 476 samples: about 11.2 % of samples carry one squeeze as background, and 2 %
+3 738 704 per-CPU samples in 24 h: about 11.2 % of samples carry one squeeze as background, and 2 %
 carry two or more. Measured on this router that day: a rule that flags any
 squeeze fires 92 times in twenty minutes, and means nothing.
 

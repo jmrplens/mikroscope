@@ -66,7 +66,7 @@ principio a fin sobre otra captura: 70 s a 10 Hz con el router por lo demás en
 reposo, con tres notas escritas en el terminal de `record`.
 
 <NotClaimed>
-	Una grabación por encima de 10 Hz. Las ejecuciones sin pérdidas a 50 Hz y 100 Hz del [techo de
+	Una grabación por encima de 10 Hz. Las ejecuciones sin pérdidas a 20, 50 y 100 Hz del [techo de
 	muestreo](/mikroscope/es/cost/rate-ceiling/) fueron del colector, no de `record`. Ambos usan el
 	mismo tamaño de lote, pero una grabación a esas cadencias no se ha medido por separado. Tampoco
 	una grabación a través del relay, a ninguna cadencia.
@@ -90,20 +90,21 @@ otro.
 - **relay** ejecuta `/tool fetch output=user` en el router por la API binaria,
   así que el usuario de la API necesita las políticas `read,api,test`. Cada
   llamada por relay tarda o unos 3 ms o alrededor de 1 s. Una respuesta está
-  limitada a <Measured id="relay.replyMaxBytes" />, así que una petición por relay pide como mucho 18
+  limitada a <Measured id="relay.replyMaxBytes" />, así que una petición por relay pide como mucho <Measured id="relay.maxBatch" />
   muestras, y una respuesta que llega al límite se rechaza en vez de analizarse
   truncada. La petición desde el router no lleva cabecera: un agente instalado
   con token solo se puede grabar por el camino directo.
 
 <Aside type="caution" title="Una petición por relay llena aún puede llegar al límite">
-	Por aritmética, leído del código el 2026-09-15 y no medido. El límite de 18 muestras sale del tope
-	de fetch de <Measured id="relay.replyMaxBytes" />, una línea media de 2 560 B y un margen del
-	134 %; la media son los <Measured id="ring.lineBytes" /> medidos en el RB5009 (RouterOS 7.24.2,
-	2026-09-12), redondeados hacia arriba. Una petición llena de líneas medias ocupa unos 46 kB. Una
-	petición llena cuyas líneas midan de media más del 134 % de esa media seguiría llegando al tope y
-	se rechazaría, y cuánto miden las líneas con los suelos por fuente por defecto de hoy no se ha
-	medido. Con 18 muestras por petición y el `--poll` por defecto de 500 ms, el relay lleva 36
-	muestras por segundo; por encima, usa el camino directo.
+	Por aritmética, calculado a partir del código y no medido. El límite de <Measured id="relay.maxBatch" />
+	muestras sale del tope de <Measured id="relay.replyMaxBytes" /> de la petición, de una línea que se
+	cobra a <Measured id="ring.lineChargedBytes" /> y de un 134 % de margen; la línea se midió
+	en <Measured id="ring.lineBytes" /> en el RB5009 (RouterOS 7.24.2, 2026-09-17) y el presupuesto cobra
+	la clase de tamaño del asignador que hay por encima. Una petición llena de esas líneas son unos
+	45 kB. Una petición llena cuyas líneas promedien más de ese 134 % llegaría igualmente al tope y se
+	rechazaría, y no se ha medido cuánto miden las líneas con los suelos por fuente de hoy.
+	Con <Measured id="relay.maxBatch" /> muestras por petición y el `--poll` por defecto de 500 ms, el relay
+	lleva 26 muestras por segundo; por encima de eso, usa la vía directa.
 </Aside>
 
 [Llegar al agente](/mikroscope/es/install/reaching-the-agent/) explica qué

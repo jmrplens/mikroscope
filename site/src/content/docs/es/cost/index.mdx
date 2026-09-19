@@ -28,7 +28,8 @@ un <Measured id="run.10hz.rss" /> de RSS**, desde su propio cgroup:
 **La memoria está dentro del presupuesto y la CPU no.** <Measured id="run.10hz.rss" /> frente a
 los <Measured id="budget.rss" /> que pide el presupuesto, y un <Measured id="run.10hz.cpu" /> frente
 al <Measured id="budget.cpu" />, con todas las fuentes leídas, entre ellas los tiempos de perf,
-buddyinfo, los contadores ECC de MTD, los eventos de cgroup y los contadores de puerto.
+buddyinfo, los contadores ECC de MTD, slabinfo, el log del kernel y los eventos de cgroup. El
+tráfico por interfaz no está en ese conjunto: el contenedor no lo ve, y viene de la capa de la API.
 
 Estuvo por encima de los dos hasta 1.0.6. El anillo guardaba 300 s en vez de 60 y el límite de
 memoria era un 40 MiB fijo que nunca apretaba, lo que dejaba al mismo agente en 31,3 MiB; ninguna de

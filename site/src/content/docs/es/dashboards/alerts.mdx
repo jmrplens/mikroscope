@@ -161,7 +161,7 @@ contador que vale 0 en un equipo sano es la misma alerta.
   leyó el agente. La ocupación sale de `/proc/slabinfo`, que necesita un contenedor privilegiado.
 
 Las reglas no alertan por squeezes de softnet. Medido en el RB5009 de referencia el 2026-09-15 sobre
-3 476 muestras, alrededor del <Measured id="squeeze.backgroundOne" /> de las muestras llevan un squeeze, y alertar con "squeeze > 0" te
+3 738 704 muestras por CPU en 24 h, alrededor del <Measured id="squeeze.backgroundOne" /> de las muestras llevan un squeeze, y alertar con "squeeze > 0" te
 despertaría para siempre. Lo que llega en su lugar a la alerta de detecciones es la detección
 `microburst`: tres muestras de ráfaga en una CPU en 60 s. Una muestra de ráfaga es aquella en la que
 una cola de softnet descartó un paquete, o agotó su presupuesto más veces que el percentil 90 móvil

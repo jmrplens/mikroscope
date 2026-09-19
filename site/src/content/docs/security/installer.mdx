@@ -31,8 +31,8 @@ listing masks the token as `value="(token)"`.
 
 `upgrade` does not get this guarantee. It builds the image, refuses a router where any step of the
 plan built from its own flags is missing (`nothing to upgrade: run install first`), and asks the
-same `write the objects above to the router? [y/N]` — but it prints no listing and runs no `doctor`
-first, so there are no objects above. On `y` it removes the container, the envlist and the image
+same `write the objects above to the router? [y/N]` — and since 1.0.10 it does print a listing of
+its own, the container step alone. It still runs no `doctor` first. On `y` it removes the container, the envlist and the image
 and writes them again, the envlist from the flags given to `upgrade`; [what --expose
 opens](/mikroscope/security/expose/) has what that means for the token.
 
@@ -167,7 +167,7 @@ check of its own before anything is written.
   writes that setting.** `doctor` reads it, and when the reference names a host the setting does not
   match it prints the one command to run
   (`/container/config/set registry-url=https://ghcr.io`, for the GHCR copy of the image) or says to
-  use `--agent-tar` instead. The Docker Hub reference `jmrplens/mikroscope-agent:1.0.0` carries no
+  use `--agent-tar` instead. The Docker Hub reference `jmrplens/mikroscope-agent:1.0.9` carries no
   host and leaves the setting as the router has it. Trust in the image is trust in that registry:
   nothing in the CLI verifies what the router pulls.
 

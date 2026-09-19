@@ -14,7 +14,7 @@ Esta página responde a lo que necesita saber primero quien está decidiendo si
 probar mikroscope: qué partes funcionan de extremo a extremo, en qué hardware
 se demostró, cuánto cuesta hoy el observador, qué defectos se conocen y siguen
 abiertos, y si hay algo que descargar. Está contrastada con el código a fecha
-del 2026-09-16.
+del 2026-09-19.
 
 ## Qué funciona de extremo a extremo
 
@@ -106,8 +106,9 @@ leídos de su propio cgroup en régimen estacionario con el anillo lleno:
 
 <RunsTable only={["10hz"]} />
 
-Eso está por encima del presupuesto de <Measured id="budget.cpu" /> de un núcleo y <Measured id="budget.rss" /> de RSS. El
-presupuesto es orientativo, no un contrato: el coste depende del equipo, del
+Eso está por encima del presupuesto de <Measured id="budget.cpu" /> de un núcleo y dentro del
+de <Measured id="budget.rss" /> de RSS —estuvo por encima de los dos hasta el anillo de 60 s y el
+límite de memoria derivado de 1.0.6. El presupuesto es orientativo, no un contrato: el coste depende del equipo, del
 conjunto de fuentes y del tamaño del anillo. El presupuesto de imagen es <Measured id="budget.image" />;
 el único tamaño de imagen registrado es <Measured id="image.size" />, y no lleva fecha.
 
@@ -188,8 +189,10 @@ el watchdog hardware en `/sys/class/watchdog/watchdog0`.
 
 ## Qué publica la versión
 
-La versión actual es la **v1.0.0** — la que hay en `VERSION`, compilada en los
-dos binarios y que devuelve `mikroscope version`. Una etiqueta `v*` lanza la
+`VERSION` es **1.0.10**, compilada en los dos binarios y lo que devuelve
+`mikroscope version`; la última release publicada es la **v1.0.9**. Difieren porque
+1.0.10 aún no está etiquetada, y 1.0.8 no lo estuvo nunca: la release salta de la
+v1.0.7 a la v1.0.9, que lleva las dos. Una etiqueta `v*` lanza la
 configuración de GoReleaser, que publica:
 
 - **Archivos de la CLI** para linux, darwin, windows y freebsd en amd64, arm64 y
@@ -200,8 +203,8 @@ configuración de GoReleaser, que publica:
   `mikroscope-agent-arm64.tar`, `mikroscope-agent-arm.tar`,
   `mikroscope-agent-amd64.tar` —, que es lo que `install --agent-tar` sube al
   router.
-- **La imagen del agente en dos registros**, `jmrplens/mikroscope-agent:1.0.0`
-  en Docker Hub y `ghcr.io/jmrplens/mikroscope-agent:1.0.0` en GHCR, cada una un
+- **La imagen del agente en dos registros**, `jmrplens/mikroscope-agent:1.0.9`
+  en Docker Hub y `ghcr.io/jmrplens/mikroscope-agent:1.0.9` en GHCR, cada una un
   único manifiesto sobre `linux/amd64`, `linux/arm64` y `linux/arm/v7`, que
   `install --remote-image` hace descargar al router. RouterOS toma el host del
   registro del ajuste global `/container/config registry-url`, que viene puesto

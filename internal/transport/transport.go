@@ -313,14 +313,19 @@ const relayHeadroomPercent = 134
 // than chosen so it cannot fall out of step with either number it depends on.
 //
 // It was the literal 30 until 2026-09-15, sized when a line was ~1.6 kB. The
-// discovery sources took the mean line to 2 560 B (agent.ApproxLineBytes), so
-// 30 of them is about 73 kB — over the 64 512-byte cap, and a relayed pull
-// that filled its batch got the "relay reply hit the fetch limit" error
-// instead of data. A full batch is only asked for when the ring has that much
-// to give, which at a 500 ms poll means BatchFor asks for min(rate, cap): the
-// error needed an agent above ~27 Hz, so the default 10 Hz install never saw
-// it and the 50 and 100 Hz runs of 2026-09-15 were pulled directly, not
-// relayed.
+// discovery sources took the line to 2 560 B, so 30 of them is about 73 kB —
+// over the 64 512-byte cap, and a relayed pull that filled its batch got the
+// "relay reply hit the fetch limit" error instead of data. A full batch is
+// only asked for when the ring has that much to give, which at a 500 ms poll
+// means BatchFor asks for min(rate, cap): the error needed an agent above
+// ~27 Hz, so the default 10 Hz install never saw it and the 50 and 100 Hz runs
+// of 2026-09-15 were pulled directly, not relayed.
+//
+// Computing it is what keeps it honest. agent.ApproxLineBytes went to 3 456 B
+// on 2026-09-17 and the cap fell from 18 to 13 with no edit here — while six
+// documentation pages went on saying 18 until the 2026-09-19 audit, which is
+// why site/src/data/measurements.ts now carries the cap behind a build-time
+// assertion that recomputes it from the same line size.
 //
 // The cost of the smaller cap is more round trips through `/tool fetch` at
 // high rates, and a fetch is the expensive part of the relay.
@@ -328,8 +333,8 @@ const relayMaxBatch = RelayMax * 100 / (agent.ApproxLineBytes * relayHeadroomPer
 
 // RelayMaxBatch is the relay's per-pull cap as a package-level value, for the
 // CLI's own help text: the flag that documents the cap has to read it rather
-// than repeat it, which is how it came to advertise 30 after the cap became
-// 18.
+// than repeat it, which is how it came to advertise 30 after the cap had
+// already moved.
 func RelayMaxBatch() int { return relayMaxBatch }
 
 // MaxBatch reports the relay's per-pull cap, so a puller draining the ring

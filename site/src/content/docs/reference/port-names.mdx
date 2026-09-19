@@ -125,7 +125,7 @@ its table, names ports without asking RouterOS:
   no port are absent from it;
 - the collector's `link-flap` detection is keyed by the port name and reads the
   same classification: a flap is `link-up` and `link-down` records on one port,
-  counted, not the text parsed a second time;
+  counted, through the same classifier rather than by re-reading the text;
 - `mikroscope status` prints the board and whether it has a map, for example
   `eth1 (ether2)`; `/healthz` and `/capabilities` carry the board, and
   `/capabilities` and `mikroscope_device_info` carry the table's evidence string
