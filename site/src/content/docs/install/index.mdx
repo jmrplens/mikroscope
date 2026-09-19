@@ -125,10 +125,18 @@ the checkout, `--agent-tar`, or `--remote-image` and no image at all — checks
 that every step is present
 (otherwise `nothing to upgrade: run install first`), asks for confirmation,
 removes the container step, waits for RouterOS's asynchronous removal, creates
-the step again with the new image and probes the agent. Unlike `install`, it
-prints no plan and runs no `doctor`: its prompt is the same
-`write the objects above to the router? [y/N]` with nothing listed above it.
-`mikroscope plan` with the same flags shows the container command it will write.
+the step again with the new image and probes the agent.
+
+It prints its own plan first — the container step only, with the line
+`keeps: the veth, the router address and the list memberships are not touched`,
+because those four objects are exactly what an upgrade does NOT write — and
+`--dry-run` stops there, before a connection to the router is even opened.
+Unlike `install` it still runs no `doctor`; run that yourself if you want the
+free-space and device-mode checks before an upgrade.
+
+Until 1.0.10 `upgrade` ignored `--dry-run` outright: it printed nothing and went
+straight to the confirmation, so `upgrade --dry-run --yes` replaced the
+container on a live router while the flag promised it would write nothing.
 
 The envlist belongs to the container step, so `upgrade` writes it again from the
 flags `upgrade` itself is given. `--port`, `--rate`, `--buffer`, `--memory-max`,

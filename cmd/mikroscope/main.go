@@ -441,6 +441,15 @@ func upgrade(c cli) error {
 	if err != nil {
 		return err
 	}
+	// The plan first, and --dry-run stops here — before the runner exists, so
+	// a dry run opens no connection to the router at all. Until 1.0.10 this
+	// function ignored c.dryRun outright: it printed no plan and fell through
+	// to confirm(), so `upgrade --dry-run --yes` replaced the container on a
+	// live router while the flag promised nothing would be written.
+	router.UpgradeListing(c.opts, len(img), os.Stdout)
+	if c.dryRun {
+		return nil
+	}
 	r, err := c.runner()
 	if err != nil {
 		return err
