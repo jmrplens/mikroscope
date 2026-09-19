@@ -347,7 +347,7 @@ Because the agent is no longer reachable only through the veth, the token is man
 refuses `--expose` without one (`--expose makes the agent reachable from the LAN: a token is
 mandatory`). With a token set, every endpoint the agent serves except `/healthz` returns
 `401 token required`, with `WWW-Authenticate: Bearer`, unless the request carries
-`Authorization: Bearer <token>`: `/capabilities`, `/snapshot`, `/stream`, `/metrics`, `/captures`,
+`Authorization: Bearer <token>`: `/capabilities`, `/sampler`, `/snapshot`, `/stream`, `/captures`,
 `/captures/{id}` (including `DELETE`) and `POST /capture`. A path the agent does not serve gets
 `404`, and a wrong method `405`, token or not. The agent strips an optional `"Bearer "` prefix before
 comparing, so a header holding the bare token is accepted too.

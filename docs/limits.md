@@ -459,7 +459,8 @@ when it did something). Established on the RB5009 (RouterOS 7.24.2, kernel 5.6.3
 
 An ordinary container also reads these files as the router's, read on 2026-09-12: the two
 thermal zones under `/sys/class/thermal`, `scaling_cur_freq` per core,
-the NAND wear counters in `/proc/yaffs` and `/proc/buddyinfo`. The device tree's `model`
+the NAND wear counters in `/proc/yaffs`, and the page allocator's free lists in
+`/proc/buddyinfo`. The device tree's `model`
 string (`RB5009`) is not namespaced either, and it is how the agent identifies the board
 without the RouterOS API.
 

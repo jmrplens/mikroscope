@@ -65,7 +65,7 @@ el kernel.
 | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
 | `off`  | sin capa de la API: `--api-every 0`                                                                                                                                         | en producción, cuando el tráfico por interfaz ya viene de otro sitio |
 | `slow` | una ronda cada 10 s, sin `/system/health` y sin el número de conexiones; `/system/resource`, `monitor-traffic` y los contadores de puerto siguen ejecutándose en cada ronda | en producción, cuando también quieres las tasas de las interfaces    |
-| `full` | una ronda por segundo, con `/system/health`; contadores de puerto cada 10 s; el número de conexiones solo si `--conntrack-every` lo pide                                    | experimentos y ejecuciones de `record`                               |
+| `full` | una ronda por segundo, con `/system/health`; contadores de puerto cada 10 s; el número de conexiones solo si `--conntrack-every` lo pide                                    | experimentos y ejecuciones cortas de `forward`                               |
 
 </ScrollTable>
 
@@ -92,6 +92,7 @@ más a menudo que `--api-every`.
 | Orden                                                               | Pide                                                                             | Se ejecuta                                           | Apagada cuando                              |
 | ------------------------------------------------------------------- | -------------------------------------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------- |
 | `/system/resource/print`                                                     | `cpu-load`, `free-memory`, `total-memory`, `free-hdd-space`, `uptime`, `version`                          | en cada ronda                                                                                 | la capa está apagada                        |
+| `/system/resource/cpu/print`                                                 | `cpu`, `load`, `irq`, `disk`                                                                              | en cada ronda                                                                                 | la capa está apagada                        |
 | `/system/health/print`                                                       | `name`, `value`                                                                                           | en cada ronda                                                                                 | `--no-health`, o `slow`                     |
 | `/interface/monitor-traffic` con `interface=<list>` y `once`                 | las cuatro tasas de tráfico y las tasas de pérdidas que devuelva el router                                | en cada ronda, una llamada para todas las interfaces                                          | `--interfaces` está vacío                   |
 | `/interface/print` con `.proplist=name,default-name,type,comment,actual-mtu` | qué es cada interfaz: su nombre actual, el nombre de fábrica de la placa, su tipo, su comentario y su MTU | al arrancar, antes de la primera extracción del kernel, y luego cada `--labels-every` (5 min) | la capa está apagada                        |
@@ -167,6 +168,7 @@ la placa y no recibe etiqueta.
 | Opción              | Por defecto                    | Significado                                                                              |
 | ------------------- | ------------------------------ | ---------------------------------------------------------------------------------------- |
 | `--api host:port`   | `MIKROSCOPE_API_ADDR`          | la API binaria de RouterOS, p. ej. `192.168.88.1:8728`                                                                       |
+| `--api-user`        | `MIKROSCOPE_API_USER`          | el usuario de la API; su contraseña solo desde `MIKROSCOPE_API_PASSWORD`                                                     |
 | `--api-mode`        | `full`                         | `off`, `slow` o `full`, como arriba                                                                                          |
 | `--api-every`       | `1s`                           | la cadencia de la ronda; `0` desactiva la capa                                                                               |
 | `--interfaces`      | `MIKROSCOPE_INTERFACES`, vacío | interfaces separadas por comas para `monitor-traffic`, p. ej. `bridge,ether1`                                                |
