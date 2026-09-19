@@ -6,6 +6,35 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [1.0.10]
 
+### Added
+
+- **A tile, an alert and a playbook for a port losing frames.** The reference
+  RB5009's `ether1` had been dropping 0.5 % of the packets
+  the NAS sent for days — the data was in the store the whole time and nothing
+  on the dashboard said so.
+
+  - **"Port errors in the window"** joins the Overview tiles: every typed MAC
+    error on every port, summed, **green at 0 and red above it**. Verified
+    against the live deployment in both states — 21.4 k over a window that
+    contains the fault, 0 over one that does not.
+  - **`mikroscope-port-errors`** fires when any port counts a typed error for
+    five minutes running. It is the twelfth rule and the first that reads the
+    API tier's per-port counters.
+  - **[A port losing frames]** is the eighth playbook, in both languages: how
+    to get from the red tile to which port and which error, and then to the
+    question the fix hangs on — is the port busy, or is the sender bursting?
+    The test is numeric: compare the receive volume in the intervals that
+    overflowed against the link's capacity. On the reference device that was
+    8.96 Mbit/s on a 2.5 Gbit/s link, 0.36 % of it, which rules out load.
+
+    It records what did NOT work as carefully as what did: a smaller MTU cut
+    the worst bursts by 91 % and did not change the frequency at all, and
+    Ethernet flow control never fired — 41 minutes with pause negotiated, 5 578
+    overflows, `rx-pause` and `tx-pause` both still 0. What worked was pacing
+    the sender below what the slowest destination drains.
+
+[A port losing frames]: https://jmrp.io/docs/mikroscope/playbooks/port-errors/
+
 ### Fixed
 
 - **Three interface panels were unusable, and `dashboards check` called all

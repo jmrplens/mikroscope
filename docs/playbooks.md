@@ -47,6 +47,7 @@ Read the idle shape first. Without it, every other page looks like an anomaly.
 | [A packet flood](https://jmrp.io/docs/mikroscope/playbooks/packet-flood/)                | `ping -f` at the router's own LAN address, 10 s  | `switch0` interrupts, softirqs, `time_squeeze` | `switch0` 5.5 k → 34 k per 5 s bucket, all on the one core the IRQ is pinned to                                           |
 | [Flash wear](https://jmrp.io/docs/mikroscope/playbooks/flash-wear/)                      | nothing provoked; the router writes on its own   | the `yaffs` source, MTD ECC counters           | 2 page writes per 30 s at idle, traced to the `dns` topic logging to disk                                                 |
 | [Conntrack without the API](https://jmrp.io/docs/mikroscope/playbooks/conntrack/)        | a cross-check against the API, no storm          | the `nf_conntrack` slab cache                  | the router's real connection count where the container's own namespace reports 0                                          |
+| [A port losing frames](https://jmrp.io/docs/mikroscope/playbooks/port-errors/)           | real, found on the production router 2026-09-19  | the API tier's per-port MAC counters           | one port at 0.5 % of packets lost to microbursts, then none                                                               |
 
 ### Two checks before you trust a reading
 
@@ -818,3 +819,134 @@ They are worth watching for their own sake:
 - [What privileged buys](https://jmrp.io/docs/mikroscope/limits/privileged/): the root-only files, `/proc/slabinfo` among
   them.
 - [Detections](https://jmrp.io/docs/mikroscope/sinks/detections/): `conntrack-cliff` and `conntrack-high` in full.
+
+## A port losing frames
+
+The Overview tile went red — how to go from one number to which port, which error and whether it is load or a burst, using the case that took the reference router's NAS link from 0.5 % of packets lost to none.
+
+Source: <https://jmrp.io/docs/mikroscope/playbooks/port-errors/>
+
+**Port errors in the window** is green at 0 and red above it. This page is what to
+do when it is red: how to get from that one number to which port, which error,
+and — the question that decides the fix — whether the port is losing frames
+because it is busy or because the sender is bursting.
+
+The whole page is one real fault on the reference RB5009, found on 2026-09-19
+and fixed the same afternoon.
+
+Measured on RB5009UG+S+ · 4 × 1.4 GHz Cortex-A72 · RouterOS 7.24.2 · 2026-09-19 · ether1, the 2.5 GbE port to the NAS, over 10 s counter intervals; the before figures are the three hours preceding the fix and the after figures the 39 minutes following it, at the same load
+
+### From the tile to the port
+
+The tile sums every typed MAC error on every port. It deliberately says nothing
+about which: open **Interface traffic** and read *Port errors per bin*, which
+draws one row per `(port, error type)` pair that had an error in the window and
+nothing for the pairs that did not. On a healthy router it says
+`no port errors in this window`.
+
+On the reference device it drew exactly one row: `ether1 rx overflow`.
+
+That name is the diagnosis's first half. `rx-overflow` is the receive FIFO
+filling faster than the switch chip can drain it — frames that arrived
+correctly and were dropped for want of somewhere to put them. It is not a
+cabling fault. `rx-fcs-error`, `rx-fragment` and the collision counters are,
+and they send you somewhere else entirely: the cable, the duplex, the port.
+
+### Load, or a burst?
+
+This is the question the fix hangs on, and the counters answer it.
+
+Take the receive volume in the 10-second intervals that overflowed and compare
+it with what the link could have carried. On the reference device the median
+interval with an overflow carried 8.96 Mbit/s on a
+2.5 Gbit/s link — 0.36 % of its capacity.
+
+A port cannot be overwhelmed at 0.36 % occupancy by sustained load. It can only
+be overwhelmed by bursts too short for a one-second average to show: the mean
+was 3.25 Mbit/s and the highest single second in three hours was 70 Mbit/s,
+while the overflow ran at 5 399 an
+hour, 0.502 % of every packet the sender sent.
+
+If instead the intervals that overflow are the ones near line rate, stop here:
+that is a capacity problem and the answer is a faster link or less traffic.
+
+### Where the frames were going
+
+A burst overflows on ingress because something downstream cannot take it. The
+per-port counters find it by correlation: rank the overflow deltas against each
+other port's transmit deltas over the same intervals.
+
+On the reference device the strongest was `ether4` at ρ 0.53, a 1 Gbit/s port,
+and `sfp-sfpplus1` at ρ 0.42 — which is 10 Gbit/s itself but feeds a switch
+whose ports are not. The CPU-bound share of the traffic correlated at ρ 0.00,
+which rules out the router's own forwarding: these frames never reached the
+CPU.
+
+`ether4` also carried 6 644 `tx-queue-drop`. That is the same event counted
+from the other end — the egress queue that could not drain fast enough — and
+finding both is what turns a correlation into a mechanism: a 2.5 Gbit/s sender
+bursting at line rate into a 1 Gbit/s destination.
+
+### What did not work
+
+Two things were tried on the reference device before the one that worked, and
+both are worth knowing about because both look right.
+
+**A smaller MTU.** Dropping the sender and the port from 9000 to 1500 cut the
+worst bursts by 91 % and the data lost per dropped frame by six, and **did not
+change the frequency at all**: 0.530 % of packets before, 0.502 % after. It
+makes each event cheaper without making events rarer.
+
+**Ethernet flow control.** Negotiating pause in both directions is the
+mechanism designed for exactly this, and on this hardware it never fired: 41
+minutes with pause negotiated, 5 578 overflows, and `rx-pause` and `tx-pause`
+both still **0**. Check those two counters before believing pause is helping
+you. The chip is dropping the frame rather than asking the sender to wait.
+
+### What worked
+
+Pace the sender. Not an AQM — the sender's queue is empty at 0.36 % occupancy,
+so an AQM has nothing to manage and hands the NIC the burst unchanged — but a
+shaper with a rate **below what the slowest destination can drain**:
+
+```sh
+tc qdisc replace dev <iface> root cake bandwidth 900Mbit
+```
+
+Two things matter in that line. The rate is under 1 Gbit/s, so the destination
+drains faster than the source sends and the chip's buffer never grows. And
+`cake` splits GSO super-segments, which is what the sender was handing its NIC
+to put on the wire back to back at line rate.
+
+The result on the reference device, at the same traffic volume: the overflow
+went from 1 054–3 681 per 20 minutes to **0**, and `ether4`'s `tx-queue-drop`
+to 0 with it. The cost was nothing measurable — the highest second of egress
+observed was 70 Mbit/s against a 900 Mbit cap.
+
+### The signature
+
+**A real fault, not provoked** · 2026-09-19
+
+- **Port errors in the window** red, and *Port errors per bin* drawing one row:
+  a `rx overflow` on one port and nothing else.
+- The intervals that overflow carry a small fraction of the link's capacity —
+  a burst, not a load.
+- A slower port's transmit correlates with the overflow, and carries
+  `tx-queue-drop` of its own.
+- `rx-pause` and `tx-pause` stay at 0 whatever the negotiated flow control
+  says.
+
+> **Not measured, so not claimed**
+>
+> That the shaper holds. The zero above is 39 minutes at one afternoon's load, not a day's, and the
+> rate was chosen against a 1 Gbit/s destination rather than derived. Whether the same cap still
+> fits when something behind the 10 Gbit/s port wants more than 900 Mbit was not tested. The
+> chip's exact counter semantics are MikroTik's and were not verified against its documentation.
+
+### See also
+
+- [Interface traffic](https://jmrp.io/docs/mikroscope/dashboards/#interface-traffic): the panels this page reads.
+- [The API tier](https://jmrp.io/docs/mikroscope/sinks/api-tier/): where the per-port counters come from, and why the
+  agent cannot see them.
+- [Alert rules](https://jmrp.io/docs/mikroscope/dashboards/alerts/): the rule that fires on this, and what it cannot
+  tell apart.

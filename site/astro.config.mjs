@@ -402,6 +402,11 @@ export default defineConfig({
 							slug: "playbooks/flash-wear",
 						},
 						{
+							label: "A port losing frames",
+							translations: { es: "Un puerto perdiendo tramas" },
+							slug: "playbooks/port-errors",
+						},
+						{
 							label: "Conntrack without the API",
 							translations: { es: "Conntrack sin la API" },
 							slug: "playbooks/conntrack",

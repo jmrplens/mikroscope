@@ -132,11 +132,15 @@ func assertStoreDashboard(t *testing.T, store Store) {
 	// observer panels that were Prometheus-only — the tick interval, the wake
 	// latency, the read duration and what the captures pin — now have an
 	// InfluxDB form too, because the figures behind them travel as data.
+	// 176 with the port-errors tile (2026-09-19): one number on the Overview
+	// for "is any port losing frames", added after a real fault — ether1's
+	// receive FIFO overflowing on microbursts from the NAS — was visible in
+	// the data for days with nothing on the dashboard saying so.
 	// Prometheus keeps fewer: every panel whose promQL is empty is
 	// dropped, and a section all of whose panels go that way emits no row
 	// at all.
 	ps := charts(top)
-	want := map[Store]int{Influx: 175, Prometheus: 133}[store]
+	want := map[Store]int{Influx: 176, Prometheus: 134}[store]
 	if len(ps) != want {
 		t.Fatalf("%s: %d panels, want %d", store, len(ps), want)
 	}

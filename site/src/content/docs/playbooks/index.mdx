@@ -50,6 +50,7 @@ Read the idle shape first. Without it, every other page looks like an anomaly.
 | [A packet flood](/mikroscope/playbooks/packet-flood/)                | `ping -f` at the router's own LAN address, 10 s  | `switch0` interrupts, softirqs, `time_squeeze` | `switch0` 5.5 k → 34 k per 5 s bucket, all on the one core the IRQ is pinned to                                           |
 | [Flash wear](/mikroscope/playbooks/flash-wear/)                      | nothing provoked; the router writes on its own   | the `yaffs` source, MTD ECC counters           | 2 page writes per 30 s at idle, traced to the `dns` topic logging to disk                                                 |
 | [Conntrack without the API](/mikroscope/playbooks/conntrack/)        | a cross-check against the API, no storm          | the `nf_conntrack` slab cache                  | the router's real connection count where the container's own namespace reports 0                                          |
+| [A port losing frames](/mikroscope/playbooks/port-errors/)           | real, found on the production router 2026-09-19  | the API tier's per-port MAC counters           | one port at 0.5 % of packets lost to microbursts, then none                                                               |
 
 </ScrollTable>
 

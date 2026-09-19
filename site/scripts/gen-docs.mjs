@@ -162,6 +162,7 @@ const MANIFEST = [
 			"playbooks/packet-flood",
 			"playbooks/flash-wear",
 			"playbooks/conntrack",
+			"playbooks/port-errors",
 		],
 	},
 	// What runs where, which credential lives where, and what the installer refuses.

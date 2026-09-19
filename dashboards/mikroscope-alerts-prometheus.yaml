@@ -269,6 +269,32 @@ groups:
           - refId: C
             datasourceUid: __expr__
             model: {refId: C, type: threshold, expression: B, conditions: [{evaluator: {type: gt, params: [0]}}]}
+      - uid: mikroscope-port-errors
+        title: "A port is counting typed MAC errors"
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          source: mikroscope
+        annotations:
+          summary: "A port's MAC is counting typed errors: frames it could not take. The commonest on a switched LAN is rx-overflow, the receive FIFO filling faster than the chip can drain it, and it is a microburst signature rather than a load one — on the reference RB5009 it ran at 0.5 % of the packets the NAS sent while the 2.5 GbE link sat at 0.36 % occupancy, because the sender was emitting TSO super-segments at line rate toward a 1 GbE destination. FCS errors and collisions mean something else: cabling, duplex, a dying port. Which port and which error is one row each in the dashboard's Interface traffic section; the procedure is in the port-errors playbook. Needs the API tier: a MAC counter is not visible from inside the container. It cannot tell a real error from a counter reset, so a router that reboots inside the window fires it once."
+        data:
+          - refId: A
+            relativeTimeRange: {from: 600, to: 0}
+            datasourceUid: DS_UID_PLACEHOLDER
+            model:
+              refId: A
+              expr: "sum(increase(mikroscope_api_interface_counter_total{counter=~\"rx-overflow|rx-fcs-error|rx-fragment|rx-too-short|rx-too-long|rx-jabber|tx-fcs-error|tx-late-collision|tx-excessive-collision\"}[5m]))"
+              instant: true
+              range: false
+          - refId: B
+            datasourceUid: __expr__
+            model: {refId: B, type: reduce, expression: A, reducer: last, settings: {mode: dropNN}}
+          - refId: C
+            datasourceUid: __expr__
+            model: {refId: C, type: threshold, expression: B, conditions: [{evaluator: {type: gt, params: [0]}}]}
       - uid: mikroscope-ecc-failure
         title: "The NAND reported an uncorrectable ECC failure"
         condition: C
