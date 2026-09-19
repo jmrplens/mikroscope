@@ -278,6 +278,32 @@ recuperan, por un dashboard publicado en el siguiente arranque, que sí. La
 línea lleva lo que dijo el servidor. `--grafana-dry-run` imprime lo que
 escribiría sin escribir nada, y se ejecuta antes de tocar el router.
 
+### `uninstall` lista las mismas tablas cada vez
+
+InfluxDB 3 borra una tabla **renombrándola** y dejando la entrada en
+`information_schema` con un nombre que lleva el instante del borrado. Antes de
+la 1.1.0 esto las habría listado otra vez en cada ejecución, las habría
+borrado con éxito —el almacén acepta borrar un nombre que ya retiró— y no se
+habría vaciado nunca. Ahora se filtran. Si estás mirando
+`mikroscope_cpu-20260919T225605` en el resultado de una consulta, esa tabla ya
+no está.
+
+### `uninstall --targets data` dice que un destino no guarda nada que pueda borrar
+
+Tres de ellos de verdad no guardan nada. A `--prom` lo raspan en vez de
+escribirle, así que las series viven en un Prometheus del que esto no ha oído
+hablar; `--graphite` no ofrece borrado alguno, y sus ficheros whisper hay que
+quitarlos a mano; `--sql` escribe un fichero, y las filas ya cargadas desde él
+en una base de datos real hay que borrarlas allí —o con `--postgres` apuntado a
+esa base—. Cada uno imprime su propio motivo, porque el silencio se leería como
+que no hay nada que borrar.
+
+### `--targets dashboard` dejó la fuente de datos
+
+Estaba adoptada. Una fuente de datos nombrada en `--grafana-datasource-uid` era
+de otro antes de que el colector se ejecutara y es de otro después: publicar la
+deja en paz y borrar también.
+
 ## Leer lo que muestra
 
 Cuando los datos ya llegan, la pregunta cambia de «por qué está roto esto» a

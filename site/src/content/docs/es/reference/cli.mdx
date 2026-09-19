@@ -73,7 +73,7 @@ incluidas las credenciales que no tienen ninguna opción.
 | `plan`      | Imprime cada objeto que crearía `install` y se detiene. Igual que `install --dry-run`; con `--rsc` escribe en su lugar un script de RouterOS.        | no                   |
 | `install`   | Consigue la imagen, imprime el listado, ejecuta `doctor`, pide confirmación, escribe y después sondea el agente desde este equipo.                   | sí                   |
 | `upgrade`   | Consigue una imagen nueva, comprueba que están todos los pasos de la instalación, pregunta, borra y vuelve a crear el paso del contenedor, y sondea. | sí                   |
-| `uninstall` | Borra cada paso del más reciente al más antiguo, verifica después por recuento de propiedad y falla nombrando lo que quede.                          | sí                   |
+| `uninstall` | Borra cada paso del más reciente al más antiguo, verifica después por recuento de propiedad y falla nombrando lo que quede. `--targets` lo amplía más allá del router; nada se va sin `--yes`. | sí                   |
 | `status`    | Imprime el recuento de propiedad de cada paso; si hay algo instalado, sondea el agente e imprime su salud y su placa.                                | no                   |
 | `image`     | Construye el tar de la imagen del agente y lo escribe en `--out`, para cargarlo a mano.                                                              | no                   |
 
@@ -181,6 +181,70 @@ rutas y la etiqueta de ese plan. Así que:
 <RouterWrites command="upgrade" />
 
 <RouterWrites command="uninstall" />
+
+### `uninstall --targets`
+
+`uninstall` ha significado «los objetos que creó `install` en el router» desde
+la 1.0.0 y lo sigue significando cuando no se le da nada más. `--targets` lo
+amplía.
+
+<ScrollTable label="objetivos de uninstall">
+
+| Objetivo    | Qué se va                                                                                          |
+| ----------- | ---------------------------------------------------------------------------------------------------- |
+| `router`    | el contenedor, el veth, la dirección y las dos pertenencias a listas — el valor por defecto            |
+| `dashboard` | el dashboard y la fuente de datos que publicó `forward --grafana`, por cada store al que escribe      |
+| `data`      | las tablas e índices que escribieron los destinos, y los ficheros que escribieron los de fichero      |
+| `all`       | los tres de arriba                                                                                    |
+
+</ScrollTable>
+
+```sh
+mikroscope uninstall                                  # lista los objetos del router
+mikroscope uninstall --yes                            # y los borra
+mikroscope uninstall --targets all --influx … --grafana …        # lista todo
+mikroscope uninstall --targets all --influx … --grafana … --yes  # y lo borra
+```
+
+**No se borra nada sin `--yes`**, y es el mismo `--yes` que toman los verbos de
+despliegue. Por defecto se lista, porque la alternativa es una orden mal escrita
+que vacía un almacén — y al contrario que los objetos del router, que `install`
+vuelve a poner, una tabla borrada es una tabla borrada.
+
+**Las tablas se le preguntan al almacén, nunca van compiladas.** Una lista dentro
+del binario serían las medidas que escribe *esta* versión, y las que merece la
+pena borrar son justamente las que ya nadie escribe: lo que recogía una versión
+anterior, o una fuente apagada desde entonces. Se reclama todo lo que lleva el
+prefijo `mikroscope_`; nada más se toca, nunca.
+
+**Una fuente de datos adoptada no se borra.** Una nombrada en
+`--grafana-datasource-uid` era de otro antes de esto y es de otro después:
+publicar la deja en paz y esto también.
+
+**Una que no se va no detiene a las demás.** Cada fallo se imprime con lo que
+dijo el almacén y el borrado continúa, porque parar en el primero lo dejaría a
+medias y sin lista de lo que queda.
+
+<Aside type="caution" title="Tres destinos no guardan nada que esto pueda borrar">
+  A `--prom` lo raspan en vez de escribirle, así que las series viven en un
+  Prometheus del que esto no ha oído hablar y caducan con su retención.
+  `--graphite` no ofrece borrado en absoluto: quita a mano los ficheros whisper.
+  `--sql` escribe un fichero, y las filas ya cargadas en una base de datos real
+  desde él hay que borrarlas allí — o con `--postgres` apuntado a esa base. Cada
+  uno imprime su propio motivo en lugar de faltar en silencio, porque el
+  silencio se leería como que no hay nada que borrar.
+</Aside>
+
+Un almacén necesita una palabra sobre qué significa «borrada» para él:
+
+<Aside type="note" title="InfluxDB 3 borra una tabla renombrándola">
+  Una tabla borrada por `/api/v3/configure/table` se queda en
+  `information_schema` con un nombre que lleva el instante del borrado —
+  `mikroscope_cpu-20260919T225605`, medido el 2026-09-20. Esas están fuera y no
+  se vuelven a ofrecer; sin ese filtro, un uninstall listaría las mismas tablas
+  en cada ejecución, las borraría con éxito y no se vaciaría nunca. El borrado
+  pide `hard_delete_at=now`, que el servidor acepta y programa.
+</Aside>
 
 ## record, mark y plot
 

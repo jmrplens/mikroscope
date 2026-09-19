@@ -182,6 +182,17 @@ func createStep(r Runner, o Options, s Step, image []byte, w io.Writer) error {
 // is already gone — then asks the router, step by step, whether anything
 // install created is still there, and returns an error naming what is. A
 // removal that printed nothing is not evidence; the count is.
+// RemovalListing prints what Uninstall would take off the router, in the order
+// it would take it — the install plan backwards, because an object is removed
+// after whatever depends on it.
+func RemovalListing(o Options, w io.Writer) {
+	plan := Plan(o)
+	fmt.Fprintf(w, "  %d router object(s) tagged %q:\n", len(plan), o.Tag())
+	for _, s := range slices.Backward(plan) {
+		fmt.Fprintf(w, "    %s\n", s.Name)
+	}
+}
+
 func Uninstall(r Runner, o Options, w io.Writer) error {
 	plan := Plan(o)
 	for _, s := range slices.Backward(plan) {

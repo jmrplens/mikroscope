@@ -63,6 +63,44 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `mikroscope-port-errors` also reaches the alerts page, which 1.0.10 added
   the rule without.
 
+- **`uninstall --targets`: take away what this put anywhere.** The verb has
+  meant "the objects `install` created on the router" since 1.0.0 and still
+  does when given nothing else — widening what an existing destructive verb
+  does by default is not a thing to do to somebody who has it in a script.
+  `--targets` opens the rest: `dashboard` for what `forward --grafana`
+  published, `data` for what the sinks wrote, `all` for the three.
+
+  **Nothing is removed without `--yes`**, and the default is the list. The
+  alternative is one mistyped command that empties a store, and unlike the
+  router objects — which `install` puts back — a dropped table is a dropped
+  table.
+
+  **The tables are asked of the store, never compiled in.** A list inside the
+  binary would be the measurements this version writes, and the ones worth
+  removing are exactly the ones nobody writes any more: what an earlier
+  version collected, or a source switched off since. Everything under the
+  `mikroscope_` prefix is claimed and nothing else is ever touched.
+
+  Three sinks store nothing this can remove and each says so by name rather
+  than being silently absent — `--prom` is scraped, `--graphite` offers no
+  delete, `--sql` writes a file whose rows live wherever they were loaded. An
+  adopted datasource is left alone, as publishing leaves it alone. One item
+  that will not go is reported and the rest still go, because stopping at the
+  first would leave it half done with no list of what is left.
+
+  Verified in the docker suite on 2026-09-20 against the live stores, with the
+  assertion that matters most: a table **this project did not write**, sitting
+  in the same database and the same schema, is neither listed nor removed. A
+  run without `--yes` removes nothing; a run with it empties both stores; a
+  second run says they are already empty.
+
+  **What that run found about InfluxDB 3:** it deletes a table by *renaming*
+  it, leaving the entry in `information_schema` as
+  `mikroscope_cpu-20260919T225605`. Listed again next time, deleted again
+  successfully — the server accepts a delete of a name it has already retired
+  — and the list never empties. Those are filtered out, and the delete asks
+  for `hard_delete_at=now`.
+
 - **Five datasources of five, by two routes.** `forward --grafana` derived two
   in 1.1.0's first cut; it derives three now and is told the other two.
 
