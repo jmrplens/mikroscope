@@ -22,6 +22,31 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   errors, nothing reports no data, and the panel looks like good news. A test
   now states the rule for every bar panel in both stores.
 
+- **The drops panel, split in two and given a scale.** "Interface drops — rx,
+  tx and tx-queue" drew one state-timeline lane per interface per counter:
+  forty-eight lanes on sixteen interfaces, of which eighteen could never carry
+  anything, because RouterOS returns `rx_drops` and `tx_drops` for the seven
+  virtual interfaces and for **none** of the nine physical ports (measured
+  2026-09-19 over 7 198 samples each). A blank lane and a zero lane looked the
+  same, so the panel could not say whether a port reported zero or did not
+  report.
+
+  And the colour was binary, so the quiet fault was the loud one: over the same
+  window `wg_devices` dropped exactly one packet in each of 172 separate
+  seconds and `ether4` dropped 3 337 in six one-second bursts peaking at 436/s.
+  The trickle painted the louder lane.
+
+  Two bar panels instead — **"Egress queue drops — the router's own transmit
+  queue"**, which the old panel's own description called the counter to watch,
+  and **"Packets the interface itself dropped — rx and tx"**, whose no-value
+  text says what a missing interface means here, because it does not mean
+  zero. Each is filtered to the interfaces that dropped anything in the window
+  and each carries the number. Neither defines thresholds: `colorFor` would
+  switch them to `color.mode: "thresholds"` and paint every series by value,
+  leaving a legend that cannot be matched to a bar. The zero / non-zero
+  judgement stays in the stat tile and the alert rule, where one number can
+  carry it.
+
 ## [1.0.10]
 
 ### Added
