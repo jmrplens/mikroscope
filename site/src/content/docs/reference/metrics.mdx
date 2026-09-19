@@ -1,6 +1,6 @@
 ---
 title: Prometheus metric families
-description: Every family on the agent’s /metrics and on the collector’s --prom exposition, grouped by source, with its type, its labels and when it is absent.
+description: Every family on the collector’s --prom exposition, grouped by source, with its type, its labels and when it is absent.
 ---
 
 import { Aside } from "@astrojs/starlight/components";
@@ -11,7 +11,7 @@ import SeeAlso from "../../../components/SeeAlso.astro";
 
 This page lists every metric family mikroscope exposes in Prometheus text
 format: its name, its type, its labels, what it counts, and when it is not
-there. It is read from `internal/agent/metrics.go`, `internal/agent/capture.go`
+there. It is read from `internal/expo/expo.go`, `internal/agent/capture.go`
 and `internal/sinks/prometheus.go`. A family is listed under the source it
 comes from, because that is what decides whether a given board has it.
 
@@ -149,8 +149,8 @@ cannot tell those apart.
 
 ## The sampler's own timing
 
-Agent only. A sample is read over a stretch of time, not at an instant, and
-these families measure that stretch.
+Rendered by the collector from each sample's `self` block. A sample is read over
+a stretch of time, not at an instant, and these families measure that stretch.
 
 <ScrollTable label="Sampler timing families">
 
@@ -376,7 +376,7 @@ agent runs shows after it restarts.
 
 ## Triggers and captures
 
-Agent only, and only while `CAPTURE_MB` is above 0. Every
+Rendered by the collector, and only while `CAPTURE_MB` is above 0. Every
 condition-and-reason pair is written from the start at 0.
 
 <ScrollTable label="Trigger and capture families">

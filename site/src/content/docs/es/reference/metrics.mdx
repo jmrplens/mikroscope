@@ -1,6 +1,6 @@
 ---
 title: Familias de métricas de Prometheus
-description: Todas las familias del /metrics del agente y de la exposición --prom del colector, agrupadas por fuente, con su tipo, sus labels y cuándo faltan.
+description: Todas las familias de la exposición --prom del colector, agrupadas por fuente, con su tipo, sus labels y cuándo faltan.
 ---
 
 import { Aside } from "@astrojs/starlight/components";
@@ -11,7 +11,7 @@ import SeeAlso from "../../../../components/SeeAlso.astro";
 
 Esta página enumera todas las familias de métricas que mikroscope expone en el
 formato de texto de Prometheus: su nombre, su tipo, sus labels, qué cuenta y
-cuándo no está. Está leída de `internal/agent/metrics.go`,
+cuándo no está. Está leída de `internal/expo/expo.go`,
 `internal/agent/capture.go` e `internal/sinks/prometheus.go`. Cada familia
 aparece bajo la fuente de la que sale, porque eso es lo que decide si una placa
 concreta la tiene.
@@ -158,8 +158,9 @@ ocupados no puede distinguirlos.
 
 ## Los tiempos del propio muestreador
 
-Solo el agente. Una muestra se lee a lo largo de un tramo de tiempo, no en un
-instante, y estas familias miden ese tramo.
+Los representa el colector a partir del bloque `self` de cada muestra. Una
+muestra se lee a lo largo de un tramo de tiempo, no en un instante, y estas
+familias miden ese tramo.
 
 <ScrollTable label="Familias de tiempos del muestreador">
 
@@ -389,8 +390,8 @@ mientras el agente funciona se ve después de reiniciarlo.
 
 ## Disparos y capturas
 
-Solo el agente, y solo mientras `CAPTURE_MB` sea mayor que 0. Cada par de
-condición y motivo se escribe desde el principio a 0.
+Los representa el colector, y solo mientras `CAPTURE_MB` sea mayor que 0. Cada
+par de condición y motivo se escribe desde el principio a 0.
 
 <ScrollTable label="Familias de disparos y capturas">
 

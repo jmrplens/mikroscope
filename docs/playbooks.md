@@ -90,8 +90,8 @@ echo "$c0 $c1 $t0 $t1" | awk '{printf "%.2f %% of one core\n", 100*($2-$1)/1e6/(
 
 Two things to expect:
 
-- **Cost and memory rise until the ring fills.** With the default 300 s ring at
-  10 Hz the agent holds 3 000 pre-encoded samples; a figure taken in the first
+- **Cost and memory rise until the ring fills.** With the default 60 s ring at
+  10 Hz the agent holds 600 pre-encoded samples; a figure taken in the first
   minute after install is measured on a nearly empty heap and will be
   optimistic. Wait out `BUFFER_S` before quoting a steady-state number.
 - **`mikroscope_slipped_total` is the number that actually matters.** A sampler
@@ -232,7 +232,7 @@ for k,v in c.most_common(): print(f"  {v:5d}  {k}")'
 ```
 
 `?seconds=` takes 1 to 3600, and the agent can only return what its ring still
-holds — 300 s at the default `BUFFER_S`. The window's length comes from summing
+holds — 60 s at the default `BUFFER_S`. The window's length comes from summing
 each sample's own `dt_ns`, not from the number you asked for.
 
 ### Step 2 — read the timing, not just the text

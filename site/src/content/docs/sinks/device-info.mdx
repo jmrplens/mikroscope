@@ -85,7 +85,7 @@ never mixed into a sample row.
 | Graphite                        | the numeric facts under `device.*`; board, kernel and governor have no Graphite form                                                               |
 | OTLP                            | gauges: `mikroscope.device.cores` with board, kernel and hash as attributes, the thermal and cpufreq ceilings, `mikroscope.device.source_cadence`  |
 | Loki                            | one `source="device"`, `level="info"` line: board, kernel, cores, privileged, cgroup, sources, hash                                                |
-| Prometheus                      | the same device-info families the agent's own `/metrics` carries                                                                                   |
+| Prometheus                      | the device-info families, rendered by the collector's exposition                                                                                   |
 
 </ScrollTable>
 

@@ -241,8 +241,8 @@ plot](/mikroscope/record/#triggers-during-a-recording) says what it does with it
 
 ## Counting what was not captured
 
-The agent's `/metrics` carries the families that say how much the captures did
-not see. Every condition and reason pair is rendered from the start, at 0 until
+The collector's `/metrics` carries the families that say how much the captures
+did not see, built from the agent's `GET /sampler` counters on the health cadence. Every condition and reason pair is rendered from the start, at 0 until
 it happens, so a dashboard can show "0 so far".
 
 <ScrollTable label="Trigger and capture metric families">
@@ -259,9 +259,10 @@ it happens, so a dashboard can show "0 so far".
 
 </ScrollTable>
 
-The collector cannot recompute these from the samples, so the Prometheus
-dashboard expects a scrape job on the agent itself that keeps only the agent-only
-families; [Prometheus](/mikroscope/sinks/prometheus/) has the job.
+The collector cannot recompute these from the samples; it reads them from the
+agent's `GET /sampler` and renders them into its own exposition, so one scrape
+job on the collector carries them. [Prometheus](/mikroscope/sinks/prometheus/)
+has the detail.
 
 ## What it cannot do
 

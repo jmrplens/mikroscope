@@ -211,8 +211,9 @@ plain defaults, whatever the CLI's usage text says. Export the variables you nee
    [the RouterOS API tier](/mikroscope/sinks/api-tier/) says which of those the agent can read
    itself. Without those variables the API tier is disabled with a warning and the kernel tier still runs. Both go to a Prometheus
    exposition on `:9124` and to InfluxDB 3. From there,
-   [import and check](/mikroscope/dashboards/import-and-check/) sets up the two Grafana dashboards,
-   the datasource field an InfluxDB 3 import needs and the two Prometheus scrape jobs.
+   [import and check](/mikroscope/dashboards/import-and-check/) sets up the Grafana dashboards — five
+   of them, one per store — and the datasource field an InfluxDB 3 import needs. One scrape job is
+   enough: the collector's.
 
 </Steps>
 

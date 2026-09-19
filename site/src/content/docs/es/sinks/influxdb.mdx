@@ -195,8 +195,10 @@ El datasource de Grafana para InfluxDB 3 necesita dos campos seguros, no uno; co
 [importar y comprobar](/mikroscope/es/dashboards/import-and-check/).
 
 <NotClaimed>
-	Todas las ejecuciones registradas escribieron en InfluxDB 3 Core; no consta ninguna escritura en
-	el `/api/v2/write` de InfluxDB 2 ni en InfluxDB 3 Enterprise. Las filas duplicadas del 2026-09-13
+	No consta ninguna escritura en el `/api/v2/write` de InfluxDB 2. InfluxDB 3 Enterprise sí está
+	medido, pero poco: el 2026-09-19 el colector de referencia pasó a Enterprise 3.11.4 y escribió
+	44 820 filas en 36 tablas en los primeros 19 minutos, 0 descartadas y 0 errores. Todo lo anterior
+	a esa fecha se midió contra Core. Las filas duplicadas del 2026-09-13
 	tienen una explicación principal y sin verificar, y desactivar el reenvío propio del cliente HTTP
 	no se ha medido contra una repetición de aquella ejecución.
 </NotClaimed>

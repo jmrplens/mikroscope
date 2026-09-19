@@ -90,7 +90,7 @@ and fail rather than fall back.
 >
 > By arithmetic, read from the code on 2026-09-15 and not measured. The cap of 18 samples comes from
 > the 64 512 B fetch limit, a mean line of 2 560 B, and 134 % headroom;
-> the mean is the 2 439 B measured on the RB5009 (RouterOS 7.24.2,
+> the mean is the 3 230 B measured on the RB5009 (RouterOS 7.24.2,
 > 2026-09-12), rounded up. A full pull of mean lines is about 46 kB. A full pull whose lines average
 > more than 134 % of that mean would still reach the limit and be refused, and how long lines run at
 > today's default per-source floors was not measured. At 18 samples a pull and the default 500 ms
@@ -416,7 +416,7 @@ of the container, an `upgrade` or a reboot loses the ones not yet downloaded.
 #### What a capture weighs
 
 A capture's size is its window's sample count times the line size. The mean line
-measured on the RB5009 (RouterOS 7.24.2, 10 Hz, every source of that date, 2026-09-12) was 2 439 B; lines at the default floors were not
+measured on the RB5009 (RouterOS 7.24.2, 10 Hz, every source of that date, 2026-09-12) was 3 230 B; lines at the default floors were not
 measured. That gives, by arithmetic and not by measuring captures:
 
 | Rate   | Default window (5 s + 5 s)  | Captures in the 4 MiB default |
@@ -505,8 +505,8 @@ plot](https://jmrp.io/docs/mikroscope/record/#triggers-during-a-recording) says 
 
 ### Counting what was not captured
 
-The agent's `/metrics` carries the families that say how much the captures did
-not see. Every condition and reason pair is rendered from the start, at 0 until
+The collector's `/metrics` carries the families that say how much the captures
+did not see, built from the agent's `GET /sampler` counters on the health cadence. Every condition and reason pair is rendered from the start, at 0 until
 it happens, so a dashboard can show "0 so far".
 
 | Family                                                  | Type    | Meaning                                                                                                  |
@@ -519,9 +519,10 @@ it happens, so a dashboard can show "0 so far".
 | `mikroscope_capture_budget_bytes`                       | gauge   | The budget, from `CAPTURE_MB`.                                                                           |
 | `mikroscope_capture_bytes_served_total`                 | counter | Bytes handed out over `/captures/<id>`.                                                                  |
 
-The collector cannot recompute these from the samples, so the Prometheus
-dashboard expects a scrape job on the agent itself that keeps only the agent-only
-families; [Prometheus](https://jmrp.io/docs/mikroscope/sinks/prometheus/) has the job.
+The collector cannot recompute these from the samples; it reads them from the
+agent's `GET /sampler` and renders them into its own exposition, so one scrape
+job on the collector carries them. [Prometheus](https://jmrp.io/docs/mikroscope/sinks/prometheus/)
+has the detail.
 
 ### What it cannot do
 

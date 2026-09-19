@@ -1076,10 +1076,10 @@ The entries install writes into the agent's envlist:
 | --- | --- | --- | --- |
 | `MIKROSCOPE_TAG` | always | `--name` | the ownership marker `mikroscope:<name> (managed by mikroscope)`, written first and removed last; the agent ignores it |
 | `RATE_HZ` | always | `--rate`, default `10`, 1–100 | the sampler rate, in Hz |
-| `BUFFER_S` | always | `--buffer`, default `300`, 10–3600 | the ring's length, in seconds |
+| `BUFFER_S` | always | `--buffer`, default `60`, 10–3600 | the ring's length, in seconds |
 | `PORT` | always | `--port`, default `9123`, 1–65535 | the agent's HTTP port |
 | `ADDR` | always | `--subnet` | the agent's address, the `.2` of the /30; the agent binds only there |
-| `MEM_LIMIT_MB` | always | `--mem-limit-mb`, default `40`, 8–1024 | the agent's Go soft memory limit, in MiB |
+| `MEM_LIMIT_MB` | always | `--mem-limit-mb`, 8–1024 | the agent's Go soft memory limit, in MiB; derived from the ring since 1.0.6 (rate × buffer × line, × 2.5, floored at 16 MiB) rather than a flat number |
 | `FLOOR_HZ` | only when above 0 | `--floor-hz`, default `0`, 0–1000 | one cadence for every level source, in Hz |
 | `CAPTURE_MB` | always | `--capture-mb`, default `4`, 0–256 | the triggered-capture budget, in MiB; `0` turns captures off |
 | `TRIGGERS` | only when set | `--triggers` | the trigger conditions; unset, the agent uses its default set |
@@ -1117,11 +1117,11 @@ immediately. It honours the default stop time of 10 s.
 ### Size the memory to the ring
 
 `--memory-max` and `--mem-limit-mb` have to move with `--rate` and `--buffer`.
-The ring holds `rate × buffer` lines of about 2.4 kB each; the Go soft limit
+The ring holds `rate × buffer` lines of about 3.5 kB each; the Go soft limit
 wants about twice that and has to sit comfortably under `memory-max`. The
-agent's startup check counts 2 560 bytes a line plus `--capture-mb`: above
-`memory-max` it refuses to start, and above half of `--mem-limit-mb` it warns. The defaults, 40 MiB under
-`64M`, are sized for 10 Hz and a 300 s ring. The triggered-capture budget
+agent's startup check counts 3 456 B a line plus `--capture-mb`: above
+`memory-max` it refuses to start, and above half of `--mem-limit-mb` it warns. The defaults — a soft
+limit derived from the ring, under `64M` — are sized for 10 Hz and a 60 s ring. The triggered-capture budget
 counts against both limits in that check, as the ring does.
 
 The measured runs used `(the defaults: --buffer 60, the derived --mem-limit-mb, --memory-max 64M)` at 10 Hz, `(the defaults: --buffer 60, the derived --mem-limit-mb, --memory-max 64M)`

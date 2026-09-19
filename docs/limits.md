@@ -10,7 +10,7 @@ Source: <https://jmrp.io/docs/mikroscope/cost/>
 
 An observer that costs 20 % of the thing it observes is not measuring the
 router, it is measuring itself. So this number is a first-class result here, not
-a footnote: it is reported by the agent on every sample and exposed on `/metrics`, and the image-size budget is asserted in CI.
+a footnote: it is reported by the agent on every sample, and the image-size budget is asserted in CI.
 
 ### The budget, and what it actually costs
 
@@ -53,9 +53,10 @@ a binary rather than a script.
 > **Where the number comes from**
 >
 > Not from `top`, and not from a snapshot. The agent counts its own CPU microseconds and RSS out of
-> its cgroup and publishes them as `mikroscope_self_cpu_usec_total` and `mikroscope_self_rss_bytes`.
-> Two reads of `/metrics` 60 s apart, at steady state with the ring already full, is the
-> measurement. RouterOS `/tool profile` shows the same process as `mikroscope-agent`.
+> its cgroup and carries them on every sample, in the `self` block, as `cpu_us` and `rss`; the collector renders them
+> as `mikroscope_self_cpu_usec_total` and `mikroscope_self_rss_bytes`. Two reads of the COLLECTOR's
+> `/metrics` 60 s apart, at steady state with the ring already full, is the measurement — the agent
+> has served no exposition of its own since 1.0.5. RouterOS `/tool profile` shows the same process as `mikroscope-agent`.
 
 ### Size the memory limit to the data
 
@@ -276,7 +277,7 @@ first.
 
 ### Gaps are reported, never papered over
 
-The agent keeps 300 s by default. A collector outage shorter than that is
+The agent keeps 60 s by default. A collector outage shorter than that is
 backfilled on reconnect through `since=<seq>`; a longer one is reported as a gap
 of known length — a marker in a recording, a counter on the collector. A chart
 with a hole in it is a chart telling the truth.
@@ -400,7 +401,7 @@ and `schedstat` where a kernel has them.
 ### How far back the agent remembers
 
 The other hard bound is depth, not resolution. The agent keeps its samples in a ring of
-`--buffer` seconds, 300 s by default and 10–3600 s allowed, which holds rate × buffer
+`--buffer` seconds, 60 s by default and 10–3600 s allowed, which holds rate × buffer
 samples. Nothing older exists anywhere on the router.
 
 A collector or recorder outage shorter than the ring is backfilled on reconnect: it asks
@@ -411,8 +412,11 @@ samples it still holds; `record` writes it as a marker reading `samples N..M los
 `forward` counts it in `mikroscope_collector_gaps_total` and hands it to every sink.
 
 A longer ring costs memory in the agent, and the agent refuses one that cannot fit. At
-start it estimates the ring at 2 560 bytes a line (the mean line was measured at 2 439 B on the RB5009 on 2026-09-12, without the PMU, buddyinfo and MTD sources; a board
-with more cores or interrupt lines, or more sources, costs more), adds the triggered-capture budget, and exits with an error if the total exceeds the
+start it estimates the ring at 3 456 B a line — the mean line
+was measured at 3 230 B on the RB5009 on 2026-09-17 with every source on,
+and the budget charges the allocator size class it is served from rather than the line itself,
+because that is what the heap pays; a board with more cores or interrupt lines costs more, one with
+no PMU costs 35 % less — adds the triggered-capture budget, and exits with an error if the total exceeds the
 container's `memory.max`. If the total is more than half the Go soft memory limit it starts
 but logs a warning, because a heap that tight keeps the garbage collector running. How to
 size both limits is on [the cost of the observer](https://jmrp.io/docs/mikroscope/cost/).

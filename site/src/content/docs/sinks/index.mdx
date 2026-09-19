@@ -93,7 +93,7 @@ warning: at most 18 samples per pull every 500ms is 36/s, below the agent's 100 
 
 The cap and the warning are read from the code on 2026-09-15, not re-measured against a device.
 
-A collector that falls further behind than the agent's ring (300 s by default)
+A collector that falls further behind than the agent's ring (60 s by default)
 receives a gap line instead of the samples, and every sink records the gap.
 
 ## Whose clock each record carries

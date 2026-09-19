@@ -165,9 +165,9 @@ sample's packet count was at or below its trailing median. See
 - **An unprivileged agent's blind spots.** The connection-table and ECC rules read sources that need
   a privileged container. Without one those measurements never reach the store, and on Prometheus a
   query over a missing metric returns no data — which these rules read as OK.
-- **Anything while the silent-agent rule fires.** Every other rule but the slipped-ticks rule, which
-  reads the agent directly, reads the same stream; with no samples arriving they read zero or no
-  data, and both are OK.
+- **Anything while the silent-agent rule fires.** Every rule reads the same stream — including the
+  slipped-ticks rule, whose only query is against the collector, not the agent — so with no samples
+  arriving they read zero or no data, and both are OK.
 
 <NotClaimed variant="untested" title="What has not been tried">
 	These files have not been loaded into Grafana and watched while a rule evaluated, fired or

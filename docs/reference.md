@@ -123,7 +123,7 @@ The checks doctor runs:
 | `--rate`         | `10`                            | none                      | 1–100                                                      | sampler rate in Hz (envlist `RATE_HZ`); 10, 50 and 100 Hz measured lossless on the RB5009 ([rate ceiling](https://jmrp.io/docs/mikroscope/cost/rate-ceiling/))                                                                                                                                                                      |
 | `--buffer`       | `60`                            | none                      | 10–3600                                                    | ring buffer in seconds (envlist `BUFFER_S`)                                                                                                                                                                                                                                                                     |
 | `--memory-max`   | `64M`                           | none                      | `^\d{1,6}[KMG]?$`                                          | container cgroup `memory-max`, RouterOS syntax                                                                                                                                                                                                                                                                  |
-| `--mem-limit-mb` | `40`                            | none                      | 8–1024                                                     | agent Go soft memory limit in MiB (envlist `MEM_LIMIT_MB`); must fit the ring, rate × buffer × about 2.4 kB, with room for the garbage collector                                                                                                                                         |
+| `--mem-limit-mb` | `40`                            | none                      | 8–1024                                                     | agent Go soft memory limit in MiB (envlist `MEM_LIMIT_MB`); must fit the ring, rate × buffer × about 3.5 kB, with room for the garbage collector                                                                                                                                         |
 | `--capture-mb`   | `4`                             | none                      | 0–256                                                      | triggered-capture budget in MiB (envlist `CAPTURE_MB`); `0` turns captures off                                                                                                                                                                                                                                  |
 | `--triggers`     | empty (the agent's default set) | none                      | see [triggered capture](https://jmrp.io/docs/mikroscope/record/triggers/)      | trigger conditions, comma-separated (envlist `TRIGGERS`)                                                                                                                                                                                                                                                        |
 | `--floor-hz`     | `0`                             | none                      | 0–1000                                                     | one cadence for every level source, in Hz (envlist `FLOOR_HZ`); `0` keeps the per-source floors; equal to `--rate` reads and emits every source every tick                                                                                                                                                      |
@@ -512,11 +512,11 @@ The names `SOURCES` accepts are the optional sources `/capabilities` reports:
 compares are on [triggered capture](https://jmrp.io/docs/mikroscope/record/triggers/).
 
 Before it listens, the agent checks the ring against the container's own
-`memory.max`: `RATE_HZ × BUFFER_S × 2 560 B` plus `CAPTURE_MB` must fit, or it
+`memory.max`: `RATE_HZ × BUFFER_S × 3 456 B` plus `CAPTURE_MB` must fit, or it
 refuses to start and names the three variables and `--memory-max`. If that
 figure is more than half of `MEM_LIMIT_MB`, it starts and logs a warning with
 the limit to raise to. 2 560 B is not itself a measurement: it is the mean
-line measured on the RB5009 with every source of that date (2 439 B, 4 cores,
+line measured on the RB5009 with every source of that date (3 230 B, 4 cores,
 `IRQ_TOP_K` 8, RouterOS 7.24.2, 2026-09-12) rounded up. A board with more cores
 or more interrupt lines writes longer lines, so the check errs open. When the
 agent cannot read its `memory.max`, the refusal check does not run.
@@ -532,10 +532,10 @@ The entries install writes into the agent's envlist:
 | --- | --- | --- | --- |
 | `MIKROSCOPE_TAG` | always | `--name` | the ownership marker `mikroscope:<name> (managed by mikroscope)`, written first and removed last; the agent ignores it |
 | `RATE_HZ` | always | `--rate`, default `10`, 1–100 | the sampler rate, in Hz |
-| `BUFFER_S` | always | `--buffer`, default `300`, 10–3600 | the ring's length, in seconds |
+| `BUFFER_S` | always | `--buffer`, default `60`, 10–3600 | the ring's length, in seconds |
 | `PORT` | always | `--port`, default `9123`, 1–65535 | the agent's HTTP port |
 | `ADDR` | always | `--subnet` | the agent's address, the `.2` of the /30; the agent binds only there |
-| `MEM_LIMIT_MB` | always | `--mem-limit-mb`, default `40`, 8–1024 | the agent's Go soft memory limit, in MiB |
+| `MEM_LIMIT_MB` | always | `--mem-limit-mb`, 8–1024 | the agent's Go soft memory limit, in MiB; derived from the ring since 1.0.6 (rate × buffer × line, × 2.5, floored at 16 MiB) rather than a flat number |
 | `FLOOR_HZ` | only when above 0 | `--floor-hz`, default `0`, 0–1000 | one cadence for every level source, in Hz |
 | `CAPTURE_MB` | always | `--capture-mb`, default `4`, 0–256 | the triggered-capture budget, in MiB; `0` turns captures off |
 | `TRIGGERS` | only when set | `--triggers` | the trigger conditions; unset, the agent uses its default set |
@@ -926,13 +926,13 @@ capture](https://jmrp.io/docs/mikroscope/record/triggers/).
 
 ## Prometheus metric families
 
-Every family on the agent’s /metrics and on the collector’s --prom exposition, grouped by source, with its type, its labels and when it is absent.
+Every family on the collector’s --prom exposition, grouped by source, with its type, its labels and when it is absent.
 
 Source: <https://jmrp.io/docs/mikroscope/reference/metrics/>
 
 This page lists every metric family mikroscope exposes in Prometheus text
 format: its name, its type, its labels, what it counts, and when it is not
-there. It is read from `internal/agent/metrics.go`, `internal/agent/capture.go`
+there. It is read from `internal/expo/expo.go`, `internal/agent/capture.go`
 and `internal/sinks/prometheus.go`. A family is listed under the source it
 comes from, because that is what decides whether a given board has it.
 
@@ -1058,8 +1058,8 @@ cannot tell those apart.
 
 ### The sampler's own timing
 
-Agent only. A sample is read over a stretch of time, not at an instant, and
-these families measure that stretch.
+Rendered by the collector from each sample's `self` block. A sample is read over
+a stretch of time, not at an instant, and these families measure that stretch.
 
 | Family                                 | Type      | Labels | Meaning                                                                                                                          |
 | -------------------------------------- | --------- | ------ | -------------------------------------------------------------------------------------------------------------------------------- |
@@ -1245,7 +1245,7 @@ agent runs shows after it restarts.
 
 ### Triggers and captures
 
-Agent only, and only while `CAPTURE_MB` is above 0. Every
+Rendered by the collector, and only while `CAPTURE_MB` is above 0. Every
 condition-and-reason pair is written from the start at 0.
 
 | Family                                  | Type    | Labels                                         | Meaning                                                                                                       |
@@ -1860,9 +1860,10 @@ The kinds, and the record shapes the RouterOS kernel prints (RB5009, kernel
 
 The agent classifies at read time and ships `kind` in the record, and a
 collector in front of an older agent whose records carry none classifies them
-itself with the same function. That is the case on the reference router today:
-the agent running there has not been redeployed with this build, so its
-`/metrics` carries no `kind` label yet and the collector does the work.
+itself with the same function. That path exists for a collector in front of an agent
+older than 1.0.0, which is when `kind` began shipping in the record; the
+reference router's agent has carried it since, and was upgraded to 1.0.9 on
+2026-09-19.
 
 **Four records are not four faults.** A normal link-up is followed by
 `stp-blocking`, `stp-learning` and `stp-forwarding` as the bridge walks the port

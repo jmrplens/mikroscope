@@ -101,8 +101,8 @@ whose panels are dropped emits no row at all.
 
 That is why the counts differ, and they differ in both directions. Most of the thermal and clock
 family, the flash wear section, the slab census and several memory panels have SQL and no PromQL,
-so they exist only on InfluxDB. The sampler's timing histograms, the trigger suppressions and the
-capture budget live on the agent's `/metrics` only. The busy run still in progress and the age of
+so they exist only on InfluxDB. The trigger suppressions live on the collector's
+`/metrics` only; the sampler's timing histograms and the capture budget have an InfluxDB form too. The busy run still in progress and the age of
 each held reading are Prometheus exposition families, on the collector's `/metrics` too, with no
 InfluxDB field. Neither group is written to InfluxDB, so the panels reading them exist only on
 Prometheus. Each panel below that is on one store only says which.
@@ -581,8 +581,9 @@ the Overview), which found 4 493 missing ticks and one restart in the
 #### The observer: sampler timing and self events
 
 The sampler's own smear — how late it woke and how long the read took — and the cgroup events the
-agent records about itself. The three heatmaps read the agent's histograms, which are never shipped
-as samples, so they exist only on Prometheus.
+agent records about itself. The timings ride in each sample's `self` block as `wake_ns` and
+`read_ns`, so all three heatmaps exist on the InfluxDB and PostgreSQL dashboards as well as on
+Prometheus.
 
 - Tick interval distribution, relative to the nominal period
 - Wake latency: how late the sampler ran after its ticker
@@ -1149,9 +1150,9 @@ sample's packet count was at or below its trailing median. See
 - **An unprivileged agent's blind spots.** The connection-table and ECC rules read sources that need
   a privileged container. Without one those measurements never reach the store, and on Prometheus a
   query over a missing metric returns no data — which these rules read as OK.
-- **Anything while the silent-agent rule fires.** Every other rule but the slipped-ticks rule, which
-  reads the agent directly, reads the same stream; with no samples arriving they read zero or no
-  data, and both are OK.
+- **Anything while the silent-agent rule fires.** Every rule reads the same stream — including the
+  slipped-ticks rule, whose only query is against the collector, not the agent — so with no samples
+  arriving they read zero or no data, and both are OK.
 
 > **What has not been tried**
 >

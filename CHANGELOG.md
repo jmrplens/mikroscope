@@ -6,6 +6,47 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [1.0.10]
 
+### Documentation
+
+- **The bilingual site was audited page by page against the code, and the first
+  three passes of the result are applied.** Fifty-three English pages and their
+  Spanish twins were read against the source; 234 findings were proposed and 206
+  survived an adversarial refutation pass. The documentation had been updated
+  release by release rather than by sweep, so every change since 1.0.3 left a
+  trail of pages behind. Fixed here:
+
+  - **The agent's `/metrics`.** 1.0.5 removed the exposition from the agent
+    entirely, and sixteen page pairs still attributed one to it — telling a
+    reader to scrape the agent, to take "two reads of `/metrics` 60 s apart" on
+    it, or reasoning from a two-exposition world that no longer exists. Among
+    them `reference/metrics.mdx` cited `internal/agent/metrics.go`, a file
+    renamed to `internal/expo/expo.go`, in a page whose own voice is "no claim
+    without its evidence".
+  - **The ring's default.** 1.0.6 made it 60 s; ten page pairs still said 300,
+    including the conditions line of `about/status.mdx`, which quoted figures
+    measured with a 60 s ring under a sentence promising 300.
+  - **The line size.** `ApproxLineBytes` has been 3 456 B since 2026-09-17;
+    `site/src/data/measurements.ts` still carried the 2 439 B of 2026-09-12, so
+    a dozen pages rendered the old number from the data file rather than from
+    stale prose. The data now carries the measured line (3 230 B) and the
+    charged size class (3 456 B) as separate ids, because they stopped being the
+    same number.
+  - **Provenance.** Every `run.*` measurement was attributed to campaign
+    `rates-2026-09-15` while the table it reads is the six-run campaign of
+    2026-09-18, and the landing page cited the superseded campaign while its own
+    data file used the current one.
+  - **`MEM_LIMIT_MB`** is derived from the ring, not a flat 40, and `BUFFER_S`
+    defaults to 60 — both wrong in `site/src/data/envlist.ts`, which feeds three
+    pages in two languages.
+  - **InfluxDB 3 Enterprise is now measured.** `sinks/influxdb.mdx` said no
+    write to it was recorded; on 2026-09-19 the reference collector moved onto
+    Enterprise 3.11.4 and wrote 44 820 rows across 36 tables in nineteen
+    minutes, 0 dropped and 0 errors.
+
+  The remaining four passes — the reference tier's SQL tables, the
+  five-dashboards sweep, the 1.0.9/1.0.10 strays and the twin-drift list — are
+  not in this release.
+
 ### Fixed
 
 - **`upgrade --dry-run` wrote to the router.** The flag is documented as "print

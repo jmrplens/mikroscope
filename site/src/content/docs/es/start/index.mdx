@@ -15,7 +15,7 @@ El **agente** es un binario Go estático en un contenedor scratch dentro del
 router. Un contenedor de RouterOS comparte el kernel del anfitrión, así que el
 `/proc` de dentro es el `/proc` del propio router: `/proc/stat` por núcleo,
 `/proc/interrupts`, `/proc/softirqs`, `/proc/net/softnet_stat`, `/proc/meminfo`,
-`/proc/vmstat`, `/proc/diskstats`, `/dev/kmsg`. Los muestrea con un temporizador de 1 a 100 Hz (10 Hz por defecto; medidos a 10, 50 y 100 Hz), guarda los últimos 300 segundos en un anillo y los sirve. No tiene conexión saliente ni presenta ninguna credencial; el único secreto que guarda es el token opcional que exige a quien lo lea.
+`/proc/vmstat`, `/proc/diskstats`, `/dev/kmsg`. Los muestrea con un temporizador de 1 a 100 Hz (10 Hz por defecto; medidos a 10, 20, 50 y 100 Hz), guarda los últimos 60 segundos en un anillo y los sirve. No tiene conexión saliente ni presenta ninguna credencial; el único secreto que guarda es el token opcional que exige a quien lo lea.
 
 La **CLI** corre en tu máquina. Instala y desinstala el agente, graba una
 ventana con marcadores, dibuja un SVG determinista de ella, y funciona como

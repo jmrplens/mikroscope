@@ -52,7 +52,7 @@ for k,v in c.most_common(): print(f"  {v:5d}  {k}")'
 ```
 
 `?seconds=` takes 1 to 3600, and the agent can only return what its ring still
-holds — 300 s at the default `BUFFER_S`. The window's length comes from summing
+holds — 60 s at the default `BUFFER_S`. The window's length comes from summing
 each sample's own `dt_ns`, not from the number you asked for.
 
 ## Step 2 — read the timing, not just the text

@@ -224,6 +224,16 @@ export const campaigns = {
 	// gives the date, and the rest of the conditions were checked on the
 	// reference device and are written down nowhere that publishes. It predates the PMU, buddyinfo and MTD sources and
 	// the per-source floors.
+	"line-size-2026-09-17": {
+		...RB5009,
+		date: "2026-09-17",
+		conditions: {
+			en: "one ring line with every source on, privileged, 10 Hz, 4 cores, `IRQ_TOP_K=8` — including the PMU and the sampler's own timing, which the 2026-09-12 measurement predates",
+			es: "una línea del anillo con todas las fuentes activas, privileged, 10 Hz, 4 núcleos, `IRQ_TOP_K=8` —incluidos el PMU y la propia temporización del muestreador, que la medición del 2026-09-12 no tenía",
+		},
+		source:
+			"internal/agent/agent.go, ApproxLineBytes: 3 230 B measured, charged from Go's 3 456 B size class. The 2 439 B of 2026-09-12 understated the ring by 35 %, which is why the budget check never bound.",
+	},
 	"line-size": {
 		...RB5009,
 		date: "2026-09-12",
@@ -704,21 +714,32 @@ const fixed = {
 		digits: 2,
 		campaign: "floors-overnight",
 	},
-	// site/src/content/docs/install/layout.mdx; internal/router/options.go, Options.MemLimitMB, "~2.4 kB"; the copy says "about".
+	// What the ring BUDGET charges per line, rounded for prose: the allocator
+	// size class, not the measured line. site/src/content/docs/install/layout.mdx.
 	"ring.lineKB": {
 		kind: "reading",
-		value: 2.4,
+		value: 3.5,
 		unit: "kB",
 		digits: 1,
-		campaign: "line-size",
+		campaign: "line-size-2026-09-17",
 	},
-	// The same line to the byte, internal/agent/agent.go, ApproxLineBytes.
+	// The measured line. It is NO LONGER the same number as ApproxLineBytes:
+	// since 2026-09-17 the budget charges the 3 456 B size class the allocator
+	// rounds this up to, because that is what the heap actually pays.
 	"ring.lineBytes": {
 		kind: "reading",
-		value: 2439,
+		value: 3230,
 		unit: "B",
 		digits: 0,
-		campaign: "line-size",
+		campaign: "line-size-2026-09-17",
+	},
+	// internal/agent/agent.go, ApproxLineBytes — the charged figure exactly.
+	"ring.lineChargedBytes": {
+		kind: "reading",
+		value: 3456,
+		unit: "B",
+		digits: 0,
+		campaign: "line-size-2026-09-17",
 	},
 } satisfies Record<string, Measurement>;
 
@@ -728,7 +749,7 @@ export type MeasurementId = keyof typeof fixed | `run.${RunKey}.${RunMetric}`;
 
 const fromRuns = Object.fromEntries(
 	runs.flatMap((r) => {
-		const base = { kind: "reading", campaign: "rates-2026-09-15" } as const;
+		const base = { kind: "reading", campaign: "rates-2026-09-18" } as const;
 		return [
 			[`run.${r.key}.cpu`, { ...base, value: r.cpuPct, unit: "%", digits: 2 }],
 			[

@@ -87,7 +87,7 @@ run against the reference RB5009 (RouterOS 7.24.2), not only against fakes:
 
 ### What the agent costs today
 
-At the install default — 10 Hz, default per-source floors, a 300 s ring — the
+At the install default — 10 Hz, default per-source floors, a 60 s ring — the
 agent costs **2.69 % of one core and 13.2 MiB RSS**,
 read from its own cgroup at steady state with the ring full:
 
@@ -121,7 +121,7 @@ what each one costs — not what the number was at some earlier point.
 | Configuration                                         | CPU of one core                                                       | RSS                            | Measured   | Note                                                                                                     |
 | ----------------------------------------------------- | --------------------------------------------------------------------- | ------------------------------ | ---------- | -------------------------------------------------------------------------------------------------------- |
 | Every source read every tick                          | 2.43 %                                                                | not recorded                   | 2026-09-12 | above the budget                                                                                         |
-| Ring full, `MEM_LIMIT_MB` 14                          | 9.38 % (9 374 µs/sample) | not recorded                   | 2026-09-12 | a 300 s ring of lines of about 2.4 kB holds ~7.3 MB; the Go GC runs without pause |
+| Ring full, `MEM_LIMIT_MB` 14                          | 9.38 % (9 374 µs/sample) | not recorded                   | 2026-09-12 | a 300 s ring of lines of about 3.5 kB holds ~7.3 MB; the Go GC runs without pause |
 | Ring full, `--mem-limit-mb 40`, `--memory-max 64M`    | 1.39 % (1 388 µs/sample) | 25.13 MiB                      | 2026-09-12 | 0 slipped ticks                                                                                          |
 | PMU counters on, a live `forward` writing to InfluxDB | 1.72 %                                                                | not recorded                   | 2026-09-12 | 0 slipped ticks; 2 400 samples forwarded, 0 gaps, 0 drops                                                |
 | The install default                                   | 2.69 %                                        | 13.2 MiB | 2026-09-15 | the figure above                                                                                         |

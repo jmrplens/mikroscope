@@ -180,9 +180,9 @@ o por debajo. Consulta
   leen fuentes que necesitan un contenedor privilegiado. Sin él esas medidas nunca llegan al almacén,
   y en Prometheus una consulta sobre una métrica inexistente no devuelve datos — lo que estas reglas
   leen como OK.
-- **Nada mientras salta la regla del agente en silencio.** Todas las demás reglas salvo la de ticks
-  perdidos por retraso, que lee directamente el agente, leen el mismo flujo; sin muestras llegando
-  leen cero o ningún dato, y las dos cosas son OK.
+- **Nada mientras salta la regla del agente en silencio.** Todas las reglas leen el mismo flujo —
+  incluida la de ticks perdidos por retraso, cuya única consulta va contra el colector, no contra el
+  agente—, así que sin muestras llegando leen cero o ningún dato, y las dos cosas son OK.
 
 <NotClaimed variant="untested" title="Lo que no se ha probado">
 	Estos ficheros no se han cargado en Grafana para observar una regla evaluarse, saltar o

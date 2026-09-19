@@ -10,7 +10,7 @@ import SeeAlso from "../../../components/SeeAlso.astro";
 
 An observer that costs 20 % of the thing it observes is not measuring the
 router, it is measuring itself. So this number is a first-class result here, not
-a footnote: it is reported by the agent on every sample and exposed on `/metrics`, and the image-size budget is asserted in CI.
+a footnote: it is reported by the agent on every sample, and the image-size budget is asserted in CI.
 
 ## The budget, and what it actually costs
 
@@ -52,9 +52,10 @@ a binary rather than a script.
 
 <Aside type="note" title="Where the number comes from">
 	Not from `top`, and not from a snapshot. The agent counts its own CPU microseconds and RSS out of
-	its cgroup and publishes them as `mikroscope_self_cpu_usec_total` and `mikroscope_self_rss_bytes`.
-	Two reads of `/metrics` 60 s apart, at steady state with the ring already full, is the
-	measurement. RouterOS `/tool profile` shows the same process as `mikroscope-agent`.
+	its cgroup and carries them on every sample, in the `self` block, as `cpu_us` and `rss`; the collector renders them
+	as `mikroscope_self_cpu_usec_total` and `mikroscope_self_rss_bytes`. Two reads of the COLLECTOR's
+	`/metrics` 60 s apart, at steady state with the ring already full, is the measurement — the agent
+	has served no exposition of its own since 1.0.5. RouterOS `/tool profile` shows the same process as `mikroscope-agent`.
 </Aside>
 
 ## Size the memory limit to the data

@@ -53,7 +53,7 @@ for k,v in c.most_common(): print(f"  {v:5d}  {k}")'
 ```
 
 `?seconds=` admite de 1 a 3600, y el agente solo puede devolver lo que su anillo
-aún guarda — 300 s con el `BUFFER_S` por defecto. La longitud de la ventana sale
+aún guarda — 60 s con el `BUFFER_S` por defecto. La longitud de la ventana sale
 de sumar el `dt_ns` de cada muestra, no del número que pediste.
 
 ## Paso 2 — leer los tiempos, no solo el texto
