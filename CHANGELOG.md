@@ -37,6 +37,13 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   answers. With `Restart=always` in the unit, a reboot could otherwise leave a
   restarted collector permanently without an API tier.
 
+- **A kernel-only run no longer panics one hour in.** `forward` arms the API
+  ticker at an hour and resets it to the real cadence only when there is a
+  tier, but it never stopped it — so with `--api-every 0`, or with no API
+  credentials, the first tick dereferenced a nil reader. Any run past the hour
+  mark crashed. Found by reading the loop while fixing the reconnection, not by
+  hitting it: the reference deployment has always run the API tier.
+
 - **The report no longer hides an API outage.** `api` counts rounds
   *attempted*, so through those 7 h 24 min the summary line read a healthy,
   growing `82 610 api`. It now carries `api: N failed round(s), N

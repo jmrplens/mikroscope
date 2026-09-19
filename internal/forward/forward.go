@@ -164,6 +164,12 @@ func (f *Forwarder) Run(ctx context.Context) (Stats, error) {
 	apiTick := time.NewTicker(time.Hour)
 	if f.API != nil && f.Opts.APIEvery > 0 {
 		apiTick.Reset(f.Opts.APIEvery)
+	} else {
+		// Stopped, not left at an hour. The branch below dereferences f.API,
+		// so a kernel-only run — `--api-every 0`, or no API credentials —
+		// would panic on the first tick, one hour in. A stopped ticker never
+		// delivers.
+		apiTick.Stop()
 	}
 	defer apiTick.Stop()
 	skewTick := time.NewTicker(f.Opts.SkewEvery)
@@ -178,6 +184,9 @@ func (f *Forwarder) Run(ctx context.Context) (Stats, error) {
 		case <-poll.C:
 			f.pull(ctx, &since)
 		case <-apiTick.C:
+			if f.API == nil {
+				continue
+			}
 			s := f.API.Read(ctx)
 			f.noteAPI(&s)
 			f.stats.API++
