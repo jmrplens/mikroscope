@@ -422,12 +422,13 @@ Anything whose name starts with `mikroscope-agent` is the other program.
   you moved it, and that directory has to be on your `PATH`. A binary built this
   way reports the module version rather than a release stamp.
 
-  A checkout builds both programs at once, which is the contributor's route:
+  A checkout builds either program, which is the contributor's route:
 
   ```sh
   git clone https://github.com/jmrplens/mikroscope
   cd mikroscope
-  make build          # leaves bin/mikroscope and bin/mikroscope-agent
+  make build          # leaves bin/mikroscope
+  make build-agent    # leaves bin/mikroscope-agent-<goarch>
   ```
 
 ### Check it
@@ -766,7 +767,8 @@ under its own name, veth and `/30` so that nothing already on the device was
 touched, and each removed again before the next. In every one the agent
 answered `/healthz` from the collector host: the checkout build and the
 published `mikroscope-agent-arm64.tar` at a 2 ms round trip, the router's own
-pull of `jmrplens/mikroscope-agent:1.0.9` from Docker Hub at 2 ms, and the
+pull of `jmrplens/mikroscope-agent:1.0.1` from Docker Hub at 2 ms — the tag of that date, which
+this sentence keeps rather than following the release — and the
 `plan --rsc` script — uploaded and `/import`ed, with no CLI involved in the
 install itself — at 15 ms on its first samples. `uninstall` then verified by
 ownership count in each case, and the router's `/export` after all four was

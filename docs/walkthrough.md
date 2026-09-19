@@ -120,7 +120,7 @@ plain defaults, whatever the CLI's usage text says. Export the variables you nee
 1. **Get mikroscope.**
 
    ```sh wrap
-   tar xzf mikroscope_1.0.0_linux_x86_64.tar.gz   # a .zip on Windows
+   tar xzf mikroscope_1.0.9_linux_x86_64.tar.gz   # a .zip on Windows
    ./mikroscope version
    ```
 
@@ -165,12 +165,12 @@ plain defaults, whatever the CLI's usage text says. Export the variables you nee
      checkout. The CLI reads the tar before it uploads it — it has to be a mikroscope agent image
      and its architecture has to match `--arch`, or the verb stops and names the asset to download
      instead;
-   - **the registry**, `--remote-image jmrplens/mikroscope-agent:1.0.0`: the router pulls the image
+   - **the registry**, `--remote-image jmrplens/mikroscope-agent:1.0.9`: the router pulls the image
      itself, nothing is uploaded, and `uninstall` has no file to account for. RouterOS takes the
      registry host from the global `/container/config registry-url`, which mikroscope never writes
      because every container on the device shares it, and which ships as
      `https://registry-1.docker.io` — so the Docker Hub reference above runs on a stock router as
-     it stands. The GHCR reference, `ghcr.io/jmrplens/mikroscope-agent:1.0.0`, names a host of its
+     it stands. The GHCR reference, `ghcr.io/jmrplens/mikroscope-agent:1.0.9`, names a host of its
      own: `doctor` checks the setting against it and prints
      `/container/config/set registry-url=https://ghcr.io` when it does not match, or points at
      `--agent-tar`. The pull needs the router to reach the registry and the free RAM for the layers.
@@ -180,7 +180,7 @@ plain defaults, whatever the CLI's usage text says. Export the variables you nee
    if they differ.
 
    On a router you only reach through WinBox or WebFig, there is a fourth way with no CLI on your
-   side at all: `mikroscope plan --rsc --remote-image jmrplens/mikroscope-agent:1.0.0 --out install.rsc`
+   side at all: `mikroscope plan --rsc --remote-image jmrplens/mikroscope-agent:1.0.9 --out install.rsc`
    writes the same commands, in the same order and with the same tags, as a RouterOS script to
    paste into the terminal or `/import`. [Installing the agent](https://jmrp.io/docs/mikroscope/install/) has that path
    and its two caveats in full.

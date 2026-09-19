@@ -301,8 +301,8 @@ and the event panels are marked known-empty so that `check` does not fail on it.
 - Captures held on the agent, and the budget they pin
 - Trigger markers in this window — InfluxDB only
 
-In "Trigger fires and suppressions per bin", the suppressions are on Prometheus only: they live on
-the agent's `/metrics`.
+In "Trigger fires and suppressions per bin", the suppressions are on Prometheus only: the
+collector renders them into its exposition and no store carries a field for them.
 
 #### The red dashed lines on every panel
 

@@ -49,7 +49,7 @@ and its first key says what it is:
 - `{"trigger":…}` — the agent's capture marker, also verbatim;
 - `{"derived":…}` — the derive stage's values, on the line after the sample they belong
   to, so a reader that wants only raw samples skips that kind;
-- `{"detection":…}`, `{"device":…}`, `{"api":…}` and `{"gap":…}`.
+- `{"detection":…}`, `{"device":…}`, `{"api":…}`, `{"sampler":…}` and `{"gap":…}`.
 
 Writes are synchronous through a 64 KiB buffer, and the counters are in events. A write
 the filesystem refuses counts one error and one drop.
@@ -303,6 +303,7 @@ time. Every level is a **Gauge**. Nothing from the kernel tier is pre-divided ex
 | Gauge | `mikroscope.derived.fastpath_share`                                                                                                                         | `interface`, `direction`                                                            |
 | Gauge | `mikroscope.device.cores`; `mikroscope.device.thermal.critical`, `mikroscope.device.thermal.polling` (s)                                                    | `board`, `kernel`, `hash`; `zone`                                                   |
 | Gauge | `mikroscope.device.cpu.frequency_max`, `mikroscope.device.cpu.frequency_min`; `mikroscope.device.source_cadence`                                            | `cpu`; `source`, `reason`                                                           |
+| Gauge | `mikroscope.sampler.{ticks,slipped,trigger_fired,trigger_suppressed}`; `mikroscope.capture.{held,bytes,budget_bytes,served_bytes,refused}`                  | `condition`, `reason`                                                               |
 
 </ScrollTable>
 
@@ -355,6 +356,7 @@ value becomes `none`, so a path's depth never changes.
 | `derived.{mem_pressure,cycles_per_packet,instructions_per_packet,cache_misses_per_packet,packets_per_irq}`                                           | the derive stage                  |
 | `trigger.<cause>`, `detection.<rule>` — the value 1 at each event                                                                                    | triggers and detections           |
 | `device.{cores,conntrack_max,cgroup_mem_max}`, `device.thermal.<zone>.*`, `device.cpufreq.<n>.*`, `device.cadence.<source>.hz`                       | the device-info stream            |
+| `sampler.{ticks,slipped,captures_held,capture_bytes,capture_budget_bytes,capture_served_bytes}`                                                      | the agent's own counters, on the health cadence|
 | `collector.gap.{samples,from,to}`                                                                                                                    | gaps, at the collector's clock    |
 
 </ScrollTable>
@@ -411,7 +413,7 @@ One document per event, with `kind` telling them apart:
   `role` and `bridge`, and each `iface_counters` entry `comment`, `type`, `role` and
   `bridge`, where the inventory has them. The API tier's per-command errors are not
   written;
-- `gap` (`from`, `to`, `lost`), `device`, `detection` and `trigger`.
+- `gap` (`from`, `to`, `lost`), `device`, `detection`, `trigger` and `sampler`.
 
 Every document carries `@timestamp` from the agent's clock (the collector's for gaps and
 device records) and `host`. The index name expands `%Y`, `%m` and `%d` — only those —

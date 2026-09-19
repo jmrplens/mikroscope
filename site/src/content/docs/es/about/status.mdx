@@ -118,7 +118,7 @@ RB5009, con un límite blando de memoria de 14 MiB, una lectura tomada en el
 primer minuto tras la instalación dio un 1,47 % de un núcleo frente a un 9,38 %
 en régimen estacionario — y leer el coste del `/metrics` del colector, o de
 `cpu_us` y `rss` en `mikroscope_self` en el almacén que uses, en vez de un
-`/snapshot` grande, cuya respuesta de ~1,5 MB tiene que serializar el agente.
+`/snapshot` grande, cuya respuesta de ~1,9 MB tiene que serializar el agente.
 
 ### Coste a 10 Hz, por configuración
 
@@ -132,7 +132,7 @@ anterior.
 | Configuración                                                            | CPU de un núcleo                                                       | RSS                            | Medido     | Nota                                                                                                          |
 | ------------------------------------------------------------------------ | ---------------------------------------------------------------------- | ------------------------------ | ---------- | ------------------------------------------------------------------------------------------------------------- |
 | Cada fuente leída en cada tick                                           | 2,43 %                                                                 | no registrado                  | 2026-09-12 | por encima del presupuesto                                                                                    |
-| Anillo lleno, `MEM_LIMIT_MB` 14                                          | <Measured id="gc.tight.cpu" /> (<Measured id="gc.tight.us" />/muestra) | no registrado                  | 2026-09-12 | un anillo de 300 s de líneas de unos <Measured id="ring.lineKB" /> ocupa ~7,3 MB; el GC de Go corre sin pausa |
+| Anillo lleno, `MEM_LIMIT_MB` 14                                          | <Measured id="gc.tight.cpu" /> (<Measured id="gc.tight.us" />/muestra) | no registrado                  | 2026-09-12 | un anillo de 300 s de líneas de unos 2,4 kB, la línea de esa fecha, ocupa ~7,3 MB; el GC de Go corre sin pausa |
 | Anillo lleno, `--mem-limit-mb 40`, `--memory-max 64M`                    | <Measured id="gc.roomy.cpu" /> (<Measured id="gc.roomy.us" />/muestra) | 25,13 MiB                      | 2026-09-12 | 0 ticks retrasados                                                                                            |
 | Contadores PMU activados, un `forward` en marcha escribiendo en InfluxDB | 1,72 %                                                                 | no registrado                  | 2026-09-12 | 0 ticks retrasados; 2 400 muestras reenviadas, 0 huecos, 0 descartes                                          |
 | Los valores por defecto de la instalación                                | <Measured id="run.10hz.cpu" />                                         | <Measured id="run.10hz.rss" /> | 2026-09-15 | la cifra de arriba                                                                                            |
@@ -176,9 +176,6 @@ Contrastado con el código a fecha de esta página:
   Elasticsearch y Telegraf rechazan ese reenvío, así que una conexión muerta es
   un error que el destino reintenta y contabiliza. Ninguna ejecución posterior
   a esa noche muestra si los duplicados han desaparecido.
-- **Graphite nombra las zonas térmicas por índice.** El índice es deliberado —
-  la cadena `type` de una zona no es única entre zonas — pero la lista de rutas
-  al principio de `internal/sinks/graphite.go` dice `thermal.<zone>`.
 
 ### Encontrado en el equipo y sin recoger
 

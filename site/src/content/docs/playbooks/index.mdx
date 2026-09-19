@@ -75,7 +75,7 @@ Measure the observer, and measure it honestly — including the part where
 measuring changes the answer.
 
 Pulling a 60-second `/snapshot` is not free: the agent has to hand over ~600
-pre-encoded lines, about 1.5 MB, and `self.cpu_us` inside those samples
+pre-encoded lines, about 1.9 MB, and `self.cpu_us` inside those samples
 _includes the cost of serving them_. Reading the agent's cost out of a large
 snapshot therefore overstates it, and doing it repeatedly overstates it more.
 

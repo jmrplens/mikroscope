@@ -160,6 +160,27 @@ const CMD = {
 
 const RUNS_ON_LANDING: RunKey[] = ["10hz", "50hz", "100hz"];
 
+/**
+ * The campaign's sinks, named rather than counted. spellCount against a fixed
+ * plural rendered "the one sinks the collector forwarded to" on the landing
+ * page the day the 2026-09-18 campaign came down to a single sink.
+ */
+const sinksPhrase = (lang: "en" | "es"): string => {
+	const list = rates.sinks;
+	if (list.length === 1) {
+		return lang === "en"
+			? `${list[0]}, the one sink`
+			: `${list[0]}, el único destino`;
+	}
+	const joined =
+		lang === "en"
+			? `${list.slice(0, -1).join(", ")} and ${list.at(-1)}`
+			: `${list.slice(0, -1).join(", ")} y ${list.at(-1)}`;
+	return lang === "en"
+		? `the ${spellCount(list.length, "en")} sinks (${joined})`
+		: `los ${spellCount(list.length, "es")} destinos (${joined})`;
+};
+
 export const en: HomeContent = {
 	lang: "en",
 	readout: {
@@ -182,11 +203,11 @@ export const en: HomeContent = {
 			},
 			{
 				id: "run.gapsDrops",
-				label: `gaps and drops, in every sink, across ${spellCount(runs.length, "en")} runs`,
+				label: `gaps and drops, across ${spellCount(runs.length, "en")} runs`,
 				href: "/mikroscope/cost/rate-ceiling/",
 			},
 		],
-		claim: `The first three from the agent's own cgroup, carried on every sample, the fourth from the ${spellCount(rates.sinks.length, "en")} sinks the collector forwarded to, on an RB5009 (${describeCpu(rates, "en")}, RouterOS ${rates.routeros}), ${win("en")} windows at steady state, ${rates.date}. At ${hz(run10.rateHz, "en")} the memory is inside the ≤ ${q("budget.rss", "en")} the budget asks for and the CPU is above the ≤ ${q("budget.cpu", "en")}.`,
+		claim: `The first three from the agent's own cgroup, carried on every sample, the fourth from ${sinksPhrase("en")} the collector forwarded to, on an RB5009 (${describeCpu(rates, "en")}, RouterOS ${rates.routeros}), ${win("en")} windows at steady state, ${rates.date}. At ${hz(run10.rateHz, "en")} the memory is inside the ≤ ${q("budget.rss", "en")} the budget asks for and the CPU is above the ≤ ${q("budget.cpu", "en")}.`,
 	},
 	hides: {
 		title: "A one-second average is a report about a second",
@@ -296,11 +317,11 @@ export const es: HomeContent = {
 			},
 			{
 				id: "run.gapsDrops",
-				label: `huecos y descartes, en todos los destinos, en ${spellCount(runs.length, "es")} ejecuciones`,
+				label: `huecos y descartes, en ${spellCount(runs.length, "es")} ejecuciones`,
 				href: "/mikroscope/es/cost/rate-ceiling/",
 			},
 		],
-		claim: `Las tres primeras, desde el propio cgroup del agente, en cada muestra; la cuarta, desde los ${spellCount(rates.sinks.length, "es")} destinos a los que reenviaba el colector; en un RB5009 (${describeCpu(rates, "es")}, RouterOS ${rates.routeros}), ventanas de ${win("es")} en régimen estacionario, ${rates.date}. A ${hz(run10.rateHz, "es")} la memoria está dentro de los ≤ ${q("budget.rss", "es")} que pide el presupuesto y la CPU por encima del ≤ ${q("budget.cpu", "es")}.`,
+		claim: `Las tres primeras, desde el propio cgroup del agente, en cada muestra; la cuarta, desde ${sinksPhrase("es")} al que reenviaba el colector; en un RB5009 (${describeCpu(rates, "es")}, RouterOS ${rates.routeros}), ventanas de ${win("es")} en régimen estacionario, ${rates.date}. A ${hz(run10.rateHz, "es")} la memoria está dentro de los ≤ ${q("budget.rss", "es")} que pide el presupuesto y la CPU por encima del ≤ ${q("budget.cpu", "es")}.`,
 	},
 	hides: {
 		title: "Una media de un segundo es un informe sobre un segundo",
