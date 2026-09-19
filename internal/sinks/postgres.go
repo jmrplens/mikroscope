@@ -73,6 +73,8 @@ func NewPostgres(dsn, host string, hypertable bool, queueSeconds int, log func(s
 		stop:   make(chan struct{}), done: make(chan struct{}),
 	}
 	if s.Log == nil {
+		// A sink with nowhere to log still has to be callable: the no-op is
+		// what lets every Log call below skip a nil check.
 		s.Log = func(string) {}
 	}
 	s.maxQ = queueSeconds * 64 << 10
