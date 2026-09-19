@@ -174,9 +174,10 @@ Without the API tier a kernel record keeps the board's default name and gets no 
 
 </ScrollTable>
 
-Without `--api`, `--api-user` and `MIKROSCOPE_API_PASSWORD`, or when the session cannot
-be opened within 10 s, `forward` logs `api tier disabled: …` and runs the kernel tier
-alone. That is a warning, not a failure: the kernel tier is the point.
+Without `--api`, `--api-user` and `MIKROSCOPE_API_PASSWORD`, `forward` runs the kernel tier
+alone. When they are given but the session cannot be opened within 10 s it logs
+`api tier: not connected yet, will keep trying: …` and attaches the reader anyway: since
+1.0.9 a failed first dial is a warning, not a tier disabled for the life of the process.
 
 ## The user it needs
 

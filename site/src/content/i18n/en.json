@@ -59,5 +59,6 @@
   "ms.alerts.noData": "No data means",
   "ms.alerts.stores": "Stores",
   "ms.alerts.both": "both",
-  "ms.breadcrumb.home": "Home"
+  "ms.breadcrumb.home": "Home",
+  "ms.alerts.all": "all three"
 }

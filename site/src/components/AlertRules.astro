@@ -14,7 +14,15 @@
  * A regenerated alert file changes this page in both locales at once.
  */
 import { Code } from "@astrojs/starlight/components";
-import { alertFiresWhen, alertRules, alertUids, STORES, type Store } from "../data/dashboards";
+import {
+	alertFiresWhen,
+	alertRules,
+	alertUids,
+	ALERT_STORES,
+	STORE_NAMES,
+	STORES,
+	type Store,
+} from "../data/dashboards";
 import { formatNumber } from "../lib/format";
 import { nextId } from "../lib/ids";
 import { langOf } from "../lib/lang";
@@ -42,7 +50,7 @@ const find = (s: Store, uid: string) => alertRules[s].find((r) => r.uid === uid)
 // whichever file carries it, and a rule both files carry with different values
 // fails the build rather than showing one of them.
 const rows = alertUids.map((uid) => {
-	const inStores = STORES.filter((s) => find(s, uid) !== undefined);
+	const inStores = ALERT_STORES.filter((s) => find(s, uid) !== undefined);
 	const [first, ...rest] = inStores.map((s) => find(s, uid)!);
 	for (const other of rest) {
 		for (const key of ["for", "noDataState", "severity", "op", "value"] as const) {
@@ -53,8 +61,13 @@ const rows = alertUids.map((uid) => {
 	}
 	return { rule: first, inStores };
 });
+// Named from STORE_NAMES rather than from a key per combination: there are
+// three alert files, so "both" and a two-way influx/prometheus guess printed
+// "InfluxDB only" for every rule all three carry — which is most of them.
 const storesText = (s: Store[]) =>
-	s.length === 2 ? t("ms.alerts.both") : t(s[0] === "influxdb" ? "ms.dash.influxOnly" : "ms.dash.promOnly");
+	s.length === ALERT_STORES.length
+		? t("ms.alerts.all")
+		: s.map((x) => STORE_NAMES[x]).join(", ");
 const threshold = (op: string, value: number) =>
 	`${op} ${formatNumber(value, lang, String(value).split(".")[1]?.length ?? 0)}`;
 

@@ -131,7 +131,7 @@ The checks doctor runs:
 | `--token`        | empty                           | `MIKROSCOPE_TOKEN`        | `^[A-Za-z0-9_.-]{0,128}$`                                  | bearer token the agent requires (envlist `TOKEN`); mandatory with `--expose`                                                                                                                                                                                                                                    |
 | `--expose`       | `false`                         | none                      | needs `--lan-address` and `--token`                        | dst-nat the agent port on the router's LAN address; adds two tagged firewall rules                                                                                                                                                                                                                              |
 | `--lan-address`  | empty                           | `MIKROSCOPE_LAN_ADDRESS`  | an IPv4 address                                            | the router's LAN address for `--expose`                                                                                                                                                                                                                                                                         |
-| `--dry-run`      | `false`                         | none                      |                                                            | `install`: print the listing and write nothing                                                                                                                                                                                                                                                                  |
+| `--dry-run`      | `false`                         | none                      |                                                            | `install` and `upgrade`: print the listing and write nothing                                                                                                                                                                                                                                                                  |
 | `--yes`          | `false`                         | none                      |                                                            | `install`, `upgrade`: do not ask before writing                                                                                                                                                                                                                                                                 |
 | `--no-doctor`    | `false`                         | none                      |                                                            | `install`: skip the preflight checks                                                                                                                                                                                                                                                                            |
 | `--out`          | `mikroscope-agent-<arch>.tar`   | none                      |                                                            | `image`: output path of the tar. `plan --rsc`: where the script is written; empty writes it to standard output                                                                                                                                                                                                  |
@@ -282,8 +282,10 @@ refuses to start without at least one sink.
 | `--labels-every`    | `5m`    | none                    | re-read what each interface is (label from its comment, type, interface lists, bridge, MTU); read once before the first kernel pull and again this often; `0` takes the 5 min default                                                                                                                                                                                                                                                                         |
 | `--no-health`       | `false` | none                    | skip `/system/health`. `slow` sets it                                                                                                                                                                                                                                                                                                                                                                                                                         |
 
-Without `--api` and `--api-user`, `forward` logs `api tier disabled` and runs
-the kernel tier alone; that is a warning, not a failure.
+Without `--api` and `--api-user`, `forward` runs the kernel tier alone. With them,
+a first dial that fails logs `api tier: not connected yet, will keep trying: …`
+and the tier connects on the first round the router answers — since 1.0.9 it is
+never disabled for the life of the process.
 
 #### Sinks
 
@@ -335,8 +337,8 @@ mikroscope dashboards check  --store influxdb --datasource-uid <uid> --window 1h
 
 | Flag               | Default         | Variable      | Read by           | Meaning                                                                                          |
 | ------------------ | --------------- | ------------- | ----------------- | ------------------------------------------------------------------------------------------------ |
-| `--out`            | `dashboards`    | none          | `gen`             | output directory for `mikroscope-<store>.json` and `mikroscope-alerts-<store>.yaml`, both stores |
-| `--store`          | `influxdb`      | none          | `import`, `check` | `influxdb` or `prometheus`                                                                       |
+| `--out`            | `dashboards`    | none          | `gen`             | output directory for `mikroscope-<store>.json` (five) and `mikroscope-alerts-<store>.yaml` (three) |
+| `--store`          | `influxdb`      | none          | `import`, `check` | `influxdb`, `prometheus`, `postgres`, `graphite` or `elasticsearch`                                                                       |
 | `--grafana`        | empty           | `GRAFANA_URL` | `import`, `check` | Grafana base URL; the token comes only from `GRAFANA_TOKEN`                                      |
 | `--datasource-uid` | empty, required | none          | `import`, `check` | the datasource UID bound to `DS_MIKROSCOPE`                                                      |
 | `--no-probe`       | `false`         | none          | `import`, `check` | do not ask the datasource which measurements it holds; use the compiled defaults                 |
@@ -1669,14 +1671,14 @@ produces in one sample comes near 2^63.
 
 | Data                            | InfluxDB                                                                                                                            | SQL                                                                               |
 | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| CPU frequency                   | `mikroscope_cpufreq`                                                                                                                | not written                                                                       |
-| per-CPU interrupts and softirqs | `mikroscope_irq_cpu`, `mikroscope_softirq`                                                                                          | not written; `mikroscope_irq` has the sum only                                    |
-| vmstat events and levels        | `mikroscope_vm`, `mikroscope_vm_level`                                                                                              | only `pgfault` and `pgmajfault`, on `mikroscope_stat`                             |
-| PMU counters                    | `mikroscope_perf`                                                                                                                   | not written                                                                       |
-| sample sequence and clocks      | `mikroscope_sample`                                                                                                                 | `seq` on `mikroscope_self`; `dt_ns` on `mikroscope_cpu`                           |
-| `/proc/meminfo`                 | nineteen fields on `mikroscope_mem`                                                                                                 | five columns on `mikroscope_mem`                                                  |
+| CPU frequency                   | `mikroscope_cpufreq`                                                                                                                | `mikroscope_cpufreq`                                                                       |
+| per-CPU interrupts and softirqs | `mikroscope_irq_cpu`, `mikroscope_softirq`                                                                                          | `mikroscope_irq_cpu`, `mikroscope_softirq`                                    |
+| vmstat events and levels        | `mikroscope_vm`, `mikroscope_vm_level`                                                                                              | `mikroscope_vm`, `mikroscope_vm_level`                             |
+| PMU counters                    | `mikroscope_perf`                                                                                                                   | `mikroscope_perf`                                                                       |
+| sample sequence and clocks      | `mikroscope_sample`                                                                                                                 | `mikroscope_sample`                           |
+| `/proc/meminfo`                 | nineteen fields on `mikroscope_mem`                                                                                                 | nineteen columns on `mikroscope_mem`                                                  |
 | kernel log                      | counts per level, port and kind, `mikroscope_kmsg`; no text                                                                         | every record with its text, `port` and `kind`, `mikroscope_event`; no counts      |
-| observer extras                 | `cgroup_mem_max`, `resets`, `kmsg_dropped` on `mikroscope_self`                                                                     | not written                                                                       |
+| observer extras                 | `cgroup_mem_max`, `resets`, `kmsg_dropped` on `mikroscope_self`                                                                     | all but `cgroup_mem_max`                                                                       |
 | slab ceiling                    | field `limit`                                                                                                                       | column `limit_objs`; population `active` against `active_objs`                    |
 | free lists                      | one row per zone, a field per order                                                                                                 | one row per zone and order                                                        |
 | what an interface is            | `label`, `type`, `role`, `bridge` as tags on `mikroscope_api_iface` and `mikroscope_api_ifcounters`, beside `mikroscope_api_ifinfo` | `label` alone on `mikroscope_api_iface`; the rest through `mikroscope_api_ifinfo` |
@@ -1694,12 +1696,13 @@ produces in one sample comes near 2^63.
 > interrupt line, no privileged sources), not on a router: a kernel event renders to 1 375 B of SQL
 > against 716 B of line protocol, an API event to 1 138 B against 608 B, and 10 Hz plus the 1 Hz API
 > tier writes about 14 KiB/s after a 5.6 KiB header; with the privileged sources the same kernel
-> event grows to 2 749 B. The figures do not cover fourteen of the thirty-two tables the sink
-> writes — `load`, `stat`, `buddy`, `mtd`, `api_ifcounter`, `api_ifinfo`, `trigger`, `derived`,
-> `derived_iface`, `detection` and the four `device` tables — and have not been re-measured, so
-> they predate the `port` and `kind` columns of `mikroscope_event`. The header for all thirty-two,
-> computed from the schema strings in `internal/sinks/sql.go` rather than measured, is 7 757 B,
-> about 7.6 KiB. How `--sql - | psql` behaves when `psql` falls behind a 10 Hz agent is not
+> event grows to 2 749 B. The figures cover eighteen of the forty-three tables the sink now
+> writes: the fixture is from 2026-09-12 and eleven tables were added after it, in 1.0.3 and 1.0.5,
+> and it did not exercise `load`, `stat`, `buddy`, `mtd`, `api_ifcounter`, `api_ifinfo`, `trigger`,
+> `derived`, `derived_iface`, `detection` or the four `device` tables. They have not been
+> re-measured, so they also predate the `port` and `kind` columns of `mikroscope_event`. The header
+> for all forty-three, rendered by the sink's own `header()` on 2026-09-19, is 10 482 B, about
+> 10.2 KiB. How `--sql - | psql` behaves when `psql` falls behind a 10 Hz agent is not
 > measured.
 
 ### See also
@@ -2023,8 +2026,8 @@ accepts:
 
 ### Layer 3 — the dashboards
 
-The same target then imports both dashboards into a real Grafana, pointed at
-the store the run just filled, and runs every panel's query through Grafana's
+The same target then imports all five dashboards into a real Grafana, each
+pointed at the store the run just filled, and runs every panel's query through Grafana's
 own `/api/ds/query`. That is where a panel fails for reasons no unit test
 reaches: a type an aggregate returns that the datasource plugin cannot decode,
 a macro the plugin escapes, a column the store does not have.

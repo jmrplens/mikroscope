@@ -241,10 +241,10 @@ disparo para ella; lee `/captures` en su lugar.
 la entrega a cada destino como anotación: la medida `mikroscope_trigger` en
 InfluxDB y la tabla en SQL, `mikroscope_collector_triggers_total{cause}` en la
 exposición Prometheus del colector, y la propia línea en el destino de fichero.
-Los dos paneles de Grafana llevan una anotación `triggers`, desactivada por
-defecto en la barra de conmutadores: en InfluxDB lee las filas de
+Los cinco paneles de Grafana llevan una anotación `triggers`, desactivada por
+defecto en la barra de conmutadores: en los almacenes SQL lee las filas de
 `mikroscope_trigger`, en Prometheus el `mikroscope_trigger_fired_total` del
-agente. La captura en sí se queda en el agente, en `/captures/<id>`.
+colector. La captura en sí se queda en el agente, en `/captures/<id>`.
 
 `record` aún no reconoce la línea — [Grabar, marcar,
 dibujar](/mikroscope/es/record/#disparadores-durante-una-grabación) dice qué hace

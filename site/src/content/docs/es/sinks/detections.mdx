@@ -94,17 +94,17 @@ anterior. `value` es el nuevo número de secuencia, `threshold` el anterior.
 secuencia del agente vuelve a empezar desde 1 en cada arranque, así que así es como se ve un
 reinicio desde fuera.
 
-<Aside type="caution" title="Un forward en marcha no lo ve hoy">
-	Leído en el código, no observado en una ejecución: `forward` guarda su cursor de lectura, el último
-	número de secuencia que recibió, y nunca lo reinicia. El anillo de un agente reiniciado responde a
-	`/snapshot?since=<secuencia antigua>` con nada, y sin hueco, hasta que su nueva secuencia supera
-	el cursor antiguo; para entonces cada muestra que devuelve tiene un número de secuencia mayor que
-	el anterior. Así que un `forward` que sigue en marcha durante el reinicio de un agente no recibe
-	nada del agente nuevo durante tanto tiempo como llevaba en marcha el anterior — un día a 10 Hz
-	para un agente que llevaba un día — y esta regla no puede saltar en él. La regla solo la ejercitan
-	las pruebas unitarias de la etapa de derivación; ninguna prueba de forward ni de extremo a extremo
-	la cubre. Reiniciar `forward` después de que se reinicie el agente recupera los datos, pero
-	entonces no hay número de secuencia anterior y la regla tampoco salta.
+<Aside type="note" title="Corregido en 1.0.4">
+	Esto era inalcanzable en un colector en marcha. `forward` guardaba su cursor de lectura y nunca lo
+	reiniciaba, así que el anillo de un agente reiniciado respondía a `/snapshot?since=<secuencia
+	antigua>` con nada —y sin hueco— hasta que su nueva secuencia superaba el cursor antiguo: un día a
+	10 Hz para un agente que llevaba un día. Desde 1.0.4, `resync` retrocede el cursor a la muestra más
+	antigua del anillo nuevo en la siguiente lectura de salud, como mucho un minuto, y registra `agent
+	restarted: its newest sample is N and the cursor was M; resuming from 1`. La secuencia baja del
+	agente nuevo frente a la anterior de la etapa es justo lo que casa esta regla, así que salta.
+	`TestResyncAfterAgentRestart` cubre el lado del colector, y el RB5009 de referencia lo ejercitó de
+	verdad el 2026-09-19: el router se reinició a las 00:43:30 y la capa del kernel se reanudó a las
+	00:45:03.
 </Aside>
 
 **No puede afirmar** por qué se reinició el agente. Un colector reiniciado a la vez no tiene
@@ -157,11 +157,12 @@ marcas nueva y anterior en segundos.
 
 **Necesita** `privileged=yes`, que exige el log del kernel, y un colector que siga en marcha
 durante el reinicio mientras el agente vuelve. No necesita credenciales de la API de
-RouterOS. Que el colector siga en marcha no basta por sí solo: el agente que vuelve tras el
-reinicio es un proceso nuevo, y sus muestras solo llegan a `forward` cuando su secuencia
-supera el cursor antiguo (ver [`agent-restart`](#agent-restart)). La regla solo puede
-saltar entonces con un registro del log del kernel cuyo tiempo desde el arranque siga por
-debajo del último visto antes del reinicio. Esto está leído en el código, no observado.
+RouterOS. El agente que vuelve tras el reinicio es un proceso nuevo; desde 1.0.4 el
+colector retrocede su cursor al anillo nuevo en menos de un minuto (ver
+[`agent-restart`](#agent-restart)), así que sus muestras sí llegan a `forward`. La regla salta
+entonces con un registro del log del kernel cuyo tiempo desde el arranque esté por debajo del
+último visto antes del reinicio. No se comprobó si saltó en el reinicio del 2026-09-19 del
+equipo de referencia; nada en el árbol lo registra en un sentido ni en otro.
 
 **No puede afirmar** que se vea cada reinicio. El agente lee el log del kernel desde el
 final al arrancar, así que el primer registro tras un reinicio es uno escrito después de que

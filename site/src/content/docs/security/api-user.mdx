@@ -41,7 +41,8 @@ run at which cadence is on [the RouterOS API tier](/mikroscope/sinks/api-tier/).
 
 Without an address and a user, each command says so differently:
 
-- `forward` runs the kernel tier alone and logs `api tier disabled: …`.
+- `forward` runs the kernel tier alone. With an address that does not answer it logs
+  `api tier: not connected yet, will keep trying: …` and keeps retrying.
 - `mark --log-markers` and `--transport relay` fail with
   `the RouterOS API needs --api, --api-user and MIKROSCOPE_API_PASSWORD`.
 - `record --log-markers` keeps the recording, prints `log markers: the RouterOS API needs …` on

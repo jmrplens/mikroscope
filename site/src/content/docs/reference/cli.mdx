@@ -131,7 +131,7 @@ the credentials that have no flag at all.
 | `--token`        | empty                           | `MIKROSCOPE_TOKEN`        | `^[A-Za-z0-9_.-]{0,128}$`                                  | bearer token the agent requires (envlist `TOKEN`); mandatory with `--expose`                                                                                                                                                                                                                                    |
 | `--expose`       | `false`                         | none                      | needs `--lan-address` and `--token`                        | dst-nat the agent port on the router's LAN address; adds two tagged firewall rules                                                                                                                                                                                                                              |
 | `--lan-address`  | empty                           | `MIKROSCOPE_LAN_ADDRESS`  | an IPv4 address                                            | the router's LAN address for `--expose`                                                                                                                                                                                                                                                                         |
-| `--dry-run`      | `false`                         | none                      |                                                            | `install`: print the listing and write nothing                                                                                                                                                                                                                                                                  |
+| `--dry-run`      | `false`                         | none                      |                                                            | `install` and `upgrade`: print the listing and write nothing                                                                                                                                                                                                                                                                  |
 | `--yes`          | `false`                         | none                      |                                                            | `install`, `upgrade`: do not ask before writing                                                                                                                                                                                                                                                                 |
 | `--no-doctor`    | `false`                         | none                      |                                                            | `install`: skip the preflight checks                                                                                                                                                                                                                                                                            |
 | `--out`          | `mikroscope-agent-<arch>.tar`   | none                      |                                                            | `image`: output path of the tar. `plan --rsc`: where the script is written; empty writes it to standard output                                                                                                                                                                                                  |
@@ -248,8 +248,10 @@ refuses to start without at least one sink.
 
 </ScrollTable>
 
-Without `--api` and `--api-user`, `forward` logs `api tier disabled` and runs
-the kernel tier alone; that is a warning, not a failure.
+Without `--api` and `--api-user`, `forward` runs the kernel tier alone. With them,
+a first dial that fails logs `api tier: not connected yet, will keep trying: …`
+and the tier connects on the first round the router answers — since 1.0.9 it is
+never disabled for the life of the process.
 
 ### Sinks
 
@@ -307,8 +309,8 @@ mikroscope dashboards check  --store influxdb --datasource-uid <uid> --window 1h
 
 | Flag               | Default         | Variable      | Read by           | Meaning                                                                                          |
 | ------------------ | --------------- | ------------- | ----------------- | ------------------------------------------------------------------------------------------------ |
-| `--out`            | `dashboards`    | none          | `gen`             | output directory for `mikroscope-<store>.json` and `mikroscope-alerts-<store>.yaml`, both stores |
-| `--store`          | `influxdb`      | none          | `import`, `check` | `influxdb` or `prometheus`                                                                       |
+| `--out`            | `dashboards`    | none          | `gen`             | output directory for `mikroscope-<store>.json` (five) and `mikroscope-alerts-<store>.yaml` (three) |
+| `--store`          | `influxdb`      | none          | `import`, `check` | `influxdb`, `prometheus`, `postgres`, `graphite` or `elasticsearch`                                                                       |
 | `--grafana`        | empty           | `GRAFANA_URL` | `import`, `check` | Grafana base URL; the token comes only from `GRAFANA_TOKEN`                                      |
 | `--datasource-uid` | empty, required | none          | `import`, `check` | the datasource UID bound to `DS_MIKROSCOPE`                                                      |
 | `--no-probe`       | `false`         | none          | `import`, `check` | do not ask the datasource which measurements it holds; use the compiled defaults                 |

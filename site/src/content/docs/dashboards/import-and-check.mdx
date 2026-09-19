@@ -55,9 +55,12 @@ script was loaded as. `sslmode` is yours to choose; `postgresVersion` only decid
 plugin may emit, and every query in this dashboard is plain SQL.
 
 The panels are the InfluxDB ones, rewritten: the bucket macro, the percentiles, the casts and the
-column names the SQL sink had to change because `user`, `from` and `to` are reserved words. Ten
-queries are not rewritten and say so — `mikroscope_buddy` and the RouterOS interface counters are
-wide in InfluxDB and long in the SQL schema, and a pivot is a different question.
+column names the SQL sink had to change because `user`, `from` and `to` are reserved words. Fifteen
+panels are not rewritten and are **dropped silently** rather than moved into the "not available"
+row: the kernel-log panels, because the SQL schema has no count table for it, and the panels over
+`mikroscope_buddy` and the RouterOS interface counters, which are wide in InfluxDB and long in SQL,
+where a pivot is a different question. The PostgreSQL dashboard therefore carries 160 panels against
+InfluxDB's 175.
 
 ## The Graphite datasource
 
@@ -116,7 +119,7 @@ mikroscope dashboards check  --store influxdb --datasource-uid <uid> --window 15
 | `--no-probe`       | off            | import, check | skip asking the datasource what it holds; use the compiled defaults       |
 | `--window`         | `15m`          | check         | length of the query window                                                |
 | `--end`            | now            | check         | the window's right edge, RFC 3339                                         |
-| `--out`            | `dashboards`   | gen           | the directory `gen` writes the four files into                            |
+| `--out`            | `dashboards`   | gen           | the directory `gen` writes the eight files into                            |
 
 </ScrollTable>
 
@@ -174,6 +177,13 @@ measurements it holds`, with the reason, and carry on with the compiled defaults
 
 `--no-probe` skips the question and uses the compiled defaults, which is also what plain `gen` does,
 since it has no datasource to ask.
+
+**Only InfluxDB and Prometheus can be probed.** The query above is written per datasource type, and
+`internal/dashboards/grafana.go` has one for those two and `cannot probe a "…" datasource` for the
+rest. With `--store postgres`, `--store graphite` or `--store elasticsearch` the probe therefore
+always fails, always warns, and always ships the compiled defaults — the same result as passing
+`--no-probe`. That is a gap, not a design: those three stores get the dashboard the panel list
+declares rather than the one their data supports.
 
 ## What `check` verifies
 

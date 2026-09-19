@@ -230,10 +230,10 @@ instead.
 `forward` recognises the line, never mistakes it for a sample, counts it, and
 hands it to every sink as an annotation: the `mikroscope_trigger` measurement in
 InfluxDB and table in SQL, `mikroscope_collector_triggers_total{cause}` on the
-collector's Prometheus exposition, and the line itself in the file sink. Both
+collector's Prometheus exposition, and the line itself in the file sink. All five
 Grafana dashboards carry a `triggers` annotation, off by default in the toggle
-bar: on InfluxDB it reads the `mikroscope_trigger` rows, on Prometheus the agent's
-`mikroscope_trigger_fired_total`. The capture itself stays on the agent, under
+bar: on the SQL stores it reads the `mikroscope_trigger` rows, on Prometheus the
+collector's `mikroscope_trigger_fired_total`. The capture itself stays on the agent, under
 `/captures/<id>`.
 
 `record` does not recognise the line yet — [Record, mark,

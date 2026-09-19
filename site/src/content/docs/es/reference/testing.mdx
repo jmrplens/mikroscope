@@ -91,8 +91,8 @@ acepta:
 
 ## Capa 3 — los paneles
 
-La misma orden importa después los dos dashboards en un Grafana real, apuntado
-al almacén que la ejecución acaba de llenar, y pasa la consulta de cada panel
+La misma orden importa después los cinco dashboards en un Grafana real, cada uno
+apuntado al almacén que la ejecución acaba de llenar, y pasa la consulta de cada panel
 por la propia `/api/ds/query` de Grafana. Ahí es donde un panel falla por
 motivos a los que ninguna prueba unitaria llega: un tipo que devuelve una
 agregación y el complemento de la fuente de datos no sabe decodificar, una

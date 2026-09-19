@@ -177,9 +177,10 @@ la placa y no recibe etiqueta.
 
 </ScrollTable>
 
-Sin `--api`, `--api-user` y `MIKROSCOPE_API_PASSWORD`, o cuando la sesión no se puede abrir
-en 10 s, `forward` registra `api tier disabled: …` y ejecuta solo la capa del kernel. Es un
-aviso, no un fallo: la capa del kernel es lo importante.
+Sin `--api`, `--api-user` y `MIKROSCOPE_API_PASSWORD`, `forward` ejecuta solo la capa del
+kernel. Si se dan pero la sesión no se puede abrir en 10 s, registra `api tier: not connected
+yet, will keep trying: …` y engancha el lector igualmente: desde 1.0.9 una primera marcación
+fallida es un aviso, no una capa deshabilitada para toda la vida del proceso.
 
 ## El usuario que necesita
 

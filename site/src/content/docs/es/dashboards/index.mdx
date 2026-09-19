@@ -13,10 +13,10 @@ import Measured from "../../../../components/Measured.astro";
 import NotClaimed from "../../../../components/NotClaimed.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
 
-`dashboards/` contiene un dashboard de Grafana por almacén, los dos generados por
+`dashboards/` contiene un dashboard de Grafana por almacén —cinco— todos generados por
 `mikroscope dashboards gen` a partir de una única lista de paneles en `internal/dashboards`. Esta
 página responde a qué hay en ellos: qué secciones, qué paneles en cada una, qué muestra el Overview
-antes de desplegar nada y qué paneles existen solo en uno de los dos almacenes. Importarlos y
+antes de desplegar nada y qué paneles no puede llevar cada almacén. Importarlos y
 comprobarlos contra un Grafana en marcha está en
 [Importar y comprobar](/mikroscope/es/dashboards/import-and-check/); las reglas de alerta que se
 generan a su lado, en [Reglas de alerta](/mikroscope/es/dashboards/alerts/).
@@ -41,7 +41,7 @@ Grafana, sin traducir, para que puedas encontrarlos.
 </FileTree>
 
 ```sh
-mikroscope dashboards gen                    # escribe los cuatro ficheros en ./dashboards
+mikroscope dashboards gen                    # escribe los ocho ficheros en ./dashboards
 mikroscope dashboards gen --out /tmp/dash    # o en otro directorio
 ```
 
@@ -82,7 +82,7 @@ el dashboard. Cada una enlaza al fichero a tamaño completo.
 
 <DashboardCaptures />
 
-## Una lista, dos almacenes
+## Una lista, cinco almacenes
 
 Cada panel se declara una sola vez, con su SQL y su PromQL uno al lado del otro, de modo que un
 panel añadido a un almacén queda añadido al otro. Cuando un panel no tiene consulta para un almacén,

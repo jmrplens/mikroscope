@@ -87,8 +87,8 @@ accepts:
 
 ## Layer 3 — the dashboards
 
-The same target then imports both dashboards into a real Grafana, pointed at
-the store the run just filled, and runs every panel's query through Grafana's
+The same target then imports all five dashboards into a real Grafana, each
+pointed at the store the run just filled, and runs every panel's query through Grafana's
 own `/api/ds/query`. That is where a panel fails for reasons no unit test
 reaches: a type an aggregate returns that the datasource plugin cannot decode,
 a macro the plugin escapes, a column the store does not have.

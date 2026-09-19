@@ -200,7 +200,8 @@ run at which cadence is on [the RouterOS API tier](https://jmrp.io/docs/mikrosco
 
 Without an address and a user, each command says so differently:
 
-- `forward` runs the kernel tier alone and logs `api tier disabled: …`.
+- `forward` runs the kernel tier alone. With an address that does not answer it logs
+  `api tier: not connected yet, will keep trying: …` and keeps retrying.
 - `mark --log-markers` and `--transport relay` fail with
   `the RouterOS API needs --api, --api-user and MIKROSCOPE_API_PASSWORD`.
 - `record --log-markers` keeps the recording, prints `log markers: the RouterOS API needs …` on
@@ -433,8 +434,9 @@ then, in this order:
    `Y` stops it with `not confirmed; nothing written`;
 3. only then writes.
 
-`plan`, and `install --dry-run`, stop after the listing. The listing masks the token as
-`value="(token)"`.
+`plan`, `install --dry-run` and `upgrade --dry-run` stop after the listing — the last of
+those only since 1.0.10, which is when `upgrade` began honouring the flag at all. The
+listing masks the token as `value="(token)"`.
 
 `upgrade` does not get this guarantee. It builds the image, refuses a router where any step of the
 plan built from its own flags is missing (`nothing to upgrade: run install first`), and asks the

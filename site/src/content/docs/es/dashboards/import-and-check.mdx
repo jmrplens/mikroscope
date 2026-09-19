@@ -56,9 +56,11 @@ puede emitir el complemento, y todas las consultas de este dashboard son SQL lla
 
 Los paneles son los de InfluxDB, reescritos: la macro de agrupación, los percentiles, los casts y
 los nombres de columna que el destino SQL tuvo que cambiar porque `user`, `from` y `to` son palabras
-reservadas. Diez consultas no se reescriben y lo dicen: `mikroscope_buddy` y los contadores de
-interfaz de RouterOS son anchos en InfluxDB y largos en el esquema SQL, y un pivote es otra
-pregunta.
+reservadas. Quince paneles no se reescriben y **se caen en silencio**, en vez de pasar a la fila de «no
+disponible»: los del log del kernel, porque el esquema SQL no tiene tabla de recuentos para él, y
+los de `mikroscope_buddy` y los contadores de interfaz de RouterOS, anchos en InfluxDB y largos en
+SQL, donde un pivote es otra pregunta. El dashboard de PostgreSQL lleva por tanto 160 paneles frente
+a los 175 de InfluxDB.
 
 ## La fuente de datos de Graphite
 
@@ -117,7 +119,7 @@ mikroscope dashboards check  --store influxdb --datasource-uid <uid> --window 15
 | `--no-probe`       | desactivada          | import, check | no preguntar a la fuente de datos qué contiene; usar los valores compilados por defecto       |
 | `--window`         | `15m`                | check         | longitud de la ventana de consulta                                                            |
 | `--end`            | ahora                | check         | el borde derecho de la ventana, en RFC 3339                                                   |
-| `--out`            | `dashboards`         | gen           | el directorio en el que `gen` escribe los cuatro ficheros                                     |
+| `--out`            | `dashboards`         | gen           | el directorio en el que `gen` escribe los ocho ficheros                                     |
 
 </ScrollTable>
 
@@ -178,6 +180,13 @@ measurements it holds`, con el motivo, y siguen con los valores compilados por d
 
 `--no-probe` se salta la pregunta y usa los valores compilados por defecto, que es también lo que hace
 `gen` a secas, ya que no tiene fuente de datos a la que preguntar.
+
+**Solo se puede sondear InfluxDB y Prometheus.** La consulta de arriba se escribe por tipo de fuente
+de datos, y `internal/dashboards/grafana.go` tiene una para esos dos y `cannot probe a "…"
+datasource` para el resto. Con `--store postgres`, `--store graphite` o `--store elasticsearch` el
+sondeo falla siempre, avisa siempre y entrega siempre los valores compilados: el mismo resultado que
+pasar `--no-probe`. Es una carencia, no una decisión de diseño: esos tres almacenes reciben el
+dashboard que declara la lista de paneles, no el que sus datos admiten.
 
 ## Lo que verifica `check`
 
