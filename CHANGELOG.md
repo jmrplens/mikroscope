@@ -76,7 +76,22 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     within a minute, and the reference device exercised it for real on
     2026-09-19.
 
-  What is left is the twin-drift list and the low-severity editorial sweep.
+- **The twin-drift list and the factual low-severity findings.** Where the two
+  languages disagreed, each needed both files opened: a sentence the 1.0.10
+  commit deleted in English and left standing in Spanish, "las cinco
+  ejecuciones" against "the six runs", two table rows present in English and
+  missing in Spanish (`/system/resource/cpu/print` and `--api-user`), the
+  project's "sub-second" claim dropped from the Spanish head title, and a
+  half-finished 1.0.5 edit that left a different broken plural in each language.
+
+  Among the small ones, four were plainly wrong rather than merely dated:
+  `/proc/buddyinfo` was described as a NAND wear counter (it is the page
+  allocator's free lists), `--hz 10` is not a flag (`--rate`), the token-guarded
+  endpoint list still named `/metrics` and omitted `GET /sampler`, and the
+  InfluxDB page listed four of the five fields `notCounters` drops.
+
+  What is left is the remaining low-severity editorial sweep — wording, a dead
+  attribution, dates to refresh — and the report in `plan/` lists it.
 
 ### Fixed
 

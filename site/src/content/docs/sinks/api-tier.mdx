@@ -65,7 +65,7 @@ kernel.
 | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
 | `off`  | no API tier: `--api-every 0`                                                                                                                                        | production, when per-interface traffic already comes from somewhere else |
 | `slow` | one round every 10 s, without `/system/health` and without the conntrack count; `/system/resource`, `monitor-traffic` and the port counters still run on each round | production, when you want interface rates too                            |
-| `full` | one round every second, with `/system/health`; port counters every 10 s; the conntrack count only if `--conntrack-every` asks for it                                | experiments and `record` runs                                            |
+| `full` | one round every second, with `/system/health`; port counters every 10 s; the conntrack count only if `--conntrack-every` asks for it                                | experiments and short `forward` runs                                            |
 
 </ScrollTable>
 

@@ -439,8 +439,8 @@ stream](https://jmrp.io/docs/mikroscope/sinks/device-info/).
 
 - [Prometheus metric families](https://jmrp.io/docs/mikroscope/reference/metrics/): every family the agent and the
   collector render, with its labels.
-- [Import and check](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/): the dashboard this scrape job
-  feed, and how to check it panel by panel.
+- [Import and check](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/): the dashboards this scrape job
+  feeds, and how to check them panel by panel.
 - [What the collector derives](https://jmrp.io/docs/mikroscope/sinks/derive/): what the `mikroscope_derived_*` gauges
   mean and when they are absent.
 - [The collector](https://jmrp.io/docs/mikroscope/sinks/): what one `forward` run does before anything reaches
@@ -592,7 +592,7 @@ port, an empty string for a bridge, VLAN or tunnel) as a string field and `mtu` 
 the router reports one above zero. It is written once before the first kernel pull and
 again on every `--labels-every` re-read, 5 minutes by default, and it is the table a
 panel joins to say what an interface is. `mikroscope_api_ifcounters` carries counters
-only: `mtu`, `l2mtu`, `max-l2mtu` and `sfp-shutdown-temperature` parse as integers but
+only: `mtu`, `actual-mtu`, `l2mtu`, `max-l2mtu` and `sfp-shutdown-temperature` parse as integers but
 are sizes and configuration, not counts, so they are not fields there; the MTU is in
 `mikroscope_api_ifinfo`.
 
@@ -1163,7 +1163,7 @@ kernel.
 | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
 | `off`  | no API tier: `--api-every 0`                                                                                                                                        | production, when per-interface traffic already comes from somewhere else |
 | `slow` | one round every 10 s, without `/system/health` and without the conntrack count; `/system/resource`, `monitor-traffic` and the port counters still run on each round | production, when you want interface rates too                            |
-| `full` | one round every second, with `/system/health`; port counters every 10 s; the conntrack count only if `--conntrack-every` asks for it                                | experiments and `record` runs                                            |
+| `full` | one round every second, with `/system/health`; port counters every 10 s; the conntrack count only if `--conntrack-every` asks for it                                | experiments and short `forward` runs                                            |
 
 `off` is the mode that gives per-interface traffic up; `slow` is the one that keeps it
 cheaply. Two dashboard panels are blank by configuration under `slow` rather than by
@@ -1944,7 +1944,7 @@ data" over every window after it: measured on the reference deployment on 2026-0
 where the last device row was 26 hours old and those panels had been empty for as long.
 Five minutes puts the facts inside any window worth reading them over and costs twelve
 rows an emission — one identity, one per thermal zone, one per core with cpufreq facts,
-one per level source — against the 864 000 sample rows a day that `--hz 10` produces.
+one per level source — against the 864 000 sample rows a day that `--rate 10` produces.
 
 The repeat is marked as one, and the sinks split on it: the stores write it like any
 other row, which is the whole point, and the streams meant for a reader — Loki, stdout,

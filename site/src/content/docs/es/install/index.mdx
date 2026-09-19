@@ -142,8 +142,6 @@ las comprobaciones de espacio libre y device-mode antes de actualizar.
 Hasta 1.0.10 `upgrade` ignoraba `--dry-run` por completo: no imprimía nada e iba
 directo a la confirmación, así que `upgrade --dry-run --yes` reemplazaba el
 contenedor en un router vivo mientras el flag prometía no escribir nada.
-`mikroscope plan` con las mismas opciones muestra la orden del contenedor que va
-a escribir.
 
 La envlist pertenece al paso del contenedor, así que `upgrade` la vuelve a
 escribir a partir de las opciones que recibe el propio `upgrade`. `--port`,

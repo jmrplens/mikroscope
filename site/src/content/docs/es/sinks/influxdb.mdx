@@ -161,8 +161,8 @@ puerto físico, una cadena vacía para un bridge, una VLAN o un túnel) como cam
 y `mtu` donde el router informa de uno mayor que cero. Se escribe una vez antes del
 primer sondeo del kernel y de nuevo en cada relectura de `--labels-every`, 5 minutos por
 defecto, y es la tabla con la que un panel cruza para decir qué es una interfaz.
-`mikroscope_api_ifcounters` lleva solo contadores: `mtu`, `l2mtu`, `max-l2mtu` y
-`sfp-shutdown-temperature` se leen como enteros, pero son tamaños y configuración, no
+`mikroscope_api_ifcounters` lleva solo contadores: `mtu`, `actual-mtu`, `l2mtu`,
+`max-l2mtu` y `sfp-shutdown-temperature` se leen como enteros, pero son tamaños y configuración, no
 cuentas, así que no son campos ahí; la MTU está en `mikroscope_api_ifinfo`.
 
 El `fp_rx_share` de `mikroscope_derived_iface` es la proporción del fast path del tráfico

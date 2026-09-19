@@ -156,7 +156,7 @@ port, an empty string for a bridge, VLAN or tunnel) as a string field and `mtu` 
 the router reports one above zero. It is written once before the first kernel pull and
 again on every `--labels-every` re-read, 5 minutes by default, and it is the table a
 panel joins to say what an interface is. `mikroscope_api_ifcounters` carries counters
-only: `mtu`, `l2mtu`, `max-l2mtu` and `sfp-shutdown-temperature` parse as integers but
+only: `mtu`, `actual-mtu`, `l2mtu`, `max-l2mtu` and `sfp-shutdown-temperature` parse as integers but
 are sizes and configuration, not counts, so they are not fields there; the MTU is in
 `mikroscope_api_ifinfo`.
 

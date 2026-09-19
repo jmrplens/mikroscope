@@ -7,7 +7,6 @@ import { Aside } from "@astrojs/starlight/components";
 import Measured from "../../../../components/Measured.astro";
 import NotClaimed from "../../../../components/NotClaimed.astro";
 import Provenance from "../../../../components/Provenance.astro";
-import RunFlags from "../../../../components/RunFlags.astro";
 import RunsTable from "../../../../components/RunsTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
 
@@ -99,13 +98,13 @@ más ticks: diez veces los datos cuestan 6,3 veces la CPU, no diez. Y **los slip
 son culpa de la lectura, no de la CPU**: a 100 Hz la lectura media son 1,2 ms
 contra un período de 10 ms, pero la peor son 17,9 ms. Un tick cuya lectura dura
 más que su período llega tarde por definición, y por eso esa misma fila marca un
-16,8 % de un núcleo y cinco ticks perdidos en vez de un muro de CPU.
+16,8 % de un núcleo y cinco ticks retrasados en vez de un muro de CPU.
 
 **Compra el margen en segundos de búfer, no en ingenio.** A 100 Hz un búfer de
 20 s ocupa 6,59 MiB y deriva un límite de 17 MiB —el mismo alivio que daría
 comprimir el anillo 4,7×, y la compresión se midió en este equipo en
 **+1 331 µs por muestra**, que a 100 Hz son +74 % de CPU y seis veces los ticks
-perdidos—. Los segundos son gratis; la compresión no.
+retrasados—. Los segundos son gratis; la compresión no.
 
 ## Lo que muestrear más rápido compra de verdad
 

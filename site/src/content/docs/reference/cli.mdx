@@ -104,7 +104,7 @@ the credentials that have no flag at all.
 
 | Flag             | Default                         | Variable                  | Accepted                                                   | Meaning                                                                                                                                                                                                                                                                                                         |
 | ---------------- | ------------------------------- | ------------------------- | ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--router`       | none, required                  | `MIKROSCOPE_ROUTER`       | `user@host` or an ssh config alias                         | ssh target; every verb but `plan`, `install --dry-run` and `image` fails without it                                                                                                                                                                                                                             |
+| `--router`       | none, required                  | `MIKROSCOPE_ROUTER`       | `user@host` or an ssh config alias                         | ssh target; every verb but `plan`, `install --dry-run`, `upgrade --dry-run` and `image` fails without it                                                                                                                                                                                                                             |
 | `--ssh-port`     | empty (ssh config)              | `MIKROSCOPE_SSH_PORT`     |                                                            | ssh port                                                                                                                                                                                                                                                                                                        |
 | `--ssh-key`      | empty (agent or ssh config)     | `MIKROSCOPE_SSH_KEY`      |                                                            | ssh identity file                                                                                                                                                                                                                                                                                               |
 | `--name`         | `mikroscope`                    | `MIKROSCOPE_NAME`         | `^[A-Za-z0-9][A-Za-z0-9_.-]{0,31}$`                        | container name; tags every object as `mikroscope:<name> (managed by mikroscope)`                                                                                                                                                                                                                                |
@@ -287,8 +287,9 @@ built stops `forward` before it pulls anything.
 On exit `forward` prints the number of kernel samples, API samples, gaps and
 skew jumps, and for each sink how many events it wrote, dropped and failed
 on. While it runs it logs a line on standard error once a minute with the
-kernel, API, gap, trigger and detection counts, the last sequence number, and
-each sink's written, dropped and error counts.
+kernel, API, gap, trigger and detection counts, the agent-restart count, the last
+sequence number, and each sink's written, dropped and error counts. When the API
+tier has failed or reconnected it adds `api: N failed round(s), N reconnect(s)`.
 
 The collector's Prometheus sink sizes its busy-tick histogram for 10 Hz
 whatever rate the agent runs at (`promHistogramRateHz` in

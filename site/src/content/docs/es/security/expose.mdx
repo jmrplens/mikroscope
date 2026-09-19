@@ -72,7 +72,7 @@ Como al agente ya no se llega solo a través de la veth, el token es obligatorio
 `--expose` sin uno (`--expose makes the agent reachable from the LAN: a token is mandatory`). Con
 un token puesto, todos los endpoints que sirve el agente salvo `/healthz` devuelven
 `401 token required`, con `WWW-Authenticate: Bearer`, a menos que la petición lleve
-`Authorization: Bearer <token>`: `/capabilities`, `/snapshot`, `/stream`, `/metrics`, `/captures`,
+`Authorization: Bearer <token>`: `/capabilities`, `/sampler`, `/snapshot`, `/stream`, `/captures`,
 `/captures/{id}` (incluido `DELETE`) y `POST /capture`. Una ruta que el agente no sirve recibe `404`,
 y un método equivocado `405`, haya token o no. El agente quita un prefijo `"Bearer "` opcional antes de
 comparar, así que también se acepta una cabecera que lleve el token a secas.
