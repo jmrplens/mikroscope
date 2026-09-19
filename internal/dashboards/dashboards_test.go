@@ -140,7 +140,7 @@ func assertStoreDashboard(t *testing.T, store Store) {
 	// dropped, and a section all of whose panels go that way emits no row
 	// at all.
 	ps := charts(top)
-	want := map[Store]int{Influx: 176, Prometheus: 134}[store]
+	want := map[Store]int{Influx: 177, Prometheus: 135}[store]
 	if len(ps) != want {
 		t.Fatalf("%s: %d panels, want %d", store, len(ps), want)
 	}

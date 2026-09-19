@@ -2144,16 +2144,41 @@ func apiNetPanels(b qb) []Panel {
 			),
 		},
 		{
-			Title: "Interface drops — rx, tx and tx-queue", Type: typeStateTL, Unit: "short", W: 24, H: 9, NoValue: "no drops",
-			Mappings: []Mapping{
-				{To: f(0.0001), Text: "no drops", Color: "green"},
-				{From: f(0.0001), Text: "drops", Color: "orange"},
-			},
-			Thresholds:  thresholds("green", step(1, "red")),
-			Description: "Three drop counters for each interface tag present — rx_drops, tx_drops and tx_queue_drops — colored by whether the router dropped anything in each bin. The row count follows the data (three times however many interfaces GROUP BY returns), so this is three rows on a single-interface deployment and forty-eight on a sixteen-port one. Every field is already a per-second rate, so the query takes max() over the bin rather than a delta; a SQL delta or a Grafana rate() on these would be meaningless. Drops mean the queue, which is a different fault from the PHY errors in the panel above: tx_queue_drops is the one to watch, because it is the router's own egress queue overflowing — the signature of a saturated uplink rather than a lossy medium. On the reference device (RB5009, RouterOS 7.24.2) measured over the 24 h to 2026-09-12 16:48 UTC, all three counters were 0 on all three configured interfaces across 883 samples each; zero is the healthy reading and a quiet panel here is the expected state, not a broken query. Your device will differ in row count and, if any link is saturated, in color. What it cannot tell you: why a packet was dropped (queue discipline, buffer exhaustion and a policer all land in the same counter), nor anything about interfaces outside Options.Interfaces. Both InfluxDB and the Prometheus exposition carry the error counters as well, and they are in the panel above. THRESHOLDS: green base with a single step at 1, the same zero / non-zero rule as the errors panel and for the same reason — the healthy reading is exactly zero on every device, while 'how many drops per second is acceptable' depends on the link and the ruleset. PRESENTATION: height 9 rather than 6 — nine row labels in six grid rows collide into illegible overlapping text, and a deployment with more interfaces will want more height still.",
+			Title: "Egress queue drops — the router's own transmit queue", Unit: "pps", W: 12, H: 8,
+			DrawStyle: "bars", MinInterval: "1m", NoValue: "no egress queue drops in this window",
+			Legends: []string{"{{interface}}"},
+			// ONLY THE INTERFACES THAT DROPPED SOMETHING, and the number rather
+			// than a color. Until 1.1.0 this and the panel beside it were one
+			// state timeline with a lane per interface per kind, which on the
+			// reference device's sixteen interfaces was forty-eight lanes, of
+			// which eighteen could never carry anything (see the rx/tx panel) and
+			// twenty-eight were a flat green that said only "still zero". The two
+			// readings it could not give are the two that matter, both measured
+			// on the reference device on 2026-09-19: ether4 dropped 3 337 packets
+			// in six one-second bursts peaking at 436/s, and wg_devices dropped
+			// exactly one packet in each of 172 separate seconds. A binary color
+			// paints the trickle as the louder of the two.
+			Description: "How many packets per second the router's own transmit queue dropped, per interface and per bin, for the interfaces that dropped any — a bar chart of the worst second in each bin, not a color. THIS IS THE DROP COUNTER TO WATCH: it is the router's egress queue overflowing, the signature of a saturated link or of bursts arriving faster than the port can drain them, which is a different fault from the PHY errors in the panel above and from a lossy medium. The field is already a per-second rate from monitor-traffic, so the query takes max() over the bin rather than a delta; a SQL delta or a Grafana rate() on it would be meaningless. ON THE REFERENCE DEVICE (RB5009, RouterOS 7.24.2) over the 6.5 h to 2026-09-19 18:00 UTC, two of sixteen interfaces dropped anything: ether4, a 1 GbE port to a server, lost 3 337 packets in six one-second bursts an hour, peaking at 436/s while the port averaged 8-9 Mbit/s — microbursts against a gigabit egress, not a saturated link — and ether5, the WAN, lost 336. The other fourteen were flat zero across 7 198 samples each, and are not drawn. Read the PEAK, not the mean: a burst is one second wide and a 60 s bin's mean divides it by sixty. WHAT IT CANNOT TELL YOU: why a packet was dropped — queue discipline, buffer exhaustion and a policer all land in this one counter — nor which flow filled the queue, nor anything about interfaces outside Options.Interfaces. A device that never drops draws nothing and says so, which is the expected state and not a broken query. NO THRESHOLDS, and this is a presentation decision rather than a judgement one: colorFor switches a panel that defines thresholds to color.mode 'thresholds', which paints every series by its value, so two interfaces dropping at the same rate draw in the same color and the legend cannot be matched to a bar. The classic palette gives each interface its own color instead, which is the reading this panel exists for — WHICH port, and how much. The zero / non-zero judgement has not gone anywhere: it lives in the stat tile and the alert rule, where one number can carry it.",
 			Queries: b.q(
-				`SELECT $__dateBin(time) AS time, concat(interface, ' rx drops') AS metric, max(rx_drops) AS value FROM mikroscope_api_iface WHERE $__timeFilter(time) GROUP BY 1, 2 UNION ALL SELECT $__dateBin(time), concat(interface, ' tx drops'), max(tx_drops) FROM mikroscope_api_iface WHERE $__timeFilter(time) GROUP BY 1, 2 UNION ALL SELECT $__dateBin(time), concat(interface, ' tx-queue drops'), max(tx_queue_drops) FROM mikroscope_api_iface WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1`,
-				`mikroscope_api_interface{kind=~"rx_drops|tx_drops|tx_queue_drops"}`,
+				`SELECT time, metric, value FROM (SELECT time, metric, value, max(value) OVER (PARTITION BY metric) AS worst FROM (SELECT $__dateBin(time) AS time, interface AS metric, max(tx_queue_drops)::DOUBLE AS value FROM mikroscope_api_iface WHERE $__timeFilter(time) GROUP BY 1, 2)) WHERE worst > 0 ORDER BY 1`,
+				`max by (interface) (mikroscope_api_interface{kind="tx_queue_drops"}) > 0`,
+			),
+		},
+		{
+			Title: "Packets the interface itself dropped — rx and tx", Unit: "pps", W: 12, H: 8,
+			DrawStyle: "bars", MinInterval: "1m", NoValue: "no rx or tx drops in this window — and RouterOS returns these two only for some interface types, so a port missing here is not a port at zero",
+			Legends: []string{"{{interface}}"},
+			// WHY THIS IS NOT THE SAME PANEL AS THE ONE BESIDE IT. Measured on the
+			// reference device 2026-09-19 over 7 198 samples: rx_drops and
+			// tx_drops came back on all seven virtual interfaces and on NONE of
+			// the nine physical ports, while tx_queue_drops came back on all
+			// sixteen. Drawn together, half the lanes were blank by construction
+			// and a reader had no way to tell "this port reports zero" from "this
+			// port does not report".
+			Description: "How many packets per second each interface dropped on receive and on transmit, per bin, for the interfaces that dropped any — the two counters monitor-traffic returns beside the egress queue. Both are already per-second rates, so the query takes max() over the bin. WHAT A MISSING INTERFACE MEANS HERE, and it is not zero: RouterOS returns rx_drops and tx_drops for some interface types and not others. On the reference device (RB5009, RouterOS 7.24.2) over the 2 h to 2026-09-19 18:00 UTC, both came back on all seven virtual interfaces — the bridge, the VLAN, the PPPoE, the two veths and the two WireGuard peers — and on NONE of the nine physical ports, which returned only the egress queue counter across 7 198 samples each. So the absence of ether1 from this panel says nothing about ether1, and that is why the egress queue has a panel of its own rather than a third lane here. What the reference device did drop: wg_devices lost exactly one packet in each of 172 separate seconds, a trickle and not an event, and VLAN_DIGI lost 172 packets in four seconds, peaking at 75/s. WHAT IT CANNOT TELL YOU: why — queue discipline, buffer exhaustion and a policer are one counter — nor anything about interfaces outside Options.Interfaces. NO THRESHOLDS, for the reason given on the egress queue panel beside this one: color.mode 'thresholds' would paint both series the same color and leave the legend unmatchable, where the classic palette names each interface by color.",
+			Queries: b.q(
+				`SELECT time, metric, value FROM (SELECT time, metric, value, max(value) OVER (PARTITION BY metric) AS worst FROM (SELECT $__dateBin(time) AS time, concat(interface, ' ', kind) AS metric, max(v)::DOUBLE AS value FROM (SELECT time, interface, 'rx' AS kind, rx_drops AS v FROM mikroscope_api_iface WHERE $__timeFilter(time) UNION ALL SELECT time, interface, 'tx' AS kind, tx_drops AS v FROM mikroscope_api_iface WHERE $__timeFilter(time)) GROUP BY 1, 2)) WHERE worst > 0 ORDER BY 1`,
+				`max by (interface, kind) (mikroscope_api_interface{kind=~"rx_drops|tx_drops"}) > 0`,
 			),
 		},
 		{

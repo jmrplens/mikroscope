@@ -18,9 +18,9 @@ alert rules generated beside them are on [Alert rules](https://jmrp.io/docs/mikr
 ### What `gen` writes
 
 - dashboards/
-  - mikroscope-influxdb.json 176 panels, InfluxDB 3 (SQL)
-  - mikroscope-prometheus.json 134 panels, Prometheus
-  - mikroscope-postgres.json 160 panels, PostgreSQL / TimescaleDB
+  - mikroscope-influxdb.json 177 panels, InfluxDB 3 (SQL)
+  - mikroscope-prometheus.json 135 panels, Prometheus
+  - mikroscope-postgres.json 161 panels, PostgreSQL / TimescaleDB
   - mikroscope-graphite.json 41 panels, Graphite
   - mikroscope-elasticsearch.json 30 panels, Elasticsearch
   - mikroscope-alerts-influxdb.yaml 11 rules
@@ -72,7 +72,7 @@ One capture per section of the InfluxDB dashboard, over a demonstration database
 - CPU and scheduler (11)
 - Memory and load (9)
 - Connections (9)
-- Interface traffic (13)
+- Interface traffic (14)
 - Detections and captures (6)
 - Network receive path (9)
 - Forwarding cost (derived) (4)
@@ -115,7 +115,7 @@ Panels per section, per store:
 | CPU and scheduler | 11 | 9 | 11 | 1 | no row |
 | Memory and load | 9 | 9 | 9 | 7 | 5 |
 | Connections | 9 | 3 | 9 | 1 | 1 |
-| Interface traffic | 13 | 11 | 9 | 2 | no row |
+| Interface traffic | 14 | 12 | 10 | 2 | no row |
 | Detections and captures | 6 | 4 | 6 | no row | no row |
 | Network receive path | 9 | 7 | 9 | 3 | 3 |
 | Forwarding cost (derived) | 4 | 4 | 4 | no row | no row |
@@ -134,7 +134,7 @@ Panels per section, per store:
 | The observer: sampler timing and self events | 6 | 7 | 6 | no row | no row |
 | This device | 3 | 3 | 3 | no row | no row |
 | Not available on this device | 5 | 5 | 5 | 5 | 5 |
-| **Total** | **176** | **134** | **160** | **41** | **30** |
+| **Total** | **177** | **135** | **161** | **41** | **30** |
 
 The counts are those of the committed files, which carry the compiled defaults. `import` and
 `check` ask the datasource what it holds first and can move panels into or out of the last row;
@@ -150,7 +150,7 @@ deliberately, and last what mikroscope costs the router it is measuring.
 
 Every section but the Overview ships **collapsed**. Grafana keeps a collapsed row's panels inside
 the row object and runs none of their queries until someone expands it, so the first render asks
-the store for the Overview's twelve panels and not for all 176.
+the store for the Overview's twelve panels and not for all 177.
 
 The defaults are a 3-hour range (`now-3h`) and a 5-minute refresh. The 5-minute refresh is kept for
 the case where someone expands a section: the slab census and the PMU and per-sample cost heatmaps
@@ -271,7 +271,8 @@ or not selected, and the three look the same.
 - Where a port's receive bytes went — switched in hardware, CPU fast path, CPU slow path — InfluxDB only
 - Link flaps — link-downs per interface, per bin
 - Frame size mix over the window, per Ethernet port
-- Interface drops — rx, tx and tx-queue
+- Egress queue drops — the router's own transmit queue
+- Packets the interface itself dropped — rx and tx
 - What each interface is: type, role, bridge and label
 - Interface inventory and window summary
 - /system/health sensors, as RouterOS reads them
