@@ -282,6 +282,10 @@ func step(v float64, color string) Threshold { return Threshold{Value: f(v), Col
 // legend, row, bar and stat name reads "value core 0".
 const metricLabel = "${__field.labels.metric}"
 
+// perInterface names a series after the interface tag alone, for the panels
+// that group by nothing else and would otherwise print the whole label set.
+const perInterface = "{{interface}}"
+
 // mikroscope's own two budgets, the only numeric literals left in the
 // observer family. They are properties of this project, not of any router:
 // the budget is 2 % of one core and 16 MiB. The container memory cap is not a
@@ -2132,7 +2136,7 @@ func apiNetPanels(b qb) []Panel {
 				`SELECT $__dateBin(time) AS time, interface AS metric, max(link_downs) - min(link_downs) AS value FROM mikroscope_api_ifcounters WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1`,
 				`sum by (interface) (increase(mikroscope_api_interface_counter_total{counter="link-downs"}[$__interval]))`,
 			),
-			Legends: []string{"{{interface}}"},
+			Legends: []string{perInterface},
 		},
 		{
 			Title: "Frame size mix over the window, per Ethernet port", Type: typeTable, Unit: "short", W: 12, H: 8, Format: "table",
@@ -2146,7 +2150,7 @@ func apiNetPanels(b qb) []Panel {
 		{
 			Title: "Egress queue drops — the router's own transmit queue", Unit: "pps", W: 12, H: 8,
 			DrawStyle: "bars", MinInterval: "1m", NoValue: "no egress queue drops in this window",
-			Legends: []string{"{{interface}}"},
+			Legends: []string{perInterface},
 			// ONLY THE INTERFACES THAT DROPPED SOMETHING, and the number rather
 			// than a color. Until 1.1.0 this and the panel beside it were one
 			// state timeline with a lane per interface per kind, which on the
@@ -2167,7 +2171,7 @@ func apiNetPanels(b qb) []Panel {
 		{
 			Title: "Packets the interface itself dropped — rx and tx", Unit: "pps", W: 12, H: 8,
 			DrawStyle: "bars", MinInterval: "1m", NoValue: "no rx or tx drops in this window — and RouterOS returns these two only for some interface types, so a port missing here is not a port at zero",
-			Legends: []string{"{{interface}}"},
+			Legends: []string{perInterface},
 			// WHY THIS IS NOT THE SAME PANEL AS THE ONE BESIDE IT. Measured on the
 			// reference device 2026-09-19 over 7 198 samples: rx_drops and
 			// tx_drops came back on all seven virtual interfaces and on NONE of
