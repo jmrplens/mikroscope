@@ -3626,6 +3626,7 @@
                 }
               ],
               "min": 0,
+              "noValue": "no drops",
               "thresholds": {
                 "mode": "absolute",
                 "steps": [
