@@ -355,7 +355,7 @@ func TestRedialAfterTransportFailure(t *testing.T) {
 	}
 	s := r.Read(context.Background())
 	if dials != 1 {
-		t.Fatalf("dialled %d times, want exactly 1 (the attempts after it are spaced by RedialEvery)", dials)
+		t.Fatalf("dialed %d times, want exactly 1 (the attempts after it are spaced by RedialEvery)", dials)
 	}
 	if !dead.closed {
 		t.Error("the dead connection was not closed; its socket leaks")
@@ -384,7 +384,7 @@ func TestNoRedialOnDeviceError(t *testing.T) {
 	}
 	s := r.Read(context.Background())
 	if dials != 0 {
-		t.Errorf("dialled %d times on a !trap, want 0", dials)
+		t.Errorf("dialed %d times on a !trap, want 0", dials)
 	}
 	if len(s.Errors) == 0 {
 		t.Error("a !trap must still be reported as an error on the sample")
@@ -403,12 +403,12 @@ func TestRedialOnFatal(t *testing.T) {
 	}
 	r.Read(context.Background())
 	if dials != 1 {
-		t.Errorf("dialled %d times on !fatal, want 1", dials)
+		t.Errorf("dialed %d times on !fatal, want 1", dials)
 	}
 }
 
 // TestRedialIsSpaced: Read issues four or five commands a round at 1 Hz. A
-// router that is down must not be dialled once per command — each dial
+// router that is down must not be dialed once per command — each dial
 // carries a login.
 func TestRedialIsSpaced(t *testing.T) {
 	dead := &deadClient{err: errors.New("dial tcp 192.168.0.1:8728: connect: connection refused")}
@@ -422,7 +422,7 @@ func TestRedialIsSpaced(t *testing.T) {
 	r.Read(context.Background())
 	r.Read(context.Background())
 	if dials != 1 {
-		t.Errorf("dialled %d times across two rounds of a down router, want 1 (RedialEvery is an hour)", dials)
+		t.Errorf("dialed %d times across two rounds of a down router, want 1 (RedialEvery is an hour)", dials)
 	}
 	if r.Redials() != 0 {
 		t.Errorf("Redials() = %d, want 0: no attempt succeeded", r.Redials())

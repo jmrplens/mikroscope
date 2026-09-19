@@ -1392,7 +1392,7 @@ command, and asking again would only spend its CPU on the same bad question. A
 session.
 
 Attempts are spaced at five seconds. One round issues four or five commands, so
-a router that is down would otherwise be dialled several times a second, and
+a router that is down would otherwise be dialed several times a second, and
 every dial carries a login. The inventory is dropped and re-read after a
 reconnection: an upgrade is exactly when an interface can change its name, type
 or bridge, and stale labels on fresh rates would be worse than a moment's gap.
@@ -1417,7 +1417,7 @@ api tier: recovered after 137 failed round(s)
 
 and the minute report carries `api: N failed round(s), N reconnect(s)` while
 either is nonzero. Before 1.0.9 none of this existed, and the outage was
-invisible: `api` counts rounds *attempted*, so the report kept growing through
+invisible: `api` counts rounds _attempted_, so the report kept growing through
 a tier in which every command failed. What that cost on the reference device is
 in [Troubleshooting](https://jmrp.io/docs/mikroscope/reference/troubleshooting/#the-api-panels-are-blank-and-the-kernel-panels-are-fine).
 

@@ -201,11 +201,11 @@ type Reader struct {
 	// — interface throughput, per-port counters, RouterOS cpu-load, and the
 	// reboot count itself — was blank for that window.
 	//
-	// nil keeps the old behaviour: no reconnection.
+	// nil keeps the old behavior: no reconnection.
 	Redial func(context.Context) (Client, error)
 	// RedialEvery spaces the attempts. 0 means defaultRedialEvery. It matters
 	// because Read issues four or five commands per round at 1 Hz: unspaced,
-	// a router that is down would be dialled several times a second, and a
+	// a router that is down would be dialed several times a second, and a
 	// dial carries a login.
 	RedialEvery time.Duration
 
@@ -306,7 +306,7 @@ var ErrNotConnected = errors.New("not connected")
 
 // defaultRedialEvery is the minimum spacing between reconnection attempts.
 // Five seconds is short enough that a reboot costs a handful of samples and
-// long enough that a router which is down is not dialled once per command.
+// long enough that a router which is down is not dialed once per command.
 const defaultRedialEvery = 5 * time.Second
 
 // exec runs one sentence and, when the failure came from the transport
@@ -341,12 +341,11 @@ func (r *Reader) shouldRedial(err error) bool {
 	if r.Redial == nil {
 		return false
 	}
-	var dev *rosapi.DeviceError
-	if errors.As(err, &dev) {
+	if dev, ok := errors.AsType[*rosapi.DeviceError](err); ok {
 		return dev.Sentence != nil && dev.Sentence.Word == "!fatal"
 	}
-	var unknown *rosapi.UnknownReplyError
-	return !errors.As(err, &unknown)
+	_, unknown := errors.AsType[*rosapi.UnknownReplyError](err)
+	return !unknown
 }
 
 // redial reopens the connection, at most once per RedialEvery. It reports
