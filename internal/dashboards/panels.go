@@ -454,6 +454,17 @@ func overviewPanels(b qb) []Panel {
 			),
 		},
 		{
+			Title: "Port errors in the window", Type: typeStat, Unit: "short", W: 6, H: 5, Calcs: []string{"sum"}, GraphMode: "none", MinInterval: "1m",
+			NoValue:        "no API tier",
+			Description:    "Every typed MAC error on every port, summed over the window: one number that answers 'is any port losing frames'. Green at 0, red above it, and the ports and the error types are one row each in the Interface traffic section. ON THE REFERENCE DEVICE (RB5009, RouterOS 7.24.2) this read between 1 054 and 3 681 per 20 minutes on 2026-09-19 while ether1's receive FIFO was overflowing on microbursts from the NAS, and 0 after a shaper was put on the NAS's egress the same afternoon — same traffic, same window length. WHAT IT CANNOT TELL YOU: which port, which error, or why; the Interface traffic section has the breakdown and [the port-errors playbook](/mikroscope/playbooks/port-errors/) has the procedure. It also cannot tell a real error from a counter reset: a router that reboots mid-window makes max-min the whole pre-reboot total, which reads as a burst of errors that never happened. It needs the API tier; the agent cannot see a MAC counter from inside the container.",
+			Thresholds:     thresholds("green", step(1, "red")),
+			RequiresFields: []string{"mikroscope_api_ifcounters.rx_overflow", "mikroscope_api_ifcounters.rx_fcs_error"},
+			Queries: b.q(
+				`SELECT t AS time, 'port errors' AS metric, sum(v)::DOUBLE AS value FROM (SELECT $__dateBin(time) AS t, interface, greatest(max(rx_overflow) - min(rx_overflow), 0)::BIGINT + greatest(max(rx_fcs_error) - min(rx_fcs_error), 0)::BIGINT + greatest(max(rx_fragment) - min(rx_fragment), 0)::BIGINT + greatest(max(rx_too_short) - min(rx_too_short), 0)::BIGINT + greatest(max(rx_too_long) - min(rx_too_long), 0)::BIGINT + greatest(max(rx_jabber) - min(rx_jabber), 0)::BIGINT + greatest(max(tx_fcs_error) - min(tx_fcs_error), 0)::BIGINT + greatest(max(tx_late_collision) - min(tx_late_collision), 0)::BIGINT + greatest(max(tx_excessive_collision) - min(tx_excessive_collision), 0)::BIGINT AS v FROM mikroscope_api_ifcounters WHERE $__timeFilter(time) GROUP BY 1, 2) GROUP BY 1, 2 ORDER BY 1`,
+				`sum(increase(mikroscope_api_interface_counter_total{counter=~"rx-overflow|rx-fcs-error|rx-fragment|rx-too-short|rx-too-long|rx-jabber|tx-fcs-error|tx-late-collision|tx-excessive-collision"}[$__range]))`,
+			),
+		},
+		{
 			Title: "Ticks never delivered, this window", Type: typeStat, Unit: "short", W: 6, H: 5, Calcs: []string{"sum"}, ShowName: true, GraphMode: "none", MinInterval: "1m", Legends: []string{"ticks never delivered", "agent restarts (seq reset)"},
 			Graphite:    []string{`alias($prefix.$host.collector.gap.samples, "ticks never delivered")`},
 			Elastic:     []string{`kind.keyword:gap AND host.keyword:$host | sum:lost | date`},

@@ -261,6 +261,10 @@ export const alertFiresWhen: Record<string, Record<Lang, string>> = {
 		en: "fewer than 1 new sample reached the store in the last 2 minutes",
 		es: "llegó al almacén menos de 1 muestra nueva en los últimos 2 minutos",
 	},
+	"mikroscope-port-errors": {
+		en: "any port's MAC counted a typed error — overflow, FCS, collision — for 5 minutes running",
+		es: "el MAC de algún puerto contó un error tipificado —desbordamiento, FCS, colisión— durante 5 minutos seguidos",
+	},
 	"mikroscope-softnet-drops": {
 		en: "`softnet_stat` dropped a packet in the last 5 minutes",
 		es: "`softnet_stat` descartó un paquete en los últimos 5 minutos",

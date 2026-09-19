@@ -214,6 +214,16 @@ export const campaigns = {
 	// gives the date, and the rest of the conditions were checked on the
 	// reference device and are written down nowhere that publishes. It predates the PMU, buddyinfo and MTD sources and
 	// the per-source floors.
+	"port-overflow-2026-09-19": {
+		...RB5009,
+		date: "2026-09-19",
+		conditions: {
+			en: "ether1, the 2.5 GbE port to the NAS, over 10 s counter intervals; the before figures are the three hours preceding the fix and the after figures the 39 minutes following it, at the same load",
+			es: "ether1, el puerto de 2,5 GbE del NAS, en intervalos de contador de 10 s; las cifras de antes son las tres horas previas al arreglo y las de después los 39 minutos siguientes, con la misma carga",
+		},
+		source:
+			"plan/per-port-audit.md sections 8 to 13; the counters are RouterOS /interface/ethernet/print stats on ether1, read by the API tier every 10 s",
+	},
 	"line-size-2026-09-17": {
 		...RB5009,
 		date: "2026-09-17",
@@ -730,6 +740,40 @@ const fixed = {
 		unit: "B",
 		digits: 0,
 		campaign: "line-size-2026-09-17",
+	},
+	// The NAS port's receive overflow, before and after the shaper. See
+	// plan/per-port-audit.md and the port-errors playbook.
+	"overflow.shareBefore": {
+		kind: "reading",
+		value: 0.502,
+		unit: "%",
+		digits: 3,
+		campaign: "port-overflow-2026-09-19",
+	},
+	"overflow.perHourBefore": {
+		kind: "reading",
+		value: 5399,
+		unit: "",
+		digits: 0,
+		campaign: "port-overflow-2026-09-19",
+	},
+	// What makes it a microburst rather than a load problem: the link was this
+	// full, on average, in the 10 s intervals that overflowed.
+	"overflow.occupancy": {
+		kind: "reading",
+		value: 0.36,
+		unit: "%",
+		digits: 2,
+		campaign: "port-overflow-2026-09-19",
+	},
+	// The same 11.2 MB per 10 s interval, as a rate: what makes it legible is
+	// that it sits against a 2 500 Mbit/s link.
+	"overflow.burstRate": {
+		kind: "reading",
+		value: 8.96,
+		unit: "Mbit/s",
+		digits: 2,
+		campaign: "port-overflow-2026-09-19",
 	},
 	// internal/agent/agent.go, ApproxLineBytes — the charged figure exactly.
 	"ring.lineChargedBytes": {

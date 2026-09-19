@@ -53,6 +53,7 @@ anomalía.
 | [Una inundación de paquetes](/mikroscope/es/playbooks/packet-flood/)             | `ping -f` a la propia dirección LAN del router, 10 s       | interrupciones de `switch0`, softirqs, `time_squeeze` | `switch0` de 5,5 k a 34 k por tramo de 5 s, todo en el único núcleo al que está fijada la IRQ                                 |
 | [Desgaste de la flash](/mikroscope/es/playbooks/flash-wear/)                     | nada provocado; el router escribe por su cuenta            | la fuente `yaffs`, contadores ECC de MTD              | 2 escrituras de página cada 30 s en reposo, rastreadas hasta el tema `dns` que registra en disco                              |
 | [Conntrack sin la API](/mikroscope/es/playbooks/conntrack/)                      | una comprobación cruzada contra la API, sin tormenta       | la caché slab `nf_conntrack`                          | el número real de conexiones del router donde el propio namespace del contenedor informa 0                                    |
+| [Un puerto perdiendo tramas](/mikroscope/es/playbooks/port-errors/)              | real, encontrado en el router de producción el 2026-09-19  | los contadores MAC por puerto de la capa de la API    | un puerto al 0,5 % de paquetes perdidos por microrráfagas, y luego ninguno                                                    |
 
 </ScrollTable>
 

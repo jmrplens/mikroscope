@@ -54,7 +54,7 @@ run against the reference RB5009 (RouterOS 7.24.2), not only against fakes:
   two SQL stores are asked the same question in two dialects: the PostgreSQL
   panels are the InfluxDB ones rewritten, and every one of its 216 queries is
   planned by a real PostgreSQL in the container suite. Graphite and
-  Elasticsearch carry fewer panels on purpose (41 and 30 against 175): Graphite
+  Elasticsearch carry fewer panels on purpose (41 and 30 against 176): Graphite
   has no labels and Elasticsearch no nested documents, so what they cannot
   express is absent rather than wrong. All five are imported into a real
   Grafana over the stores the suite filled, and every panel is asked: on

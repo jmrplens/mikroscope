@@ -18,13 +18,13 @@ alert rules generated beside them are on [Alert rules](https://jmrp.io/docs/mikr
 ### What `gen` writes
 
 - dashboards/
-  - mikroscope-influxdb.json 175 panels, InfluxDB 3 (SQL)
-  - mikroscope-prometheus.json 133 panels, Prometheus
+  - mikroscope-influxdb.json 176 panels, InfluxDB 3 (SQL)
+  - mikroscope-prometheus.json 134 panels, Prometheus
   - mikroscope-postgres.json 160 panels, PostgreSQL / TimescaleDB
   - mikroscope-graphite.json 41 panels, Graphite
   - mikroscope-elasticsearch.json 30 panels, Elasticsearch
-  - mikroscope-alerts-influxdb.yaml 10 rules
-  - mikroscope-alerts-prometheus.yaml 11 rules
+  - mikroscope-alerts-influxdb.yaml 11 rules
+  - mikroscope-alerts-prometheus.yaml 12 rules
   - mikroscope-alerts-postgres.yaml 8 rules
 
 ```sh
@@ -68,7 +68,7 @@ puts them. Each is a link to the file at full size.
 
 One capture per section of the InfluxDB dashboard, over a demonstration database filled by the fake agent, on [the page](https://jmrp.io/docs/mikroscope/dashboards/):
 
-- Overview (12)
+- Overview (13)
 - CPU and scheduler (11)
 - Memory and load (9)
 - Connections (9)
@@ -111,7 +111,7 @@ Panels per section, per store:
 
 | Section (Grafana row) | InfluxDB 3 | Prometheus | PostgreSQL | Graphite | Elasticsearch |
 | --- | --- | --- | --- | --- | --- |
-| Overview | 12 | 12 | 12 | 10 | 6 |
+| Overview | 13 | 13 | 12 | 10 | 6 |
 | CPU and scheduler | 11 | 9 | 11 | 1 | no row |
 | Memory and load | 9 | 9 | 9 | 7 | 5 |
 | Connections | 9 | 3 | 9 | 1 | 1 |
@@ -134,7 +134,7 @@ Panels per section, per store:
 | The observer: sampler timing and self events | 6 | 7 | 6 | no row | no row |
 | This device | 3 | 3 | 3 | no row | no row |
 | Not available on this device | 5 | 5 | 5 | 5 | 5 |
-| **Total** | **175** | **133** | **160** | **41** | **30** |
+| **Total** | **176** | **134** | **160** | **41** | **30** |
 
 The counts are those of the committed files, which carry the compiled defaults. `import` and
 `check` ask the datasource what it holds first and can move panels into or out of the last row;
@@ -150,7 +150,7 @@ deliberately, and last what mikroscope costs the router it is measuring.
 
 Every section but the Overview ships **collapsed**. Grafana keeps a collapsed row's panels inside
 the row object and runs none of their queries until someone expands it, so the first render asks
-the store for the Overview's twelve panels and not for all 175.
+the store for the Overview's twelve panels and not for all 176.
 
 The defaults are a 3-hour range (`now-3h`) and a 5-minute refresh. The 5-minute refresh is kept for
 the case where someone expands a section: the slab census and the PMU and per-sample cost heatmaps
@@ -968,8 +968,8 @@ device itself published. None is a number compiled in for one router.
 
 | File                                           |                                            Rules | Query language |
 | ---------------------------------------------- | -----------------------------------------------: | -------------- |
-| `dashboards/mikroscope-alerts-influxdb.yaml`   |   10 | InfluxDB 3 SQL |
-| `dashboards/mikroscope-alerts-prometheus.yaml` | 11 | PromQL         |
+| `dashboards/mikroscope-alerts-influxdb.yaml`   |   11 | InfluxDB 3 SQL |
+| `dashboards/mikroscope-alerts-prometheus.yaml` | 12 | PromQL         |
 | `dashboards/mikroscope-alerts-postgres.yaml`   |   8 | PostgreSQL SQL |
 
 The InfluxDB file has one rule fewer because "The sampler is slipping ticks" has no SQL form yet.
@@ -1021,6 +1021,7 @@ The alert rules:
 | `mikroscope-agent-oom` | the agent's own cgroup recorded an OOM kill in the last 5 minutes | > 0 | critical | 0s | OK | InfluxDB only |
 | `mikroscope-l2-loop` | an own-address record on any port in the last 5 minutes | > 0 | critical | 0s | OK | both |
 | `mikroscope-port-link-down` | a link-down record on any port in the last 5 minutes | > 0 | warning | 0s | OK | both |
+| `mikroscope-port-errors` | any port's MAC counted a typed error — overflow, FCS, collision — for 5 minutes running | > 0 | warning | 5m | OK | both |
 | `mikroscope-ecc-failure` | the NAND reported an uncorrectable ECC failure in the last hour | > 0 | critical | 0s | OK | InfluxDB only |
 | `mikroscope-ticks-slipped` | the sampler slipped a tick in the last 5 minutes | > 0 | warning | 5m | OK | Prometheus only |
 
@@ -1092,6 +1093,8 @@ Each rule's title, and under it its `summary` annotation verbatim, as generated:
   sum(increase(mikroscope_kmsg_port_records_total{kind="own-address"}[5m]))
   # mikroscope-port-link-down          (> 0)
   sum(increase(mikroscope_kmsg_port_records_total{kind="link-down"}[5m]))
+  # mikroscope-port-errors             (> 0)
+  sum(increase(mikroscope_api_interface_counter_total{counter=~"rx-overflow|rx-fcs-error|rx-fragment|rx-too-short|rx-too-long|rx-jabber|tx-fcs-error|tx-late-collision|tx-excessive-collision"}[5m]))
   # mikroscope-ecc-failure             (> 0)
   sum(increase(mikroscope_mtd_ecc_failures_total[1h]))
   ```
@@ -1125,6 +1128,8 @@ Each rule's title, and under it its `summary` annotation verbatim, as generated:
   SELECT coalesce(sum(count), 0) AS value FROM mikroscope_kmsg WHERE time >= now() - interval '5 minutes' AND kind = 'own-address'
   -- mikroscope-port-link-down          (> 0)
   SELECT coalesce(sum(count), 0) AS value FROM mikroscope_kmsg WHERE time >= now() - interval '5 minutes' AND kind = 'link-down'
+  -- mikroscope-port-errors             (> 0)
+  SELECT coalesce(sum(v), 0) AS value FROM (SELECT interface, greatest(max(rx_overflow) - min(rx_overflow), 0)::BIGINT + greatest(max(rx_fcs_error) - min(rx_fcs_error), 0)::BIGINT + greatest(max(rx_fragment) - min(rx_fragment), 0)::BIGINT + greatest(max(rx_too_short) - min(rx_too_short), 0)::BIGINT + greatest(max(rx_too_long) - min(rx_too_long), 0)::BIGINT + greatest(max(rx_jabber) - min(rx_jabber), 0)::BIGINT + greatest(max(tx_fcs_error) - min(tx_fcs_error), 0)::BIGINT + greatest(max(tx_late_collision) - min(tx_late_collision), 0)::BIGINT + greatest(max(tx_excessive_collision) - min(tx_excessive_collision), 0)::BIGINT AS v FROM mikroscope_api_ifcounters WHERE time >= now() - interval '5 minutes' GROUP BY interface)
   -- mikroscope-ecc-failure             (> 0)
   SELECT coalesce(sum(delta), 0) AS value FROM (SELECT max(ecc_failures) - min(ecc_failures) AS delta FROM mikroscope_mtd WHERE time >= now() - interval '1 hour' AND ecc_failures IS NOT NULL GROUP BY "partition")
   ```

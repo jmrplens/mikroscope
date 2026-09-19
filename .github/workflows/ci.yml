@@ -242,6 +242,9 @@ jobs:
       # means "a dependency has a high advisory", so the second stops being
       # read. pnpm exits non-zero for both, so the two are told apart by what
       # it printed, and an unanswered run is annotated rather than failed.
+      # ERR_PNPM_AUDIT_BAD_RESPONSE is in that list because it is the same
+      # thing wearing a different name: the advisories endpoint answering
+      # 503 after its own retries. It blocked a pull request on 2026-09-19.
       - name: Audit the site's dependencies
         shell: bash
         working-directory: site
@@ -251,7 +254,7 @@ jobs:
           status=$?
           printf '%s\n' "$output"
           if [ "$status" -ne 0 ] && printf '%s' "$output" |
-              grep -qE 'TimeoutError|operation was aborted|ENOTFOUND|EAI_AGAIN|ECONNRESET|ECONNREFUSED|socket hang up'; then
+              grep -qE 'TimeoutError|operation was aborted|ENOTFOUND|EAI_AGAIN|ECONNRESET|ECONNREFUSED|socket hang up|ERR_PNPM_AUDIT_BAD_RESPONSE'; then
             echo "::warning title=Dependency audit did not run::the npm advisories endpoint did not answer, so this run says nothing about the dependencies"
             exit 0
           fi

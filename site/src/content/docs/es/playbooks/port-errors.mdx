@@ -1,0 +1,149 @@
+---
+title: Un puerto perdiendo tramas
+description: La tesela del Overview se puso roja — cómo pasar de un número a qué puerto, qué error y si es carga o una ráfaga, con el caso que llevó el enlace del NAS del router de referencia del 0,5 % de paquetes perdidos a ninguno.
+---
+
+import FaultSignature from "../../../../components/FaultSignature.astro";
+import Measured from "../../../../components/Measured.astro";
+import NotClaimed from "../../../../components/NotClaimed.astro";
+import Provenance from "../../../../components/Provenance.astro";
+import SeeAlso from "../../../../components/SeeAlso.astro";
+
+**Port errors in the window** está verde en 0 y roja por encima. Esta página es
+qué hacer cuando está roja: cómo llegar de ese único número a qué puerto, qué
+error y —la pregunta que decide el arreglo— si el puerto pierde tramas porque
+está ocupado o porque quien envía lo hace a ráfagas.
+
+La página entera es un fallo real del RB5009 de referencia, encontrado el
+2026-09-19 y arreglado esa misma tarde.
+
+<Provenance of="port-overflow-2026-09-19" />
+
+## De la tesela al puerto
+
+La tesela suma todos los errores tipificados del MAC de todos los puertos. A
+propósito no dice cuál: abre **Interface traffic** y lee _Port errors per bin_,
+que dibuja una fila por cada par `(puerto, tipo de error)` que tuvo un error en
+la ventana y nada por los que no. En un router sano dice
+`no port errors in this window`.
+
+En el equipo de referencia dibujó exactamente una fila: `ether1 rx overflow`.
+
+Ese nombre es la primera mitad del diagnóstico. `rx-overflow` es el FIFO de
+recepción llenándose más rápido de lo que el chip puede drenarlo: tramas que
+llegaron bien y se descartaron por no tener dónde ponerlas. No es un fallo de
+cableado. `rx-fcs-error`, `rx-fragment` y los contadores de colisión sí lo son,
+y te mandan a otro sitio completamente: el cable, el dúplex, el puerto.
+
+## ¿Carga, o ráfaga?
+
+Esta es la pregunta de la que cuelga el arreglo, y los contadores la responden.
+
+Coge el volumen recibido en los intervalos de 10 segundos que desbordaron y
+compáralo con lo que el enlace podría haber llevado. En el equipo de referencia
+el intervalo mediano con desborde llevó <Measured id="overflow.burstRate" /> en un
+enlace de 2,5 Gbit/s: el <Measured id="overflow.occupancy" /> de su capacidad.
+
+Un puerto no puede verse superado al 0,36 % de ocupación por carga sostenida.
+Solo puede verse superado por ráfagas demasiado cortas para que una media de un
+segundo las muestre: la media era de 3,25 Mbit/s y el segundo más alto en tres
+horas fue de 70 Mbit/s, mientras el desborde corría
+a <Measured id="overflow.perHourBefore" /> por hora,
+el <Measured id="overflow.shareBefore" /> de cada paquete que enviaba el origen.
+
+Si en cambio los intervalos que desbordan son los que rozan la velocidad de
+línea, párate aquí: eso es un problema de capacidad y la respuesta es un enlace
+más rápido o menos tráfico.
+
+## Adónde iban las tramas
+
+Una ráfaga desborda en la entrada porque algo aguas abajo no puede con ella.
+Los contadores por puerto lo encuentran por correlación: ordena los deltas del
+desborde contra los deltas de transmisión de cada otro puerto en los mismos
+intervalos.
+
+En el equipo de referencia el más fuerte fue `ether4` con ρ 0,53, un puerto de
+1 Gbit/s, y `sfp-sfpplus1` con ρ 0,42 —que es de 10 Gbit/s pero alimenta a un
+switch cuyos puertos no lo son. La parte del tráfico que llega a la CPU
+correlacionó a ρ 0,00, lo que descarta el propio reenvío del router: esas
+tramas nunca llegaron a la CPU.
+
+`ether4` llevaba además 6 644 `tx-queue-drop`. Ese es el mismo suceso contado
+desde el otro extremo —la cola de salida que no drenaba bastante rápido— y
+encontrar los dos es lo que convierte una correlación en un mecanismo: un
+origen de 2,5 Gbit/s soltando ráfagas a velocidad de línea contra un destino de
+1 Gbit/s.
+
+## Lo que no funcionó
+
+En el equipo de referencia se probaron dos cosas antes de la que funcionó, y
+merece la pena conocerlas porque las dos parecen correctas.
+
+**Una MTU más pequeña.** Bajar el origen y el puerto de 9000 a 1500 recortó las
+peores ráfagas un 91 % y los datos perdidos por trama descartada por seis, y
+**no cambió la frecuencia en absoluto**: 0,530 % de los paquetes antes, 0,502 %
+después. Abarata cada suceso sin hacer que los sucesos sean más raros.
+
+**El control de flujo de Ethernet.** Negociar pause en ambos sentidos es el
+mecanismo diseñado justo para esto, y en este hardware no se activó nunca: 41
+minutos con el pause negociado, 5 578 desbordes, y `rx-pause` y `tx-pause`
+ambos todavía a **0**. Mira esos dos contadores antes de creer que el pause te
+está ayudando. El chip descarta la trama en vez de pedirle al origen que
+espere.
+
+## Lo que sí funcionó
+
+Espaciar al origen. No un AQM —la cola del origen está vacía al 0,36 % de
+ocupación, así que un AQM no tiene nada que gestionar y le pasa la ráfaga
+intacta a la NIC— sino un shaper con una tasa **por debajo de lo que drena el
+destino más lento**:
+
+```sh
+tc qdisc replace dev <iface> root cake bandwidth 900Mbit
+```
+
+En esa línea importan dos cosas. La tasa está por debajo de 1 Gbit/s, así que
+el destino drena más rápido de lo que el origen envía y el búfer del chip nunca
+crece. Y `cake` parte los super-segmentos de GSO, que es lo que el origen le
+estaba entregando a su NIC para ponerlo en el cable seguido y a velocidad de
+línea.
+
+El resultado en el equipo de referencia, con el mismo volumen de tráfico: el
+desborde pasó de 1 054–3 681 cada 20 minutos a **0**, y el `tx-queue-drop` de
+`ether4` a 0 con él. El coste fue nada medible: el segundo más alto de salida
+observado fue de 70 Mbit/s contra un tope de 900.
+
+## La firma
+
+<FaultSignature origin="real" date="2026-09-19">
+
+- **Port errors in the window** en rojo, y _Port errors per bin_ dibujando una
+  fila: un `rx overflow` en un puerto y nada más.
+- Los intervalos que desbordan llevan una fracción pequeña de la capacidad del
+  enlace: una ráfaga, no carga.
+- La transmisión de un puerto más lento correlaciona con el desborde, y lleva
+  `tx-queue-drop` propios.
+- `rx-pause` y `tx-pause` se quedan en 0 diga lo que diga el control de flujo
+  negociado.
+
+</FaultSignature>
+
+<NotClaimed>
+	Que el shaper aguante. El cero de arriba son 39 minutos con la carga de una tarde, no de un día,
+	y la tasa se eligió contra un destino de 1 Gbit/s en vez de derivarse. No se ha probado si ese
+	mismo tope sigue valiendo cuando algo detrás del puerto de 10 Gbit/s quiera más de 900 Mbit. La
+	semántica exacta de los contadores del chip es de MikroTik y no se ha contrastado con su
+	documentación.
+</NotClaimed>
+
+<SeeAlso>
+
+## Véase también
+
+- [Interface traffic](/mikroscope/es/dashboards/#tráfico-por-interfaz): los paneles que lee esta página.
+- [La capa de la API](/mikroscope/es/sinks/api-tier/): de dónde salen los contadores por puerto, y
+  por qué el agente no los ve.
+- [Reglas de alerta](/mikroscope/es/dashboards/alerts/): la regla que salta con esto, y lo que no
+  puede distinguir.
+
+</SeeAlso>
