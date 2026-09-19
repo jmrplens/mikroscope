@@ -91,8 +91,9 @@ data" para siempre. Una sección a la que se le quitan todos los paneles no emit
 
 Por eso difieren los recuentos, y difieren en los dos sentidos. Casi toda la familia térmica y de
 reloj, la sección de desgaste de la flash, el censo de slab y varios paneles de memoria tienen SQL y
-no PromQL, así que solo existen en InfluxDB. Los histogramas de temporización del muestreador, las
-supresiones de disparadores y el presupuesto de capturas viven solo en el `/metrics` del agente. La
+no PromQL, así que solo existen en InfluxDB. Las supresiones de disparadores viven solo en el
+`/metrics` del colector; los histogramas de temporización del muestreador y el presupuesto de
+capturas tienen además forma en InfluxDB. La
 racha de ocupación aún en curso y la antigüedad de cada lectura retenida son familias de la
 exposición de Prometheus, también en el `/metrics` del colector, sin campo en InfluxDB. Ninguno de
 los dos grupos se escribe en InfluxDB, así que los paneles que los leen solo existen en Prometheus. Cada panel de abajo que está en un solo
@@ -437,8 +438,9 @@ la captura del 2026-09-11/12 de los que el registro de huecos del colector no de
 ### El observador: temporización del muestreador y sucesos propios
 
 El emborronamiento del propio muestreador — con cuánto retraso despertó y cuánto tardó la lectura — y
-los sucesos de cgroup que el agente registra sobre sí mismo. Los tres mapas de calor leen los
-histogramas del agente, que nunca se envían como muestras, así que solo existen en Prometheus.
+los sucesos de cgroup que el agente registra sobre sí mismo. Las temporizaciones viajan en el bloque `self` de cada muestra como
+`wake_ns` y `read_ns`, así que los tres mapas de calor existen también en los paneles de InfluxDB y
+PostgreSQL, no solo en Prometheus.
 
 <DashboardPanels section="The observer: sampler timing and self events" />
 

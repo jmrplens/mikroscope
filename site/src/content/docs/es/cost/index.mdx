@@ -10,7 +10,7 @@ import SeeAlso from "../../../../components/SeeAlso.astro";
 
 Un observador que cuesta un 20 % de aquello que observa no está midiendo el
 router: se está midiendo a sí mismo. Por eso aquí este número es un resultado de
-primera clase y no una nota al pie: el agente lo publica en cada muestra y lo expone en `/metrics`, y CI comprueba el presupuesto de tamaño de la imagen.
+primera clase y no una nota al pie: el agente lo publica en cada muestra, y CI comprueba el presupuesto de tamaño de la imagen.
 
 ## El presupuesto, y lo que cuesta de verdad
 
@@ -52,9 +52,10 @@ agente sea un binario y no un script.
 
 <Aside type="note" title="De dónde sale el número">
 	No de `top`, y no de una instantánea. El agente cuenta sus propios microsegundos de CPU y su RSS
-	desde su cgroup y los publica como `mikroscope_self_cpu_usec_total` y `mikroscope_self_rss_bytes`.
-	Dos lecturas de `/metrics` separadas 60 s, en régimen estacionario y con el anillo ya lleno, son
-	la medida. El `/tool profile` de RouterOS muestra el mismo proceso como `mikroscope-agent`.
+	desde su cgroup y los lleva en cada muestra, en el bloque `self`, como `cpu_us` y `rss`; el colector
+	los representa como `mikroscope_self_cpu_usec_total` y `mikroscope_self_rss_bytes`. Dos lecturas del
+	`/metrics` DEL COLECTOR separadas 60 s, en régimen estacionario y con el anillo ya lleno, son la
+	medida — el agente no sirve exposición propia desde 1.0.5. El `/tool profile` de RouterOS muestra el mismo proceso como `mikroscope-agent`.
 </Aside>
 
 ## Dimensiona el límite de memoria según los datos

@@ -86,8 +86,8 @@ whose panels are dropped emits no row at all.
 
 That is why the counts differ, and they differ in both directions. Most of the thermal and clock
 family, the flash wear section, the slab census and several memory panels have SQL and no PromQL,
-so they exist only on InfluxDB. The sampler's timing histograms, the trigger suppressions and the
-capture budget live on the agent's `/metrics` only. The busy run still in progress and the age of
+so they exist only on InfluxDB. The trigger suppressions live on the collector's
+`/metrics` only; the sampler's timing histograms and the capture budget have an InfluxDB form too. The busy run still in progress and the age of
 each held reading are Prometheus exposition families, on the collector's `/metrics` too, with no
 InfluxDB field. Neither group is written to InfluxDB, so the panels reading them exist only on
 Prometheus. Each panel below that is on one store only says which.
@@ -412,8 +412,9 @@ the Overview), which found 4 493 missing ticks and one restart in the
 ### The observer: sampler timing and self events
 
 The sampler's own smear — how late it woke and how long the read took — and the cgroup events the
-agent records about itself. The three heatmaps read the agent's histograms, which are never shipped
-as samples, so they exist only on Prometheus.
+agent records about itself. The timings ride in each sample's `self` block as `wake_ns` and
+`read_ns`, so all three heatmaps exist on the InfluxDB and PostgreSQL dashboards as well as on
+Prometheus.
 
 <DashboardPanels section="The observer: sampler timing and self events" />
 

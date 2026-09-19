@@ -59,10 +59,10 @@ The entries install writes into the agent's envlist:
 | --- | --- | --- | --- |
 | `MIKROSCOPE_TAG` | always | `--name` | the ownership marker `mikroscope:<name> (managed by mikroscope)`, written first and removed last; the agent ignores it |
 | `RATE_HZ` | always | `--rate`, default `10`, 1–100 | the sampler rate, in Hz |
-| `BUFFER_S` | always | `--buffer`, default `300`, 10–3600 | the ring's length, in seconds |
+| `BUFFER_S` | always | `--buffer`, default `60`, 10–3600 | the ring's length, in seconds |
 | `PORT` | always | `--port`, default `9123`, 1–65535 | the agent's HTTP port |
 | `ADDR` | always | `--subnet` | the agent's address, the `.2` of the /30; the agent binds only there |
-| `MEM_LIMIT_MB` | always | `--mem-limit-mb`, default `40`, 8–1024 | the agent's Go soft memory limit, in MiB |
+| `MEM_LIMIT_MB` | always | `--mem-limit-mb`, 8–1024 | the agent's Go soft memory limit, in MiB; derived from the ring since 1.0.6 (rate × buffer × line, × 2.5, floored at 16 MiB) rather than a flat number |
 | `FLOOR_HZ` | only when above 0 | `--floor-hz`, default `0`, 0–1000 | one cadence for every level source, in Hz |
 | `CAPTURE_MB` | always | `--capture-mb`, default `4`, 0–256 | the triggered-capture budget, in MiB; `0` turns captures off |
 | `TRIGGERS` | only when set | `--triggers` | the trigger conditions; unset, the agent uses its default set |

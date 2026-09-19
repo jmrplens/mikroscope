@@ -177,7 +177,7 @@ disparo y qué compara cada una están en [captura por
 disparo](/mikroscope/es/record/triggers/).
 
 Antes de escuchar, el agente compara el anillo con el propio `memory.max` del
-contenedor: `RATE_HZ × BUFFER_S × 2 560 B` más `CAPTURE_MB` tiene que caber, o
+contenedor: `RATE_HZ × BUFFER_S × 3 456 B` más `CAPTURE_MB` tiene que caber, o
 se niega a arrancar y nombra las tres variables y `--memory-max`. Si esa cifra
 supera la mitad de `MEM_LIMIT_MB`, arranca y registra un aviso con el límite al
 que subir. 2 560 B no es una medida en sí: es la línea media medida en el

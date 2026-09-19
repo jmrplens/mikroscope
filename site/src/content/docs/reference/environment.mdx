@@ -172,7 +172,7 @@ The names `SOURCES` accepts are the optional sources `/capabilities` reports:
 compares are on [triggered capture](/mikroscope/record/triggers/).
 
 Before it listens, the agent checks the ring against the container's own
-`memory.max`: `RATE_HZ × BUFFER_S × 2 560 B` plus `CAPTURE_MB` must fit, or it
+`memory.max`: `RATE_HZ × BUFFER_S × 3 456 B` plus `CAPTURE_MB` must fit, or it
 refuses to start and names the three variables and `--memory-max`. If that
 figure is more than half of `MEM_LIMIT_MB`, it starts and logs a warning with
 the limit to raise to. 2 560 B is not itself a measurement: it is the mean

@@ -9,8 +9,9 @@ import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
 
 `--prom :9124` hace que el colector sirva texto de Prometheus en `GET /metrics` en esa
-dirección. Esta página responde a qué lleva esa exposición, qué no puede llevar y tiene
-que venir del agente, y cómo hacer scrape de los dos sin contar nada dos veces.
+dirección. Esta página responde a qué lleva esa exposición y qué no puede
+llevar a ningún destino. Solo hay una cosa a la que hacer scrape: el agente no sirve
+exposición desde 1.0.5.
 
 ## Recalculado a partir de las muestras
 

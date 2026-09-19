@@ -71,7 +71,7 @@ advancing one batch per poll. A short reply is the ring's edge.
 
 The relay transport caps a pull at 18 lines, and the cap is computed rather than chosen:
 `/tool fetch` returns 64 512 B at most, the mean ring line is taken as
-2 560 B (the measured 2 439 B, rounded up), and the cap allows 134 % of
+2 560 B (the measured 3 230 B, rounded up), and the cap allows 134 % of
 that mean so a batch of above-average lines still fits — 18 lines, about 46 kB. A reply that
 reaches the fetch limit anyway is refused with
 `relay reply hit the 64512-byte fetch limit; lower the batch` rather than parsed truncated. At the
@@ -85,7 +85,7 @@ warning: at most 18 samples per pull every 500ms is 36/s, below the agent's 100 
 
 The cap and the warning are read from the code on 2026-09-15, not re-measured against a device.
 
-A collector that falls further behind than the agent's ring (300 s by default)
+A collector that falls further behind than the agent's ring (60 s by default)
 receives a gap line instead of the samples, and every sink records the gap.
 
 ### Whose clock each record carries
@@ -266,9 +266,9 @@ The collector’s own `/metrics` — every agent family recomputed from the samp
 Source: <https://jmrp.io/docs/mikroscope/sinks/prometheus/>
 
 `--prom :9124` makes the collector serve Prometheus text on `GET /metrics` at that
-address. This page answers what that exposition carries, what it cannot carry and
-has to come from the agent instead, and how to scrape both without counting anything
-twice.
+address. This page answers what that exposition carries and what no
+store can be given at all. There is only one thing to scrape: the agent has served no
+exposition since 1.0.5.
 
 ### Recomputed from the samples
 
@@ -624,8 +624,10 @@ check](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/).
 
 > **Not measured, so not claimed**
 >
-> Every recorded run wrote to InfluxDB 3 Core; no write to InfluxDB 2's `/api/v2/write` or to
-> InfluxDB 3 Enterprise is recorded. The duplicate rows of 2026-09-13 have an explanation that is
+> No write to InfluxDB 2's `/api/v2/write` is recorded. InfluxDB 3 Enterprise is now measured, but
+> briefly: on 2026-09-19 the reference collector was moved onto Enterprise 3.11.4 and wrote 44 820
+> rows across 36 tables in the first 19 minutes, 0 dropped and 0 errors. Everything before that date
+> was measured against Core. The duplicate rows of 2026-09-13 have an explanation that is
 > leading and unverified, and disabling the HTTP client's own resend has not been measured against a
 > repeat of that run.
 
@@ -1970,7 +1972,7 @@ never mixed into a sample row.
 | Graphite                        | the numeric facts under `device.*`; board, kernel and governor have no Graphite form                                                               |
 | OTLP                            | gauges: `mikroscope.device.cores` with board, kernel and hash as attributes, the thermal and cpufreq ceilings, `mikroscope.device.source_cadence`  |
 | Loki                            | one `source="device"`, `level="info"` line: board, kernel, cores, privileged, cgroup, sources, hash                                                |
-| Prometheus                      | the same device-info families the agent's own `/metrics` carries                                                                                   |
+| Prometheus                      | the device-info families, rendered by the collector's exposition                                                                                   |
 
 #### InfluxDB and SQL
 

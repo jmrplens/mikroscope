@@ -158,9 +158,10 @@ The kinds, and the record shapes the RouterOS kernel prints (RB5009, kernel
 
 The agent classifies at read time and ships `kind` in the record, and a
 collector in front of an older agent whose records carry none classifies them
-itself with the same function. That is the case on the reference router today:
-the agent running there has not been redeployed with this build, so its
-`/metrics` carries no `kind` label yet and the collector does the work.
+itself with the same function. That path exists for a collector in front of an agent
+older than 1.0.0, which is when `kind` began shipping in the record; the
+reference router's agent has carried it since, and was upgraded to 1.0.9 on
+2026-09-19.
 
 **Four records are not four faults.** A normal link-up is followed by
 `stp-blocking`, `stp-learning` and `stp-forwarding` as the bridge walks the port

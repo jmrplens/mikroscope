@@ -252,8 +252,8 @@ con ella.
 
 ## Contar lo que no se capturó
 
-El `/metrics` del agente lleva las familias que dicen cuánto no vieron las
-capturas. Cada par de condición y motivo se expone desde el principio, a 0 hasta
+El `/metrics` del colector lleva las familias que dicen cuánto no vieron las
+capturas, construidas a partir de los contadores de `GET /sampler` del agente. Cada par de condición y motivo se expone desde el principio, a 0 hasta
 que ocurre, así que un panel puede mostrar «0 hasta ahora».
 
 <ScrollTable label="Familias de métricas de disparo y captura">
@@ -270,10 +270,10 @@ que ocurre, así que un panel puede mostrar «0 hasta ahora».
 
 </ScrollTable>
 
-El colector no puede recalcularlas a partir de las muestras, así que el panel de
-Prometheus espera un trabajo de scrape sobre el propio agente que conserve solo
-las familias exclusivas del agente; [Prometheus](/mikroscope/es/sinks/prometheus/)
-tiene el trabajo.
+El colector no puede recalcularlas a partir de las muestras; las lee del
+`GET /sampler` del agente y las representa en su propia exposición, así que un
+único trabajo de scrape sobre el colector las lleva.
+[Prometheus](/mikroscope/es/sinks/prometheus/) tiene el detalle.
 
 ## Lo que no puede hacer
 

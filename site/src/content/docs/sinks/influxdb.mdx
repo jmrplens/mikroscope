@@ -187,8 +187,10 @@ The Grafana datasource for InfluxDB 3 needs two secure fields, not one; see [imp
 check](/mikroscope/dashboards/import-and-check/).
 
 <NotClaimed>
-	Every recorded run wrote to InfluxDB 3 Core; no write to InfluxDB 2's `/api/v2/write` or to
-	InfluxDB 3 Enterprise is recorded. The duplicate rows of 2026-09-13 have an explanation that is
+	No write to InfluxDB 2's `/api/v2/write` is recorded. InfluxDB 3 Enterprise is now measured, but
+	briefly: on 2026-09-19 the reference collector was moved onto Enterprise 3.11.4 and wrote 44 820
+	rows across 36 tables in the first 19 minutes, 0 dropped and 0 errors. Everything before that date
+	was measured against Core. The duplicate rows of 2026-09-13 have an explanation that is
 	leading and unverified, and disabling the HTTP client's own resend has not been measured against a
 	repeat of that run.
 </NotClaimed>

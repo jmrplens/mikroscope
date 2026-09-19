@@ -14,7 +14,7 @@ The **agent** is a static Go binary in a scratch container on the router. A
 RouterOS container shares the host kernel, so `/proc` inside it is the router's
 own `/proc`: `/proc/stat` per core, `/proc/interrupts`, `/proc/softirqs`,
 `/proc/net/softnet_stat`, `/proc/meminfo`, `/proc/vmstat`, `/proc/diskstats`,
-`/dev/kmsg`. It samples them on a ticker at 1 to 100 Hz (10 Hz by default; 10, 50 and 100 Hz measured), keeps the last 300 seconds in a ring, and serves them. It has no outbound connection and presents no credential; the only secret it holds is the optional token it requires of whoever reads it.
+`/dev/kmsg`. It samples them on a ticker at 1 to 100 Hz (10 Hz by default; 10, 20, 50 and 100 Hz measured), keeps the last 60 seconds in a ring, and serves them. It has no outbound connection and presents no credential; the only secret it holds is the optional token it requires of whoever reads it.
 
 The **CLI** runs on your machine. It installs and removes the agent, records a
 window with markers, draws a deterministic SVG of it, and runs as a collector
@@ -287,8 +287,9 @@ plain defaults, whatever the CLI's usage text says. Export the variables you nee
    [the RouterOS API tier](https://jmrp.io/docs/mikroscope/sinks/api-tier/) says which of those the agent can read
    itself. Without those variables the API tier is disabled with a warning and the kernel tier still runs. Both go to a Prometheus
    exposition on `:9124` and to InfluxDB 3. From there,
-   [import and check](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/) sets up the two Grafana dashboards,
-   the datasource field an InfluxDB 3 import needs and the two Prometheus scrape jobs.
+   [import and check](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/) sets up the Grafana dashboards — five
+   of them, one per store — and the datasource field an InfluxDB 3 import needs. One scrape job is
+   enough: the collector's.
 
 ### What the chart shows
 

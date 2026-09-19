@@ -126,9 +126,9 @@ immediately. It honours the default stop time of 10 s.
 `--memory-max` and `--mem-limit-mb` have to move with `--rate` and `--buffer`.
 The ring holds `rate × buffer` lines of about <Measured id="ring.lineKB" /> each; the Go soft limit
 wants about twice that and has to sit comfortably under `memory-max`. The
-agent's startup check counts 2 560 bytes a line plus `--capture-mb`: above
-`memory-max` it refuses to start, and above half of `--mem-limit-mb` it warns. The defaults, 40 MiB under
-`64M`, are sized for 10 Hz and a 300 s ring. The triggered-capture budget
+agent's startup check counts <Measured id="ring.lineChargedBytes" /> a line plus `--capture-mb`: above
+`memory-max` it refuses to start, and above half of `--mem-limit-mb` it warns. The defaults — a soft
+limit derived from the ring, under `64M` — are sized for 10 Hz and a 60 s ring. The triggered-capture budget
 counts against both limits in that check, as the ring does.
 
 The measured runs used <RunFlags run="10hz" /> at 10 Hz, <RunFlags run="50hz" />

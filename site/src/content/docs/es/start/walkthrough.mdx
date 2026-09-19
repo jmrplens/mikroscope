@@ -217,9 +217,9 @@ necesites, o copia `.env.example` a `.env` y carga el fichero con `set -a; . ./.
    puede leer el propio agente. Sin esas variables la
    capa de la API queda desactivada con un aviso y la capa del kernel sigue funcionando. Ambas van a
    una exposición de Prometheus en `:9124` y a InfluxDB 3. A partir de ahí,
-   [importar y comprobar](/mikroscope/es/dashboards/import-and-check/) monta los dos paneles de
-   Grafana, el campo del origen de datos que necesita una importación de InfluxDB 3 y los dos
-   trabajos de scrape de Prometheus.
+   [importar y comprobar](/mikroscope/es/dashboards/import-and-check/) monta los paneles de Grafana
+   —cinco, uno por destino— y el campo del origen de datos que necesita una importación de
+   InfluxDB 3. Basta con un trabajo de scrape: el del colector.
 
 </Steps>
 

@@ -9,9 +9,9 @@ import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
 
 `--prom :9124` makes the collector serve Prometheus text on `GET /metrics` at that
-address. This page answers what that exposition carries, what it cannot carry and
-has to come from the agent instead, and how to scrape both without counting anything
-twice.
+address. This page answers what that exposition carries and what no
+store can be given at all. There is only one thing to scrape: the agent has served no
+exposition since 1.0.5.
 
 ## Recomputed from the samples
 

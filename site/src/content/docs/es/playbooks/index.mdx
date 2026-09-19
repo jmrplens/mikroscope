@@ -100,7 +100,7 @@ echo "$c0 $c1 $t0 $t1" | awk '{printf "%.2f %% of one core\n", 100*($2-$1)/1e6/(
 Dos cosas que cabe esperar:
 
 - **El coste y la memoria suben hasta que el anillo se llena.** Con el anillo por
-  defecto de 300 s a 10 Hz, el agente guarda 3 000 muestras ya codificadas; una
+  defecto de 60 s a 10 Hz, el agente guarda 600 muestras ya codificadas; una
   cifra tomada en el primer minuto tras la instalación se mide sobre un heap casi
   vacío y saldrá optimista. Espera a que pase `BUFFER_S` antes de citar un número
   de régimen estacionario.

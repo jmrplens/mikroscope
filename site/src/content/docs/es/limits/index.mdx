@@ -107,7 +107,7 @@ kernel los tiene.
 ## Hasta dónde recuerda el agente
 
 El otro límite duro es la profundidad, no la resolución. El agente guarda sus muestras en un
-anillo de `--buffer` segundos, 300 s por defecto y entre 10 y 3600 s permitidos, que contiene
+anillo de `--buffer` segundos, 60 s por defecto y entre 10 y 3600 s permitidos, que contiene
 cadencia × búfer muestras. Nada más antiguo existe en ningún sitio del router.
 
 Un corte del colector o del grabador más corto que el anillo se rellena al reconectar: pide
@@ -118,8 +118,11 @@ que aún conserva; `record` lo escribe como un marcador que dice `samples N..M l
 lo cuenta en `mikroscope_collector_gaps_total` y se lo pasa a cada destino.
 
 Un anillo más largo cuesta memoria en el agente, y el agente rechaza uno que no quepa. Al arrancar
-estima el anillo a 2 560 bytes por línea (la línea media se midió en <Measured id="ring.lineBytes" /> en el RB5009 el 2026-09-12, sin las fuentes de PMU, buddyinfo y MTD; una placa con más núcleos o
-líneas de interrupción, o más fuentes, cuesta más), suma el
+estima el anillo a <Measured id="ring.lineChargedBytes" /> por línea —la línea media se midió
+en <Measured id="ring.lineBytes" /> en el RB5009 el 2026-09-17 con todas las fuentes activas, y
+el presupuesto cobra la clase de tamaño del asignador de la que se sirve, no la línea en sí, porque
+es lo que paga el heap; una placa con más núcleos o líneas de interrupción cuesta más, y una sin PMU
+un 35 % menos— suma el
 presupuesto de la captura por disparo, y sale con un error si el total supera el `memory.max` del
 contenedor. Si el total es más de la mitad del límite blando de memoria de Go, arranca pero
 registra un aviso, porque un heap tan justo mantiene al recolector de basura trabajando sin parar.
