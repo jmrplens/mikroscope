@@ -323,3 +323,146 @@ func TestInventoryReadBeforeTheFirstRoundIsStillHandedOn(t *testing.T) {
 		t.Fatalf("inventory repeated without a re-read: %+v", s.Inventory)
 	}
 }
+
+// deadClient is a connection that has died: every command fails the way a
+// socket does after the router at the other end rebooted. Close records that
+// the reader let go of it.
+type deadClient struct {
+	err    error
+	calls  int
+	closed bool
+}
+
+func (d *deadClient) RunArgsContext(context.Context, []string) (*rosapi.Reply, error) {
+	d.calls++
+	return nil, d.err
+}
+
+func (d *deadClient) Close() error { d.closed = true; return nil }
+
+// TestRedialAfterTransportFailure is the 2026-09-19 outage in miniature: the
+// router rebooted, the tier's one connection died, and before this the reader
+// wrote to that dead socket for seven and a half hours. It must reconnect and
+// answer from the new connection instead.
+func TestRedialAfterTransportFailure(t *testing.T) {
+	dead := &deadClient{err: errors.New("write tcp 192.168.0.100:3062->192.168.0.1:8728: write: broken pipe")}
+	live := &fakeClient{}
+	dials := 0
+	r := &Reader{
+		Client: dead,
+		Opts:   Options{Health: true, Interfaces: []string{"bridge"}},
+		Redial: func(context.Context) (Client, error) { dials++; return live, nil },
+	}
+	s := r.Read(context.Background())
+	if dials != 1 {
+		t.Fatalf("dialled %d times, want exactly 1 (the attempts after it are spaced by RedialEvery)", dials)
+	}
+	if !dead.closed {
+		t.Error("the dead connection was not closed; its socket leaks")
+	}
+	if r.Redials() != 1 {
+		t.Errorf("Redials() = %d, want 1", r.Redials())
+	}
+	if s.System == nil {
+		t.Fatal("no /system/resource after the reconnection: the retry did not run on the new client")
+	}
+	if len(s.Errors) != 0 {
+		t.Errorf("the round still reported errors after reconnecting: %v", s.Errors)
+	}
+}
+
+// TestNoRedialOnDeviceError: a !trap is the router answering on a healthy
+// connection. Reconnecting there would throw away a good socket and ask the
+// same refused question again.
+func TestNoRedialOnDeviceError(t *testing.T) {
+	trap := &deadClient{err: &rosapi.DeviceError{Sentence: &proto.Sentence{Word: "!trap", Map: map[string]string{"message": "not enough permissions (9)"}}}}
+	dials := 0
+	r := &Reader{
+		Client: trap,
+		Opts:   Options{Health: true},
+		Redial: func(context.Context) (Client, error) { dials++; return &fakeClient{}, nil },
+	}
+	s := r.Read(context.Background())
+	if dials != 0 {
+		t.Errorf("dialled %d times on a !trap, want 0", dials)
+	}
+	if len(s.Errors) == 0 {
+		t.Error("a !trap must still be reported as an error on the sample")
+	}
+}
+
+// TestRedialOnFatal: !fatal is the word RouterOS sends as it closes the
+// session, so unlike every other DeviceError the socket is finished.
+func TestRedialOnFatal(t *testing.T) {
+	fatal := &deadClient{err: &rosapi.DeviceError{Sentence: &proto.Sentence{Word: "!fatal", Map: map[string]string{"message": "session closed"}}}}
+	dials := 0
+	r := &Reader{
+		Client: fatal,
+		Opts:   Options{},
+		Redial: func(context.Context) (Client, error) { dials++; return &fakeClient{}, nil },
+	}
+	r.Read(context.Background())
+	if dials != 1 {
+		t.Errorf("dialled %d times on !fatal, want 1", dials)
+	}
+}
+
+// TestRedialIsSpaced: Read issues four or five commands a round at 1 Hz. A
+// router that is down must not be dialled once per command — each dial
+// carries a login.
+func TestRedialIsSpaced(t *testing.T) {
+	dead := &deadClient{err: errors.New("dial tcp 192.168.0.1:8728: connect: connection refused")}
+	dials := 0
+	r := &Reader{
+		Client:      dead,
+		Opts:        Options{Health: true, Interfaces: []string{"bridge"}, ConntrackEvery: time.Nanosecond, CountersEvery: time.Nanosecond},
+		RedialEvery: time.Hour,
+		Redial:      func(context.Context) (Client, error) { dials++; return nil, errors.New("still down") },
+	}
+	r.Read(context.Background())
+	r.Read(context.Background())
+	if dials != 1 {
+		t.Errorf("dialled %d times across two rounds of a down router, want 1 (RedialEvery is an hour)", dials)
+	}
+	if r.Redials() != 0 {
+		t.Errorf("Redials() = %d, want 0: no attempt succeeded", r.Redials())
+	}
+}
+
+// TestRedialRereadsInventory: a reconnection usually follows a reboot or an
+// upgrade, and an upgrade is when an interface can change its name, type or
+// bridge. Keeping the labels from before would tag fresh rates with stale
+// configuration.
+func TestRedialRereadsInventory(t *testing.T) {
+	live := &fakeClient{}
+	r := &Reader{Client: live, Opts: Options{Interfaces: []string{"bridge"}}}
+	if err := r.LoadInventory(context.Background()); err != nil {
+		t.Fatalf("LoadInventory: %v", err)
+	}
+	if len(r.InventoryList()) == 0 {
+		t.Fatal("no inventory read to begin with")
+	}
+	r.Client = &deadClient{err: errors.New("EOF")}
+	r.Redial = func(context.Context) (Client, error) { return &fakeClient{}, nil }
+	r.Read(context.Background())
+	if r.inv != nil {
+		t.Error("the inventory survived the reconnection; it must be re-read")
+	}
+	if r.inventoryDue() != true {
+		t.Error("the inventory is not due after a reconnection")
+	}
+}
+
+// TestNoClientConnectsOnFirstRound: the collector may start while the router
+// is rebooting. That must cost the first rounds, not the whole process.
+func TestNoClientConnectsOnFirstRound(t *testing.T) {
+	r := &Reader{Opts: Options{Health: true}}
+	if s := r.Read(context.Background()); len(s.Errors) == 0 {
+		t.Error("a reader with no client and no Redial must report errors")
+	}
+	r.Redial = func(context.Context) (Client, error) { return &fakeClient{}, nil }
+	s := r.Read(context.Background())
+	if s.System == nil {
+		t.Fatalf("still no system read after a Redial became available: %v", s.Errors)
+	}
+}

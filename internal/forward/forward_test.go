@@ -380,3 +380,41 @@ func TestResyncAfterAgentRestart(t *testing.T) {
 		t.Errorf("a quiet agent was taken for a restart: cursor %d, resyncs %d", since, f.stats.Resyncs)
 	}
 }
+
+// TestAPIFailuresAreLoggedOnceAndRecoveryIsSaid is the journal side of the
+// 2026-09-19 outage: the tier wrote one line per failed command per second,
+// 44 257 of them in three hours, all identical. The first failure is worth a
+// line; the 44 256 repeats are not; and the recovery — the line that closes
+// the window the graphs are missing — was never written at all.
+func TestAPIFailuresAreLoggedOnceAndRecoveryIsSaid(t *testing.T) {
+	var lines []string
+	f := &Forwarder{API: &apitier.Reader{}, Log: func(s string) { lines = append(lines, s) }}
+	broken := apitier.Sample{Errors: []string{"resource: broken pipe", "monitor-traffic: broken pipe"}}
+	for range 100 {
+		s := broken
+		f.noteAPI(&s)
+	}
+	if len(lines) != 2 {
+		t.Fatalf("logged %d lines for 100 identical failed rounds, want the 2 of the first round: %v", len(lines), lines)
+	}
+	if f.stats.APIFailed != 100 {
+		t.Errorf("APIFailed = %d, want 100: every failed round is counted even though it is not logged", f.stats.APIFailed)
+	}
+	ok := apitier.Sample{}
+	f.noteAPI(&ok)
+	if len(lines) != 3 || !strings.Contains(lines[2], "recovered after 100 failed round(s)") {
+		t.Fatalf("the recovery was not reported with its count: %v", lines)
+	}
+	// And the report stops hiding it. Before this, `api` counted rounds
+	// ATTEMPTED, so a tier whose every command failed reported a growing
+	// count and looked healthy.
+	if got := f.report(); !strings.Contains(got, "api: 100 failed round(s)") {
+		t.Errorf("report() hides the failures: %q", got)
+	}
+	// A healthy run carries no such clause: an operator should not read past
+	// two zeroes every minute.
+	clean := &Forwarder{API: &apitier.Reader{}, Log: func(string) {}}
+	if got := clean.report(); strings.Contains(got, "failed round(s)") {
+		t.Errorf("a clean report should not mention API failures: %q", got)
+	}
+}

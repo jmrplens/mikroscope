@@ -4,6 +4,43 @@ Notable changes per release. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the versions
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.9]
+
+### Fixed
+
+- **The API tier now reconnects.** It holds one persistent RouterOS API
+  connection, and nothing ever reopened it. On the reference RB5009 a RouterOS
+  upgrade on 2026-09-19 rebooted the router at 00:43:30 CEST; the kernel tier
+  resynced at 00:45:03 and carried on, and the API tier wrote to the dead
+  socket for the next **7 h 24 min** — 10 800 failures an hour, one per
+  command — until the collector was restarted by hand at 08:07:49. Every panel
+  the API feeds was blank for that window: interface throughput and packet
+  rate, per-port counters, RouterOS cpu-load, and "Reboots in the window",
+  which reads `uptime_s` and so could not count the very reboot that broke it.
+  A transport failure now reopens the connection, at most once every 5 s, and
+  the round is retried on the new one. A `!trap` does not: that is a live
+  router refusing a command, and repeating it would only spend its CPU. A
+  `!fatal` does, because that is the word RouterOS sends as it closes the
+  session. The inventory is re-read after a reconnection, since an upgrade is
+  exactly when an interface can change its name, type or bridge.
+
+- **A collector that starts while the router is down no longer gives up on the
+  API for the life of the process.** The first dial failing is a warning now,
+  not a disabled tier; the reader connects on the first round the router
+  answers. With `Restart=always` in the unit, a reboot could otherwise leave a
+  restarted collector permanently without an API tier.
+
+- **The report no longer hides an API outage.** `api` counts rounds
+  *attempted*, so through those 7 h 24 min the summary line read a healthy,
+  growing `82 610 api`. It now carries `api: N failed round(s), N
+  reconnect(s)` when either is nonzero, and nothing when both are zero.
+
+- **The failure is logged once, not once per command per second.** The outage
+  put **44 257 identical lines** into three hours of journal, which buried the
+  first one — the only one that said what happened. The first failed round is
+  logged, the rounds after it are silent, and the recovery is logged with the
+  count of what it closed.
+
 ## [1.0.8]
 
 ### Changed
