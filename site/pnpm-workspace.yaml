@@ -14,19 +14,18 @@ allowBuilds:
   puppeteer: true
   sharp: true
 
-auditConfig:
-  ignoreGhsas:
-    # extract-zip symlink path traversal: the advisory lists >=2.0.2 as patched,
-    # but no release after 2.0.1 exists on npm, so there is nothing to pin to.
-    # Dev-only path (pa11y-ci > puppeteer > @puppeteer/browsers). Remove this
-    # exception once extract-zip publishes a fixed release.
-    - GHSA-jmr9-qjv8-65gv
-    # extract-zip arbitrary file writes through symlink archive entries: the
-    # same package, the same dev-only path, and the same absence of anywhere to
-    # go. This one records no patched version at all, and 2.0.1 is still the
-    # last release published. Both exceptions retire together, on the release
-    # that fixes either.
-    - GHSA-7pqw-9j4j-h8q3
+# @puppeteer/browsers 2.x unpacks the browser archive with extract-zip, whose
+# last release is 2.0.1 from 2023-03-04 and which carries two open high
+# advisories with nowhere to go: the fix would have to be published by a
+# package nobody has published in three years. 3.x dropped it for modern-tar,
+# so the override takes the dependency out of the tree instead of accepting it.
+#
+# It is a major bump of a package puppeteer-core 24 calls directly, so it is
+# pinned here rather than left to a range, and `pnpm run a11y` is the test that
+# it still works. Remove it when pa11y-ci's puppeteer range reaches 25, which
+# depends on 3.x on its own.
+overrides:
+  "@puppeteer/browsers": "^3.2.2"
 
 # Resolve to the latest published versions; pnpm 11.8 applies a non-zero
 # release-age gate otherwise, which turns a fresh install into a different
