@@ -244,13 +244,25 @@ func waitAndDropTar(o *Options, imageFile string) string {
 		`/file/remove [find name="` + imageFile + `"]; `
 }
 
-// containerBySource selects the container by what it was created from, for
-// the Check count: the tar's path, or the registry reference.
-func containerBySource(o *Options, imageFile string) string {
-	if o.UsesRemoteImage() {
-		return ` remote-image="` + o.RemoteRef() + `"`
-	}
-	return ` file="` + imageFile + `"`
+// containerBySource selects the container that belongs to THIS install, for
+// the Check count that decides whether something untagged is sitting where
+// this one is about to go.
+//
+// The veth, and not the image it was created from. A remote-image install used
+// to be identified by its registry reference, which is the same string for
+// every mikroscope install on earth: a second one on the same router — its own
+// --name, --veth and --subnet, its own everything — found the first one and
+// refused with "exists on the router and was not created by mikroscope (no
+// ownership tag); pick another --name/--veth/--subnet", which is what had just
+// been done. Measured on the reference RB5009 on 2026-09-21 while testing the
+// GHCR route beside the running install.
+//
+// The veth is one-to-one with the install by construction: doctor checks the
+// name is free or ours before anything is written, and RouterOS stores it
+// verbatim, which root-dir is not — it comes back with a leading slash the
+// plan never wrote.
+func containerBySource(o *Options, _ string) string {
+	return ` interface="` + o.Veth + `"`
 }
 
 // plusImageFile adds the tar to an ownership count, for the install that

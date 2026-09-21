@@ -629,3 +629,52 @@ func TestScriptIsTheSameInstall(t *testing.T) {
 		t.Error("the tar script does not name the file the operator must upload")
 	}
 }
+
+// TestTwoInstallsOnOneRouterDoNotFindEachOther. The container step's Check
+// decides whether something untagged is sitting where this install is about to
+// go, and it used to ask for the image: `/container/find remote-image="..."`,
+// which is the same string for every mikroscope install anywhere. A second one
+// on the same router — its own name, veth and subnet — found the first and
+// refused with "pick another --name/--veth/--subnet", which was exactly what
+// had been passed. Seen on the reference RB5009 on 2026-09-21.
+func TestTwoInstallsOnOneRouterDoNotFindEachOther(t *testing.T) {
+	t.Parallel()
+	first := Defaults()
+	first.RemoteImage = "ghcr.io/jmrplens/mikroscope-agent:1.0.9"
+	if err := first.Finish(); err != nil {
+		t.Fatal(err)
+	}
+	second := Defaults()
+	second.Name = "mikroscope-ghcr"
+	second.Veth = "veth-msghcr"
+	second.Subnet = "172.30.20.0/30"
+	second.RemoteImage = "ghcr.io/jmrplens/mikroscope-agent:1.0.9"
+	if err := second.Finish(); err != nil {
+		t.Fatal(err)
+	}
+
+	check := func(o Options) string {
+		t.Helper()
+		for _, s := range Plan(o) {
+			if strings.HasPrefix(s.Name, "container ") {
+				return s.Check
+			}
+		}
+		t.Fatal("the plan has no container step")
+		return ""
+	}
+	a, b := check(first), check(second)
+	if a == b {
+		t.Fatalf("both installs ask the same question, so each finds the other:\n%s", a)
+	}
+	// And the question is about this install's own veth rather than about an
+	// image string every install shares.
+	for o, want := range map[string]string{a: first.Veth, b: second.Veth} {
+		if !strings.Contains(o, `interface="`+want+`"`) {
+			t.Errorf("the check does not name the veth %q:\n%s", want, o)
+		}
+		if strings.Contains(o, "remote-image=") {
+			t.Errorf("the check still identifies the container by its image:\n%s", o)
+		}
+	}
+}
