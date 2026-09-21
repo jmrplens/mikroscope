@@ -63,7 +63,7 @@ the credentials that have no flag at all.
 | `plan`      | Prints every object `install` would create, then stops. Same as `install --dry-run`; with `--rsc` it writes a RouterOS script instead. | no                   |
 | `install`   | Gets the image, prints the listing, runs `doctor`, asks for confirmation, writes, then probes the agent from this host.                | yes                  |
 | `upgrade`   | Gets a new image, checks that every install step is present, asks, removes and re-creates the container step, then probes.             | yes                  |
-| `uninstall` | Removes every step newest first, then verifies by ownership counts and fails naming anything that remains.                             | yes                  |
+| `uninstall` | Removes every step newest first, then verifies by ownership counts and fails naming anything that remains. `--targets` widens it past the router; nothing goes without `--yes`. | yes                  |
 | `status`    | Prints the ownership count of every step; if anything is installed, probes the agent and prints its health and board.                  | no                   |
 | `image`     | Builds the agent image tar and writes it to `--out`, for side-loading by hand.                                                         | no                   |
 
@@ -221,6 +221,65 @@ Every object carries the comment `mikroscope:<name> (managed by mikroscope)`
 `mikroscope plan` prints every command before anything is written.
 
 `uninstall` removes by exact tag plus identity, never by pattern, and fails naming the step if anything remains.
+
+#### `uninstall --targets`
+
+`uninstall` has meant "the objects `install` created on the router" since
+1.0.0 and still does when it is given nothing else. `--targets` widens it.
+
+| Target      | What goes                                                                                      |
+| ----------- | ------------------------------------------------------------------------------------------------ |
+| `router`    | the container, the veth, the address, and the two list memberships — the default                 |
+| `dashboard` | the dashboard and the datasource `forward --grafana` published, per store this collector writes to |
+| `data`      | the tables and indices the sinks wrote, and the files the file sinks wrote                        |
+| `all`       | the three above                                                                                  |
+
+```sh
+mikroscope uninstall                                  # lists the router objects
+mikroscope uninstall --yes                            # and removes them
+mikroscope uninstall --targets all --influx … --grafana …        # lists everything
+mikroscope uninstall --targets all --influx … --grafana … --yes  # and removes it
+```
+
+**Nothing is removed without `--yes`**, and that is the same `--yes` the
+deployment verbs take. The default is the list, because the alternative is one
+mistyped command that empties a store — and unlike the router objects, which
+`install` puts back, a dropped table is a dropped table.
+
+**The tables are asked of the store, never compiled in.** A list inside the
+binary would be the measurements *this* version writes, and the ones worth
+removing are exactly the ones nobody writes any more: what an earlier version
+collected, or a source switched off since. Everything under the
+`mikroscope_` prefix is claimed; nothing else is touched, ever.
+
+**An adopted datasource is not removed.** One named in
+`--grafana-datasource-uid` was somebody else's before this ran and is somebody
+else's after — publishing leaves it alone and so does this.
+
+**One that will not go does not stop the rest.** Each failure is printed with
+what the store said and the removal carries on, because stopping at the first
+would leave it half done with no list of what is left.
+
+> **Three sinks store nothing this can remove**
+>
+> `--prom` is scraped rather than written to, so the series live in a
+> Prometheus this has never heard of and age out with its retention.
+> `--graphite` offers no delete at all: remove the whisper files by hand.
+> `--sql` writes a file, and rows already loaded into a real database from it
+> have to be removed there — or with `--postgres` pointed at that database.
+> Each of them prints its own reason rather than being silently absent, because
+> silence would read as nothing to remove.
+
+One store needs a word about what "deleted" means to it:
+
+> **InfluxDB 3 deletes a table by renaming it**
+>
+> A table deleted through `/api/v3/configure/table` stays in
+> `information_schema` under a name carrying the deletion instant —
+> `mikroscope_cpu-20260919T225605`, measured 2026-09-20. Those are gone and are
+> not offered again; without that filter an uninstall would list the same
+> tables on every run, delete them successfully, and never empty. The delete
+> asks for `hard_delete_at=now`, which the server accepts and schedules.
 
 ### record, mark and plot
 
@@ -2387,6 +2446,31 @@ would trade the samples of the hour spent not running, which cannot be
 recovered, for a dashboard published on the next restart, which can. The line
 carries what the server said. `--grafana-dry-run` prints what it would write
 without writing anything, and runs before the router is touched.
+
+#### `uninstall` lists the same tables every time
+
+InfluxDB 3 deletes a table by **renaming** it and leaving the entry in
+`information_schema` under a name carrying the deletion instant. Before 1.1.0
+this would have listed those again on every run, deleted them successfully —
+the store accepts a delete of a name it has already retired — and never
+emptied. They are filtered out now. If you are looking at
+`mikroscope_cpu-20260919T225605` in a query result, that table is already
+gone.
+
+#### `uninstall --targets data` says a sink stores nothing it can remove
+
+Three of them genuinely do not. `--prom` is scraped rather than written to, so
+the series live in a Prometheus this has never heard of; `--graphite` offers no
+delete at all, and its whisper files have to go by hand; `--sql` writes a file,
+and rows already loaded from it into a real database have to be removed there —
+or with `--postgres` pointed at that database. Each prints its own reason,
+because silence would read as nothing to remove.
+
+#### `--targets dashboard` left the datasource behind
+
+It was adopted. A datasource named in `--grafana-datasource-uid` was somebody
+else's before the collector ran and is somebody else's after: publishing leaves
+it alone and so does removing.
 
 ### Reading what it shows
 

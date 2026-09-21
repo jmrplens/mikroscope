@@ -31,8 +31,10 @@ On the RB5009, verified means: a `doctor` → `install` → `status` → `upgrad
 `uninstall` round trip that leaves the router's export byte-identical; sampling
 at 10, 50 and 100 Hz with no loss; the agent's own cost measured at 2.85 % of
 one core and 31.3 MiB at the 10 Hz default; `record`, `mark` and `plot`;
-`forward` into Prometheus and InfluxDB 3; and both dashboards checked panel by
-panel. On the other two rows it means the agent cross-compiles and its image is
+`forward` into Prometheus and InfluxDB 3, with `--grafana` building the
+InfluxDB datasource and publishing its dashboard; and both dashboards checked
+panel by panel. `uninstall --targets data` has not been run against that
+device's store, only against the container suite's. On the other two rows it means the agent cross-compiles and its image is
 built in CI, and nothing more.
 
 RouterOS **7.24 or later** is the floor, on any of them: the container step
@@ -171,7 +173,8 @@ bin/mikroscope plan                     # every RouterOS command, nothing writte
 bin/mikroscope install                  # doctor, confirmation, writes, then probes the agent
 bin/mikroscope status                   # ownership counts and the agent's health
 bin/mikroscope upgrade                  # new image, container only; network objects stay
-bin/mikroscope uninstall                # removes and verifies
+bin/mikroscope uninstall                # lists the router objects; --yes removes and verifies
+bin/mikroscope uninstall --targets all --yes  # the router objects, the dashboards it published and the stores it wrote
 bin/mikroscope image --arch arm64       # build the tar yourself, for side-loading by hand
 bin/mikroscope plan --rsc --remote-image ghcr.io/jmrplens/mikroscope-agent:1.0.2 --out install.rsc  # install from the router
 bin/mikroscope record --for 5m --out cap   # cap.jsonl, cap.csv, cap.markers.csv; type lines to mark
@@ -179,6 +182,8 @@ bin/mikroscope mark --out cap "queue tree applied"   # a marker from another she
 bin/mikroscope mark --out cap --log-markers          # the router's own log lines, over the API
 bin/mikroscope plot --in cap            # cap.svg, deterministic
 bin/mikroscope forward --prom :9124 --influx "$MIKROSCOPE_INFLUX_URL" --interfaces bridge,ether1   # collector
+bin/mikroscope forward --influx http://influx:8181 --influx-db mikroscope --grafana http://grafana:3000  # and it sets Grafana up
+bin/mikroscope forward --postgres "$MIKROSCOPE_POSTGRES_DSN"   # the SQL sink's other half, down a connection
 bin/mikroscope dashboards gen           # dashboards/*.json; import/check need GRAFANA_URL and GRAFANA_TOKEN
 curl http://172.30.10.2:9123/metrics    # Prometheus text; /snapshot, /stream, /capabilities, /captures too
 ```

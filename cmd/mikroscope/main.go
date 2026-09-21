@@ -31,7 +31,8 @@ verbs
              --rsc writes it as a RouterOS script to run on the router itself
   install    doctor, get the agent image, deploy it, then probe the agent; --dry-run = plan
   upgrade    replace the container with a fresh image; network objects stay
-  uninstall  remove everything install created and verify by ownership counts
+  uninstall  remove what this put in place: --targets router (default), dashboard, data, all;
+             lists and removes nothing without --yes
   status     ownership counts and, if reachable, the agent's health
   image      write the agent image tar to --out (for side-loading by hand)
   record     pull samples for a window into <out>.jsonl/.csv with markers (stdin lines, gaps, --log-markers)
@@ -81,8 +82,18 @@ type cli struct {
 }
 
 func parse(verb string, args []string) (cli, error) {
+	return parseWith(verb, args, nil)
+}
+
+// parseWith is parse into a FlagSet the caller has already put its own flags
+// on, which is how `uninstall` adds --targets and the sink flags without
+// restating the twenty deployment ones. nil makes its own, and parse passes
+// nil.
+func parseWith(verb string, args []string, fs *flag.FlagSet) (cli, error) {
 	c := cli{opts: router.Defaults()}
-	fs := flag.NewFlagSet("mikroscope "+verb, flag.ContinueOnError)
+	if fs == nil {
+		fs = flag.NewFlagSet("mikroscope "+verb, flag.ContinueOnError)
+	}
 	fs.StringVar(&c.router, "router", env("ROUTER", ""), "ssh target: user@host or an ssh config alias (MIKROSCOPE_ROUTER)")
 	fs.StringVar(&c.sshPort, "ssh-port", env("SSH_PORT", ""), "ssh port; empty = ssh config (MIKROSCOPE_SSH_PORT)")
 	fs.StringVar(&c.sshKey, "ssh-key", env("SSH_KEY", ""), "ssh identity file; empty = agent / config (MIKROSCOPE_SSH_KEY)")
@@ -152,6 +163,17 @@ func main() {
 		}
 		return
 	}
+	// uninstall registers its own flags before the deployment ones are parsed,
+	// so it comes through here rather than through run().
+	if verb == "uninstall" {
+		if err := runUninstall(os.Args[2:], cli{opts: router.Defaults()}); err != nil {
+			if !errors.Is(err, flag.ErrHelp) {
+				fmt.Fprintln(os.Stderr, "mikroscope:", err)
+			}
+			os.Exit(1)
+		}
+		return
+	}
 	if verb == "record" || verb == "mark" || verb == "plot" || verb == "forward" {
 		var err error
 		c := cli{opts: router.Defaults()}
@@ -200,12 +222,6 @@ func run(verb string, c cli) error {
 		return install(c)
 	case "upgrade":
 		return upgrade(c)
-	case "uninstall":
-		r, err := c.runner()
-		if err != nil {
-			return err
-		}
-		return router.Uninstall(r, c.opts, os.Stdout)
 	case "status":
 		return status(c)
 	case "image":

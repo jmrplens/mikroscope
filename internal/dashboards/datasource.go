@@ -250,3 +250,34 @@ func (g *Grafana) EnsureFolder(ctx context.Context, title string) (string, Outco
 	}
 	return f.UID, Created, nil
 }
+
+// Exists reports whether there is an object at this path. A 404 is "no" rather
+// than an error: asking whether something is there is the ordinary case for an
+// uninstall, and most of the time it is not.
+func (g *Grafana) Exists(ctx context.Context, path string) (bool, error) {
+	res, err := g.call(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return false, err
+	}
+	switch {
+	case res.Status == http.StatusNotFound:
+		return false, nil
+	case res.Status/100 == 2:
+		return true, nil
+	default:
+		return false, fmt.Errorf("reading %s: %s", path, said(res))
+	}
+}
+
+// Delete removes the object at this path. One that is already gone is the
+// outcome asked for, not a failure.
+func (g *Grafana) Delete(ctx context.Context, path string) error {
+	res, err := g.call(ctx, http.MethodDelete, path, nil)
+	if err != nil {
+		return err
+	}
+	if res.Status/100 == 2 || res.Status == http.StatusNotFound {
+		return nil
+	}
+	return fmt.Errorf("deleting %s: %s", path, said(res))
+}
