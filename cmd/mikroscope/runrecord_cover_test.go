@@ -34,8 +34,10 @@ func fakeAgentServer(t *testing.T) (subnet string, port int) {
 	var mu sync.Mutex
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		// int64: a nanosecond wall clock does not fit the 32-bit int of
+		// linux/arm, which is one of the platforms this is type-checked for.
 		fmt.Fprintf(w, `{"ok":true,"seq":%d,"oldest_seq":1,"rate_hz":10,"version":"1.0.9","board":"RB5009","wall_ns":%d}`,
-			100, 1788000000000000000)
+			100, int64(1788000000000000000))
 	})
 	mux.HandleFunc("/snapshot", func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()

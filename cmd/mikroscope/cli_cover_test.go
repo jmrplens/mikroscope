@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -32,11 +33,44 @@ func capture(t *testing.T, f func()) string {
 	}
 	saved := os.Stdout
 	os.Stdout = w
+	// DRAINED WHILE f RUNS, not after it. A pipe holds one buffer and blocks
+	// its writer when that fills, so reading only after f returns deadlocks on
+	// any output larger than the buffer — and the buffer's size is the
+	// platform's, not Go's. `dashboards check` prints a line per panel, which
+	// fits the 64 KiB Linux gives and did not fit what Windows does: the test
+	// hung there for the full 30-minute timeout while passing locally in a
+	// second.
+	done := make(chan string, 1)
+	go func() {
+		b, _ := io.ReadAll(r)
+		done <- string(b)
+	}()
 	f()
 	os.Stdout = saved
 	_ = w.Close()
-	out, _ := io.ReadAll(r)
-	return string(out)
+	out := <-done
+	_ = r.Close()
+	return out
+}
+
+// A capture larger than any pipe buffer must come back whole. This is the
+// regression for the helper above: reading the pipe only after f returned
+// deadlocked the writer as soon as the output outgrew the buffer, which is a
+// platform's number and not Go's — it fit on Linux and hung for the full
+// 30-minute test timeout on Windows.
+func TestCaptureSurvivesMoreOutputThanAPipeHolds(t *testing.T) {
+	const lines = 20000
+	out := capture(t, func() {
+		for i := range lines {
+			fmt.Printf("line %d: %s\n", i, strings.Repeat("x", 60))
+		}
+	})
+	if got := strings.Count(out, "\n"); got != lines {
+		t.Errorf("captured %d lines of %d, want all of them", got, lines)
+	}
+	if !strings.Contains(out, fmt.Sprintf("line %d:", lines-1)) {
+		t.Error("the last line did not survive the capture")
+	}
 }
 
 // run is the verb switch. Every arm but the default needs a router, and with
