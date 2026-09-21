@@ -19,6 +19,54 @@ Así que el archivo que quieres aquí lo decide **tu** sistema operativo y tu
 CPU, no los del router. La arquitectura del router decide otra cosa, y esa
 tabla está en [Lo que necesita el router](/mikroscope/es/install/prerequisites/).
 
+## Una orden
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/jmrplens/mikroscope/main/install.sh | bash
+```
+
+o, en PowerShell en Windows:
+
+```powershell
+irm https://raw.githubusercontent.com/jmrplens/mikroscope/main/install.ps1 | iex
+```
+
+Cualquiera de los dos hace por su cuenta todo lo que el resto de esta página
+hace a mano: averigua tu plataforma, resuelve la versión más reciente, descarga
+ese archivo y el `checksums.txt` de la release, y **se niega a instalar nada
+cuyo SHA-256 no sea el que publicó la release**. No hay opción para saltarse esa
+comprobación. Un script metido por una tubería a una shell es la forma menos
+inspeccionable de instalar algo, así que lo único que no debe hacer es fiarse de
+lo que acaba de descargar. Donde `cosign` ya esté en la máquina, verifica además
+que el `checksums.txt` salió del workflow de release; donde no esté, la suma de
+comprobación se sigue exigiendo.
+
+Instala en `/usr/local/bin` cuando se puede escribir ahí y en `~/.local/bin` si
+no, y si el directorio no está en tu `PATH` imprime la línea que hay que añadir
+y el fichero donde añadirla. No echará mano de `sudo` por su cuenta: un script
+leído de la red no debería ser quien decide convertirse en root.
+
+<Aside type="note" title="Ofrece la otra mitad, y no la hace en silencio">
+  En una terminal pregunta después si poner el agente en un router. Decir que sí
+  ejecuta `mikroscope doctor` —de solo lectura— y luego `mikroscope install`, que
+  imprime cada orden de RouterOS que va a ejecutar y espera tu respuesta. No se
+  le pasa nada que salte esa pregunta. Metido por una tubería sin terminal,
+  imprime las dos órdenes en vez de preguntar, porque no hay nadie para
+  contestar.
+</Aside>
+
+Dos argumentos, que son también las variables `VERSION` y `BIN_DIR` para poder
+fijarlos a través de una tubería:
+
+```sh
+curl -fsSL .../install.sh | VERSION=1.0.9 BIN_DIR=~/bin bash
+./install.sh --version 1.0.9 --dir ~/bin      # lo mismo, con el fichero descargado antes
+```
+
+El resto de esta página es lo que hacen esos scripts, plataforma por plataforma,
+para quien prefiera leer él mismo la suma de comprobación del archivo — o esté
+en una máquina donde `curl | bash` no es algo que se teclee.
+
 ## Qué archivo
 
 <ScrollTable label="Qué archivo de la CLI descargar para tu propia máquina">

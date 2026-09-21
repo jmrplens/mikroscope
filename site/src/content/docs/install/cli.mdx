@@ -19,6 +19,53 @@ So the archive you want here is picked by **your** operating system and CPU,
 not by the router's. The router's architecture decides something else, and
 [What the router needs](/mikroscope/install/prerequisites/) has that table.
 
+## One command
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/jmrplens/mikroscope/main/install.sh | bash
+```
+
+or, in PowerShell on Windows:
+
+```powershell
+irm https://raw.githubusercontent.com/jmrplens/mikroscope/main/install.ps1 | iex
+```
+
+Either script does by itself everything the rest of this page does by hand:
+work out your platform, resolve the newest version, download that archive and
+the release's `checksums.txt`, and **refuse to install anything whose SHA-256
+is not the one the release published**. There is no flag to skip that check. A
+script piped into a shell is the least inspectable way to install anything, so
+the one thing it must not do is trust what it just downloaded. Where `cosign`
+is already on the machine it also verifies that `checksums.txt` came from the
+release workflow; where it is not, the checksum is still enforced.
+
+It installs into `/usr/local/bin` when that is writable and `~/.local/bin`
+otherwise, and if the directory is not on your `PATH` it prints the line to add
+and the file to add it to. It will not reach for `sudo` on its own: a script
+read off the network should not be the thing that decides to become root.
+
+<Aside type="note" title="It offers the other half, and does not do it quietly">
+  On a terminal it then asks whether to put the agent on a router. Saying yes
+  runs `mikroscope doctor` — read-only — and then `mikroscope install`, which
+  prints every RouterOS command it is about to run and waits for your answer.
+  Nothing is passed that would skip that prompt. Piped into a shell with no
+  terminal it prints the two commands instead of asking, because there is
+  nobody there to answer.
+</Aside>
+
+Two arguments, which are also the `VERSION` and `BIN_DIR` variables so they can
+be set through a pipe:
+
+```sh
+curl -fsSL .../install.sh | VERSION=1.0.9 BIN_DIR=~/bin bash
+./install.sh --version 1.0.9 --dir ~/bin      # the same, with the file downloaded first
+```
+
+The rest of this page is what those scripts do, one platform at a time, for
+anyone who would rather read the archive's checksum themselves — or who is on a
+machine where `curl | bash` is not something to type.
+
 ## Which archive
 
 <ScrollTable label="Which CLI archive to download for your own machine">

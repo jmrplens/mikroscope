@@ -45,6 +45,15 @@ necesites, o copia `.env.example` a `.env` y carga el fichero con `set -a; . ./.
 1. **Conseguir mikroscope.**
 
    ```sh wrap
+   curl -fsSL https://raw.githubusercontent.com/jmrplens/mikroscope/main/install.sh | bash
+   ```
+
+   Eso averigua la plataforma, toma la versión más reciente y se niega a instalar nada cuya suma
+   de comprobación no sea la que publicó la release; `irm …/install.ps1 | iex` es la mitad de
+   PowerShell. [Conseguir la CLI](/mikroscope/es/install/cli/) tiene el mismo camino a mano,
+   plataforma por plataforma, para una máquina donde `curl | bash` no es algo que se teclee:
+
+   ```sh wrap
    tar xzf mikroscope_1.0.9_linux_x86_64.tar.gz   # un .zip en Windows
    ./mikroscope version
    ```
