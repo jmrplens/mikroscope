@@ -2,6 +2,7 @@ package router
 
 import (
 	"bytes"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -627,5 +628,109 @@ func TestScriptIsTheSameInstall(t *testing.T) {
 	Script(tarOpts, &tb)
 	if !strings.Contains(tb.String(), tarOpts.ImageFile()) {
 		t.Error("the tar script does not name the file the operator must upload")
+	}
+}
+
+// TestTwoInstallsOnOneRouterDoNotFindEachOther. The container step's Check
+// decides whether something untagged is sitting where this install is about to
+// go, and it used to ask for the image: `/container/find remote-image="..."`,
+// which is the same string for every mikroscope install anywhere. A second one
+// on the same router — its own name, veth and subnet — found the first and
+// refused with "pick another --name/--veth/--subnet", which was exactly what
+// had been passed. Seen on the reference RB5009 on 2026-09-21.
+func TestTwoInstallsOnOneRouterDoNotFindEachOther(t *testing.T) {
+	t.Parallel()
+	first := Defaults()
+	first.RemoteImage = "ghcr.io/jmrplens/mikroscope-agent:1.0.9"
+	if err := first.Finish(); err != nil {
+		t.Fatal(err)
+	}
+	second := Defaults()
+	second.Name = "mikroscope-ghcr"
+	second.Veth = "veth-msghcr"
+	second.Subnet = "172.30.20.0/30"
+	second.RemoteImage = "ghcr.io/jmrplens/mikroscope-agent:1.0.9"
+	if err := second.Finish(); err != nil {
+		t.Fatal(err)
+	}
+
+	check := func(o Options) string {
+		t.Helper()
+		for _, s := range Plan(o) {
+			if strings.HasPrefix(s.Name, "container ") {
+				return s.Check
+			}
+		}
+		t.Fatal("the plan has no container step")
+		return ""
+	}
+	a, b := check(first), check(second)
+	if a == b {
+		t.Fatalf("both installs ask the same question, so each finds the other:\n%s", a)
+	}
+	// And the question is about this install's own veth rather than about an
+	// image string every install shares.
+	for o, want := range map[string]string{a: first.Veth, b: second.Veth} {
+		if !strings.Contains(o, `interface="`+want+`"`) {
+			t.Errorf("the check does not name the veth %q:\n%s", want, o)
+		}
+		if strings.Contains(o, "remote-image=") {
+			t.Errorf("the check still identifies the container by its image:\n%s", o)
+		}
+	}
+}
+
+// A RouterOS `find` reads a bare word as a variable name, and an unset
+// variable is the empty value — so `find protocol=tcp` matches nothing while
+// `find protocol="tcp"` matches. Measured on the reference RB5009 (7.24.4,
+// 2026-09-21): over the same 15 dstnat rules the first returned 0 and the
+// second 10.
+//
+// The expose steps shipped with that one value unquoted while every other
+// value in the same selector was quoted, and nothing caught it because the
+// selector is the Check, the Owned AND the Remove at once: the three agreed
+// with each other and disagreed with the router. `uninstall --expose` removed
+// neither firewall rule and then reported "verified: nothing mikroscope
+// created remains on the router" over a live dst-nat, and `install` could not
+// see its own rule, so installing twice left two copies.
+//
+// Creation is not affected — `add protocol=tcp` takes a bare word — which is
+// why the rules appeared correctly and only vanished from their own queries.
+func TestFindSelectorsQuoteEveryValue(t *testing.T) {
+	t.Parallel()
+	o := Defaults()
+	o.Expose = true
+	o.LANAddress = "192.168.0.1"
+	o.Token = "t0ken"
+	if err := o.Finish(); err != nil {
+		t.Fatal(err)
+	}
+	// Two stages: isolate each `find …` region, then walk every key=value
+	// inside it. One regex cannot do both, because FindAllStringSubmatch
+	// returns non-overlapping matches and would stop at the first pair.
+	findRegion := regexp.MustCompile(`find\s+([^\]]*)`)
+	pair := regexp.MustCompile(`\b([a-z-]+)=([^\s\]]+)`)
+	for _, step := range Plan(o) {
+		for _, q := range []struct{ what, text string }{
+			{"Check", step.Check}, {"Owned", step.Owned}, {"Remove", step.Remove},
+		} {
+			for _, region := range findRegion.FindAllStringSubmatch(q.text, -1) {
+				for _, m := range pair.FindAllStringSubmatch(region[1], -1) {
+					key, val := m[1], m[2]
+					// chain= and action= name RouterOS enums that `find` does
+					// take bare; they are written that way throughout and work.
+					if key == "chain" || key == "action" {
+						continue
+					}
+					// Quoted, numeric, or a script variable: all fine.
+					if strings.HasPrefix(val, `"`) || strings.HasPrefix(val, "$") || val[0] >= '0' && val[0] <= '9' {
+						continue
+					}
+					t.Errorf("step %q: %s selects %s=%s with an unquoted value. "+
+						"A RouterOS find reads a bare word as a variable, so this matches nothing "+
+						"while the rule exists; write %s=%q.", step.Name, q.what, key, val, key, val)
+				}
+			}
+		}
 	}
 }

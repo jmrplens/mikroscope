@@ -161,9 +161,10 @@ every other check with it.
 
 <NotClaimed variant="untested">
 	An install on arm or x86_64: every installation so far ran on one arm64 RB5009, and the hEX S that
-	will test 32-bit RouterOS has not arrived. Any RouterOS other than 7.24.2. The container step
-	writes `privileged=`, which RouterOS added in 7.24, and envlist entries with `key=`, where `name=`
-	fails on 7.24.2; how an earlier 7.x takes either was not tried.
+	will test 32-bit RouterOS has not arrived. Any RouterOS before 7.24: the container step writes
+	`privileged=`, which RouterOS added in 7.24, and envlist entries with `key=`, where `name=` fails
+	on 7.24.2; how an earlier 7.x takes either was not tried. Installs have run on 7.24.2 and 7.24.4
+	and on nothing else.
 </NotClaimed>
 
 <SeeAlso>

@@ -166,10 +166,55 @@ rutas y la etiqueta de ese plan. Así que:
   `--disk` o `--ephemeral` deciden qué casan los selectores; cambia uno y el
   verbo busca otros objetos.
 
+Las tres se ejecutaron contra el RB5009 de referencia (RouterOS 7.24.4) el
+2026-09-21, como una segunda instalación junto a la de producción y con su
+propio `--name`, `--veth`, `--subnet` y `--port`. **Se cumplen, y la segunda es
+peor de lo que se lee.**
+
+La instalación se hizo expuesta, con token y con `--rate 20 --buffer 90
+--mem-limit-mb 64 --capture-mb 8 --floor-hz 5 --memory-max 96M`. A través de la
+dirección LAN del router, `/snapshot` respondía entonces `401` sin token, `200`
+con él y `401` con uno equivocado.
+
+Un `upgrade` al que solo se le dieron `--name`, `--veth`, `--subnet` y `--port`
+reescribió la envlist con `RATE_HZ=10`, `BUFFER_S=60`, `MEM_LIMIT_MB=16`,
+`CAPTURE_MB=4`, ninguna línea `FLOOR_HZ` —y **ningún `TOKEN`**—. Las dos reglas
+de firewall no están en el plan de un upgrade, así que la exposición siguió
+intacta, y el mismo `/snapshot` que un minuto antes respondía `401` devolvió
+`200` y 68 041 bytes de telemetría del kernel a cualquier cosa de la LAN. **El
+valor por defecto de `--token` es vacío, así que «escribe los valores por
+defecto en su lugar» significa que un upgrade quita la autenticación, sin
+avisar, de una instalación que sigue publicada.** Pásale `--token` a todo
+`upgrade` de una instalación expuesta.
+
+El `uninstall` sin `--expose` quitó después el contenedor, la veth, la
+dirección y las dos pertenencias a listas, imprimió `verified: nothing
+mikroscope created remains on the router` y dejó el dst-nat apuntando a
+`172.30.21.2`, una dirección que ya no existía en el equipo.
+
+<Aside type="caution" title="Corregido en esta versión: las reglas de expose no se podían borrar">
+	La ejecución además destapó un defecto. Los dos selectores de expose llevaban `protocol=tcp` sin
+	comillas, y un `find` de RouterOS lee una palabra suelta como nombre de variable —y una variable
+	sin asignar es el valor vacío—, así que el selector no casaba con nada. Medido en el mismo
+	equipo: sobre las mismas 15 reglas dstnat, `find chain=dstnat protocol=tcp` devolvió `0` y `find
+	chain=dstnat protocol="tcp"` devolvió `10`.
+
+	La misma cadena es la comprobación de existencia, la de propiedad y el borrado, así que las tres
+	coincidían entre sí y discrepaban del router: `uninstall --expose` no borraba **ninguna** de las
+	dos reglas y luego informaba de `verified: nothing mikroscope created remains` sobre un dst-nat
+	vivo, e `install` no veía su propia regla, así que instalar dos veces dejaba dos copias. La
+	creación nunca se vio afectada —`add protocol=tcp` sí acepta una palabra suelta—, que es la razón
+	de que las reglas aparecieran bien y solo fueran invisibles para sus propias consultas. Ahora los
+	dos selectores entrecomillan el valor, `TestFindSelectorsQuoteEveryValue` falla si uno nuevo no lo
+	hace, y el binario corregido borró las dos reglas que había dejado el binario sin corregir.
+</Aside>
+
+Lo que esa ejecución no cubrió:
+
 <NotClaimed variant="untested">
-	Las tres consecuencias de arriba están leídas de `internal/router/deploy.go`, `probe.go` y
-	`steps.go`. Ninguna se ha ejercitado contra el router: en particular, no se ha ejecutado un
-	`upgrade` que pierda el token de una instalación expuesta.
+	`--disk` frente a `--ephemeral` como aquello que cambia qué objetos casan los selectores: la
+	ejecución varió `--name`, `--veth`, `--subnet` y `--port`, no el modo de almacenamiento. Una
+	instalación expuesta en cualquier placa que no sea el RB5009.
 </NotClaimed>
 
 ### Lo que escriben los verbos que escriben

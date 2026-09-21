@@ -164,10 +164,53 @@ own invocation and selects objects by that plan's names, paths and tag. So:
   `--disk` or `--ephemeral` decide what the selectors match; change one and
   the verb is looking for different objects.
 
+All three were run against the reference RB5009 (RouterOS 7.24.4) on
+2026-09-21, as a second install beside the production one under its own
+`--name`, `--veth`, `--subnet` and `--port`. **They hold, and the second one is
+worse than it reads.**
+
+The install was made exposed, with a token and with `--rate 20 --buffer 90
+--mem-limit-mb 64 --capture-mb 8 --floor-hz 5 --memory-max 96M`. Through the
+router's LAN address `/snapshot` then answered `401` with no token, `200` with
+it, and `401` with a wrong one.
+
+An `upgrade` given only `--name`, `--veth`, `--subnet` and `--port` rewrote the
+envlist to `RATE_HZ=10`, `BUFFER_S=60`, `MEM_LIMIT_MB=16`, `CAPTURE_MB=4`, no
+`FLOOR_HZ` line at all — and **no `TOKEN`**. The two firewall rules are not in
+an upgrade's plan, so the exposure survived untouched, and the same
+`/snapshot` that had answered `401` a minute earlier returned `200` and
+68 041 bytes of kernel telemetry to anything on the LAN. **The default for
+`--token` is empty, so "writes the defaults in their place" means an upgrade
+silently removes authentication from an install that is still published.**
+Pass `--token` to every `upgrade` of an exposed install.
+
+The `uninstall` without `--expose` then removed the container, the veth, the
+address and both list memberships, printed `verified: nothing mikroscope
+created remains on the router`, and left the dst-nat pointing at
+`172.30.21.2` — an address that no longer existed on the device.
+
+<Aside type="caution" title="Fixed in this release: the expose rules could not be removed at all">
+	The run also found a defect. Both expose selectors carried `protocol=tcp` unquoted, and a
+	RouterOS `find` reads a bare word as a variable name — an unset variable is the empty value, so
+	the selector matched nothing. Measured on the same device: over the same 15 dstnat rules, `find
+	chain=dstnat protocol=tcp` returned `0` and `find chain=dstnat protocol="tcp"` returned `10`.
+
+	The same string is the existence check, the ownership check and the removal, so all three agreed
+	with each other and disagreed with the router: `uninstall --expose` removed **neither** rule and
+	then reported `verified: nothing mikroscope created remains` over a live dst-nat, and `install`
+	could not see its own rule, so installing twice left two copies. Creation was never affected —
+	`add protocol=tcp` takes a bare word — which is why the rules appeared correctly and were
+	invisible only to their own queries. Both selectors quote the value now,
+	`TestFindSelectorsQuoteEveryValue` fails if a new one does not, and the fixed binary removed the
+	two rules the unfixed one had left behind.
+</Aside>
+
+What that run did not cover:
+
 <NotClaimed variant="untested">
-	The three consequences above are read from `internal/router/deploy.go`, `probe.go` and `steps.go`.
-	None of them was exercised against the router: an `upgrade` that drops the token of an exposed
-	install, in particular, has not been run.
+	`--disk` against `--ephemeral` as the thing that changes which objects the selectors match: the
+	run varied `--name`, `--veth`, `--subnet` and `--port`, not the storage mode. An exposed install
+	on any board other than the RB5009.
 </NotClaimed>
 
 ### What the writing verbs write

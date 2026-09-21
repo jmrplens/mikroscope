@@ -495,12 +495,16 @@ su explicación y no una insignia roja de error. Cómo decide el sondeo está en
   (<Measured id="budget.cpu" /> de un núcleo, <Measured id="budget.rss" />).
 
 <NotClaimed variant="untested" title="Versiones de Grafana">
-	Los dashboards se comprobaron en Grafana 12.3.2 (2026-09-12) y Grafana 13.2.1 (pasadas en el
+	Los dashboards se comprobaron en Grafana 12.3.2 (2026-09-12), Grafana 13.2.1 (pasadas en el
 	navegador el 2026-09-12 y el 2026-09-14, `check` y renderizado el 2026-09-15, y `check` otra vez el
-	2026-09-16). Las opciones de los
-	paneles están escritas según el esquema que espera Grafana 13.2.1 — la marca del xychart, por
-	ejemplo, cambió de sitio entre Grafana 11 y 13 — y `__requires` declara Grafana 11.0.0. No se ha
-	probado ninguna versión aparte de esas dos.
+	2026-09-16) y Grafana 12.3.0 (2026-09-21: `import` contra el almacén InfluxDB 3 en producción y
+	después `check` sobre una ventana de 15 min —167 paneles devolvieron filas, los 9 que se sabe que
+	salen vacíos salieron vacíos, y el marcador de detecciones del Overview salió vacío porque el
+	almacén no tenía ninguna detección en esa ventana, que es el único caso que `check` señala y que
+	un navegador lee como el «none» sano—). Las opciones de los paneles están escritas según el
+	esquema que espera Grafana 13.2.1 — la marca del xychart, por ejemplo, cambió de sitio entre
+	Grafana 11 y 13 — y `__requires` declara Grafana 11.0.0. No se ha probado ninguna versión aparte
+	de esas tres, y la 12.3.0 se comprobó solo por consulta, sin renderizar nunca en un navegador.
 </NotClaimed>
 
 <SeeAlso>

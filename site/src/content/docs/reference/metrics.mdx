@@ -77,10 +77,19 @@ The counters on the collector count from the collector's start, and
 collector. `mikroscope_self_*` still describe the agent: they come from the
 agent's samples.
 
+The first three were checked against a real agent on 2026-09-21, run at 100 Hz
+and again at 50 Hz with the collector pulling from it: `/healthz` read
+`rate_hz` 100 and 50 and the collector's own log named the same rate back,
+while `mikroscope_info{rate_hz}` read `10` at both; `mikroscope_cpu_busy_ticks`
+carried the buckets `le="0"` through `le="11"` plus `+Inf` at both; and
+`window="1s"`, `window="10s"` and `window="60s"` were all present at both.
+
 <NotClaimed variant="untested">
-	The consequences listed above for an agent running at a rate other than 10 Hz are arithmetic from
-	`internal/sinks/prometheus.go`. None of them was compared against the agent's own exposition at 50
-	or 100 Hz.
+	The last two are still arithmetic, from `internal/expo/expo.go`: the collector's `Totals` is
+	sized once at the nominal 10 Hz and `SetSamplerRate` resizes only the ring, never re-buckets, so
+	the 1/600 weight and the 36 000-sample eviction stand whatever the agent's rate. Neither was
+	watched happening — the eviction needs an interrupt line to fall out of the top-K and stay out,
+	which no run has provoked.
 </NotClaimed>
 
 ## Conventions

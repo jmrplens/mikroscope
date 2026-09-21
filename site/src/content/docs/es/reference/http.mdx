@@ -5,7 +5,6 @@ description: Cada ruta que sirve el agente en la veth, sus parámetros de consul
 
 import { Aside } from "@astrojs/starlight/components";
 import Measured from "../../../../components/Measured.astro";
-import NotClaimed from "../../../../components/NotClaimed.astro";
 import PrivilegedOnly from "../../../../components/PrivilegedOnly.astro";
 import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
@@ -179,7 +178,8 @@ líneas.
 ## `GET /stream`
 
 NDJSON por trozos con `Cache-Control: no-store`, abierto hasta que el cliente
-se va.
+se va o hasta que lo cierra el `WriteTimeout` de 30 s del servidor, lo que
+ocurra antes.
 
 - `since` ausente o `0`: empieza en directo. La primera muestra que se escribe
   es la siguiente que se produce después de la petición; la más reciente que ya
@@ -195,13 +195,15 @@ se va.
 
 Un `since` que no es un número es `400`.
 
-<NotClaimed variant="untested">
-	El `WriteTimeout` de 30 s del servidor se aplica a todas las respuestas, y el servidor HTTP de Go
-	no lo levanta para un manejador que sigue escribiendo, así que cabe esperar que una conexión a
-	`/stream` termine unos 30 s después de abrirse. Eso está leído de `internal/agent/agent.go` y
-	`http.go`, no medido. La CLI no depende de `/stream`: `record` y `forward` tiran de
-	`/snapshot?since=`.
-</NotClaimed>
+El `WriteTimeout` de 30 s del servidor se aplica a todas las respuestas, y el
+servidor HTTP de Go no lo levanta para un manejador que sigue escribiendo, así
+que una conexión a `/stream` termina unos 30 s después de abrirse por mucho que
+le quede por decir. Medido en el RB5009 de referencia (RouterOS 7.24.4, agente
+1.0.9 a 10 Hz) el 2026-09-21: tres conexiones duraron <Measured id="stream.lifetime" />
+y llevaron <Measured id="stream.lines" /> líneas cada una. **Quien consuma
+`/stream` tiene que reconectar**, con el último `seq` que vio como `since` para
+que se rellene el hueco. La CLI no depende de `/stream`: `record` y `forward`
+tiran de `/snapshot?since=`.
 
 ## Los tipos de línea
 

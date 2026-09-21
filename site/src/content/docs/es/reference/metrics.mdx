@@ -81,10 +81,21 @@ Los contadores del colector cuentan desde que arrancó el colector, y
 `mikroscope_self_*` siguen describiendo el agente: salen de las muestras del
 agente.
 
+Las tres primeras se comprobaron contra un agente real el 2026-09-21,
+ejecutado a 100 Hz y otra vez a 50 Hz con el colector tirando de él: `/healthz`
+daba `rate_hz` 100 y 50 y el propio registro del colector repetía esa misma
+cadencia, mientras que `mikroscope_info{rate_hz}` valía `10` en los dos casos;
+`mikroscope_cpu_busy_ticks` llevaba los cubos `le="0"` a `le="11"` más `+Inf` en
+los dos; y `window="1s"`, `window="10s"` y `window="60s"` estaban los tres
+presentes en los dos.
+
 <NotClaimed variant="untested">
-	Las consecuencias enumeradas arriba para un agente que funciona a una cadencia distinta de 10 Hz
-	son aritmética a partir de `internal/sinks/prometheus.go`. Ninguna se ha comparado con la propia
-	exposición del agente a 50 o 100 Hz.
+	Las dos últimas siguen siendo aritmética, de `internal/expo/expo.go`: el `Totals` del colector se
+	dimensiona una sola vez con los 10 Hz nominales y `SetSamplerRate` solo redimensiona el anillo,
+	nunca rehace los cubos, así que el peso de 1/600 y el desalojo a las 36 000 muestras valen sea
+	cual sea la cadencia del agente. No se ha visto ocurrir ninguna de las dos: el desalojo necesita
+	que una línea de interrupción se caiga del top-K y siga fuera, y ninguna ejecución lo ha
+	provocado.
 </NotClaimed>
 
 ## Convenciones

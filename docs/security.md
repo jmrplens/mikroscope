@@ -152,7 +152,7 @@ either.
 >
 > Reboot survival of the persistent install is untested: the reference router is production and is
 > not rebooted for tests. The container settings above were verified on one RB5009 running RouterOS
-> 7.24.2; no other board or RouterOS version was tried.
+> 7.24.2 and re-exercised on 7.24.4; no other board was tried.
 
 ### See also
 

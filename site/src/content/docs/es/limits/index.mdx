@@ -95,12 +95,28 @@ El agente detecta al arrancar lo que tiene el kernel y lo publica en `/capabilit
 en cada muestra y en cada destino, nunca valen cero. El agente sí lee PSI y `schedstat` donde el
 kernel los tiene.
 
+Los dos analizadores leen ya el kernel que ejecuta la batería de pruebas en vez
+de una captura: `TestParsePressureReadsTheRunningKernel` y
+`TestParseSchedstatReadsTheRunningKernel` analizan el
+`/proc/pressure/{cpu,memory,io}` y el `/proc/schedstat` del propio equipo y
+comparan el resultado con una segunda lectura independiente de esos mismos
+bytes, y se saltan la prueba donde los ficheros no están —que es justo el caso
+del RB5009—. En el equipo de desarrollo amd64 (kernel 6.12.107) pasan, y el
+`/proc/pressure/cpu` de ese kernel lleva línea `full`, cosa que la mayoría de
+los kernels no hace.
+
+El conjunto de contadores de la PMU de ese equipo se registró el 2026-09-21:
+seis contadores —`cycles`, `instructions`, `cache-references`, `cache-misses`,
+`branch-instructions` y `branch-misses`— y van multiplexados, cada uno
+funcionando en torno al 84 % del tiempo que estuvo habilitado. Esa es la razón
+de que el agente mande `enabled_ns` y `running_ns` junto a cada cuenta en vez
+de la cuenta a secas: en una CPU que multiplexa, el número crudo es una muestra
+del intervalo, no el intervalo.
+
 <NotClaimed variant="untested">
 	Los caminos de PSI y `schedstat` nunca se han ejecutado en el RB5009, porque su kernel carece de
-	ambos. El camino de `schedstat` solo se ejecutó en el equipo de desarrollo amd64 (kernel 6.12.107,
-	2026-09-12); el analizador de PSI solo se ha probado con entradas sintéticas. La PMU se abrió en
-	ese equipo de desarrollo (2026-09-12), pero no se registró qué contadores abrió; en ninguna CPU
-	salvo el Cortex-A72 del RB5009 se conoce el conjunto de contadores. El hEX S, una compilación de
+	ambos, así que nunca se han ejecutado en un router. En ninguna CPU salvo el Cortex-A72 del RB5009
+	y este equipo amd64 se conoce el conjunto de contadores de la PMU. El hEX S, una compilación de
 	RouterOS de 32 bits sobre un chip ARM64, no se ha medido en absoluto.
 </NotClaimed>
 

@@ -169,10 +169,10 @@ también todas las demás comprobaciones.
 
 <NotClaimed variant="untested">
 	Una instalación en arm o x86_64: todas las instalaciones hasta ahora se hicieron en un único
-	RB5009 arm64, y el hEX S que probará RouterOS de 32 bits no ha llegado. Cualquier RouterOS que no
-	sea 7.24.2. El paso del contenedor escribe `privileged=`, que RouterOS añadió en 7.24, y entradas
-	de envlist con `key=`, donde `name=` falla en 7.24.2; no se probó cómo acepta una 7.x anterior
-	cualquiera de las dos.
+	RB5009 arm64, y el hEX S que probará RouterOS de 32 bits no ha llegado. Cualquier RouterOS
+	anterior a 7.24: el paso del contenedor escribe `privileged=`, que RouterOS añadió en 7.24, y
+	entradas de envlist con `key=`, donde `name=` falla en 7.24.2; no se probó cómo acepta una 7.x
+	anterior cualquiera de las dos. Se ha instalado sobre 7.24.2 y 7.24.4, y sobre nada más.
 </NotClaimed>
 
 <SeeAlso>

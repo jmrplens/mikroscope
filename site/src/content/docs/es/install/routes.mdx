@@ -142,13 +142,49 @@ instalación misma — con 15 ms en sus primeras muestras. `uninstall` verificó
 después por recuento de propiedad en cada caso, y el `/export` del router tras
 las cuatro era idéntico byte a byte al tomado antes de ellas.
 
+### `--remote-image` contra GHCR
+
+La quinta ejecución fue el 2026-09-21, en el mismo RB5009 ya con RouterOS
+7.24.4, como una segunda instalación junto a la que estaba corriendo, con su
+propio `--name`, `--veth`, `--subnet` y `--port`. **No funcionó, y conviene
+saber por qué antes de elegir registro.**
+
+`/container/config registry-url` es un único ajuste global de RouterOS, así que
+apuntarlo a `https://ghcr.io` cambia el registro para todos los contenedores
+del equipo; se cambió para la prueba y se dejó como estaba al terminar.
+`doctor` lo leyó primero y se negó indicando el desajuste exacto —`MISSING
+registry-url is https://ghcr.io`—, que es la comprobación haciendo su trabajo.
+Con el registro apuntando a GHCR el router creó el contenedor y falló al
+bajarse la imagen:
+
+```text
+download/extract error: fetch manifest failed:
+  getting https://ghcr.io/v2/jmrplens/mikroscope-agent/manifests/1.0.9 failed: auth error
+```
+
+`/container/config` lleva **un** usuario y una contraseña para todos los
+registros, y los del router de referencia son de Docker Hub. Medido el mismo
+día desde el equipo del operador, contra ese mismo paquete público: sin
+credencial ninguna se obtiene `200` una vez pedido el token anónimo, y con una
+credencial ajena el punto de token responde `403`. Es decir: la credencial se
+manda a GHCR, GHCR la rechaza y RouterOS informa de `auth error` —que la imagen
+sea pública no ayuda, porque el router nunca pregunta de forma anónima.
+
+Lo que esto implica: **un router cuyo `/container/config` tenga un usuario de
+Docker Hub no puede bajarse imágenes de GHCR**, y la salida es poner en ese
+mismo campo un token de GHCR o quedarse en Docker Hub. No se ha probado un
+router sin credencial, porque la contraseña del router de referencia no se
+puede volver a leer y por tanto no se puede restaurar.
+
+La ejecución además destapó un fallo real, ya corregido: una instalación con
+`--remote-image` identificaba su contenedor por la referencia del registro, que
+es la misma cadena para cualquier instalación de mikroscope del mundo, así que
+una segunda instalación en un router encontraba la primera y se negaba como si
+fuera un contenedor ajeno. Ahora se identifica por su veth.
+
 <NotClaimed variant="untested">
-	`--remote-image` contra **GHCR**. `/container/config registry-url` es un único ajuste global de
-	RouterOS que mikroscope lee y nunca escribe, y el router de referencia apunta a Docker Hub;
-	apuntarlo a ghcr.io para probar ese camino cambiaría el registro para todos los demás
-	contenedores del equipo. La imagen se publica en los dos registros y la CI la arranca desde GHCR
-	en las tres arquitecturas, pero ningún router se la ha bajado de allí. Tampoco se ha ejecutado
-	ninguna ruta en hardware arm ni x86_64.
+	Una descarga desde GHCR en un router cuyo `/container/config` no tenga credencial, por lo dicho
+	arriba. No se ha ejecutado ninguna ruta en hardware arm ni x86_64.
 </NotClaimed>
 
 ## Un checkout, con Go

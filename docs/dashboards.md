@@ -648,10 +648,15 @@ probe decides is on [Import and check](https://jmrp.io/docs/mikroscope/dashboard
 
 > **Grafana versions**
 >
-> The dashboards were checked on Grafana 12.3.2 (2026-09-12) and Grafana 13.2.1 (browser passes on
-> 2026-09-12 and 2026-09-14, `check` and render on 2026-09-15, `check` again on 2026-09-16). The panel options are written to the
-> schema Grafana 13.2.1 expects — the xychart's mark, for one, moved between Grafana 11 and 13 — and
-> `__requires` declares Grafana 11.0.0. No version other than those two has been tried.
+> The dashboards were checked on Grafana 12.3.2 (2026-09-12), Grafana 13.2.1 (browser passes on
+> 2026-09-12 and 2026-09-14, `check` and render on 2026-09-15, `check` again on 2026-09-16) and
+> Grafana 12.3.0 (2026-09-21: `import` against the live InfluxDB 3 store, then `check` over a 15 min
+> window — 167 panels returned rows, the 9 known-empty ones were empty, and the Overview's
+> detections tile was empty because the store held no detection in that window, which is the one
+> case `check` reports and a browser reads as the healthy "none"). The panel options are written to
+> the schema Grafana 13.2.1 expects — the xychart's mark, for one, moved between Grafana 11 and
+> 13 — and `__requires` declares Grafana 11.0.0. No version other than those three has been tried,
+> and 12.3.0 was checked by query only, never rendered in a browser.
 
 ### See also
 
@@ -1260,27 +1265,27 @@ Each rule's title, and under it its `summary` annotation verbatim, as generated:
   -- mikroscope-agent-silent            (< 1)
   SELECT count(1) AS value FROM mikroscope_cpu WHERE time >= now() - interval '2 minutes'
   -- mikroscope-softnet-drops           (> 0)
-  SELECT coalesce(sum(dropped), 0) AS value FROM mikroscope_softnet WHERE time >= now() - interval '5 minutes'
+  SELECT coalesce(sum(dropped), 0)::BIGINT AS value FROM mikroscope_softnet WHERE time >= now() - interval '5 minutes'
   -- mikroscope-oom-kill                (> 0)
-  SELECT coalesce(sum(oom_kill), 0) AS value FROM mikroscope_vm WHERE time >= now() - interval '5 minutes'
+  SELECT coalesce(sum(oom_kill), 0)::BIGINT AS value FROM mikroscope_vm WHERE time >= now() - interval '5 minutes'
   -- mikroscope-detections              (> 0)
   SELECT count(1) AS value FROM mikroscope_detection WHERE time >= now() - interval '5 minutes'
   -- mikroscope-thermal-near-critical   (> 0)
   SELECT count(1) AS value FROM (SELECT zone, max(celsius) AS c, max(critical_celsius) AS crit FROM mikroscope_thermal WHERE time >= now() - interval '2 minutes' AND critical_celsius IS NOT NULL GROUP BY zone) WHERE c >= 0.85 * crit
   -- mikroscope-conntrack-near-limit    (> 0.8)
-  SELECT max(active) * 1.0 / nullif(max(limit_objs), 0) AS value FROM mikroscope_slab WHERE time >= now() - interval '2 minutes' AND cache = 'nf_conntrack' AND limit_objs IS NOT NULL
+  SELECT max(active) * 1.0 / nullif(max("limit"), 0) AS value FROM mikroscope_slab WHERE time >= now() - interval '2 minutes' AND cache = 'nf_conntrack' AND "limit" IS NOT NULL
   -- mikroscope-agent-oom               (> 0)
-  SELECT coalesce(sum(oom_kill), 0) AS value FROM mikroscope_self WHERE time >= now() - interval '5 minutes' AND oom_kill IS NOT NULL
+  SELECT coalesce(sum(oom_kill), 0)::BIGINT AS value FROM mikroscope_self WHERE time >= now() - interval '5 minutes' AND oom_kill IS NOT NULL
   -- mikroscope-l2-loop                 (> 0)
-  SELECT coalesce(sum(count), 0) AS value FROM mikroscope_kmsg WHERE time >= now() - interval '5 minutes' AND kind = 'own-address'
+  SELECT coalesce(sum(count), 0)::BIGINT AS value FROM mikroscope_kmsg WHERE time >= now() - interval '5 minutes' AND kind = 'own-address'
   -- mikroscope-port-link-down          (> 0)
-  SELECT coalesce(sum(count), 0) AS value FROM mikroscope_kmsg WHERE time >= now() - interval '5 minutes' AND kind = 'link-down'
+  SELECT coalesce(sum(count), 0)::BIGINT AS value FROM mikroscope_kmsg WHERE time >= now() - interval '5 minutes' AND kind = 'link-down'
   -- mikroscope-port-errors             (> 0)
-  SELECT coalesce(sum(v), 0) AS value FROM (SELECT interface, greatest(max(rx_overflow) - min(rx_overflow), 0)::BIGINT + greatest(max(rx_fcs_error) - min(rx_fcs_error), 0)::BIGINT + greatest(max(rx_fragment) - min(rx_fragment), 0)::BIGINT + greatest(max(rx_too_short) - min(rx_too_short), 0)::BIGINT + greatest(max(rx_too_long) - min(rx_too_long), 0)::BIGINT + greatest(max(rx_jabber) - min(rx_jabber), 0)::BIGINT + greatest(max(tx_fcs_error) - min(tx_fcs_error), 0)::BIGINT + greatest(max(tx_late_collision) - min(tx_late_collision), 0)::BIGINT + greatest(max(tx_excessive_collision) - min(tx_excessive_collision), 0)::BIGINT AS v FROM mikroscope_api_ifcounters WHERE time >= now() - interval '5 minutes' GROUP BY interface)
+  SELECT coalesce(sum(v), 0)::BIGINT AS value FROM (SELECT interface, greatest(max(rx_overflow) - min(rx_overflow), 0)::BIGINT + greatest(max(rx_fcs_error) - min(rx_fcs_error), 0)::BIGINT + greatest(max(rx_fragment) - min(rx_fragment), 0)::BIGINT + greatest(max(rx_too_short) - min(rx_too_short), 0)::BIGINT + greatest(max(rx_too_long) - min(rx_too_long), 0)::BIGINT + greatest(max(rx_jabber) - min(rx_jabber), 0)::BIGINT + greatest(max(tx_fcs_error) - min(tx_fcs_error), 0)::BIGINT + greatest(max(tx_late_collision) - min(tx_late_collision), 0)::BIGINT + greatest(max(tx_excessive_collision) - min(tx_excessive_collision), 0)::BIGINT AS v FROM mikroscope_api_ifcounters WHERE time >= now() - interval '5 minutes' GROUP BY interface)
   -- mikroscope-egress-queue-drops      (> 0)
-  SELECT coalesce(max(tx_queue_drops), 0) AS value FROM mikroscope_api_iface WHERE time >= now() - interval '1 minute'
+  SELECT coalesce(max(tx_queue_drops), 0)::BIGINT AS value FROM mikroscope_api_iface WHERE time >= now() - interval '1 minute'
   -- mikroscope-ecc-failure             (> 0)
-  SELECT coalesce(sum(delta), 0) AS value FROM (SELECT max(ecc_failures) - min(ecc_failures) AS delta FROM mikroscope_mtd WHERE time >= now() - interval '1 hour' AND ecc_failures IS NOT NULL GROUP BY "partition")
+  SELECT coalesce(sum(delta), 0)::BIGINT AS value FROM (SELECT max(ecc_failures) - min(ecc_failures) AS delta FROM mikroscope_mtd WHERE time >= now() - interval '1 hour' AND ecc_failures IS NOT NULL GROUP BY "partition")
   ```
 
 ### Where the thresholds come from
@@ -1329,37 +1334,57 @@ sample's packet count was at or below its trailing median. See
   slipped-ticks rule, whose only query is against the collector, not the agent — so with no samples
   arriving they read zero or no data, and both are OK.
 
+### Loaded into Grafana, and what that found
+
+On 2026-09-21 the InfluxDB provisioning file was loaded into Grafana 13.2.1
+against the live InfluxDB 3 store and all twelve rules were watched through
+their own evaluation. **It found two defects, both fixed in this release**, and
+one of them would have kept most of these rules from ever firing.
+
+**`coalesce()` over an unsigned aggregate returns nothing, silently.** The
+InfluxDB sink writes its counters unsigned, so `coalesce(sum(count), 0)` is
+`coalesce(UInt64, Int64)`; Grafana's InfluxDB plugin cannot map that pair, and
+answers **HTTP 200 with no frames and no error**. Grafana reads an empty result
+as NoData, and every rule here but the silent-agent one declares
+`noDataState: OK` — so the rule reads OK forever while the thing it watches is
+happening. Seven of the twelve were in that state, `mikroscope-l2-loop` among
+them, *while the loop signature it exists to catch was running*: the same SQL
+over `/api/v3/query_sql` returned 109 at that moment. Every `coalesce()` over
+an aggregate now carries `::BIGINT`, and
+`TestCoalesceIsCastInAlertSQL` fails if a new rule omits it. This is the same
+fault [the panels already pinned for `greatest()`](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/),
+and worse: a panel at least fails loudly with a 500.
+
+**The conntrack rule named a column no InfluxDB store holds** — `limit_objs`,
+which is the SQL sink's name, while the InfluxDB sink writes the slab ceiling
+as `limit`. This page predicted that defect before it was confirmed; the rule
+now reads `"limit"`, and the PostgreSQL translation turns it back into
+`limit_objs`.
+
+Afterwards all twelve rules returned a value, and `mikroscope-l2-loop` went to
+**Alerting** at 16:58:50Z on the live `own-address` signature. Grafana's own
+instance list for that rule still carried `Normal (NoData)` at 16:56:50Z from
+the run before the fix: the defect and its repair two minutes apart in the same
+record.
+
 > **What has not been tried**
 >
-> These files have not been loaded into Grafana and watched while a rule evaluated, fired or
-> resolved; `dashboards check` runs the dashboards' panel queries and not these. Several consequences
-> follow from the code and have not been observed. **InfluxDB tables that appear only after their
-> first event:** the collector creates `mikroscope_detection` with the first detection it writes,
-> and InfluxDB 3 refuses a query naming a missing table when it plans it, so on a store that has
-> never held a detection the detections rule's query should fail, and its `execErrState: Error`
-> applies instead of OK; the same applies to any table or column the deployment has never written,
-> such as `mikroscope_mtd` on an unprivileged agent. **The two port-event rules have never been seen
-> firing:** neither has been watched against a live loop or a live link-down, on either store. Their
-> InfluxDB form reads the `kind` column of `mikroscope_kmsg`, which a store holds only once the
-> collector has written a first port record classified by kind — on the reference deployment on
-> 2026-09-16 the store had no `kind` column yet, so that query fails at planning there for the same
-> reason as the missing-table case above. Their Prometheus form reads
+> **A rule resolving.** The loop signature on the reference device has not stopped, so the firing
+> rule has not been watched going back to Normal. **The Prometheus and PostgreSQL forms**, which
+> were not loaded into any Grafana — only the InfluxDB file was. **Notification delivery:** the run
+> configured no contact point, so what was watched is the rule's state, never a message leaving
+> Grafana. **The store-shaped failures**, because this store was not missing anything: the
+> collector creates `mikroscope_detection` with the first detection it writes, and InfluxDB 3
+> refuses a query naming a missing table when it plans it, so on a store that has never held a
+> detection the detections rule's query should fail and its `execErrState: Error` applies instead
+> of OK — the same for any table or column the deployment has never written, such as
+> `mikroscope_mtd` on an unprivileged agent. On the store this ran against, every table existed and
+> that path was never taken. **The Prometheus form's missing label:** it reads
 > `mikroscope_kmsg_port_records_total{kind=…}` from the collector's `/metrics`, which carries a
 > `kind` on every port record whatever the agent shipped; the agent's own exposition carries the
 > label only when the agent classifies, and the one on the reference router does not, so a
 > Prometheus scraping the agent alone sees no `kind` there and the query returns no data, which
-> these rules read as OK. **The InfluxDB conntrack rule names a column no
-> InfluxDB store holds:** its query reads `limit_objs`, which is the column name in the SQL
-> (Postgres/Timescale) sink, while the InfluxDB sink writes the slab ceiling as the field `limit`
-> (the dashboards' own occupancy panel reads `limit`). So on every InfluxDB store, privileged or
-> not, that query should fail at planning and the rule cannot evaluate. This is a defect in the
-> generator, not a property of the device. **The InfluxDB ECC rule across partitions:** its query
-> takes the largest `ecc_failures` reading in the hour minus the smallest, over every partition
-> together, with no grouping by partition — so on a board whose partitions sit at different non-zero
-> levels the difference is non-zero without any new failure. Every partition reads zero on the
-> reference RB5009, so that device cannot show it. The flash panel's own description adds that a
-> board shipping with factory-marked bad blocks shows a non-zero level that is normal for it, and
-> that the change is the event, not the level.
+> these rules read as OK.
 
 ### See also
 

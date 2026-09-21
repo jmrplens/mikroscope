@@ -98,7 +98,10 @@ no solo contra simulaciones:
 - **Una batería de extremo a extremo** compila los dos binarios y los ejecuta
   contra un árbol `/proc` capturado del equipo de referencia y contra un agente
   simulado, con un receptor por cada protocolo de destino que comprueba los
-  bytes. No necesita router, ni Grafana, ni red, y se ejecuta en la CI.
+  bytes. No necesita router, ni Grafana, ni red, y se ejecuta en la CI tanto en
+  macOS y Windows como en Linux, que es donde se notaría una diferencia en el
+  nombre del ejecutable, en los ficheros que escriben los destinos de fichero y
+  SQL, o en cómo se detiene un proceso hijo.
 - **Una segunda batería contra los almacenes mismos** (`make test-e2e-docker`)
   levanta nueve de ellos con docker compose, ejecuta el mismo colector contra
   el mismo agente simulado con todos los destinos apuntando a ellos y luego
@@ -161,19 +164,23 @@ anterior.
 
 </ScrollTable>
 
-## Un equipo, una versión de RouterOS
+## Un equipo, dos versiones de RouterOS
 
 Todas las cifras tomadas en el equipo que aparecen en esta documentación vienen
-de un único RB5009UG+S+ con RouterOS 7.24.2, el router de producción del
-propietario. No hay equipo de laboratorio.
+de un único RB5009UG+S+, el router de producción del propietario. No hay equipo
+de laboratorio. Las cifras se midieron con RouterOS 7.24.2 y cada una lo indica;
+el equipo ha pasado desde entonces a 7.24.4, y allí se ejercitaron `doctor`,
+`plan`, `install`, `status` y `uninstall` el 2026-09-21, con el agente instalado
+funcionando de forma continua desde el 2026-09-19. Las mediciones no se han
+repetido sobre 7.24.4.
 
 <NotClaimed variant="untested">
 	Una segunda placa de cualquier tipo. El hEX S (2025) — RouterOS de 32 bits sobre un chip ARM64,
 	que es para lo que existe la compilación `linux/arm` del agente — no ha llegado, así que ni la
 	ruta del desbordamiento de contadores de 32 bits ni la imagen `linux/arm` se han ejecutado en
-	hardware. Ningún host RouterOS x86_64. Ninguna versión de RouterOS distinta de 7.24.2. Nada que
-	necesite un reinicio, que espera a una ventana de mantenimiento. La batería de extremo a extremo
-	solo se ha ejecutado en Linux; no se ha ejecutado en macOS ni en Windows.
+	hardware. Ningún host RouterOS x86_64. Ningún RouterOS anterior a 7.24, y ninguna de las cifras
+	tomadas en el equipo vuelta a medir sobre 7.24.4. Nada que necesite un reinicio, que espera a una
+	ventana de mantenimiento.
 </NotClaimed>
 
 ## Encontrado y sin corregir
