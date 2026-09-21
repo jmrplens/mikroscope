@@ -15,6 +15,22 @@ import (
 // TestProtoRunAsync, TestRunEOFAsync and TestListen exercised the async/listen
 // mode, which this vendored copy removes outright — see PRUNED.md.
 
+// TestRandomData: a kilobyte of noise where a reply should be must not crash
+// the client, hang it, or be read as the pre-6.43 challenge.
+//
+// IT USED TO REQUIRE AN ERROR, and that was wrong here — inherited from
+// upstream, where a `!done` carrying no `ret` returned ErrNoChallengeReceived
+// and so an error was certain. This vendored copy removed the two-stage login
+// outright, which changed Login's contract: a bare `!done` is a SUCCESSFUL
+// login now, because that is what it means in the protocol. So when the random
+// word happens to parse cleanly, Login correctly returns nil and the old
+// assertion failed — measured at 3 runs in 400 on 2026-09-21, which over seven
+// pull requests and a three-platform matrix is often enough to have blocked
+// two merges.
+//
+// What is actually worth asserting is what cannot happen whatever the bytes
+// are: the client must come back, and it must never take noise for a
+// challenge.
 func TestRandomData(t *testing.T) {
 	c, s := newPair(t)
 	defer deferCloser(t, c)
@@ -30,8 +46,13 @@ func TestRandomData(t *testing.T) {
 		s.writeSentence(t, "!done", string(randomBytes))
 	}()
 
-	err := c.Login("userTest", "passTest")
-	require.Error(t, err)
+	// Either outcome is correct: the sentence did not parse and Login says so,
+	// or it did and a bare !done is a login. What must not happen is the
+	// legacy path, which this copy cannot walk.
+	if err := c.Login("userTest", "passTest"); err != nil {
+		require.NotErrorIs(t, err, ErrLegacyLoginUnsupported,
+			"noise was read as the pre-6.43 MD5 challenge")
+	}
 }
 
 func TestLoginPre643(t *testing.T) {
