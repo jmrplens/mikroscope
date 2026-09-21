@@ -186,6 +186,26 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`uninstall --expose` removed neither firewall rule, and said it had.** Both
+  expose selectors carried `protocol=tcp` unquoted, and a RouterOS `find` reads
+  a bare word as a variable name — an unset variable is the empty value, so the
+  selector matched nothing. Measured on the reference RB5009 (7.24.4,
+  2026-09-21): over the same 15 dstnat rules, `find chain=dstnat protocol=tcp`
+  returned 0 and `find chain=dstnat protocol="tcp"` returned 10.
+
+  The same string is the existence check, the ownership check and the removal,
+  so all three agreed with each other and disagreed with the router:
+  `uninstall --expose` left both rules and then printed `verified: nothing
+  mikroscope created remains on the router` over a live dst-nat pointing at a
+  container address that no longer existed, and `install` could not see its own
+  rule, so installing twice left two copies. Creation was never affected —
+  `add protocol=tcp` takes a bare word — which is why the rules appeared
+  correctly and were invisible only to their own queries.
+
+  Both selectors quote the value now, and `TestFindSelectorsQuoteEveryValue`
+  fails on any `find` in the plan that compares against a bare word. The fixed
+  binary removed the two rules the unfixed one had left behind.
+
 - **Seven of the twelve InfluxDB alert rules could never fire.** The InfluxDB
   sink writes its counters unsigned, so `coalesce(sum(count), 0)` is
   `coalesce(UInt64, Int64)` — a pair Grafana's InfluxDB plugin cannot map into

@@ -92,8 +92,21 @@ func Plan(o Options) []Step {
 		},
 	}
 	if o.Expose {
-		natSel := `chain=dstnat dst-address="` + o.LANAddress + `" dst-port="` + port + `" protocol=tcp`
-		acceptSel := `chain=forward dst-address="` + o.ContainerIP + `" dst-port="` + port + `" protocol=tcp`
+		// protocol="tcp", QUOTED. In a RouterOS `find`, a bare word is read as
+		// a variable name and an unset variable is the empty value, so
+		// `protocol=tcp` matches nothing at all while `protocol="tcp"` matches
+		// — measured on the reference RB5009 (7.24.4, 2026-09-21): against the
+		// same 15 dstnat rules, `find chain=dstnat protocol=tcp` returned 0 and
+		// `find chain=dstnat protocol="tcp"` returned 10. Every other field
+		// here was already quoted; this one was not, and because the same
+		// selector is the Check, the Owned and the Remove, the effect was
+		// silent in both directions: `uninstall --expose` removed neither rule
+		// and then verified zero of them, printing "verified: nothing
+		// mikroscope created remains on the router" over a live dst-nat, and
+		// `install` never saw its own rule, so a repeat install added a second
+		// copy. `add protocol=tcp` is unaffected: creation takes a bare word.
+		natSel := `chain=dstnat dst-address="` + o.LANAddress + `" dst-port="` + port + `" protocol="tcp"`
+		acceptSel := `chain=forward dst-address="` + o.ContainerIP + `" dst-port="` + port + `" protocol="tcp"`
 		acceptRule := `/ip/firewall/filter/add chain=forward dst-address=` + o.ContainerIP + ` protocol=tcp dst-port=` + port +
 			` connection-nat-state=dstnat action=accept` + byTag
 		steps = append(steps,
