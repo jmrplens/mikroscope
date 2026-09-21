@@ -18,6 +18,9 @@ type Datasource struct {
 	UID, Name, Type string
 	URL             string
 	Database        string
+	// User is the account the datasource connects as, which only the SQL
+	// stores have and which Grafana keeps outside jsonData.
+	User string
 	// JSON is the plugin's own settings: the query-language version, the HTTP
 	// method, the name of a header. It differs per store, so it is the
 	// caller's to fill.
@@ -164,6 +167,9 @@ func datasourceBody(want Datasource) map[string]any {
 	if want.Database != "" {
 		body["database"] = want.Database
 	}
+	if want.User != "" {
+		body["user"] = want.User
+	}
 	if len(want.Secret) > 0 {
 		body["secureJsonData"] = want.Secret
 	}
@@ -180,6 +186,7 @@ func sameDatasource(body []byte, want Datasource) bool {
 		Type     string         `json:"type"`
 		URL      string         `json:"url"`
 		Database string         `json:"database"`
+		User     string         `json:"user"`
 		JSONData map[string]any `json:"jsonData"`
 	}
 	if err := json.Unmarshal(body, &have); err != nil {
@@ -189,6 +196,9 @@ func sameDatasource(body []byte, want Datasource) bool {
 		return false
 	}
 	if want.Database != "" && have.Database != want.Database {
+		return false
+	}
+	if want.User != "" && have.User != want.User {
 		return false
 	}
 	for k, v := range want.JSON {

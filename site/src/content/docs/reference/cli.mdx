@@ -323,6 +323,8 @@ as whoever an anonymous request is to that server.
 | `--grafana`                | empty        | `MIKROSCOPE_GRAFANA_URL`            | publish to this Grafana at start; empty publishes nothing                                |
 | `--grafana-folder`         | `mikroscope` | `MIKROSCOPE_GRAFANA_FOLDER`         | the folder to publish into; empty is Grafana's General folder                            |
 | `--grafana-datasource-uid` | empty        | `MIKROSCOPE_GRAFANA_DATASOURCE_UID` | adopt an existing datasource by uid instead of creating one, and leave it untouched      |
+| `--grafana-datasource-url` | empty        | `MIKROSCOPE_GRAFANA_DATASOURCE_URL` | the address Grafana queries, for `--prom` and `--graphite`; also overrides a derived one |
+| `--grafana-datasource-sslmode` | empty    | `MIKROSCOPE_GRAFANA_DATASOURCE_SSLMODE` | `disable`, `require`, `verify-ca` or `verify-full` for the PostgreSQL datasource     |
 | `--grafana-dry-run`        | `false`      | none                                | print what it would write, write nothing, and stop before collecting                     |
 
 </ScrollTable>

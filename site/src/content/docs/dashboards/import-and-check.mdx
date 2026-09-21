@@ -157,7 +157,9 @@ grafana: influxdb: dashboard http://grafana:3000/d/mikroscope-influxdb/…
 | -------------------------- | ------------ | ---------------------------------------------------------------------------------------- |
 | `--grafana`                | empty        | the Grafana to publish to at start. Empty — the default — publishes nothing               |
 | `--grafana-folder`         | `mikroscope` | the folder to publish into; empty is Grafana's General folder                             |
-| `--grafana-datasource-uid` | empty        | adopt an existing datasource by uid instead of creating one                               |
+| `--grafana-datasource-uid` | empty        | adopt an existing datasource by uid instead of creating one, and leave it untouched      |
+| `--grafana-datasource-url` | empty        | the address Grafana queries, for the two sinks that cannot know it; it also overrides one a sink does know |
+| `--grafana-datasource-sslmode` | empty    | `disable`, `require`, `verify-ca` or `verify-full` for the PostgreSQL datasource        |
 | `--grafana-dry-run`        | off          | print the datasource and dashboard it would write, write nothing, and stop before collecting |
 
 </ScrollTable>
@@ -175,25 +177,59 @@ spent not running — for the thing that can, a dashboard published on the next 
 left where it is. Removing somebody's dashboard unasked is not a thing a collector should do, even
 one it made, because it may be the copy they are looking at.
 
-### Two of the five sinks can describe their own datasource
+### Five of five, by two different routes
 
-They are the two whose write address **is** the address Grafana queries.
+**Three sinks know the address Grafana queries**, because it is the address
+they write to or dial. **Two cannot know it**, and no amount of reading their
+flags would find it — but told the address in `--grafana-datasource-url`,
+there is nothing else to derive: a Prometheus datasource is a URL, and so is a
+Graphite one.
 
 <ScrollTable label="which sinks can describe a Grafana datasource">
 
-| Sink        | Datasource | Why                                                                              |
-| ----------- | ---------- | -------------------------------------------------------------------------------- |
-| `--influx`  | created    | the server it writes to is the server Grafana asks; `--influx-db` names the database |
-| `--elastic` | created    | the base URL it `_bulk`s to is the one Grafana asks; `--elastic-index` gives the index pattern |
-| `--prom`    | adopt      | it **serves** `/metrics` and is scraped; the Prometheus Grafana asks is one it has never heard of |
-| `--sql`     | adopt      | it writes statements to a file, not to a server                                  |
-| `--graphite`| adopt      | it speaks the carbon ingest port, which is not the API Grafana queries           |
+| Sink         | Datasource   | Why                                                                                            |
+| ------------ | ------------ | ---------------------------------------------------------------------------------------------- |
+| `--influx`   | derived      | the server it writes to is the server Grafana asks; `--influx-db` names the database           |
+| `--elastic`  | derived      | the base URL it `_bulk`s to is the one Grafana asks; `--elastic-index` gives the index pattern |
+| `--postgres` | derived      | it dials the server, so the connection string has the host, port, database, user and sslmode   |
+| `--prom`     | told the URL | it **serves** `/metrics` and is scraped: the Prometheus Grafana asks is one it has never heard of |
+| `--graphite` | told the URL | it speaks the carbon ingest port, which is not the web API Grafana queries — usually a different port on the same host |
+| `--sql`      | **never**    | it writes statements to a file and never connects, so no host, port, user or password exists anywhere in the flags |
 
 </ScrollTable>
 
-The three marked *adopt* need `--grafana-datasource-uid`, and say so by name if you leave it out.
-An adopted datasource is somebody else's to describe, so it is never corrected either: reconciling
-one this did not make would overwrite settings nobody asked it to have.
+`--sql` is the one that can never be described, and it says so by naming
+`--postgres` — the sink that can — rather than sending you to Grafana. Any of
+them can still be adopted with `--grafana-datasource-uid`, and an adopted
+datasource is never corrected either: reconciling one this did not make would
+overwrite settings nobody asked it to have.
+
+<Aside type="note" title="The PostgreSQL datasource, and two things it will not do">
+  The connection string is parsed with **pgx's own parser**, the one the sink
+  dials with, rather than a second one written here — a parser of this
+  project's own would disagree with the sink about what the flag says on
+  exactly the inputs where being wrong matters. It takes the URL form and the
+  keyword form alike.
+
+  **It copies only a password the connection string itself carries.** pgx reads
+  `PGPASSWORD`, `~/.pgpass` and the service file the way libpq does, which is
+  exactly what the sink wants — but a datasource is written into a Grafana
+  other people can see, and a credential that came from the machine doing the
+  publishing rather than from the configuration is one nobody asked to put
+  there. When it finds one that way it says so and does not copy it.
+
+  **`sslmode` is read, not guessed.** libpq's default is `prefer` — try TLS and
+  carry on without it — and Grafana's datasource has no such mode: it either
+  insists or refuses. A connection string naming one of Grafana's four
+  (`disable`, `require`, `verify-ca`, `verify-full`) is believed. One naming
+  `prefer`, `allow`, or nothing at all, is given `disable` **and a line saying
+  so**, because guessing `require` instead would break the other half of
+  readers into a datasource that cannot connect at all.
+  `--grafana-datasource-sslmode` decides it outright.
+</Aside>
+
+The InfluxDB one carries its own three, and they are the ones this project got
+wrong first:
 
 <Aside type="note" title="What the created InfluxDB datasource carries">
   Three settings that are easy to miss by hand, and each of them was missed here first. The token
@@ -365,6 +401,21 @@ plus the agent directly for the families the collector cannot recompute.
 The two port-event panels' SQL was validated the same day against a synthetic table in the same
 InfluxDB 3, because the live store holds no `kind` column until the first port record classified by
 kind is written to it.
+
+**2026-09-20**, in the docker end-to-end suite, for `forward --grafana` itself: the collector was
+pointed at a real Grafana and each of the five stores in turn, allowed to create the datasource,
+and then `dashboards check` was run **against the datasource the collector had just built** — every
+panel's query, through Grafana's own query API.
+
+That is the shape the check has to take here, because what goes wrong is never the JSON. Grafana
+accepts a datasource and the query path then refuses it: both InfluxDB traps this project has hit
+were exactly that, one answering `flightsql: Unauthenticated` and the other `tls: first record does
+not look like a TLS handshake` from a datasource the API had stored without complaint. All five
+stores' dashboards answered from what the collector built, with no datasource error on any panel.
+
+The same run found a defect no unit test had: a collector writing to a live PostgreSQL through
+`--postgres` and nothing else published nothing at all and reported "there is nothing to publish",
+because the store list still only knew `--sql`.
 
 The headless row-by-row walk of both dashboards in Chromium at 1600x1000 — 0 error badges, 0 "No
 data" — is from **2026-09-15** and covers 168 InfluxDB panels and 130 Prometheus ones. It has not

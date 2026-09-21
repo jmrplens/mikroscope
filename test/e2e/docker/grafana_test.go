@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -29,30 +30,51 @@ func grafanaPassword() string {
 // grafanaToken makes this run a service account of its own and returns its
 // token: Grafana's API needs a credential even with anonymous access on, and
 // `dashboards import` requires GRAFANA_TOKEN.
+// grafanaToken is ONE service account token for the whole run, made once.
+//
+// It used to make a new one per call, and the second caller got
+// `serviceaccounts.ErrAlreadyExists` from Grafana — the account is named after
+// the run, which is the point, so a second test in the same run could not have
+// a token at all. Two tests want one now (the dashboards walk and the publish
+// walk), and any number of them should be able to.
 func grafanaToken(ctx context.Context, tb testing.TB, admin string) string {
 	tb.Helper()
+	tokenOnce.Do(func() { sharedToken, errToken = makeGrafanaToken(ctx, admin) })
+	if errToken != nil {
+		tb.Fatalf("creating a service account token: %v", errToken)
+	}
+	return sharedToken
+}
+
+var (
+	tokenOnce   sync.Once
+	sharedToken string
+	errToken    error
+)
+
+func makeGrafanaToken(ctx context.Context, admin string) (string, error) {
 	var account struct {
 		ID int `json:"id"`
 	}
 	body, err := json.Marshal(map[string]any{"name": "e2e-" + runID, "role": "Admin", "isDisabled": false})
 	if err != nil {
-		tb.Fatal(err)
+		return "", err
 	}
 	if acctErr := httpJSON(ctx, "POST", admin+"/api/serviceaccounts", "application/json", body, &account); acctErr != nil {
-		tb.Fatalf("creating a service account: %v", acctErr)
+		return "", fmt.Errorf("creating a service account: %w", acctErr)
 	}
 	var token struct {
 		Key string `json:"key"`
 	}
 	body, err = json.Marshal(map[string]any{"name": "e2e-" + runID})
 	if err != nil {
-		tb.Fatal(err)
+		return "", err
 	}
-	if tokenErr := httpJSON(ctx, "POST",
-		fmt.Sprintf("%s/api/serviceaccounts/%d/tokens", admin, account.ID), "application/json", body, &token); tokenErr != nil {
-		tb.Fatalf("creating a service account token: %v", tokenErr)
+	if tErr := httpJSON(ctx, "POST",
+		fmt.Sprintf("%s/api/serviceaccounts/%d/tokens", admin, account.ID), "application/json", body, &token); tErr != nil {
+		return "", tErr
 	}
-	return token.Key
+	return token.Key, nil
 }
 
 // createDatasources points Grafana at the two stores this run filled. They are
