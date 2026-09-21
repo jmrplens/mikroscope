@@ -270,9 +270,11 @@ func NewSQL(path, host string, hypertable bool, log func(string)) (*SQL, error) 
 // wants the statements and will send them somewhere itself. NewSQL is the one
 // that opens a file; this one opens nothing and can never fail.
 func newSQLRenderer(host string, hypertable bool) *SQL {
-	// The no-op logger, not nil: a renderer writes nowhere, so it has nothing
-	// to report, and every Log call in the shared code path skips a nil check.
-	noWhereToLog := func(string) {}
+	noWhereToLog := func(string) {
+		// Deliberately empty: a renderer writes nowhere, so it has nothing to
+		// report, and a no-op lets every Log call in the shared code path skip
+		// a nil check.
+	}
 	return &SQL{Host: host, Hypertable: hypertable, Log: noWhereToLog, hostLit: sqlQuote(host)}
 }
 

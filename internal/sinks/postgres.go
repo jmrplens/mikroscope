@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -73,9 +74,11 @@ func NewPostgres(dsn, host string, hypertable bool, queueSeconds int, log func(s
 		stop:   make(chan struct{}), done: make(chan struct{}),
 	}
 	if s.Log == nil {
-		// A sink with nowhere to log still has to be callable: the no-op is
-		// what lets every Log call below skip a nil check.
-		s.Log = func(string) {}
+		s.Log = func(string) {
+			// Deliberately empty: a sink given nowhere to log still has to be
+			// callable, and a no-op here is what lets every Log call below
+			// skip a nil check.
+		}
 	}
 	s.maxQ = queueSeconds * 64 << 10
 	go s.loop()
@@ -196,16 +199,27 @@ func (s *Postgres) declare(ctx context.Context, pool *pgxpool.Pool) error {
 	if err = conn.QueryRow(ctx, "SHOW standard_conforming_strings").Scan(&setting); err != nil {
 		return fmt.Errorf("asking for standard_conforming_strings: %w", err)
 	}
-	if setting != "on" {
-		return fmt.Errorf("this server has standard_conforming_strings = %s, and the statements "+
-			"this sink sends quote by doubling the single quote only: with it off, a backslash "+
-			"at the end of a kernel-log message escapes the closing quote and everything after "+
-			"it is parsed as string content. Turn it on for this connection or use --sql", setting)
+	if bad := conformingStrings(setting); bad != nil {
+		return bad
 	}
 	if _, err = conn.Exec(ctx, s.render.headerSQL()); err != nil {
 		return fmt.Errorf("declaring the schema: %w", err)
 	}
 	return nil
+}
+
+// conformingStrings judges what the server answered, and is separate from the
+// query that asked so the judgement and its wording can be tested without a
+// server: the message is the whole value of the check, because it is what an
+// operator reads when their collector will not write.
+func conformingStrings(setting string) error {
+	if strings.EqualFold(setting, "on") {
+		return nil
+	}
+	return fmt.Errorf("this server has standard_conforming_strings = %s, and the statements "+
+		"this sink sends quote by doubling the single quote only: with it off, a backslash "+
+		"at the end of a kernel-log message escapes the closing quote and everything after "+
+		"it is parsed as string content. Turn it on for this connection or use --sql", setting)
 }
 
 // Stats implements Sink. The counters are the queue's, so Written is batches

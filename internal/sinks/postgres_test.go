@@ -1,9 +1,12 @@
 package sinks
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/jmrplens/mikroscope/internal/sample"
 	"github.com/jmrplens/mikroscope/internal/transport"
@@ -187,5 +190,71 @@ func TestAKernelSampleRendersThroughThePostgresSink(t *testing.T) {
 	}
 	if !strings.HasSuffix(strings.TrimSpace(got), "ON CONFLICT DO NOTHING;") {
 		t.Errorf("queued %q, want every statement idempotent", got)
+	}
+}
+
+// The setting the sink refuses on, and the message an operator reads when it
+// does — which is the whole value of the check, since a collector that will
+// not write has to say why in a line that survives a journal.
+func TestTheSinkRefusesAServerThatWouldMisreadItsQuoting(t *testing.T) {
+	t.Parallel()
+	if err := conformingStrings("on"); err != nil {
+		t.Errorf("conformingStrings(\"on\") = %v, want nil", err)
+	}
+	// PostgreSQL answers this setting in lower case, but a server or a pooler
+	// that echoes it differently is not a reason to refuse a healthy one.
+	if err := conformingStrings("ON"); err != nil {
+		t.Errorf("conformingStrings(\"ON\") = %v, want nil", err)
+	}
+	for _, answer := range []string{"off", "", "unknown"} {
+		err := conformingStrings(answer)
+		if err == nil {
+			t.Errorf("conformingStrings(%q) = nil, want a refusal", answer)
+			continue
+		}
+		// The three things the line has to carry: what the server said, what
+		// goes wrong, and the two ways out.
+		for _, want := range []string{answer, "backslash", "--sql"} {
+			if want != "" && !strings.Contains(err.Error(), want) {
+				t.Errorf("conformingStrings(%q) = %q, want it to carry %q", answer, err, want)
+			}
+		}
+	}
+}
+
+// The paths that need a pool but not a server. pgxpool.New connects lazily, so
+// a pool built on an address nothing listens on is a real pool that fails on
+// first use — which is exactly the shape of a database that went away
+// mid-run, and it reaches the code a dead DSN alone never does: the
+// already-connected branch, the transaction that cannot begin, and Close with
+// something to close.
+func TestTheSinkHandlesAPoolWhoseServerIsGone(t *testing.T) {
+	t.Parallel()
+	const dsn = "postgres://u@127.0.0.1:1/d?sslmode=disable&connect_timeout=1"
+	s, err := NewPostgres(dsn, "rb5009", false, 60, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool, err := pgxpool.New(context.Background(), dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.pool = pool
+
+	// connect hands back the pool it already has rather than building another.
+	got, err := s.connect(context.Background())
+	if err != nil {
+		t.Fatalf("connect with a pool already built: %v", err)
+	}
+	if got != pool {
+		t.Error("connect built a second pool over the one it had")
+	}
+	// And a batch against it fails at the transaction rather than panicking.
+	if err = s.send([]byte("SELECT 1;")); err == nil {
+		t.Error("a batch against a server that is not there reported success")
+	}
+	// Close gives the pool back.
+	if err = s.Close(); err != nil {
+		t.Errorf("Close() = %v, want nil", err)
 	}
 }
