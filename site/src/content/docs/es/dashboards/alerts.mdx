@@ -206,38 +206,59 @@ o por debajo. Consulta
   incluida la de ticks perdidos por retraso, cuya única consulta va contra el colector, no contra el
   agente—, así que sin muestras llegando leen cero o ningún dato, y las dos cosas son OK.
 
+## Cargadas en Grafana, y lo que eso destapó
+
+El 2026-09-21 el fichero de aprovisionamiento de InfluxDB se cargó en Grafana
+13.2.1 contra el almacén InfluxDB 3 en producción y se observaron las doce
+reglas pasando por su propia evaluación. **Destapó dos defectos, los dos
+corregidos en esta versión**, y uno de ellos habría impedido que la mayoría de
+estas reglas saltaran nunca.
+
+**`coalesce()` sobre un agregado sin signo no devuelve nada, y sin avisar.** El
+destino de InfluxDB escribe sus contadores sin signo, así que
+`coalesce(sum(count), 0)` es `coalesce(UInt64, Int64)`; el plugin de InfluxDB de
+Grafana no sabe mapear ese par y responde **HTTP 200 sin marcos y sin error
+ninguno**. Grafana interpreta un resultado vacío como NoData, y todas las reglas
+de aquí menos la del agente callado declaran `noDataState: OK`: la regla marca
+OK para siempre mientras ocurre justo aquello que vigila. Siete de las doce
+estaban así, `mikroscope-l2-loop` entre ellas, *mientras corría la firma de
+bucle que existe para cazar*: el mismo SQL contra `/api/v3/query_sql` devolvía
+109 en ese momento. Ahora todos los `coalesce()` sobre un agregado llevan
+`::BIGINT`, y `TestCoalesceIsCastInAlertSQL` falla si una regla nueva se lo
+deja. Es el mismo fallo
+[que los paneles ya fijaban para `greatest()`](/mikroscope/es/dashboards/import-and-check/),
+y peor: un panel al menos falla a gritos con un 500.
+
+**La regla de conntrack nombraba una columna que ningún almacén InfluxDB
+tiene** —`limit_objs`, que es el nombre del destino SQL, mientras que el destino
+de InfluxDB escribe el techo del slab como `limit`—. Esta misma página predijo
+ese defecto antes de confirmarse; la regla lee ya `"limit"`, y la traducción a
+PostgreSQL lo vuelve a convertir en `limit_objs`.
+
+Después de eso las doce reglas devolvieron un valor, y `mikroscope-l2-loop` pasó
+a **Alerting** a las 16:58:50Z con la firma `own-address` en vivo. La propia
+lista de instancias de Grafana para esa regla seguía llevando `Normal (NoData)`
+de las 16:56:50Z, de la ejecución anterior a la corrección: el defecto y su
+arreglo con dos minutos de diferencia en el mismo registro.
+
 <NotClaimed variant="untested" title="Lo que no se ha probado">
-	Estos ficheros no se han cargado en Grafana para observar una regla evaluarse, saltar o
-	resolverse; `dashboards check` ejecuta las consultas de los paneles de los dashboards y no estas.
-	Del código se siguen varias consecuencias que no se han observado. **Tablas de InfluxDB que solo
-	aparecen tras su primer suceso:** el colector crea `mikroscope_detection` con la primera detección
-	que escribe, e InfluxDB 3 rechaza al planificarla una consulta que nombra una tabla inexistente,
-	así que en un almacén que nunca ha tenido una detección la consulta de la regla de detecciones
-	debería fallar, y se aplica su `execErrState: Error` en vez de OK; lo mismo vale para cualquier
-	tabla o columna que el despliegue no haya escrito nunca, como `mikroscope_mtd` en un agente sin
-	privilegios. **A las dos reglas de sucesos de puerto no se las ha visto saltar:** ninguna se ha
-	observado contra un bucle real ni contra un link-down real, en ninguno de los dos almacenes. Su
-	forma de InfluxDB lee la columna `kind` de `mikroscope_kmsg`, que un almacén solo tiene una vez
-	que el colector ha escrito un primer registro de puerto clasificado por `kind` — en el despliegue
-	de referencia, el 2026-09-16 el almacén todavía no tenía columna `kind`, así que allí esa consulta
-	falla al planificarse por la misma razón que el caso de la tabla inexistente de más arriba. Su
-	forma de Prometheus lee `mikroscope_kmsg_port_records_total{kind=…}` del `/metrics` del colector,
-	que lleva un `kind` en todo registro de puerto sea cual sea la versión del agente; la exposición
-	del propio agente lleva la etiqueta solo cuando es él quien clasifica, y el del router de
-	referencia no lo hace, así que un Prometheus que raspe solo al agente no ve allí ningún `kind` y
-	la consulta no devuelve datos, lo que estas reglas leen como OK. **La regla de conntrack de InfluxDB nombra una columna que ningún almacén InfluxDB
-	tiene:** su consulta lee `limit_objs`, que es el nombre de la columna en el destino SQL
-	(Postgres/Timescale), mientras que el destino InfluxDB escribe el techo del slab como el campo
-	`limit` (el propio panel de ocupación de los dashboards lee `limit`). Así que en todo almacén
-	InfluxDB, con o sin privilegios, esa consulta debería fallar al planificarse y la regla no puede
-	evaluarse. Es un defecto del generador, no una propiedad del equipo. **La regla ECC de InfluxDB a
-	través de particiones:** su consulta toma la mayor lectura de `ecc_failures` de la hora menos la
-	menor, sobre todas las particiones juntas, sin agrupar por partición — así que en una placa cuyas
-	particiones estén en niveles distintos de cero la diferencia no es cero sin que haya ningún fallo
-	nuevo. Todas las particiones leen cero en el RB5009 de referencia, así que ese equipo no puede
-	mostrarlo. La propia descripción del panel de la flash añade que una placa que sale de fábrica con
-	bloques marcados como defectuosos muestra un nivel distinto de cero que es normal para ella, y que
-	el suceso es el cambio, no el nivel.
+	**Que una regla se resuelva.** La firma de bucle del equipo de referencia no ha parado, así que
+	no se ha visto a la regla que salta volver a Normal. **Las formas de Prometheus y de PostgreSQL**,
+	que no se cargaron en ningún Grafana: solo se cargó el fichero de InfluxDB. **La entrega de
+	avisos:** la ejecución no configuró ningún punto de contacto, así que lo que se observó es el
+	estado de la regla, nunca un mensaje saliendo de Grafana. **Los fallos que dependen de la forma
+	del almacén**, porque a este no le faltaba nada: el colector crea `mikroscope_detection` con la
+	primera detección que escribe, e InfluxDB 3 rechaza al planificarla una consulta que nombra una
+	tabla inexistente, así que en un almacén que nunca ha tenido una detección la consulta de la
+	regla de detecciones debería fallar y aplicarse su `execErrState: Error` en lugar de OK —y lo
+	mismo para cualquier tabla o columna que el despliegue no haya escrito nunca, como
+	`mikroscope_mtd` con un agente sin privilegios—. En el almacén contra el que se ejecutó esto
+	existían todas las tablas y ese camino no se recorrió. **La etiqueta que le falta a la forma de
+	Prometheus:** lee `mikroscope_kmsg_port_records_total{kind=…}` del `/metrics` del colector, cuya
+	copia lleva un `kind` en todo registro de puerto venga como venga del agente; la exposición del
+	propio agente lleva la etiqueta solo cuando el agente clasifica, y el del router de referencia no
+	lo hace, así que un Prometheus que raspe solo al agente no ve ahí ningún `kind` y la consulta no
+	devuelve datos, cosa que estas reglas leen como OK.
 </NotClaimed>
 
 <SeeAlso>

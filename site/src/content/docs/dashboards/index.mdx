@@ -465,10 +465,15 @@ probe decides is on [Import and check](/mikroscope/dashboards/import-and-check/#
   numbers are mikroscope's own budget targets (<Measured id="budget.cpu" /> of one core, <Measured id="budget.rss" />).
 
 <NotClaimed variant="untested" title="Grafana versions">
-	The dashboards were checked on Grafana 12.3.2 (2026-09-12) and Grafana 13.2.1 (browser passes on
-	2026-09-12 and 2026-09-14, `check` and render on 2026-09-15, `check` again on 2026-09-16). The panel options are written to the
-	schema Grafana 13.2.1 expects — the xychart's mark, for one, moved between Grafana 11 and 13 — and
-	`__requires` declares Grafana 11.0.0. No version other than those two has been tried.
+	The dashboards were checked on Grafana 12.3.2 (2026-09-12), Grafana 13.2.1 (browser passes on
+	2026-09-12 and 2026-09-14, `check` and render on 2026-09-15, `check` again on 2026-09-16) and
+	Grafana 12.3.0 (2026-09-21: `import` against the live InfluxDB 3 store, then `check` over a 15 min
+	window — 167 panels returned rows, the 9 known-empty ones were empty, and the Overview's
+	detections tile was empty because the store held no detection in that window, which is the one
+	case `check` reports and a browser reads as the healthy "none"). The panel options are written to
+	the schema Grafana 13.2.1 expects — the xychart's mark, for one, moved between Grafana 11 and
+	13 — and `__requires` declares Grafana 11.0.0. No version other than those three has been tried,
+	and 12.3.0 was checked by query only, never rendered in a browser.
 </NotClaimed>
 
 <SeeAlso>

@@ -87,7 +87,9 @@ run against the reference RB5009 (RouterOS 7.24.2), not only against fakes:
 - **An end-to-end suite** builds both binaries and drives them against a
   captured `/proc` tree of the reference device and against a fake agent, with
   one receiver per sink protocol asserting the bytes. It needs no router, no
-  Grafana and no network, and runs in CI.
+  Grafana and no network, and runs in CI on macOS and Windows as well as Linux,
+  which is where a difference in the executable's name, in the files the file
+  and SQL sinks write, or in how a child process is stopped would surface.
 - **A second suite against the stores themselves** (`make test-e2e-docker`)
   starts nine of them with docker compose, runs the same collector against the
   same fake agent with every sink pointed at them, and then asks each store its
@@ -147,18 +149,22 @@ what each one costs — not what the number was at some earlier point.
 | PMU counters on, a live `forward` writing to InfluxDB | 1.72 %                                                                | not recorded                   | 2026-09-12 | 0 slipped ticks; 2 400 samples forwarded, 0 gaps, 0 drops                                                |
 | The install default                                   | 2.69 %                                        | 13.2 MiB | 2026-09-15 | the figure above                                                                                         |
 
-### One device, one RouterOS version
+### One device, two RouterOS versions
 
-Every on-device figure in this documentation comes from one RB5009UG+S+ on
-RouterOS 7.24.2, the owner's production router. There is no lab device.
+Every on-device figure in this documentation comes from one RB5009UG+S+, the
+owner's production router. There is no lab device. The figures were measured on
+RouterOS 7.24.2 and each says so; the device has since moved to 7.24.4, and
+`doctor`, `plan`, `install`, `status` and `uninstall` were exercised there on
+2026-09-21, with the installed agent running on it continuously since
+2026-09-19. The measurements have not been repeated on 7.24.4.
 
 > **Untested**
 >
 > A second board of any kind. The hEX S (2025) — 32-bit RouterOS on an ARM64 chip, which is what the
 > agent's `linux/arm` build is for — has not arrived, so the 32-bit counter-wrap path and the
-> `linux/arm` image have not run on hardware. No x86_64 RouterOS host. No RouterOS version other
-> than 7.24.2. Nothing that needs a reboot, which waits for a maintenance window. The end-to-end
-> suite has run on Linux only; it has not been run on macOS or Windows.
+> `linux/arm` image have not run on hardware. No x86_64 RouterOS host. No RouterOS before 7.24, and
+> none of the on-device figures re-measured on 7.24.4. Nothing that needs a reboot, which waits for
+> a maintenance window.
 
 ### Found and not fixed
 

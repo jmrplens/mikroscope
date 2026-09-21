@@ -253,11 +253,12 @@ más, además de la subida por `scp`. ssh nunca es un camino de datos: `record` 
 <NotClaimed variant="untested">
 	Que una instalación persistente sobreviva a un reinicio: el router de referencia está en
 	producción y no se reinicia para pruebas. El ciclo idéntico byte a byte en cualquier equipo que no
-	sea el RB5009, en cualquier RouterOS que no sea 7.24.2, o con install y upgrade ejecutados sin
-	`--ephemeral` (la ejecución con guion lo pasó a doctor, install y upgrade, no a status ni a
-	uninstall). El ciclo no se ha ejecutado contra los ajustes actuales del contenedor:
-	`privileged=yes`, `memory-max=64M` y las entradas de envlist `MEM_LIMIT_MB`, `CAPTURE_MB`,
-	`TRIGGERS` y `FLOOR_HZ`; se ejecutó con `memory-max=32M`.
+	sea el RB5009, en cualquier RouterOS que no sea 7.24.2 —install, status y uninstall se han
+	ejecutado desde entonces sobre 7.24.4, pero el ciclo en sí no se ha repetido allí—, o con install
+	y upgrade ejecutados sin `--ephemeral` (la ejecución con guion lo pasó a doctor, install y
+	upgrade, no a status ni a uninstall). El ciclo no se ha ejecutado contra los ajustes actuales del
+	contenedor: `privileged=yes`, `memory-max=64M` y las entradas de envlist `MEM_LIMIT_MB`,
+	`CAPTURE_MB`, `TRIGGERS` y `FLOOR_HZ`; se ejecutó con `memory-max=32M`.
 </NotClaimed>
 
 <SeeAlso>

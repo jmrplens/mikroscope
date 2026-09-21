@@ -203,9 +203,10 @@ and the comment meet:
 Both are known-empty panels — a quiet set of ports is the healthy state — and
 the Prometheus form of each reads the collector's `/metrics`, whose copy of the
 family carries a `kind` on every port record however the agent shipped it. In an InfluxDB store the `kind` column exists only once a first port
-record classified by kind has been written, so both queries were validated on
-2026-09-16 against a synthetic table in the same InfluxDB 3, the live store
-having no such column yet.
+record classified by kind has been written, so both queries were first
+validated on 2026-09-16 against a synthetic table in the same InfluxDB 3, the
+live store having no such column then. It has one since 2026-09-19, holding all
+eight kinds.
 
 Two alert rules ship beside them, in both provisioning files. Both read
 `/dev/kmsg` through the agent and ask RouterOS nothing:
@@ -219,11 +220,21 @@ Two alert rules ship beside them, in both provisioning files. Both read
 The InfluxDB form of each needs a store that has already held one port record
 classified by kind; before that the query fails at planning time.
 
+Both rules' InfluxDB queries were run verbatim against the live store on
+2026-09-21, and both return a firing value on records the router really wrote:
+`mikroscope-l2-loop` read 109 over its own five-minute window, the `own-address`
+signature on `ether2` having run continuously at about 0.5 records/s since
+2026-09-19; `mikroscope-port-link-down` read 3 over the window holding a real
+`ether7` link-down at 16:33:49 and 4 over the cluster of four on `ether4` at
+09:19 on 2026-09-20. Both thresholds are 0 with `gt`, so both conditions were
+met.
+
 <NotClaimed variant="untested">
-	Neither port-event rule has been seen firing on a real event: they were written against the
-	record shapes measured on the reference RB5009 and have not been put in front of a live loop or a
-	live link-down. The row-by-row headless render walk of 2026-09-15 covered 168 InfluxDB panels and
-	130 Prometheus ones and has not been repeated for these two.
+	Neither rule has been watched through Grafana's own evaluation — query returning a firing value
+	is not the same as a rule going pending, firing and resolving, which is the gap the
+	[alerts page](/mikroscope/dashboards/alerts/) states. The row-by-row headless render walk of
+	2026-09-15 covered 168 InfluxDB panels and 130 Prometheus ones and has not been repeated for
+	these two.
 </NotClaimed>
 
 The port table all of this rests on carries its own limit.

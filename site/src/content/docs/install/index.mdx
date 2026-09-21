@@ -242,10 +242,12 @@ over HTTP or the RouterOS API.
 <NotClaimed variant="untested">
 	Reboot survival of a persistent install: the reference router is production and is not rebooted
 	for tests. The byte-identical round trip on any device other than the RB5009, on any RouterOS
-	other than 7.24.2, or with install and upgrade run without `--ephemeral` (the scripted run passed
-	it to doctor, install and upgrade, not to status or uninstall). The round trip has not been run
-	against the current container settings: `privileged=yes`, `memory-max=64M`, and the envlist
-	entries `MEM_LIMIT_MB`, `CAPTURE_MB`, `TRIGGERS` and `FLOOR_HZ`; it ran with `memory-max=32M`.
+	other than 7.24.2 — install, status and uninstall have since run on 7.24.4, but the round trip
+	itself has not been repeated there — or with install and upgrade run without `--ephemeral` (the
+	scripted run passed it to doctor, install and upgrade, not to status or uninstall). The round
+	trip has not been run against the current container settings: `privileged=yes`,
+	`memory-max=64M`, and the envlist entries `MEM_LIMIT_MB`, `CAPTURE_MB`, `TRIGGERS` and
+	`FLOOR_HZ`; it ran with `memory-max=32M`.
 </NotClaimed>
 
 <SeeAlso>

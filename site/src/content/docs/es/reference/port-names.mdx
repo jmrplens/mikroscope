@@ -210,9 +210,10 @@ callado es el estado sano— y la forma de Prometheus de cada uno lee el `/metri
 del colector, cuya copia de la familia lleva un `kind` en todo registro de puerto
 venga como venga del agente. En un almacén InfluxDB la
 columna `kind` no existe hasta que se escribe el primer registro de puerto
-clasificado por clase, así que las dos consultas se validaron el 2026-09-16
-contra una tabla sintética en ese mismo InfluxDB 3, porque el almacén en
-producción todavía no tenía esa columna.
+clasificado por clase, así que las dos consultas se validaron primero el
+2026-09-16 contra una tabla sintética en ese mismo InfluxDB 3, porque el
+almacén en producción todavía no tenía esa columna. La tiene desde el
+2026-09-19, con las ocho clases.
 
 Junto a ellos se publican dos reglas de alerta, en los dos ficheros de
 aprovisionamiento. Las dos leen `/dev/kmsg` a través del agente y no preguntan
@@ -228,12 +229,23 @@ La forma de InfluxDB de cada una necesita un almacén que ya haya guardado un
 registro de puerto clasificado por clase; antes de eso la consulta falla al
 planificarse.
 
+Las consultas de InfluxDB de las dos reglas se ejecutaron tal cual contra el
+almacén en producción el 2026-09-21, y las dos devuelven un valor de disparo
+sobre registros que el router escribió de verdad: `mikroscope-l2-loop` dio 109
+en su propia ventana de cinco minutos, con la firma `own-address` en `ether2`
+corriendo sin parar a unos 0,5 registros/s desde el 2026-09-19;
+`mikroscope-port-link-down` dio 3 en la ventana que contiene una caída de
+enlace real en `ether7` a las 16:33:49 y 4 en el grupo de cuatro de `ether4` de
+las 09:19 del 2026-09-20. Las dos tienen umbral 0 con `gt`, así que las dos
+condiciones se cumplieron.
+
 <NotClaimed variant="untested">
-	No se ha visto saltar ninguna de las dos reglas de puerto con un suceso real: se escribieron
-	contra las formas de registro medidas en el RB5009 de referencia y no se han puesto delante de un
-	bucle ni de una caída de enlace en vivo. El recorrido de render fila a fila con Chromium sin
-	interfaz del 2026-09-15 cubrió 168 paneles de InfluxDB y 130 de Prometheus, y no se ha repetido
-	para estos dos.
+	No se ha visto a ninguna de las dos reglas pasar por la evaluación de Grafana: que la consulta
+	devuelva un valor de disparo no es lo mismo que una regla que pasa a pendiente, salta y se
+	resuelve, que es justo el hueco que señala la
+	[página de alertas](/mikroscope/es/dashboards/alerts/). El recorrido de render fila a fila con
+	Chromium sin interfaz del 2026-09-15 cubrió 168 paneles de InfluxDB y 130 de Prometheus, y no se
+	ha repetido para estos dos.
 </NotClaimed>
 
 La tabla de puertos sobre la que se apoya todo esto tiene su propio límite.

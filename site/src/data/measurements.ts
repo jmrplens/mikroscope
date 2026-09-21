@@ -88,6 +88,19 @@ export const campaigns = {
 		},
 		source: "site/src/content/docs/limits/index.mdx",
 	},
+	// Three `/stream` connections against the production agent, timed to the
+	// centisecond from the operator host on the same LAN. The point of the run
+	// was the server's own 30 s WriteTimeout, so nothing else was varied.
+	"stream-2026-09-21": {
+		...RB5009,
+		routeros: "7.24.4",
+		date: "2026-09-21",
+		conditions: {
+			en: "three `GET /stream` connections against the installed agent at 10 Hz, opened from the operator host on the LAN and held until the server closed them",
+			es: "tres conexiones `GET /stream` contra el agente instalado a 10 Hz, abiertas desde el equipo del operador en la LAN y mantenidas hasta que el servidor las cerró",
+		},
+		source: "site/src/content/docs/reference/http.mdx",
+	},
 	// The naive approach, measured once so the agent's cost has something to be
 	// compared against: a busybox shell loop reading the same file set at the
 	// same rate, which pays a fork per iteration where the Go agent pays none.
@@ -621,6 +634,25 @@ const fixed = {
 		unit: "%",
 		digits: 0,
 		campaign: "ssh-connect",
+	},
+	// site/src/content/docs/reference/http.mdx: how long a /stream connection
+	// lives before the server's WriteTimeout closes it, and how many lines it
+	// carried in that time at 10 Hz.
+	"stream.lifetime": {
+		kind: "reading",
+		value: 30.01,
+		max: 30.06,
+		unit: "s",
+		digits: 2,
+		campaign: "stream-2026-09-21",
+	},
+	"stream.lines": {
+		kind: "reading",
+		value: 304,
+		max: 306,
+		unit: "",
+		digits: 0,
+		campaign: "stream-2026-09-21",
 	},
 	// site/src/content/docs/install/reaching-the-agent.mdx: a reply is truncated there, silently.
 	"relay.replyMaxBytes": {

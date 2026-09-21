@@ -390,14 +390,29 @@ The agent detects what a kernel has at start and reports it on `/capabilities`: 
 source are absent from every sample and every sink, never zero. The agent does read PSI
 and `schedstat` where a kernel has them.
 
+Both parsers now read the kernel running the test suite rather than a fixture:
+`TestParsePressureReadsTheRunningKernel` and
+`TestParseSchedstatReadsTheRunningKernel` parse the host's own
+`/proc/pressure/{cpu,memory,io}` and `/proc/schedstat` and compare the result
+against a second, independent reading of the same bytes, skipping where the
+files are absent — which is the RB5009's own case. On the amd64 development
+host (kernel 6.12.107) they pass, and that kernel's `/proc/pressure/cpu`
+carries a `full` line, which most kernels do not.
+
+The PMU counter set on that host was recorded on 2026-09-21: six counters —
+`cycles`, `instructions`, `cache-references`, `cache-misses`,
+`branch-instructions` and `branch-misses` — and they are multiplexed, each
+running about 84 % of the time it was enabled. That is the reason the agent
+ships `enabled_ns` and `running_ns` beside every count instead of the count
+alone: on a CPU that multiplexes, the raw number is a sample of the interval,
+not the interval.
+
 > **Untested**
 >
-> The PSI and `schedstat` paths have never run on the RB5009, because its kernel lacks both. The
-> `schedstat` path ran only on the amd64 development host (kernel 6.12.107, 2026-09-12); the PSI
-> parser has been tested only against synthetic input. The PMU opened on that development host
-> (2026-09-12), but which counters it opened was not recorded; on no CPU but the RB5009's Cortex-A72
-> is the counter set known. The hEX S, a 32-bit RouterOS build on an ARM64 chip, has not been
-> measured at all.
+> The PSI and `schedstat` paths have never run on the RB5009, because its kernel lacks both, and so
+> they have never run on a router at all. On no CPU but the RB5009's Cortex-A72 and this amd64
+> host is the PMU counter set known. The hEX S, a 32-bit RouterOS build on an ARM64 chip, has not
+> been measured at all.
 
 ### How far back the agent remembers
 

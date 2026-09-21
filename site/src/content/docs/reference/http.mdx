@@ -5,7 +5,6 @@ description: Every path the agent serves on the veth, its query parameters, what
 
 import { Aside } from "@astrojs/starlight/components";
 import Measured from "../../../components/Measured.astro";
-import NotClaimed from "../../../components/NotClaimed.astro";
 import PrivilegedOnly from "../../../components/PrivilegedOnly.astro";
 import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
@@ -173,7 +172,7 @@ asks for at most <Measured id="relay.maxBatch" /> lines.
 ## `GET /stream`
 
 Chunked NDJSON with `Cache-Control: no-store`, held open until the client
-leaves.
+leaves or the server's 30 s `WriteTimeout` closes it, whichever comes first.
 
 - `since` absent or `0`: starts live. The first sample written is the next one
   produced after the request; the newest sample already in the ring is not
@@ -187,12 +186,15 @@ leaves.
 
 A `since` that is not a number is `400`.
 
-<NotClaimed variant="untested">
-	The server's 30 s `WriteTimeout` applies to every response, and Go's HTTP server does not lift it
-	for a handler that keeps writing, so a `/stream` connection is expected to end about 30 s after it
-	opens. That is read from `internal/agent/agent.go` and `http.go`, not measured. The CLI does not
-	depend on `/stream`: `record` and `forward` pull `/snapshot?since=`.
-</NotClaimed>
+The server's 30 s `WriteTimeout` applies to every response, and Go's HTTP
+server does not lift it for a handler that keeps writing, so a `/stream`
+connection ends about 30 s after it opens however much it still has to say.
+Measured on the reference RB5009 (RouterOS 7.24.4, agent 1.0.9 at 10 Hz) on
+2026-09-21: three connections lived <Measured id="stream.lifetime" /> and
+carried <Measured id="stream.lines" /> lines each. **A consumer of `/stream`
+has to reconnect**, with the last `seq` it saw as `since` so the gap is
+backfilled. The CLI does not depend on `/stream`: `record` and `forward` pull
+`/snapshot?since=`.
 
 ## The line kinds
 

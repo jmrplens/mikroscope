@@ -844,7 +844,7 @@ asks for at most 13 lines.
 ### `GET /stream`
 
 Chunked NDJSON with `Cache-Control: no-store`, held open until the client
-leaves.
+leaves or the server's 30 s `WriteTimeout` closes it, whichever comes first.
 
 - `since` absent or `0`: starts live. The first sample written is the next one
   produced after the request; the newest sample already in the ring is not
@@ -858,12 +858,15 @@ leaves.
 
 A `since` that is not a number is `400`.
 
-> **Untested**
->
-> The server's 30 s `WriteTimeout` applies to every response, and Go's HTTP server does not lift it
-> for a handler that keeps writing, so a `/stream` connection is expected to end about 30 s after it
-> opens. That is read from `internal/agent/agent.go` and `http.go`, not measured. The CLI does not
-> depend on `/stream`: `record` and `forward` pull `/snapshot?since=`.
+The server's 30 s `WriteTimeout` applies to every response, and Go's HTTP
+server does not lift it for a handler that keeps writing, so a `/stream`
+connection ends about 30 s after it opens however much it still has to say.
+Measured on the reference RB5009 (RouterOS 7.24.4, agent 1.0.9 at 10 Hz) on
+2026-09-21: three connections lived 30.01–30.06 s and
+carried 304–306 lines each. **A consumer of `/stream`
+has to reconnect**, with the last `seq` it saw as `since` so the gap is
+backfilled. The CLI does not depend on `/stream`: `record` and `forward` pull
+`/snapshot?since=`.
 
 ### The line kinds
 
@@ -1094,11 +1097,20 @@ The counters on the collector count from the collector's start, and
 collector. `mikroscope_self_*` still describe the agent: they come from the
 agent's samples.
 
+The first three were checked against a real agent on 2026-09-21, run at 100 Hz
+and again at 50 Hz with the collector pulling from it: `/healthz` read
+`rate_hz` 100 and 50 and the collector's own log named the same rate back,
+while `mikroscope_info{rate_hz}` read `10` at both; `mikroscope_cpu_busy_ticks`
+carried the buckets `le="0"` through `le="11"` plus `+Inf` at both; and
+`window="1s"`, `window="10s"` and `window="60s"` were all present at both.
+
 > **Untested**
 >
-> The consequences listed above for an agent running at a rate other than 10 Hz are arithmetic from
-> `internal/sinks/prometheus.go`. None of them was compared against the agent's own exposition at 50
-> or 100 Hz.
+> The last two are still arithmetic, from `internal/expo/expo.go`: the collector's `Totals` is
+> sized once at the nominal 10 Hz and `SetSamplerRate` resizes only the ring, never re-buckets, so
+> the 1/600 weight and the 36 000-sample eviction stand whatever the agent's rate. Neither was
+> watched happening — the eviction needs an interrupt line to fall out of the top-K and stay out,
+> which no run has provoked.
 
 ### Conventions
 
@@ -2007,9 +2019,10 @@ and the comment meet:
 Both are known-empty panels — a quiet set of ports is the healthy state — and
 the Prometheus form of each reads the collector's `/metrics`, whose copy of the
 family carries a `kind` on every port record however the agent shipped it. In an InfluxDB store the `kind` column exists only once a first port
-record classified by kind has been written, so both queries were validated on
-2026-09-16 against a synthetic table in the same InfluxDB 3, the live store
-having no such column yet.
+record classified by kind has been written, so both queries were first
+validated on 2026-09-16 against a synthetic table in the same InfluxDB 3, the
+live store having no such column then. It has one since 2026-09-19, holding all
+eight kinds.
 
 Two alert rules ship beside them, in both provisioning files. Both read
 `/dev/kmsg` through the agent and ask RouterOS nothing:
@@ -2023,12 +2036,22 @@ Two alert rules ship beside them, in both provisioning files. Both read
 The InfluxDB form of each needs a store that has already held one port record
 classified by kind; before that the query fails at planning time.
 
+Both rules' InfluxDB queries were run verbatim against the live store on
+2026-09-21, and both return a firing value on records the router really wrote:
+`mikroscope-l2-loop` read 109 over its own five-minute window, the `own-address`
+signature on `ether2` having run continuously at about 0.5 records/s since
+2026-09-19; `mikroscope-port-link-down` read 3 over the window holding a real
+`ether7` link-down at 16:33:49 and 4 over the cluster of four on `ether4` at
+09:19 on 2026-09-20. Both thresholds are 0 with `gt`, so both conditions were
+met.
+
 > **Untested**
 >
-> Neither port-event rule has been seen firing on a real event: they were written against the
-> record shapes measured on the reference RB5009 and have not been put in front of a live loop or a
-> live link-down. The row-by-row headless render walk of 2026-09-15 covered 168 InfluxDB panels and
-> 130 Prometheus ones and has not been repeated for these two.
+> Neither rule has been watched through Grafana's own evaluation — query returning a firing value
+> is not the same as a rule going pending, firing and resolving, which is the gap the
+> [alerts page](https://jmrp.io/docs/mikroscope/dashboards/alerts/) states. The row-by-row headless render walk of
+> 2026-09-15 covered 168 InfluxDB panels and 130 Prometheus ones and has not been repeated for
+> these two.
 
 The port table all of this rests on carries its own limit.
 

@@ -186,6 +186,41 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Seven of the twelve InfluxDB alert rules could never fire.** The InfluxDB
+  sink writes its counters unsigned, so `coalesce(sum(count), 0)` is
+  `coalesce(UInt64, Int64)` — a pair Grafana's InfluxDB plugin cannot map into
+  a frame. It answers **HTTP 200 with no frames and no error**, Grafana reads
+  an empty result as NoData, and every rule but the silent-agent one declares
+  `noDataState: OK`. The rule sits at OK forever while the condition it watches
+  is true.
+
+  Found on 2026-09-21 by loading the provisioning file into Grafana 13.2.1
+  against the live store and watching all twelve evaluate — which is a thing
+  nothing had done before, and the reason this shipped. `mikroscope-l2-loop`
+  was one of the seven, dead *while the `own-address` loop signature it exists
+  to catch was running*: the same SQL over `/api/v3/query_sql` returned 109 at
+  that moment. Every `coalesce()` over an aggregate now carries `::BIGINT`;
+  afterwards all twelve returned a value and that rule went to Alerting on the
+  live signature. `TestCoalesceIsCastInAlertSQL` fails if a new rule omits the
+  cast. It is the same fault `TestGreatestIsCastForTheInfluxPlugin` already
+  pinned for panels, and worse, because a panel fails loudly with a 500 and
+  this returns success and nothing.
+
+- **The InfluxDB conntrack rule named a column no InfluxDB store holds.** It
+  read `limit_objs`, the SQL sink's name, while the InfluxDB sink writes the
+  slab ceiling as `limit`; the rule failed at planning on every InfluxDB store.
+  The documentation had predicted this defect from the code before anything
+  confirmed it. The rule reads `"limit"` now, and the PostgreSQL translation
+  turns it back into `limit_objs`.
+
+- **A second `--remote-image` install on one router refused itself.** The
+  container was identified by its registry reference, which is the same string
+  for every mikroscope install anywhere, so a second install under its own
+  `--name`, `--veth` and `--subnet` found the first and refused with "exists on
+  the router and was not created by mikroscope" — which is what had just been
+  done. It is identified by its veth now. Measured on the reference RB5009 on
+  2026-09-21 while testing the GHCR route beside the running install.
+
 - **A collector writing only to `--postgres` published nothing.** The store
   list that decides which dashboards to publish still only knew `--sql`, so a
   deployment using the connecting sink alone was told "there is nothing to

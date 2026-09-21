@@ -273,10 +273,12 @@ over HTTP or the RouterOS API.
 >
 > Reboot survival of a persistent install: the reference router is production and is not rebooted
 > for tests. The byte-identical round trip on any device other than the RB5009, on any RouterOS
-> other than 7.24.2, or with install and upgrade run without `--ephemeral` (the scripted run passed
-> it to doctor, install and upgrade, not to status or uninstall). The round trip has not been run
-> against the current container settings: `privileged=yes`, `memory-max=64M`, and the envlist
-> entries `MEM_LIMIT_MB`, `CAPTURE_MB`, `TRIGGERS` and `FLOOR_HZ`; it ran with `memory-max=32M`.
+> other than 7.24.2 — install, status and uninstall have since run on 7.24.4, but the round trip
+> itself has not been repeated there — or with install and upgrade run without `--ephemeral` (the
+> scripted run passed it to doctor, install and upgrade, not to status or uninstall). The round
+> trip has not been run against the current container settings: `privileged=yes`,
+> `memory-max=64M`, and the envlist entries `MEM_LIMIT_MB`, `CAPTURE_MB`, `TRIGGERS` and
+> `FLOOR_HZ`; it ran with `memory-max=32M`.
 
 ### See also
 
@@ -675,9 +677,10 @@ every other check with it.
 > **Untested**
 >
 > An install on arm or x86_64: every installation so far ran on one arm64 RB5009, and the hEX S that
-> will test 32-bit RouterOS has not arrived. Any RouterOS other than 7.24.2. The container step
-> writes `privileged=`, which RouterOS added in 7.24, and envlist entries with `key=`, where `name=`
-> fails on 7.24.2; how an earlier 7.x takes either was not tried.
+> will test 32-bit RouterOS has not arrived. Any RouterOS before 7.24: the container step writes
+> `privileged=`, which RouterOS added in 7.24, and envlist entries with `key=`, where `name=` fails
+> on 7.24.2; how an earlier 7.x takes either was not tried. Installs have run on 7.24.2 and 7.24.4
+> and on nothing else.
 
 ### See also
 
@@ -821,14 +824,49 @@ install itself — at 15 ms on its first samples. `uninstall` then verified by
 ownership count in each case, and the router's `/export` after all four was
 byte-identical to the one taken before them.
 
+#### `--remote-image` against GHCR
+
+The fifth run happened on 2026-09-21, on the same RB5009 by then running
+RouterOS 7.24.4, as a second install beside the running one under its own
+`--name`, `--veth`, `--subnet` and `--port`. **It did not work, and the reason
+is worth knowing before you choose a registry.**
+
+`/container/config registry-url` is a single global RouterOS setting, so
+pointing it at `https://ghcr.io` changes the registry for every container on
+the device; it was set for the run and put back afterwards. `doctor` read it
+first and refused with the exact mismatch — `MISSING registry-url is
+https://ghcr.io` — which is the check doing its job. With the registry pointed
+at GHCR the router created the container and then failed the pull:
+
+```
+download/extract error: fetch manifest failed:
+  getting https://ghcr.io/v2/jmrplens/mikroscope-agent/manifests/1.0.9 failed: auth error
+```
+
+`/container/config` carries **one** username and password for every registry,
+and the reference router's is a Docker Hub login. Measured from the operator
+host the same day, against the same public package: no credential at all
+returns `200` once the anonymous token is fetched, and a foreign credential
+returns `403` at the token endpoint. So the credential is sent to GHCR, GHCR
+rejects it, and RouterOS reports `auth error` — the image being public does not
+help, because the router never asks anonymously.
+
+What follows for you: **a router whose `/container/config` holds a Docker Hub
+login cannot pull from GHCR**, and the fix is either a GHCR token in that same
+field or Docker Hub as the registry. A router with no credential set was not
+tried, because the reference router's password cannot be read back and so
+cannot be restored.
+
+The run also found a real bug, now fixed: a `--remote-image` install identified
+its container by the registry reference, which is the same string for every
+mikroscope install anywhere, so a second install on one router found the first
+and refused as though it were someone else's container. It is identified by its
+veth now.
+
 > **Untested**
 >
-> `--remote-image` against **GHCR**. `/container/config registry-url` is a single global RouterOS
-> setting that mikroscope reads and never writes, and the reference router points at Docker Hub;
-> pointing it at ghcr.io to test that path would change the registry for every other container on
-> the device. The image is published to both registries and CI starts it from GHCR on all three
-> architectures, but no router has pulled it from there. Nor has any route been run on arm or on
-> x86_64 hardware.
+> A GHCR pull from a router whose `/container/config` has no credential, for the reason above. No
+> route has been run on arm or on x86_64 hardware.
 
 ### A checkout, with Go
 
