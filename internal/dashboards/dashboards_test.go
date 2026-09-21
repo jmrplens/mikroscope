@@ -705,3 +705,24 @@ func TestGreatestIsCastForTheInfluxPlugin(t *testing.T) {
 		}
 	}
 }
+
+// A bar with no fill is a bar that is not there. "Which core takes each
+// interrupt" shipped with FillOpacity 0 and drew an empty plot under a
+// 21-entry legend on the reference device (2026-09-19), which is the worst
+// shape a defect can take on a dashboard: the panel looks like a quiet device
+// rather than like a broken panel. timeseriesCustom already gives bars 90 and
+// a stack 40 when nothing overrides it, so the rule is simply that nothing
+// overrides it down to zero.
+func TestNoBarPanelIsDrawnWithNoFill(t *testing.T) {
+	t.Parallel()
+	for _, store := range []Store{Influx, Prometheus} {
+		for _, p := range panelsFor(store, nil) {
+			if p.DrawStyle != "bars" || p.FillOpacity == nil || *p.FillOpacity != 0 {
+				continue
+			}
+			t.Errorf("%s panel %q: bars at FillOpacity 0 render nothing at all. "+
+				"Leave it unset (bars take 90, a stack 40) or give it a visible value.",
+				store, p.Title)
+		}
+	}
+}

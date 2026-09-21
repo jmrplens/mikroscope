@@ -5974,7 +5974,7 @@
                 "barAlignment": 0,
                 "barWidthFactor": 0.9,
                 "drawStyle": "bars",
-                "fillOpacity": 0,
+                "fillOpacity": 40,
                 "hideFrom": {
                   "legend": false,
                   "tooltip": false,

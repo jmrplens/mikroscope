@@ -4,6 +4,24 @@ Notable changes per release. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the versions
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **The interrupt panel that drew nothing at all.** "Which core takes each
+  interrupt" carried `FillOpacity: 0` on a stacked bar chart, and a bar with
+  no fill is a bar that is not there. On the reference device (RB5009,
+  RouterOS 7.24.2, 2026-09-19) it returned 21 series totalling 4 300
+  interrupts/s, auto-scaled its axis to 7 K c/s to fit them, printed all 21 in
+  the legend — and drew an empty plot. Its own description says the reading is
+  "the stack redistributing while its total stays flat", which it had never
+  been able to show.
+
+  An empty plot under a full legend reads as a quiet device rather than as a
+  broken panel, which is the worst shape a dashboard defect can take: nothing
+  errors, nothing reports no data, and the panel looks like good news. A test
+  now states the rule for every bar panel in both stores.
+
 ## [1.0.10]
 
 ### Added
