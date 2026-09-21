@@ -45,7 +45,7 @@ func TestParsePressureReadsTheRunningKernel(t *testing.T) {
 // parser's own byte walk, so a shared bug cannot make both agree.
 func totalsByHand(t *testing.T, b []byte) (some, full uint64, hasFull bool) {
 	t.Helper()
-	for _, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(string(b)), "\n") {
 		fields := strings.Fields(line)
 		if len(fields) == 0 {
 			continue
@@ -83,7 +83,7 @@ func TestParseSchedstatReadsTheRunningKernel(t *testing.T) {
 	// check is that it found every cpu line the file has, in file order, with
 	// the same three numbers read a different way.
 	var cpus []string
-	for _, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(string(b)), "\n") {
 		if strings.HasPrefix(line, "cpu") {
 			cpus = append(cpus, line)
 		}
@@ -105,9 +105,9 @@ func TestParseSchedstatReadsTheRunningKernel(t *testing.T) {
 			{8, got[i].WaitNS, "wait ns"},
 			{9, got[i].Timeslices, "timeslices"},
 		} {
-			n, err := strconv.ParseUint(fields[want.col], 10, 64)
-			if err != nil {
-				t.Fatalf("%s column %d: %v", fields[0], want.col, err)
+			n, convErr := strconv.ParseUint(fields[want.col], 10, 64)
+			if convErr != nil {
+				t.Fatalf("%s column %d: %v", fields[0], want.col, convErr)
 			}
 			if want.got != n {
 				t.Errorf("%s %s = %d, the file says %d (field %d)", fields[0], want.name, want.got, n, j)
