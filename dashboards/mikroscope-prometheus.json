@@ -3214,15 +3214,17 @@
             "type": "prometheus",
             "uid": "${DS_MIKROSCOPE}"
           },
-          "description": "Three drop counters for each interface tag present — rx_drops, tx_drops and tx_queue_drops — colored by whether the router dropped anything in each bin. The row count follows the data (three times however many interfaces GROUP BY returns), so this is three rows on a single-interface deployment and forty-eight on a sixteen-port one. Every field is already a per-second rate, so the query takes max() over the bin rather than a delta; a SQL delta or a Grafana rate() on these would be meaningless. Drops mean the queue, which is a different fault from the PHY errors in the panel above: tx_queue_drops is the one to watch, because it is the router's own egress queue overflowing — the signature of a saturated uplink rather than a lossy medium. On the reference device (RB5009, RouterOS 7.24.2) measured over the 24 h to 2026-09-12 16:48 UTC, all three counters were 0 on all three configured interfaces across 883 samples each; zero is the healthy reading and a quiet panel here is the expected state, not a broken query. Your device will differ in row count and, if any link is saturated, in color. What it cannot tell you: why a packet was dropped (queue discipline, buffer exhaustion and a policer all land in the same counter), nor anything about interfaces outside Options.Interfaces. Both InfluxDB and the Prometheus exposition carry the error counters as well, and they are in the panel above. THRESHOLDS: green base with a single step at 1, the same zero / non-zero rule as the errors panel and for the same reason — the healthy reading is exactly zero on every device, while 'how many drops per second is acceptable' depends on the link and the ruleset. PRESENTATION: height 9 rather than 6 — nine row labels in six grid rows collide into illegible overlapping text, and a deployment with more interfaces will want more height still.",
+          "description": "How many packets per second the router's own transmit queue dropped, per interface and per bin, for the interfaces that dropped any — a bar chart of the worst second in each bin, not a color. THIS IS THE DROP COUNTER TO WATCH: it is the router's egress queue overflowing, the signature of a saturated link or of bursts arriving faster than the port can drain them, which is a different fault from the PHY errors in the panel above and from a lossy medium. The field is already a per-second rate from monitor-traffic, so the query takes max() over the bin rather than a delta; a SQL delta or a Grafana rate() on it would be meaningless. ON THE REFERENCE DEVICE (RB5009, RouterOS 7.24.2) over the 6.5 h to 2026-09-19 18:00 UTC, two of sixteen interfaces dropped anything: ether4, a 1 GbE port to a server, lost 3 337 packets in six one-second bursts an hour, peaking at 436/s while the port averaged 8-9 Mbit/s — microbursts against a gigabit egress, not a saturated link — and ether5, the WAN, lost 336. The other fourteen were flat zero across 7 198 samples each, and are not drawn. Read the PEAK, not the mean: a burst is one second wide and a 60 s bin's mean divides it by sixty. WHAT IT CANNOT TELL YOU: why a packet was dropped — queue discipline, buffer exhaustion and a policer all land in this one counter — nor which flow filled the queue, nor anything about interfaces outside Options.Interfaces. A device that never drops draws nothing and says so, which is the expected state and not a broken query. NO THRESHOLDS, and this is a presentation decision rather than a judgement one: colorFor switches a panel that defines thresholds to color.mode 'thresholds', which paints every series by its value, so two interfaces dropping at the same rate draw in the same color and the legend cannot be matched to a bar. The classic palette gives each interface its own color instead, which is the reading this panel exists for — WHICH port, and how much. The zero / non-zero judgement has not gone anywhere: it lives in the stat tile and the alert rule, where one number can carry it.",
           "fieldConfig": {
             "defaults": {
               "color": {
-                "fixedColor": "text",
-                "mode": "fixed"
+                "mode": "palette-classic"
               },
               "custom": {
-                "fillOpacity": 70,
+                "barAlignment": 0,
+                "barWidthFactor": 0.9,
+                "drawStyle": "bars",
+                "fillOpacity": 90,
                 "hideFrom": {
                   "legend": false,
                   "tooltip": false,
@@ -3230,74 +3232,38 @@
                 },
                 "insertNulls": 300000,
                 "lineWidth": 0,
-                "spanNulls": false
-              },
-              "mappings": [
-                {
-                  "options": {
-                    "from": null,
-                    "result": {
-                      "color": "green",
-                      "index": 0,
-                      "text": "no drops"
-                    },
-                    "to": 0.0001
-                  },
-                  "type": "range"
-                },
-                {
-                  "options": {
-                    "from": 0.0001,
-                    "result": {
-                      "color": "orange",
-                      "index": 1,
-                      "text": "drops"
-                    },
-                    "to": null
-                  },
-                  "type": "range"
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
                 }
-              ],
-              "min": 0,
-              "noValue": "no drops",
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green",
-                    "value": null
-                  },
-                  {
-                    "color": "red",
-                    "value": 1
-                  }
-                ]
               },
-              "unit": "short"
+              "mappings": [],
+              "min": 0,
+              "noValue": "no egress queue drops in this window",
+              "unit": "pps"
             },
             "overrides": []
           },
           "gridPos": {
-            "h": 9,
-            "w": 24,
+            "h": 8,
+            "w": 12,
             "x": 0,
             "y": 150
           },
           "id": 46,
+          "interval": "1m",
           "options": {
-            "alignValue": "left",
             "legend": {
               "calcs": [],
               "displayMode": "list",
               "placement": "bottom",
               "showLegend": true
             },
-            "mergeValues": true,
-            "rowHeight": 0.9,
-            "showValue": "auto",
             "tooltip": {
-              "mode": "single",
-              "sort": "none"
+              "mode": "multi",
+              "sort": "desc"
             }
           },
           "targets": [
@@ -3306,14 +3272,88 @@
                 "type": "prometheus",
                 "uid": "${DS_MIKROSCOPE}"
               },
-              "expr": "mikroscope_api_interface{kind=~\"rx_drops|tx_drops|tx_queue_drops\"}",
-              "legendFormat": "__auto",
+              "expr": "max by (interface) (mikroscope_api_interface{kind=\"tx_queue_drops\"}) \u003e 0",
+              "interval": "1m",
+              "legendFormat": "{{interface}}",
               "range": true,
               "refId": "A"
             }
           ],
-          "title": "Interface drops — rx, tx and tx-queue",
-          "type": "state-timeline"
+          "title": "Egress queue drops — the router's own transmit queue",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_MIKROSCOPE}"
+          },
+          "description": "How many packets per second each interface dropped on receive and on transmit, per bin, for the interfaces that dropped any — the two counters monitor-traffic returns beside the egress queue. Both are already per-second rates, so the query takes max() over the bin. WHAT A MISSING INTERFACE MEANS HERE, and it is not zero: RouterOS returns rx_drops and tx_drops for some interface types and not others. On the reference device (RB5009, RouterOS 7.24.2) over the 2 h to 2026-09-19 18:00 UTC, both came back on all seven virtual interfaces — the bridge, the VLAN, the PPPoE, the two veths and the two WireGuard peers — and on NONE of the nine physical ports, which returned only the egress queue counter across 7 198 samples each. So the absence of ether1 from this panel says nothing about ether1, and that is why the egress queue has a panel of its own rather than a third lane here. What the reference device did drop: wg_devices lost exactly one packet in each of 172 separate seconds, a trickle and not an event, and VLAN_DIGI lost 172 packets in four seconds, peaking at 75/s. WHAT IT CANNOT TELL YOU: why — queue discipline, buffer exhaustion and a policer are one counter — nor anything about interfaces outside Options.Interfaces. NO THRESHOLDS, for the reason given on the egress queue panel beside this one: color.mode 'thresholds' would paint both series the same color and leave the legend unmatchable, where the classic palette names each interface by color.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "barAlignment": 0,
+                "barWidthFactor": 0.9,
+                "drawStyle": "bars",
+                "fillOpacity": 90,
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": 300000,
+                "lineWidth": 0,
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                }
+              },
+              "mappings": [],
+              "min": 0,
+              "noValue": "no rx or tx drops in this window — and RouterOS returns these two only for some interface types, so a port missing here is not a port at zero",
+              "unit": "pps"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 150
+          },
+          "id": 47,
+          "interval": "1m",
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${DS_MIKROSCOPE}"
+              },
+              "expr": "max by (interface, kind) (mikroscope_api_interface{kind=~\"rx_drops|tx_drops\"}) \u003e 0",
+              "interval": "1m",
+              "legendFormat": "{{interface}}",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Packets the interface itself dropped — rx and tx",
+          "type": "timeseries"
         },
         {
           "datasource": {
@@ -3335,9 +3375,9 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 159
+            "y": 158
           },
-          "id": 47,
+          "id": 48,
           "options": {
             "cellHeight": "sm",
             "footer": {
@@ -3497,9 +3537,9 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 167
+            "y": 166
           },
-          "id": 48,
+          "id": 49,
           "options": {
             "cellHeight": "sm",
             "footer": {
@@ -3568,9 +3608,9 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 175
+            "y": 174
           },
-          "id": 49,
+          "id": 50,
           "options": {
             "legend": {
               "calcs": [],
@@ -3669,9 +3709,9 @@
             "h": 7,
             "w": 24,
             "x": 0,
-            "y": 183
+            "y": 182
           },
-          "id": 50,
+          "id": 51,
           "interval": "1m",
           "options": {
             "alignValue": "left",
@@ -3715,9 +3755,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 190
+        "y": 189
       },
-      "id": 51,
+      "id": 52,
       "panels": [
         {
           "datasource": {
@@ -3760,9 +3800,9 @@
             "h": 8,
             "w": 16,
             "x": 0,
-            "y": 191
+            "y": 190
           },
-          "id": 52,
+          "id": 53,
           "interval": "1m",
           "knownEmpty": true,
           "options": {
@@ -3883,9 +3923,9 @@
             "h": 8,
             "w": 8,
             "x": 16,
-            "y": 191
+            "y": 190
           },
-          "id": 53,
+          "id": 54,
           "interval": "1m",
           "options": {
             "alignValue": "left",
@@ -3960,9 +4000,9 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 199
+            "y": 198
           },
-          "id": 54,
+          "id": 55,
           "interval": "1m",
           "knownEmpty": true,
           "options": {
@@ -4034,9 +4074,9 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 199
+            "y": 198
           },
-          "id": 55,
+          "id": 56,
           "options": {
             "colorMode": "value",
             "graphMode": "none",
@@ -4109,9 +4149,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 207
+        "y": 206
       },
-      "id": 56,
+      "id": 57,
       "panels": [
         {
           "datasource": {
@@ -4151,9 +4191,9 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 208
+            "y": 207
           },
-          "id": 57,
+          "id": 58,
           "options": {
             "legend": {
               "calcs": [],
@@ -4219,9 +4259,9 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 208
+            "y": 207
           },
-          "id": 58,
+          "id": 59,
           "options": {
             "legend": {
               "calcs": [],
@@ -4287,9 +4327,9 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 216
+            "y": 215
           },
-          "id": 59,
+          "id": 60,
           "options": {
             "legend": {
               "calcs": [],
@@ -4339,9 +4379,9 @@
             "h": 8,
             "w": 6,
             "x": 12,
-            "y": 216
+            "y": 215
           },
-          "id": 60,
+          "id": 61,
           "options": {
             "displayMode": "basic",
             "legend": {
@@ -4414,9 +4454,9 @@
             "h": 8,
             "w": 6,
             "x": 18,
-            "y": 216
+            "y": 215
           },
-          "id": 61,
+          "id": 62,
           "interval": "1m",
           "options": {
             "colorMode": "value",
@@ -4505,9 +4545,9 @@
             "h": 6,
             "w": 24,
             "x": 0,
-            "y": 224
+            "y": 223
           },
-          "id": 62,
+          "id": 63,
           "options": {
             "alignValue": "left",
             "legend": {
@@ -4577,9 +4617,9 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 230
+            "y": 229
           },
-          "id": 63,
+          "id": 64,
           "options": {
             "legend": {
               "calcs": [],
@@ -4617,9 +4657,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 238
+        "y": 237
       },
-      "id": 64,
+      "id": 65,
       "panels": [
         {
           "datasource": {
@@ -4659,9 +4699,9 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 239
+            "y": 238
           },
-          "id": 65,
+          "id": 66,
           "interval": "1m",
           "options": {
             "legend": {
@@ -4751,9 +4791,9 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 239
+            "y": 238
           },
-          "id": 66,
+          "id": 67,
           "interval": "1m",
           "options": {
             "legend": {
@@ -4823,9 +4863,9 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 247
+            "y": 246
           },
-          "id": 67,
+          "id": 68,
           "interval": "1m",
           "options": {
             "legend": {
@@ -4907,9 +4947,9 @@
             "h": 7,
             "w": 24,
             "x": 0,
-            "y": 255
+            "y": 254
           },
-          "id": 68,
+          "id": 69,
           "interval": "1m",
           "knownEmpty": true,
           "options": {
@@ -4950,9 +4990,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 262
+        "y": 261
       },
-      "id": 69,
+      "id": 70,
       "panels": [
         {
           "datasource": {
@@ -4992,9 +5032,9 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 263
+            "y": 262
           },
-          "id": 70,
+          "id": 71,
           "interval": "1m",
           "options": {
             "legend": {
@@ -5063,9 +5103,9 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 271
+            "y": 270
           },
-          "id": 71,
+          "id": 72,
           "options": {
             "legend": {
               "calcs": [],
@@ -5132,9 +5172,9 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 271
+            "y": 270
           },
-          "id": 72,
+          "id": 73,
           "options": {
             "legend": {
               "calcs": [],
@@ -5202,9 +5242,9 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 279
+            "y": 278
           },
-          "id": 73,
+          "id": 74,
           "interval": "1m",
           "options": {
             "legend": {
@@ -5268,9 +5308,9 @@
             "h": 10,
             "w": 12,
             "x": 0,
-            "y": 287
+            "y": 286
           },
-          "id": 74,
+          "id": 75,
           "options": {
             "colorMode": "value",
             "graphMode": "area",
@@ -5325,9 +5365,9 @@
             "h": 10,
             "w": 12,
             "x": 12,
-            "y": 287
+            "y": 286
           },
-          "id": 75,
+          "id": 76,
           "options": {
             "displayMode": "basic",
             "legend": {
@@ -5405,9 +5445,9 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 297
+            "y": 296
           },
-          "id": 76,
+          "id": 77,
           "options": {
             "legend": {
               "calcs": [],
@@ -5473,9 +5513,9 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 297
+            "y": 296
           },
-          "id": 77,
+          "id": 78,
           "options": {
             "legend": {
               "calcs": [],
@@ -5541,9 +5581,9 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 305
+            "y": 304
           },
-          "id": 78,
+          "id": 79,
           "options": {
             "legend": {
               "calcs": [],
@@ -5628,9 +5668,9 @@
             "h": 5,
             "w": 24,
             "x": 0,
-            "y": 313
+            "y": 312
           },
-          "id": 79,
+          "id": 80,
           "options": {
             "alignValue": "left",
             "legend": {
@@ -5682,9 +5722,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 318
+        "y": 317
       },
-      "id": 80,
+      "id": 81,
       "panels": [
         {
           "datasource": {
@@ -5723,9 +5763,9 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 319
+            "y": 318
           },
-          "id": 81,
+          "id": 82,
           "options": {
             "legend": {
               "calcs": [],
@@ -5791,9 +5831,9 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 319
+            "y": 318
           },
-          "id": 82,
+          "id": 83,
           "options": {
             "legend": {
               "calcs": [],
@@ -5831,9 +5871,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 327
+        "y": 326
       },
-      "id": 83,
+      "id": 84,
       "panels": [
         {
           "datasource": {
@@ -5945,9 +5985,9 @@
             "h": 6,
             "w": 24,
             "x": 0,
-            "y": 328
+            "y": 327
           },
-          "id": 84,
+          "id": 85,
           "knownEmpty": true,
           "options": {
             "alignValue": "left",
@@ -6021,9 +6061,9 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 334
+            "y": 333
           },
-          "id": 85,
+          "id": 86,
           "options": {
             "legend": {
               "calcs": [],
@@ -6073,9 +6113,9 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 334
+            "y": 333
           },
-          "id": 86,
+          "id": 87,
           "options": {
             "colorMode": "none",
             "graphMode": "area",
@@ -6140,9 +6180,9 @@
             "h": 7,
             "w": 12,
             "x": 0,
-            "y": 342
+            "y": 341
           },
-          "id": 87,
+          "id": 88,
           "options": {
             "displayMode": "basic",
             "legend": {
@@ -6222,9 +6262,9 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 342
+            "y": 341
           },
-          "id": 88,
+          "id": 89,
           "interval": "1m",
           "knownEmpty": true,
           "options": {
@@ -6275,9 +6315,9 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 350
+            "y": 349
           },
-          "id": 89,
+          "id": 90,
           "knownEmpty": true,
           "options": {
             "cellHeight": "sm",
@@ -6319,9 +6359,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 358
+        "y": 357
       },
-      "id": 90,
+      "id": 91,
       "panels": [
         {
           "datasource": {
@@ -6361,9 +6401,9 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 359
+            "y": 358
           },
-          "id": 91,
+          "id": 92,
           "interval": "1m",
           "options": {
             "legend": {
@@ -6431,9 +6471,9 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 359
+            "y": 358
           },
-          "id": 92,
+          "id": 93,
           "interval": "1m",
           "options": {
             "legend": {
@@ -6501,9 +6541,9 @@
             "h": 6,
             "w": 12,
             "x": 0,
-            "y": 367
+            "y": 366
           },
-          "id": 93,
+          "id": 94,
           "options": {
             "displayMode": "basic",
             "legend": {
@@ -6580,9 +6620,9 @@
             "h": 6,
             "w": 12,
             "x": 12,
-            "y": 367
+            "y": 366
           },
-          "id": 94,
+          "id": 95,
           "interval": "1m",
           "options": {
             "legend": {
@@ -6633,9 +6673,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 373
+        "y": 372
       },
-      "id": 95,
+      "id": 96,
       "panels": [
         {
           "datasource": {
@@ -6675,9 +6715,9 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 374
+            "y": 373
           },
-          "id": 96,
+          "id": 97,
           "interval": "1m",
           "options": {
             "legend": {
@@ -6719,9 +6759,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 382
+        "y": 381
       },
-      "id": 97,
+      "id": 98,
       "panels": [
         {
           "datasource": {
@@ -6746,9 +6786,9 @@
             "h": 6,
             "w": 12,
             "x": 0,
-            "y": 383
+            "y": 382
           },
-          "id": 98,
+          "id": 99,
           "options": {
             "colorMode": "none",
             "graphMode": "area",
@@ -6852,9 +6892,9 @@
             "h": 6,
             "w": 12,
             "x": 12,
-            "y": 383
+            "y": 382
           },
-          "id": 99,
+          "id": 100,
           "options": {
             "alignValue": "left",
             "legend": {
@@ -6957,9 +6997,9 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 389
+            "y": 388
           },
-          "id": 100,
+          "id": 101,
           "options": {
             "alignValue": "left",
             "legend": {
@@ -7029,9 +7069,9 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 389
+            "y": 388
           },
-          "id": 101,
+          "id": 102,
           "options": {
             "legend": {
               "calcs": [],
@@ -7097,9 +7137,9 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 397
+            "y": 396
           },
-          "id": 102,
+          "id": 103,
           "options": {
             "legend": {
               "calcs": [],
@@ -7165,9 +7205,9 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 397
+            "y": 396
           },
-          "id": 103,
+          "id": 104,
           "options": {
             "legend": {
               "calcs": [],
@@ -7215,9 +7255,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 405
+        "y": 404
       },
-      "id": 104,
+      "id": 105,
       "panels": [
         {
           "datasource": {
@@ -7290,9 +7330,9 @@
             "h": 5,
             "w": 24,
             "x": 0,
-            "y": 406
+            "y": 405
           },
-          "id": 105,
+          "id": 106,
           "options": {
             "alignValue": "left",
             "legend": {
@@ -7362,9 +7402,9 @@
             "h": 7,
             "w": 12,
             "x": 0,
-            "y": 411
+            "y": 410
           },
-          "id": 106,
+          "id": 107,
           "options": {
             "legend": {
               "calcs": [],
@@ -7430,9 +7470,9 @@
             "h": 7,
             "w": 12,
             "x": 12,
-            "y": 411
+            "y": 410
           },
-          "id": 107,
+          "id": 108,
           "options": {
             "legend": {
               "calcs": [],
@@ -7470,9 +7510,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 418
+        "y": 417
       },
-      "id": 108,
+      "id": 109,
       "panels": [
         {
           "datasource": {
@@ -7512,9 +7552,9 @@
             "h": 8,
             "w": 15,
             "x": 0,
-            "y": 419
+            "y": 418
           },
-          "id": 109,
+          "id": 110,
           "options": {
             "legend": {
               "calcs": [],
@@ -7563,9 +7603,9 @@
             "h": 8,
             "w": 9,
             "x": 15,
-            "y": 419
+            "y": 418
           },
-          "id": 110,
+          "id": 111,
           "options": {
             "colorMode": "none",
             "graphMode": "none",
@@ -7639,9 +7679,9 @@
             "h": 8,
             "w": 10,
             "x": 0,
-            "y": 427
+            "y": 426
           },
-          "id": 111,
+          "id": 112,
           "options": {
             "displayMode": "basic",
             "legend": {
@@ -7718,9 +7758,9 @@
             "h": 8,
             "w": 14,
             "x": 10,
-            "y": 427
+            "y": 426
           },
-          "id": 112,
+          "id": 113,
           "interval": "1m",
           "options": {
             "legend": {
@@ -7788,9 +7828,9 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 435
+            "y": 434
           },
-          "id": 113,
+          "id": 114,
           "interval": "1m",
           "options": {
             "legend": {
@@ -7858,9 +7898,9 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 435
+            "y": 434
           },
-          "id": 114,
+          "id": 115,
           "interval": "1m",
           "options": {
             "legend": {
@@ -7910,9 +7950,9 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 443
+            "y": 442
           },
-          "id": 115,
+          "id": 116,
           "options": {
             "cellHeight": "sm",
             "footer": {
@@ -7953,9 +7993,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 451
+        "y": 450
       },
-      "id": 116,
+      "id": 117,
       "panels": [
         {
           "datasource": {
@@ -7995,9 +8035,9 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 452
+            "y": 451
           },
-          "id": 117,
+          "id": 118,
           "options": {
             "legend": {
               "calcs": [],
@@ -8082,9 +8122,9 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 452
+            "y": 451
           },
-          "id": 118,
+          "id": 119,
           "options": {
             "legend": {
               "calcs": [],
@@ -8132,9 +8172,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 460
+        "y": 459
       },
-      "id": 119,
+      "id": 120,
       "panels": [
         {
           "datasource": {
@@ -8174,9 +8214,9 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 461
+            "y": 460
           },
-          "id": 120,
+          "id": 121,
           "options": {
             "legend": {
               "calcs": [],
@@ -8243,9 +8283,9 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 461
+            "y": 460
           },
-          "id": 121,
+          "id": 122,
           "options": {
             "bucketOffset": 0,
             "combine": false,
@@ -8316,9 +8356,9 @@
             "h": 10,
             "w": 12,
             "x": 0,
-            "y": 469
+            "y": 468
           },
-          "id": 122,
+          "id": 123,
           "options": {
             "legend": {
               "calcs": [],
@@ -8368,9 +8408,9 @@
             "h": 10,
             "w": 12,
             "x": 12,
-            "y": 469
+            "y": 468
           },
-          "id": 123,
+          "id": 124,
           "options": {
             "displayMode": "basic",
             "legend": {
@@ -8457,9 +8497,9 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 479
+            "y": 478
           },
-          "id": 124,
+          "id": 125,
           "options": {
             "legend": {
               "calcs": [],
@@ -8532,9 +8572,9 @@
             "h": 8,
             "w": 6,
             "x": 12,
-            "y": 479
+            "y": 478
           },
-          "id": 125,
+          "id": 126,
           "options": {
             "colorMode": "value",
             "graphMode": "none",
@@ -8608,9 +8648,9 @@
             "h": 8,
             "w": 6,
             "x": 18,
-            "y": 479
+            "y": 478
           },
-          "id": 126,
+          "id": 127,
           "options": {
             "minVizHeight": 75,
             "minVizWidth": 75,
@@ -8680,9 +8720,9 @@
             "h": 8,
             "w": 15,
             "x": 0,
-            "y": 487
+            "y": 486
           },
-          "id": 127,
+          "id": 128,
           "options": {
             "legend": {
               "calcs": [],
@@ -8751,9 +8791,9 @@
             "h": 8,
             "w": 9,
             "x": 15,
-            "y": 487
+            "y": 486
           },
-          "id": 128,
+          "id": 129,
           "options": {
             "colorMode": "none",
             "graphMode": "none",
@@ -8798,9 +8838,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 495
+        "y": 494
       },
-      "id": 129,
+      "id": 130,
       "panels": [
         {
           "datasource": {
@@ -8840,9 +8880,9 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 496
+            "y": 495
           },
-          "id": 130,
+          "id": 131,
           "options": {
             "legend": {
               "calcs": [],
@@ -8918,9 +8958,9 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 496
+            "y": 495
           },
-          "id": 131,
+          "id": 132,
           "options": {
             "legend": {
               "calcs": [],
@@ -8986,9 +9026,9 @@
             "h": 8,
             "w": 13,
             "x": 0,
-            "y": 504
+            "y": 503
           },
-          "id": 132,
+          "id": 133,
           "options": {
             "legend": {
               "calcs": [],
@@ -9054,9 +9094,9 @@
             "h": 8,
             "w": 11,
             "x": 13,
-            "y": 504
+            "y": 503
           },
-          "id": 133,
+          "id": 134,
           "options": {
             "legend": {
               "calcs": [],
@@ -9153,9 +9193,9 @@
             "h": 8,
             "w": 13,
             "x": 0,
-            "y": 512
+            "y": 511
           },
-          "id": 134,
+          "id": 135,
           "options": {
             "displayMode": "basic",
             "legend": {
@@ -9243,9 +9283,9 @@
             "h": 8,
             "w": 11,
             "x": 13,
-            "y": 512
+            "y": 511
           },
-          "id": 135,
+          "id": 136,
           "options": {
             "minVizHeight": 75,
             "minVizWidth": 75,
@@ -9313,9 +9353,9 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 520
+            "y": 519
           },
-          "id": 136,
+          "id": 137,
           "interval": "1m",
           "options": {
             "legend": {
@@ -9417,9 +9457,9 @@
             "h": 6,
             "w": 24,
             "x": 0,
-            "y": 528
+            "y": 527
           },
-          "id": 137,
+          "id": 138,
           "interval": "1m",
           "options": {
             "alignValue": "left",
@@ -9487,9 +9527,9 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 534
+            "y": 533
           },
-          "id": 138,
+          "id": 139,
           "interval": "1m",
           "options": {
             "colorMode": "value",
@@ -9556,9 +9596,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 542
+        "y": 541
       },
-      "id": 139,
+      "id": 140,
       "panels": [
         {
           "datasource": {
@@ -9581,9 +9621,9 @@
             "h": 8,
             "w": 8,
             "x": 0,
-            "y": 543
+            "y": 542
           },
-          "id": 140,
+          "id": 141,
           "interval": "1m",
           "options": {
             "calculate": false,
@@ -9662,9 +9702,9 @@
             "h": 8,
             "w": 8,
             "x": 8,
-            "y": 543
+            "y": 542
           },
-          "id": 141,
+          "id": 142,
           "interval": "1m",
           "options": {
             "calculate": false,
@@ -9743,9 +9783,9 @@
             "h": 8,
             "w": 8,
             "x": 16,
-            "y": 543
+            "y": 542
           },
-          "id": 142,
+          "id": 143,
           "interval": "1m",
           "options": {
             "calculate": false,
@@ -9837,9 +9877,9 @@
             "h": 6,
             "w": 6,
             "x": 0,
-            "y": 551
+            "y": 550
           },
-          "id": 143,
+          "id": 144,
           "interval": "1m",
           "options": {
             "colorMode": "value",
@@ -9908,9 +9948,9 @@
             "h": 6,
             "w": 9,
             "x": 6,
-            "y": 551
+            "y": 550
           },
-          "id": 144,
+          "id": 145,
           "interval": "1m",
           "options": {
             "colorMode": "value",
@@ -10061,9 +10101,9 @@
             "h": 6,
             "w": 9,
             "x": 15,
-            "y": 551
+            "y": 550
           },
-          "id": 145,
+          "id": 146,
           "options": {
             "cellHeight": "sm",
             "footer": {
@@ -10132,9 +10172,9 @@
             "h": 6,
             "w": 24,
             "x": 0,
-            "y": 557
+            "y": 556
           },
-          "id": 146,
+          "id": 147,
           "options": {
             "displayMode": "basic",
             "legend": {
@@ -10183,9 +10223,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 563
+        "y": 562
       },
-      "id": 147,
+      "id": 148,
       "panels": [
         {
           "datasource": {
@@ -10324,9 +10364,9 @@
             "h": 5,
             "w": 24,
             "x": 0,
-            "y": 564
+            "y": 563
           },
-          "id": 148,
+          "id": 149,
           "options": {
             "cellHeight": "sm",
             "footer": {
@@ -10454,9 +10494,9 @@
             "h": 6,
             "w": 12,
             "x": 0,
-            "y": 569
+            "y": 568
           },
-          "id": 149,
+          "id": 150,
           "options": {
             "cellHeight": "sm",
             "footer": {
@@ -10608,9 +10648,9 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 569
+            "y": 568
           },
-          "id": 150,
+          "id": 151,
           "options": {
             "cellHeight": "sm",
             "footer": {
@@ -10651,9 +10691,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 577
+        "y": 576
       },
-      "id": 151,
+      "id": 152,
       "panels": [
         {
           "datasource": {
@@ -10694,9 +10734,9 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 578
+            "y": 577
           },
-          "id": 152,
+          "id": 153,
           "knownEmpty": true,
           "options": {
             "legend": {
@@ -10771,9 +10811,9 @@
             "h": 6,
             "w": 12,
             "x": 12,
-            "y": 578
+            "y": 577
           },
-          "id": 153,
+          "id": 154,
           "knownEmpty": true,
           "options": {
             "alignValue": "left",
@@ -10845,9 +10885,9 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 586
+            "y": 585
           },
-          "id": 154,
+          "id": 155,
           "knownEmpty": true,
           "options": {
             "legend": {
@@ -10915,9 +10955,9 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 586
+            "y": 585
           },
-          "id": 155,
+          "id": 156,
           "knownEmpty": true,
           "options": {
             "legend": {
@@ -10985,9 +11025,9 @@
             "h": 7,
             "w": 24,
             "x": 0,
-            "y": 594
+            "y": 593
           },
-          "id": 156,
+          "id": 157,
           "knownEmpty": true,
           "options": {
             "legend": {
