@@ -6,6 +6,77 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`forward --grafana`: the collector sets Grafana up itself.** Point it at a
+  Grafana and it reconciles one datasource and one dashboard per store it
+  writes to, once, at start, before the first sample. It removes the step
+  `dashboards import` could never remove — building the datasource by hand,
+  and getting right the three settings a person gets wrong.
+
+  - **It is off unless asked**, and refuses without `GRAFANA_TOKEN`: some
+    Grafanas accept an anonymous request, and one that did would write as
+    whoever the server thinks is asking.
+  - **A failure is a warning, not a refusal to start.** Refusing would trade
+    the samples of the hour spent not running, which cannot be recovered, for
+    a dashboard published on the next restart, which can.
+  - **Nothing is ever deleted.** A leftover under a uid nothing writes to any
+    more is left where it is: it may be the copy somebody is looking at.
+  - **Two of the five sinks can describe their own datasource**, because their
+    write address is the address Grafana queries: `--influx` and `--elastic`.
+    `--prom` is scraped, `--sql` writes to a file and `--graphite` speaks the
+    ingest port, so those three are adopted through `--grafana-datasource-uid`
+    or not published, and say so by name.
+  - `--grafana-dry-run` prints what it would write and stops before
+    collecting, so it is answerable with no router in front of it.
+
+  The InfluxDB datasource it builds carries three things that are easy to miss
+  by hand, and all three were missed here first: the token in **both** `token`
+  and `httpHeaderValue1`, because the plugin reads one on the FlightSQL path
+  and the other on the HTTP path; `insecureGrpc` following the URL's scheme,
+  without which a plain-HTTP store answers every panel `tls: first record does
+  not look like a TLS handshake` while the store itself is fine (measured
+  2026-09-19 by creating the datasource without it); and the database in
+  `jsonData.dbName` rather than the top-level `database` field, which this
+  plugin ignores. Verified end to end against the live Grafana: folder and
+  datasource created, and `dashboards check` against the datasource it built
+  returned rows for every panel but the two the device had nothing to say
+  about in the window.
+
+- **`mikroscope-egress-queue-drops`**, the twelfth alert rule and the first
+  whose counter is *supposed* to move. Dropping is how a full queue tells a
+  sender to slow down, so "any drop" is not a fault on any device, and a
+  packets-per-second threshold would be a number the device did not publish.
+  It keeps the zero threshold and puts the judgement in the duration instead:
+  a **one-minute** window with a **ten-minute** pending period, so it takes ten
+  consecutive minutes of dropping to fire and no single burst can do it,
+  however large. On the reference RB5009 a 1 GbE port lost 3 337 packets in
+  six one-second bursts over 6.5 h, peaking at 436 packets/s (2026-09-19):
+  real, visible on the egress queue panel, and correctly not an alert.
+
+  The five-minute window every other counter rule uses would have fired on
+  that: with a one-minute evaluation interval a single burst keeps the query
+  non-zero for the five evaluations that still see it, which is exactly the
+  pending period. The file's own note about thresholds now carries this as the
+  shape to copy for anything whose healthy reading is not exactly zero.
+
+  `mikroscope-port-errors` also reaches the alerts page, which 1.0.10 added
+  the rule without.
+
+- **`--influx-db`.** `--influx` is the server now and the write URL is
+  assembled from the fields: `--influx http://influx:8181 --influx-db
+  mikroscope`. A write URL is the sink's shape and the wrong shape for
+  everything else — Grafana wants the server and the database apart and will
+  not take a write path at all.
+
+  A full write URL is still taken **verbatim**: every 1.0.x deployment has one
+  in `MIKROSCOPE_INFLUX_URL`, including this project's own systemd unit.
+  Its database is read back out of that URL and never from `--influx-db`, so
+  a datasource cannot end up pointed at a database nothing fills; a URL this
+  cannot take apart, a v2 `/api/v2/write` for instance, writes as well as ever
+  and simply cannot describe a datasource, which `forward --grafana` says
+  rather than building one that answers nothing.
+
 ### Fixed
 
 - **The interrupt panel that drew nothing at all.** "Which core takes each

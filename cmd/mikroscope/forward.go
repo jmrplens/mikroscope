@@ -23,9 +23,11 @@ func runForward(args []string, c cli) error {
 		noHealth                                               bool
 		apiMode                                                string
 		sf                                                     sinkFlags
+		pf                                                     publishFlags
 	)
 	fs := flag.NewFlagSet("mikroscope forward", flag.ContinueOnError)
 	sf.register(fs)
+	pf.register(fs)
 	fs.StringVar(&ifaces, "interfaces", env("INTERFACES", ""), "API tier: comma-separated interfaces for monitor-traffic (MIKROSCOPE_INTERFACES)")
 	fs.DurationVar(&apiEvery, "api-every", time.Second, "API tier cadence; 0 disables the API tier")
 	fs.DurationVar(&conntrackEvery, "conntrack-every", 0, "API tier: ask the conntrack count this often (0 = never; it is a table scan)")
@@ -46,6 +48,15 @@ func runForward(args []string, c cli) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	logf := func(s string) { fmt.Fprintln(os.Stderr, s) }
+	// BEFORE THE ROUTER IS TOUCHED. Publishing has nothing to do with the
+	// agent, and putting it first is what makes --grafana-dry-run answerable
+	// from a laptop with no router in front of it. A dry run stops here, the
+	// way `install --dry-run` does: its whole job is to be read before the
+	// real one is started.
+	publishOrCarryOn(ctx, &pf, &sf, logf)
+	if pf.asked() && pf.dryRun {
+		return nil
+	}
 	puller, closer, err := choosePuller(ctx, ro, c)
 	if err != nil {
 		return err
@@ -151,5 +162,34 @@ func attachAPITier(ctx context.Context, fw *forward.Forwarder, ro recordOptions,
 		if closer, ok := reader.Client.(io.Closer); ok {
 			_ = closer.Close()
 		}
+	}
+}
+
+// publishOrCarryOn reconciles the Grafana objects when --grafana was passed,
+// and warns and goes on when it cannot.
+//
+// A FAILURE HERE IS NOT A REASON TO REFUSE TO START. Refusing would trade the
+// thing that cannot be recovered later — the samples of the hour the collector
+// spent not running — for the thing that can, a dashboard published on the
+// next restart. So an unreachable Grafana, a rejected token and a datasource
+// the server will not take are all one warning and a collector that collects.
+//
+// The one thing it does not do is delete. A dashboard or a datasource under a
+// uid nothing writes to any more is left where it is and not mentioned:
+// removing somebody's dashboard unasked is not a thing a collector should do,
+// even one it made, because it may be the copy they are looking at.
+func publishOrCarryOn(ctx context.Context, pf *publishFlags, sf *sinkFlags, logf func(string)) {
+	if !pf.asked() {
+		return
+	}
+	var said strings.Builder
+	err := pf.publish(ctx, sf, &said)
+	for line := range strings.SplitSeq(strings.TrimSpace(said.String()), "\n") {
+		if line != "" {
+			logf("grafana: " + line)
+		}
+	}
+	if err != nil {
+		logf("grafana: could not publish, carrying on without it: " + err.Error())
 	}
 }

@@ -30,6 +30,7 @@ type sinkFlags struct {
 	file     string
 	prom     string
 	influx   string
+	influxDB string
 	loki     string
 	lokiTen  string
 	otlp     string
@@ -54,7 +55,8 @@ type sinkFlags struct {
 func (s *sinkFlags) register(fs *flag.FlagSet) {
 	fs.StringVar(&s.file, "file", "", "sink: write the merged timeline as JSONL to this path")
 	fs.StringVar(&s.prom, "prom", "", "sink: serve Prometheus /metrics on this address, e.g. :9124")
-	fs.StringVar(&s.influx, "influx", env("INFLUX_URL", ""), "sink: InfluxDB 3 write URL, e.g. http://host:8181/api/v3/write_lp?db=mikroscope&precision=nanosecond (MIKROSCOPE_INFLUX_URL)")
+	fs.StringVar(&s.influx, "influx", env("INFLUX_URL", ""), "sink: InfluxDB 3 server, e.g. http://host:8181 — a full write URL is still taken verbatim (MIKROSCOPE_INFLUX_URL)")
+	fs.StringVar(&s.influxDB, "influx-db", env("INFLUX_DB", ""), "sink: the InfluxDB 3 database --influx writes to; ignored when --influx already carries a write path (MIKROSCOPE_INFLUX_DB)")
 	fs.StringVar(&s.loki, "loki", env("LOKI_URL", ""), "sink: Loki push URL, e.g. http://host:3100/loki/api/v1/push — carries the kernel-log events and gaps, not the metrics (MIKROSCOPE_LOKI_URL)")
 	fs.StringVar(&s.lokiTen, "loki-tenant", env("LOKI_TENANT", ""), "sink: X-Scope-OrgID for a multi-tenant Loki (MIKROSCOPE_LOKI_TENANT)")
 	fs.StringVar(&s.otlp, "otlp", env("OTLP_URL", ""), "sink: OTLP/HTTP metrics endpoint, e.g. http://host:4318/v1/metrics (MIKROSCOPE_OTLP_URL)")
@@ -124,7 +126,11 @@ func (s *sinkFlags) build(ctx context.Context, rateHz int, logf func(string)) ([
 		add(sinks.NewStdout(s.stdout, s.hostTag, q, logf))
 	}
 	if s.influx != "" {
-		add(sinks.NewInflux(s.influx, s.influxToken, s.hostTag, q, logf))
+		t, err := resolveInflux(s.influx, s.influxDB)
+		if err != nil {
+			return nil, err
+		}
+		add(sinks.NewInflux(t.Endpoint, s.influxToken, s.hostTag, q, logf))
 	}
 	if s.loki != "" {
 		add(sinks.NewLoki(s.loki, s.lokiToken, s.lokiTen, s.hostTag, q, logf))

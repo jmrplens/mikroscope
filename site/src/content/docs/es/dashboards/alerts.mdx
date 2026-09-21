@@ -119,6 +119,16 @@ El título de cada regla, en inglés como aparece en Grafana, y debajo una tradu
   colector cubre el caso repetido; esto es el suceso único. Se lee de `/dev/kmsg` con el agente, sin
   API; el puerto, su comentario y su rol están en los sucesos de puerto de la sección del registro
   del kernel.
+- **A port is counting typed MAC errors.** El MAC de un puerto está contando errores tipificados:
+  tramas que no pudo aceptar. El más común en una LAN conmutada es rx-overflow, la FIFO de recepción
+  llenándose más rápido de lo que el chip la drena, y es una firma de microrráfaga y no de carga. Los
+  errores de FCS y las colisiones significan otra cosa: cableado, dúplex, un puerto muriéndose.
+  Necesita la capa de API: un contador del MAC no se ve desde dentro del contenedor.
+- **A port's egress queue has been dropping every minute for ten minutes.** La cola de salida de un
+  puerto ha descartado paquetes en cada uno de los últimos diez minutos. A diferencia de las demás
+  reglas de contador, el contador de esta **sí** debe moverse: descartar es como una cola llena le
+  dice a quien envía que afloje. Lo que la dispara es un enlace sencillamente demasiado pequeño para
+  lo que se le pide llevar, o un shaper puesto por debajo del tráfico. Necesita la capa de API.
 - **The NAND reported an uncorrectable ECC failure.** `ecc_failures` subió en una partición MTD: una
   lectura que la corrección de errores no pudo arreglar, es decir, pérdida de datos en la flash. Cualquier incremento es un incidente.
 
@@ -159,6 +169,17 @@ contador que vale 0 en un equipo sano es la misma alerta.
   inventado.
 - **Una proporción del propio límite de conexiones del kernel.** 0.8 del límite de `nf_conntrack` que
   leyó el agente. La ocupación sale de `/proc/slabinfo`, que necesita un contenedor privilegiado.
+- **Cero otra vez, para un contador que *sí* debe moverse — con el juicio en la duración.** La cola
+  de salida es el único caso aquí en que la lectura sana no es exactamente cero en todos los
+  equipos: descartar es como una cola llena le dice a quien envía que afloje, así que un enlace
+  brevemente saturado descarta unos cuantos paquetes y está funcionando como se diseñó. Un umbral en
+  paquetes por segundo sería un número que el equipo no publica, así que
+  `mikroscope-egress-queue-drops` mantiene el cero y pregunta **solo por el último minuto** con un
+  **periodo de espera de diez**: hacen falta diez minutos seguidos descartando para que dispare, y
+  ninguna ráfaga puede lograrlo por grande que sea. En el RB5009 de referencia un puerto de 1 GbE
+  perdió 3 337 paquetes en seis ráfagas de un segundo a lo largo de 6,5 h, con picos de 436
+  paquetes/s: real, visible en el panel de cola de salida, y correctamente no una alerta. Esta es la
+  forma que hay que copiar para cualquier regla futura cuya lectura sana no sea cero.
 
 Las reglas no alertan por squeezes de softnet. Medido en el RB5009 de referencia el 2026-09-15 sobre
 3 738 704 muestras por CPU en 24 h, alrededor del <Measured id="squeeze.backgroundOne" /> de las muestras llevan un squeeze, y alertar con "squeeze > 0" te

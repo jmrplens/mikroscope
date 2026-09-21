@@ -23,9 +23,9 @@ alert rules generated beside them are on [Alert rules](https://jmrp.io/docs/mikr
   - mikroscope-postgres.json 161 panels, PostgreSQL / TimescaleDB
   - mikroscope-graphite.json 41 panels, Graphite
   - mikroscope-elasticsearch.json 30 panels, Elasticsearch
-  - mikroscope-alerts-influxdb.yaml 11 rules
-  - mikroscope-alerts-prometheus.yaml 12 rules
-  - mikroscope-alerts-postgres.yaml 8 rules
+  - mikroscope-alerts-influxdb.yaml 12 rules
+  - mikroscope-alerts-prometheus.yaml 13 rules
+  - mikroscope-alerts-postgres.yaml 9 rules
 
 ```sh
 mikroscope dashboards gen                    # writes the eight files into ./dashboards
@@ -790,6 +790,88 @@ GRAFANA_TOKEN and --datasource-uid`.
 resolved to your UID, `overwrite` on, into the General folder (`folderId` 0). The dashboard's `uid`
 is fixed, so importing again replaces the same dashboard at the same URL. It prints that URL.
 
+### Letting the collector do it: `forward --grafana`
+
+Since 1.1.0 the collector can set Grafana up itself. Point `forward` at a Grafana and it reconciles
+one datasource and one dashboard per store it writes to, once, at start, before the first sample:
+
+```sh
+export GRAFANA_TOKEN=…
+mikroscope forward \
+  --influx http://influx:8181 --influx-db mikroscope \
+  --grafana http://grafana:3000
+```
+
+```text
+grafana: folder "mikroscope" (bfyr3khdp41z4b) created
+grafana: influxdb: datasource mikroscope-influxdb (influxdb) created
+grafana: influxdb: dashboard http://grafana:3000/d/mikroscope-influxdb/…
+```
+
+| Flag                       | Default      | What it does                                                                             |
+| -------------------------- | ------------ | ---------------------------------------------------------------------------------------- |
+| `--grafana`                | empty        | the Grafana to publish to at start. Empty — the default — publishes nothing               |
+| `--grafana-folder`         | `mikroscope` | the folder to publish into; empty is Grafana's General folder                             |
+| `--grafana-datasource-uid` | empty        | adopt an existing datasource by uid instead of creating one                               |
+| `--grafana-dry-run`        | off          | print the datasource and dashboard it would write, write nothing, and stop before collecting |
+
+**It is off unless you ask.** A collector that wrote to somebody's Grafana because it could is not
+a collector anyone should run. `GRAFANA_TOKEN` is required for the same reason: some Grafanas
+accept an anonymous request, and one that did would write as whoever the server thinks is asking.
+
+**A failure here does not stop the collector.** An unreachable Grafana, a rejected token and a
+datasource the server will not take are each one warning and a collector that goes on collecting.
+Refusing to start would trade the thing that cannot be recovered later — the samples of the hour
+spent not running — for the thing that can, a dashboard published on the next restart.
+
+**Nothing is ever deleted.** A dashboard or datasource under a uid nothing writes to any more is
+left where it is. Removing somebody's dashboard unasked is not a thing a collector should do, even
+one it made, because it may be the copy they are looking at.
+
+#### Two of the five sinks can describe their own datasource
+
+They are the two whose write address **is** the address Grafana queries.
+
+| Sink        | Datasource | Why                                                                              |
+| ----------- | ---------- | -------------------------------------------------------------------------------- |
+| `--influx`  | created    | the server it writes to is the server Grafana asks; `--influx-db` names the database |
+| `--elastic` | created    | the base URL it `_bulk`s to is the one Grafana asks; `--elastic-index` gives the index pattern |
+| `--prom`    | adopt      | it **serves** `/metrics` and is scraped; the Prometheus Grafana asks is one it has never heard of |
+| `--sql`     | adopt      | it writes statements to a file, not to a server                                  |
+| `--graphite`| adopt      | it speaks the carbon ingest port, which is not the API Grafana queries           |
+
+The three marked *adopt* need `--grafana-datasource-uid`, and say so by name if you leave it out.
+An adopted datasource is somebody else's to describe, so it is never corrected either: reconciling
+one this did not make would overwrite settings nobody asked it to have.
+
+> **What the created InfluxDB datasource carries**
+>
+> Three settings that are easy to miss by hand, and each of them was missed here first. The token
+> goes in **both** `token` and `httpHeaderValue1` (`Bearer <token>`), because the plugin reads one
+> on the FlightSQL path and the other on the HTTP path. `insecureGrpc` follows the scheme: against
+> a plain-HTTP store, a datasource without it answers every panel `tls: first record does not look
+> like a TLS handshake` while the store itself is fine (measured 2026-09-19). And the database goes
+> in `jsonData.dbName`, not in the top-level `database` field, which this plugin ignores.
+
+#### The URL, and the fields
+
+`--influx` used to be the whole write URL, query string and all. It still is, if that is what you
+pass: every 1.0.x deployment has one in `MIKROSCOPE_INFLUX_URL` and it keeps working byte for byte.
+But a write URL is the sink's shape and the wrong shape for everything else — Grafana wants the
+server and the database apart, and it will not take a write path at all. So the fields are the
+interface now:
+
+```sh
+--influx http://influx:8181 --influx-db mikroscope   # the URL is assembled
+--influx "http://influx:8181/api/v3/write_lp?db=mikroscope&precision=nanosecond"  # taken as it is
+```
+
+When `--influx` carries a path, the datasource's database is read back out of **that URL**, never
+from `--influx-db`: a datasource pointed at a different database than the one the sink fills is
+worse than no datasource. A write URL this cannot take apart — a v2 `/api/v2/write`, say — still
+writes fine and simply cannot describe a datasource, and `forward --grafana` says so instead of
+building one that answers nothing.
+
 ### The probe
 
 Before generating, `import` and `check` ask the datasource which of mikroscope's measurements it
@@ -969,9 +1051,9 @@ device itself published. None is a number compiled in for one router.
 
 | File                                           |                                            Rules | Query language |
 | ---------------------------------------------- | -----------------------------------------------: | -------------- |
-| `dashboards/mikroscope-alerts-influxdb.yaml`   |   11 | InfluxDB 3 SQL |
-| `dashboards/mikroscope-alerts-prometheus.yaml` | 12 | PromQL         |
-| `dashboards/mikroscope-alerts-postgres.yaml`   |   8 | PostgreSQL SQL |
+| `dashboards/mikroscope-alerts-influxdb.yaml`   |   12 | InfluxDB 3 SQL |
+| `dashboards/mikroscope-alerts-prometheus.yaml` | 13 | PromQL         |
+| `dashboards/mikroscope-alerts-postgres.yaml`   |   9 | PostgreSQL SQL |
 
 The InfluxDB file has one rule fewer because "The sampler is slipping ticks" has no SQL form yet.
 The counter itself does reach InfluxDB since 1.0.5 — the collector reads it from the agent's
@@ -1023,6 +1105,7 @@ The alert rules:
 | `mikroscope-l2-loop` | an own-address record on any port in the last 5 minutes | > 0 | critical | 0s | OK | both |
 | `mikroscope-port-link-down` | a link-down record on any port in the last 5 minutes | > 0 | warning | 0s | OK | both |
 | `mikroscope-port-errors` | any port's MAC counted a typed error — overflow, FCS, collision — for 5 minutes running | > 0 | warning | 5m | OK | both |
+| `mikroscope-egress-queue-drops` | any port's own egress queue dropped a packet in every one of the last 10 minutes — sustained congestion, never a single burst | > 0 | warning | 10m | OK | InfluxDB only |
 | `mikroscope-ecc-failure` | the NAND reported an uncorrectable ECC failure in the last hour | > 0 | critical | 0s | OK | InfluxDB only |
 | `mikroscope-ticks-slipped` | the sampler slipped a tick in the last 5 minutes | > 0 | warning | 5m | OK | Prometheus only |
 
@@ -1066,6 +1149,16 @@ Each rule's title, and under it its `summary` annotation verbatim, as generated:
   rebooted or powered off, a renegotiation. The collector's link-flap detection covers the repeated
   case; this is the single event. Read from /dev/kmsg by the agent, no API; the port, its comment and
   its role are on the Kernel log section's port events."
+- **A port is counting typed MAC errors.** "A port's MAC is counting typed errors: frames it could
+  not take. The commonest on a switched LAN is rx-overflow, the receive FIFO filling faster than the
+  chip can drain it, and it is a microburst signature rather than a load one. FCS errors and
+  collisions mean something else: cabling, duplex, a dying port. Needs the API tier: a MAC counter
+  is not visible from inside the container."
+- **A port's egress queue has been dropping every minute for ten minutes.** "A port's own egress
+  queue has dropped packets in every one of the last ten minutes. Unlike the other counter rules,
+  this one's counter is supposed to move: dropping is how a full queue tells a sender to slow down.
+  What fires this is a link that is simply too small for what it is being asked to carry, or a
+  shaper set below the traffic. Needs the API tier."
 - **The NAND reported an uncorrectable ECC failure.** "ecc_failures rose on an MTD partition: a read
   the error correction could not fix, i.e. data loss on the flash. Any increment is an incident."
 
@@ -1096,6 +1189,8 @@ Each rule's title, and under it its `summary` annotation verbatim, as generated:
   sum(increase(mikroscope_kmsg_port_records_total{kind="link-down"}[5m]))
   # mikroscope-port-errors             (> 0)
   sum(increase(mikroscope_api_interface_counter_total{counter=~"rx-overflow|rx-fcs-error|rx-fragment|rx-too-short|rx-too-long|rx-jabber|tx-fcs-error|tx-late-collision|tx-excessive-collision"}[5m]))
+  # mikroscope-egress-queue-drops      (> 0)
+  max(max_over_time(mikroscope_api_interface{kind="tx_queue_drops"}[1m]))
   # mikroscope-ecc-failure             (> 0)
   sum(increase(mikroscope_mtd_ecc_failures_total[1h]))
   ```
@@ -1131,6 +1226,8 @@ Each rule's title, and under it its `summary` annotation verbatim, as generated:
   SELECT coalesce(sum(count), 0) AS value FROM mikroscope_kmsg WHERE time >= now() - interval '5 minutes' AND kind = 'link-down'
   -- mikroscope-port-errors             (> 0)
   SELECT coalesce(sum(v), 0) AS value FROM (SELECT interface, greatest(max(rx_overflow) - min(rx_overflow), 0)::BIGINT + greatest(max(rx_fcs_error) - min(rx_fcs_error), 0)::BIGINT + greatest(max(rx_fragment) - min(rx_fragment), 0)::BIGINT + greatest(max(rx_too_short) - min(rx_too_short), 0)::BIGINT + greatest(max(rx_too_long) - min(rx_too_long), 0)::BIGINT + greatest(max(rx_jabber) - min(rx_jabber), 0)::BIGINT + greatest(max(tx_fcs_error) - min(tx_fcs_error), 0)::BIGINT + greatest(max(tx_late_collision) - min(tx_late_collision), 0)::BIGINT + greatest(max(tx_excessive_collision) - min(tx_excessive_collision), 0)::BIGINT AS v FROM mikroscope_api_ifcounters WHERE time >= now() - interval '5 minutes' GROUP BY interface)
+  -- mikroscope-egress-queue-drops      (> 0)
+  SELECT coalesce(max(tx_queue_drops), 0) AS value FROM mikroscope_api_iface WHERE time >= now() - interval '1 minute'
   -- mikroscope-ecc-failure             (> 0)
   SELECT coalesce(sum(delta), 0) AS value FROM (SELECT max(ecc_failures) - min(ecc_failures) AS delta FROM mikroscope_mtd WHERE time >= now() - interval '1 hour' AND ecc_failures IS NOT NULL GROUP BY "partition")
   ```
@@ -1148,6 +1245,16 @@ Each rule's title, and under it its `summary` annotation verbatim, as generated:
   ceiling.
 - **A share of the kernel's own connection limit.** 0.8 of the `nf_conntrack` limit the agent read.
   The occupancy comes from `/proc/slabinfo`, which needs a privileged container.
+- **Zero again, for a counter that *is* supposed to move — with the judgement in the duration
+  instead.** The egress queue is the one case here where the healthy reading is not exactly zero on
+  every device: dropping is how a full queue tells a sender to slow down, so a link that is briefly
+  saturated drops a few packets and is working as designed. A packets-per-second threshold would be
+  a number the device did not publish, so `mikroscope-egress-queue-drops` keeps the zero and asks
+  **only the last minute** with a **ten-minute pending period**: it takes ten consecutive minutes of
+  dropping to fire, and no single burst can do it however large. On the reference RB5009 a 1 GbE
+  port lost 3 337 packets in six one-second bursts over 6.5 h, peaking at 436 packets/s — real,
+  visible on the egress queue panel, and correctly not an alert. This is the shape to copy for any
+  future rule whose healthy reading is not zero.
 
 The rules do not alert on softnet squeezes. Measured on the reference RB5009 on 2026-09-15 over
 3 738 704 per-CPU samples in 24 h, about 11.2 % of samples carry one squeeze, and alerting on "squeeze > 0" would page

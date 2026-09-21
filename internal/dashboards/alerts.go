@@ -13,7 +13,14 @@ import (
 //
 // Every threshold here is either zero — a counter that should not move — or
 // the device's own published ceiling (a thermal zone's critical trip, the
-// conntrack maximum), never a number the device did not publish. The rules
+// conntrack maximum), never a number the device did not publish. One rule,
+// mikroscope-egress-queue-drops, is about a counter that SHOULD move: a queue
+// drops packets to tell a sender to slow down, so "any drop" is not a fault
+// on any device. It keeps the zero threshold and puts the judgement in the
+// pending duration instead — short window, long For, so it takes sustained
+// dropping rather than a large one. That is the shape to copy for anything
+// else whose healthy reading is not exactly zero; a packets-per-second
+// threshold would be a number the device did not publish. The rules
 // are provisioned, not built into the dashboard, so an operator who wants
 // none copies nothing; the datasource UID is a placeholder the operator
 // fills in, because provisioning files do not resolve dashboard inputs.
@@ -98,6 +105,20 @@ var AlertRules = []AlertRule{
 		Summary: "A port's MAC is counting typed errors: frames it could not take. The commonest on a switched LAN is rx-overflow, the receive FIFO filling faster than the chip can drain it, and it is a microburst signature rather than a load one — on the reference RB5009 it ran at 0.5 % of the packets the NAS sent while the 2.5 GbE link sat at 0.36 % occupancy, because the sender was emitting TSO super-segments at line rate toward a 1 GbE destination. FCS errors and collisions mean something else: cabling, duplex, a dying port. Which port and which error is one row each in the dashboard's Interface traffic section; the procedure is in the port-errors playbook. Needs the API tier: a MAC counter is not visible from inside the container. It cannot tell a real error from a counter reset, so a router that reboots inside the window fires it once.",
 		PromQL:  `sum(increase(mikroscope_api_interface_counter_total{counter=~"rx-overflow|rx-fcs-error|rx-fragment|rx-too-short|rx-too-long|rx-jabber|tx-fcs-error|tx-late-collision|tx-excessive-collision"}[5m]))`,
 		SQL:     `SELECT coalesce(sum(v), 0) AS value FROM (SELECT interface, greatest(max(rx_overflow) - min(rx_overflow), 0)::BIGINT + greatest(max(rx_fcs_error) - min(rx_fcs_error), 0)::BIGINT + greatest(max(rx_fragment) - min(rx_fragment), 0)::BIGINT + greatest(max(rx_too_short) - min(rx_too_short), 0)::BIGINT + greatest(max(rx_too_long) - min(rx_too_long), 0)::BIGINT + greatest(max(rx_jabber) - min(rx_jabber), 0)::BIGINT + greatest(max(tx_fcs_error) - min(tx_fcs_error), 0)::BIGINT + greatest(max(tx_late_collision) - min(tx_late_collision), 0)::BIGINT + greatest(max(tx_excessive_collision) - min(tx_excessive_collision), 0)::BIGINT AS v FROM mikroscope_api_ifcounters WHERE time >= now() - interval '5 minutes' GROUP BY interface)`,
+	},
+	{
+		UID: "mikroscope-egress-queue-drops", Title: "A port's egress queue has been dropping every minute for ten minutes", Severity: "warning", For: "10m", Op: "gt", Threshold: 0, NoData: "OK",
+		// THE ONE RULE HERE WHOSE COUNTER IS SUPPOSED TO MOVE, which is why
+		// the window is one minute and the pending period is ten rather than
+		// the five-minute window every other counter rule uses. A five-minute
+		// window with a five-minute For fires on a SINGLE burst: the query
+		// stays non-zero for the five evaluations that still see it, which is
+		// exactly the pending period. Asking only the last minute makes a
+		// burst clear on the next evaluation, so the ten minutes mean ten
+		// minutes of dropping and not one event seen ten times.
+		Summary: "A port's own egress queue has dropped packets in every one of the last ten minutes. UNLIKE THE OTHER COUNTER RULES, THIS ONE'S COUNTER IS SUPPOSED TO MOVE: dropping is how a full queue tells a sender to slow down, so a link that is briefly saturated drops a few packets and is working as designed. That is why the threshold stays at zero and the ten-minute pending period carries the judgement — it takes ten consecutive minutes of dropping to fire, and no single burst can do it however large. On the reference RB5009 a 1 GbE port to a server lost 3 337 packets in six one-second bursts over 6.5 h, peaking at 436 packets/s (measured 2026-09-19): real, visible on the egress queue panel, and correctly not an alert. What fires this is a link that is simply too small for what it is being asked to carry, or a shaper set below the traffic. What it cannot tell you is which: queue discipline, buffer exhaustion and a policer all land in this one counter, and the port and the shape of the dropping are in the dashboard's Interface traffic section. This is a different fault from the typed MAC errors of mikroscope-port-errors, which are frames the hardware could not take rather than frames the router chose not to send. Needs the API tier: monitor-traffic is not visible from inside the container.",
+		PromQL:  `max(max_over_time(mikroscope_api_interface{kind="tx_queue_drops"}[1m]))`,
+		SQL:     `SELECT coalesce(max(tx_queue_drops), 0) AS value FROM mikroscope_api_iface WHERE time >= now() - interval '1 minute'`,
 	},
 	{
 		UID: "mikroscope-ecc-failure", Title: "The NAND reported an uncorrectable ECC failure", Severity: "critical", For: "0s", Op: "gt", Threshold: 0, NoData: "OK",
