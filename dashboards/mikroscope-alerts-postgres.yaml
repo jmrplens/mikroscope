@@ -56,7 +56,7 @@ groups:
               rawQuery: true
               editorMode: code
               format: table
-              rawSql: "SELECT coalesce(sum(dropped), 0) AS value FROM mikroscope_softnet WHERE time >= now() - interval '5 minutes'"
+              rawSql: "SELECT coalesce(sum(dropped), 0)::BIGINT AS value FROM mikroscope_softnet WHERE time >= now() - interval '5 minutes'"
           - refId: B
             datasourceUid: __expr__
             model: {refId: B, type: reduce, expression: A, reducer: last, settings: {mode: dropNN}}
@@ -83,7 +83,7 @@ groups:
               rawQuery: true
               editorMode: code
               format: table
-              rawSql: "SELECT coalesce(sum(oom_kill), 0) AS value FROM mikroscope_vm WHERE time >= now() - interval '5 minutes'"
+              rawSql: "SELECT coalesce(sum(oom_kill), 0)::BIGINT AS value FROM mikroscope_vm WHERE time >= now() - interval '5 minutes'"
           - refId: B
             datasourceUid: __expr__
             model: {refId: B, type: reduce, expression: A, reducer: last, settings: {mode: dropNN}}
@@ -164,7 +164,7 @@ groups:
               rawQuery: true
               editorMode: code
               format: table
-              rawSql: "SELECT max(active_objs) * 1.0 / nullif(max(limit_objs), 0) AS value FROM mikroscope_slab WHERE time >= now() - interval '2 minutes' AND cache = 'nf_conntrack' AND limit_objs IS NOT NULL"
+              rawSql: "SELECT max(active_objs) * 1.0 / nullif(max(\"limit_objs\"), 0) AS value FROM mikroscope_slab WHERE time >= now() - interval '2 minutes' AND cache = 'nf_conntrack' AND \"limit_objs\" IS NOT NULL"
           - refId: B
             datasourceUid: __expr__
             model: {refId: B, type: reduce, expression: A, reducer: last, settings: {mode: dropNN}}
@@ -191,7 +191,7 @@ groups:
               rawQuery: true
               editorMode: code
               format: table
-              rawSql: "SELECT coalesce(sum(oom_kill), 0) AS value FROM mikroscope_self WHERE time >= now() - interval '5 minutes' AND oom_kill IS NOT NULL"
+              rawSql: "SELECT coalesce(sum(oom_kill), 0)::BIGINT AS value FROM mikroscope_self WHERE time >= now() - interval '5 minutes' AND oom_kill IS NOT NULL"
           - refId: B
             datasourceUid: __expr__
             model: {refId: B, type: reduce, expression: A, reducer: last, settings: {mode: dropNN}}
@@ -218,7 +218,7 @@ groups:
               rawQuery: true
               editorMode: code
               format: table
-              rawSql: "SELECT coalesce(max(tx_queue_drops), 0) AS value FROM mikroscope_api_iface WHERE time >= now() - interval '1 minute'"
+              rawSql: "SELECT coalesce(max(tx_queue_drops), 0)::BIGINT AS value FROM mikroscope_api_iface WHERE time >= now() - interval '1 minute'"
           - refId: B
             datasourceUid: __expr__
             model: {refId: B, type: reduce, expression: A, reducer: last, settings: {mode: dropNN}}
@@ -245,7 +245,7 @@ groups:
               rawQuery: true
               editorMode: code
               format: table
-              rawSql: "SELECT coalesce(sum(delta), 0) AS value FROM (SELECT max(ecc_failures) - min(ecc_failures) AS delta FROM mikroscope_mtd WHERE time >= now() - interval '1 hour' AND ecc_failures IS NOT NULL GROUP BY \"partition\")"
+              rawSql: "SELECT coalesce(sum(delta), 0)::BIGINT AS value FROM (SELECT max(ecc_failures) - min(ecc_failures) AS delta FROM mikroscope_mtd WHERE time >= now() - interval '1 hour' AND ecc_failures IS NOT NULL GROUP BY \"partition\")"
           - refId: B
             datasourceUid: __expr__
             model: {refId: B, type: reduce, expression: A, reducer: last, settings: {mode: dropNN}}

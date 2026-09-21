@@ -1265,27 +1265,27 @@ Each rule's title, and under it its `summary` annotation verbatim, as generated:
   -- mikroscope-agent-silent            (< 1)
   SELECT count(1) AS value FROM mikroscope_cpu WHERE time >= now() - interval '2 minutes'
   -- mikroscope-softnet-drops           (> 0)
-  SELECT coalesce(sum(dropped), 0) AS value FROM mikroscope_softnet WHERE time >= now() - interval '5 minutes'
+  SELECT coalesce(sum(dropped), 0)::BIGINT AS value FROM mikroscope_softnet WHERE time >= now() - interval '5 minutes'
   -- mikroscope-oom-kill                (> 0)
-  SELECT coalesce(sum(oom_kill), 0) AS value FROM mikroscope_vm WHERE time >= now() - interval '5 minutes'
+  SELECT coalesce(sum(oom_kill), 0)::BIGINT AS value FROM mikroscope_vm WHERE time >= now() - interval '5 minutes'
   -- mikroscope-detections              (> 0)
   SELECT count(1) AS value FROM mikroscope_detection WHERE time >= now() - interval '5 minutes'
   -- mikroscope-thermal-near-critical   (> 0)
   SELECT count(1) AS value FROM (SELECT zone, max(celsius) AS c, max(critical_celsius) AS crit FROM mikroscope_thermal WHERE time >= now() - interval '2 minutes' AND critical_celsius IS NOT NULL GROUP BY zone) WHERE c >= 0.85 * crit
   -- mikroscope-conntrack-near-limit    (> 0.8)
-  SELECT max(active) * 1.0 / nullif(max(limit_objs), 0) AS value FROM mikroscope_slab WHERE time >= now() - interval '2 minutes' AND cache = 'nf_conntrack' AND limit_objs IS NOT NULL
+  SELECT max(active) * 1.0 / nullif(max("limit"), 0) AS value FROM mikroscope_slab WHERE time >= now() - interval '2 minutes' AND cache = 'nf_conntrack' AND "limit" IS NOT NULL
   -- mikroscope-agent-oom               (> 0)
-  SELECT coalesce(sum(oom_kill), 0) AS value FROM mikroscope_self WHERE time >= now() - interval '5 minutes' AND oom_kill IS NOT NULL
+  SELECT coalesce(sum(oom_kill), 0)::BIGINT AS value FROM mikroscope_self WHERE time >= now() - interval '5 minutes' AND oom_kill IS NOT NULL
   -- mikroscope-l2-loop                 (> 0)
-  SELECT coalesce(sum(count), 0) AS value FROM mikroscope_kmsg WHERE time >= now() - interval '5 minutes' AND kind = 'own-address'
+  SELECT coalesce(sum(count), 0)::BIGINT AS value FROM mikroscope_kmsg WHERE time >= now() - interval '5 minutes' AND kind = 'own-address'
   -- mikroscope-port-link-down          (> 0)
-  SELECT coalesce(sum(count), 0) AS value FROM mikroscope_kmsg WHERE time >= now() - interval '5 minutes' AND kind = 'link-down'
+  SELECT coalesce(sum(count), 0)::BIGINT AS value FROM mikroscope_kmsg WHERE time >= now() - interval '5 minutes' AND kind = 'link-down'
   -- mikroscope-port-errors             (> 0)
-  SELECT coalesce(sum(v), 0) AS value FROM (SELECT interface, greatest(max(rx_overflow) - min(rx_overflow), 0)::BIGINT + greatest(max(rx_fcs_error) - min(rx_fcs_error), 0)::BIGINT + greatest(max(rx_fragment) - min(rx_fragment), 0)::BIGINT + greatest(max(rx_too_short) - min(rx_too_short), 0)::BIGINT + greatest(max(rx_too_long) - min(rx_too_long), 0)::BIGINT + greatest(max(rx_jabber) - min(rx_jabber), 0)::BIGINT + greatest(max(tx_fcs_error) - min(tx_fcs_error), 0)::BIGINT + greatest(max(tx_late_collision) - min(tx_late_collision), 0)::BIGINT + greatest(max(tx_excessive_collision) - min(tx_excessive_collision), 0)::BIGINT AS v FROM mikroscope_api_ifcounters WHERE time >= now() - interval '5 minutes' GROUP BY interface)
+  SELECT coalesce(sum(v), 0)::BIGINT AS value FROM (SELECT interface, greatest(max(rx_overflow) - min(rx_overflow), 0)::BIGINT + greatest(max(rx_fcs_error) - min(rx_fcs_error), 0)::BIGINT + greatest(max(rx_fragment) - min(rx_fragment), 0)::BIGINT + greatest(max(rx_too_short) - min(rx_too_short), 0)::BIGINT + greatest(max(rx_too_long) - min(rx_too_long), 0)::BIGINT + greatest(max(rx_jabber) - min(rx_jabber), 0)::BIGINT + greatest(max(tx_fcs_error) - min(tx_fcs_error), 0)::BIGINT + greatest(max(tx_late_collision) - min(tx_late_collision), 0)::BIGINT + greatest(max(tx_excessive_collision) - min(tx_excessive_collision), 0)::BIGINT AS v FROM mikroscope_api_ifcounters WHERE time >= now() - interval '5 minutes' GROUP BY interface)
   -- mikroscope-egress-queue-drops      (> 0)
-  SELECT coalesce(max(tx_queue_drops), 0) AS value FROM mikroscope_api_iface WHERE time >= now() - interval '1 minute'
+  SELECT coalesce(max(tx_queue_drops), 0)::BIGINT AS value FROM mikroscope_api_iface WHERE time >= now() - interval '1 minute'
   -- mikroscope-ecc-failure             (> 0)
-  SELECT coalesce(sum(delta), 0) AS value FROM (SELECT max(ecc_failures) - min(ecc_failures) AS delta FROM mikroscope_mtd WHERE time >= now() - interval '1 hour' AND ecc_failures IS NOT NULL GROUP BY "partition")
+  SELECT coalesce(sum(delta), 0)::BIGINT AS value FROM (SELECT max(ecc_failures) - min(ecc_failures) AS delta FROM mikroscope_mtd WHERE time >= now() - interval '1 hour' AND ecc_failures IS NOT NULL GROUP BY "partition")
   ```
 
 ### Where the thresholds come from
