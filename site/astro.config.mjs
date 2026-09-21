@@ -505,11 +505,6 @@ export default defineConfig({
 							translations: { es: "Cuando algo no funciona" },
 							slug: "reference/troubleshooting",
 						},
-						{
-							label: "How the project tests itself",
-							translations: { es: "Cómo se prueba el proyecto" },
-							slug: "reference/testing",
-						},
 					],
 				},
 				{
@@ -523,14 +518,36 @@ export default defineConfig({
 							slug: "about/status",
 						},
 						{
+							label: "Lineage and licence",
+							translations: { es: "Linaje y licencia" },
+							slug: "about/lineage",
+						},
+					],
+				},
+				// Last, and its own group: everything above answers "how do I
+				// use this", and these two answer "how do I change it". Mixed
+				// into Reference and About they read as things a user has to
+				// get through to reach what they came for.
+				{
+					label: "For contributors",
+					translations: { es: "Para quien contribuye" },
+					collapsed: true,
+					items: [
+						{
+							label: "How the project tests itself",
+							translations: { es: "Cómo se prueba el proyecto" },
+							slug: "reference/testing",
+						},
+						{
 							label: "The mark",
 							translations: { es: "La marca" },
 							slug: "about/brand",
 						},
 						{
-							label: "Lineage and licence",
-							translations: { es: "Linaje y licencia" },
-							slug: "about/lineage",
+							label: "Contributing (GitHub)",
+							translations: { es: "Contribuir (GitHub)" },
+							link: "https://github.com/jmrplens/mikroscope/blob/main/CONTRIBUTING.md",
+							attrs: { target: "_blank", rel: "noopener" },
 						},
 					],
 				},

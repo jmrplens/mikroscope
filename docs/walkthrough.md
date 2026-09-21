@@ -120,6 +120,15 @@ plain defaults, whatever the CLI's usage text says. Export the variables you nee
 1. **Get mikroscope.**
 
    ```sh wrap
+   curl -fsSL https://raw.githubusercontent.com/jmrplens/mikroscope/main/install.sh | bash
+   ```
+
+   That works out the platform, takes the newest release, and refuses to install anything whose
+   checksum is not the one the release published; `irm …/install.ps1 | iex` is the PowerShell
+   half. [Getting the CLI](https://jmrp.io/docs/mikroscope/install/cli/) has the same path by hand, one platform at a
+   time, for a machine where `curl | bash` is not something to type:
+
+   ```sh wrap
    tar xzf mikroscope_1.0.9_linux_x86_64.tar.gz   # a .zip on Windows
    ./mikroscope version
    ```
