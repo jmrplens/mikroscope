@@ -104,3 +104,40 @@ func TestGraphiteRendersEveryDiscoveredSourceAndEventKind(t *testing.T) {
 		}
 	}
 }
+
+// Elasticsearch has the same shape of gap: the derive stage, the fast-path
+// shares, the sampler, the device facts, the detections and the triggers each
+// become a document of their own, and none of them had reached it.
+func TestElasticsearchRendersEveryEventKind(t *testing.T) {
+	t.Parallel()
+	srv := &esServer{}
+	ts := newESServer(t, srv)
+	defer ts.Close()
+
+	s := NewElasticsearch(ts.URL, "", "", "rb5009", 60, nil)
+	for _, e := range fullEvents() {
+		e.At = 1788000000000000000
+		s.Write(e)
+	}
+	s.Write(device())
+	s.Write(samplerEvent())
+	time.Sleep(1300 * time.Millisecond)
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	body := strings.Join(srv.got, "\n")
+	for _, want := range []string{
+		`"kind":"sampler"`,
+		`"kind":"device"`,
+		`"kind":"detection"`,
+		`"kind":"trigger"`,
+		`"derived"`,
+		`"fastpath"`,
+		`"slab_limit"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("missing %q", want)
+		}
+	}
+}
