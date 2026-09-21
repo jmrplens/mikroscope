@@ -220,15 +220,14 @@ func (p *postgres) Drop(ctx context.Context, item string) error {
 		return err
 	}
 	defer func() { _ = conn.Close(ctx) }()
-	_, err = conn.Exec(ctx, "DROP TABLE IF EXISTS "+quoteIdent(item))
+	// pgx.Identifier.Sanitize rather than quoting by hand: a table name is an
+	// identifier and PostgreSQL takes no parameter in its place, so this
+	// statement is built by concatenation and there is no version of it that
+	// is not. What makes that safe is stated twice — ours() above admits only
+	// [a-z0-9_] after the prefix, so nothing that could end the identifier can
+	// get this far, and the driver's own quoting is what closes it.
+	_, err = conn.Exec(ctx, "DROP TABLE IF EXISTS "+pgx.Identifier{item}.Sanitize())
 	return err
-}
-
-// quoteIdent is PostgreSQL identifier quoting, spelled here rather than
-// reached for across packages: a table this drops is one the SQL sink wrote,
-// and the two have to agree about what its name is.
-func quoteIdent(s string) string {
-	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
 }
 
 // ── The two file sinks ──────────────────────────────────────────────────────

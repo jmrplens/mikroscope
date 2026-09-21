@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // THE ONE PROPERTY EVERYTHING HERE HANGS ON: only what this project wrote.
@@ -24,7 +26,10 @@ func TestNothingOutsideThePrefixIsEverClaimed(t *testing.T) {
 			t.Errorf("ours(%q) is true; the prefix is %q", name, Prefix)
 		}
 	}
-	for _, name := range []string{Prefix + "cpu", Prefix, Prefix + "api_iface"} {
+	// The bare prefix is not among them: a table literally named
+	// "mikroscope_" is one this project has never written, and the pattern
+	// requires at least one character after it.
+	for _, name := range []string{Prefix + "cpu", Prefix + "api_iface"} {
 		if !ours(name) {
 			t.Errorf("ours(%q) is false", name)
 		}
@@ -363,19 +368,43 @@ func TestForOffersNothingWhenNothingIsConfigured(t *testing.T) {
 	}
 }
 
-// A table name is an identifier rather than a value, so it cannot be a
-// parameter; the quoting is what stands between the statement and a name with
-// a quote in it. The prefix check runs first, so this is belt and braces —
-// which is the point.
-func TestIdentifierQuotingDoublesTheQuote(t *testing.T) {
+// A table name is an identifier rather than a value, so PostgreSQL takes no
+// parameter in its place and the DROP is built by concatenation. Two things
+// make that safe and both are asserted: nothing that could end an identifier
+// gets past ours(), and the driver's own quoting closes what does.
+func TestOnlyANameThatCannotEndAnIdentifierIsEverClaimed(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{
+		Prefix + `cpu"; DROP TABLE payments; --`,
+		Prefix + "cpu; DROP TABLE payments",
+		Prefix + "cpu payments",
+		Prefix + `cpu\`,
+		Prefix + "CPU",   // upper case: this project writes none
+		Prefix + "cpu-1", // the shape InfluxDB renames a deleted table to
+		Prefix,           // the prefix alone is not a table
+	} {
+		if ours(name) {
+			t.Errorf("ours(%q) is true; only [a-z0-9_] may follow the prefix", name)
+		}
+	}
+	for _, name := range []string{Prefix + "cpu", Prefix + "api_iface", Prefix + "vm_level", Prefix + "perf"} {
+		if !ours(name) {
+			t.Errorf("ours(%q) is false; it is a table this project writes", name)
+		}
+	}
+}
+
+// And the driver's quoting is what the statement is actually built with, so a
+// name that somehow reached it could still not end the identifier.
+func TestTheDriverQuotesTheIdentifier(t *testing.T) {
 	t.Parallel()
 	for in, want := range map[string]string{
-		"mikroscope_cpu":    `"mikroscope_cpu"`,
-		`weird"name`:        `"weird""name"`,
-		`";DROP TABLE x;--`: `""";DROP TABLE x;--"`,
+		"mikroscope_cpu": `"mikroscope_cpu"`,
+		`weird"name`:     `"weird""name"`,
 	} {
-		if got := quoteIdent(in); got != want {
-			t.Errorf("quoteIdent(%q) = %q, want %q", in, got, want)
+		got := pgx.Identifier{in}.Sanitize()
+		if got != want {
+			t.Errorf("Sanitize(%q) = %s, want %s", in, got, want)
 		}
 	}
 }

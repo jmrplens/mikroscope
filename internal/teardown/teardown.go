@@ -16,7 +16,7 @@ package teardown
 import (
 	"context"
 	"fmt"
-	"strings"
+	"regexp"
 )
 
 // Prefix is the namespace every measurement this project writes lives under,
@@ -24,8 +24,20 @@ import (
 // not put there by mikroscope and is never touched.
 const Prefix = "mikroscope_"
 
+// ourName is the whole of what a name this project wrote can look like: the
+// prefix, then lower-case letters, digits and underscores and nothing else.
+//
+// It is a STRICT ALLOWLIST rather than a prefix test because one of the two
+// SQL stores builds a statement by concatenation — a table name is an
+// identifier and PostgreSQL takes no parameter there, so there is no
+// parameterised form of DROP TABLE to reach for. With this, the only strings
+// that can reach that statement are ones that cannot carry a quote, a space, a
+// semicolon or a backslash, whatever the catalog returns and whatever anyone
+// managed to create in it.
+var ourName = regexp.MustCompile(`^` + Prefix + `[a-z0-9_]+$`)
+
 // ours reports whether a name is one this project would have written.
-func ours(name string) bool { return strings.HasPrefix(name, Prefix) }
+func ours(name string) bool { return ourName.MatchString(name) }
 
 // Store is a place this wrote that can be asked what it holds and told to drop
 // it.

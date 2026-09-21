@@ -327,3 +327,37 @@ func TestTheDashboardHalfListsOnlyWhatIsThere(t *testing.T) {
 		t.Errorf("deleted %v, want the one dashboard", deleted)
 	}
 }
+
+// The router target through the verb, which is the default and so the shape
+// most people will type. No router is reached without --yes.
+func TestTheVerbListsTheRouterObjectsByDefault(t *testing.T) {
+	t.Parallel()
+	var out strings.Builder
+	if err := uninstall(nil, &out); err != nil {
+		t.Fatal(err)
+	}
+	said := out.String()
+	if !strings.Contains(said, "router object(s) tagged") {
+		t.Errorf("said %q, want the router objects", said)
+	}
+	if !strings.Contains(said, "add --yes to remove them") {
+		t.Errorf("said %q, want it to say nothing was removed", said)
+	}
+	// And nothing about the stores, which were not asked for.
+	if strings.Contains(said, "would be removed") {
+		t.Errorf("said %q, want the store half silent", said)
+	}
+}
+
+// An --influx that cannot be taken apart cannot say which database to empty,
+// and the verb has to stop rather than empty the wrong one or none.
+func TestTheVerbRefusesAWriteURLItCannotReadBack(t *testing.T) {
+	t.Parallel()
+	err := uninstall([]string{
+		"--targets", "data",
+		"--influx", "http://host:8086/api/v2/write?bucket=m&org=home",
+	}, &strings.Builder{})
+	if err == nil || !strings.Contains(err.Error(), "--influx-db") {
+		t.Fatalf("err = %v, want it to name the flag that resolves it", err)
+	}
+}
