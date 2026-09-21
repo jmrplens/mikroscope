@@ -108,6 +108,46 @@ make gen-brand          # writes the mark and the favicons into brand/
 make check-generated    # writes nothing, fails if either is stale
 ```
 
+## Coverage, and the 14% a test binary cannot reach
+
+`make cover` writes a profile over `./cmd/...` and `./internal/...` and prints
+the total; `make cover-check` fails below `COVERAGE_MIN` in the Makefile, which
+is the same profile SonarCloud reads. The floor is a ratchet against a drop,
+not a target: raise it when the total rises, and do not lower it to make a
+branch pass.
+
+**A function at 0% here is not necessarily unexercised.** `make test-e2e`
+builds both binaries and drives them as separate processes, so everything they
+do is covered by a test and none of it appears in this profile, which can only
+see the test binary's own execution. `main` and the agent's `Run` loop are the
+clearest cases: both are exercised end to end on every CI run and both read 0%.
+
+Of the 26 functions at 0% as of 2026-09-21, these cannot be reached from a test
+binary at all, and a test that pretended to would be testing its own fake:
+
+- **`main` in all three commands**, which parse `os.Args` and call `os.Exit`.
+- **`router.SSHRunner`** (`base`, `ctx`, `Run`, `Upload`) — it shells out to
+  `ssh` and `scp` against a real host. Everything it carries is tested through
+  the fake runner; what is untested is the shelling out itself.
+- **`rosapi.newClientAndLogin`, `apitier.Dial`, `transport.APIFetcher.Fetch`** —
+  a TCP session to a RouterOS API. The protocol codec beside them is at 99.6%.
+- **`image.BuildAgent`**, which runs `go build` for another GOARCH.
+- **`agent.drain` and `agent.read`** (`kmsg_linux.go`), which need `/dev/kmsg`.
+- **`gen_brand`'s `iconsCmd` and `rasterize`**, a build-time tool that is never
+  shipped and rasterises through a browser.
+
+The rest — the `record`, `mark`, `forward` and `uninstall` verbs, and
+`dashboards check` — need a router or a Grafana to do anything, and their flag
+handling is covered. They are where the remaining points are, for anyone who
+wants them.
+
+**What a new test owes.** Cover a branch because something depends on it, not
+to move the number: a test that asserts a function was called teaches nobody
+anything and fails for no reason later. If a package's tests redirect
+`os.Stdout`, they cannot also be `t.Parallel()` without serialising it —
+`cmd/mikroscope`'s `capture` takes a mutex for exactly that reason, after one
+intermittent failure in a coverage run.
+
 ## Working against a real router
 
 The tool exists to run on production routers, and it is developed against one.
