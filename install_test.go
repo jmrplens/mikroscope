@@ -106,13 +106,6 @@ func serveRelease(t *testing.T, rel fakeRelease) string {
 	return serveCounted(t, rel, nil)
 }
 
-// serveNamed reads as what it is at the call site of a platform test: a server
-// holding one named archive.
-func serveNamed(t *testing.T, rel fakeRelease) string {
-	t.Helper()
-	return serveCounted(t, rel, nil)
-}
-
 // serveCounted is serveRelease with a counter, for the tests that care whether
 // anything was fetched at all.
 func serveCounted(t *testing.T, rel fakeRelease, asked *atomic.Int32) string {
@@ -381,7 +374,7 @@ func TestTheInstallerTakesTheDarwinArchiveOnAMac(t *testing.T) {
 source install.sh --dir "$1" --version "$2"`
 	cmd := exec.CommandContext(t.Context(), "bash", "-c", shim, "bash", dir, fakeVersion)
 	cmd.Env = append(os.Environ(),
-		"MIKROSCOPE_DOWNLOAD_BASE="+serveNamed(t, rel),
+		"MIKROSCOPE_DOWNLOAD_BASE="+serveRelease(t, rel),
 		"MIKROSCOPE_LATEST_URL=http://127.0.0.1:1/no-such-api")
 	out, _ := cmd.CombinedOutput()
 
