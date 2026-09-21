@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -218,5 +220,110 @@ func TestTheRouterHalfListsWithoutTouchingTheRouter(t *testing.T) {
 	veth := strings.Index(said, "veth interface ")
 	if container > veth {
 		t.Errorf("the listing is not the plan backwards:\n%s", said)
+	}
+}
+
+// The whole verb, driven the way somebody types it. The two file sinks are the
+// only stores that need no server, which makes them the ones that can carry
+// this end to end.
+func TestTheVerbListsThenRemoves(t *testing.T) {
+	dir := t.TempDir()
+	jsonl := filepath.Join(dir, "sweep.jsonl")
+	sql := filepath.Join(dir, "sweep.sql")
+	for _, p := range []string{jsonl, sql} {
+		if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	args := []string{"--targets", "data", "--file", jsonl, "--sql", sql}
+
+	var listed strings.Builder
+	if err := uninstall(args, &listed); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(listed.String(), "2 thing(s) would be removed. Nothing was.") {
+		t.Errorf("said %q, want the list and no removal", listed.String())
+	}
+	for _, p := range []string{jsonl, sql} {
+		if _, err := os.Stat(p); err != nil {
+			t.Errorf("a run without --yes removed %s", p)
+		}
+	}
+
+	var removed strings.Builder
+	if err := uninstall(append(args, "--yes"), &removed); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(removed.String(), "removed --file "+jsonl) {
+		t.Errorf("said %q, want it to name what went", removed.String())
+	}
+	for _, p := range []string{jsonl, sql} {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Errorf("%s is still there", p)
+		}
+	}
+	// And again on the empty set: already gone is the outcome asked for.
+	var again strings.Builder
+	if err := uninstall(append(args, "--yes"), &again); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(again.String(), "nothing of this is here to remove") {
+		t.Errorf("said %q, want it to say the stores are already empty", again.String())
+	}
+}
+
+func TestTheVerbRefusesAMisspelledTarget(t *testing.T) {
+	t.Parallel()
+	err := uninstall([]string{"--targets", "dashbord"}, &strings.Builder{})
+	if err == nil || !strings.Contains(err.Error(), "unknown --targets name") {
+		t.Fatalf("err = %v, want the refusal", err)
+	}
+}
+
+// The dashboard half against a Grafana that holds one of the two objects: the
+// listing names what is there and says nothing about what is not, because an
+// uninstall lists what it would take away rather than what it wishes it could.
+func TestTheDashboardHalfListsOnlyWhatIsThere(t *testing.T) {
+	t.Setenv("GRAFANA_TOKEN", "glsa_test")
+	var deleted []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodDelete:
+			deleted = append(deleted, r.URL.Path)
+			w.WriteHeader(http.StatusOK)
+		case strings.HasPrefix(r.URL.Path, "/api/dashboards/uid/"):
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"dashboard":{"uid":"mikroscope-influxdb"}}`))
+		default: // the datasource is not there
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+
+	args := []string{
+		"--targets", "dashboard",
+		"--grafana", srv.URL,
+		"--influx", "http://store:8181", "--influx-db", "mikroscope",
+	}
+	var listed strings.Builder
+	if err := uninstall(args, &listed); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(listed.String(), "dashboard mikroscope-influxdb") {
+		t.Errorf("said %q, want the dashboard that is there", listed.String())
+	}
+	if strings.Contains(listed.String(), "datasource mikroscope-influxdb") {
+		t.Errorf("said %q, want nothing about the datasource that is not there", listed.String())
+	}
+	if len(deleted) != 0 {
+		t.Errorf("a run without --yes deleted %v", deleted)
+	}
+
+	var removed strings.Builder
+	if err := uninstall(append(args, "--yes"), &removed); err != nil {
+		t.Fatal(err)
+	}
+	if len(deleted) != 1 || deleted[0] != "/api/dashboards/uid/mikroscope-influxdb" {
+		t.Errorf("deleted %v, want the one dashboard", deleted)
 	}
 }

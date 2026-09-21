@@ -46,6 +46,12 @@ type removal struct {
 // command that empties a store, and unlike the router objects — which `install`
 // puts back — a dropped table is a dropped table.
 func runUninstall(args []string, _ cli) error {
+	return uninstall(args, os.Stdout)
+}
+
+// uninstall is runUninstall with the destination named, so the whole verb can
+// be driven by a test rather than only the pieces under it.
+func uninstall(args []string, out io.Writer) error {
 	fs := flag.NewFlagSet("mikroscope uninstall", flag.ContinueOnError)
 	var (
 		targets string
@@ -69,7 +75,6 @@ func runUninstall(args []string, _ cli) error {
 		return err
 	}
 	ctx := context.Background()
-	out := os.Stdout
 
 	if wanted[targetRouter] {
 		if failed := removeRouterObjects(&c, yes, out); failed != nil {
