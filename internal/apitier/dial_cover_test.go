@@ -36,7 +36,7 @@ func loginListener(t *testing.T) string {
 					}
 					w.BeginSentence()
 					w.WriteWord("!done")
-					if endErr := w.EndSentence(); endErr != nil {
+					if w.EndSentence() != nil {
 						return
 					}
 				}

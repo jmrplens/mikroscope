@@ -52,7 +52,7 @@ func TestWriteScriptGoesToStdoutOrToTheNamedFile(t *testing.T) {
 	// An unwritable path is the operator's typo, and an error rather than a
 	// script that silently went nowhere.
 	c.out = filepath.Join(t.TempDir(), "no", "such", "dir", "install.rsc")
-	if writeErr := writeScript(c); writeErr == nil {
+	if writeScript(c) == nil {
 		t.Error("writing into a missing directory returned no error")
 	}
 }

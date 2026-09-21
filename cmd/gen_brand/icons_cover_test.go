@@ -83,7 +83,7 @@ func TestIconsCmdRasterizesEachSizeAndLeavesNoSources(t *testing.T) {
 func TestIconsCmdReportsAConverterThatFails(t *testing.T) {
 	stubConverters(t, "exit 3", "")
 	var stdout, stderr bytes.Buffer
-	if code := iconsCmd(context.Background(), []string{"-out", t.TempDir()}, &stdout, &stderr); code == 0 {
+	if iconsCmd(context.Background(), []string{"-out", t.TempDir()}, &stdout, &stderr) == 0 {
 		t.Fatal("a failing rsvg-convert returned success")
 	}
 	if !strings.Contains(stderr.String(), "rsvg-convert") {
@@ -94,7 +94,7 @@ func TestIconsCmdReportsAConverterThatFails(t *testing.T) {
 func TestIconsCmdReportsAFailingIcoAssembly(t *testing.T) {
 	stubConverters(t, "", "exit 4")
 	var stdout, stderr bytes.Buffer
-	if code := iconsCmd(context.Background(), []string{"-out", t.TempDir()}, &stdout, &stderr); code == 0 {
+	if iconsCmd(context.Background(), []string{"-out", t.TempDir()}, &stdout, &stderr) == 0 {
 		t.Fatal("a failing magick returned success")
 	}
 	if !strings.Contains(stderr.String(), "favicon.ico") {

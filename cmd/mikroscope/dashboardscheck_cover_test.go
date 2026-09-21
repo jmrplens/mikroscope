@@ -76,13 +76,13 @@ func TestDashboardsCheckToleratesKnownEmptyAndFailsOnTheRest(t *testing.T) {
 	// A Grafana that refuses is the check's own failure, not a panel's.
 	dead := &dashboards.Grafana{URL: "http://127.0.0.1:1", Token: "t"}
 	_ = capture(t, func() {
-		if checkErr := dashboardsCheck(dead, []byte(twoPanelDashboard), "influxdb", "uid", time.Minute, time.Time{}, nil); checkErr == nil {
+		if dashboardsCheck(dead, []byte(twoPanelDashboard), "influxdb", "uid", time.Minute, time.Time{}, nil) == nil {
 			t.Error("an unreachable Grafana returned no error")
 		}
 	})
 
 	// A dashboard that is not JSON is refused before any query is made.
-	if checkErr := dashboardsCheck(stubGrafana(t, oneRow), []byte("{{{"), "influxdb", "uid", time.Minute, time.Time{}, nil); checkErr == nil {
+	if dashboardsCheck(stubGrafana(t, oneRow), []byte("{{{"), "influxdb", "uid", time.Minute, time.Time{}, nil) == nil {
 		t.Error("an unparseable dashboard returned no error")
 	}
 }

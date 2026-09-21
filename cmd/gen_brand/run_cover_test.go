@@ -106,7 +106,7 @@ func TestComposeWritesBothFormatsPerTarget(t *testing.T) {
 func TestComposeReportsAConverterThatFails(t *testing.T) {
 	stubConverters(t, "exit 5", "")
 	var stdout, stderr bytes.Buffer
-	if code := composeCmd(context.Background(), []string{"-out", composeDir(t)}, &stdout, &stderr); code == 0 {
+	if composeCmd(context.Background(), []string{"-out", composeDir(t)}, &stdout, &stderr) == 0 {
 		t.Fatal("a failing rsvg-convert returned success")
 	}
 	if !strings.Contains(stderr.String(), "rsvg-convert") || !strings.Contains(stderr.String(), ".svg") {
