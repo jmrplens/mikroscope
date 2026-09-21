@@ -145,10 +145,17 @@ exercised anyway — `make test-e2e` builds and runs the agent, and
 is not necessarily unexercised**: the end-to-end suite drives both binaries as
 separate processes, which a profile of the test binary cannot see.
 
-The rest of the gap is not whole functions but error branches: the arm of a
-`switch` a fake never reaches, the `if err != nil` of a write that did not
-fail. They are spread thin across every package rather than concentrated
-anywhere, so raising the total is steady work rather than one change.
+The rest of the gap is not whole functions but branches: the arm of a `switch`
+a fake never reaches, the `if err != nil` of a write that did not fail, and
+`main`'s own `os.Exit` beside each arm that returns. They are spread thin
+across every package rather than concentrated anywhere, so raising the total is
+steady work rather than one change.
+
+**The total moves by about three tenths of a point between runs.** A few sink
+tests drive a backoff on a timer, and whether the retry lands inside the test's
+window decides a handful of statements. That is why the floor sits a point
+under the measurement rather than just below it: a floor at the last reading
+fails on the unlucky run and teaches the next person to lower it.
 
 **What a new test owes.** Cover a branch because something depends on it, not
 to move the number: a test that asserts a function was called teaches nobody
