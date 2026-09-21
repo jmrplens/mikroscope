@@ -706,6 +706,49 @@ func TestGreatestIsCastForTheInfluxPlugin(t *testing.T) {
 	}
 }
 
+// TestCoalesceIsCastInAlertSQL is the alert rules' half of the same fault
+// TestGreatestIsCastForTheInfluxPlugin pins for panels, and it is worse here
+// because it is silent on both sides. The InfluxDB sink writes its counters
+// unsigned, so `coalesce(sum(count), 0)` is coalesce(UInt64, Int64); Grafana's
+// InfluxDB plugin cannot map that pair and answers HTTP 200 with NO frames and
+// no error, Grafana reads an empty result as NoData, and every rule here but
+// the silent-agent one declares noDataState OK. The rule therefore reads OK
+// forever while the thing it watches is happening.
+//
+// Measured on 2026-09-21 against the live store through Grafana 13.2.1: seven
+// of the twelve rules returned no frames, mikroscope-l2-loop among them while
+// the loop signature it exists to catch was running and the same SQL over
+// /api/v3/query_sql returned 109. A panel at least fails loudly with a 500;
+// this returns success and nothing.
+func TestCoalesceIsCastInAlertSQL(t *testing.T) {
+	t.Parallel()
+	aggregate := regexp.MustCompile(`^(max|min|sum|avg|count)\(`)
+	for _, r := range AlertRules {
+		if r.SQL == "" {
+			continue
+		}
+		for arm := range strings.SplitSeq(r.SQL, "coalesce(") {
+			if !aggregate.MatchString(arm) {
+				continue
+			}
+			// closingParen starts inside coalesce's own parentheses, so it
+			// walks past the aggregate's pair and returns the one that closes
+			// coalesce itself — which is the character the cast must follow.
+			end := closingParen(arm)
+			if end < 0 {
+				continue
+			}
+			after := arm[end+1:]
+			if strings.HasPrefix(after, "::") {
+				continue
+			}
+			t.Errorf("rule %s: a coalesce() over an aggregate reaches the plugin uncast (%q…). "+
+				"Grafana's InfluxDB plugin answers 200 with no frames for it, which the rule reads "+
+				"as NoData and so as OK; append ::BIGINT.", r.UID, after[:min(len(after), 60)])
+		}
+	}
+}
+
 // A bar with no fill is a bar that is not there. "Which core takes each
 // interrupt" shipped with FillOpacity 0 and drew an empty plot under a
 // 21-entry legend on the reference device (2026-09-19), which is the worst
