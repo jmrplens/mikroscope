@@ -46,7 +46,7 @@ no solo contra simulaciones:
   60 s a 10 Hz el 2026-09-12 dio exactamente 600 muestras, 0 huecos y −7 ms de
   desfase de reloj.
 - **`forward`**, el colector, une la capa del kernel con la capa de la API de
-  RouterOS y escribe en diez destinos. Fichero, Prometheus e InfluxDB 3 se han
+  RouterOS y escribe en once destinos. Fichero, Prometheus e InfluxDB 3 se han
   ejecutado desde el RB5009; por Loki, OTLP, Graphite, Elasticsearch, SQL,
   Telegraf y stdout todavía no han pasado muestras del router, pero todos ellos
   escriben ya en el producto real — InfluxDB 3, PostgreSQL, Elasticsearch,
@@ -231,7 +231,7 @@ ejecutado en hardware: en el único RB5009 de arriba.
   en tu propio equipo.
 - [El techo de muestreo](/mikroscope/es/cost/rate-ceiling/): las seis ejecuciones medidas a 10, 20, 50 y
   100 Hz.
-- [El fichero y los demás destinos](/mikroscope/es/sinks/other/): los diez destinos en los que
+- [El fichero y los demás destinos](/mikroscope/es/sinks/other/): los once destinos en los que
   escribe `forward`.
 - [Linaje y licencia](/mikroscope/es/about/lineage/): de dónde vienen el código de despliegue y el
   cliente de la API.

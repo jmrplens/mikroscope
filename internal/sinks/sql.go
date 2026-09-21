@@ -266,6 +266,42 @@ func NewSQL(path, host string, hypertable bool, log func(string)) (*SQL, error) 
 	return s, nil
 }
 
+// newSQLRenderer is an SQL sink with no file behind it, for a caller that
+// wants the statements and will send them somewhere itself. NewSQL is the one
+// that opens a file; this one opens nothing and can never fail.
+func newSQLRenderer(host string, hypertable bool) *SQL {
+	noWhereToLog := func(string) {
+		// Deliberately empty: a renderer writes nowhere, so it has nothing to
+		// report, and a no-op lets every Log call in the shared code path skip
+		// a nil check.
+	}
+	return &SQL{Host: host, Hypertable: hypertable, Log: noWhereToLog, hostLit: sqlQuote(host)}
+}
+
+// statements is one event as SQL, or nil for an event this has nothing to say
+// about. The bytes are a copy: the caller keeps them past the lock.
+func (s *SQL) statements(e Event) []byte {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.render(e)
+	if s.buf.Len() == 0 {
+		return nil
+	}
+	return bytes.Clone(s.buf.Bytes())
+}
+
+// headerSQL is the DDL, for a caller applying it over a connection rather than
+// writing it to a file. Identical by construction: it is the same header().
+func (s *SQL) headerSQL() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.buf.Reset()
+	s.header()
+	out := s.buf.String()
+	s.buf.Reset()
+	return out
+}
+
 // Name implements Sink.
 func (s *SQL) Name() string { return "sql " + s.Path }
 
@@ -278,6 +314,31 @@ func (s *SQL) Name() string { return "sql " + s.Path }
 func (s *SQL) Write(e Event) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.render(e)
+	if s.buf.Len() == 0 {
+		return
+	}
+	if _, err := s.w.Write(s.buf.Bytes()); err != nil {
+		s.stats.Errors++
+		s.stats.Dropped++
+		if time.Since(s.lastLog) > time.Minute {
+			s.lastLog = time.Now()
+			s.Log("sql: " + err.Error() + " (event dropped)")
+		}
+		return
+	}
+	s.stats.Written++
+}
+
+// render turns one event into statements in s.buf, and is the ONE place that
+// decides what a point looks like as SQL. The file sink writes what it
+// produces and the Postgres sink sends it down a connection: two renderers
+// would be two schemas, and a dashboard written against either would be a lie
+// about the other. The caller holds s.mu.
+//
+// An event this has nothing to say about leaves the buffer empty, which both
+// callers read as "nothing to do" rather than as an empty write.
+func (s *SQL) render(e Event) {
 	s.buf.Reset()
 	switch {
 	case e.Kernel != nil:
@@ -293,11 +354,11 @@ func (s *SQL) Write(e Event) {
 		}
 	case e.Gap != nil:
 		// A gap carries no timestamp of its own; the collector noticed it now.
-		s.gapRow(sqlStamp(time.Now().UnixNano()), e.Gap)
+		s.gapRow(sqlStamp(e.At), e.Gap)
 	case e.Device != nil:
-		s.deviceRows(sqlStamp(time.Now().UnixNano()), e.Device)
+		s.deviceRows(sqlStamp(e.At), e.Device)
 	case e.Sampler != nil:
-		s.samplerRows(sqlStamp(time.Now().UnixNano()), e.Sampler)
+		s.samplerRows(sqlStamp(e.At), e.Sampler)
 	case e.Detection != nil:
 		d := e.Detection
 		fmt.Fprintf(&s.buf, "INSERT INTO mikroscope_detection (time, host, rule, key, seq, value, threshold, message) VALUES (%s, %s, %s, %s, %d, %s, %s, %s)%s",
@@ -309,16 +370,6 @@ func (s *SQL) Write(e Event) {
 	default:
 		return
 	}
-	if _, err := s.w.Write(s.buf.Bytes()); err != nil {
-		s.stats.Errors++
-		s.stats.Dropped++
-		if time.Since(s.lastLog) > time.Minute {
-			s.lastLog = time.Now()
-			s.Log("sql: " + err.Error() + " (event dropped)")
-		}
-		return
-	}
-	s.stats.Written++
 }
 
 // header renders the DDL. CREATE TABLE IF NOT EXISTS and the hypertable's

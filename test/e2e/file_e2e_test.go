@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jmrplens/mikroscope/internal/sample"
+	"github.com/jmrplens/mikroscope/test/e2e/fakeagent"
 )
 
 func TestFileSinkWritesTheTimelineAsJSONL(t *testing.T) {
@@ -41,11 +42,40 @@ func TestFileSinkWritesTheTimelineAsJSONL(t *testing.T) {
 		agentLines[l] = true
 	}
 
-	var kernel, gaps, other int
+	counts := classifyTimeline(t, lines, agentLines)
+
+	if counts.kernel < 30 {
+		t.Errorf("only %d kernel samples were written", counts.kernel)
+	}
+	if counts.gaps == 0 {
+		// The sequence numbers are printed because the two reasons this can
+		// happen look identical without them: a sink that does not record
+		// gaps, and a run whose cursor started past the fixture's jump.
+		t.Errorf("the sequence gap was not recorded; a consumer reading this file could not "+
+			"tell a gap from a quiet router. %d kernel samples, seq %d..%d, and the fixture "+
+			"jumps after %d", counts.kernel, counts.firstSeq, counts.lastSeq, fakeagent.GapAfter)
+	}
+	if counts.other != 0 {
+		t.Errorf("%d api records were written with --api-mode off", counts.other)
+	}
+}
+
+// timelineCounts is what one pass over the file found.
+type timelineCounts struct {
+	kernel, gaps, other int
+	firstSeq, lastSeq   uint64
+}
+
+// classifyTimeline reads every line as the kind its prefix says it is, and
+// fails on one that is none of them: a file a consumer cannot parse is the
+// thing this sink exists not to write.
+func classifyTimeline(t *testing.T, lines []string, agentLines map[string]bool) timelineCounts {
+	t.Helper()
+	var c timelineCounts
 	for i, line := range lines {
 		switch {
 		case strings.HasPrefix(line, `{"gap":`):
-			gaps++
+			c.gaps++
 			var g struct {
 				Gap struct{ From, To uint64 } `json:"gap"`
 			}
@@ -56,8 +86,10 @@ func TestFileSinkWritesTheTimelineAsJSONL(t *testing.T) {
 				t.Errorf("gap %d..%d is empty", g.Gap.From, g.Gap.To)
 			}
 		case strings.HasPrefix(line, `{"api":`):
-			other++
-		case strings.HasPrefix(line, `{"derived":`), strings.HasPrefix(line, `{"detection":`), strings.HasPrefix(line, `{"trigger":`), strings.HasPrefix(line, `{"device":`), strings.HasPrefix(line, `{"sampler":`):
+			c.other++
+		case strings.HasPrefix(line, `{"derived":`), strings.HasPrefix(line, `{"detection":`),
+			strings.HasPrefix(line, `{"trigger":`), strings.HasPrefix(line, `{"device":`),
+			strings.HasPrefix(line, `{"sampler":`):
 			// The collector's own line kinds, beside the samples; a consumer
 			// wanting raw samples skips them by prefix, as this does.
 		default:
@@ -65,21 +97,19 @@ func TestFileSinkWritesTheTimelineAsJSONL(t *testing.T) {
 			if decErr := json.Unmarshal([]byte(line), &s); decErr != nil {
 				t.Fatalf("line %d is neither a sample, an api record nor a gap: %v\n%s", i+1, decErr, line)
 			}
-			kernel++
+			c.kernel++
+			if c.firstSeq == 0 || s.Seq < c.firstSeq {
+				c.firstSeq = s.Seq
+			}
+			if s.Seq > c.lastSeq {
+				c.lastSeq = s.Seq
+			}
 			if !agentLines[line] {
 				t.Fatalf("line %d was re-encoded rather than written verbatim:\n%s", i+1, line)
 			}
 		}
 	}
-	if kernel < 30 {
-		t.Errorf("only %d kernel samples were written", kernel)
-	}
-	if gaps == 0 {
-		t.Errorf("the sequence gap was not recorded; a consumer reading this file could not tell a gap from a quiet router")
-	}
-	if other != 0 {
-		t.Errorf("%d api records were written with --api-mode off", other)
-	}
+	return c
 }
 
 func TestFileSinkTruncatesRatherThanAppending(t *testing.T) {

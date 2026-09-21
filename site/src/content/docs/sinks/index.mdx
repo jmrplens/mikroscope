@@ -145,7 +145,7 @@ run has no CPU or memory numbers in it at all. **`--prom` is scraped, not
 pushed**: `forward` serves `/metrics` and Prometheus comes to it, which means
 the collector has to be reachable from the Prometheus host.
 
-## The ten sinks
+## The eleven sinks
 
 <ScrollTable label="The sinks forward can write to">
 
@@ -155,6 +155,7 @@ the collector has to be reachable from the Prometheus host.
 | `--prom :9124`                   | Prometheus `/metrics` on the collector host     | —                                                                        | in memory   | [Prometheus](/mikroscope/sinks/prometheus/)                            |
 | `--influx URL`                   | InfluxDB 3 line protocol                        | `MIKROSCOPE_INFLUX_URL`, `MIKROSCOPE_INFLUX_TOKEN`                       | queued      | [InfluxDB 3](/mikroscope/sinks/influxdb/)                              |
 | `--sql path` or `--sql -`        | PostgreSQL / TimescaleDB statements, for `psql` | —                                                                        | synchronous | [SQL](/mikroscope/sinks/other/#sql-for-postgresql-and-timescaledb)     |
+| `--postgres DSN`                 | the same statements, into a running PostgreSQL  | `MIKROSCOPE_POSTGRES_DSN`                                                | queued      | [`--postgres`](/mikroscope/sinks/other/#--postgres-the-same-statements-down-a-connection) |
 | `--stdout lp` or `--stdout json` | standard output                                 | —                                                                        | queued      | [stdout](/mikroscope/sinks/other/#standard-output)                     |
 | `--loki URL`                     | Loki push API: events, not metrics              | `MIKROSCOPE_LOKI_URL`, `MIKROSCOPE_LOKI_TOKEN`, `MIKROSCOPE_LOKI_TENANT` | queued      | [Loki](/mikroscope/sinks/other/#loki)                                  |
 | `--otlp URL`                     | OTLP/HTTP metrics, JSON encoding                | `MIKROSCOPE_OTLP_URL`, `MIKROSCOPE_OTLP_TOKEN`                           | queued      | [OTLP](/mikroscope/sinks/other/#otlp)                                  |

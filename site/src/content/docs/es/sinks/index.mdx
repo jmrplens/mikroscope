@@ -152,7 +152,7 @@ se consulta, no se envía**: `forward` sirve `/metrics` y Prometheus viene a por
 él, lo que significa que el colector tiene que ser alcanzable desde la máquina
 de Prometheus.
 
-## Los diez destinos
+## Los once destinos
 
 <ScrollTable label="Los destinos en los que puede escribir forward">
 
@@ -162,6 +162,7 @@ de Prometheus.
 | `--prom :9124`                  | `/metrics` de Prometheus en la máquina del colector | —                                                                        | en memoria | [Prometheus](/mikroscope/es/sinks/prometheus/)                          |
 | `--influx URL`                  | protocolo de líneas de InfluxDB 3                   | `MIKROSCOPE_INFLUX_URL`, `MIKROSCOPE_INFLUX_TOKEN`                       | en cola    | [InfluxDB 3](/mikroscope/es/sinks/influxdb/)                            |
 | `--sql path` o `--sql -`        | sentencias PostgreSQL / TimescaleDB, para `psql`    | —                                                                        | síncrono   | [SQL](/mikroscope/es/sinks/other/#sql-para-postgresql-y-timescaledb)    |
+| `--postgres DSN`                | las mismas sentencias, a un PostgreSQL en marcha    | `MIKROSCOPE_POSTGRES_DSN`                                                | en cola    | [`--postgres`](/mikroscope/es/sinks/other/#--postgres-las-mismas-sentencias-por-una-conexión) |
 | `--stdout lp` o `--stdout json` | salida estándar                                     | —                                                                        | en cola    | [stdout](/mikroscope/es/sinks/other/#salida-estándar)                   |
 | `--loki URL`                    | API push de Loki: eventos, no métricas              | `MIKROSCOPE_LOKI_URL`, `MIKROSCOPE_LOKI_TOKEN`, `MIKROSCOPE_LOKI_TENANT` | en cola    | [Loki](/mikroscope/es/sinks/other/#loki)                                |
 | `--otlp URL`                    | métricas OTLP/HTTP, codificación JSON               | `MIKROSCOPE_OTLP_URL`, `MIKROSCOPE_OTLP_TOKEN`                           | en cola    | [OTLP](/mikroscope/es/sinks/other/#otlp)                                |

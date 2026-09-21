@@ -142,24 +142,24 @@ func (s *Graphite) Write(e Event) {
 		s.writeAPI(e.API)
 		s.writeDerived(e)
 	case e.Gap != nil:
-		s.writeGap(e.Gap)
+		s.writeGap(e.At, e.Gap)
 	case e.Trigger != nil:
 		// One point per fire, under the cause: an annotation source.
 		s.putU("trigger."+graphiteNode(e.Trigger.Cause), 1, e.Trigger.WallNS/1e9)
 	case e.Detection != nil:
 		s.putU("detection."+graphiteNode(e.Detection.Rule), 1, e.Detection.WallNS/1e9)
 	case e.Device != nil:
-		s.writeDevice(e.Device)
+		s.writeDevice(e.At, e.Device)
 	case e.Sampler != nil:
-		s.writeSampler(e.Sampler)
+		s.writeSampler(e.At, e.Sampler)
 	}
 }
 
 // writeDevice emits the numeric board facts under device.*; the strings
 // (board, kernel, governor) have no Graphite form and stay in the sinks
 // that can hold them.
-func (s *Graphite) writeDevice(c *agent.Capabilities) {
-	ts := time.Now().Unix()
+func (s *Graphite) writeDevice(at int64, c *agent.Capabilities) {
+	ts := at / 1e9
 	s.putI("device.cores", int64(c.Cores), ts)
 	if c.Limits.ConntrackMax > 0 {
 		s.putU("device.conntrack_max", c.Limits.ConntrackMax, ts)
@@ -498,8 +498,8 @@ func (s *Graphite) writeAPI(a *apitier.Sample) {
 // it. A gap carries no timestamp of its own, so it is
 // stamped when it is seen — the collector's clock, unlike every other line
 // here, which carries the agent's.
-func (s *Graphite) writeGap(g *transport.Gap) {
-	ts := time.Now().Unix()
+func (s *Graphite) writeGap(at int64, g *transport.Gap) {
+	ts := at / 1e9
 	var lost uint64
 	if g.To >= g.From {
 		lost = g.To - g.From + 1 // From..To inclusive (transport.Gap)
@@ -646,8 +646,8 @@ func (s *Graphite) Close() error {
 // writeSampler renders the agent's own counters. A Graphite path has no
 // labels, so each condition and reason becomes a node of its own — the same
 // shape the interface and core series already use here.
-func (s *Graphite) writeSampler(st *agent.SamplerStats) {
-	ts := time.Now().Unix()
+func (s *Graphite) writeSampler(at int64, st *agent.SamplerStats) {
+	ts := at / 1e9
 	s.putU("sampler.ticks", st.Ticks, ts)
 	s.putU("sampler.slipped", st.Slipped, ts)
 	c := st.Captures

@@ -193,6 +193,80 @@ again at the end of the run. There is no metric family for it. That is a deliber
 protects the data, and a collector waiting on a slow store would lose more than
 the store does.
 
+## The store and the dashboard
+
+### `flightsql: Unauthenticated`, from an InfluxDB datasource
+
+The InfluxDB plugin has two transports and reads the credential from a
+different place on each: the HTTP calls take the `Authorization` header, the
+FlightSQL ones take `token`. A datasource with only one of them set answers
+this on every panel while the store itself is perfectly healthy. Set **both**
+secure fields — `token` = the token, `httpHeaderValue1` = `Bearer <token>` —
+or let `forward --grafana` build the datasource, which sets both.
+
+### `tls: first record does not look like a TLS handshake`
+
+The same plugin, the same two transports, and the other half of the same trap:
+the FlightSQL side attempts TLS unless `insecureGrpc` is set, so a datasource
+pointed at a **plain-HTTP** InfluxDB answers this on every panel. Set
+`insecureGrpc` on the datasource, or use `forward --grafana`, which follows the
+scheme of the URL the sink writes to. Measured against the reference store on
+2026-09-19, by creating the datasource without it.
+
+### The panels are empty and the SQL is fine in `psql`
+
+The InfluxDB plugin rejects a result whose columns are all numeric and none is
+time-typed, so a panel whose query returns one row of numbers renders its
+no-value text — which looks exactly like a quiet device. If you are writing a
+panel, give it a `time` column even when the panel does not plot one;
+`mikroscope dashboards check` runs every panel's query through Grafana's own
+API and is the fastest way to tell a broken query from a quiet one.
+
+### `the <name> sink does not know the address Grafana would query`
+
+`forward --grafana` builds a datasource only for the sinks whose **write
+address is the address Grafana queries**: `--influx` and `--elastic`. The other
+three cannot, and each for its own reason — `--prom` serves `/metrics` and is
+scraped, so the Prometheus Grafana asks is one the collector has never heard
+of; `--sql` writes statements to a file and never connects; `--graphite`
+speaks the carbon ingest port, which is not the API Grafana queries. Create
+those in Grafana and name them in `--grafana-datasource-uid`, which also tells
+`forward` to leave that datasource alone.
+
+### `--influx is a write URL this cannot take apart`
+
+`--influx` may be a server (`http://host:8181`, with `--influx-db`) or a full
+write URL, and a full one is used verbatim. A URL whose shape is not
+InfluxDB 3's `/api/v3/write_lp?db=…` — a v2 `/api/v2/write`, say — writes as
+well as ever and simply cannot describe a datasource, because nothing can read
+the database name back out of it. Pass the fields, or adopt a datasource by
+uid.
+
+### `standard_conforming_strings = off`
+
+`--postgres` refuses a server that answers this, rather than writing to it.
+The statements quote by doubling the single quote and nothing else, so with the
+setting off a kernel-log message ending in a backslash escapes its own closing
+quote and every statement after it is parsed as string content. Turn it on for
+the connection — `ALTER ROLE … SET standard_conforming_strings = on` — or use
+`--sql` and apply the file, whose header sets it itself.
+
+### `database "…" does not exist`
+
+`--postgres` connects to a database; it does not create one. The sink declares
+its **tables** on the first batch and nothing else, because creating databases
+is not a collector's job. `createdb mikroscope` first. The collector goes on
+collecting meanwhile: the failure is counted against the sink and logged once a
+minute, and the other sinks are unaffected.
+
+### The collector says `grafana: could not publish, carrying on without it`
+
+That is the designed behaviour, not a half-failure to chase. Refusing to start
+would trade the samples of the hour spent not running, which cannot be
+recovered, for a dashboard published on the next restart, which can. The line
+carries what the server said. `--grafana-dry-run` prints what it would write
+without writing anything, and runs before the router is touched.
+
 ## Reading what it shows
 
 Once the data is arriving, the question changes from "why is this broken" to

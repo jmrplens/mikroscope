@@ -293,7 +293,8 @@ never disabled for the life of the process.
 | ------------------- | --------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------ |
 | `--file`            | empty                 | none                       | write the merged timeline as JSONL to this path (truncated at start)                                               |
 | `--prom`            | empty                 | none                       | serve Prometheus `/metrics` on this address, for example `:9124`                                                   |
-| `--influx`          | empty                 | `MIKROSCOPE_INFLUX_URL`    | InfluxDB 3 write URL, for example `http://host:8181/api/v3/write_lp?db=mikroscope&precision=nanosecond`            |
+| `--influx`          | empty                 | `MIKROSCOPE_INFLUX_URL`    | InfluxDB 3 server, for example `http://host:8181`. A full write URL is still taken verbatim                        |
+| `--influx-db`       | empty                 | `MIKROSCOPE_INFLUX_DB`     | the database `--influx` writes to; ignored when `--influx` already carries a write path                            |
 | `--loki`            | empty                 | `MIKROSCOPE_LOKI_URL`      | Loki push URL; carries events (kernel log, gaps, API errors, detections, triggers, the device record), not samples |
 | `--loki-tenant`     | empty                 | `MIKROSCOPE_LOKI_TENANT`   | `X-Scope-OrgID` for a multi-tenant Loki                                                                            |
 | `--otlp`            | empty                 | `MIKROSCOPE_OTLP_URL`      | OTLP/HTTP metrics endpoint, for example `http://host:4318/v1/metrics`                                              |
@@ -302,17 +303,27 @@ never disabled for the life of the process.
 | `--elastic`         | empty                 | `MIKROSCOPE_ELASTIC_URL`   | Elasticsearch or OpenSearch base URL for `_bulk`                                                                   |
 | `--elastic-index`   | `mikroscope-%Y.%m.%d` | none                       | index name; `%Y`, `%m`, `%d` expand to the event's date                                                            |
 | `--sql`             | empty                 | none                       | write PostgreSQL/TimescaleDB statements to this path, or to standard output with `-`; there is no database driver  |
-| `--sql-hypertable`  | `false`               | none                       | also emit TimescaleDB `create_hypertable` calls in the SQL header                                                  |
+| `--sql-hypertable`  | `false`               | none                       | also emit TimescaleDB `create_hypertable` calls in the SQL header; applies to `--postgres` too                     |
+| `--postgres`        | empty                 | `MIKROSCOPE_POSTGRES_DSN`  | send the same statements to a running PostgreSQL. The one sink flag that may carry a credential — see below        |
 | `--telegraf`        | empty                 | `MIKROSCOPE_TELEGRAF_URL`  | Telegraf listener: `http://host:8186/telegraf`, `tcp://host:8094` or `udp://host:8094`                             |
 | `--stdout`          | empty                 | none                       | write to standard output as `lp` (InfluxDB line protocol) or `json` (NDJSON); any other value is refused           |
 | `--host-tag`        | `router`              | `MIKROSCOPE_HOST_TAG`      | host tag or label on every point, in every sink                                                                    |
 | `--queue-seconds`   | `60`                  | none                       | seconds of data each queued sink may hold before it drops the oldest batch; `0` or less takes 60                   |
 
-No sink credential is a flag, because a flag is visible in `ps` and in shell
-history: the tokens come from `MIKROSCOPE_INFLUX_TOKEN`,
-`MIKROSCOPE_LOKI_TOKEN`, `MIKROSCOPE_OTLP_TOKEN`, `MIKROSCOPE_ELASTIC_AUTH`
-and `MIKROSCOPE_TELEGRAF_TOKEN`. A sink that was asked for and cannot be
-built stops `forward` before it pulls anything.
+No sink **token** is a flag, because a flag is visible in `ps` and in shell
+history: they come from `MIKROSCOPE_INFLUX_TOKEN`, `MIKROSCOPE_LOKI_TOKEN`,
+`MIKROSCOPE_OTLP_TOKEN`, `MIKROSCOPE_ELASTIC_AUTH` and
+`MIKROSCOPE_TELEGRAF_TOKEN`. A sink that was asked for and cannot be built
+stops `forward` before it pulls anything.
+
+`--postgres` is the one exception, and it is one on purpose. A PostgreSQL
+connection string is the shape every PostgreSQL client takes, and pgx reads
+`PGPASSWORD`, `~/.pgpass` and the service file exactly as `psql` does — so a
+DSN with **no** password in it works the way an operator already expects. The
+flag exists so the DSN can say host, database, user and `sslmode` on the
+command line; the password belongs in one of those three places, or in
+`MIKROSCOPE_POSTGRES_DSN` in an environment file. A password written into the
+flag is readable by any process on the machine.
 
 On exit `forward` prints the number of kernel samples, API samples, gaps and
 skew jumps, and for each sink how many events it wrote, dropped and failed
@@ -327,6 +338,27 @@ whatever rate the agent runs at (`promHistogramRateHz` in
 reconnects to an agent configured differently. [Prometheus metric
 families](https://jmrp.io/docs/mikroscope/reference/metrics/) says what else follows from that
 constant.
+
+#### Publishing to Grafana
+
+`forward` can reconcile a datasource and a dashboard per store it writes to,
+once, at start, before the first sample. It is off unless `--grafana` is
+given, and the token is `GRAFANA_TOKEN` — publishing without one would write
+as whoever an anonymous request is to that server.
+
+| Flag                       | Default      | Variable                            | Meaning                                                                                  |
+| -------------------------- | ------------ | ----------------------------------- | ---------------------------------------------------------------------------------------- |
+| `--grafana`                | empty        | `MIKROSCOPE_GRAFANA_URL`            | publish to this Grafana at start; empty publishes nothing                                |
+| `--grafana-folder`         | `mikroscope` | `MIKROSCOPE_GRAFANA_FOLDER`         | the folder to publish into; empty is Grafana's General folder                            |
+| `--grafana-datasource-uid` | empty        | `MIKROSCOPE_GRAFANA_DATASOURCE_UID` | adopt an existing datasource by uid instead of creating one, and leave it untouched      |
+| `--grafana-dry-run`        | `false`      | none                                | print what it would write, write nothing, and stop before collecting                     |
+
+A failure here is a warning and not a refusal to start: the samples of an hour
+spent not running cannot be recovered, and a dashboard can be published on the
+next restart. Nothing is ever deleted. `--grafana-dry-run` runs before the
+router is touched, so it is answerable with no router in front of it.
+[Import and check](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/) says which sinks
+can describe their own datasource and which have to be told.
 
 ### dashboards
 
@@ -445,6 +477,7 @@ user](https://jmrp.io/docs/mikroscope/security/api-user/) has the policy that us
 | -------------------------- | --------------- | ------------------- | -------------------------------------------------------------------------------- |
 | `MIKROSCOPE_INFLUX_URL`    | `--influx`      | empty               | InfluxDB 3 server, `http://host:8181`; a full write URL is still taken verbatim  |
 | `MIKROSCOPE_INFLUX_DB`     | `--influx-db`   | empty               | the database `--influx` writes to, when `--influx` is a bare server               |
+| `MIKROSCOPE_POSTGRES_DSN`  | `--postgres`    | empty               | PostgreSQL connection string for the connecting SQL sink                          |
 | `MIKROSCOPE_LOKI_URL`      | `--loki`        | empty               | Loki push URL                                                                    |
 | `MIKROSCOPE_LOKI_TENANT`   | `--loki-tenant` | empty               | `X-Scope-OrgID`                                                                  |
 | `MIKROSCOPE_OTLP_URL`      | `--otlp`        | empty               | OTLP/HTTP metrics endpoint                                                       |
@@ -2276,6 +2309,80 @@ again at the end of the run. There is no metric family for it. That is a deliber
 [the collector](https://jmrp.io/docs/mikroscope/sinks/) explains it: the agent's ring is what
 protects the data, and a collector waiting on a slow store would lose more than
 the store does.
+
+### The store and the dashboard
+
+#### `flightsql: Unauthenticated`, from an InfluxDB datasource
+
+The InfluxDB plugin has two transports and reads the credential from a
+different place on each: the HTTP calls take the `Authorization` header, the
+FlightSQL ones take `token`. A datasource with only one of them set answers
+this on every panel while the store itself is perfectly healthy. Set **both**
+secure fields — `token` = the token, `httpHeaderValue1` = `Bearer <token>` —
+or let `forward --grafana` build the datasource, which sets both.
+
+#### `tls: first record does not look like a TLS handshake`
+
+The same plugin, the same two transports, and the other half of the same trap:
+the FlightSQL side attempts TLS unless `insecureGrpc` is set, so a datasource
+pointed at a **plain-HTTP** InfluxDB answers this on every panel. Set
+`insecureGrpc` on the datasource, or use `forward --grafana`, which follows the
+scheme of the URL the sink writes to. Measured against the reference store on
+2026-09-19, by creating the datasource without it.
+
+#### The panels are empty and the SQL is fine in `psql`
+
+The InfluxDB plugin rejects a result whose columns are all numeric and none is
+time-typed, so a panel whose query returns one row of numbers renders its
+no-value text — which looks exactly like a quiet device. If you are writing a
+panel, give it a `time` column even when the panel does not plot one;
+`mikroscope dashboards check` runs every panel's query through Grafana's own
+API and is the fastest way to tell a broken query from a quiet one.
+
+#### `the <name> sink does not know the address Grafana would query`
+
+`forward --grafana` builds a datasource only for the sinks whose **write
+address is the address Grafana queries**: `--influx` and `--elastic`. The other
+three cannot, and each for its own reason — `--prom` serves `/metrics` and is
+scraped, so the Prometheus Grafana asks is one the collector has never heard
+of; `--sql` writes statements to a file and never connects; `--graphite`
+speaks the carbon ingest port, which is not the API Grafana queries. Create
+those in Grafana and name them in `--grafana-datasource-uid`, which also tells
+`forward` to leave that datasource alone.
+
+#### `--influx is a write URL this cannot take apart`
+
+`--influx` may be a server (`http://host:8181`, with `--influx-db`) or a full
+write URL, and a full one is used verbatim. A URL whose shape is not
+InfluxDB 3's `/api/v3/write_lp?db=…` — a v2 `/api/v2/write`, say — writes as
+well as ever and simply cannot describe a datasource, because nothing can read
+the database name back out of it. Pass the fields, or adopt a datasource by
+uid.
+
+#### `standard_conforming_strings = off`
+
+`--postgres` refuses a server that answers this, rather than writing to it.
+The statements quote by doubling the single quote and nothing else, so with the
+setting off a kernel-log message ending in a backslash escapes its own closing
+quote and every statement after it is parsed as string content. Turn it on for
+the connection — `ALTER ROLE … SET standard_conforming_strings = on` — or use
+`--sql` and apply the file, whose header sets it itself.
+
+#### `database "…" does not exist`
+
+`--postgres` connects to a database; it does not create one. The sink declares
+its **tables** on the first batch and nothing else, because creating databases
+is not a collector's job. `createdb mikroscope` first. The collector goes on
+collecting meanwhile: the failure is counted against the sink and logged once a
+minute, and the other sinks are unaffected.
+
+#### The collector says `grafana: could not publish, carrying on without it`
+
+That is the designed behaviour, not a half-failure to chase. Refusing to start
+would trade the samples of the hour spent not running, which cannot be
+recovered, for a dashboard published on the next restart, which can. The line
+carries what the server said. `--grafana-dry-run` prints what it would write
+without writing anything, and runs before the router is touched.
 
 ### Reading what it shows
 

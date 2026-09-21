@@ -127,7 +127,7 @@ func (p *publishFlags) publishOne(ctx context.Context, g *dashboards.Grafana,
 }
 
 // storesToPublish is one store per metric sink configured, in a fixed order so
-// two runs of the same flags report the same way. Five of the ten sinks have a
+// two runs of the same flags report the same way. Five of the eleven sinks have a
 // dashboard; --file, --loki, --otlp, --telegraf and --stdout do not, and a
 // collector writing only to those publishes nothing.
 func storesToPublish(s *sinkFlags) []dashboards.Store {

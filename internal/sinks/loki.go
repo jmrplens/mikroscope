@@ -131,7 +131,7 @@ func (s *Loki) Write(e Event) {
 	case e.API != nil:
 		s.apiErrors(e.API)
 	case e.Gap != nil:
-		s.gap(e.Gap)
+		s.gap(e.At, e.Gap)
 	case e.Detection != nil:
 		d := e.Detection
 		line := fmt.Sprintf("detection %s: %s rule=%s key=%s seq=%d value=%g threshold=%g", d.Rule, d.Message, d.Rule, d.Key, d.Seq, d.Value, d.Threshold)
@@ -145,7 +145,7 @@ func (s *Loki) Write(e Event) {
 		}
 		c := e.Device
 		line := fmt.Sprintf("device: board=%s kernel=%s cores=%d privileged=%t cgroup=%t sources=%s hash=%s", orUnknown(c.Board), orUnknown(c.Kernel), c.Cores, c.Privileged, c.Cgroup, deviceSources(c), c.Hash)
-		s.cur = append(s.cur, lokiEntry{source: "device", level: "info", ns: time.Now().UnixNano(), line: line})
+		s.cur = append(s.cur, lokiEntry{source: "device", level: "info", ns: e.At, line: line})
 	case e.Sampler != nil:
 		// Deliberately nothing. A log stream is for what changed; the agent's
 		// own counters are levels read every minute, and a line a minute
@@ -227,13 +227,13 @@ func (s *Loki) apiErrors(a *apitier.Sample) {
 // gap renders a lost sequence range; called with s.mu held. A gap carries no
 // timestamp of its own, so it is stamped with the collector's clock at the
 // moment it was noticed, which is when the pull that found it returned.
-func (s *Loki) gap(g *transport.Gap) {
+func (s *Loki) gap(at int64, g *transport.Gap) {
 	var n uint64
 	if g.To >= g.From {
 		n = g.To - g.From + 1
 	}
 	line := fmt.Sprintf("sample gap: seq %d..%d never arrived from=%d to=%d count=%d", g.From, g.To, g.From, g.To, n)
-	s.cur = append(s.cur, lokiEntry{source: "gap", level: "warn", ns: time.Now().UnixNano(), line: line})
+	s.cur = append(s.cur, lokiEntry{source: "gap", level: "warn", ns: at, line: line})
 }
 
 // rotate renders the current batch into a push body and queues it, dropping

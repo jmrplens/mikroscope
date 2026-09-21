@@ -219,7 +219,34 @@ func bringUp(ctx context.Context, tb testing.TB) (*Stack, error) {
 	if err != nil {
 		return nil, err
 	}
-	return stack, readiness(ctx, stack)
+	if notReady := readiness(ctx, stack); notReady != nil {
+		return nil, notReady
+	}
+	return stack, ensureDirectDatabase(ctx)
+}
+
+// ensureDirectDatabase makes the database the Postgres sink writes to.
+//
+// config/postgres-init.sql creates it, but /docker-entrypoint-initdb.d runs
+// only when the image initializes an EMPTY data directory — a stack this
+// process reused, or one kept with MIKROSCOPE_E2E_KEEP, already has its volume
+// and never runs it again. That is the ordinary case on a second run and it
+// cost a full suite to find, so the database is made here as well, where it is
+// made every time and costs one statement.
+func ensureDirectDatabase(ctx context.Context) error {
+	out, err := execIn(ctx, "postgres", nil, "psql", "-U", "mikroscope", "-d", "mikroscope",
+		"-tAc", "SELECT 1 FROM pg_database WHERE datname = 'mikroscope_direct'")
+	if err != nil {
+		return fmt.Errorf("asking whether mikroscope_direct is there: %w", err)
+	}
+	if strings.TrimSpace(out) == "1" {
+		return nil
+	}
+	if _, err = execIn(ctx, "postgres", nil, "psql", "-U", "mikroscope", "-d", "mikroscope",
+		"-c", "CREATE DATABASE mikroscope_direct"); err != nil {
+		return fmt.Errorf("creating mikroscope_direct: %w", err)
+	}
+	return nil
 }
 
 // readiness waits for the services compose cannot check for itself. Loki's
@@ -376,6 +403,9 @@ func clip(s string) string {
 
 // execIn runs a command inside a service's container, for the stores whose
 // only client is the one shipped in their own image.
+// today; the parameter is the point, and the next store's test passes its own.
+//
+//nolint:unparam // every caller in this package happens to say "postgres"
 func execIn(ctx context.Context, service string, stdin []byte, args ...string) (string, error) {
 	full := append([]string{"compose", "-p", project, "-f", composeFile, "exec", "-T", service}, args...)
 	cmd := exec.CommandContext(ctx, "docker", full...)

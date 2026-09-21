@@ -38,7 +38,7 @@ verbs
   mark       add a marker to a running or finished recording: mark --out <prefix> <text>
   plot       draw a recording as a deterministic SVG: plot --in <prefix>
   forward    run as a collector: kernel tier + API tier (1 Hz) → --file, --prom, --influx,
-             --loki, --otlp, --graphite, --elastic, --sql, --telegraf, --stdout
+             --loki, --otlp, --graphite, --elastic, --sql, --postgres, --telegraf, --stdout
   dashboards gen | import | check — Grafana dashboards for InfluxDB 3 and Prometheus
   version    print the build identity
 

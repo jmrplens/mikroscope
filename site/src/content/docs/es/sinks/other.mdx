@@ -111,6 +111,59 @@ Cada `INSERT` termina en `ON CONFLICT DO NOTHING`, así que aplicar el mismo fic
 veces no hace nada en vez de abortar por clave duplicada. Una fila es un instante inmutable
 de un delta de contador, nunca un total acumulado que un fichero posterior corrija.
 
+### `--postgres`: las mismas sentencias, por una conexión
+
+```sh
+mikroscope forward --postgres 'postgres://usuario@host/mikroscope?sslmode=require'
+```
+
+Desde 1.1.0 el colector puede escribir en un PostgreSQL que **está en marcha**, en vez de
+en un fichero que alguien reproduce después. `--sql` y `--postgres` son el mismo destino
+dos veces: el que conecta envía las sentencias que produce el de fichero, desde un único
+renderizador. No dos que hoy coinciden — los dashboards que este proyecto genera para el
+store postgres tienen que ser verdad en un despliegue que usara cualquiera de los dos, y
+un segundo renderizador pasaría un recuento de filas y aun así desviaría una columna.
+
+El fichero sigue siendo lo que quieres cuando la base de datos está donde el colector no
+llega, cuando la carga debe ocurrir más tarde o bajo revisión, o cuando quien lee no es
+PostgreSQL: las sentencias son SQL corriente y otro motor puede tomarlas. Los dos pueden
+funcionar a la vez, contra bases distintas o la misma — `ON CONFLICT DO NOTHING` hace que
+el solape no haga nada.
+
+Lo que puede la conexión y no puede un fichero:
+
+- **Sabe si una fila se guardó.** Un lote va dentro de una transacción y entra entero o no
+  entra, así que un reintento tras un fallo no puede dejar medio evento atrás.
+- **Comprueba la suposición que la cabecera solo puede pedir.** `SET
+  standard_conforming_strings = on` es un consejo en un fichero que el operador puede
+  ejecutar sin él. Por una conexión el ajuste se puede leer de vuelta, así que se lee — y
+  un servidor que responde `off` se rechaza con el motivo en vez de escribirse, porque un
+  mensaje del kernel terminado en barra invertida escaparía su propia comilla de cierre y
+  todo lo que viniera detrás se interpretaría como contenido de cadena.
+- **Sabe describir su propia fuente de datos de Grafana**, cosa que el destino de fichero
+  no podrá nunca: ver [importar y comprobar](/mikroscope/es/dashboards/import-and-check/).
+
+Lo que cede: nada del esquema, y una dependencia. `--postgres` enlaza pgx en el binario
+del colector. El **agente** no lo enlaza — el agente enlaza `procfs`, `sample`, `agent` y
+la biblioteca estándar, y su presupuesto de imagen sigue en 6,5 MiB para arm64.
+
+El DSN es una opción y no un secreto solo de entorno porque las convenciones de libpq son
+justamente el punto: pgx lee `PGPASSWORD`, `~/.pgpass` y el fichero de servicio igual que
+`psql`, así que un DSN sin contraseña funciona como en cualquier otro cliente de
+PostgreSQL. `MIKROSCOPE_POSTGRES_DSN` fija el valor por defecto.
+
+<Aside type="caution" title="Una contraseña en un DSN se ve en `ps`">
+  Una cadena de conexión pasada por línea de órdenes la puede leer cualquier proceso de la
+  máquina. Pon la contraseña en `~/.pgpass` o en `PGPASSWORD`, o en
+  `MIKROSCOPE_POSTGRES_DSN` dentro de un fichero de entorno, y no en la opción.
+</Aside>
+
+**Verificado contra un servidor real**: la suite de extremo a extremo con docker ejecuta
+el barrido con los dos destinos a la vez, el script a una base de datos y la conexión a
+otra, y luego le pregunta a PostgreSQL si las dos tienen lo mismo. El 2026-09-20 fueron
+**34 tablas coincidiendo byte a byte** — cada columna de cada fila, con un hash por fila
+sumado — más un `information_schema.columns` idéntico para todo el esquema.
+
 <ScrollTable label="Tablas que declara el destino SQL">
 
 | Tabla                                                                                                      | Clave tras `time, host`    | Guarda                                                                                         |

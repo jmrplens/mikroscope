@@ -262,7 +262,8 @@ trying: …` y la capa conecta en la primera ronda que el router responda: desde
 | ------------------- | --------------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
 | `--file`            | vacío                 | ninguna                    | escribe la línea de tiempo combinada como JSONL en esta ruta (truncada al arrancar)                                                            |
 | `--prom`            | vacío                 | ninguna                    | sirve el `/metrics` de Prometheus en esta dirección, por ejemplo `:9124`                                                                       |
-| `--influx`          | vacío                 | `MIKROSCOPE_INFLUX_URL`    | URL de escritura de InfluxDB 3, por ejemplo `http://host:8181/api/v3/write_lp?db=mikroscope&precision=nanosecond`                              |
+| `--influx`          | vacío                 | `MIKROSCOPE_INFLUX_URL`    | servidor de InfluxDB 3, por ejemplo `http://host:8181`. Una URL de escritura completa se sigue tomando tal cual                               |
+| `--influx-db`       | vacío                 | `MIKROSCOPE_INFLUX_DB`     | la base de datos a la que escribe `--influx`; se ignora cuando `--influx` ya lleva una ruta de escritura                                       |
 | `--loki`            | vacío                 | `MIKROSCOPE_LOKI_URL`      | URL de push de Loki; lleva eventos (log del kernel, huecos, errores de la API, detecciones, disparadores, el registro del equipo), no muestras |
 | `--loki-tenant`     | vacío                 | `MIKROSCOPE_LOKI_TENANT`   | `X-Scope-OrgID` para un Loki multiinquilino                                                                                                    |
 | `--otlp`            | vacío                 | `MIKROSCOPE_OTLP_URL`      | endpoint de métricas OTLP/HTTP, por ejemplo `http://host:4318/v1/metrics`                                                                      |
@@ -271,7 +272,8 @@ trying: …` y la capa conecta en la primera ronda que el router responda: desde
 | `--elastic`         | vacío                 | `MIKROSCOPE_ELASTIC_URL`   | URL base de Elasticsearch u OpenSearch para `_bulk`                                                                                            |
 | `--elastic-index`   | `mikroscope-%Y.%m.%d` | ninguna                    | nombre del índice; `%Y`, `%m`, `%d` se expanden a la fecha del evento                                                                          |
 | `--sql`             | vacío                 | ninguna                    | escribe sentencias de PostgreSQL/TimescaleDB en esta ruta, o en la salida estándar con `-`; no hay driver de base de datos                     |
-| `--sql-hypertable`  | `false`               | ninguna                    | emite también llamadas `create_hypertable` de TimescaleDB en la cabecera SQL                                                                   |
+| `--sql-hypertable`  | `false`               | ninguna                    | emite también llamadas `create_hypertable` de TimescaleDB en la cabecera SQL; se aplica también a `--postgres`                                 |
+| `--postgres`        | vacío                 | `MIKROSCOPE_POSTGRES_DSN`  | envía las mismas sentencias a un PostgreSQL en marcha. La única opción de destino que puede llevar una credencial: ver más abajo               |
 | `--telegraf`        | vacío                 | `MIKROSCOPE_TELEGRAF_URL`  | receptor de Telegraf: `http://host:8186/telegraf`, `tcp://host:8094` o `udp://host:8094`                                                       |
 | `--stdout`          | vacío                 | ninguna                    | escribe en la salida estándar como `lp` (line protocol de InfluxDB) o `json` (NDJSON); cualquier otro valor se rechaza                         |
 | `--host-tag`        | `router`              | `MIKROSCOPE_HOST_TAG`      | etiqueta o label de host en cada punto, en todos los destinos                                                                                  |
@@ -279,11 +281,20 @@ trying: …` y la capa conecta en la primera ronda que el router responda: desde
 
 </ScrollTable>
 
-Ninguna credencial de destino es una opción, porque una opción se ve en `ps` y
-en el historial de la shell: los tokens salen de `MIKROSCOPE_INFLUX_TOKEN`,
+Ningún **token** de destino es una opción, porque una opción se ve en `ps` y en
+el historial de la shell: salen de `MIKROSCOPE_INFLUX_TOKEN`,
 `MIKROSCOPE_LOKI_TOKEN`, `MIKROSCOPE_OTLP_TOKEN`, `MIKROSCOPE_ELASTIC_AUTH` y
 `MIKROSCOPE_TELEGRAF_TOKEN`. Un destino pedido que no se puede construir
 detiene `forward` antes de que tire de nada.
+
+`--postgres` es la excepción, y lo es a propósito. Una cadena de conexión de
+PostgreSQL es la forma que toma cualquier cliente de PostgreSQL, y pgx lee
+`PGPASSWORD`, `~/.pgpass` y el fichero de servicio igual que `psql` — así que
+un DSN **sin** contraseña funciona como un operador ya espera. La opción existe
+para que el DSN pueda decir host, base de datos, usuario y `sslmode` en la línea
+de órdenes; la contraseña va en uno de esos tres sitios, o en
+`MIKROSCOPE_POSTGRES_DSN` dentro de un fichero de entorno. Una contraseña
+escrita en la opción la puede leer cualquier proceso de la máquina.
 
 Al salir, `forward` imprime el número de muestras del kernel, muestras de la
 API, huecos y saltos de desfase, y para cada destino cuántos eventos escribió,
@@ -300,6 +311,31 @@ para 10 Hz sea cual sea la cadencia del agente (`promHistogramRateHz` en
 cuando se reconecta a un agente configurado de otra forma. [Familias de
 métricas de Prometheus](/mikroscope/es/reference/metrics/) cuenta qué más se
 sigue de esa constante.
+
+### Publicar en Grafana
+
+`forward` puede conciliar una fuente de datos y un dashboard por cada store al
+que escribe, una vez, al arrancar, antes de la primera muestra. Está apagado si
+no se da `--grafana`, y el token es `GRAFANA_TOKEN` — publicar sin uno
+escribiría como aquel por quien el servidor tome a quien pregunta.
+
+<ScrollTable label="Opciones de Grafana de forward">
+
+| Opción                     | Por defecto  | Variable                            | Significado                                                                               |
+| -------------------------- | ------------ | ----------------------------------- | ------------------------------------------------------------------------------------------ |
+| `--grafana`                | vacío        | `MIKROSCOPE_GRAFANA_URL`            | publicar en este Grafana al arrancar; vacío no publica nada                               |
+| `--grafana-folder`         | `mikroscope` | `MIKROSCOPE_GRAFANA_FOLDER`         | la carpeta donde publicar; vacío es la carpeta General de Grafana                         |
+| `--grafana-datasource-uid` | vacío        | `MIKROSCOPE_GRAFANA_DATASOURCE_UID` | adoptar una fuente de datos existente por uid en vez de crear una, y dejarla intacta      |
+| `--grafana-dry-run`        | `false`      | ninguna                             | imprimir lo que escribiría, no escribir nada y parar antes de recoger                     |
+
+</ScrollTable>
+
+Un fallo aquí es un aviso y no una negativa a arrancar: las muestras de una hora
+sin funcionar no se recuperan, y un dashboard se puede publicar en el siguiente
+arranque. Nunca se borra nada. `--grafana-dry-run` se ejecuta antes de tocar el
+router, así que se puede contestar sin router delante.
+[Importar y comprobar](/mikroscope/es/dashboards/import-and-check/) dice qué
+destinos saben describir su propia fuente de datos y a cuáles hay que decírselo.
 
 ## dashboards
 

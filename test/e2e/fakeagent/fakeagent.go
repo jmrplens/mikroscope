@@ -70,11 +70,18 @@ const RateHz = 10
 // deterministic: any pull that crosses it sees one gap line, which is what
 // exercises the collector's gap path and the sinks' gap rendering.
 //
-// GapAfter is comfortably more than one poll interval's worth of samples
-// (the collector polls every 500 ms, so ~5 samples) so that the collector
-// has connected, read healthz and pulled at least once before the jump.
+// GapAfter is more than one poll interval's worth of samples (the collector
+// polls every 500 ms, so ~5 samples) so that a reader has pulled at least
+// once before the jump, and NOT MUCH MORE than that, because every run this
+// fixture serves is bounded: a five-second collector run that spends a second
+// starting up has four left, and a jump at 1.5 s that a slow machine pushes to
+// 3 s has been the difference between a suite that passes and one that reports
+// a sink not recording gaps.
+//
+// It is counted from the first PULL rather than from the first request of any
+// kind (see the mux), so the handshake before it costs nothing here.
 const (
-	GapAfter = 15
+	GapAfter = 10
 	GapWidth = 4
 )
 
@@ -237,11 +244,22 @@ func (a *Agent) appendLocked(due, wake time.Time) {
 
 func (a *Agent) handler() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", a.begin(a.healthz))
-	mux.HandleFunc("GET /capabilities", a.begin(a.auth(a.capabilities)))
+	// PUBLISHING STARTS ON THE FIRST PULL, not on the first request of any
+	// kind. A collector reads /healthz, /capabilities and /sampler before it
+	// pulls anything, and it takes its starting cursor from the sequence
+	// /healthz reported — so starting the clock there puts the jump at
+	// GapAfter on a race with however long that handshake takes. On a Windows
+	// runner it lost twice (2026-09-19 and 2026-09-21): the collector wrote
+	// its samples and no gap line, and the suite reported a fixture race as a
+	// sink that does not record gaps.
+	//
+	// Gated on the pull endpoints, the first sample is published after the
+	// reader has its cursor, so the jump is always ahead of it.
+	mux.HandleFunc("GET /healthz", a.healthz)
+	mux.HandleFunc("GET /capabilities", a.auth(a.capabilities))
 	mux.HandleFunc("GET /snapshot", a.begin(a.auth(a.snapshot)))
 	mux.HandleFunc("GET /stream", a.begin(a.auth(a.stream)))
-	mux.HandleFunc("GET /sampler", a.begin(a.auth(a.sampler)))
+	mux.HandleFunc("GET /sampler", a.auth(a.sampler))
 	return mux
 }
 
@@ -258,7 +276,7 @@ func (a *Agent) sampler(w http.ResponseWriter, _ *http.Request) {
 	}
 }
 
-// begin starts the publisher on the first request of any kind.
+// begin starts the publisher on the first pull; see the mux above.
 func (a *Agent) begin(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		a.mu.Lock()

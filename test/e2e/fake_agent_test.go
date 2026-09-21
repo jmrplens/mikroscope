@@ -38,8 +38,16 @@ func TestFakeAgentServesTheFourPathsAndTheAwkwardCases(t *testing.T) {
 
 	checkFakeCapabilities(t, base)
 
-	// Publishing starts on the first request, so by now the ring is filling.
-	// Wait for enough samples to have crossed the sequence jump.
+	// Publishing starts on the first PULL, so it has not started yet: the
+	// capabilities read above is not one. That is the fixture's contract —
+	// the sequence jump has to be ahead of whatever cursor a reader took from
+	// /healthz, and gating on any request put it on a race with however long
+	// the reader's handshake ran. One pull starts the clock.
+	if _, _, ok := httpGet(t.Context(), base+"/snapshot?since=0&max=1", ""); !ok {
+		t.Fatal("could not take the first pull")
+	}
+	// And now the ring is filling. Wait for enough samples to have crossed
+	// the sequence jump.
 	want := fakeagent.GapAfter + 8
 	if !waitFor(30*time.Second, func() bool { return fake.Published() >= want }) {
 		t.Fatalf("the fake published %d samples, not %d", fake.Published(), want)

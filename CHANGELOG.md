@@ -63,6 +63,37 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `mikroscope-port-errors` also reaches the alerts page, which 1.0.10 added
   the rule without.
 
+- **`--postgres`: the SQL sink's other half, down a connection.** The
+  collector can write to a PostgreSQL that is running instead of to a file
+  somebody replays later. `--sql` and `--postgres` are ONE RENDERER with two
+  transports — internal/sinks/postgres.go sends the statements
+  internal/sinks/sql.go produced — because the dashboard this project
+  generates for the postgres store has to be true of a deployment that used
+  either, and a second renderer would pass a row count and still drift a
+  column.
+
+  The file is not deprecated and is still what you want when the database is
+  unreachable, when the load happens later or under review, or when the reader
+  is not PostgreSQL at all. Both can run at once.
+
+  Two things the connection does that a file cannot. A batch goes inside a
+  transaction, so it lands whole or not at all and a retry cannot leave half
+  an event behind. And `SET standard_conforming_strings = on` stops being
+  advice: the header can only ASK a file's reader for it, but a connection can
+  be asked back, so it is — a server that answers `off` is refused with the
+  reason rather than written to, because a kernel message ending in a
+  backslash would escape its own closing quote and everything after it would
+  be parsed as string content.
+
+  Verified against a real server on 2026-09-20: the docker suite runs the
+  sweep with both sinks at once, the script into one database and the
+  connection into another, and asks PostgreSQL whether the two hold the same
+  thing. **34 tables matched byte for byte** — every column of every row,
+  hashed per row and summed — with an identical information_schema for the
+  whole schema. pgx reaches the collector binary only; the agent still links
+  procfs, sample, agent and the standard library, and its arm64 image is
+  unchanged at 6.5 MiB.
+
 - **`--influx-db`.** `--influx` is the server now and the write URL is
   assembled from the fields: `--influx http://influx:8181 --influx-db
   mikroscope`. A write URL is the sink's shape and the wrong shape for
@@ -78,6 +109,18 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   rather than building one that answers nothing.
 
 ### Fixed
+
+- **One event, ten timestamps.** Every sink called `time.Now()` while
+  rendering the events that have no clock of their own — a gap, the device
+  facts, the sampler's counters — so one gap reached ten stores with ten
+  different timestamps. Microseconds apart, which nobody would notice, and
+  different, which makes two stores disagree about when it happened.
+
+  The Postgres sink is what brought it out, because it and the SQL sink are
+  one renderer and their rows are comparable byte for byte: nine of the
+  thirty-four tables did not compare, and all nine were the clock-less ones.
+  The forwarder now reads the clock once per event into `sinks.Event.At` and
+  every sink uses it.
 
 - **The interrupt panel that drew nothing at all.** "Which core takes each
   interrupt" carried `FillOpacity: 0` on a stacked bar chart, and a bar with
