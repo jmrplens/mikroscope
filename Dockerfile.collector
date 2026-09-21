@@ -1,0 +1,32 @@
+# The collector image GoReleaser publishes. It compiles nothing: the binary it
+# copies is the one the CLI archives of the same release carry, already
+# stamped, so the image and the archive cannot disagree about what they hold.
+#
+# NOT `FROM scratch`, which is what Dockerfile.agent uses. The agent speaks
+# plain HTTP to one address on a veth and needs nothing else; the collector
+# reaches stores and a Grafana that are ordinarily behind TLS, and a static
+# binary with no CA bundle fails every one of them with `x509: certificate
+# signed by unknown authority`. distroless/static carries the bundle and
+# nothing executable beyond it — no shell, no package manager, so nothing to
+# pin a version of and nothing to exploit with one.
+#
+# `nonroot` because the collector reads no local file it did not create and
+# binds only what --prom is given; a container that needs no root should not
+# have it.
+#
+# THIS IMAGE IS FOR `forward`. The deployment verbs (doctor, install, upgrade,
+# uninstall) shell out to ssh and scp, which are not in here on purpose: a
+# container that could reconfigure a router is a larger thing to hand someone
+# than one that reads from it.
+#
+# TARGETPLATFORM is how GoReleaser's dockers_v2 lays the build context out: one
+# directory per platform, each holding that platform's binary.
+#
+# There is no LABEL block here. GoReleaser passes the OCI labels on the build
+# command line from .goreleaser.yaml, where the version, the commit and the
+# date are known.
+FROM gcr.io/distroless/static-debian12:nonroot
+ARG TARGETPLATFORM
+COPY ${TARGETPLATFORM}/mikroscope /mikroscope
+ENTRYPOINT ["/mikroscope"]
+CMD ["forward"]

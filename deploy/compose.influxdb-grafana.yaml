@@ -1,0 +1,84 @@
+# mikroscope's collector, InfluxDB 3 and Grafana.
+#
+# Put these in a .env file beside this one:
+#
+#   MIKROSCOPE_SUBNET=172.30.10.0/30   # the /30 `install` was given; the agent is its .2
+#   MIKROSCOPE_TOKEN=                  # only if the install has one
+#
+# then `docker compose up -d`. Grafana is on http://localhost:3000, admin and
+# the password below, with the dashboard already in it and pointed at the
+# store beside it: the collector publishes both on start.
+#
+# THE COLLECTOR RUNS ON THE HOST'S NETWORK, and that is not a shortcut. The
+# agent answers on a /30 veth inside the router, and the route to it is the
+# host's — a container on a bridge network has no way there. Two consequences
+# follow: the collector reaches InfluxDB and Grafana at 127.0.0.1 rather than
+# by service name, and the host must already be able to curl the agent. If it
+# cannot, the relay is the other way in; see deploy/README.md.
+
+name: mikroscope
+
+services:
+  influxdb:
+    image: influxdb:3-core
+    # Without a credential, because a store that exists for the first time
+    # when the collector first writes to it has nobody to have made one. Put
+    # one on it before anything else can reach the port.
+    command:
+      - influxdb3
+      - serve
+      - --node-id=node0
+      - --object-store=file
+      - --data-dir=/var/lib/influxdb3
+      - --without-auth
+    ports: ["127.0.0.1:8181:8181"]
+    volumes:
+      - influx:/var/lib/influxdb3
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8181/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:13.2.1
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      # The collector creates the datasource and the dashboard over the API,
+      # so nothing is provisioned from disk here.
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    ports: ["127.0.0.1:3000:3000"]
+    volumes:
+      - grafana:/var/lib/grafana
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  collector:
+    image: ghcr.io/jmrplens/mikroscope:latest
+    network_mode: host
+    depends_on:
+      influxdb: {condition: service_healthy}
+      grafana: {condition: service_healthy}
+    environment:
+      MIKROSCOPE_SUBNET: ${MIKROSCOPE_SUBNET:-172.30.10.0/30}
+      MIKROSCOPE_TOKEN: ${MIKROSCOPE_TOKEN:-}
+      MIKROSCOPE_INFLUX_URL: http://127.0.0.1:8181
+      MIKROSCOPE_GRAFANA_URL: http://127.0.0.1:3000
+      GRAFANA_TOKEN: ${GRAFANA_TOKEN:-}
+    command:
+      - forward
+      - --influx-db=mikroscope
+      # The API tier needs RouterOS credentials; without them the kernel tier
+      # runs alone, which is every metric the agent reads and none that only
+      # the API can answer.
+      - --api-mode=off
+    restart: unless-stopped
+
+volumes:
+  influx:
+  grafana:

@@ -59,7 +59,8 @@ site/                   the documentation, from which docs/ is generated
 
 ```sh
 make analyze        # golangci-lint (gosec and staticcheck inside it), govulncheck,
-                    # actionlint, markdownlint, relative links, generated artifacts
+                    # actionlint, shellcheck, markdownlint, relative links,
+                    # generated artifacts
 go build ./... && go test ./...
 ```
 
@@ -84,6 +85,15 @@ go build ./... && go test ./...
   build tag, so `make test` never compiles it and `make lint` type-checks it.
 - `make agent-smoke PLATFORM=linux/arm/v7` with Docker and QEMU, for a change to
   `internal/image` or to how the agent starts.
+- `make shellcheck` is inside `make analyze` and runs over `install.sh` and
+  every script under `scripts/` and `.github/scripts/`. actionlint runs
+  shellcheck too, but only over the `run:` blocks of the workflows — the
+  scripts those blocks call are a different set of files, and the installer is
+  the first command the README gives.
+- **hadolint** has no make target because it has no local install this project
+  pins; CI runs it over `Dockerfile.agent` and `Dockerfile.collector` through
+  the action. `hadolint --failure-threshold warning Dockerfile.agent` is the
+  same check if you have the binary.
 
 For a change under `site/`:
 

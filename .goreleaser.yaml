@@ -192,6 +192,48 @@ dockers_v2:
       "index:org.opencontainers.image.revision": "{{ .FullCommit }}"
       "index:org.opencontainers.image.created": "{{ .CommitDate }}"
 
+  # The collector, for the compose files under deploy/ and for anyone who would
+  # rather not put a Go binary on the host that watches their router.
+  #
+  # Two platforms, not four. The agent's four are the boards RouterOS runs on;
+  # the collector runs on whatever watches them, which in practice is an x86
+  # server or an arm64 one. A 32-bit ARM collector would be a NAS or a Pi of
+  # that generation, and nobody has asked.
+  - id: collector
+    ids: [mikroscope]
+    images:
+      - "ghcr.io/jmrplens/mikroscope"
+      - "docker.io/jmrplens/mikroscope"
+    tags:
+      - "{{ .Version }}"
+      - latest
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    dockerfile: Dockerfile.collector
+    labels:
+      "org.opencontainers.image.title": "mikroscope"
+      "org.opencontainers.image.description": "Collector for mikroscope: pulls the agent's ring and forwards it to eleven sinks"
+      "org.opencontainers.image.source": "https://github.com/jmrplens/mikroscope"
+      "org.opencontainers.image.url": "https://github.com/jmrplens/mikroscope"
+      "org.opencontainers.image.documentation": "https://github.com/jmrplens/mikroscope/tree/main/docs"
+      "org.opencontainers.image.licenses": "MIT"
+      "org.opencontainers.image.vendor": "jmrplens"
+      "org.opencontainers.image.version": "{{ .Version }}"
+      "org.opencontainers.image.revision": "{{ .FullCommit }}"
+      "org.opencontainers.image.created": "{{ .CommitDate }}"
+    annotations:
+      "index:org.opencontainers.image.title": "mikroscope"
+      "index:org.opencontainers.image.description": "Collector for mikroscope: pulls the agent's ring and forwards it to eleven sinks"
+      "index:org.opencontainers.image.source": "https://github.com/jmrplens/mikroscope"
+      "index:org.opencontainers.image.url": "https://github.com/jmrplens/mikroscope"
+      "index:org.opencontainers.image.documentation": "https://github.com/jmrplens/mikroscope/tree/main/docs"
+      "index:org.opencontainers.image.licenses": "MIT"
+      "index:org.opencontainers.image.vendor": "jmrplens"
+      "index:org.opencontainers.image.version": "{{ .Version }}"
+      "index:org.opencontainers.image.revision": "{{ .FullCommit }}"
+      "index:org.opencontainers.image.created": "{{ .CommitDate }}"
+
 release:
   github:
     owner: jmrplens

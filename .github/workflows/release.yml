@@ -277,3 +277,24 @@ jobs:
                 ;;
             esac
           done
+
+      # The collector image, on the two platforms it is built for. Same check
+      # for the same reason: an image that starts and reports another version
+      # is the failure worth catching, and it is the one a tag cannot show.
+      - name: Run the published collector image on every architecture
+        env:
+          VERSION: ${{ needs.preflight.outputs.version }}
+        run: |
+          set -euo pipefail
+          for platform in linux/amd64 linux/arm64; do
+            out="$(docker run --rm --pull=always --platform "${platform}" \
+              "ghcr.io/jmrplens/mikroscope:${VERSION}" version)"
+            echo "${platform}: ${out}"
+            case "${out}" in
+              "mikroscope ${VERSION} "*) ;;
+              *)
+                echo "::error::the ${platform} collector image reports '${out}', expected version ${VERSION}"
+                exit 1
+                ;;
+            esac
+          done
