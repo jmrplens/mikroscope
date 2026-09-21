@@ -108,6 +108,63 @@ make gen-brand          # writes the mark and the favicons into brand/
 make check-generated    # writes nothing, fails if either is stale
 ```
 
+## Coverage
+
+`make cover` writes a profile over `./cmd/...` and `./internal/...` and prints
+the total; `make cover-check` fails below `COVERAGE_MIN` in the Makefile, which
+is the same profile SonarCloud reads. The floor is a ratchet against a drop,
+not a target: raise it when the total rises, and do not lower it to make a
+branch pass.
+
+**Almost nothing here is genuinely unreachable from a test binary**, and an
+earlier version of this section claimed otherwise about a dozen functions that
+now have tests. The techniques that got them, in case the next one looks
+unreachable too:
+
+- **A stub on `PATH`.** `SSHRunner` shells out to `ssh` and `scp`, `gen_brand`
+  to `rsvg-convert` and `magick`. A shell script of that name in a `t.TempDir()`
+  prepended to `PATH` makes the exec real and only the far end fake — and it is
+  how the `-p` versus `-P` difference between ssh and scp is pinned. A stub
+  `ssh` that answers one line per line it is given drives `status`, `doctor` and
+  `install --dry-run` end to end.
+- **A pipe or a listener instead of a router.** `newClientAndLogin` takes an
+  `io.ReadWriteCloser`, so the RouterOS API needs no socket; `apitier.Dial` and
+  the `--log-markers` path need only a listener that answers the login. Note
+  that this package's `proto` reader is a REPLY reader: it refuses a query word
+  like `?>time=…`, so a fake router parses the login and then reads raw bytes.
+- **A path, not a device.** `openKmsg` takes one, so a regular file exercises
+  the reader; what a file cannot imitate is the device's `EAGAIN`.
+- **`httptest`** for the agent, for Grafana and for a store.
+- **`os.Args` and `os.Stdout`** for `main` itself, on the paths that return.
+
+What is left at 0% is two functions, each one statement:
+`cmd/mikroscope-agent`'s `main` and `cmd/gen_brand`'s, both of the form
+`os.Exit(run(…))`. A test entering either would exit the test binary. Both are
+exercised anyway — `make test-e2e` builds and runs the agent, and
+`make check-generated` runs gen_brand — and **a function at 0% in this profile
+is not necessarily unexercised**: the end-to-end suite drives both binaries as
+separate processes, which a profile of the test binary cannot see.
+
+The rest of the gap is not whole functions but branches: the arm of a `switch`
+a fake never reaches, the `if err != nil` of a write that did not fail, and
+`main`'s own `os.Exit` beside each arm that returns. They are spread thin
+across every package rather than concentrated anywhere, so raising the total is
+steady work rather than one change.
+
+**The total moves by about three tenths of a point between runs.** A few sink
+tests drive a backoff on a timer, and whether the retry lands inside the test's
+window decides a handful of statements. That is why the floor sits a point
+under the measurement rather than just below it: a floor at the last reading
+fails on the unlucky run and teaches the next person to lower it.
+
+**What a new test owes.** Cover a branch because something depends on it, not
+to move the number: a test that asserts a function was called teaches nobody
+anything and fails for no reason later. If a package's tests redirect
+`os.Stdout`, they cannot also be `t.Parallel()` without serializing it —
+`cmd/mikroscope`'s `capture` takes a mutex for exactly that reason, after one
+intermittent failure in a coverage run, and it holds that mutex for the length
+of the call it wraps, so a slow call inside one is a slow call for all of them.
+
 ## Working against a real router
 
 The tool exists to run on production routers, and it is developed against one.
