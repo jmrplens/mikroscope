@@ -78,12 +78,12 @@ PLATFORM ?= linux/arm64
 # time by a lot. SonarCloud reads the same coverage.out, so the number it
 # reports and the floor below are one measurement.
 #
-# The floor sits just under what was measured when it was set: 86.0% over
+# The floor sits just under what was measured when it was set: 89.1% over
 # ./cmd/... and ./internal/... on 2026-09-21 (go1.27.1, linux/amd64), up from
 # 81.9% before that day's pass. It is a ratchet against a drop, not a target;
-# raise it when the total rises. What the remaining 14% is, and why most of it
-# cannot be reached from a test binary, is in CONTRIBUTING.md.
-COVERAGE_MIN      := 85
+# raise it when the total rises. What is left, and the techniques that reached
+# the rest, are in CONTRIBUTING.md.
+COVERAGE_MIN      := 88
 COVERAGE_PKGS     := ./cmd/... ./internal/...
 COVERAGE_COVERPKG := ./cmd/...,./internal/...
 
