@@ -4,7 +4,7 @@ Notable changes per release. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the versions
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.1.0] - 2026-09-22
 
 ### Added
 
@@ -218,6 +218,33 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and simply cannot describe a datasource, which `forward --grafana` says
   rather than building one that answers nothing.
 
+- **A tile, an alert and a playbook for a port losing frames.** The reference
+  RB5009's `ether1` had been dropping 0.5 % of the packets
+  the NAS sent for days — the data was in the store the whole time and nothing
+  on the dashboard said so.
+
+  - **"Port errors in the window"** joins the Overview tiles: every typed MAC
+    error on every port, summed, **green at 0 and red above it**. Verified
+    against the live deployment in both states — 21.4 k over a window that
+    contains the fault, 0 over one that does not.
+  - **`mikroscope-port-errors`** fires when any port counts a typed error for
+    five minutes running. It is the twelfth rule and the first that reads the
+    API tier's per-port counters.
+  - **[A port losing frames]** is the eighth playbook, in both languages: how
+    to get from the red tile to which port and which error, and then to the
+    question the fix hangs on — is the port busy, or is the sender bursting?
+    The test is numeric: compare the receive volume in the intervals that
+    overflowed against the link's capacity. On the reference device that was
+    8.96 Mbit/s on a 2.5 Gbit/s link, 0.36 % of it, which rules out load.
+
+    It records what did NOT work as carefully as what did: a smaller MTU cut
+    the worst bursts by 91 % and did not change the frequency at all, and
+    Ethernet flow control never fired — 41 minutes with pause negotiated, 5 578
+    overflows, `rx-pause` and `tx-pause` both still 0. What worked was pacing
+    the sender below what the slowest destination drains.
+
+[A port losing frames]: https://jmrp.io/docs/mikroscope/playbooks/port-errors/
+
 ### Fixed
 
 - **`uninstall --expose` removed neither firewall rule, and said it had.** Both
@@ -332,39 +359,6 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   judgement stays in the stat tile and the alert rule, where one number can
   carry it.
 
-## [1.0.10]
-
-### Added
-
-- **A tile, an alert and a playbook for a port losing frames.** The reference
-  RB5009's `ether1` had been dropping 0.5 % of the packets
-  the NAS sent for days — the data was in the store the whole time and nothing
-  on the dashboard said so.
-
-  - **"Port errors in the window"** joins the Overview tiles: every typed MAC
-    error on every port, summed, **green at 0 and red above it**. Verified
-    against the live deployment in both states — 21.4 k over a window that
-    contains the fault, 0 over one that does not.
-  - **`mikroscope-port-errors`** fires when any port counts a typed error for
-    five minutes running. It is the twelfth rule and the first that reads the
-    API tier's per-port counters.
-  - **[A port losing frames]** is the eighth playbook, in both languages: how
-    to get from the red tile to which port and which error, and then to the
-    question the fix hangs on — is the port busy, or is the sender bursting?
-    The test is numeric: compare the receive volume in the intervals that
-    overflowed against the link's capacity. On the reference device that was
-    8.96 Mbit/s on a 2.5 Gbit/s link, 0.36 % of it, which rules out load.
-
-    It records what did NOT work as carefully as what did: a smaller MTU cut
-    the worst bursts by 91 % and did not change the frequency at all, and
-    Ethernet flow control never fired — 41 minutes with pause negotiated, 5 578
-    overflows, `rx-pause` and `tx-pause` both still 0. What worked was pacing
-    the sender below what the slowest destination drains.
-
-[A port losing frames]: https://jmrp.io/docs/mikroscope/playbooks/port-errors/
-
-### Fixed
-
 - **Three interface panels were unusable, and `dashboards check` called all
   three "ok".** Found by looking at the reference deployment rather than at the
   query results — the check verifies that a query returns rows, not that the
@@ -393,6 +387,20 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   panel claimed "no port errors" while `ether1` was overflowing. Casting the
   result (`::DOUBLE`) fixes it, and a test now fails the build for any
   uncast one.
+
+- **`upgrade --dry-run` wrote to the router.** The flag is documented as "print
+  the plan and write nothing"; `upgrade` never read it. It printed no plan and
+  fell through to the confirmation prompt, so the only thing standing between a
+  dry run and a replaced container was answering `n` — and **`upgrade --dry-run
+  --yes` replaced it outright**, on a live router, while promising it would not.
+  Found on 2026-09-19 while upgrading the reference RB5009's agent to 1.0.9:
+  the dry run printed nothing but the prompt, which is what gave it away.
+
+  `upgrade` now prints its own plan and `--dry-run` returns before the runner
+  is built, so a dry run opens no connection at all. The plan is the container
+  step alone — `install`'s listing names the veth, the router address and the
+  two list memberships, which an upgrade does not touch, and printing them
+  would promise writes that never come.
 
 ### Documentation
 
@@ -540,22 +548,6 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     Windows-only test skip.
 
   The audit is closed.
-
-### Fixed
-
-- **`upgrade --dry-run` wrote to the router.** The flag is documented as "print
-  the plan and write nothing"; `upgrade` never read it. It printed no plan and
-  fell through to the confirmation prompt, so the only thing standing between a
-  dry run and a replaced container was answering `n` — and **`upgrade --dry-run
-  --yes` replaced it outright**, on a live router, while promising it would not.
-  Found on 2026-09-19 while upgrading the reference RB5009's agent to 1.0.9:
-  the dry run printed nothing but the prompt, which is what gave it away.
-
-  `upgrade` now prints its own plan and `--dry-run` returns before the runner
-  is built, so a dry run opens no connection at all. The plan is the container
-  step alone — `install`'s listing names the veth, the router address and the
-  two list memberships, which an upgrade does not touch, and printing them
-  would promise writes that never come.
 
 ## [1.0.9]
 

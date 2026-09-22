@@ -36,7 +36,7 @@ func Listing(o Options, imageSize int, w io.Writer) {
 // four objects upgrade will not touch, which invites an operator to expect
 // writes that never come.
 //
-// It exists because until 1.0.10 `upgrade --dry-run` printed NOTHING and then
+// It exists because until 1.1.0 `upgrade --dry-run` printed NOTHING and then
 // asked for confirmation: the flag documented as "print the plan and write
 // nothing" did neither half, so `upgrade --dry-run --yes` replaced the
 // container on a live router while promising it would not.

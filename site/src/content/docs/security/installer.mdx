@@ -26,12 +26,12 @@ then, in this order:
 3. only then writes.
 
 `plan`, `install --dry-run` and `upgrade --dry-run` stop after the listing — the last of
-those only since 1.0.10, which is when `upgrade` began honouring the flag at all. The
+those only since 1.1.0, which is when `upgrade` began honouring the flag at all. The
 listing masks the token as `value="(token)"`.
 
 `upgrade` does not get this guarantee. It builds the image, refuses a router where any step of the
 plan built from its own flags is missing (`nothing to upgrade: run install first`), and asks the
-same `write the objects above to the router? [y/N]` — and since 1.0.10 it does print a listing of
+same `write the objects above to the router? [y/N]` — and since 1.1.0 it does print a listing of
 its own, the container step alone. It still runs no `doctor` first. On `y` it removes the container, the envlist and the image
 and writes them again, the envlist from the flags given to `upgrade`; [what --expose
 opens](/mikroscope/security/expose/) has what that means for the token.
