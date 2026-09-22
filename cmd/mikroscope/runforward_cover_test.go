@@ -15,7 +15,6 @@ import (
 // agent and at least one sink, and the file sink is the one that needs
 // nothing else — which makes it the one a test can assert the bytes of.
 func TestRunForwardFansOutToASinkAndReportsWhatItWrote(t *testing.T) {
-	t.Parallel()
 	subnet, port := fakeAgentServer(t)
 	c := cli{opts: router.Defaults()}
 	if err := c.opts.Finish(); err != nil {
@@ -56,7 +55,6 @@ func TestRunForwardFansOutToASinkAndReportsWhatItWrote(t *testing.T) {
 // --api-mode is validated before anything connects, so a typo does not cost a
 // connect to find out.
 func TestRunForwardRefusesAnUnknownAPIMode(t *testing.T) {
-	t.Parallel()
 	c := cli{opts: router.Defaults()}
 	if err := c.opts.Finish(); err != nil {
 		t.Fatal(err)

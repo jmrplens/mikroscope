@@ -20,7 +20,6 @@ import (
 // with, so what it writes has to be exactly the set the check target compares
 // against.
 func TestDashboardsGenWritesOneFilePerStoreAndItsAlerts(t *testing.T) {
-	t.Parallel()
 	dir := t.TempDir()
 	out := capture(t, func() {
 		if err := dashboardsGen(dir); err != nil {
@@ -83,7 +82,6 @@ func TestRunDashboardsRefusesWhatItCannotDo(t *testing.T) {
 }
 
 func TestParseRecordFlagsReadsItsOwnFlags(t *testing.T) {
-	t.Parallel()
 	c := cli{opts: router.Defaults()}
 	ro, rest, err := parseRecordFlags("record", []string{"--out", "cap", "--for", "30s", "--batch", "64", "--transport", "relay", "trailing"}, &c, nil)
 	if err != nil {
@@ -103,7 +101,6 @@ func TestParseRecordFlagsReadsItsOwnFlags(t *testing.T) {
 // choosePuller is the transport negotiation: direct if the agent answers,
 // otherwise the relay, and each refusal has to say which half failed.
 func TestChoosePullerPrefersDirectAndExplainsEachRefusal(t *testing.T) {
-	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"ok":true,"seq":1,"oldest_seq":1,"rate_hz":10,"version":"t"}`))
 	}))

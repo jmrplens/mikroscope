@@ -19,7 +19,6 @@ func describePostgres(t *testing.T, dsn string) (dashboards.Datasource, string) 
 }
 
 func TestThePostgresDatasourceComesOutOfTheConnectionString(t *testing.T) {
-	t.Parallel()
 	got, _ := describePostgres(t, "postgres://mikroscope@db.example:5433/telemetry?sslmode=require")
 	if got.URL != "db.example:5433" {
 		t.Errorf("url = %q, want host:port — Grafana's PostgreSQL datasource takes no scheme", got.URL)
@@ -42,7 +41,6 @@ func TestThePostgresDatasourceComesOutOfTheConnectionString(t *testing.T) {
 // operator wrote — so the datasource has to read both, or the two disagree
 // about what the configuration says.
 func TestThePostgresDatasourceReadsTheKeywordForm(t *testing.T) {
-	t.Parallel()
 	got, _ := describePostgres(t, "host=db.example port=5433 user=mikroscope dbname=telemetry sslmode=verify-full")
 	if got.URL != "db.example:5433" || got.Database != "telemetry" || got.User != "mikroscope" {
 		t.Errorf("got %+v, want the same answer as the URL form", got)
@@ -72,7 +70,6 @@ func TestOnlyAPasswordTheConnectionStringItselfCarriesIsCopied(t *testing.T) {
 }
 
 func TestAPasswordWrittenIntoTheConnectionStringIsCopied(t *testing.T) {
-	t.Parallel()
 	for _, dsn := range []string{
 		"postgres://mikroscope:s3cret@db.example:5432/telemetry",
 		"host=db.example user=mikroscope password=s3cret dbname=telemetry",
@@ -96,7 +93,6 @@ func TestAPasswordWrittenIntoTheConnectionStringIsCopied(t *testing.T) {
 // plaintext; answering "require" would break the other half into a datasource
 // that cannot connect at all.
 func TestAnSSLModeGrafanaCannotSayBecomesDisableAndIsReported(t *testing.T) {
-	t.Parallel()
 	for _, dsn := range []string{
 		"postgres://u@h:5432/d", // says nothing: libpq's prefer
 		"postgres://u@h:5432/d?sslmode=prefer",
@@ -127,7 +123,6 @@ func TestAnSSLModeGrafanaCannotSayBecomesDisableAndIsReported(t *testing.T) {
 // — which is the documented behavior and has nothing to do with this test.
 // Measured on a Windows CI runner, where it did.
 func TestTheSSLModeOverrideWinsAndSaysNothingAboutIt(t *testing.T) {
-	t.Parallel()
 	var said strings.Builder
 	got, err := datasourceFor(dashboards.Postgres,
 		&sinkFlags{postgres: "postgres://u@h:5432/d?sslmode=require"},
@@ -144,7 +139,6 @@ func TestTheSSLModeOverrideWinsAndSaysNothingAboutIt(t *testing.T) {
 }
 
 func TestAConnectionStringPGXRefusesIsAnError(t *testing.T) {
-	t.Parallel()
 	_, err := datasourceFor(dashboards.Postgres,
 		&sinkFlags{postgres: "postgres://[::1"}, &publishFlags{}, io.Discard)
 	if err == nil {
@@ -159,7 +153,6 @@ func TestAConnectionStringPGXRefusesIsAnError(t *testing.T) {
 // dials the database over one address while Grafana reaches it over another is
 // an ordinary deployment, not an error.
 func TestTheAddressOverrideWinsOverTheDerivedOne(t *testing.T) {
-	t.Parallel()
 	var said strings.Builder
 	got, err := datasourceFor(dashboards.Postgres,
 		&sinkFlags{postgres: "postgres://u@inside:5432/d?sslmode=disable"},

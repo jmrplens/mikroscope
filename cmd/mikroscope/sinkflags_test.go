@@ -16,7 +16,6 @@ import (
 // does not know turns a run with that sink alone into "forward needs at least
 // one sink", which is a confusing way to say "I do not know --telegraf".
 func TestEverySinkFlagCountsAsASink(t *testing.T) {
-	t.Parallel()
 	for name, only := range map[string]sinkFlags{
 		"--file":     {file: "out.jsonl"},
 		"--prom":     {prom: ":9124"},
@@ -42,7 +41,6 @@ func TestEverySinkFlagCountsAsASink(t *testing.T) {
 // The order the sinks are built in is the order their startup lines appear, so
 // it is fixed on purpose: two runs of the same flags have to read the same.
 func TestBuildMakesEverySinkAskedForInAFixedOrder(t *testing.T) {
-	t.Parallel()
 	dir := t.TempDir()
 	s := &sinkFlags{
 		file:     filepath.Join(dir, "out.jsonl"),
@@ -74,7 +72,6 @@ func TestBuildMakesEverySinkAskedForInAFixedOrder(t *testing.T) {
 // Nothing asked for is an error rather than a collector that reads the router
 // and throws the data away.
 func TestBuildWithNoSinkIsAnError(t *testing.T) {
-	t.Parallel()
 	_, err := (&sinkFlags{hostTag: "r"}).build(context.Background(), 10, func(string) {})
 	if err == nil {
 		t.Fatal("want an error")
@@ -88,7 +85,6 @@ func TestBuildWithNoSinkIsAnError(t *testing.T) {
 // is the whole rule about sinks: one that was asked for and cannot be built
 // stops the collector rather than being absent from it.
 func TestBuildFailsOnAValueItCannotUse(t *testing.T) {
-	t.Parallel()
 	for name, s := range map[string]*sinkFlags{
 		"--stdout":   {stdout: "yaml"},
 		"--influx":   {influx: "not a url"},
@@ -111,7 +107,6 @@ func TestBuildFailsOnAValueItCannotUse(t *testing.T) {
 // both: one of them emitting the TimescaleDB calls and the other not would be
 // two schemas again.
 func TestBothSQLSinksTakeTheHypertableFlag(t *testing.T) {
-	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "out.sql")
 	s := &sinkFlags{sqlPath: path, postgres: "postgres://u@db:5432/d", sqlHyper: true, hostTag: "r"}
@@ -138,7 +133,6 @@ func TestBothSQLSinksTakeTheHypertableFlag(t *testing.T) {
 }
 
 func TestBuildSQLMakesOnlyWhatWasAskedFor(t *testing.T) {
-	t.Parallel()
 	for name, s := range map[string]*sinkFlags{
 		"neither":         {},
 		"--sql only":      {sqlPath: filepath.Join(t.TempDir(), "a.sql")},
@@ -164,7 +158,6 @@ func TestBuildSQLMakesOnlyWhatWasAskedFor(t *testing.T) {
 // the record of what actually reached the far end — so one sink that will not
 // close must not stop the others being closed or their lines being printed.
 func TestCloseAllClosesEveryOneAndReportsTheFailures(t *testing.T) {
-	t.Parallel()
 	var said []string
 	stubborn := &stubbornSink{name: "stubborn"}
 	quiet := &stubbornSink{name: "quiet", err: nil}

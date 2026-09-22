@@ -13,7 +13,6 @@ import (
 // a router reached only by WinBox or WebFig. It writes to stdout with no
 // --out, which is what makes it pipeable, and to a file with one.
 func TestWriteScriptGoesToStdoutOrToTheNamedFile(t *testing.T) {
-	t.Parallel()
 	c := cli{opts: router.Defaults()}
 	c.opts.RemoteImage = "jmrplens/mikroscope-agent:1.0.10"
 	if err := c.opts.Finish(); err != nil {
@@ -60,7 +59,6 @@ func TestWriteScriptGoesToStdoutOrToTheNamedFile(t *testing.T) {
 // plot turns a recording into an SVG. It is the one verb that needs neither a
 // router nor a network: everything it reads is on disk.
 func TestRunPlotDrawsARecordingAndRefusesWithoutOne(t *testing.T) {
-	t.Parallel()
 	c := cli{opts: router.Defaults()}
 	if err := c.opts.Finish(); err != nil {
 		t.Fatal(err)

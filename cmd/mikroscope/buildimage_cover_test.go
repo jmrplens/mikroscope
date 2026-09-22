@@ -103,7 +103,6 @@ func TestBuildImageNamesBothRoutesWithNoToolchain(t *testing.T) {
 // `plan --rsc` is routed through run, which is the arm that writes the
 // RouterOS script instead of the listing.
 func TestRunRoutesPlanRSCToTheScript(t *testing.T) {
-	t.Parallel()
 	c := cli{opts: router.Defaults(), rsc: true}
 	c.opts.RemoteImage = "jmrplens/mikroscope-agent:1.0.10"
 	if err := c.opts.Finish(); err != nil {

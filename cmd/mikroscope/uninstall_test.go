@@ -14,7 +14,6 @@ import (
 )
 
 func TestParseTargetsTakesTheNamesAndRefusesTheRest(t *testing.T) {
-	t.Parallel()
 	for list, want := range map[string][]string{
 		"router":             {targetRouter},
 		"dashboard,data":     {targetDashboard, targetData},
@@ -43,7 +42,6 @@ func TestParseTargetsTakesTheNamesAndRefusesTheRest(t *testing.T) {
 // A misspelled target removes LESS than was asked for, silently, which is the
 // one failure mode a destructive verb must not have.
 func TestParseTargetsRefusesAMisspelledName(t *testing.T) {
-	t.Parallel()
 	for _, list := range []string{"dashbord", "router,dta", "everything", ""} {
 		if _, err := parseTargets(list); err == nil {
 			t.Errorf("parseTargets(%q): want an error", list)
@@ -54,7 +52,6 @@ func TestParseTargetsRefusesAMisspelledName(t *testing.T) {
 // THE GUARANTEE THE VERB IS BUILT AROUND: without --yes nothing is removed,
 // and what would be removed is printed.
 func TestWithoutYesNothingIsRemovedAndEverythingIsListed(t *testing.T) {
-	t.Parallel()
 	var dropped []string
 	found := []removal{
 		{what: "dashboard mikroscope-influxdb", drop: func(context.Context) error {
@@ -87,7 +84,6 @@ func TestWithoutYesNothingIsRemovedAndEverythingIsListed(t *testing.T) {
 // One that will not go is reported and the rest still go: stopping at the
 // first would leave the removal half done with no list of what is left.
 func TestOneThatWillNotGoDoesNotStopTheRest(t *testing.T) {
-	t.Parallel()
 	var dropped []string
 	found := []removal{
 		{what: "first", drop: func(context.Context) error { dropped = append(dropped, "first"); return nil }},
@@ -111,7 +107,6 @@ func TestOneThatWillNotGoDoesNotStopTheRest(t *testing.T) {
 }
 
 func TestNothingToRemoveSaysSoRatherThanNothing(t *testing.T) {
-	t.Parallel()
 	var out strings.Builder
 	if err := carryOut(context.Background(), nil, true, &out); err != nil {
 		t.Fatal(err)
@@ -124,7 +119,6 @@ func TestNothingToRemoveSaysSoRatherThanNothing(t *testing.T) {
 // The file sinks are the two stores that need no server, so the whole
 // list-then-remove path can be exercised against real files.
 func TestTheFileSinksAreListedAndThenRemoved(t *testing.T) {
-	t.Parallel()
 	dir := t.TempDir()
 	jsonl := filepath.Join(dir, "sweep.jsonl")
 	sql := filepath.Join(dir, "sweep.sql")
@@ -160,7 +154,6 @@ func TestTheFileSinksAreListedAndThenRemoved(t *testing.T) {
 // An --influx that cannot be taken apart cannot say which database to empty,
 // and must refuse rather than guess at one.
 func TestDataRemovalsRefusesAWriteURLItCannotReadBack(t *testing.T) {
-	t.Parallel()
 	sf := &sinkFlags{influx: "http://host:8086/api/v2/write?bucket=m&org=home"}
 	_, err := dataRemovals(context.Background(), sf, &strings.Builder{})
 	if err == nil {
@@ -196,7 +189,6 @@ func TestAnAdoptedDatasourceIsNotRemoved(t *testing.T) {
 // the install plan backwards, because an object goes after whatever depends on
 // it. No router is reached: a listing is built from the options alone.
 func TestTheRouterHalfListsWithoutTouchingTheRouter(t *testing.T) {
-	t.Parallel()
 	c := &cli{opts: router.Defaults()}
 	if err := c.opts.Finish(); err != nil {
 		t.Fatal(err)
@@ -273,7 +265,6 @@ func TestTheVerbListsThenRemoves(t *testing.T) {
 }
 
 func TestTheVerbRefusesAMisspelledTarget(t *testing.T) {
-	t.Parallel()
 	err := uninstall([]string{"--targets", "dashbord"}, &strings.Builder{})
 	if err == nil || !strings.Contains(err.Error(), "unknown --targets name") {
 		t.Fatalf("err = %v, want the refusal", err)
@@ -331,7 +322,6 @@ func TestTheDashboardHalfListsOnlyWhatIsThere(t *testing.T) {
 // The router target through the verb, which is the default and so the shape
 // most people will type. No router is reached without --yes.
 func TestTheVerbListsTheRouterObjectsByDefault(t *testing.T) {
-	t.Parallel()
 	var out strings.Builder
 	if err := uninstall(nil, &out); err != nil {
 		t.Fatal(err)
@@ -352,7 +342,6 @@ func TestTheVerbListsTheRouterObjectsByDefault(t *testing.T) {
 // An --influx that cannot be taken apart cannot say which database to empty,
 // and the verb has to stop rather than empty the wrong one or none.
 func TestTheVerbRefusesAWriteURLItCannotReadBack(t *testing.T) {
-	t.Parallel()
 	err := uninstall([]string{
 		"--targets", "data",
 		"--influx", "http://host:8086/api/v2/write?bucket=m&org=home",

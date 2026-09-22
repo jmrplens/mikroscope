@@ -3,7 +3,6 @@ package main
 import "testing"
 
 func TestResolveInfluxBuildsTheWriteURLFromFields(t *testing.T) {
-	t.Parallel()
 	got, err := resolveInflux("http://192.168.0.40:50106", "mikroscope")
 	if err != nil {
 		t.Fatal(err)
@@ -23,7 +22,6 @@ func TestResolveInfluxBuildsTheWriteURLFromFields(t *testing.T) {
 // a URL that is already right must not be re-derived, because re-deriving it
 // is how a v2 endpoint or an unusual query silently becomes a v3 one.
 func TestResolveInfluxTakesAWrittenURLVerbatim(t *testing.T) {
-	t.Parallel()
 	const url = "http://host:8181/api/v3/write_lp?db=other&precision=nanosecond"
 	got, err := resolveInflux(url, "mikroscope")
 	if err != nil {
@@ -48,7 +46,6 @@ func TestResolveInfluxTakesAWrittenURLVerbatim(t *testing.T) {
 // the point: `forward --grafana` reports that it cannot build one rather than
 // building one that answers nothing.
 func TestResolveInfluxLeavesTheFieldsEmptyForAURLItCannotReadBack(t *testing.T) {
-	t.Parallel()
 	const url = "http://host:8086/api/v2/write?bucket=mikroscope&org=home"
 	got, err := resolveInflux(url, "")
 	if err != nil {
@@ -63,14 +60,12 @@ func TestResolveInfluxLeavesTheFieldsEmptyForAURLItCannotReadBack(t *testing.T) 
 }
 
 func TestResolveInfluxRefusesAServerWithNoDatabase(t *testing.T) {
-	t.Parallel()
 	if _, err := resolveInflux("http://host:8181", ""); err == nil {
 		t.Fatal("a bare server and no --influx-db is a write URL that cannot be built; want an error")
 	}
 }
 
 func TestResolveInfluxRefusesWhatIsNotAnHTTPURL(t *testing.T) {
-	t.Parallel()
 	for _, addr := range []string{"host:8181", "unix:///run/influx.sock", "://"} {
 		if _, err := resolveInflux(addr, "mikroscope"); err == nil {
 			t.Errorf("resolveInflux(%q): want an error", addr)
@@ -79,7 +74,6 @@ func TestResolveInfluxRefusesWhatIsNotAnHTTPURL(t *testing.T) {
 }
 
 func TestResolveInfluxIsEmptyWhenTheSinkIsNotAskedFor(t *testing.T) {
-	t.Parallel()
 	got, err := resolveInflux("", "mikroscope")
 	if err != nil || got.Endpoint != "" {
 		t.Errorf("resolveInflux(\"\") = %+v, %v, want the zero target and no error", got, err)
