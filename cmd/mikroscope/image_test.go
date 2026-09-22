@@ -13,7 +13,6 @@ import (
 // and a container that installs, starts and dies with `exec format error` in
 // the router's log. These are the four answers it can give.
 func TestLoadAgentTar(t *testing.T) {
-	t.Parallel()
 	dir := t.TempDir()
 
 	write := func(name, arch, goarm string) string {
@@ -37,7 +36,6 @@ func TestLoadAgentTar(t *testing.T) {
 	}
 
 	t.Run("the right image is accepted", func(t *testing.T) {
-		t.Parallel()
 		data, err := loadAgentTar(arm64, "arm64")
 		if err != nil {
 			t.Fatalf("a linux/arm64 image with --arch arm64: %v", err)
@@ -48,7 +46,6 @@ func TestLoadAgentTar(t *testing.T) {
 	})
 
 	t.Run("another architecture is refused by name", func(t *testing.T) {
-		t.Parallel()
 		_, err := loadAgentTar(arm64, "arm")
 		if err == nil {
 			t.Fatal("a linux/arm64 image passed as --arch arm")
@@ -61,7 +58,6 @@ func TestLoadAgentTar(t *testing.T) {
 	})
 
 	t.Run("the ARMv7 image is accepted and noted", func(t *testing.T) {
-		t.Parallel()
 		// Accepted, because it is the right architecture; the note about
 		// EN7562CT boards is image.VariantNote's, tested there.
 		if _, err := loadAgentTar(armv7, "arm"); err != nil {
@@ -70,7 +66,6 @@ func TestLoadAgentTar(t *testing.T) {
 	})
 
 	t.Run("something that is not an agent image is refused", func(t *testing.T) {
-		t.Parallel()
 		if _, err := loadAgentTar(notAnImage, "arm64"); err == nil {
 			t.Fatal("a file that is not an image was accepted")
 		}

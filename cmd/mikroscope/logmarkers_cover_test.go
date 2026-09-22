@@ -121,7 +121,6 @@ func appendSample(t *testing.T, prefix string, at time.Time) {
 }
 
 func TestMarkFromLogTurnsRouterLinesIntoMarkers(t *testing.T) {
-	t.Parallel()
 	start := time.Now().Add(-time.Hour).UTC().Truncate(time.Second)
 	inside := start.Add(30 * time.Minute)
 	outside := start.Add(-30 * time.Minute)
@@ -165,7 +164,6 @@ func TestMarkFromLogTurnsRouterLinesIntoMarkers(t *testing.T) {
 // addLogMarkers is the same fetch from the other side: `record --log-markers`
 // calls it once the recording has closed its files.
 func TestAddLogMarkersAppendsToAFinishedRecording(t *testing.T) {
-	t.Parallel()
 	start := time.Now().Add(-time.Hour).UTC().Truncate(time.Second)
 	addr := logListener(t, [][2]string{{start.Add(10 * time.Minute).Format(record.APITimeLayout), "container: started"}})
 	prefix := recording(t, t.TempDir(), start, 2)
@@ -190,7 +188,6 @@ func TestAddLogMarkersAppendsToAFinishedRecording(t *testing.T) {
 // The two refusals that come before any connection: no API configured, and a
 // zone name the machine does not have.
 func TestFetchLogMarkersRefusesBeforeItDials(t *testing.T) {
-	t.Parallel()
 	now := time.Now()
 	if _, err := fetchLogMarkers(recordOptions{tz: "UTC"}, now, now); err == nil ||
 		!strings.Contains(err.Error(), "--api") {

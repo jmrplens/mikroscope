@@ -33,7 +33,6 @@ func (stubRunner) Upload([]byte, string) error  { return nil }
 // answer into the next thing to try. The failure branches each take the full
 // 30 s WaitReachable window, so they run in parallel with each other.
 func TestProbeReportsTheAgentWhenItAnswers(t *testing.T) {
-	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"ok":true,"seq":42,"oldest_seq":1,"rate_hz":10,"slipped":3,"version":"1.0.9"}`))
 	}))
@@ -66,7 +65,6 @@ func TestProbeReportsTheAgentWhenItAnswers(t *testing.T) {
 }
 
 func TestProbeDiagnosesWhatItCannotReach(t *testing.T) {
-	t.Parallel()
 	base := cli{opts: router.Defaults()}
 	if err := base.opts.Finish(); err != nil {
 		t.Fatal(err)
@@ -112,7 +110,6 @@ func TestProbeDiagnosesWhatItCannotReach(t *testing.T) {
 // mark writes into a finished recording from another shell, so its refusals
 // are what stop a marker landing in a file that is not a recording.
 func TestRunMarkNeedsARecordingAndSomethingToSay(t *testing.T) {
-	t.Parallel()
 	c := cli{opts: router.Defaults()}
 	if err := c.opts.Finish(); err != nil {
 		t.Fatal(err)
@@ -161,7 +158,6 @@ func TestRunMarkNeedsARecordingAndSomethingToSay(t *testing.T) {
 // The three verbs that carry their own flag set refuse an unparseable flag
 // before they reach a router, and each names what it could not do.
 func TestTheRecordVerbsRefuseBeforeTheyConnect(t *testing.T) {
-	t.Parallel()
 	c := cli{opts: router.Defaults()}
 	if err := c.opts.Finish(); err != nil {
 		t.Fatal(err)

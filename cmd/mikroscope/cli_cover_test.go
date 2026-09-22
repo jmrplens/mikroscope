@@ -13,11 +13,30 @@ import (
 	"github.com/jmrplens/mikroscope/internal/router"
 )
 
-// captureMu serializes the redirection. os.Stdout is one global, so two
-// parallel tests swapping it race: each restores what IT saved, so the loser
-// hands back a pipe the winner has already closed and the winner's output
-// lands in the loser's buffer. It surfaced as one intermittent failure in a
-// coverage run, which is the only way a test like this ever announces itself.
+// NOTHING IN THIS PACKAGE'S TESTS CALLS t.Parallel(), and capture is why.
+//
+// The CLI prints to os.Stdout directly, which is right for a terminal tool,
+// so a test that wants to read what a verb printed has to redirect that
+// global. A redirect is a WRITE to a variable every other test reads the
+// moment it prints anything, and `go test -race` calls that what it is: two
+// goroutines, one writing os.Stdout and one reading it, with no
+// synchronization between them.
+//
+// The mutex below is not enough, and the first attempt at this stopped there:
+// it serializes capture against capture and says nothing about capture against
+// a parallel test that merely prints. Tests in this package that print and
+// never capture — the sink-flag ones predate all of this — raced with it just
+// the same. The race gate runs before a release rather than per pull request,
+// so it surfaced by failing the 1.1.0 release and not on the branch that
+// introduced it.
+//
+// The alternative is threading an io.Writer through every verb, which is a
+// change to the shipped code made for the tests. Serializing one package's
+// tests costs a few seconds.
+//
+// captureMu stays because a subtest or a goroutine inside one of these tests
+// can still reach capture concurrently: TestProbeDiagnosesWhatItCannotReach
+// runs three probes at once inside a single capture for exactly that reason.
 var captureMu sync.Mutex
 
 // capture runs f with os.Stdout redirected and returns what it printed. The
@@ -78,7 +97,6 @@ func TestCaptureSurvivesMoreOutputThanAPipeHolds(t *testing.T) {
 // behavior worth pinning, because the alternative is a verb that silently
 // does nothing.
 func TestRunDispatchesEveryVerbAndNamesAnUnknownOne(t *testing.T) {
-	t.Parallel()
 	c := cli{opts: router.Defaults()}
 	// A registry reference means no image is built, so these exercise the
 	// verb switch rather than this machine's Go toolchain.
@@ -121,7 +139,6 @@ func TestRunDispatchesEveryVerbAndNamesAnUnknownOne(t *testing.T) {
 }
 
 func TestRunnerNeedsARouterAndOtherwiseCarriesTheSSHSettings(t *testing.T) {
-	t.Parallel()
 	if _, err := (cli{}).runner(); err == nil || !strings.Contains(err.Error(), "--router") {
 		t.Errorf("runner with no router = %v, want an error naming --router", err)
 	}
@@ -144,7 +161,6 @@ func TestRunnerNeedsARouterAndOtherwiseCarriesTheSSHSettings(t *testing.T) {
 // parse is what every deployment verb is configured through, and an
 // unparseable flag has to fail before anything reaches the router.
 func TestParseReadsFlagsAndRefusesBadOnes(t *testing.T) {
-	t.Parallel()
 	c, err := parse("install", []string{"--name", "probe", "--rate", "50", "--port", "9999"})
 	if err != nil {
 		t.Fatal(err)
@@ -164,7 +180,6 @@ func TestParseReadsFlagsAndRefusesBadOnes(t *testing.T) {
 // resolved; a value it cannot split is a typo worth refusing rather than a
 // variable silently left unset.
 func TestSetVarSplitsOnTheFirstEqualsOnly(t *testing.T) {
-	t.Parallel()
 	into := map[string]string{}
 	set := setVar(into)
 	for _, v := range []string{"host=rb5009", "empty=", "q=a=b"} {
@@ -191,7 +206,6 @@ func TestSetVarSplitsOnTheFirstEqualsOnly(t *testing.T) {
 // --api-mode is a preset over three flags, and it must never overwrite one the
 // operator set explicitly on the same command line.
 func TestAPIModePresetsYieldToExplicitFlags(t *testing.T) {
-	t.Parallel()
 	newFS := func(setArgs ...string) (*flag.FlagSet, *time.Duration, *time.Duration, *bool) {
 		apiEvery, conntrackEvery := time.Second, 5*time.Minute
 		noHealth := false
@@ -247,7 +261,6 @@ func TestAPIModePresetsYieldToExplicitFlags(t *testing.T) {
 // printBoard is the one place the CLI turns a board string into port names,
 // and its whole purpose is to say plainly when it cannot.
 func TestPrintBoardSaysWhatItCannotMap(t *testing.T) {
-	t.Parallel()
 	if out := capture(t, func() { printBoard("") }); !strings.Contains(out, "no model") {
 		t.Errorf("an empty board printed:\n%s", out)
 	}

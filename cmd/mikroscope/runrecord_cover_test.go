@@ -64,7 +64,6 @@ func fakeAgentServer(t *testing.T) (subnet string, port int) {
 }
 
 func TestRunRecordWritesTheFilesMarkAndPlotRead(t *testing.T) {
-	t.Parallel()
 	subnet, port := fakeAgentServer(t)
 	c := cli{opts: router.Defaults()}
 	if err := c.opts.Finish(); err != nil {
@@ -117,7 +116,6 @@ func TestRunRecordWritesTheFilesMarkAndPlotRead(t *testing.T) {
 // A prefix whose directory does not exist is the operator's typo, and it has
 // to fail before the agent is pulled from rather than after.
 func TestRunRecordRefusesAPrefixItCannotWrite(t *testing.T) {
-	t.Parallel()
 	subnet, port := fakeAgentServer(t)
 	c := cli{opts: router.Defaults()}
 	if err := c.opts.Finish(); err != nil {

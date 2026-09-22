@@ -14,7 +14,6 @@ import (
 )
 
 func TestStoresToPublishFollowsTheSinksThatWereAskedFor(t *testing.T) {
-	t.Parallel()
 	// The five sinks with no dashboard must not put a store in the list:
 	// publishing a Loki dashboard this project does not build would be an
 	// error at generate time, on a path whose whole point is not to fail.
@@ -47,7 +46,6 @@ func TestStoresToPublishFollowsTheSinksThatWereAskedFor(t *testing.T) {
 // HTTP one, and a datasource with only one of them set gives a dashboard where
 // nothing loads.
 func TestInfluxDatasourceCarriesTheTokenInBothPlaces(t *testing.T) {
-	t.Parallel()
 	s := &sinkFlags{influx: "http://192.168.0.40:50106", influxDB: "mikroscope", influxToken: "apiv3_secret"}
 	got, err := datasourceFor(dashboards.Influx, s, &publishFlags{}, io.Discard)
 	if err != nil {
@@ -85,7 +83,6 @@ func TestInfluxDatasourceCarriesTheTokenInBothPlaces(t *testing.T) {
 // ...and insecureGrpc follows the scheme rather than always being on: a store
 // reached over https wants the TLS handshake the plugin would otherwise skip.
 func TestInfluxOverHTTPSDoesNotAskForPlaintextGRPC(t *testing.T) {
-	t.Parallel()
 	s := &sinkFlags{influx: "https://influx.example:8181", influxDB: "mikroscope"}
 	got, err := datasourceFor(dashboards.Influx, s, &publishFlags{}, io.Discard)
 	if err != nil {
@@ -100,7 +97,6 @@ func TestInfluxOverHTTPSDoesNotAskForPlaintextGRPC(t *testing.T) {
 // rather than build one pointed at a port that answers nothing — and must name
 // the flag that resolves it.
 func TestTheSinksThatCannotKnowTheAddressSaySo(t *testing.T) {
-	t.Parallel()
 	s := &sinkFlags{prom: ":9124", graph: "graphite:2003"}
 	for _, store := range []dashboards.Store{dashboards.Prometheus, dashboards.Graphite} {
 		_, err := datasourceFor(store, s, &publishFlags{}, io.Discard)
@@ -117,7 +113,6 @@ func TestTheSinksThatCannotKnowTheAddressSaySo(t *testing.T) {
 // ...and told the address, there is nothing else to derive: a Prometheus
 // datasource is a URL, and so is a Graphite one.
 func TestPrometheusAndGraphiteAreDescribedOnceTheyAreToldTheAddress(t *testing.T) {
-	t.Parallel()
 	s := &sinkFlags{prom: ":9124", graph: "graphite:2003"}
 	p := &publishFlags{dsURL: "http://query.example:9090"}
 	for store, wantKey := range map[dashboards.Store]string{
@@ -141,7 +136,6 @@ func TestPrometheusAndGraphiteAreDescribedOnceTheyAreToldTheAddress(t *testing.T
 // The file sink is the ONE that can never be described, and its message has to
 // send the reader to the sink that can rather than to Grafana.
 func TestTheFileSQLSinkNamesTheSinkThatCanDescribeItself(t *testing.T) {
-	t.Parallel()
 	_, err := datasourceFor(dashboards.Postgres, &sinkFlags{sqlPath: "out.sql"}, &publishFlags{}, io.Discard)
 	if err == nil {
 		t.Fatal("want an error: a file sink never connects")
@@ -155,7 +149,6 @@ func TestTheFileSQLSinkNamesTheSinkThatCanDescribeItself(t *testing.T) {
 
 // An adopted uid is taken for any store, and nothing is described.
 func TestAnAdoptedUIDNeedsNothingDescribed(t *testing.T) {
-	t.Parallel()
 	s := &sinkFlags{prom: ":9124", sqlPath: "out.sql", graph: "graphite:2003"}
 	for _, store := range []dashboards.Store{dashboards.Prometheus, dashboards.Postgres, dashboards.Graphite} {
 		got, err := datasourceFor(store, s, &publishFlags{dsUID: "adopted-uid"}, io.Discard)
@@ -169,7 +162,6 @@ func TestAnAdoptedUIDNeedsNothingDescribed(t *testing.T) {
 }
 
 func TestElasticIndexPatternDropsTheDatePart(t *testing.T) {
-	t.Parallel()
 	for in, want := range map[string]string{
 		"mikroscope-%Y.%m.%d": "mikroscope*",
 		"router.%Y":           "router*",
@@ -185,7 +177,6 @@ func TestElasticIndexPatternDropsTheDatePart(t *testing.T) {
 // A dry run writes nothing at all. This is the guarantee the flag is for, so
 // it is asserted against a server that fails the test if it is asked anything.
 func TestGrafanaDryRunSendsNoRequest(t *testing.T) {
-	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		t.Errorf("a dry run reached the server: %s %s", r.Method, r.URL.Path)
 	}))
@@ -282,7 +273,6 @@ func TestPublishWritesTheFolderTheDatasourceAndTheDashboard(t *testing.T) {
 // event, so a datasource asking for the literal name would find one day's
 // index and miss every other.
 func TestElasticsearchDatasourceAsksForEveryDaysIndex(t *testing.T) {
-	t.Parallel()
 	s := &sinkFlags{elastic: "http://elastic:9200/", elIndex: "mikroscope-%Y.%m.%d", elasticAuth: "ApiKey abc"}
 	got, err := datasourceFor(dashboards.Elasticsearch, s, &publishFlags{}, io.Discard)
 	if err != nil {
@@ -308,7 +298,6 @@ func TestElasticsearchDatasourceAsksForEveryDaysIndex(t *testing.T) {
 // Without a credential nothing secret is sent at all, rather than an empty
 // header that would make the datasource send `Authorization: `.
 func TestElasticsearchDatasourceWithNoCredentialSendsNoHeader(t *testing.T) {
-	t.Parallel()
 	got, err := datasourceFor(dashboards.Elasticsearch, &sinkFlags{elastic: "http://elastic:9200"}, &publishFlags{}, io.Discard)
 	if err != nil {
 		t.Fatal(err)
@@ -321,7 +310,6 @@ func TestElasticsearchDatasourceWithNoCredentialSendsNoHeader(t *testing.T) {
 // --grafana is the whole on/off switch: nothing happens unless a URL was
 // named, whatever else is configured.
 func TestPublishingIsOffUnlessAGrafanaIsNamed(t *testing.T) {
-	t.Parallel()
 	if (&publishFlags{folder: "mikroscope", dsUID: "x", dryRun: true}).asked() {
 		t.Error("asked() is true with no --grafana; every other flag must be inert without it")
 	}

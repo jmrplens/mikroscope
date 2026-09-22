@@ -145,7 +145,6 @@ func TestInstallDryRunWalksThePlanAndWritesNothing(t *testing.T) {
 // image refuses when the router would pull the image itself: there is no tar
 // to write, and writing an empty one would be worse than saying so.
 func TestWriteImageRefusesWithARegistryReference(t *testing.T) {
-	t.Parallel()
 	c := cli{opts: router.Defaults()}
 	c.opts.RemoteImage = "jmrplens/mikroscope-agent:1.0.10"
 	if err := c.opts.Finish(); err != nil {

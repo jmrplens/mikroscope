@@ -39,7 +39,6 @@ func stubGrafana(t *testing.T, body string) *dashboards.Grafana {
 }
 
 func TestDashboardsCheckToleratesKnownEmptyAndFailsOnTheRest(t *testing.T) {
-	t.Parallel()
 	const oneRow = `{"results":{"A":{"frames":[{"schema":{"fields":[{"name":"value","type":"number"}]},"data":{"values":[[1]]}}]}}}`
 	const noFrames = `{"results":{"A":{"frames":[]}}}`
 
