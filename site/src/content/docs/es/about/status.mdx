@@ -215,11 +215,13 @@ el watchdog hardware en `/sys/class/watchdog/watchdog0`.
 
 ## Qué publica la versión
 
-`VERSION` es **1.0.10**, compilada en los dos binarios y lo que devuelve
-`mikroscope version`; la última release publicada es la **v1.0.9**. Difieren porque
-1.0.10 aún no está etiquetada, y 1.0.8 no lo estuvo nunca: la release salta de la
-v1.0.7 a la v1.0.9, que lleva las dos. Una etiqueta `v*` lanza la
-configuración de GoReleaser, que publica:
+`VERSION` es **1.1.0**, compilada en los dos binarios y lo que devuelve
+`mikroscope version`. Dos números intermedios no tienen release propia: la 1.0.8
+y la 1.0.10 se prepararon y nunca se etiquetaron, así que la v1.0.9 lleva los
+cambios de la 1.0.8 y la v1.1.0 los de la 1.0.10. Un número que este proyecto se
+salta es uno que nadie puede instalar, y por eso el changelog no tiene sección
+para ninguno de los dos. Una etiqueta `v*` lanza la configuración de GoReleaser,
+que publica:
 
 - **Archivos de la CLI** para linux, darwin, windows y freebsd en amd64, arm64 y
   arm: `.tar.gz`, y `.zip` en Windows, cada uno con `LICENSE` y `README.md`.

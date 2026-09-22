@@ -196,11 +196,12 @@ and the hardware watchdog at `/sys/class/watchdog/watchdog0`.
 
 ### What the release publishes
 
-`VERSION` is **1.0.10**, compiled into both binaries and reported by
-`mikroscope version`; the latest published release is **v1.0.9**. They differ because
-1.0.10 is not tagged yet, and 1.0.8 never was — the release jumps from v1.0.7 to
-v1.0.9, which carries both. A `v*` tag runs the GoReleaser
-configuration, which publishes:
+`VERSION` is **1.1.0**, compiled into both binaries and reported by
+`mikroscope version`. Two numbers between it and the last one have no release of
+their own: 1.0.8 and 1.0.10 were prepared and never tagged, so v1.0.9 carries
+1.0.8's changes and v1.1.0 carries 1.0.10's. A number this project skipped is
+one nobody can install, which is why the changelog has no section for either. A
+`v*` tag runs the GoReleaser configuration, which publishes:
 
 - **CLI archives** for linux, darwin, windows and freebsd on amd64, arm64 and
   arm: `.tar.gz`, and `.zip` on Windows, each carrying `LICENSE` and `README.md`.

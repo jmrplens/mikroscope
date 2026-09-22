@@ -27,12 +27,12 @@ después, en este orden:
 3. solo entonces escribe.
 
 `plan`, `install --dry-run` y `upgrade --dry-run` se detienen después del listado —el último
-solo desde 1.0.10, que es cuando `upgrade` empezó a respetar el flag. El listado enmascara el token como
+solo desde 1.1.0, que es cuando `upgrade` empezó a respetar el flag. El listado enmascara el token como
 `value="(token)"`.
 
 `upgrade` no tiene esta garantía. Construye la imagen, rechaza un router en el que falte cualquier
 paso del plan construido con sus propias opciones (`nothing to upgrade: run install first`) y hace
-la misma pregunta `write the objects above to the router? [y/N]` —y desde 1.0.10 sí imprime un
+la misma pregunta `write the objects above to the router? [y/N]` —y desde 1.1.0 sí imprime un
 listado propio, solo el paso del contenedor. Sigue sin ejecutar `doctor` antes. Con `y` quita el contenedor, la envlist y
 la imagen y los vuelve a escribir, la envlist a partir de las opciones dadas a `upgrade`; [lo que abre
 --expose](/mikroscope/es/security/expose/) explica lo que eso supone para el token.

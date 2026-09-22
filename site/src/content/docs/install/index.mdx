@@ -134,7 +134,7 @@ because those four objects are exactly what an upgrade does NOT write — and
 Unlike `install` it still runs no `doctor`; run that yourself if you want the
 free-space and device-mode checks before an upgrade.
 
-Until 1.0.10 `upgrade` ignored `--dry-run` outright: it printed nothing and went
+Until 1.1.0 `upgrade` ignored `--dry-run` outright: it printed nothing and went
 straight to the confirmation, so `upgrade --dry-run --yes` replaced the
 container on a live router while the flag promised it would write nothing.
 
