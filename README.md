@@ -4,8 +4,14 @@
 [![Quality gate](https://sonarcloud.io/api/project_badges/measure?project=jmrplens_mikroscope&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=jmrplens_mikroscope)
 [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=jmrplens_mikroscope&metric=coverage)](https://sonarcloud.io/component_measures?id=jmrplens_mikroscope&metric=coverage)
 [![Release](https://img.shields.io/github/v/release/jmrplens/mikroscope?sort=semver)](https://github.com/jmrplens/mikroscope/releases/latest)
-[![Go](https://img.shields.io/badge/go-1.27-00ADD8?logo=go&logoColor=white)](go.mod)
+[![Downloads](https://img.shields.io/github/downloads/jmrplens/mikroscope/total?label=Downloads)](https://github.com/jmrplens/mikroscope/releases)
+[![Go Reference](https://pkg.go.dev/badge/github.com/jmrplens/mikroscope.svg)](https://pkg.go.dev/github.com/jmrplens/mikroscope)
+[![Go](https://img.shields.io/github/go-mod/go-version/jmrplens/mikroscope?logo=go&logoColor=white&label=Go)](go.mod)
+[![ghcr.io](https://img.shields.io/badge/ghcr.io-mikroscope--agent-2496ED?logo=docker&logoColor=white)](https://github.com/jmrplens/mikroscope/pkgs/container/mikroscope-agent)
+[![Docker Hub](https://img.shields.io/docker/v/jmrplens/mikroscope-agent?logo=docker&logoColor=white&label=Docker%20Hub)](https://hub.docker.com/r/jmrplens/mikroscope-agent)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Agent platforms](https://img.shields.io/badge/agent-linux%20arm64%20%7C%20arm%20%7C%20amd64-lightgrey)
+![CLI platforms](https://img.shields.io/badge/CLI-linux%20%7C%20macOS%20%7C%20windows%20%7C%20freebsd-lightgrey)
 
 Sub-second, kernel-level telemetry for container-capable MikroTik RouterOS
 devices. A static Go agent runs **on** the router, in a scratch container, and
@@ -77,12 +83,52 @@ mikroscope forward \
   --grafana http://grafana:3000        # creates the datasource and publishes the dashboard
 ```
 
+Or take a stack whole: [`deploy/`](deploy/) has two compose files, each a
+collector and somewhere for it to write, with the dashboard already in the
+Grafana beside it.
+
+```sh
+docker compose -f deploy/compose.influxdb-grafana.yaml up -d
+```
+
 `forward` writes to eleven sinks — the file, Prometheus, InfluxDB 3, Loki,
 OTLP, Graphite, Elasticsearch, PostgreSQL both as a script and down a
 connection, Telegraf and standard output — and merges the kernel tier with the
 RouterOS API tier as it goes.
 [Five minutes with a router](https://jmrp.io/docs/mikroscope/start/walkthrough/)
 is the whole path once, end to end.
+
+## What it draws
+
+Five Grafana dashboards, one per store Grafana can query, generated from a
+single panel list and shipped in the repository. `forward --grafana` creates
+the datasource and publishes the one for the store it writes to, at start,
+before the first sample.
+
+The overview, which every dashboard opens with — is this router healthy right
+now, and can these numbers be believed:
+
+![The overview section: CPU busy per core, memory and swap, the connection
+count, traffic per interface, the collector's own cost, and the sample
+continuity strip that says whether any tick is missing](site/src/assets/dashboards/00-overview.webp)
+
+And the receive path, which is the section the kernel tier exists for — softnet
+backlog, drops, time squeezes and per-CPU budget, none of which the RouterOS
+API can see:
+
+![The network receive path section: packets processed per CPU, softnet drops
+and time squeezes, the backlog depth, and the burst evidence the collector
+derives from samples at or below the trailing
+median](site/src/assets/dashboards/06-network-receive-path.webp)
+
+> Both are a run of the canned fake agent the end-to-end suites use, written
+> into a container store and photographed by the site's own script. The host is
+> called `rb5009` because the fake imitates that board's captured `/proc`, and
+> the figures are whatever the fake publishes: read them as the shape of the
+> page, never as a measurement.
+
+[The five dashboards](https://jmrp.io/docs/mikroscope/dashboards/), section by
+section, with a capture of each.
 
 ## Where it has been verified
 

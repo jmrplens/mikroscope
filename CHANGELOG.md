@@ -8,6 +8,40 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **A collector image, and two stacks that use it.** `ghcr.io/jmrplens/mikroscope`
+  and `jmrplens/mikroscope` on Docker Hub, linux/amd64 and linux/arm64, beside
+  the agent image that was already published. `deploy/` has a compose file for
+  InfluxDB 3 with Grafana and another for Prometheus with Grafana, each a
+  collector and somewhere for it to write, with the dashboard already in the
+  Grafana beside it.
+
+  Not `FROM scratch` like the agent: the collector reaches stores and a Grafana
+  that are ordinarily behind TLS, and a static binary with no CA bundle fails
+  every one of them with `x509: certificate signed by unknown authority`. It
+  runs `nonroot` on distroless/static, and the deployment verbs are
+  deliberately not usable from it — `ssh` and `scp` are not in the image,
+  because a container that could reconfigure a router is a larger thing to hand
+  someone than one that reads from it.
+
+  **The collector runs on the host's network in both files, and that is not a
+  shortcut.** The agent answers on a /30 veth inside the router and the route
+  to it belongs to the host, so a container on a bridge network has no way
+  there. `deploy/README.md` says so, gives the one-line check
+  (`curl http://172.30.10.2:9123/healthz` on the host), and documents the relay
+  as the other way in for a host that has no route.
+
+- **shellcheck and hadolint in CI**, and `make shellcheck` in `make analyze`.
+  actionlint already ran shellcheck over the `run:` blocks of the workflows;
+  what was never linted was the scripts those blocks call and `install.sh`,
+  which is the first command the README gives and so the one piece of shell
+  most readers will execute. Both were clean when the check was added, which is
+  the outcome worth having and not one worth assuming.
+
+- **The README shows what it draws.** Two dashboard sections, the overview and
+  the receive path, from the captures the site already generated; and the five
+  badges that were missing, of which four report something the release already
+  publishes.
+
 - **`forward --grafana`: the collector sets Grafana up itself.** Point it at a
   Grafana and it reconciles one datasource and one dashboard per store it
   writes to, once, at start, before the first sample. It removes the step

@@ -16,7 +16,7 @@ SHELL := /bin/bash
 	test-e2e-docker test-e2e-docker-race e2e-docker-up e2e-docker-down e2e-docker-build \
 	docs check-docs site-check \
 	cover cover-check \
-	fmt fmt-check vet tidy lint golangci-lint govulncheck actionlint analyze analyze-fix sonar \
+	fmt fmt-check vet tidy lint golangci-lint govulncheck actionlint shellcheck analyze analyze-fix sonar \
 	mdlint mdlint-fix check-doc-links \
 	gen-dashboards check-dashboards gen-brand check-brand check-generated \
 	install-tools tools-versions release-check roundtrip
@@ -339,6 +339,14 @@ govulncheck: ## Scan for known vulnerabilities in what the code actually reaches
 actionlint: ## Lint the GitHub workflows (shellcheck is used when it is on PATH, as it is on CI's runner)
 	actionlint
 
+# actionlint above runs shellcheck over the `run:` blocks of the workflows;
+# this runs it over the scripts those blocks CALL, and over the installer,
+# which is the first command the README gives and so the one piece of shell
+# most readers will execute.
+shellcheck: ## Lint the installer and every shell script the repository ships
+	@echo "=== shellcheck ==="
+	shellcheck install.sh scripts/*.sh .github/scripts/*.sh
+
 # Scoped to FMT_PATHS for the reason given where it is defined, and because the
 # formatter is the one command that rewrites files: with no path argument
 # golangci-lint formats the whole tree, git-ignored scratch directories
@@ -401,14 +409,15 @@ analyze: ## Run the whole static-analysis suite and report every failure at once
 	echo "Go toolchain: $$GOTOOLCHAIN (go.mod: $(PROJECT_GO_VERSION))"; \
 	echo "Go analysis packages: $(PKGS)"; \
 	echo ""; \
-	run_check "[1/8] golangci-lint config verify" golangci-lint config verify; \
-	run_check "[2/8] golangci-lint fmt" golangci-lint fmt --diff $(FMT_PATHS); \
-	run_check "[3/8] golangci-lint run" golangci-lint run $(PKGS); \
-	run_check "[4/8] govulncheck" $(MAKE) --no-print-directory govulncheck; \
-	run_check "[5/8] actionlint" $(MAKE) --no-print-directory actionlint; \
-	run_check "[6/8] markdownlint" $(MAKE) --no-print-directory mdlint; \
-	run_check "[7/8] documentation local links" $(MAKE) --no-print-directory check-doc-links; \
-	run_check "[8/8] generated artifacts up to date" $(MAKE) --no-print-directory check-generated; \
+	run_check "[1/9] golangci-lint config verify" golangci-lint config verify; \
+	run_check "[2/9] golangci-lint fmt" golangci-lint fmt --diff $(FMT_PATHS); \
+	run_check "[3/9] golangci-lint run" golangci-lint run $(PKGS); \
+	run_check "[4/9] govulncheck" $(MAKE) --no-print-directory govulncheck; \
+	run_check "[5/9] actionlint" $(MAKE) --no-print-directory actionlint; \
+	run_check "[6/9] shellcheck" $(MAKE) --no-print-directory shellcheck; \
+	run_check "[7/9] markdownlint" $(MAKE) --no-print-directory mdlint; \
+	run_check "[8/9] documentation local links" $(MAKE) --no-print-directory check-doc-links; \
+	run_check "[9/9] generated artifacts up to date" $(MAKE) --no-print-directory check-generated; \
 	echo "============================================================"; \
 	if [ "$$analysis_status" -ne 0 ]; then \
 		echo "Analysis failed. Review the findings above."; \

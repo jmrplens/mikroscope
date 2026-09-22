@@ -454,6 +454,41 @@ jobs:
   # which for release.yml is a tag. actionlint runs shellcheck over every
   # `run:` block when shellcheck is on PATH, as it is on this runner image, so
   # the scripts in the workflows are checked too.
+  # The installer is the README's first command and the four shell scripts
+  # beside it run in CI, so they are linted as FILES. actionlint below already
+  # runs shellcheck, but only over the `run:` blocks of the workflows: the
+  # scripts those blocks call were never looked at.
+  shellcheck:
+    name: shellcheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Lint the installer and every script the repository ships
+        run: make shellcheck
+
+  # Dockerfile.agent is what every `--remote-image` install pulls, so what it
+  # declares is what lands on somebody's router.
+  hadolint:
+    name: hadolint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Lint the agent image
+        uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387  # v3.5.0
+        with:
+          dockerfile: Dockerfile.agent
+          failure-threshold: warning
+
   actionlint:
     name: actionlint
     runs-on: ubuntu-latest
@@ -702,6 +737,8 @@ jobs:
       - golangci-lint
       - govulncheck
       - actionlint
+      - shellcheck
+      - hadolint
       - analyze-md
       - site-lint
       - agent-size

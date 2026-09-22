@@ -1,0 +1,74 @@
+# mikroscope's collector, Prometheus and Grafana.
+#
+# The other shape: Prometheus SCRAPES the collector rather than the collector
+# writing to a store. Put these in a .env file beside this one:
+#
+#   MIKROSCOPE_SUBNET=172.30.10.0/30   # the /30 `install` was given; the agent is its .2
+#   MIKROSCOPE_TOKEN=                  # only if the install has one
+#
+# then `docker compose up -d`. Grafana is on http://localhost:3000.
+#
+# The collector runs on the host's network for the reason given in
+# compose.influxdb-grafana.yaml: the route to the agent's veth is the host's.
+# Prometheus therefore scrapes host.docker.internal, which is the host as seen
+# from a container — on Linux that name needs the extra_hosts line below.
+#
+# `--grafana` is NOT passed here. The collector can describe an InfluxDB or an
+# Elasticsearch datasource from its own write URL, but a Prometheus one is an
+# address it is scraped AT rather than writes to, so Grafana has to be told:
+# pass --grafana-datasource-uid with a datasource you made, or import the
+# dashboard yourself. `mikroscope dashboards import --store prometheus` does
+# the second.
+
+name: mikroscope
+
+services:
+  prometheus:
+    image: prom/prometheus:v3.7.3
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=15d
+    ports: ["127.0.0.1:9090:9090"]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    configs:
+      - source: prometheus_yml
+        target: /etc/prometheus/prometheus.yml
+    volumes:
+      - prometheus:/prometheus
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:13.2.1
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    ports: ["127.0.0.1:3000:3000"]
+    volumes:
+      - grafana:/var/lib/grafana
+    restart: unless-stopped
+
+  collector:
+    image: ghcr.io/jmrplens/mikroscope:latest
+    network_mode: host
+    environment:
+      MIKROSCOPE_SUBNET: ${MIKROSCOPE_SUBNET:-172.30.10.0/30}
+      MIKROSCOPE_TOKEN: ${MIKROSCOPE_TOKEN:-}
+    command:
+      - forward
+      - --prom=0.0.0.0:9124
+      - --api-mode=off
+    restart: unless-stopped
+
+configs:
+  prometheus_yml:
+    content: |
+      global:
+        scrape_interval: 5s
+      scrape_configs:
+        - job_name: mikroscope
+          static_configs:
+            - targets: ["host.docker.internal:9124"]
+
+volumes:
+  prometheus:
+  grafana:
