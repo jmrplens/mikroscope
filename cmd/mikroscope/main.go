@@ -342,6 +342,10 @@ func doctor(c cli) error {
 		return err
 	}
 	rep.Print(os.Stdout)
+	// The agent half runs whatever the prerequisites say: a router that fails
+	// one can still run an agent installed before, and its ring is what an
+	// operator typing `doctor` most needs.
+	doctorHealth(context.Background(), os.Stdout, c.opts.ContainerIP, c.opts.Port, c.opts.Token)
 	if failed := rep.Failed(); len(failed) > 0 {
 		return fmt.Errorf("%d prerequisite(s) missing; nothing was written", len(failed))
 	}

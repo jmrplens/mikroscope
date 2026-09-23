@@ -604,17 +604,19 @@ cycle before it accepts another.
 ### What doctor checks
 
 `doctor` prints `device:` with the board, the RouterOS version and the
-architecture, then one line per check marked `ok` or `MISSING`, with what it
-found in parentheses and, for a missing one, a `fix:` line. It ends with
-`doctor: every prerequisite is met`, or fails with
-`N prerequisite(s) missing; nothing was written`. `install` runs the same checks
-first unless you pass `--no-doctor`.
+architecture, then one line per check marked `ok`, `MISSING` or `WARN`, with
+what it found in parentheses and, for a missing one or a warning, a `fix:`
+line. It ends with `doctor: every prerequisite is met`, or fails with
+`N prerequisite(s) missing; nothing was written`. A `WARN` is advice: it never
+changes that ending, and `install` goes ahead past it. `install` runs the same
+checks first unless you pass `--no-doctor`.
 
 The checks doctor runs:
 
 | Check, as printed | Passes when | The fix it names |
 | --- | --- | --- |
 | registry-url is https://<host> | with `--remote-image`, `/container/config registry-url` names the reference's registry host. Without `--remote-image` doctor does not ask: the setting is global to the device and mikroscope never writes it | `/container/config/set registry-url=https://<host>` on the router, which applies to every container on it, or install from a tar with `--agent-tar` |
+| no registry credential meant for another registry | a warning, with `--remote-image` only: no `/container/config` username is set, or the pull goes to Docker Hub. Doctor reads whether a username is set, never the name, and cannot read the password | RouterOS presents the one device-wide credential to whichever registry it pulls from, and a Docker Hub account sent to GHCR ends the pull in `auth error`. Install from a tar with `--agent-tar`, or clear the username if nothing else needs it |
 | container package installed and enabled | a `container` package exists with `disabled=no` | download, upload, reboot; then `/system/package/enable container` |
 | device-mode container=yes | `/system/device-mode` reports `container=yes` | `/system/device-mode/update container=yes`, then the reset or mode button, or a power cycle, within 5 minutes |
 | architecture matches --arch <arch> | the router's `architecture-name` is the one `--arch` maps to (`arm64`, `arm`, `x86_64`) | re-run with the `--arch` it names |
@@ -624,6 +626,7 @@ The checks doctor runs:
 | interface list <list> exists (raw rule trap) | the `--iface-list` list (default `LAN`) exists | `/interface/list/add name=…`, or pass the list your `in-interface-list=!…` drop rule uses |
 | address list <list> has entries (raw rule trap) | the `--addr-list` list (default `LANs`) has at least one entry | pass the list your `drop local if not from default IP range` rule uses; an empty list is fine only if there is no such rule |
 | veth name <veth> is free or ours | always reported `ok`, with the count found | none: a collision is caught by `install` itself |
+| the installed agent published on the LAN asks for a token | a warning, shown only when an install of this `--name` has a dst-nat on the LAN: its environment holds a `TOKEN`. Doctor counts the entries, never reads the value | `upgrade` with the same `--name` and `--token <secret>`, or `uninstall --expose` to take it off the LAN |
 
 The flash check uses the real tar size under `install`. `doctor` on its own
 assumes a 7 MiB image, so it asks for 18.0 MiB. Twice the image because the tar
@@ -644,11 +647,59 @@ needs the setting changed first.
 [Four ways to install](https://jmrp.io/docs/mikroscope/install/routes/#a-registry-pull) has the
 command to set it by hand.
 
+The same setting holds one username and password for the whole device, and
+RouterOS presents them to whichever registry it pulls from. They are nearly
+always a Docker Hub account, set to lift Docker Hub's pull limit, and that
+account presented to GHCR ends the pull in `auth error`, even though the image
+can be pulled anonymously. So with any `--remote-image`, doctor asks whether a
+username is set — a yes or a no, never the name, and the password cannot be read
+back at all — and warns when one is set and the pull goes anywhere but Docker
+Hub.
+
+When an install of the same `--name` is already on the router and published on
+the LAN (a dst-nat carrying its tag), doctor also counts the `TOKEN` entries in
+its environment, without reading them, and warns when there are none: the agent
+answers anyone on the LAN. An `upgrade` without `--token` is the ordinary way to
+get there.
+
 The two list checks exist because of two raw firewall rules that drop every
 packet a container sends; [The two firewall traps](https://jmrp.io/docs/mikroscope/install/firewall/)
 explains them. `doctor` marks an empty address list missing even on a router
 that has no such rule; there, `--no-doctor` is the way past it, and it skips
 every other check with it.
+
+### What the running agent shows
+
+Standalone `doctor`, not the one inside `install`, then asks the agent that is
+already running what its ring holds: a `health` section, after the checks. It
+reads the ring once from this host — the same address `status` probes — and
+gives up after 3 s, saying so, when no agent answers. It never changes the exit
+status: the prerequisites decide that.
+
+The ring is 60 s by default, so this sees what is happening now, not what
+happened this morning; the dashboards and the alert rules read history. What it
+looks for, in counts of events a healthy router does not produce rather than
+thresholds tuned to one device:
+
+- **`layer2-loop`**: three or more frames in the window that came back in on a
+  port carrying the bridge's own address as their source. The loop on the
+  reference RB5009 repeated it every 2.0 s, the STP hello interval, while every
+  RouterOS counter showed the port healthy and STP kept it blocked, sending
+  one packet a second, for days.
+- **`stp-churn`**: a port that STP moved to learning at least three more times
+  than it let it forward, without that signature. Not a count of blocks: every
+  healthy link-up logs three of those at once, and reaches forwarding 2–3 s
+  later; on the reference router's 30 days of data, every healthy link-up left
+  learning minus forwarding at 0.
+- **`link-flap`**: two or more link-downs on one port, the count the collector's
+  own link-flap marker uses.
+- **`softnet-drops`**: any packet the kernel dropped from its softnet backlog —
+  lost inside the router, where no interface counter sees it. Squeezes are not
+  counted: a squeeze is the kernel pacing itself.
+
+Each finding names the RouterOS port, on a board the port map knows, and the
+kernel's name otherwise. The kernel-log records are classified again here from
+their text, so an agent older than the classification is read the same way.
 
 ### What your host needs
 

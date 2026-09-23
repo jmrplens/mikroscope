@@ -8,9 +8,15 @@ import (
 )
 
 // Item is one preflight check with the exact fix when it fails.
+//
+// Warn marks a finding that is worth an operator's attention but does not
+// stop an install: a failing Warn item is printed as WARN, left out of
+// Failed(), and so changes neither doctor's exit status nor install's
+// decision to proceed.
 type Item struct {
 	Name string
 	OK   bool
+	Warn bool
 	Got  string
 	Fix  string // RouterOS command or physical step; empty when OK
 }
@@ -21,11 +27,11 @@ type Report struct {
 	Items  []Item
 }
 
-// Failed lists the items that are not OK.
+// Failed lists the prerequisites that are not met. Warnings are not in it.
 func (r Report) Failed() []Item {
 	var out []Item
 	for _, it := range r.Items {
-		if !it.OK {
+		if !it.OK && !it.Warn {
 			out = append(out, it)
 		}
 	}
@@ -35,35 +41,68 @@ func (r Report) Failed() []Item {
 // routerOSArch maps GOARCH to /system/resource architecture-name.
 var routerOSArch = map[string]string{"arm64": "arm64", "arm": "arm", "amd64": "x86_64"}
 
+// The names doctor asks its batched queries under and reads the answers by.
+const (
+	qVersion      = "version"
+	qBoard        = "board"
+	qArch         = "arch"
+	qFreeMemory   = "free-memory"
+	qFreeHdd      = "free-hdd"
+	qPackage      = "package"
+	qDeviceMode   = "device-mode"
+	qIfaceList    = "iface-list"
+	qAddrList     = "addr-list"
+	qVeth         = "veth"
+	qExposed      = "exposed"
+	qTokenEnv     = "token-env"
+	qDisk         = "disk"
+	qRegistryURL  = "registry-url"
+	qRegistryUser = "registry-user"
+
+	foundPrefix = "found="
+)
+
 // Doctor runs every preflight read in one connect and writes nothing. Each
 // failing item names the RouterOS command or the physical step that fixes
 // it — including the one no tool can do for the operator: MikroTik gates
 // `device-mode container=yes` behind a physical reset-button press or a cold
 // reboot.
 func Doctor(r Runner, o Options, imageBytes int) (Report, error) {
-	queries := []string{
-		`:put [/system/resource/get version]`,
-		`:put [/system/resource/get board-name]`,
-		`:put [/system/resource/get architecture-name]`,
-		`:put [/system/resource/get free-memory]`,
-		`:put [/system/resource/get free-hdd-space]`,
-		`:put [:len [/system/package/find name="container" disabled=no]]`,
-		`:put [/system/device-mode/get container]`,
-		`:put [:len [/interface/list/find name="` + o.IfaceList + `"]]`,
-		`:put [:len [/ip/firewall/address-list/find list="` + o.AddrList + `"]]`,
-		`:put [:len [/interface/veth/find name="` + o.Veth + `"]]`,
-	}
+	// Every answer is looked up by name, never by position from the end: the
+	// optional queries used to share `lines[len(lines)-1]`, so with --disk
+	// and a registry host together the disk check read the registry-url line
+	// and passed whatever it said.
+	var q doctorQueries
+	q.add(qVersion, `:put [/system/resource/get version]`)
+	q.add(qBoard, `:put [/system/resource/get board-name]`)
+	q.add(qArch, `:put [/system/resource/get architecture-name]`)
+	q.add(qFreeMemory, `:put [/system/resource/get free-memory]`)
+	q.add(qFreeHdd, `:put [/system/resource/get free-hdd-space]`)
+	q.add(qPackage, `:put [:len [/system/package/find name="container" disabled=no]]`)
+	q.add(qDeviceMode, `:put [/system/device-mode/get container]`)
+	q.add(qIfaceList, `:put [:len [/interface/list/find name="`+o.IfaceList+`"]]`)
+	q.add(qAddrList, `:put [:len [/ip/firewall/address-list/find list="`+o.AddrList+`"]]`)
+	q.add(qVeth, `:put [:len [/interface/veth/find name="`+o.Veth+`"]]`)
+	// An install already on the router that publishes the agent on the LAN
+	// (the dst-nat carries this install's tag) while its environment holds no
+	// TOKEN: every host on the LAN can read it. Counts only, never the value.
+	q.add(qExposed, `:put [:len [/ip/firewall/nat/find comment="`+o.Tag()+`" action=dst-nat]]`)
+	q.add(qTokenEnv, `:put [:len [/container/envs/find list="`+o.EnvList()+`" key="TOKEN"]]`)
 	if o.Disk != "" {
-		queries = append(queries, `:put [:len [/disk/find slot="`+o.Disk+`"]]`)
+		q.add(qDisk, `:put [:len [/disk/find slot="`+o.Disk+`"]]`)
 	}
-	if host := o.RegistryHost(); host != "" {
-		queries = append(queries, `:put [/container/config/get registry-url]`)
+	if o.UsesRemoteImage() {
+		q.add(qRegistryURL, `:put [/container/config/get registry-url]`)
+		// Whether a registry username is set, as a boolean: the name is the
+		// operator's and the password cannot be read back at all.
+		q.add(qRegistryUser, `:put ([:len [/container/config/get username]] > 0)`)
 	}
-	lines, err := batch(r, queries)
+	lines, err := batch(r, q.queries)
 	if err != nil {
 		return Report{}, fmt.Errorf("doctor: %w", err)
 	}
-	version, board, arch, freeMem, freeHdd := lines[0], lines[1], lines[2], lines[3], lines[4]
+	at := func(name string) string { return lines[q.index[name]] }
+	version, board, arch, freeMem, freeHdd := at(qVersion), at(qBoard), at(qArch), at(qFreeMemory), at(qFreeHdd)
 	rep := Report{Device: board + ", RouterOS " + version + ", " + arch}
 	add := func(name string, ok bool, got, fix string) {
 		if ok {
@@ -77,14 +116,17 @@ func Doctor(r Runner, o Options, imageBytes int) (Report, error) {
 		// pointing the router's registry somewhere else to install a probe
 		// would be a change to someone else's containers. RouterOS takes the
 		// host from here and only the rest from `remote-image=`.
-		got := strings.TrimSpace(lines[len(lines)-1])
+		got := at(qRegistryURL)
 		want := "https://" + host
 		add("registry-url is "+want, got == want, "registry-url="+quoteEmpty(got),
 			"the registry host is a global RouterOS setting this tool does not write. Run `/container/config/set registry-url="+want+"` on the router (it applies to every container on the device), or install from a tar with --agent-tar instead")
 	}
-	add("container package installed and enabled", lines[5] != "0", "found="+lines[5],
+	if o.UsesRemoteImage() {
+		addRegistryCredential(&rep, o, at(qRegistryURL), isYes(at(qRegistryUser)))
+	}
+	add("container package installed and enabled", at(qPackage) != "0", foundPrefix+at(qPackage),
 		"download the `container` package for this architecture and RouterOS version from mikrotik.com, upload it to the router, reboot; then `/system/package/enable container`")
-	add("device-mode container=yes", isYes(lines[6]), "container="+lines[6],
+	add("device-mode container=yes", isYes(at(qDeviceMode)), "container="+at(qDeviceMode),
 		"`/system/device-mode/update container=yes`, then press the reset button or power-cycle within 5 minutes when the console says `update: please activate by turning power off or pressing reset or mode button`")
 	wantArch := routerOSArch[o.Arch]
 	add("architecture matches --arch "+o.Arch, arch == wantArch, "router="+arch,
@@ -103,15 +145,73 @@ func Doctor(r Runner, o Options, imageBytes int) (Report, error) {
 		add(fmt.Sprintf("free flash ≥ %s (image tar + extracted root)", humanBytes(need)), hdd >= need, humanBytes(hdd),
 			"free space on the internal flash, or install with `--disk tmpfs` / `--ephemeral` where a tmpfs disk exists")
 	} else {
-		add("disk "+o.Disk+" exists", lines[len(lines)-1] != "0", "found="+lines[len(lines)-1],
+		add("disk "+o.Disk+" exists", at(qDisk) != "0", foundPrefix+at(qDisk),
 			"`/disk/add type=tmpfs tmpfs-max-size=64M slot=tmpfs` for a RAM disk, or name an existing disk with --disk")
 	}
-	add("interface list "+o.IfaceList+" exists (raw rule trap)", lines[7] != "0", "found="+lines[7],
+	add("interface list "+o.IfaceList+" exists (raw rule trap)", at(qIfaceList) != "0", foundPrefix+at(qIfaceList),
 		"`/interface/list/add name="+o.IfaceList+"`, or pass the list your firewall's `in-interface-list=!…` drop rule uses with --iface-list")
-	add("address list "+o.AddrList+" has entries (raw rule trap)", lines[8] != "0", "entries="+lines[8],
+	add("address list "+o.AddrList+" has entries (raw rule trap)", at(qAddrList) != "0", "entries="+at(qAddrList),
 		"pass the list your firewall's `drop local if not from default IP range` rule uses with --addr-list (an empty list is fine only if no such rule exists)")
-	add("veth name "+o.Veth+" is free or ours", true, "found="+lines[9], "")
+	add("veth name "+o.Veth+" is free or ours", true, foundPrefix+at(qVeth), "")
+	if exposed := at(qExposed); exposed != "0" {
+		tokenSet := at(qTokenEnv) != "0"
+		rep.Items = append(rep.Items, Item{
+			Name: "the installed agent published on the LAN asks for a token", OK: tokenSet, Warn: true,
+			Got: "dst-nat=" + exposed + " token=" + setOrUnset(tokenSet),
+			Fix: "the install named " + o.Name + " publishes the agent on the LAN with no token, so any host there can read it. " +
+				"Re-run `mikroscope upgrade` with the same --name and --token <secret>, or `uninstall --expose` to withdraw it from the LAN",
+		})
+	}
 	return rep, nil
+}
+
+// doctorQueries keeps each query's position under its name.
+type doctorQueries struct {
+	queries []string
+	index   map[string]int
+}
+
+func (q *doctorQueries) add(name, query string) {
+	if q.index == nil {
+		q.index = map[string]int{}
+	}
+	q.index[name] = len(q.queries)
+	q.queries = append(q.queries, query)
+}
+
+func setOrUnset(set bool) string {
+	if set {
+		return "set"
+	}
+	return "unset"
+}
+
+// dockerHub is every spelling of Docker Hub a registry-url or an image
+// reference can carry; the empty string is RouterOS's default, which is Docker
+// Hub too.
+var dockerHub = map[string]bool{
+	"": true, "docker.io": true, "registry-1.docker.io": true, "index.docker.io": true, "registry.hub.docker.com": true,
+}
+
+// addRegistryCredential warns about a registry username that will be sent to
+// the wrong registry. /container/config holds ONE username and password for
+// the whole device and RouterOS presents them to whichever registry it pulls
+// from. They are nearly always a Docker Hub account, set to lift Docker Hub's
+// pull limit, and a Docker Hub credential presented to another registry makes
+// the pull end in `auth error`, even for an image anyone can pull anonymously.
+func addRegistryCredential(rep *Report, o Options, registryURL string, userSet bool) {
+	host := o.RegistryHost()
+	if host == "" {
+		host = strings.TrimPrefix(strings.TrimPrefix(registryURL, "https://"), "http://")
+	}
+	host = strings.TrimSuffix(host, "/")
+	rep.Items = append(rep.Items, Item{
+		Name: "no registry credential meant for another registry", OK: !userSet || dockerHub[host], Warn: true,
+		Got: "pull from " + quoteEmpty(host) + ", username " + setOrUnset(userSet),
+		Fix: "/container/config carries one username for the whole device, and RouterOS will present it to " + host +
+			": the pull fails with `auth error` if it belongs to another registry. Install from a tar with --agent-tar " +
+			"(nothing is pulled), or clear the username if nothing else on the router needs it",
+	})
 }
 
 // quoteEmpty renders an empty reading as something a reader can see.
@@ -155,7 +255,10 @@ func (r Report) Print(w io.Writer) {
 	fmt.Fprintf(w, "device: %s\n", r.Device)
 	for _, it := range r.Items {
 		mark := "ok  "
-		if !it.OK {
+		switch {
+		case !it.OK && it.Warn:
+			mark = "WARN"
+		case !it.OK:
 			mark = "MISSING"
 		}
 		fmt.Fprintf(w, "  %-7s %s (%s)\n", mark, it.Name, it.Got)

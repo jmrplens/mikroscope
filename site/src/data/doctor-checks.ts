@@ -8,6 +8,10 @@
  * than a table cell. The free-flash and disk checks are exclusive: doctor runs
  * the first without `--disk` or `--ephemeral`, the second with one. The
  * registry-url check runs only with a `--remote-image` that names a host.
+ * The registry-credential check runs with any `--remote-image`, and the
+ * exposed-token check only when an install of that `--name` is published on
+ * the LAN. Those two are warnings: doctor prints them as `WARN`, and they
+ * change neither its exit status nor whether `install` goes ahead.
  */
 import type { Lang } from "./measurements";
 
@@ -31,6 +35,18 @@ export const doctorChecks: readonly DoctorCheck[] = [
 		fix: {
 			en: "`/container/config/set registry-url=https://<host>` on the router, which applies to every container on it, or install from a tar with `--agent-tar`",
 			es: "`/container/config/set registry-url=https://<host>` en el router, que afecta a todos sus contenedores, o instalar desde un tar con `--agent-tar`",
+		},
+	},
+	{
+		id: "registry-credential",
+		printed: "no registry credential meant for another registry",
+		passes: {
+			en: "a warning, with `--remote-image` only: no `/container/config` username is set, or the pull goes to Docker Hub. Doctor reads whether a username is set, never the name, and cannot read the password",
+			es: "un aviso, solo con `--remote-image`: no hay usuario en `/container/config`, o la descarga va a Docker Hub. Doctor lee si hay usuario, nunca el nombre, y no puede leer la contraseña",
+		},
+		fix: {
+			en: "RouterOS presents the one device-wide credential to whichever registry it pulls from, and a Docker Hub account sent to GHCR ends the pull in `auth error`. Install from a tar with `--agent-tar`, or clear the username if nothing else needs it",
+			es: "RouterOS presenta la única credencial del equipo a cualquier registro del que descargue, y una cuenta de Docker Hub enviada a GHCR termina la descarga en `auth error`. Instalar desde un tar con `--agent-tar`, o borrar el usuario si nada más lo necesita",
 		},
 	},
 	{
@@ -139,6 +155,18 @@ export const doctorChecks: readonly DoctorCheck[] = [
 		fix: {
 			en: "none: a collision is caught by `install` itself",
 			es: "ninguna: una colisión la detecta el propio `install`",
+		},
+	},
+	{
+		id: "exposed-token",
+		printed: "the installed agent published on the LAN asks for a token",
+		passes: {
+			en: "a warning, shown only when an install of this `--name` has a dst-nat on the LAN: its environment holds a `TOKEN`. Doctor counts the entries, never reads the value",
+			es: "un aviso, que solo aparece cuando una instalación con este `--name` tiene un dst-nat en la LAN: su entorno contiene un `TOKEN`. Doctor cuenta las entradas, nunca lee el valor",
+		},
+		fix: {
+			en: "`upgrade` with the same `--name` and `--token <secret>`, or `uninstall --expose` to take it off the LAN",
+			es: "`upgrade` con el mismo `--name` y `--token <secreto>`, o `uninstall --expose` para retirarlo de la LAN",
 		},
 	},
 ];

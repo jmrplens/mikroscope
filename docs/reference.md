@@ -59,7 +59,7 @@ the credentials that have no flag at all.
 
 | Verb        | What it does                                                                                                                           | Writes to the router |
 | ----------- | -------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
-| `doctor`    | Read-only preflight in one ssh connect; each failing check names its fix. Exits 1 if any prerequisite is missing.                      | no                   |
+| `doctor`    | Read-only preflight in one ssh connect; each failing check names its fix. Then reads the running agent's ring for a loop, STP churn, link flaps and softnet drops. Exits 1 if any prerequisite is missing; warnings and findings do not. | no                   |
 | `plan`      | Prints every object `install` would create, then stops. Same as `install --dry-run`; with `--rsc` it writes a RouterOS script instead. | no                   |
 | `install`   | Gets the image, prints the listing, runs `doctor`, asks for confirmation, writes, then probes the agent from this host.                | yes                  |
 | `upgrade`   | Gets a new image, checks that every install step is present, asks, removes and re-creates the container step, then probes.             | yes                  |
@@ -74,6 +74,7 @@ The checks doctor runs:
 | Check, as printed | Passes when | The fix it names |
 | --- | --- | --- |
 | registry-url is https://<host> | with `--remote-image`, `/container/config registry-url` names the reference's registry host. Without `--remote-image` doctor does not ask: the setting is global to the device and mikroscope never writes it | `/container/config/set registry-url=https://<host>` on the router, which applies to every container on it, or install from a tar with `--agent-tar` |
+| no registry credential meant for another registry | a warning, with `--remote-image` only: no `/container/config` username is set, or the pull goes to Docker Hub. Doctor reads whether a username is set, never the name, and cannot read the password | RouterOS presents the one device-wide credential to whichever registry it pulls from, and a Docker Hub account sent to GHCR ends the pull in `auth error`. Install from a tar with `--agent-tar`, or clear the username if nothing else needs it |
 | container package installed and enabled | a `container` package exists with `disabled=no` | download, upload, reboot; then `/system/package/enable container` |
 | device-mode container=yes | `/system/device-mode` reports `container=yes` | `/system/device-mode/update container=yes`, then the reset or mode button, or a power cycle, within 5 minutes |
 | architecture matches --arch <arch> | the router's `architecture-name` is the one `--arch` maps to (`arm64`, `arm`, `x86_64`) | re-run with the `--arch` it names |
@@ -83,6 +84,7 @@ The checks doctor runs:
 | interface list <list> exists (raw rule trap) | the `--iface-list` list (default `LAN`) exists | `/interface/list/add name=…`, or pass the list your `in-interface-list=!…` drop rule uses |
 | address list <list> has entries (raw rule trap) | the `--addr-list` list (default `LANs`) has at least one entry | pass the list your `drop local if not from default IP range` rule uses; an empty list is fine only if there is no such rule |
 | veth name <veth> is free or ours | always reported `ok`, with the count found | none: a collision is caught by `install` itself |
+| the installed agent published on the LAN asks for a token | a warning, shown only when an install of this `--name` has a dst-nat on the LAN: its environment holds a `TOKEN`. Doctor counts the entries, never reads the value | `upgrade` with the same `--name` and `--token <secret>`, or `uninstall --expose` to take it off the LAN |
 
 > **Three ways to get the agent image, one flag apart**
 >
@@ -2278,6 +2280,9 @@ says what it means and where the explanation lives.
 | `--agent-tar …: this is not a mikroscope agent image`                 | The wrong asset — see [which tar](https://jmrp.io/docs/mikroscope/install/routes/#which-tar) |
 | `doctor`: `registry-url is https://ghcr.io … registry-url=…`          | [The registry host is global](https://jmrp.io/docs/mikroscope/reference/troubleshooting/#the-registry-host)                      |
 | `doctor`: `free flash ≥ …` fails                                      | `--disk tmpfs` or `--ephemeral`, or free space on the flash            |
+| `doctor`: `WARN no registry credential meant for another registry`    | [One credential for every registry](https://jmrp.io/docs/mikroscope/reference/troubleshooting/#one-credential-for-every-registry) |
+| `doctor`: `WARN the installed agent published on the LAN asks for a token` | `upgrade` with `--token`, or `uninstall --expose`                  |
+| `doctor`: `WARN layer2-loop` in the `health` section                  | [A loop RouterOS does not show](https://jmrp.io/docs/mikroscope/reference/troubleshooting/#a-loop-routeros-does-not-show)        |
 
 #### device-mode container=yes
 
@@ -2331,6 +2336,28 @@ every other container on the device, and mikroscope reads it and never writes
 it. The Docker Hub reference works out of the box because that is what RouterOS
 ships pointing at; the GHCR one needs the setting changed first, which changes
 it for everyone else on that router too.
+
+#### One credential for every registry
+
+`/container/config` holds one username and password for the device, and
+RouterOS presents them to whichever registry it pulls from. A Docker Hub account
+presented to GHCR fails, and the container stays in `error` with `auth error` in
+its log, for an image anyone can pull anonymously. Install from a tar with
+`--agent-tar`, which pulls nothing, or pull the Docker Hub reference, or clear
+the username if nothing else on the router needs it. The password cannot be read
+back once cleared, so do that only knowing where it lives.
+
+#### A loop RouterOS does not show
+
+The bridge is receiving its own frames back on that port: something behind it
+reaches the router by a second path. A mesh node with both a cable and a
+wireless backhaul is the usual cause, and so is a switch cabled twice. STP does
+its job and blocks the port, so nothing melts down, and RouterOS reports the
+port running and error-free — but whatever is behind it reaches the router
+some other way or not at all. On the reference RB5009 the port received 12 to
+13 packets a second and sent 1 on two days of the loop (2026-09-21 and 22), and
+192 and 178 on the day after the second path went (2026-09-23). Find the second path and break it; the finding goes away
+within one ring.
 
 ### The agent is installed and nothing answers
 
