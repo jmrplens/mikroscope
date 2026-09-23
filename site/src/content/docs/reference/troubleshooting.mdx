@@ -26,6 +26,9 @@ says what it means and where the explanation lives.
 | `--agent-tar …: this is not a mikroscope agent image`                 | The wrong asset — see [which tar](/mikroscope/install/routes/#which-tar) |
 | `doctor`: `registry-url is https://ghcr.io … registry-url=…`          | [The registry host is global](#the-registry-host)                      |
 | `doctor`: `free flash ≥ …` fails                                      | `--disk tmpfs` or `--ephemeral`, or free space on the flash            |
+| `doctor`: `WARN no registry credential meant for another registry`    | [One credential for every registry](#one-credential-for-every-registry) |
+| `doctor`: `WARN the installed agent published on the LAN asks for a token` | `upgrade` with `--token`, or `uninstall --expose`                  |
+| `doctor`: `WARN layer2-loop` in the `health` section                  | [A loop RouterOS does not show](#a-loop-routeros-does-not-show)        |
 
 </ScrollTable>
 
@@ -81,6 +84,28 @@ every other container on the device, and mikroscope reads it and never writes
 it. The Docker Hub reference works out of the box because that is what RouterOS
 ships pointing at; the GHCR one needs the setting changed first, which changes
 it for everyone else on that router too.
+
+### One credential for every registry
+
+`/container/config` holds one username and password for the device, and
+RouterOS presents them to whichever registry it pulls from. A Docker Hub account
+presented to GHCR fails, and the container stays in `error` with `auth error` in
+its log, for an image anyone can pull anonymously. Install from a tar with
+`--agent-tar`, which pulls nothing, or pull the Docker Hub reference, or clear
+the username if nothing else on the router needs it. The password cannot be read
+back once cleared, so do that only knowing where it lives.
+
+### A loop RouterOS does not show
+
+The bridge is receiving its own frames back on that port: something behind it
+reaches the router by a second path. A mesh node with both a cable and a
+wireless backhaul is the usual cause, and so is a switch cabled twice. STP does
+its job and blocks the port, so nothing melts down, and RouterOS reports the
+port running and error-free — but whatever is behind it reaches the router
+some other way or not at all. On the reference RB5009 the port received 12 to
+13 packets a second and sent 1 on two days of the loop (2026-09-21 and 22), and
+192 and 178 on the day after the second path went (2026-09-23). Find the second path and break it; the finding goes away
+within one ring.
 
 ## The agent is installed and nothing answers
 

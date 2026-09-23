@@ -25,7 +25,7 @@ func (s *scriptedRunner) Upload([]byte, string) error { return nil }
 
 func TestDoctorReportsEveryMissingPrerequisiteWithItsFix(t *testing.T) {
 	o := defaults(t, nil) // flash install, arm64
-	healthy := &scriptedRunner{lines: []string{"7.24.2", "RB5009UG+S+", "arm64", "823000000", "902000000", "1", "yes", "1", "6", "0"}}
+	healthy := &scriptedRunner{lines: []string{"7.24.2", "RB5009UG+S+", "arm64", "823000000", "902000000", "1", "yes", "1", "6", "0", "0", "0"}}
 	rep, err := Doctor(healthy, o, 6<<20)
 	if err != nil {
 		t.Fatal(err)
@@ -39,7 +39,7 @@ func TestDoctorReportsEveryMissingPrerequisiteWithItsFix(t *testing.T) {
 	assertSickDeviceFlagged(t, o)
 	// Ephemeral asks for the tmpfs disk instead of flash space.
 	eph := defaults(t, func(o *Options) { o.Ephemeral = true })
-	noDisk := &scriptedRunner{lines: []string{"7.24.2", "RB5009UG+S+", "arm64", "823000000", "1000", "1", "yes", "1", "6", "0", "0"}}
+	noDisk := &scriptedRunner{lines: []string{"7.24.2", "RB5009UG+S+", "arm64", "823000000", "1000", "1", "yes", "1", "6", "0", "0", "0", "0"}}
 	rep, err = Doctor(noDisk, eph, 6<<20)
 	if err != nil {
 		t.Fatal(err)
@@ -55,7 +55,7 @@ func TestDoctorReportsEveryMissingPrerequisiteWithItsFix(t *testing.T) {
 // step to take.
 func assertSickDeviceFlagged(t *testing.T, o Options) {
 	t.Helper()
-	sick := &scriptedRunner{lines: []string{"7.24.2", "hEX S", "arm", "300000000", "1000000", "0", "no", "0", "0", "0"}}
+	sick := &scriptedRunner{lines: []string{"7.24.2", "hEX S", "arm", "300000000", "1000000", "0", "no", "0", "0", "0", "0", "0"}}
 	rep, err := Doctor(sick, o, 6<<20)
 	if err != nil {
 		t.Fatal(err)
@@ -137,6 +137,159 @@ func TestUpgradeReplacesOnlyTheContainer(t *testing.T) {
 	for _, cmd := range f.ran {
 		if strings.Contains(cmd, "/interface/veth") || strings.Contains(cmd, "/ip/address") {
 			t.Fatalf("upgrade touched the network objects: %s", cmd)
+		}
+	}
+}
+
+// answeringRunner answers each query of a batch by the first substring of it
+// that it knows, so a test states what the router holds rather than the order
+// doctor happens to ask in.
+type answeringRunner struct {
+	answers [][2]string // substring of the query, answer
+	ran     []string
+}
+
+func (a *answeringRunner) Run(command string) (string, error) {
+	a.ran = append(a.ran, command)
+	var out []string
+	for q := range strings.SplitSeq(command, "\n") {
+		ans := "0"
+		for _, kv := range a.answers {
+			if strings.Contains(q, kv[0]) {
+				ans = kv[1]
+				break
+			}
+		}
+		out = append(out, ans)
+	}
+	return strings.Join(out, "\n") + "\n", nil
+}
+
+func (a *answeringRunner) Upload([]byte, string) error { return nil }
+
+func healthyAnswers(extra ...[2]string) *answeringRunner {
+	base := [][2]string{
+		{"get version", "7.24.2"},
+		{"board-name", "RB5009UG+S+"},
+		{"architecture-name", "arm64"},
+		{"free-memory", "823000000"},
+		{"free-hdd-space", "902000000"},
+		{`name="container"`, "1"},
+		{"device-mode", "yes"},
+		{"/interface/list/find", "1"},
+		{"address-list", "6"},
+	}
+	return &answeringRunner{answers: append(extra, base...)}
+}
+
+func item(rep Report, prefix string) *Item {
+	for i := range rep.Items {
+		if strings.HasPrefix(rep.Items[i].Name, prefix) {
+			return &rep.Items[i]
+		}
+	}
+	return nil
+}
+
+// Regression: with --disk and a registry host together, the disk check read
+// the LAST answer — registry-url's — and passed on a router with no such disk.
+func TestDoctorDiskAndRegistryAnswersDoNotShareALine(t *testing.T) {
+	o := defaults(t, func(o *Options) {
+		o.Disk = "tmpfs"
+		o.RemoteImage = "ghcr.io/jmrplens/mikroscope-agent:1.1.0"
+	})
+	r := healthyAnswers([2]string{"/disk/find", "0"}, [2]string{"registry-url", "https://ghcr.io"})
+	rep, err := Doctor(r, o, 6<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	disk := item(rep, "disk tmpfs exists")
+	if disk == nil || disk.OK || disk.Got != "found=0" {
+		t.Fatalf("disk check read the wrong answer: %+v", disk)
+	}
+	reg := item(rep, "registry-url is https://ghcr.io")
+	if reg == nil || !reg.OK {
+		t.Fatalf("registry-url check: %+v", reg)
+	}
+}
+
+func TestDoctorWarnsOfACredentialForAnotherRegistry(t *testing.T) {
+	cases := []struct {
+		name, image, url, user string
+		warn                   bool
+	}{
+		{"docker hub user, ghcr image", "ghcr.io/jmrplens/mikroscope-agent:1.1.0", "https://registry-1.docker.io", "true", true},
+		{"no user, ghcr image", "ghcr.io/jmrplens/mikroscope-agent:1.1.0", "https://ghcr.io", "false", false},
+		{"docker hub user, hub image", "jmrplens/mikroscope-agent:1.1.0", "https://registry-1.docker.io", "true", false},
+		{"docker hub user, default registry", "jmrplens/mikroscope-agent:1.1.0", "", "true", false},
+		{"user, hostless ref on a ghcr registry-url", "jmrplens/mikroscope-agent:1.1.0", "https://ghcr.io/", "true", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			o := defaults(t, func(o *Options) { o.RemoteImage = tc.image })
+			r := healthyAnswers([2]string{"registry-url", tc.url}, [2]string{"get username", tc.user})
+			rep, err := Doctor(r, o, 6<<20)
+			if err != nil {
+				t.Fatal(err)
+			}
+			it := item(rep, "no registry credential")
+			if it == nil || !it.Warn || it.OK == tc.warn {
+				t.Fatalf("credential item = %+v, want warn=%v", it, tc.warn)
+			}
+			if strings.Contains(r.ran[0], "get password") {
+				t.Fatal("doctor asked for the registry password")
+			}
+			for _, f := range rep.Failed() {
+				if f.Name == it.Name {
+					t.Fatal("a warning was counted as a missing prerequisite")
+				}
+			}
+		})
+	}
+	// A tar install pulls nothing and is not asked about.
+	rep, err := Doctor(healthyAnswers(), defaults(t, nil), 6<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if item(rep, "no registry credential") != nil {
+		t.Fatal("tar install was checked for a registry credential")
+	}
+}
+
+func TestDoctorWarnsOfAnExposedAgentWithoutAToken(t *testing.T) {
+	o := defaults(t, nil)
+	for _, tc := range []struct {
+		nat, token string
+		want       string // "" = no item, else "ok" or "warn"
+	}{
+		{"0", "0", ""}, {"1", "1", "ok"}, {"1", "0", "warn"},
+	} {
+		r := healthyAnswers([2]string{"action=dst-nat", tc.nat}, [2]string{`key="TOKEN"`, tc.token})
+		rep, err := Doctor(r, o, 6<<20)
+		if err != nil {
+			t.Fatal(err)
+		}
+		it := item(rep, "the installed agent published on the LAN")
+		switch {
+		case tc.want == "" && it != nil, tc.want != "" && it == nil:
+			t.Fatalf("nat=%s token=%s: item %+v", tc.nat, tc.token, it)
+		case tc.want == "warn" && (it.OK || !it.Warn || !strings.Contains(it.Fix, "--token")):
+			t.Fatalf("exposed without token not warned: %+v", it)
+		case tc.want == "ok" && !it.OK:
+			t.Fatalf("exposed with token warned: %+v", it)
+		}
+		if len(rep.Failed()) != 0 {
+			t.Fatalf("a warning changed the exit status: %+v", rep.Failed())
+		}
+		if tc.want == "warn" {
+			var buf bytes.Buffer
+			rep.Print(&buf)
+			if !strings.Contains(buf.String(), "  WARN    the installed agent") || !strings.Contains(buf.String(), "token=unset") {
+				t.Fatalf("printed report:\n%s", buf.String())
+			}
+		}
+		if !strings.Contains(r.ran[0], `comment="mikroscope:mikroscope (managed by mikroscope)"`) {
+			t.Fatalf("exposure query does not carry the install's tag: %s", r.ran[0])
 		}
 	}
 }

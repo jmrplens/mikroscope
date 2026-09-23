@@ -113,8 +113,10 @@ func TestStatusReportsAReachableAgentAndItsBoard(t *testing.T) {
 // is what an operator sees on a device that is not ready.
 func TestDoctorReportsEveryCheckAndFailsWhenTheRouterIsNotReady(t *testing.T) {
 	stubRouter(t, "0")
+	c := deployCLI(t)
+	c.opts.ContainerIP, c.opts.Port = "127.0.0.1", 1 // no agent: refused at once, not a 3 s timeout
 	var err error
-	out := capture(t, func() { err = doctor(deployCLI(t)) })
+	out := capture(t, func() { err = doctor(c) })
 	if err == nil {
 		t.Error("doctor passed against a router that answered 0 to everything")
 	}

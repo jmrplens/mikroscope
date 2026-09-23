@@ -4,6 +4,39 @@ Notable changes per release. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the versions
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`doctor` reads what the running agent sees.** After the preflight checks,
+  standalone `doctor` pulls the agent's ring once from this host and names four
+  faults RouterOS's own tools do not show: a layer-2 loop (three or more frames
+  back in on a port with the bridge's own source address), STP churn (a port
+  moved to learning at least three more times than it was let forward), a link
+  flap (two or more link-downs on one port) and softnet drops. Counts of events
+  a healthy router does not produce, not thresholds tuned to one device: the
+  loop on the reference RB5009 repeated every 2.0 s, and its 30 days of data
+  left learning minus forwarding at 0 on every healthy link-up. An agent that
+  does not answer within 3 s is said so and skipped. Findings never change the
+  exit status.
+- **Two warnings, a new `WARN` severity.** With `--remote-image`, doctor warns
+  when a `/container/config` username is set and the pull goes anywhere but
+  Docker Hub: RouterOS presents that one device-wide credential to every
+  registry, and a Docker Hub account sent to GHCR ends the pull in `auth error`.
+  And it warns when an install of the same `--name` is published on the LAN
+  with no `TOKEN` in its environment. Both were reproduced on the reference
+  RB5009 (RouterOS 7.24.4, 2026-09-23): the first read-only, the second with a
+  throwaway install that was exposed, upgraded without a token and removed.
+  Doctor reads whether a username is set and how many `TOKEN` entries exist,
+  never a value. `WARN` changes neither doctor's exit status nor whether
+  `install` proceeds.
+
+### Fixed
+
+- **`doctor --disk` with a registry host passed the disk check on any answer.**
+  Both optional checks read the last line of the batch, so the disk check read
+  the registry-url line. Every answer is now looked up by name.
+
 ## [1.1.0] - 2026-09-22
 
 ### Added

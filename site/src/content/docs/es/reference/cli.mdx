@@ -69,7 +69,7 @@ incluidas las credenciales que no tienen ninguna opción.
 
 | Verbo       | Qué hace                                                                                                                                             | Escribe en el router |
 | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
-| `doctor`    | Comprobación previa de solo lectura en una conexión ssh; cada comprobación que falla nombra su arreglo. Sale con 1 si falta algún requisito.         | no                   |
+| `doctor`    | Comprobación previa de solo lectura en una conexión ssh; cada comprobación que falla nombra su arreglo. Después lee el anillo del agente en marcha en busca de un bucle, churn de STP, flaps de enlace y descartes softnet. Sale con 1 si falta algún requisito; los avisos y hallazgos no. | no                   |
 | `plan`      | Imprime cada objeto que crearía `install` y se detiene. Igual que `install --dry-run`; con `--rsc` escribe en su lugar un script de RouterOS.        | no                   |
 | `install`   | Consigue la imagen, imprime el listado, ejecuta `doctor`, pide confirmación, escribe y después sondea el agente desde este equipo.                   | sí                   |
 | `upgrade`   | Consigue una imagen nueva, comprueba que están todos los pasos de la instalación, pregunta, borra y vuelve a crear el paso del contenedor, y sondea. | sí                   |

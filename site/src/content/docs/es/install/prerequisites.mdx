@@ -107,11 +107,12 @@ alimentación antes de aceptar otro.
 ## Lo que comprueba doctor
 
 `doctor` imprime `device:` con la placa, la versión de RouterOS y la
-arquitectura, y después una línea por comprobación marcada `ok` o `MISSING`, con
-lo que encontró entre paréntesis y, si falta algo, una línea `fix:`. Termina con
-`doctor: every prerequisite is met`, o falla con
-`N prerequisite(s) missing; nothing was written`. `install` ejecuta primero las
-mismas comprobaciones salvo que pases `--no-doctor`.
+arquitectura, y después una línea por comprobación marcada `ok`, `MISSING` o
+`WARN`, con lo que encontró entre paréntesis y, si falta algo o hay un aviso,
+una línea `fix:`. Termina con `doctor: every prerequisite is met`, o falla con
+`N prerequisite(s) missing; nothing was written`. Un `WARN` es un consejo: nunca
+cambia ese final, e `install` sigue adelante a pesar de él. `install` ejecuta
+primero las mismas comprobaciones salvo que pases `--no-doctor`.
 
 <DoctorChecks />
 
@@ -134,12 +135,61 @@ un router sin tocar, y la de GHCR es la que exige cambiar antes el ajuste.
 [Cuatro formas de instalar](/mikroscope/es/install/routes/#un-pull-del-registro)
 tiene la orden para ponerlo a mano.
 
+El mismo ajuste guarda un único usuario y contraseña para todo el equipo, y
+RouterOS los presenta a cualquier registro del que descargue. Casi siempre son
+una cuenta de Docker Hub, puesta para levantar su límite de descargas, y esa
+cuenta presentada a GHCR termina la descarga en `auth error`, aunque la imagen
+se pueda descargar de forma anónima. Así que con cualquier `--remote-image`,
+doctor pregunta si hay un usuario puesto —un sí o un no, nunca el nombre, y la
+contraseña no se puede leer en absoluto— y avisa cuando lo hay y la descarga va
+a cualquier sitio que no sea Docker Hub.
+
+Cuando ya hay en el router una instalación con el mismo `--name` publicada en la
+LAN (un dst-nat con su etiqueta), doctor cuenta además las entradas `TOKEN` de
+su entorno, sin leerlas, y avisa cuando no hay ninguna: el agente responde a
+cualquiera en la LAN. Un `upgrade` sin `--token` es la forma habitual de llegar
+ahí.
+
 Las dos comprobaciones de listas existen por dos reglas raw del cortafuegos que
 descartan cada paquete que envía un contenedor;
 [Las dos trampas del cortafuegos](/mikroscope/es/install/firewall/) las explica.
 `doctor` marca como ausente una address-list vacía incluso en un router que no
 tiene esa regla; ahí, `--no-doctor` es la forma de pasar, y con ella te saltas
 también todas las demás comprobaciones.
+
+## Lo que muestra el agente en marcha
+
+`doctor` por sí solo, no el que va dentro de `install`, pregunta después al
+agente que ya está en marcha qué tiene su anillo: una sección `health`, tras las
+comprobaciones. Lee el anillo una vez desde esta máquina —la misma dirección que
+sondea `status`— y se rinde a los 3 s, diciéndolo, cuando no responde ningún
+agente. Nunca cambia el código de salida: eso lo deciden los requisitos.
+
+El anillo es de 60 s por defecto, así que esto ve lo que pasa ahora, no lo que
+pasó esta mañana; el histórico lo leen los dashboards y las reglas de alerta. Lo
+que busca, en recuentos de sucesos que un router sano no produce y no en
+umbrales ajustados a un equipo:
+
+- **`layer2-loop`**: tres o más tramas en la ventana que volvieron a entrar por
+  un puerto con la dirección propia del bridge como origen. El bucle del RB5009
+  de referencia lo repetía cada 2,0 s, el intervalo de hello de STP, mientras
+  todos los contadores de RouterOS mostraban el puerto sano y STP lo mantenía
+  bloqueado, enviando un paquete por segundo, durante días.
+- **`stp-churn`**: un puerto que STP pasó a learning al menos tres veces más
+  de las que le dejó reenviar, sin esa firma. No es un recuento de bloqueos:
+  cada link-up sano registra tres de golpe y llega a forwarding 2–3 s después;
+  en los 30 días de datos del router de referencia, todos los link-ups sanos
+  dejaron learning menos forwarding en 0.
+- **`link-flap`**: dos o más caídas de enlace en un puerto, el mismo recuento
+  que usa la marca de link-flap del propio colector.
+- **`softnet-drops`**: cualquier paquete que el kernel descartó de su cola
+  softnet —perdido dentro del router, donde ningún contador de interfaz lo ve—.
+  Los squeezes no cuentan: un squeeze es el kernel dosificándose.
+
+Cada hallazgo nombra el puerto de RouterOS, en una placa que el mapa de puertos
+conoce, y el nombre del kernel en otro caso. Los registros del log del kernel se
+clasifican aquí otra vez a partir de su texto, de modo que un agente anterior a
+la clasificación se lee igual.
 
 ## Lo que necesita tu máquina
 

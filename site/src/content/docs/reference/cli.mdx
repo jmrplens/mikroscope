@@ -68,7 +68,7 @@ the credentials that have no flag at all.
 
 | Verb        | What it does                                                                                                                           | Writes to the router |
 | ----------- | -------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
-| `doctor`    | Read-only preflight in one ssh connect; each failing check names its fix. Exits 1 if any prerequisite is missing.                      | no                   |
+| `doctor`    | Read-only preflight in one ssh connect; each failing check names its fix. Then reads the running agent's ring for a loop, STP churn, link flaps and softnet drops. Exits 1 if any prerequisite is missing; warnings and findings do not. | no                   |
 | `plan`      | Prints every object `install` would create, then stops. Same as `install --dry-run`; with `--rsc` it writes a RouterOS script instead. | no                   |
 | `install`   | Gets the image, prints the listing, runs `doctor`, asks for confirmation, writes, then probes the agent from this host.                | yes                  |
 | `upgrade`   | Gets a new image, checks that every install step is present, asks, removes and re-creates the container step, then probes.             | yes                  |

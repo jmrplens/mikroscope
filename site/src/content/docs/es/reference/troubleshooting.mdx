@@ -26,6 +26,9 @@ significa y dónde está la explicación.
 | `--agent-tar …: this is not a mikroscope agent image`                 | El artefacto equivocado — mira [qué tar](/mikroscope/es/install/routes/#qué-tar) |
 | `doctor`: `registry-url is https://ghcr.io … registry-url=…`          | [El host del registro es global](#el-host-del-registro)                |
 | `doctor`: falla `free flash ≥ …`                                      | `--disk tmpfs` o `--ephemeral`, o libera espacio en la flash           |
+| `doctor`: `WARN no registry credential meant for another registry`    | [Una credencial para todos los registros](#una-credencial-para-todos-los-registros) |
+| `doctor`: `WARN the installed agent published on the LAN asks for a token` | `upgrade` con `--token`, o `uninstall --expose`                    |
+| `doctor`: `WARN layer2-loop` en la sección `health`                   | [Un bucle que RouterOS no muestra](#un-bucle-que-routeros-no-muestra)  |
 
 </ScrollTable>
 
@@ -82,6 +85,30 @@ compartido con todos los demás contenedores del equipo, y mikroscope lo lee y
 nunca lo escribe. La referencia de Docker Hub funciona tal cual porque es a
 donde apunta RouterOS de fábrica; la de GHCR necesita cambiar antes ese ajuste,
 lo que lo cambia también para todos los demás de ese router.
+
+### Una credencial para todos los registros
+
+`/container/config` guarda un único usuario y contraseña para el equipo, y
+RouterOS los presenta a cualquier registro del que descargue. Una cuenta de
+Docker Hub presentada a GHCR falla, y el contenedor se queda en `error` con
+`auth error` en su registro, para una imagen que cualquiera puede descargar de
+forma anónima. Instala desde un tar con `--agent-tar`, que no descarga nada, o
+descarga la referencia de Docker Hub, o borra el usuario si nada más del router
+lo necesita. La contraseña no se puede volver a leer una vez borrada, así que
+hazlo solo sabiendo dónde está guardada.
+
+### Un bucle que RouterOS no muestra
+
+El bridge está recibiendo de vuelta sus propias tramas por ese puerto: algo
+detrás de él llega al router por un segundo camino. Un nodo mesh con backhaul
+por cable y por radio a la vez es la causa habitual, y también un switch
+cableado dos veces. STP hace su trabajo y bloquea el puerto, así que nada se
+viene abajo, y RouterOS informa del puerto en marcha y sin errores —pero lo que
+hay detrás llega al router por otro lado o no llega—. En el RB5009 de referencia
+el puerto recibió de 12 a 13 paquetes por segundo y envió 1 en dos días del
+bucle (2026-09-21 y 22), y 192 y 178 el día después de desaparecer el segundo
+camino (2026-09-23). Encuentra el segundo
+camino y rómpelo; el hallazgo desaparece en un anillo.
 
 ## El agente está instalado y no responde nada
 
