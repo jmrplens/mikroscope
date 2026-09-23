@@ -31,6 +31,20 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   never a value. `WARN` changes neither doctor's exit status nor whether
   `install` proceeds.
 
+- **An alert for a bridge port the bridge has stopped delivering to.**
+  `mikroscope-bridge-port-dark` fires when a bridge port has received packets
+  for ten minutes while the bridge sent it neither a unicast nor a broadcast
+  frame: STP holding it discarding, or every host behind it learned on another
+  path, with RouterOS showing the port running and error-free. Backtested over
+  the reference store, 2026-09-19 11:13 to 2026-09-23 22:44 UTC, eight bridge
+  ports in 10-minute bins: it marks sfp-sfpplus1 in 204 bins and ether2 in 376,
+  the two phases of that week's layer-2 loop, and no other port before or
+  after. For most of the first phase the own-address rule pointed at ether2,
+  the wrong port. Broadcast as well as unicast, because a neighbor with no
+  clients can leave tx-unicast at zero on a healthy port. It will fire on an
+  RSTP alternate port and on `broadcast-flood=no` or `horizon`; the Prometheus
+  form was checked for syntax only, since that store holds no API-tier history.
+
 ### Fixed
 
 - **`doctor --disk` with a registry host passed the disk check on any answer.**

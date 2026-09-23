@@ -125,6 +125,22 @@ var AlertRules = []AlertRule{
 		SQL:     `SELECT coalesce(sum(v), 0)::BIGINT AS value FROM (SELECT interface, greatest(max(rx_overflow) - min(rx_overflow), 0)::BIGINT + greatest(max(rx_fcs_error) - min(rx_fcs_error), 0)::BIGINT + greatest(max(rx_fragment) - min(rx_fragment), 0)::BIGINT + greatest(max(rx_too_short) - min(rx_too_short), 0)::BIGINT + greatest(max(rx_too_long) - min(rx_too_long), 0)::BIGINT + greatest(max(rx_jabber) - min(rx_jabber), 0)::BIGINT + greatest(max(tx_fcs_error) - min(tx_fcs_error), 0)::BIGINT + greatest(max(tx_late_collision) - min(tx_late_collision), 0)::BIGINT + greatest(max(tx_excessive_collision) - min(tx_excessive_collision), 0)::BIGINT AS v FROM mikroscope_api_ifcounters WHERE time >= now() - interval '5 minutes' GROUP BY interface)`,
 	},
 	{
+		UID: "mikroscope-bridge-port-dark", Title: "A bridge port is receiving but the bridge sends it nothing", Severity: "warning", For: "10m", Op: "gt", Threshold: 0, NoData: "OK",
+		// Unicast AND broadcast, not unicast alone. A neighbor with no
+		// clients behind it (a spare switch, an idle access point) can leave
+		// tx-unicast at zero on a healthy port, but a forwarding bridge still
+		// floods it broadcast. Only a port the bridge has stopped delivering
+		// to shows neither. Backtested over the reference store, 2026-09-19
+		// 11:13 to 2026-09-23 22:44 (eight bridge ports, 10-minute bins): it
+		// marks sfp-sfpplus1 in 204 bins (09-19 11:10 → 09-20 21:00) and
+		// ether2 in 376 (09-20 21:20 → 09-23 11:50) — the two phases of the
+		// layer-2 loop — and no other port, before or after. The lowest
+		// healthy tx-unicast in a bin was 10 588 packets, against 0 in fault.
+		Summary: "A port that is a member of a bridge has received packets for ten minutes while the bridge delivered it neither a unicast nor a broadcast frame. Whatever is behind it is transmitting and hearing nothing back: STP holds the port discarding, or the bridge learned every host behind it on another path. RouterOS shows the port running and error-free throughout. On the reference RB5009 this was the steady state of a layer-2 loop through a mesh access point: 34 h on sfp-sfpplus1 and then 62 h on ether2 (2026-09-19..23), which carried 12 packets a second in and 1 out until the second path was broken. For most of the first phase the own-address rule had pointed at ether2, the wrong port. EXPECTED TO FIRE on a redundant design: an RSTP alternate port discards on purpose, and so does a port with broadcast-flood=no or horizon set; silence it for that port. Needs the API tier: the port counters are not visible from inside the container.",
+		PromQL:  `count((sum by (interface) (increase(mikroscope_api_interface_counter_total{counter="rx-packet"}[10m])) > 0) and on (interface) (sum by (interface) (increase(mikroscope_api_interface_counter_total{counter="tx-unicast"}[10m])) == 0) and on (interface) (sum by (interface) (increase(mikroscope_api_interface_counter_total{counter="tx-broadcast"}[10m])) == 0) and on (interface) (mikroscope_api_interface_info{bridge!=""}))`,
+		SQL:     `SELECT count(*)::BIGINT AS value FROM (SELECT interface, max(rx_packet) - min(rx_packet) AS drx, max(tx_unicast) - min(tx_unicast) AS dtu, max(tx_broadcast) - min(tx_broadcast) AS dtb FROM mikroscope_api_ifcounters WHERE time >= now() - interval '10 minutes' AND bridge IS NOT NULL AND bridge <> '' GROUP BY interface) AS ports WHERE drx > 0 AND dtu = 0 AND dtb = 0`,
+	},
+	{
 		UID: "mikroscope-egress-queue-drops", Title: "A port's egress queue has been dropping every minute for ten minutes", Severity: "warning", For: "10m", Op: "gt", Threshold: 0, NoData: "OK",
 		// THE ONE RULE HERE WHOSE COUNTER IS SUPPOSED TO MOVE, which is why
 		// the window is one minute and the pending period is ten rather than

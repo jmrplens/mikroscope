@@ -265,6 +265,10 @@ export const alertFiresWhen: Record<string, Record<Lang, string>> = {
 		en: "any port's own egress queue dropped a packet in every one of the last 10 minutes — sustained congestion, never a single burst",
 		es: "la cola de salida de algún puerto descartó un paquete en cada uno de los últimos 10 minutos: congestión sostenida, nunca una ráfaga suelta",
 	},
+	"mikroscope-bridge-port-dark": {
+		en: "a bridge port received packets while the bridge sent it neither a unicast nor a broadcast frame, for 10 minutes",
+		es: "un puerto de bridge recibió paquetes mientras el bridge no le envió ni una trama unicast ni una broadcast, durante 10 minutos",
+	},
 	"mikroscope-port-errors": {
 		en: "any port's MAC counted a typed error — overflow, FCS, collision — for 5 minutes running",
 		es: "el MAC de algún puerto contó un error tipificado —desbordamiento, FCS, colisión— durante 5 minutos seguidos",
