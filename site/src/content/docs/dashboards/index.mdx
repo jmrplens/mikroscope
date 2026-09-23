@@ -131,8 +131,8 @@ share their SQL; on Prometheus the Overview's "OOM kills in the window" and the 
 never delivered, this window" differ from their counterparts (the Observer's carries a third query,
 the sampler's slipped ticks).
 
-1. **CPU busy per core**, **Memory in use, against the kernel's own total** (a gauge of
-   `(MemTotal − MemAvailable) / MemTotal`, orange at 75 %, red at 90 %) and **Connections tracked
+1. **CPU busy per core**, **Memory in use, against the kernel's own total** (
+   `(MemTotal − MemAvailable) / MemTotal` over time, with dashed lines at 75 % and 90 %) and **Connections tracked
    right now** (the `nf_conntrack` slab's active objects; blank on an unprivileged container, and
    the tile says so).
 2. **Interface throughput — rx above, tx below** (API tier; blank with `--api-mode off`, and the

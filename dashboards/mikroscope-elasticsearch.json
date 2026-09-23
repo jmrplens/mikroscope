@@ -125,6 +125,10 @@
           "values": false
         },
         "showPercentChange": false,
+        "text": {
+          "titleSize": 16,
+          "valueSize": 32
+        },
         "textMode": "value",
         "wideLayout": true
       },
@@ -296,6 +300,10 @@
           "values": false
         },
         "showPercentChange": false,
+        "text": {
+          "titleSize": 16,
+          "valueSize": 32
+        },
         "textMode": "value_and_name",
         "wideLayout": true
       },
@@ -385,6 +393,10 @@
           "values": false
         },
         "showPercentChange": false,
+        "text": {
+          "titleSize": 16,
+          "valueSize": 32
+        },
         "textMode": "value",
         "wideLayout": true
       },
@@ -476,6 +488,10 @@
           "values": false
         },
         "showPercentChange": false,
+        "text": {
+          "titleSize": 16,
+          "valueSize": 32
+        },
         "textMode": "value",
         "wideLayout": true
       },
@@ -565,6 +581,10 @@
           "values": false
         },
         "showPercentChange": false,
+        "text": {
+          "titleSize": 16,
+          "valueSize": 32
+        },
         "textMode": "value_and_name",
         "wideLayout": true
       },
@@ -991,6 +1011,10 @@
               "values": false
             },
             "showPercentChange": false,
+            "text": {
+              "titleSize": 16,
+              "valueSize": 32
+            },
             "textMode": "value",
             "wideLayout": true
           },
@@ -1369,6 +1393,10 @@
               "values": false
             },
             "showPercentChange": false,
+            "text": {
+              "titleSize": 16,
+              "valueSize": 32
+            },
             "textMode": "value",
             "wideLayout": true
           },
@@ -2225,6 +2253,10 @@
               "values": false
             },
             "showPercentChange": false,
+            "text": {
+              "titleSize": 16,
+              "valueSize": 32
+            },
             "textMode": "value_and_name",
             "wideLayout": true
           },

@@ -6,6 +6,17 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Stat tiles draw their numbers at a fixed 32 px, not Grafana's automatic
+  size.** On a phone every panel spans the screen at its own height, and the
+  automatic size filled it: a single "0" was about 60 px tall and each tile
+  took a third of a 390x844 screen (production dashboard, 2026-09-24).
+- **"Memory in use" is a time series, not a gauge**, in the Overview and in
+  Memory and load, with the 75 % and 90 % steps as dashed lines. The gauge
+  took half a phone screen for one number and hid the course the query already
+  returned.
+
 ### Added
 
 - **`doctor` reads what the running agent sees.** After the preflight checks,

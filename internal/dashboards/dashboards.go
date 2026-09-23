@@ -175,6 +175,12 @@ type Panel struct {
 	// and "" keeps "__auto" for that one target. {{label}} interpolates.
 	Legends []string
 
+	// ThresholdLines draws a timeseries panel's threshold steps as dashed
+	// lines across the plot, for a level whose bands matter as much as its
+	// course: the memory panel was a gauge for its orange and red, and a
+	// gauge filled half a phone screen with one number.
+	ThresholdLines bool
+
 	// GraphMode is a stat panel's sparkline: "area" (the default) or "none"
 	// for a tile whose value has no useful time course.
 	GraphMode string
@@ -876,6 +882,9 @@ func timeseriesCustom(p Panel) map[string]any {
 	if p.CenteredZero {
 		c["axisCenteredZero"] = true
 	}
+	if p.ThresholdLines {
+		c["thresholdsStyle"] = map[string]any{"mode": "dashed"}
+	}
 	return c
 }
 
@@ -993,6 +1002,12 @@ func reduceOptions(p Panel) map[string]any {
 	return map[string]any{"calcs": calcs, "fields": "", "values": false}
 }
 
+// The stat tiles' type sizes, in pixels.
+const (
+	statValueSize = 32
+	statTitleSize = 16
+)
+
 func statOptions(p Panel) map[string]any {
 	color := "none"
 	if len(p.Thresholds) > 0 {
@@ -1009,9 +1024,15 @@ func statOptions(p Panel) map[string]any {
 	if p.ShowName {
 		text = "value_and_name"
 	}
+	// A fixed type size, not Grafana's automatic one. Automatic sizing fills
+	// the panel, and on a phone every panel is the full width of the screen
+	// at its own height, so a single "0" was drawn about 60 px tall and each
+	// stat tile took a third of the screen (production dashboard at 390x844,
+	// 2026-09-24). 32 px reads at a glance on a desktop tile too.
 	return map[string]any{
 		"reduceOptions": reduceOptions(p), "colorMode": color, "graphMode": graph,
 		"textMode": text, "justifyMode": "auto", "orientation": "auto",
+		"text":                   map[string]any{"valueSize": statValueSize, "titleSize": statTitleSize},
 		"percentChangeColorMode": "standard", "showPercentChange": false, "wideLayout": true,
 	}
 }
