@@ -41,6 +41,27 @@ func (r Report) Failed() []Item {
 // routerOSArch maps GOARCH to /system/resource architecture-name.
 var routerOSArch = map[string]string{"arm64": "arm64", "arm": "arm", "amd64": "x86_64"}
 
+// The names doctor asks its batched queries under and reads the answers by.
+const (
+	qVersion      = "version"
+	qBoard        = "board"
+	qArch         = "arch"
+	qFreeMemory   = "free-memory"
+	qFreeHdd      = "free-hdd"
+	qPackage      = "package"
+	qDeviceMode   = "device-mode"
+	qIfaceList    = "iface-list"
+	qAddrList     = "addr-list"
+	qVeth         = "veth"
+	qExposed      = "exposed"
+	qTokenEnv     = "token-env"
+	qDisk         = "disk"
+	qRegistryURL  = "registry-url"
+	qRegistryUser = "registry-user"
+
+	foundPrefix = "found="
+)
+
 // Doctor runs every preflight read in one connect and writes nothing. Each
 // failing item names the RouterOS command or the physical step that fixes
 // it — including the one no tool can do for the operator: MikroTik gates
@@ -52,36 +73,36 @@ func Doctor(r Runner, o Options, imageBytes int) (Report, error) {
 	// and a registry host together the disk check read the registry-url line
 	// and passed whatever it said.
 	var q doctorQueries
-	q.add("version", `:put [/system/resource/get version]`)
-	q.add("board", `:put [/system/resource/get board-name]`)
-	q.add("arch", `:put [/system/resource/get architecture-name]`)
-	q.add("free-memory", `:put [/system/resource/get free-memory]`)
-	q.add("free-hdd", `:put [/system/resource/get free-hdd-space]`)
-	q.add("package", `:put [:len [/system/package/find name="container" disabled=no]]`)
-	q.add("device-mode", `:put [/system/device-mode/get container]`)
-	q.add("iface-list", `:put [:len [/interface/list/find name="`+o.IfaceList+`"]]`)
-	q.add("addr-list", `:put [:len [/ip/firewall/address-list/find list="`+o.AddrList+`"]]`)
-	q.add("veth", `:put [:len [/interface/veth/find name="`+o.Veth+`"]]`)
+	q.add(qVersion, `:put [/system/resource/get version]`)
+	q.add(qBoard, `:put [/system/resource/get board-name]`)
+	q.add(qArch, `:put [/system/resource/get architecture-name]`)
+	q.add(qFreeMemory, `:put [/system/resource/get free-memory]`)
+	q.add(qFreeHdd, `:put [/system/resource/get free-hdd-space]`)
+	q.add(qPackage, `:put [:len [/system/package/find name="container" disabled=no]]`)
+	q.add(qDeviceMode, `:put [/system/device-mode/get container]`)
+	q.add(qIfaceList, `:put [:len [/interface/list/find name="`+o.IfaceList+`"]]`)
+	q.add(qAddrList, `:put [:len [/ip/firewall/address-list/find list="`+o.AddrList+`"]]`)
+	q.add(qVeth, `:put [:len [/interface/veth/find name="`+o.Veth+`"]]`)
 	// An install already on the router that publishes the agent on the LAN
 	// (the dst-nat carries this install's tag) while its environment holds no
 	// TOKEN: every host on the LAN can read it. Counts only, never the value.
-	q.add("exposed", `:put [:len [/ip/firewall/nat/find comment="`+o.Tag()+`" action=dst-nat]]`)
-	q.add("token-env", `:put [:len [/container/envs/find list="`+o.EnvList()+`" key="TOKEN"]]`)
+	q.add(qExposed, `:put [:len [/ip/firewall/nat/find comment="`+o.Tag()+`" action=dst-nat]]`)
+	q.add(qTokenEnv, `:put [:len [/container/envs/find list="`+o.EnvList()+`" key="TOKEN"]]`)
 	if o.Disk != "" {
-		q.add("disk", `:put [:len [/disk/find slot="`+o.Disk+`"]]`)
+		q.add(qDisk, `:put [:len [/disk/find slot="`+o.Disk+`"]]`)
 	}
 	if o.UsesRemoteImage() {
-		q.add("registry-url", `:put [/container/config/get registry-url]`)
+		q.add(qRegistryURL, `:put [/container/config/get registry-url]`)
 		// Whether a registry username is set, as a boolean: the name is the
 		// operator's and the password cannot be read back at all.
-		q.add("registry-user", `:put ([:len [/container/config/get username]] > 0)`)
+		q.add(qRegistryUser, `:put ([:len [/container/config/get username]] > 0)`)
 	}
 	lines, err := batch(r, q.queries)
 	if err != nil {
 		return Report{}, fmt.Errorf("doctor: %w", err)
 	}
 	at := func(name string) string { return lines[q.index[name]] }
-	version, board, arch, freeMem, freeHdd := at("version"), at("board"), at("arch"), at("free-memory"), at("free-hdd")
+	version, board, arch, freeMem, freeHdd := at(qVersion), at(qBoard), at(qArch), at(qFreeMemory), at(qFreeHdd)
 	rep := Report{Device: board + ", RouterOS " + version + ", " + arch}
 	add := func(name string, ok bool, got, fix string) {
 		if ok {
@@ -95,17 +116,17 @@ func Doctor(r Runner, o Options, imageBytes int) (Report, error) {
 		// pointing the router's registry somewhere else to install a probe
 		// would be a change to someone else's containers. RouterOS takes the
 		// host from here and only the rest from `remote-image=`.
-		got := at("registry-url")
+		got := at(qRegistryURL)
 		want := "https://" + host
 		add("registry-url is "+want, got == want, "registry-url="+quoteEmpty(got),
 			"the registry host is a global RouterOS setting this tool does not write. Run `/container/config/set registry-url="+want+"` on the router (it applies to every container on the device), or install from a tar with --agent-tar instead")
 	}
 	if o.UsesRemoteImage() {
-		addRegistryCredential(&rep, o, at("registry-url"), isYes(at("registry-user")))
+		addRegistryCredential(&rep, o, at(qRegistryURL), isYes(at(qRegistryUser)))
 	}
-	add("container package installed and enabled", at("package") != "0", "found="+at("package"),
+	add("container package installed and enabled", at(qPackage) != "0", foundPrefix+at(qPackage),
 		"download the `container` package for this architecture and RouterOS version from mikrotik.com, upload it to the router, reboot; then `/system/package/enable container`")
-	add("device-mode container=yes", isYes(at("device-mode")), "container="+at("device-mode"),
+	add("device-mode container=yes", isYes(at(qDeviceMode)), "container="+at(qDeviceMode),
 		"`/system/device-mode/update container=yes`, then press the reset button or power-cycle within 5 minutes when the console says `update: please activate by turning power off or pressing reset or mode button`")
 	wantArch := routerOSArch[o.Arch]
 	add("architecture matches --arch "+o.Arch, arch == wantArch, "router="+arch,
@@ -124,16 +145,16 @@ func Doctor(r Runner, o Options, imageBytes int) (Report, error) {
 		add(fmt.Sprintf("free flash ≥ %s (image tar + extracted root)", humanBytes(need)), hdd >= need, humanBytes(hdd),
 			"free space on the internal flash, or install with `--disk tmpfs` / `--ephemeral` where a tmpfs disk exists")
 	} else {
-		add("disk "+o.Disk+" exists", at("disk") != "0", "found="+at("disk"),
+		add("disk "+o.Disk+" exists", at(qDisk) != "0", foundPrefix+at(qDisk),
 			"`/disk/add type=tmpfs tmpfs-max-size=64M slot=tmpfs` for a RAM disk, or name an existing disk with --disk")
 	}
-	add("interface list "+o.IfaceList+" exists (raw rule trap)", at("iface-list") != "0", "found="+at("iface-list"),
+	add("interface list "+o.IfaceList+" exists (raw rule trap)", at(qIfaceList) != "0", foundPrefix+at(qIfaceList),
 		"`/interface/list/add name="+o.IfaceList+"`, or pass the list your firewall's `in-interface-list=!…` drop rule uses with --iface-list")
-	add("address list "+o.AddrList+" has entries (raw rule trap)", at("addr-list") != "0", "entries="+at("addr-list"),
+	add("address list "+o.AddrList+" has entries (raw rule trap)", at(qAddrList) != "0", "entries="+at(qAddrList),
 		"pass the list your firewall's `drop local if not from default IP range` rule uses with --addr-list (an empty list is fine only if no such rule exists)")
-	add("veth name "+o.Veth+" is free or ours", true, "found="+at("veth"), "")
-	if exposed := at("exposed"); exposed != "0" {
-		tokenSet := at("token-env") != "0"
+	add("veth name "+o.Veth+" is free or ours", true, foundPrefix+at(qVeth), "")
+	if exposed := at(qExposed); exposed != "0" {
+		tokenSet := at(qTokenEnv) != "0"
 		rep.Items = append(rep.Items, Item{
 			Name: "the installed agent published on the LAN asks for a token", OK: tokenSet, Warn: true,
 			Got: "dst-nat=" + exposed + " token=" + setOrUnset(tokenSet),

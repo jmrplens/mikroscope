@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -40,7 +41,11 @@ func doctorHealth(ctx context.Context, w io.Writer, host string, port int, token
 	if h.OldestSeq > 0 {
 		since = h.OldestSeq - 1
 	}
-	lines, _, err := transport.NewDirect("http://"+net.JoinHostPort(host, strconv.Itoa(port)), token).Pull(ctx, since, ringMax)
+	// Plain HTTP by design, as for every verb that talks to the agent: it
+	// answers on a /30 veth inside the router, or on a LAN dst-nat guarded by
+	// its bearer token, and a scratch container has no certificate to offer.
+	base := (&url.URL{Scheme: "http", Host: net.JoinHostPort(host, strconv.Itoa(port))}).String()
+	lines, _, err := transport.NewDirect(base, token).Pull(ctx, since, ringMax)
 	if err != nil {
 		fmt.Fprintf(w, "  skipped: the agent answered /healthz but its ring could not be read (%v)\n", err)
 		return
