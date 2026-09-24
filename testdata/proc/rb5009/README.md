@@ -4,7 +4,7 @@ Captured 2026-09-11 21:04 CEST from a busybox container on RouterOS 7.24.2
 (stable), kernel `Linux 5.6.3 #2 SMP Thu Sep 3 10:13:33 UTC 2026 aarch64`,
 4 cores, 999 956 kB `MemTotal`, uptime ≈ 161 000 s. Files are verbatim copies
 of the first snapshot (`snap-0`) of the Phase 0 debug run; the capture script
-and the raw run are kept out of the repository (`plan/phase0/`).
+and the raw run are kept out of the repository.
 
 The one identifier these files carried, the bridge's MAC in the two `kmsg`
 lines of the layer-2 loop, is replaced by `00:00:5e:00:53:5d` — the block
@@ -14,6 +14,11 @@ address or a network: the rest is counters.
 What this kernel does **not** have, and therefore is not here: `pressure/`
 (no `CONFIG_PSI`), `schedstat` (no `CONFIG_SCHEDSTATS`). The `irq` column of
 `stat` is 0 on every core (no `IRQ_TIME_ACCOUNTING`).
+
+`slabinfo` is not from `snap-0`, where it was unreadable (root-only, and the
+container ran in a user namespace): it is from the privileged discovery round of
+2026-09-12, and its `nf_conntrack` row, 6 582 active objects, is that round's
+reading of the router's conntrack population.
 
 `net/dev` is the container's own network namespace (only `lo` and the veth)
 and is kept as the negative fixture: a parser must not present it as router

@@ -85,7 +85,7 @@ rules out reading one flap twice. No traffic was interrupted and both ports were
 back within four seconds.
 
 That makes three measured pairs, all on the same shift by one, which is what
-the six inferred rows rest on.
+the six inferred ports and the switch rest on.
 
 The inferred pairs rest on two observations from a read-only
 `/interface/ethernet/print` (2026-09-13, the date the table's own evidence
@@ -117,12 +117,13 @@ its table, names ports without asking RouterOS:
   happened to that port: `iface`, `ros_iface` and `kind` on the event, `port`
   and `kind` tags on the InfluxDB rows, and
   `iface=eth1 ros_iface=ether2 port_event=own-address` on a Loki line;
-- `/metrics` gains `mikroscope_kmsg_port_records_total{port,kind,level}`, with the
-  RouterOS name as `port` on a board in the table, the kernel name on a board
-  that is not, and no port series at all on a device whose device tree reports
-  no model. It is a
-  subset of `mikroscope_kmsg_records_total`, not a partition of it: records naming
-  no port are absent from it;
+- the collector's `/metrics` carries
+  `mikroscope_kmsg_port_records_total{port,kind,level}`, built from those
+  records, with the RouterOS name as `port` on a board in the table, the kernel
+  name on a board that is not, and no port series at all on a device whose
+  device tree reports no model. It is a subset of
+  `mikroscope_kmsg_records_total`, not a partition of it: records naming no port
+  are absent from it;
 - the collector's `link-flap` detection is keyed by the port name and reads the
   same classification: a flap is `link-up` and `link-down` records on one port,
   counted, through the same classifier rather than by re-reading the text;
@@ -130,6 +131,19 @@ its table, names ports without asking RouterOS:
   `eth1 (ether2)`; `/healthz` and `/capabilities` carry the board, and
   `/capabilities` and `mikroscope_device_info` carry the table's evidence string
   as `ports_from`, so nobody has to take the mapping on trust.
+
+`mikroscope doctor`, which is the CLI and not the agent, reads the same records
+from the running agent's ring: the whole ring when it holds no more than 10 000 samples,
+otherwise the newest 10 000; 60 s by default (the agent's `BUFFER_S`).
+It classifies each kernel-log record again from its text, with the board the
+agent reports on `/healthz`, rather than trusting the agent's `kind`: an agent
+that ships records without one would otherwise make every port check pass by
+saying nothing. On a device whose device tree reports no model it still
+classifies, and names the kernel's port. Per RouterOS port it reports
+`layer2-loop` at three or more `own-address` records in the window, `stp-churn`
+when the port entered learning at least three more times than it reached
+forwarding, and `link-flap` at two or more `link-down` records; `softnet-drops`
+is reported per CPU, not per port.
 
 **An unknown board gets no port names, not guessed ones.** The shift by one is
 not applied to a board nobody has measured, because a confidently wrong port name
@@ -208,8 +222,10 @@ validated on 2026-09-16 against a synthetic table in the same InfluxDB 3, the
 live store having no such column then. It has one since 2026-09-19, holding all
 eight kinds.
 
-Two alert rules ship beside them, in both provisioning files. Both read
-`/dev/kmsg` through the agent and ask RouterOS nothing:
+Two alert rules ship beside them, in the InfluxDB and Prometheus provisioning
+files; the PostgreSQL file has neither, because that store keeps each
+kernel-log record as a row rather than a count. Both read `/dev/kmsg` through
+the agent and ask RouterOS nothing:
 
 - `mikroscope-l2-loop`, critical: any `own-address` record in five minutes. On
   the reference RB5009 that signature ran at 1.49 records/s for hours on

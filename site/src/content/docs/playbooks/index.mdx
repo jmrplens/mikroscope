@@ -1,6 +1,6 @@
 ---
 title: How to read what it shows
-description: Seven readings of kernel data from one RB5009 — a production fault found by accident, three events provoked on purpose, two that needed no provoking, and the idle shape they are read against.
+description: Eight readings of kernel and port data from one RB5009 — two production faults found without looking for them, three events provoked on purpose, two that needed no provoking, and the idle shape they are read against.
 ---
 
 import { Aside } from "@astrojs/starlight/components";
@@ -11,16 +11,19 @@ import SeeAlso from "../../../components/SeeAlso.astro";
 
 This section answers the question that comes after installing the agent: _the
 numbers are arriving — what does a fault look like in them?_ Each page is one
-shape, read from data the agent collected on the reference router, with the
-commands that produced it so you can reproduce it on your own device.
+shape, read from data the agent (or, for port errors, the API tier) collected on
+the reference router, with the commands that produced it so you can reproduce it
+on your own device.
 
-Every number in these pages comes from one campaign on the reference router, an
-aarch64 kernel on a board with 1 GB of RAM:
+Every number in these pages except the port-errors page comes from one campaign
+on the reference router, an aarch64 kernel on a board with 1 GB of RAM:
 
 <Provenance of="playbooks-2026-09-12" />
 
-Where a later page adds a
-figure from another date, it says so beside the figure. Where a fault was
+[A port losing frames](/mikroscope/playbooks/port-errors/) is a separate campaign
+a week later, read from the API tier's port counters rather than from the agent,
+and its provenance is on that page. Where another page adds a figure from another
+date, it says so beside the figure. Where a fault was
 provoked deliberately, the page says exactly how.
 
 ## Before you provoke anything
@@ -35,16 +38,16 @@ find out which port you are connected through first,
 
 and leave that port, the WAN port and anything carrying a service alone.
 
-## The seven readings
+## The eight readings
 
 Read the idle shape first. Without it, every other page looks like an anomaly.
 
-<ScrollTable label="The seven readings and their signatures">
+<ScrollTable label="The eight readings and their signatures">
 
 | Page                                                                 | How it came about                                | Where it shows                                 | Signature                                                                                                                 |
 | -------------------------------------------------------------------- | ------------------------------------------------ | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
 | [The shape of an idle router](/mikroscope/playbooks/idle/)           | 60 s at idle                                     | per-core busy, `time_squeeze`, `events`        | 6–8 % busy across four cores, squeeze never zero, zero kernel events                                                      |
-| [A loop only the kernel could see](/mikroscope/playbooks/loop/)      | real, found by accident on the production router | `events` (the `kmsg` source)                   | `events` at <Measured id="loop.eventsBefore" />, <Measured id="loop.helloGap" /> apart; the API reported a healthy device |
+| [A loop only the kernel could see](/mikroscope/playbooks/loop/)      | real, found by accident on the production router | `events` (the `kmsg` source)                   | `events` at <Measured id="loop.eventsBefore" />, <Measured id="loop.helloGap" /> apart; RouterOS's log and port monitor reported a healthy device |
 | [RouterOS ports and kernel names](/mikroscope/reference/port-names/) | a dead port toggled off and on                   | `events`                                       | the kernel prints `eth5` where RouterOS says `ether6`                                                                     |
 | [A CPU-bound workload](/mikroscope/playbooks/cpu/)                   | a console loop that ends by itself               | per-core busy, temperature, frequency          | ~29 % total, one core at 99.8 %, ~20 s of migration before it settles                                                     |
 | [A packet flood](/mikroscope/playbooks/packet-flood/)                | `ping -f` at the router's own LAN address, 10 s  | `switch0` interrupts, softirqs, `time_squeeze` | `switch0` 5.5 k → 34 k per 5 s bucket, all on the one core the IRQ is pinned to                                           |
@@ -53,6 +56,10 @@ Read the idle shape first. Without it, every other page looks like an anomaly.
 | [A port losing frames](/mikroscope/playbooks/port-errors/)           | real, found on the production router 2026-09-19  | the API tier's per-port MAC counters           | one port at 0.5 % of packets lost to microbursts, then none                                                               |
 
 </ScrollTable>
+
+The wake-up storm of 2026-09-23, a third real fault on the reference router, has
+no reading of its own yet: its measured signature, and the rule that watches for
+it, are under `mikroscope-wakeup-storm` in [Alert rules](/mikroscope/dashboards/alerts/).
 
 ## Two checks before you trust a reading
 

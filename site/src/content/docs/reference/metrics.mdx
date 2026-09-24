@@ -28,7 +28,6 @@ below is what the collector carries.
 | everything recomputed from samples: CPU, windows, runs, receive path, memory, PMU, sensors, flash, disk, kernel log, observer counters | the samples it pulled, folded by the same `Totals` code   |
 | the sampler's timing histograms (`mikroscope_tick_*`)                                                                                 | `dt_ns`, `wake_ns` and `read_ns`, which ride in each sample |
 | `mikroscope_slipped_total`, `mikroscope_sampler_ticks_total`                                                                          | the agent's `/sampler`, read at start and every minute    |
-| `mikroscope_sampler_ticks_total`                                                                                                      | ticks the agent took since it started, as the agent counts them|
 | trigger and capture families                                                                                                          | the same, while `CAPTURE_MB` is above 0                   |
 | device facts (`mikroscope_device_info`, ceilings, cadences)                                                                           | `/capabilities`, re-read every five minutes               |
 | `mikroscope_collector_*`, `mikroscope_derived_*`                                                                                      | its own: the derive stage and its counters                |
@@ -159,8 +158,10 @@ cannot tell those apart.
 
 ## The sampler's own timing
 
-Rendered by the collector from each sample's `self` block. A sample is read over
-a stretch of time, not at an instant, and these families measure that stretch.
+The three histograms are rendered by the collector from each sample's `dt_ns`
+and `self` block; the two counters come from the agent's `/sampler`. A sample is
+read over a stretch of time, not at an instant, and these families measure that
+stretch.
 
 <ScrollTable label="Sampler timing families">
 
@@ -170,6 +171,7 @@ a stretch of time, not at an instant, and these families measure that stretch.
 | `mikroscope_tick_wake_latency_seconds` | histogram | `le`   | how late the loop ran after its ticker fired; buckets 0.1 ms, 0.25, 0.5, 1, 2, 5, 10, 20, 50, 100 ms                             |
 | `mikroscope_tick_read_seconds`         | histogram | `le`   | how long reading every due source took; same buckets                                                                             |
 | `mikroscope_slipped_total`             | counter   | none   | ticks whose read finished after the next tick was due                                                                            |
+| `mikroscope_sampler_ticks_total` | counter | none | ticks the agent took since it started, as the agent counts them |
 
 </ScrollTable>
 
@@ -294,8 +296,9 @@ A change to `nf_conntrack_max` shows after the agent restarts.
 </ScrollTable>
 
 A block device that did nothing is not in the sample and so not here either;
-a comment in `internal/agent/metrics.go`, undated and with no RouterOS
-version, says the RB5009 lists sixteen idle `nbd` devices. Unlike the floored
+on the reference RB5009 (RouterOS 7.24.2, kernel 5.6.3) on 2026-09-12,
+`nbd0`–`nbd15` were present and idle and `mtdblock0`–`2` read all-zero
+(`internal/dashboards/panels.go`, the disk in-flight panel). Unlike the floored
 sources in the conventions above, the flash levels and `mikroscope_disk_inflight`
 are not carried forward, so they are missing from most scrapes of a quiet
 board.
@@ -321,14 +324,13 @@ rendered from the start, at 0, on the exposition when the capabilities list
 Without that, they appear with the first record. The port family appears with
 the first record that names a port.
 
-On the agent, `port` is the RouterOS default name on a board in the port table
-and the kernel name otherwise. On the collector's copy the API tier's interface
-inventory puts the port's current RouterOS name there, so a port renamed from
-`ether5` to `WAN` is counted under `WAN`; without an API tier the record keeps
-the board's default name. The collector classifies any record that reaches it
-without a `kind` of its own, so its exposition carries the label even when the
-agent's does not — which is how the reference RB5009 stands on 2026-09-16, with
-an agent whose `/metrics` has no `kind`.
+The agent names the port in its records with the RouterOS default name on a
+board in the port table and the kernel name otherwise. The collector's API-tier
+interface inventory puts the port's current RouterOS name in `port`, so a port
+renamed from `ether5` to `WAN` is counted under `WAN`; without an API tier the
+record keeps the board's default name. The collector classifies any port record
+that reaches it without a `kind` of its own, so records from an agent that ships
+none still carry the label.
 
 A port coming up writes four records on a bridge, not four faults: `link-up`,
 then `stp-blocking`, `stp-learning` and `stp-forwarding` on its bridge port.
@@ -501,7 +503,8 @@ instead.
 
 - [Prometheus](/mikroscope/sinks/prometheus/): running the collector's exposition and scraping it.
 - [InfluxDB and SQL measurements](/mikroscope/reference/measurements/): the same data as rows.
-- [The agent's HTTP endpoints](/mikroscope/reference/http/): `/metrics` and the paths beside it.
+- [The agent's HTTP endpoints](/mikroscope/reference/http/): `/healthz`, `/capabilities`,
+  `/snapshot`, `/stream`, `/sampler` and the capture paths.
 - [What the numbers do not say](/mikroscope/cost/limits/): what these families can and cannot
   recover.
 

@@ -92,7 +92,10 @@ router with `405`.
 
 The CLI uses `wall_ns` against its own clock to measure skew, `seq` and
 `oldest_seq` to plan a backfill, and `capabilities_hash` to notice that the
-kernel or the source set under it changed; no CLI code reads `mono_ns`. The
+kernel or the source set under it changed; `doctor` reads `board` to classify
+kernel-log records and `seq` with `oldest_seq` to read the whole ring, or its newest 10 000
+samples when it holds more. No CLI code reads
+`mono_ns`. The
 probe after `install` prints this reply as
 `direct transport ok: agent <version>, <rate> Hz, seq <n>, <n> slipped, <rtt> round trip`,
 where `<version>` is the CLI's own version, which it stamps into the agent it
@@ -156,7 +159,10 @@ Writes NDJSON and closes. Two forms, chosen by whether `since` is present.
 </ScrollTable>
 
 A value outside its range is `400` with a one-line reason. The `since` form is
-what `record` and `forward` pull, over both transports. It adds two line
+what `record` and `forward` pull, over both transports, and what `doctor`
+reads the ring with (`since` one below `oldest_seq`, or `seq` − 10 000 when the ring holds more
+than 10 000 samples, `max=10000`, direct
+transport only, with the bearer token when `TOKEN` is set). It adds two line
 kinds the `seconds` form does not: a gap line first when `since` is older than
 the ring, and a trigger line before each sample a capture condition fired on.
 `max` exists for the relay, because `/tool fetch output=user` returns at
@@ -247,7 +253,7 @@ ticks of a core are `u + n + s + q + sq + st`; idle and iowait are not busy.
 | `load`             | level | `/proc/loadavg`: `Load1`, `Load5`, `Load15`, `Running`, `Total`, `LastPID`                                                                                                                                                                                                             |
 | `vm`               | delta | `/proc/vmstat` events: `pgfault`, `pgmajfault`, and when non-zero `pgscan_kswapd`, `pgscan_direct`, `pgsteal_kswapd`, `pgsteal_direct`, `pgalloc`, `pgfree`, `allocstall`, `compact_stall`, `oom_kill`, `pswpin`, `pswpout`                                                            |
 | `vmg`              | level | `nr_free_pages`, `nr_dirty`, `nr_writeback`, `nr_slab_reclaimable`, `nr_slab_unreclaimable`, in pages                                                                                                                                                                                  |
-| `self`             | mixed | `cpu_us` (delta, µs), `rss` (level, bytes), `cg_mem` (level, omitted when zero), `cg` (`true` when cgroup2 was read), and `throttled`, `throttled_us`, `oom_kill` (deltas); the last four are omitted when zero or false                                                               |
+| `self`             | mixed | `cpu_us` (delta, µs), `rss` (level, bytes), `cg_mem` (level, omitted when zero), `cg` (`true` when cgroup2 was read), and `throttled`, `throttled_us`, `oom_kill` (deltas); the last four are omitted when zero or false; `wake_ns` (how late the loop woke after its ticker, ns) and `read_ns` (how long reading every due source took, ns), each omitted when zero                                                               |
 | `thermal`          | level | per zone `type`, `mc` (m°C) and `Celsius`; at the zone's declared cadence, every tick when no zone declares one, or at `FLOOR_HZ`                                                                                                                                                      |
 | `freq_khz`         | level | per core, kHz; on change or on the 60 s heartbeat                                                                                                                                                                                                                                      |
 | `thermal_critical` | level | zone to critical trip in m°C, on the rows that carry `thermal`                                                                                                                                                                                                                         |

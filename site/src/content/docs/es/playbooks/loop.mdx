@@ -1,6 +1,6 @@
 ---
 title: Un bucle que solo veía el kernel
-description: Un bucle de capa 2 en la red de producción del router de referencia que ni el log de RouterOS ni su monitor de puertos mostraron nunca, encontrado por la fuente de log del kernel del agente, diagnosticado a partir de una tasa y corregido con una actualización de firmware confirmada de dos formas independientes.
+description: Un bucle de capa 2 en la red de producción del router de referencia que ni el log de RouterOS ni su monitor de puertos mostraron nunca, encontrado por la fuente de log del kernel del agente, diagnosticado a partir de una tasa y desaparecido ese mismo día tras una actualización de firmware, confirmado de dos formas independientes. Volvió una semana después.
 ---
 
 import FaultSignature from "../../../../components/FaultSignature.astro";
@@ -11,9 +11,10 @@ import SeeAlso from "../../../../components/SeeAlso.astro";
 
 Este fallo no se provocó. Se encontró por casualidad el 2026-09-12, mientras se
 medía otra cosa, en el RB5009UG+S+ de producción del propietario (RouterOS
-7.24.2, kernel 5.6.3), y se diagnosticó y corrigió ese mismo día. Es la respuesta
-más clara que tiene este proyecto a _"¿por qué no consultar sin más la API de
-RouterOS?"_: durante toda su vida, la API informó de un equipo sano.
+7.24.2, kernel 5.6.3), y se diagnosticó y desapareció ese mismo día. Una semana
+después [volvió](#volvió). Es la respuesta más clara que tiene este proyecto a
+_"¿por qué no consultar sin más la API de RouterOS?"_: durante toda su vida, el
+log de RouterOS y su monitor de puertos informaron de un equipo sano.
 
 La página sigue el diagnóstico en el orden en que ocurrió, porque el orden es el
 método.
@@ -78,7 +79,21 @@ print([round(ts[i+1]-ts[i],2) for i in range(len(ts)-1)][:12])'
 desde el arranque sobre el reloj monótono — no el momento en que el agente lo
 leyó —, así que los intervalos son los del kernel, no los del muestreador.
 
-## Paso 3 — confirmar que la API de verdad no lo ve
+Desde la 1.2.0, `mikroscope doctor` independiente hace este recuento por ti: lee
+una vez el anillo del agente en marcha e imprime `WARN  layer2-loop`, con el
+puerto, cuando en la ventana han vuelto tres o más tramas con la propia dirección
+del bridge. Un puerto que STP ha pasado a learning al menos tres veces más de las
+que lo ha dejado reenviar aparece como `stp-churn`, pero solo si ese puerto no
+tiene ya el hallazgo de dirección propia. Dos reglas de alerta vigilan el mismo
+fallo a lo largo del tiempo: `mikroscope-l2-loop` salta con el primer registro de
+dirección propia, desde el log del kernel que lee el agente, y
+`mikroscope-bridge-port-dark` salta con un puerto del bridge que lleva diez
+minutos recibiendo sin que el bridge le envíe nada, y necesita el tier de API.
+Véase [Lo que muestra el agente en
+marcha](/mikroscope/es/install/prerequisites/#lo-que-muestra-el-agente-en-marcha)
+y [Reglas de alerta](/mikroscope/es/dashboards/alerts/).
+
+## Paso 3 — confirmar que el log y el monitor de puertos de RouterOS de verdad no lo ven
 
 Merece la pena hacerlo de forma explícita, porque decide dónde gastas la hora
 siguiente:
@@ -91,6 +106,13 @@ siguiente:
 Las dos volvieron limpias: cero filas de log en esos temas, todos los puertos
 `designated-port` / `in-bridge`. RouterOS no estaba ocultando el fallo; de verdad
 no muestra esta clase de sucesos del kernel.
+
+Eso vale para el log y el monitor de puertos, no para todos los contadores que
+ofrece la API. Cuando el bucle volvió, del 2026-09-19 al 23, los contadores rx/tx
+por puerto que lee el tier de API sí lo mostraron, como un puerto del bridge que
+recibe mientras el bridge no le envía nada. Es la regla
+`mikroscope-bridge-port-dark` que añadió la 1.2.0, contrastada con esos cuatro
+días. No se comprobó contra el episodio del 2026-09-12.
 
 ## Paso 4 — buscar evidencia que lo corrobore fuera del log del kernel
 
@@ -172,13 +194,36 @@ visión del bridge se volvió _coherente_.
 Los mismos 60 equipos, repartidos 36/24 en lugar de 60/0. Mientras existió el
 bucle, el router aprendía casi todos los equipos en el puerto equivocado; el
 coordinador Zigbee `00:4B:12:96:80:33`, por ejemplo, pasó del SFP+ a `ether2`,
-donde de verdad está. Una corrección que hace encajar una _segunda_ medida no
-relacionada es una corrección de la que te puedes fiar.
+donde de verdad está. Que encaje una _segunda_ medida no relacionada es lo que
+hace de una corrección algo más que una coincidencia en el tiempo. Confirma que
+el fallo había desaparecido cuando se midió, no que siga sin aparecer: una semana
+después [volvió](#volvió).
 
 <NotClaimed title="No establecido">
-	La actualización de firmware eliminó el bucle, y las dos medidas de arriba lo confirman. Por qué
-	hacía bucle el firmware anterior no está establecido: la corrección se observó, no se explicó.
+	El 2026-09-12 el bucle desapareció tras la actualización de firmware, y las dos medidas de arriba
+	confirman que ya no estaba. Por qué hacía bucle el firmware anterior no está establecido: la
+	corrección se observó, no se explicó. Tampoco está establecido si la reaparición del 2026-09-19
+	fue el mismo fallo, ni si el firmware tuvo algo que ver con ninguna de las dos.
 </NotClaimed>
+
+## Volvió
+
+La misma firma reapareció el 2026-09-19, de nuevo un bucle de capa 2 por un
+segundo camino a través de un punto de acceso de la malla, y duró hasta que ese
+camino se cortó el 2026-09-23. Durante sus primeras 34 h el puerto al que el
+bridge había dejado de entregar tráfico fue `sfp-sfpplus1`, y después `ether2`
+durante 62 h. Entre las 12:07 y las 18:55 UTC del 2026-09-21 y del 22, `ether2`
+recibió 12 y 13 paquetes por segundo y envió 1; en esas mismas horas del
+2026-09-23, tras desaparecer el segundo camino a las 12:06, recibió 192 y envió 178.
+
+La segunda vez hubo dos diferencias. Durante la mayor parte de la primera fase,
+los registros de dirección propia del log del kernel nombraban `ether2`, mientras
+que el puerto que recibía sin obtener nada de vuelta era `sfp-sfpplus1`: el
+mensaje nombra el puerto por el que entró la trama reflejada, no el puerto que el
+bucle había dejado aislado. Y los contadores por puerto de RouterOS sí lo
+mostraron, leídos como recepción sin transmisión; el contraste de
+`mikroscope-bridge-port-dark` con los datos del 2026-09-19 11:13 al 2026-09-23
+22:44 UTC marca esos dos puertos en esos dos tramos y ningún otro.
 
 ## La firma
 
@@ -188,6 +233,11 @@ relacionada es una corrección de la que te puedes fiar.
   estado sano es cero.
 - `received packet on <port> with own address as source address`, con la propia
   MAC del router dentro.
+- El puerto de ese mensaje es por donde entró la trama reflejada, no
+  necesariamente el puerto que el bucle ha dejado aislado. Del 2026-09-19 al 20
+  nombraba `ether2` mientras `sfp-sfpplus1` era el puerto que recibía y no
+  enviaba nada. Compara el rx de cada puerto del bridge con su tx antes de
+  desenchufar un cable.
 - Tiempos entre llegadas de <Measured id="loop.helloGap" />: el hello interval de STP.
 - Un puerto con mucho tráfico en el que el bridge no ha aprendido ningún host,
   con `edge=false` mientras sus vecinos están a `true`.
@@ -203,6 +253,8 @@ relacionada es una corrección de la que te puedes fiar.
 - Prefiere un cambio que discrimine entre hipótesis a un cambio que tal vez lo
   arregle.
 - Desconfía de una corrección que solo tu instrumento principal puede confirmar.
+- Sigue vigilando después de la corrección. Una corrección confirmada dice que el
+  fallo no estaba cuando mediste, y este volvió una semana después.
 
 <SeeAlso>
 
@@ -214,5 +266,7 @@ relacionada es una corrección de la que te puedes fiar.
   base contra la que destacó este flujo.
 - [La CPU del router, la red del contenedor](/mikroscope/es/limits/namespaces/): por qué el log del
   kernel es visible desde el contenedor y los contadores de las interfaces no.
+- [Reglas de alerta](/mikroscope/es/dashboards/alerts/): `mikroscope-l2-loop` y
+  `mikroscope-bridge-port-dark`, las dos reglas que vigilan este fallo.
 
 </SeeAlso>

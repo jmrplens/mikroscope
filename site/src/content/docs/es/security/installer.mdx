@@ -21,7 +21,9 @@ de limitarse a decirlo.
 después, en este orden:
 
 1. ejecuta `doctor`, la comprobación previa de solo lectura, salvo que se dé `--no-doctor`; un
-   requisito que falte lo detiene con `N prerequisite(s) missing; nothing was written`;
+   requisito que falte lo detiene con `N prerequisite(s) missing; nothing was written`. Una línea
+   `WARN` (una credencial de registro pensada para otro registro, o una instalación ya publicada en
+   la LAN sin token) se imprime y no lo detiene;
 2. pregunta `write the objects above to the router? [y/N]`, salvo que se dé `--yes`; cualquier cosa
    que no sea `y` o `Y` lo detiene con `not confirmed; nothing written`;
 3. solo entonces escribe.
@@ -90,9 +92,14 @@ y el nombre exacto del fichero de imagen, solo mientras exista la entrada de mar
 exacta. Así que `uninstall` no puede alcanzar una instalación hecha a mano, ni nada cuyo comentario
 o nombre comparta una subcadena con el nombre del contenedor.
 
-Todo `find` pone entre comillas los atributos de dirección y de puerto. Sin comillas, RouterOS los
-interpreta como valores tipados y la comparación con el valor guardado sale vacía; verificado para
-los dos en <Verified of="find-quoting" />.
+Todo `find` pone entre comillas cada valor no numérico salvo los enumerados `chain` y `action`. Sin
+comillas, una dirección o un puerto se interpretan como valores tipados y la comparación con el
+valor guardado sale vacía; verificado para los dos en <Verified of="find-quoting" />. Una palabra
+suelta como `tcp` se lee como el nombre de una variable, cuyo valor sin definir es vacío: en el
+mismo RB5009 con RouterOS 7.24.4, el 2026-09-21, `find chain=dstnat protocol=tcp` devolvió 0 de 15
+reglas dstnat y `protocol="tcp"` devolvió 10. Antes de 1.1.0 el `protocol` de las reglas de expose era
+el único valor sin comillas, así que `uninstall --expose` no quitaba ninguna de las dos reglas y las
+daba por quitadas.
 
 ## Una escritura que imprime es un fallo
 
@@ -173,9 +180,15 @@ una tiene su propia comprobación antes de que se escriba nada.
   viene puesto en `https://registry-1.docker.io`. **mikroscope nunca escribe ese ajuste.** `doctor`
   lo lee y, cuando la referencia nombra un host que no coincide con el ajuste, imprime la única
   orden que hay que ejecutar (`/container/config/set registry-url=https://ghcr.io`, para la copia
-  de la imagen en GHCR) o dice que uses `--agent-tar` en su lugar. La referencia de Docker Hub
-  `jmrplens/mikroscope-agent:1.0.9` no lleva host y deja el ajuste como lo tenga el router. Confiar
-  en la imagen es confiar en ese registro: nada en la CLI verifica lo que el router se descarga.
+  de la imagen en GHCR) o dice que uses `--agent-tar` en su lugar. La referencia de Docker Hub,
+  `jmrplens/mikroscope-agent:<versión>` (por ejemplo `:1.2.0`), no lleva host y deja el ajuste como
+  lo tenga el router. Confiar en la imagen es confiar en ese registro: nada en la CLI verifica lo
+  que el router se descarga. El mismo ajuste guarda un único usuario y contraseña de registro para
+  todo el equipo, y RouterOS los presenta a cualquier registro del que descargue, así que una cuenta
+  de Docker Hub se envía a GHCR y la descarga termina en `auth error`. `doctor` avisa de ello
+  (`WARN no registry credential meant for another registry`) y solo lee si hay un usuario puesto,
+  nunca el nombre. La contraseña no se puede leer en absoluto. `--agent-tar` no descarga de ningún
+  registro, así que no se envía ninguna credencial de registro.
 
 ## Un script .rsc generado es una credencial
 
@@ -187,8 +200,8 @@ fichero como tratas el token: no lo subas a un repositorio, no lo pegues donde q
 bórralo de los Files del router después del `/import`. Sin token no guarda ningún secreto, solo el
 plan.
 
-`plan` e `install --dry-run` enmascaran el token en lo que imprimen por el terminal
-(`value="(token)"`); `--rsc` no puede, porque el script tiene que ejecutarse.
+`plan`, `install --dry-run` y `upgrade --dry-run` enmascaran el token en lo que imprimen por el
+terminal (`value="(token)"`); `--rsc` no puede, porque el script tiene que ejecutarse.
 
 ## Cómo demuestra uninstall que ha terminado
 
@@ -197,6 +210,15 @@ está. Después pregunta al router, en una sola conexión, cuántos de los objet
 siguen ahí, imprime una línea por paso con la cuenta y falla nombrando cada paso cuya cuenta no sea
 cero (`uninstall left objects behind: …`). Una eliminación que no imprimió nada no es una prueba; la
 cuenta sí. `status` hace esa misma cuenta de forma independiente.
+
+La cuenta cubre solo los pasos del plan construido con las propias opciones de `uninstall`, no todo
+lo que lleva la etiqueta en el router. Con otras opciones que las de la instalación — sin
+`--expose`, u otro `--name`, `--veth`, `--subnet`, `--port`, `--iface-list` o `--addr-list` — pasa
+por alto objetos que siguen ahí: en el RB5009 de referencia (RouterOS 7.24.4, 2026-09-21) un
+`uninstall` sin `--expose` imprimió `verified: nothing mikroscope created remains on the router`
+con el dst-nat de expose todavía en su sitio. Pásale las opciones que tuvo `install`; [órdenes y
+opciones](/mikroscope/es/reference/cli/#pasa-la-misma-forma-a-status-upgrade-y-uninstall) tiene la
+prueba.
 
 El paso del contenedor es el lento, y el orden dentro de él es lo que mantiene honesta la cuenta:
 
@@ -216,9 +238,10 @@ Un recorrido doctor → install → status → upgrade → uninstall (`make roun
 <NotClaimed variant="device-specific">
 	El `/export` idéntico byte a byte tras ese único recorrido, y cada comportamiento de RouterOS
 	citado en esta página — el `/file/remove` silencioso, los selectores `find` entre comillas, los
-	errores impresos con estado de salida 0 — se observaron en un RB5009 con RouterOS 7.24.2. La
-	lógica de rechazo en sí está cubierta por pruebas contra un router simulado, no por una ejecución
-	en otra placa u otra versión de RouterOS.
+	errores impresos con estado de salida 0 — se observaron en un RB5009 con RouterOS 7.24.2, salvo el
+	caso de `protocol=tcp` sin comillas, medido en el mismo equipo con 7.24.4. La lógica de rechazo
+	en sí está cubierta por pruebas contra un router simulado, no por una ejecución en otra placa u
+	otra versión de RouterOS.
 </NotClaimed>
 
 <SeeAlso>

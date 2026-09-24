@@ -83,7 +83,7 @@ los genera al hacer el scrape. Nunca se mezclan en una fila de muestra.
 | Destino                         | Forma                                                                                                                                              |
 | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
 | InfluxDB, Telegraf, stdout `lp` | `mikroscope_device{board,kernel}`, `mikroscope_device_thermal{zone}`, `mikroscope_device_cpufreq{cpu}`, `mikroscope_device_cadence{source,reason}` |
-| SQL                             | las tablas `mikroscope_device`, `mikroscope_device_thermal`, `mikroscope_device_cpufreq`, `mikroscope_device_cadence`                              |
+| SQL (`--sql`, `--postgres`)     | las tablas `mikroscope_device`, `mikroscope_device_thermal`, `mikroscope_device_cpufreq`, `mikroscope_device_cadence`                              |
 | file, stdout `json`             | una línea `{"device":…}` con las capacidades tal como se obtuvieron                                                                                |
 | Elasticsearch                   | un documento con `kind: device`                                                                                                                    |
 | Graphite                        | los datos numéricos bajo `device.*`; placa, kernel y governor no tienen forma en Graphite                                                          |

@@ -18,7 +18,7 @@ func TestElasticsearchSinkPostsBulkNDJSON(t *testing.T) {
 	rx := newCapture(t, bulkReply)
 
 	// A base URL, not a bulk URL: the sink has to append /_bulk itself.
-	p := startForward(t, a, 5*time.Second, "--elastic", rx.URL())
+	p := startForward(t, a, 8*time.Second, "--elastic", rx.URL())
 	rx.Await(t, 1, 60*time.Second)
 	p.Wait(t, 90*time.Second)
 	checkBulkRequests(t, rx.Requests())

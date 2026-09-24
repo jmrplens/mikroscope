@@ -95,8 +95,11 @@ enrutador de Go con `405`.
 
 La CLI usa `wall_ns` frente a su propio reloj para medir el desfase, `seq` y
 `oldest_seq` para planificar un relleno, y `capabilities_hash` para darse cuenta
-de que ha cambiado el kernel o el conjunto de fuentes que tiene debajo; ningún
-código de la CLI lee `mono_ns`. El sondeo que sigue a `install` imprime esta
+de que ha cambiado el kernel o el conjunto de fuentes que tiene debajo;
+`doctor` lee `board` para clasificar los registros del log del kernel y
+`seq` con `oldest_seq` para leer el anillo entero, o sus 10 000 muestras más
+recientes cuando guarda más. Ningún código de la CLI lee
+`mono_ns`. El sondeo que sigue a `install` imprime esta
 respuesta como
 `direct transport ok: agent <version>, <rate> Hz, seq <n>, <n> slipped, <rtt> round trip`,
 donde `<version>` es la versión de la propia CLI, que esta graba en el agente
@@ -160,7 +163,10 @@ Escribe NDJSON y cierra. Dos formas, según esté presente `since` o no.
 </ScrollTable>
 
 Un valor fuera de su rango es `400` con un motivo de una línea. La forma
-`since` es de la que tiran `record` y `forward`, por los dos transportes. Añade
+`since` es de la que tiran `record` y `forward`, por los dos transportes, y con
+la que `doctor` lee el anillo (`since` uno por debajo de `oldest_seq`, o
+`seq` − 10 000 cuando el anillo guarda más de 10 000 muestras, `max=10000`, solo por el transporte directo y con el token cuando hay
+`TOKEN`). Añade
 dos tipos de línea que la forma `seconds` no tiene: primero una línea de hueco
 cuando `since` es más antiguo que el anillo, y una línea de disparo antes de
 cada muestra en la que saltó una condición de captura. `max` existe por el
@@ -257,7 +263,7 @@ como ocupados.
 | `load`             | nivel | `/proc/loadavg`: `Load1`, `Load5`, `Load15`, `Running`, `Total`, `LastPID`                                                                                                                                                                                                                           |
 | `vm`               | delta | eventos de `/proc/vmstat`: `pgfault`, `pgmajfault`, y cuando no son cero `pgscan_kswapd`, `pgscan_direct`, `pgsteal_kswapd`, `pgsteal_direct`, `pgalloc`, `pgfree`, `allocstall`, `compact_stall`, `oom_kill`, `pswpin`, `pswpout`                                                                   |
 | `vmg`              | nivel | `nr_free_pages`, `nr_dirty`, `nr_writeback`, `nr_slab_reclaimable`, `nr_slab_unreclaimable`, en páginas                                                                                                                                                                                              |
-| `self`             | mixto | `cpu_us` (delta, µs), `rss` (nivel, bytes), `cg_mem` (nivel, se omite cuando es cero), `cg` (`true` cuando se leyó cgroup2), y `throttled`, `throttled_us`, `oom_kill` (deltas); los cuatro últimos se omiten cuando son cero o falso                                                                |
+| `self`             | mixto | `cpu_us` (delta, µs), `rss` (nivel, bytes), `cg_mem` (nivel, se omite cuando es cero), `cg` (`true` cuando se leyó cgroup2), y `throttled`, `throttled_us`, `oom_kill` (deltas); los cuatro últimos se omiten cuando son cero o falso; `wake_ns` (cuánto tarde despertó el bucle tras su ticker, ns) y `read_ns` (cuánto tardó la lectura de todas las fuentes debidas, ns), cada uno omitido cuando es cero                                                                |
 | `thermal`          | nivel | por zona `type`, `mc` (m°C) y `Celsius`; a la cadencia declarada de la zona, en cada tick cuando ninguna zona declara una, o a `FLOOR_HZ`                                                                                                                                                            |
 | `freq_khz`         | nivel | por núcleo, kHz; al cambiar o en el latido de 60 s                                                                                                                                                                                                                                                   |
 | `thermal_critical` | nivel | zona a punto de disparo crítico en m°C, en las filas que llevan `thermal`                                                                                                                                                                                                                            |

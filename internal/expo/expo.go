@@ -608,10 +608,11 @@ func (t *Totals) foldDevices(s sample.Sample) {
 type Exposition struct {
 	Ring   *agent.Ring
 	RateHz int
-	// Sampler is true on the agent, which owns the ticker: only it can say
-	// how many ticks slipped. The collector's Prometheus sink leaves it
+	// Sampler is true when Slipped comes from the sampler that owns the
+	// ticker: always on the agent, and on the collector's Prometheus sink
+	// once it has read the agent's /sampler. Until then the sink leaves it
 	// false and renders no mikroscope_slipped_total, because a 0 there would
-	// be a claim about a sampler it never ran.
+	// be a claim about a sampler nobody has asked yet.
 	Sampler bool
 	Slipped uint64
 	Version string

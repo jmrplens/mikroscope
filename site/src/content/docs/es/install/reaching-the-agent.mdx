@@ -103,10 +103,11 @@ puede contener letras, dígitos, `_`, `.` y `-`, hasta 128 caracteres.
 en <Verified of="expose-rules" />: el par funciona, y las dos reglas se pueden quitar por etiqueta.
 
 Lo usa un cliente al que apuntes a `http://<router LAN IP>:9123`: Prometheus,
-`curl`. Los transportes de la propia CLI no. `record`, `forward` y el sondeo
-tras `install` construyen la dirección del agente a partir de `--subnet` y
-`--port`, y esta compilación no tiene ninguna opción que los dirija a la
-dirección expuesta.
+`curl`. Los transportes de la propia CLI no. `record`, `forward`, el sondeo
+tras `install` y la lectura de salud de `doctor` por sí solo construyen la
+dirección del agente a partir de `--subnet` y `--port`, y esta compilación no
+tiene ninguna opción que los dirija a la dirección expuesta. La lectura de salud
+de `doctor` tampoco usa el relay: lee directamente o no lee.
 
 Lo que abre un servicio escuchando para toda la LAN está en
 [Lo que abre --expose](/mikroscope/es/security/expose/).
@@ -119,7 +120,7 @@ Lo que abre un servicio escuchando para toda la LAN está en
 | ---------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
 | directa    | una ruta desde tu máquina a la /30 a través del router                 | solo las dos pertenencias a listas que ya añade `install`                                                                |
 | relay      | un usuario de la API con `read,api,test`; `--transport relay` o `auto` | <Measured id="relay.replyMaxBytes" /> y <Measured id="relay.maxBatch" /> muestras por llamada, ~1 s en más o menos la mitad de las llamadas, sin token |
-| `--expose` | `--lan-address` y un token; dos reglas de cortafuegos en el router     | alcanzable desde toda la LAN; no lo usan `record`, `forward` ni el sondeo                                                |
+| `--expose` | `--lan-address` y un token; dos reglas de cortafuegos en el router     | alcanzable desde toda la LAN; no lo usan `record`, `forward`, el sondeo ni la lectura de salud de `doctor`               |
 
 </ScrollTable>
 

@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"flag"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -95,6 +97,35 @@ func TestParseRecordFlagsReadsItsOwnFlags(t *testing.T) {
 	}
 	if _, _, badErr := parseRecordFlags("record", []string{"--for", "not-a-duration"}, &c, nil); badErr == nil {
 		t.Error("an unparseable --for was accepted")
+	}
+}
+
+// --from-start is record's alone. forward listed it in --help and ignored it,
+// since internal/forward always starts at the agent's newest sample; a flag
+// that does nothing must be refused, not accepted.
+func TestFromStartIsOfferedToRecordOnly(t *testing.T) {
+	c := cli{opts: router.Defaults()}
+	ro, _, err := parseRecordFlags("record", []string{"--from-start"}, &c, nil)
+	if err != nil || !ro.fromStart {
+		t.Fatalf("record --from-start: %+v, %v", ro, err)
+	}
+	for _, verb := range []string{"forward", "mark", "plot"} {
+		vc := cli{opts: router.Defaults()}
+		fs := flag.NewFlagSet("mikroscope "+verb, flag.ContinueOnError)
+		fs.SetOutput(io.Discard)
+		if _, _, verbErr := parseRecordFlags(verb, []string{"--from-start"}, &vc, fs); verbErr == nil || !strings.Contains(verbErr.Error(), "from-start") {
+			t.Errorf("%s --from-start: err = %v, want it refused", verb, verbErr)
+		}
+	}
+}
+
+// The top-level help names every store `dashboards --store` takes: it used to
+// say InfluxDB 3 and Prometheus while the code took five.
+func TestUsageNamesEveryDashboardStore(t *testing.T) {
+	for _, st := range dashboards.Stores {
+		if !strings.Contains(usageText, string(st)) {
+			t.Errorf("usage does not name the %s dashboards", st)
+		}
 	}
 }
 

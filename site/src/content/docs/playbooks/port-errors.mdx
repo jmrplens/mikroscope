@@ -70,6 +70,11 @@ from the other end — the egress queue that could not drain fast enough — and
 finding both is what turns a correlation into a mechanism: a 2.5 Gbit/s sender
 bursting at line rate into a 1 Gbit/s destination.
 
+On the dashboard it is _Egress queue drops — the router's own transmit queue_, in
+**Interface traffic**. `mikroscope-egress-queue-drops` fires only after ten
+consecutive minutes of dropping, so bursts like these show on the panel and
+deliberately do not page you.
+
 ## What did not work
 
 Two things were tried on the reference device before the one that worked, and

@@ -21,11 +21,16 @@ La **CLI** corre en tu máquina. Instala y desinstala el agente, graba una
 ventana con marcadores, dibuja un SVG determinista de ella, y funciona como
 colector que tira del agente, fusiona una capa de la API de RouterOS a 1 Hz y
 escribe a once destinos —fichero, Prometheus e InfluxDB 3 entre ellos. Se publica como un archivo por
-plataforma —linux, macOS, Windows y FreeBSD en amd64, arm64 y arm— y el agente
-a su lado como un tar de imagen por arquitectura y como imagen de registro, en
+plataforma —linux y FreeBSD en amd64, arm64 y arm; macOS y Windows en amd64 y arm64— y el
+agente a su lado como un tar de imagen por arquitectura y como imagen de registro, en
 Docker Hub como `jmrplens/mikroscope-agent` y en GHCR como
 `ghcr.io/jmrplens/mikroscope-agent`, así que instalar solo necesita una
-toolchain de Go cuando quieres el agente construido desde tu propio árbol.
+toolchain de Go cuando quieres el agente construido desde tu propio árbol. Desde
+la 1.1.0 el colector también es una imagen, `jmrplens/mikroscope` y
+`ghcr.io/jmrplens/mikroscope` (linux/amd64, linux/arm64), y `deploy/` trae dos
+stacks de compose que lo juntan con InfluxDB 3 o Prometheus y un Grafana. Esa
+imagen es para `forward`: los verbos de instalación llaman a ssh y scp, que se
+quedan fuera a propósito.
 
 ## Cuatro límites, dichos antes que nada
 
@@ -54,9 +59,10 @@ toolchain de Go cuando quieres el agente construido desde tu propio árbol.
 4. **El observador cuesta algo, y está escrito.** Un <Measured id="run.10hz.cpu" /> de un
    núcleo a 10 Hz en un RB5009, un <Measured id="run.100hz.cpu" /> a 100 Hz. [Lo que
    cuesta](/mikroscope/es/cost/) tiene la tabla completa y sus condiciones. Todas
-   las cifras de este sitio salen de ese único equipo, un RB5009UG+S+ con
-   RouterOS 7.24.2, arm64: las compilaciones para arm y x86_64 son cruzadas y
-   pasan por CI, pero no han corrido nunca en hardware.
+   las cifras de este sitio salen de ese único equipo, un RB5009UG+S+, arm64: las
+   de coste con RouterOS 7.24.2, las posteriores con 7.24.4, y cada una dice
+   cuál. Las compilaciones para arm y x86_64 son cruzadas y pasan por CI, pero no
+   han corrido nunca en hardware.
 
 </Steps>
 

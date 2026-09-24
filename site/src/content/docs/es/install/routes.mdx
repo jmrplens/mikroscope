@@ -50,16 +50,16 @@ subir:
 
 ```sh
 mikroscope install --router usuario@192.168.88.1 \
-  --remote-image jmrplens/mikroscope-agent:1.0.9
+  --remote-image jmrplens/mikroscope-agent:1.2.0
 ```
 
 No se sube nada, ningún tar aterriza en el equipo, y `uninstall` no tiene
 ningún fichero del que dar cuenta: el paso del contenedor pasa a ser
-`/container/add remote-image="jmrplens/mikroscope-agent:1.0.9" …` y el plan
+`/container/add remote-image="jmrplens/mikroscope-agent:1.2.0" …` y el plan
 imprime `the router pulls … (nothing is uploaded)` donde iría la línea de
 subida. La release publica la imagen dos veces, como
-`jmrplens/mikroscope-agent:1.0.9` en Docker Hub y como
-`ghcr.io/jmrplens/mikroscope-agent:1.0.9` en GHCR. Las dos llevan `linux/amd64`,
+`jmrplens/mikroscope-agent:1.2.0` en Docker Hub y como
+`ghcr.io/jmrplens/mikroscope-agent:1.2.0` en GHCR. Las dos llevan `linux/amd64`,
 `linux/arm64`, `linux/arm/v7` y `linux/arm/v5`, y RouterOS toma la que necesita
 su arquitectura —que es la razón de que esta ruta no pregunte nada sobre la
 placa: las dos clases de ARM de 32 bits que vende MikroTik están en el índice.
@@ -83,14 +83,18 @@ que tenga sitio en RAM para las capas mientras las extrae.
 	sitio para instalar una sonda sería cambiar los contenedores de otra persona. `doctor` lo lee en
 	su lugar y, cuando la referencia nombra un host que no cuadra con el ajuste, nombra la única
 	orden que hay que ejecutar: `/container/config/set registry-url=https://ghcr.io` para la
-	referencia de GHCR. Instala con `--agent-tar` si prefieres no tocarlo.
+	referencia de GHCR. Instala con `--agent-tar` si prefieres no tocarlo. También avisa cuando hay un
+	usuario de registro puesto y la descarga va a cualquier sitio que no sea Docker Hub: lo explica
+	[Lo que comprueba doctor](/mikroscope/es/install/prerequisites/#lo-que-comprueba-doctor).
 </Aside>
 
-Una referencia sin host —`jmrplens/mikroscope-agent:1.0.9`— deja el registro a
-lo que el router ya tenga configurado, y entonces `doctor` no comprueba nada al
-respecto. `--remote-image` toma su valor por defecto de
-`MIKROSCOPE_REMOTE_IMAGE`, y `upgrade` también lo acepta; `image` lo rechaza,
-porque no hay ningún tar que escribir.
+Una referencia sin host —`jmrplens/mikroscope-agent:1.2.0`— deja el registro a
+lo que el router ya tenga configurado, y `doctor` no hace entonces la
+comprobación de `registry-url`; sí lee el ajuste y si hay usuario, y avisa con
+`WARN no registry credential meant for another registry` cuando hay usuario y
+el registro configurado no es Docker Hub. `--remote-image` toma su valor por
+defecto de `MIKROSCOPE_REMOTE_IMAGE`, y `upgrade` también lo acepta; `image` lo
+rechaza, porque no hay ningún tar que escribir.
 
 ## Un script de RouterOS
 
@@ -99,7 +103,7 @@ otra máquina en absoluto:
 
 ```sh
 mikroscope plan --rsc \
-  --remote-image jmrplens/mikroscope-agent:1.0.9 \
+  --remote-image jmrplens/mikroscope-agent:1.2.0 \
   --out install.rsc
 ```
 
@@ -172,9 +176,15 @@ sea pública no ayuda, porque el router nunca pregunta de forma anónima.
 
 Lo que esto implica: **un router cuyo `/container/config` tenga un usuario de
 Docker Hub no puede bajarse imágenes de GHCR**, y la salida es poner en ese
-mismo campo un token de GHCR o quedarse en Docker Hub. No se ha probado un
-router sin credencial, porque la contraseña del router de referencia no se
-puede volver a leer y por tanto no se puede restaurar.
+mismo campo un token de GHCR o quedarse en Docker Hub. Desde 1.2.0 `doctor` lo
+dice antes de instalar, como `WARN no registry credential meant for another registry`,
+y propone dos salidas: instalar desde un tar con `--agent-tar`, donde no se
+descarga nada, o borrar el usuario si nada más en el router lo necesita
+([Lo que comprueba doctor](/mikroscope/es/install/prerequisites/#lo-que-comprueba-doctor)).
+Ese aviso se reprodujo en solo lectura en el mismo RB5009, con RouterOS 7.24.4,
+el 2026-09-23. No se ha probado un router sin credencial, porque la contraseña
+del router de referencia no se puede volver a leer y por tanto no se puede
+restaurar.
 
 La ejecución además destapó un fallo real, ya corregido: una instalación con
 `--remote-image` identificaba su contenedor por la referencia del registro, que
@@ -237,7 +247,7 @@ mientras que una ARMv7 no arranca en aquellas.
 
 <Steps>
 
-1. Descarga `mikroscope_1.0.9_<so>_<arch>.tar.gz` (`.zip` en Windows) y el tar
+1. Descarga `mikroscope_1.2.0_<so>_<arch>.tar.gz` (`.zip` en Windows) y el tar
    de la imagen del agente de la tabla de arriba, junto con `checksums.txt` y
    `checksums.txt.sigstore.json`.
 
@@ -246,25 +256,23 @@ mientras que una ARMv7 no arranca en aquellas.
 3. Desempaqueta la CLI e instala:
 
    ```sh
-   tar xzf mikroscope_1.0.9_linux_x86_64.tar.gz
+   tar xzf mikroscope_1.2.0_linux_x86_64.tar.gz
    ./mikroscope install --router usuario@192.168.88.1 \
      --arch arm64 --agent-tar mikroscope-agent-arm64.tar
    ```
 
 </Steps>
 
-La CLI lee el tar antes de subirlo, que es lo que caza la descarga equivocada:
-imprime lo que leyó, como
-`using mikroscope-agent-arm64.tar: linux/arm64, agent <tamaño> KiB`, y con la
-imagen ARMv7 añade la nota de que una placa EN7562CT necesita la v5. Quiere un `manifest.json` de una sola
-imagen, la configuración que ese manifiesto nombra, una capa y
-`/mikroscope-agent` como entrypoint; cualquier otra cosa falla con
-`this is not a mikroscope agent image`. Después, la arquitectura de la imagen
-tiene que ser la que dice `--arch`, o el verbo falla nombrando el artefacto que
-hay que descargar en su lugar: una imagen `amd64` en una placa arm64 se
-instalaría, arrancaría y moriría con `exec format error` en el log del
+La CLI lee el tar antes de subirlo, que es lo que caza la descarga equivocada.
+Quiere un `manifest.json` de una sola imagen, la configuración que ese manifiesto
+nombra, una capa y `/mikroscope-agent` como entrypoint; cualquier otra cosa
+falla con `this is not a mikroscope agent image`. Después, la arquitectura de la
+imagen tiene que ser la que dice `--arch`, o el verbo falla nombrando el
+artefacto que hay que descargar en su lugar: una imagen `amd64` en una placa
+arm64 se instalaría, arrancaría y moriría con `exec format error` en el log del
 contenedor. De un tar que acepta imprime lo que ha leído, así:
-`using mikroscope-agent-arm64.tar: linux/arm64, agent <tamaño> KiB`.
+`using mikroscope-agent-arm64.tar: linux/arm64, agent <tamaño> KiB`, y con la
+imagen ARMv7 añade la nota de que una placa EN7562CT necesita la v5.
 
 `--agent-tar` toma su valor por defecto de `MIKROSCOPE_AGENT_TAR`, y `upgrade`
 e `image` también lo aceptan. De ahí en adelante la instalación es la ruta de
@@ -273,7 +281,7 @@ subida: el tar sube con `scp`, RouterOS lo extrae al añadir el contenedor, e
 
 <Aside type="tip" title="Dos artefactos con nombres parecidos">
 	`mikroscope-agent-arm64.tar` es la imagen de contenedor para cargar de lado, la que quiere
-	`--agent-tar`. `mikroscope-agent_1.0.9_linux_arm64.tar.gz` es un archivo con el binario del agente
+	`--agent-tar`. `mikroscope-agent_1.2.0_linux_arm64.tar.gz` es un archivo con el binario del agente
 	a secas, para leerlo o ejecutarlo fuera de un contenedor; `--agent-tar` lo rechaza.
 </Aside>
 

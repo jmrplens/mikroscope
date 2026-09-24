@@ -38,7 +38,7 @@ agent except where the table says otherwise:
 
 | Source                         | What it gives                                                                                                                    | Where it shows                                                                 |
 | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| `/dev/kmsg`                    | the kernel ring buffer as timestamped events, naming the router's real interfaces                                                | `mikroscope_kmsg_records_total{level}`, and Loki                               |
+| `/dev/kmsg`                    | the kernel ring buffer as timestamped events, naming the router's real interfaces                                                | `mikroscope_kmsg_records_total{level}`, `mikroscope_kmsg_port_records_total{port,kind,level}`, and Loki |
 | `/proc/slabinfo`               | the global slab caches: `nf_conntrack` (the router's real connection count), `skbuff_*`, `TCP`/`UDP` sockets, `kmalloc-1k`/`-2k` | `mikroscope_slab_active_objects{cache}`                                        |
 | `/sys/class/mtd` ECC counters  | `corrected_bits` and `ecc_failures` per NAND partition                                                                           | `mikroscope_mtd_ecc_corrected_bits_total`, `mikroscope_mtd_ecc_failures_total` |
 | the PMU, via `perf_event_open` | cycles, instructions, cache references and misses, branch misses, bus cycles, per core, system-wide                              | `mikroscope_perf_events_total{counter,cpu}`                                    |
@@ -108,6 +108,13 @@ global `/proc` file in the samples, the thermal zones, `scaling_cur_freq`, `/pro
   set.
 - The NAND ECC counters. The YAFFS wear counters remain.
 - The PMU, and with it everything beneath the <Measured id="tick.ms" /> tick.
+
+What goes silent with them: `doctor`'s `health` section can then report only `softnet-drops`. Its
+`ok` line does not mean there is no loop, because the loop, STP-churn and link-flap checks read the
+kernel log. The alert rules `mikroscope-l2-loop` and `mikroscope-port-link-down` (kernel log),
+`mikroscope-conntrack-near-limit` (slab cache; `--conntrack-every` feeds a different series that
+this rule does not read) and `mikroscope-ecc-failure` (MTD) have no data and stay at OK. Check
+`mikroscope_device_info{privileged}` before trusting their silence.
 
 <Aside type="caution" title="Privileged is not a mount">
 	A privileged container with the host's `/` mounted reads the whole RouterOS configuration, secrets

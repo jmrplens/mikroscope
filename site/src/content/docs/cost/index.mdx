@@ -15,7 +15,8 @@ a footnote: it is reported by the agent on every sample, and the image-size budg
 ## The budget, and what it actually costs
 
 The budget is **≤ <Measured id="budget.cpu" /> of one core, ≤ <Measured id="budget.rss" /> RSS,
-≤ <Measured id="budget.image" /> image**. The image is <Measured id="image.size" />. The other two
+≤ <Measured id="budget.image" /> image**. The 1.0.0 image was <Measured id="image.size" />, the figure that release's notes give; the size of
+the current image is to be measured on the published 1.2.1 image. The other two
 depend on the rate and on how much you ask it to read, and the honest answer is a table rather than
 a number.
 
@@ -40,16 +41,19 @@ about the rate. Nothing about the sampling changed: the CPU moved from 2.85 % t
 
 The budget says what the agent is allowed to cost. The other comparison, the
 one a reader usually wants, is against doing it the obvious way: a busybox shell
-loop reading the same file set at the same rate. On the same router that costs
-**<Measured id="busybox.cpu" /> of one core**, while the reads themselves are
+loop. On 2026-09-11, on the same router, a loop reading the agent's file set of that date at
+10 Hz cost **<Measured id="busybox.cpu" /> of one core**, while the reads themselves took
 about <Measured id="procread.ms" /> per sample.
 
 <Provenance of="busybox-2026-09-11" />
 
-So most of the shell loop's cost is not the reading. It pays a fork per
+So most of the shell loop's cost was not the reading. It pays a fork per
 iteration and the agent pays none: one process starts, opens its files once and
-keeps them open. That is the whole of the difference, and it is why the agent is
-a binary rather than a script.
+keeps them open, which is why the agent is a binary rather than a script. The two
+figures cannot be set side by side, though. The agent reads far more today — perf,
+buddyinfo, the MTD ECC counters, slabinfo, the kernel log — and the loop has not
+been re-measured against that set, so it cannot be set
+against <Measured id="run.10hz.cpu" />.
 
 <Aside type="note" title="Where the number comes from">
 	Not from `top`, and not from a snapshot. The agent counts its own CPU microseconds and RSS out of
@@ -58,6 +62,11 @@ a binary rather than a script.
 	`/metrics` 60 s apart, at steady state with the ring already full, is the measurement — the agent
 	has served no exposition of its own since 1.0.5. RouterOS `/tool profile` shows the same process as `mikroscope-agent`.
 </Aside>
+
+Pullers add to it. Besides the collector and `record`, a standalone `doctor` reads the ring once,
+in one request: the whole ring when it holds no more than 10 000 samples, otherwise the newest
+10 000. At the defaults that is the whole 60 s ring, about 1.9 MB at 10 Hz, and that request is served on the
+sampler's core; the cost of that read on the RB5009 has not been measured.
 
 ## Size the memory limit to the data
 
@@ -97,7 +106,9 @@ is still filling it and will read low.
 The address is the collector's, not the agent's: since 1.0.5 the agent serves
 no `/metrics`, and these two counters reach the collector in every sample. With
 no Prometheus sink configured, the same two numbers are `cpu_us` and `rss` in
-`mikroscope_self`, in whichever store you are writing to.
+`mikroscope_self` on InfluxDB, Telegraf, stdout and the SQL stores, `self.cpu_us` and `self.rss` in the sample
+documents on Elasticsearch, `self.cpu_us` and `self.rss_bytes` on Graphite, and
+`mikroscope.self.cpu.time` / `mikroscope.self.memory{kind="rss"}` on OTLP.
 
 <SeeAlso>
 

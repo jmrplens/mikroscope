@@ -159,7 +159,10 @@ func Doctor(r Runner, o Options, imageBytes int) (Report, error) {
 			Name: "the installed agent published on the LAN asks for a token", OK: tokenSet, Warn: true,
 			Got: "dst-nat=" + exposed + " token=" + setOrUnset(tokenSet),
 			Fix: "the install named " + o.Name + " publishes the agent on the LAN with no token, so any host there can read it. " +
-				"Re-run `mikroscope upgrade` with the same --name and --token <secret>, or `uninstall --expose` to withdraw it from the LAN",
+				"Re-run `mikroscope upgrade` with the same --name, the flags it was installed with (--expose --lan-address among them) and --token <secret>; " +
+				"or remove the agent entirely, LAN rules and container together, with `mikroscope uninstall --name " + o.Name +
+				" --expose --lan-address <router LAN IPv4> --token <any> --yes`, plus any other shape flag the install was given, such as --port, --veth or --subnet " +
+				"(uninstall refuses --expose without --lan-address and --token, and without --yes it only lists)",
 		})
 	}
 	return rep, nil

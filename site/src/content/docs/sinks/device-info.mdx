@@ -79,7 +79,7 @@ never mixed into a sample row.
 | Sink                            | Form                                                                                                                                               |
 | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
 | InfluxDB, Telegraf, stdout `lp` | `mikroscope_device{board,kernel}`, `mikroscope_device_thermal{zone}`, `mikroscope_device_cpufreq{cpu}`, `mikroscope_device_cadence{source,reason}` |
-| SQL                             | the tables `mikroscope_device`, `mikroscope_device_thermal`, `mikroscope_device_cpufreq`, `mikroscope_device_cadence`                              |
+| SQL (`--sql`, `--postgres`)     | the tables `mikroscope_device`, `mikroscope_device_thermal`, `mikroscope_device_cpufreq`, `mikroscope_device_cadence`                              |
 | file, stdout `json`             | a `{"device":…}` line holding the capabilities as fetched                                                                                          |
 | Elasticsearch                   | a document with `kind: device`                                                                                                                     |
 | Graphite                        | the numeric facts under `device.*`; board, kernel and governor have no Graphite form                                                               |

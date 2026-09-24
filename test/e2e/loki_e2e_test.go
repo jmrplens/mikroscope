@@ -161,7 +161,7 @@ func TestLokiSinkSendsNoTenantHeaderWhenNoneIsConfigured(t *testing.T) {
 	a := newFakeAgent(t, "")
 	rx := newCapture(t, nil)
 
-	p := startForward(t, a, 5*time.Second, "--loki", rx.URL()+"/loki/api/v1/push")
+	p := startForward(t, a, 8*time.Second, "--loki", rx.URL()+"/loki/api/v1/push")
 	rx.Await(t, 1, 60*time.Second)
 	p.Wait(t, 90*time.Second)
 

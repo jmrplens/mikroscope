@@ -291,7 +291,16 @@ The total moves by 0.11 points, which is inside the traffic noise of a minute; t
 rows that answer the tier's questions move by about half a point between them. No `api`
 process row appears in either profile: the API process relays, and the work lands on
 the subsystem that answers. So a tier running a round every second costs the router
-about 0.5 % of its total CPU.
+about 0.5 % of its total CPU. That table is one 60 s profile per condition, with no
+spread.
+
+A larger configuration was measured as an A/B on the same router on 2026-09-19, the day
+of a RouterOS upgrade that has left it on 7.24.4 (which version the A/B itself ran on was
+not recorded): every interface but `lo` in `--interfaces` (16) and `--conntrack-every
+10s`, 8 min without against 14 min with. Mean `cpu-load` went from 7.12 % to 7.91 % and
+mean kernel busy from 7.70 % to 8.46 %, about +0.8 points; that is a lower bound, since
+bridge traffic fell from 48.0 to 38.9 Mbit/s between the windows. The p50 of `cpu-load`
+stayed at 6 and the p95 went from 16 to 18.
 
 That is small, and the project still treats the API as the costly path. Per-port data
 comes from the container wherever the container can see it, and configuration is read
@@ -317,8 +326,9 @@ every dial carries a login. The inventory is dropped and re-read after a
 reconnection: an upgrade is exactly when an interface can change its name, type
 or bridge, and stale labels on fresh rates would be worse than a moment's gap.
 
-Measured against the reference RB5009 on 2026-09-19, without touching the
-router: a collector polling all 16 interfaces at 1 Hz had its API socket
+Measured against the reference RB5009 on 2026-09-19, after that day's RouterOS
+upgrade, without touching the router: a collector running `monitor-traffic` on
+16 interfaces (all but `lo`) at 1 Hz had its API socket
 destroyed from the host with `ss -K`, which is what the router's side of a
 reboot looks like to it. The tier reopened the connection and retried inside
 the same round — 0 failed commands, 0 dropped rounds, 16 interfaces in every
@@ -344,17 +354,24 @@ in [Troubleshooting](/mikroscope/reference/troubleshooting/#the-api-panels-are-b
 ## The conntrack count
 
 `--conntrack-every 10s` asks `/ip/firewall/connection/print count-only` at that
-cadence: <Measured id="api.conntrackMs" /> at <Measured id="conntrack.api" /> entries on the RB5009 (date not recorded). It is off by default because it
+cadence: <Measured id="api.conntrackMs" /> at <Measured id="conntrack.api" /> entries on the RB5009 (2026-09-11, the day before the slab readings; the time of day is not recorded), a single reading with no spread. It is off by default because it
 is a table scan over an API session, and under `privileged=yes` the agent's
 `nf_conntrack` slab count is the same population read from a file at the sampler's rate.
-The two do not match exactly — they are sampled at different instants, and the slab
-counts objects the allocator still holds — but they track: the API said <Measured id="conntrack.api" /> the day before the slab said <Measured id="conntrack.slab" />.
+The two will not match exactly — they are sampled at different instants, and the slab
+counts objects the allocator still holds. Whether they track has not been measured: the API
+said <Measured id="conntrack.api" /> the day before the agent's slab said <Measured id="conntrack.slab" />,
+which shows the same order of magnitude and no more. Run the count and read the slab in the
+same minute on your own device to compare them.
 
 <NotClaimed>
-	The API tier has run against one RouterOS version, 7.24.2, on one board. Which loss keys and which
-	counters another version or another board returns is that router's statement to make; the sinks
-	carry whatever comes back and nothing else. Nor does the correlation above say whether RouterOS
-	computes `cpu-load`'s one-second window on a wall clock or on jiffies.
+	The API tier has run on one board, the reference RB5009. The inventory and loss-key figures and
+	the 60 s cost profile above were measured on RouterOS 7.24.2 (2026-09-15 and 16). The
+	reconnection test and the 16-interface A/B ran on 2026-09-19, the day of a RouterOS upgrade;
+	since then the tier has run continuously on the upgraded router, now on 7.24.4, and none of the
+	7.24.2 figures has been re-measured there. Which loss keys and which counters another version or
+	another board returns is that router's statement to make; the sinks carry whatever comes back
+	and nothing else. Nor does the correlation above say whether RouterOS computes `cpu-load`'s
+	one-second window on a wall clock or on jiffies.
 </NotClaimed>
 
 <SeeAlso>

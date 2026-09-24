@@ -31,10 +31,13 @@ import (
 //     something else, so those panels are marked unavailable for this store
 //     instead of being translated into a wrong answer.
 //
-// Every translation this file produces is planned by a real PostgreSQL in
-// test/e2e/docker (TestPostgresDashboardQueriesPlan), which is what keeps the
-// rules honest: a rule that produces valid-looking SQL PostgreSQL will not
-// accept fails there.
+// Every panel translation this file produces is planned by a real PostgreSQL
+// in test/e2e/docker (TestPostgresDashboardQueriesPlan), which is what keeps
+// the rules honest: a rule that produces valid-looking SQL PostgreSQL will not
+// accept fails there. The alert rules are not planned there; their translated
+// queries are checked offline against the columns the SQL sink declares
+// (TestPostgresAlertQueriesReadDeclaredColumns), which catches a column no
+// table has but not a type or syntax error.
 
 // pgTables maps an InfluxDB measurement to the SQL sink's table. A
 // measurement that is absent here keeps its name; one mapped to "" has no
@@ -71,12 +74,18 @@ var pgColumns = map[string]map[string]string{
 // order; the SQL sink has (block_order, free_blocks), one row per order.
 // mikroscope_api_ifcounters: InfluxDB has a column per RouterOS counter name;
 // the SQL sink has (counter, value), because the counter set differs per port
-// and per board.
+// and per board. Every counter a query names is listed, not only the ones the
+// panels use: rx_packet, tx_unicast and tx_broadcast were missing until
+// 2026-09-24, and the 1.2.0 PostgreSQL alert file carried
+// mikroscope-bridge-port-dark reading them (and bridge, an ifinfo column) as
+// columns of mikroscope_api_ifcounter, which has none of them.
+// TestPostgresAlertQueriesReadDeclaredColumns now checks every translated
+// alert query against the sink's declared schema.
 // mikroscope_self: cgroup_mem_max rides on the InfluxDB row and is a device
 // fact in the SQL schema (mikroscope_device).
 var pgWideOnly = map[string][]string{
 	"mikroscope_buddy":          {"order_"},
-	"mikroscope_api_ifcounters": {"rx_overflow", "rx_bytes", "tx_bytes", "link_downs", "tx_rx_", "fp_rx_", "fp_tx_", "rx_fcs_error"},
+	"mikroscope_api_ifcounters": {"rx_overflow", "rx_bytes", "tx_bytes", "link_downs", "tx_rx_", "fp_rx_", "fp_tx_", "rx_fcs_error", "rx_packet", "tx_unicast", "tx_broadcast"},
 	"mikroscope_self":           {"cgroup_mem_max"},
 }
 

@@ -75,6 +75,10 @@ En tramos de 5 segundos, antes y durante:
 - El squeeze no tiene un presupuesto entre el que dividirlo: `/proc/sys/net/core/*`
   (`netdev_budget`, `netdev_max_backlog`) no existe en el namespace del
   contenedor.
+- Un descarte, a diferencia de un squeeze, es un suceso que un router sano no
+  produce: `mikroscope doctor` lo informa como `softnet-drops` cuando el anillo
+  del agente en marcha contiene alguno, y la alerta `mikroscope-softnet-drops`
+  salta con el primero. Ninguno de los dos cuenta squeezes.
 
 El colector marca una muestra como `burst` cuando una cola softnet descartó un
 paquete o hizo más squeezes de los que esa CPU suele hacer (por encima de su

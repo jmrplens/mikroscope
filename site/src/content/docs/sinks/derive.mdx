@@ -164,7 +164,7 @@ noise.
 | Sink                            | Beside kernel samples                                                                           | Beside counter polls                                      |
 | ------------------------------- | ----------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
 | InfluxDB, Telegraf, stdout `lp` | `mikroscope_derived`: `mem_pressure`, `burst`, `suspect`, and the ratios that could be computed | `mikroscope_derived_iface{interface}`                     |
-| SQL                             | `mikroscope_derived`, ratios NULL where not computed                                            | `mikroscope_derived_iface`                                |
+| SQL (`--sql`, `--postgres`)     | `mikroscope_derived`, ratios NULL where not computed                                            | `mikroscope_derived_iface`                                |
 | file, stdout `json`             | a `{"derived":…}` line after its sample                                                         | not written; the raw counters are in the `{"api":…}` line |
 | Prometheus                      | `mikroscope_derived_*` gauges for the newest sample; `mikroscope_collector_bursts_total`        | `mikroscope_derived_fastpath_share{interface,direction}`  |
 | OTLP                            | `mikroscope.derived.*` gauges                                                                   | `mikroscope.derived.fastpath_share{interface,direction}`  |
@@ -173,6 +173,19 @@ noise.
 | Loki                            | —                                                                                               | —                                                         |
 
 </ScrollTable>
+
+Three sinks spell the kernel-side names their own way, and carry less. Prometheus writes
+`mikroscope_derived_memory_pressure`, `mikroscope_derived_cycles_per_packet`,
+`mikroscope_derived_instructions_per_packet`, `mikroscope_derived_cache_misses_per_packet`
+and `mikroscope_derived_packets_per_interrupt` for the newest sample; `burst` reaches it
+only as the counter `mikroscope_collector_bursts_total`, and `suspect` not at all. OTLP
+writes `mikroscope.derived.memory_pressure`, `mikroscope.derived.cycles_per_packet`,
+`mikroscope.derived.instructions_per_packet`, `mikroscope.derived.cache_misses_per_packet`
+and `mikroscope.derived.packets_per_irq`. Graphite writes `derived.mem_pressure`,
+`derived.cycles_per_packet`, `derived.instructions_per_packet`,
+`derived.cache_misses_per_packet` and `derived.packets_per_irq`. Neither OTLP nor Graphite
+carries `burst` or `suspect`. In all three, a ratio that could not be computed is left out
+rather than written as 0.
 
 <NotClaimed>
 	No comparison of the per-packet PMU cost across two router configurations on the reference device

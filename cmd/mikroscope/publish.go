@@ -161,17 +161,6 @@ func storesToPublish(s *sinkFlags) []dashboards.Store {
 
 // datasourceFor describes the datasource a store's dashboard reads from.
 //
-// TWO OF THE FIVE SINKS KNOW THE ADDRESS GRAFANA QUERIES, because it is the
-// address they write to. The other three do not, and no amount of reading
-// their flags would find it: --prom SERVES /metrics and is scraped rather than
-// written to, so the address Grafana asks belongs to a Prometheus this has
-// never heard of; --sql writes statements to a file rather than to a server;
-// --graphite speaks the carbon ingest port, which is not the API Grafana
-// queries. Those three are adopted through --grafana-datasource-uid or they
-// are not published, and saying so is better than creating a datasource
-// pointed at a port that answers nothing.
-// datasourceFor describes the datasource a store's dashboard reads from.
-//
 // FIVE OF FIVE, by two different routes. Three sinks KNOW the address Grafana
 // queries, because it is the address they write to or dial: --influx,
 // --elastic and --postgres. The other two cannot know it and no amount of

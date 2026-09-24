@@ -58,8 +58,8 @@ Two arguments, which are also the `VERSION` and `BIN_DIR` variables so they can
 be set through a pipe:
 
 ```sh
-curl -fsSL .../install.sh | VERSION=1.0.9 BIN_DIR=~/bin bash
-./install.sh --version 1.0.9 --dir ~/bin      # the same, with the file downloaded first
+curl -fsSL .../install.sh | VERSION=1.2.0 BIN_DIR=~/bin bash
+./install.sh --version 1.2.0 --dir ~/bin      # the same, with the file downloaded first
 ```
 
 The rest of this page is what those scripts do, one platform at a time, for
@@ -94,7 +94,7 @@ Anything whose name starts with `mikroscope-agent` is the other program.
 1. Download the archive and the checksums:
 
    ```sh
-   VERSION=1.0.9
+   VERSION=1.2.0
    curl -fsSLO https://github.com/jmrplens/mikroscope/releases/download/v$VERSION/mikroscope_${VERSION}_linux_x86_64.tar.gz
    curl -fsSLO https://github.com/jmrplens/mikroscope/releases/download/v$VERSION/checksums.txt
    ```
@@ -127,7 +127,7 @@ Anything whose name starts with `mikroscope-agent` is the other program.
    `darwin_x86_64` for Intel — and the checksums:
 
    ```sh
-   VERSION=1.0.9
+   VERSION=1.2.0
    curl -fsSLO https://github.com/jmrplens/mikroscope/releases/download/v$VERSION/mikroscope_${VERSION}_darwin_arm64.tar.gz
    curl -fsSLO https://github.com/jmrplens/mikroscope/releases/download/v$VERSION/checksums.txt
    ```
@@ -164,13 +164,13 @@ Anything whose name starts with `mikroscope-agent` is the other program.
 2. Check it in PowerShell, against the line for your file in `checksums.txt`:
 
    ```powershell
-   Get-FileHash .\mikroscope_1.0.9_windows_x86_64.zip -Algorithm SHA256
+   Get-FileHash .\mikroscope_1.2.0_windows_x86_64.zip -Algorithm SHA256
    ```
 
 3. Unpack it somewhere permanent and put that folder on your `PATH`:
 
    ```powershell
-   Expand-Archive .\mikroscope_1.0.9_windows_x86_64.zip -DestinationPath $HOME\mikroscope
+   Expand-Archive .\mikroscope_1.2.0_windows_x86_64.zip -DestinationPath $HOME\mikroscope
    $env:PATH += ";$HOME\mikroscope"
    ```
 
@@ -231,14 +231,17 @@ mikroscope doctor --router user@192.168.88.1
 ```
 
 `doctor` writes nothing. It reads the device, prints what it is, and marks each
-prerequisite `ok` or `MISSING` with the command that fixes it — including the
-one nobody can do remotely. That is the first thing to run, before any install
-route.
+prerequisite `ok` or `MISSING`, and an advisory check that finds something
+`WARN`, with the command that fixes it — including the one nobody can do
+remotely — then reports what an agent already running shows
+([What the running agent shows](/mikroscope/install/prerequisites/#what-the-running-agent-shows)).
+That is the first thing to run, before any install route.
 
 <Aside type="tip" title="The flags have environment variables">
-	`--router`, `--ssh-port`, `--ssh-key`, `--arch` and most of the rest read a default from a
-	`MIKROSCOPE_*` variable, so a shell that exports them turns every command below into
-	`mikroscope doctor`. [Environment variables](/mikroscope/reference/environment/) is the list, and
+	`--router`, `--ssh-port`, `--ssh-key`, `--arch` and the other connection and naming flags read a
+	default from a `MIKROSCOPE_*` variable, so a shell that exports them turns the command above into
+	`mikroscope doctor`. `--rate`, `--buffer`, `--port` and the other agent settings do not, and must
+	be passed each time. [Environment variables](/mikroscope/reference/environment/) is the list, and
 	`.env.example` in the repository is a template.
 </Aside>
 

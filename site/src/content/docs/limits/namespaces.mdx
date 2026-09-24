@@ -79,8 +79,8 @@ is the namespace's doing, not the agent's.
 
 The connection count is the exception. Under `privileged=yes` the agent reads
 `/proc/slabinfo`, and the slab allocator is global: the `nf_conntrack` cache's active-object
-count is the router's real conntrack population. On the RB5009 on 2026-09-12 it read
-6 582 in the discovery container and <Measured id="conntrack.slab" /> from the agent the same day, while the
+count is the router's real conntrack population. On the RB5009 on 2026-09-12 it
+read <Measured id="conntrack.slabDiscovery" /> in the discovery container and <Measured id="conntrack.slab" /> from the agent the same day, while the
 container's own namespace reported 0; the RouterOS API had counted <Measured id="conntrack.api" /> the day before.
 
 That replaces an API table scan with a file read, and it is why the collector never polls

@@ -122,17 +122,36 @@ func RunWith(ctx context.Context, cfg Config, src Source, version string, log fu
 	log(fmt.Sprintf("mikroscope-agent %s: kernel %s, %d cores, %d Hz, ring %d s, listening on %s, sources %v, token=%v, captures %d MiB triggers=%q",
 		version, caps.Kernel, caps.Cores, cfg.RateHz, cfg.BufferS, ln.Addr(), enabledNames(caps), cfg.Token != "", cfg.CaptureMB, cfg.Triggers))
 
-	errc := make(chan error, 2)
-	go func() { errc <- sampler.Run(ctx) }()
+	// The sampler gets a context of its own, and RunWith waits for it to
+	// return before it does. Run's deferred src.Close runs the moment RunWith
+	// returns, and the sampler's goroutine was still free to be inside
+	// src.Read at that instant — reading perf counters Close was tearing
+	// down (a data race the race detector caught in the test suite on
+	// 2026-09-24). When the HTTP server failed rather than ctx ending,
+	// nothing told the sampler to stop at all.
+	samplerCtx, stopSampler := context.WithCancel(ctx)
+	defer stopSampler()
+	samplerDone := make(chan error, 1)
+	serveErrc := make(chan error, 1)
+	go func() { samplerDone <- sampler.Run(samplerCtx) }()
 	go func() {
 		if serveErr := hs.Serve(ln); serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
-			errc <- serveErr
+			serveErrc <- serveErr
 		}
 	}()
 	var runErr error
+	samplerExited := false
 	select {
 	case <-ctx.Done():
-	case runErr = <-errc:
+	case runErr = <-samplerDone:
+		samplerExited = true
+	case runErr = <-serveErrc:
+	}
+	stopSampler()
+	if !samplerExited {
+		if samplerErr := <-samplerDone; runErr == nil {
+			runErr = samplerErr
+		}
 	}
 	// ctx is done (or the run failed): the shutdown needs a deadline of its
 	// own, detached from the canceled parent.

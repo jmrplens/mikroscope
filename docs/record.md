@@ -32,7 +32,7 @@ them; the notes say which verb acts on it.
 | `--for`         | `0`                                        | `record`: stop after this long. `0` records until Ctrl-C.                                                                                               |
 | `--from-start`  | off                                        | `record`: backfill everything the agent's ring holds before going live.                                                                                 |
 | `--poll`        | `500ms`                                    | How often to pull the agent's ring.                                                                                                                     |
-| `--batch`       | `0`                                        | Samples per pull. `0` is twice what one `--poll` interval produces at the agent's rate, at least 20; the relay caps a pull at 18.                       |
+| `--batch`       | `0`                                        | Samples per pull. `0` is twice what one `--poll` interval produces at the agent's rate, at least 20; the relay caps a pull at 13. |
 | `--transport`   | `auto`                                     | `auto`, `direct` (HTTP to the veth) or `relay` (`/tool fetch` over the RouterOS API).                                                                   |
 | `--log-markers` | off                                        | `record`: adds the router log lines of the window once the recording stops. `mark`: adds the log lines of the recording's window.                       |
 | `--topics`      | `system,interface,container`               | Log topics kept as markers; add `firewall` or `script` when their lines are the story.                                                                  |
@@ -94,9 +94,11 @@ and fail rather than fall back.
 > at 3 230 B on the RB5009 (RouterOS 7.24.2, 2026-09-17) and the budget charges
 > the allocator size class above it. A full pull of such lines is about 45 kB. A full pull whose
 > lines average more than 134 % of that would still reach the limit and be refused, and how long
-> lines run at today's default per-source floors was not measured. At 13
-> samples a pull and the default 500 ms `--poll` the relay carries 26 samples a second; above that,
-> use the direct path.
+> lines run at today's default per-source floors was not measured. A pull carries at
+> most 13 samples, and a full one is asked again at once, so the relay's
+> throughput is set by the fetch round trip rather than by `--poll`. By arithmetic, not measured: at
+> about 1 s for half the calls and about 3 ms for the rest, that is on the order of 26 samples a
+> second, less when the slow calls cluster. Above that, use the direct path.
 
 [Reaching the agent](https://jmrp.io/docs/mikroscope/install/reaching-the-agent/) covers which path a
 network allows. The API user is described on [its own
@@ -244,7 +246,9 @@ time axis, in seconds since the recording started:
 Every marker is a dashed vertical line across all three panels, grey for notes and
 log lines and red for gaps, with a label chip above the first panel. Chips are
 laid out in up to six rows to keep them apart; a label longer than 40
-characters is shortened. Consecutive log markers, in time order, that fall in the same second
+characters is shortened. When no row has room, the label is shortened further until one does, and
+a chip that would fall under 12 characters is dropped: its dashed line still marks the instant, but
+its text is not drawn. Consecutive log markers, in time order, that fall in the same second
 are folded into one chip, `<count>× <topics>: <first message>`, so a chatty
 scheduler does not bury the chart; a note or gap between them breaks the fold,
 and notes and gaps are never folded. Markers outside the recording's time span
@@ -418,14 +422,15 @@ of the container, an `upgrade` or a reboot loses the ones not yet downloaded.
 #### What a capture weighs
 
 A capture's size is its window's sample count times the line size. The mean line
-measured on the RB5009 (RouterOS 7.24.2, 10 Hz, every source of that date, 2026-09-12) was 3 230 B; lines at the default floors were not
+measured on the RB5009 (RouterOS 7.24.2, 10 Hz, privileged, every source including the PMU,
+2026-09-17) was 3 230 B; lines at the default floors were not
 measured. That gives, by arithmetic and not by measuring captures:
 
 | Rate   | Default window (5 s + 5 s)  | Captures in the 4 MiB default |
 | ------ | --------------------------- | ----------------------------- |
-| 10 Hz  | 101 samples, about 250 kB   | 17                            |
-| 50 Hz  | 501 samples, about 1.2 MB   | 3                             |
-| 100 Hz | 1 001 samples, about 2.4 MB | 1                             |
+| 10 Hz  | 101 samples, about 330 kB   | 12                            |
+| 50 Hz  | 501 samples, about 1.6 MB   | 2                             |
+| 100 Hz | 1 001 samples, about 3.2 MB | 1                             |
 
 A bigger board — more cores, more interrupt lines — has longer lines. The
 `bytes` field of each capture is the real figure.
@@ -433,10 +438,13 @@ A bigger board — more cores, more interrupt lines — has longer lines. The
 The budget is memory the agent holds beyond its ring: a pinned line stays alive
 after the ring has moved past it. So the agent counts it at start in the same
 check as the ring. When the agent can read the container's `memory.max` and about
-`rate × buffer × 2.56 kB` plus `CAPTURE_MB` exceeds it, the agent refuses to
-start, naming the three settings to lower or `--memory-max` to raise. When
-`MEM_LIMIT_MB` is above 0, it warns when twice that exceeds its Go soft memory
-limit; the agent's own default for `MEM_LIMIT_MB` is 14, and `install` writes 40. [The cost of the observer](https://jmrp.io/docs/mikroscope/cost/) explains why that
+`rate × buffer ×` 3 456 B plus `CAPTURE_MB` exceeds it, the agent
+refuses to start, naming the three settings to lower or `--memory-max` to raise. It also warns
+when twice that exceeds its Go soft memory limit, `MEM_LIMIT_MB` (8 to 1 024 MiB). The agent's own
+default for `MEM_LIMIT_MB` is 14; `install` derives it from the ring instead (rate × buffer × line,
+× 2.5, at least 16, at most three quarters of `--memory-max`), which writes 16 at the defaults, and
+`--mem-limit-mb` sets it by hand. That derivation does not count `CAPTURE_MB`, so a large capture
+budget can still draw the warning. [The cost of the observer](https://jmrp.io/docs/mikroscope/cost/) explains why that
 second ratio matters.
 
 ### Reading captures over HTTP
@@ -472,7 +480,7 @@ client.
 
 > **Captures need the direct path**
 >
-> The relay transport pulls through `/tool fetch`, which returns at most 64 512 B and sends no token. A capture at the defaults is about 250 kB. Fetch captures from a host that
+> The relay transport pulls through `/tool fetch`, which returns at most 64 512 B and sends no token. A capture at the defaults is about 330 kB, five times the fetch limit. Fetch captures from a host that
 > reaches the agent directly, or through `--expose`: [reaching the
 > agent](https://jmrp.io/docs/mikroscope/install/reaching-the-agent/) covers both.
 
@@ -496,11 +504,22 @@ instead.
 `forward` recognises the line, never mistakes it for a sample, counts it, and
 hands it to every sink as an annotation: the `mikroscope_trigger` measurement in
 InfluxDB and table in SQL, `mikroscope_collector_triggers_total{cause}` on the
-collector's Prometheus exposition, and the line itself in the file sink. All five
-Grafana dashboards carry a `triggers` annotation, off by default in the toggle
-bar: on the SQL stores it reads the `mikroscope_trigger` rows, on Prometheus the
-collector's `mikroscope_trigger_fired_total`. The capture itself stays on the agent, under
-`/captures/<id>`.
+collector's Prometheus exposition, a `trigger` document in Elasticsearch,
+`trigger.<cause>` in Graphite, a `source="trigger"` line in Loki, the
+`mikroscope.trigger.fired{cause}` sum in OTLP, and the line itself in the file sink.
+All five Grafana dashboards carry a `triggers` annotation, off by default in the
+toggle bar, beside a `detections` one that is on, and each reads its own store: on
+InfluxDB and PostgreSQL the `mikroscope_trigger` rows, on Prometheus the collector's
+`mikroscope_trigger_fired_total`. On Elasticsearch it is a Lucene filter,
+`kind:trigger AND host.keyword:$host`, that marks each `trigger` document with its
+`field` as text and its `cause` as tag (`kind:detection`, `message` and `rule` for
+detections). On Graphite it is `aliasByNode($prefix.$host.trigger.*, 3)`, one marker
+per point titled with the cause, with no text, because Graphite holds no string
+(`detection.*` and the rule for detections). Through 1.2.0 both of these dashboards
+carried the Prometheus expression instead and showed nothing. The Elasticsearch and
+Graphite forms are checked only as generated JSON; they have not been run in a real
+Grafana. The capture itself stays
+on the agent, under `/captures/<id>`.
 
 `record` does not recognise the line yet — [Record, mark,
 plot](https://jmrp.io/docs/mikroscope/record/#triggers-during-a-recording) says what it does with it.
@@ -508,7 +527,8 @@ plot](https://jmrp.io/docs/mikroscope/record/#triggers-during-a-recording) says 
 ### Counting what was not captured
 
 The collector's `/metrics` carries the families that say how much the captures
-did not see, built from the agent's `GET /sampler` counters on the health cadence. Every condition and reason pair is rendered from the start, at 0 until
+did not see, built from the agent's `GET /sampler` counters, which the collector reads at start and every
+minute. Every condition and reason pair is rendered from the start, at 0 until
 it happens, so a dashboard can show "0 so far".
 
 | Family                                                  | Type    | Meaning                                                                                                  |
@@ -558,6 +578,6 @@ Stated because each of these will happen:
 - [The agent's HTTP endpoints](https://jmrp.io/docs/mikroscope/reference/http/): `/captures`,
   `/stream` and `/snapshot` beside the rest.
 - [Prometheus metric families](https://jmrp.io/docs/mikroscope/reference/metrics/): the trigger and
-  capture families with every other one the agent exposes.
+  capture families with every other family on the collector's exposition.
 - [The resolution floor is the kernel's](https://jmrp.io/docs/mikroscope/limits/): what full rate
   can and cannot resolve.

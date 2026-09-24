@@ -25,7 +25,7 @@ alert rules generated beside them are on [Alert rules](https://jmrp.io/docs/mikr
   - mikroscope-elasticsearch.json 30 panels, Elasticsearch
   - mikroscope-alerts-influxdb.yaml 14 rules
   - mikroscope-alerts-prometheus.yaml 15 rules
-  - mikroscope-alerts-postgres.yaml 11 rules
+  - mikroscope-alerts-postgres.yaml 10 rules
 
 ```sh
 mikroscope dashboards gen                    # writes the eight files into ./dashboards
@@ -33,11 +33,11 @@ mikroscope dashboards gen --out /tmp/dash    # or into another directory
 ```
 
 All five dashboards are in Grafana's shareable export format: the datasource is a `${DS_MIKROSCOPE}`
-placeholder declared in `__inputs`, there is no `id`, and the `uid` is fixed —
-`mikroscope-influxdb` and `mikroscope-prometheus` — so a re-import updates the same dashboard in
-place instead of creating a second one. A test asserts that two generations of the InfluxDB
-dashboard are identical, and regenerating on 2026-09-15 reproduced all four committed files byte for
-byte.
+placeholder declared in `__inputs`, there is no `id`, and the `uid` is fixed, `mikroscope-<store>`,
+one per dashboard, so a re-import updates the same dashboard in place instead of creating a second
+one. A test asserts that two generations of the InfluxDB dashboard are identical; regenerating on
+2026-09-15 reproduced the committed files of that day byte for byte, and the files added since have
+not been re-checked that way.
 
 The InfluxDB dashboard queries InfluxDB 3 in SQL, and every query is bounded by `$__timeFilter`,
 because InfluxDB 3 Core refuses unbounded scans; where a column is named `cluster` the SQL quotes
@@ -101,11 +101,11 @@ whose panels are dropped emits no row at all.
 
 That is why the counts differ, and they differ in both directions. Most of the thermal and clock
 family, the flash wear section, the slab census and several memory panels have SQL and no PromQL,
-so they exist only on InfluxDB. The trigger suppressions live on the collector's
-`/metrics` only; the sampler's timing histograms and the capture budget have an InfluxDB form too. The busy run still in progress and the age of
-each held reading are Prometheus exposition families, on the collector's `/metrics` too, with no
-InfluxDB field. Neither group is written to InfluxDB, so the panels reading them exist only on
-Prometheus. Each panel below that is on one store only says which.
+so they exist only on InfluxDB. Three things exist only on Prometheus, because none of them is
+written to InfluxDB: the trigger suppressions, the busy run still in progress and the age of each
+held reading, all exposition families on the collector's `/metrics`. The sampler's timing
+histograms and the capture budget are on the collector's `/metrics` too, but also have an InfluxDB
+form. Each panel below that is on one store only says which.
 
 Panels per section, per store:
 
@@ -150,7 +150,7 @@ deliberately, and last what mikroscope costs the router it is measuring.
 
 Every section but the Overview ships **collapsed**. Grafana keeps a collapsed row's panels inside
 the row object and runs none of their queries until someone expands it, so the first render asks
-the store for the Overview's twelve panels and not for all 177.
+the store for the Overview's thirteen panels (twelve on PostgreSQL) and not for all 177.
 
 The defaults are a 3-hour range (`now-3h`) and a 5-minute refresh. The 5-minute refresh is kept for
 the case where someone expands a section: the slab census and the PMU and per-sample cost heatmaps
@@ -167,8 +167,9 @@ returns an aggregate; three tiles ("Reboots in the window", "Sample continuity" 
 delivered, this window") compute it with a window function over the window's raw samples.
 Most of them are copies of panels that also live in a later section, because a Grafana panel
 belongs to exactly one row. "Connections tracked right now", "Load average (1 min) against the core
-count", "Reboots in the window" and "Detections in the window" live only here, as does "OOM kills in
-the window" on Prometheus, where the Reclaim section's copy has no PromQL and is dropped. The copies
+count", "Reboots in the window", "Detections in the window" and "Port errors in the window" live
+only here, as does "OOM kills in the window" on Prometheus, where the Reclaim section's copy has no
+PromQL and is dropped. The copies
 share their SQL; on Prometheus the Overview's "OOM kills in the window" and the Observer's "Ticks
 never delivered, this window" differ from their counterparts (the Observer's carries a third query,
 the sampler's slipped ticks).
@@ -188,16 +189,22 @@ the sampler's slipped ticks).
 4. **Packets dropped in the kernel RX path (window total)**, **OOM kills in the window**, **Reboots
    in the window** and **Detections in the window** — each zero on a healthy device and colored on
    its own thresholds.
-5. **Ticks never delivered, this window**, beside the count of agent restarts.
+5. **Port errors in the window** (every typed MAC error on every port, summed; API tier, blank with
+   `--api-mode off`) and **Ticks never delivered, this window**, which also counts agent restarts.
 
 > **One screen, measured once**
 >
 > On 2026-09-14 an eleven-panel Overview measured 1 052 px tall in a 1 080 px browser viewport — one
-> desktop screen with nothing cut off. The Overview carries twelve panels, and the grid wraps "Ticks
-> never delivered" onto its own full-width line; that height has not been measured in a browser,
-> though the committed JSON of both dashboards makes it 31 grid units, row header included. On a
-> phone it is not one screen: Grafana stacks a 24-column row into one column below about 768 px, and
-> an eight-panel Overview rendered 2 188 px tall against an 844 px viewport on 2026-09-12.
+> desktop screen with nothing cut off. The Overview now carries thirteen panels on InfluxDB and
+> Prometheus, where "Port errors in the window" and "Ticks never delivered" share the last line, and
+> twelve on PostgreSQL, where "Ticks never delivered" has that line to itself; that height has not
+> been measured in a browser, though the committed JSON of those three dashboards makes it 31 grid
+> units, row header included (21 on Graphite, 14 on Elasticsearch). On a phone it is not one screen:
+> Grafana stacks a 24-column row into one column below about 768 px, and an eight-panel Overview
+> rendered 2 188 px tall against an 844 px viewport on 2026-09-12. On 2026-09-24 the InfluxDB
+> dashboard was imported into the production Grafana and captured at 390x844 and 1600x1000 to check
+> the fixed stat size, and the numbers read at a normal size on both; the Overview's height was not
+> measured that day.
 
 ### The four everyday questions
 
@@ -331,8 +338,23 @@ dashboards holds nothing else. Click the layer's name to hide its markers. That 
 it lasts for the session, and saving the dashboard keeps it. Nothing about the underlying rows
 changes, and the Detections section still counts them.
 
-On InfluxDB each annotation is one event row with its message; on Prometheus it is
-`increase(…[1m]) > 0` at a 1-minute step, so an annotation there marks the minute, not the instant.
+Each store draws the layers from what its sink writes, in its own query language:
+
+- **InfluxDB and PostgreSQL**: one `mikroscope_detection` or `mikroscope_trigger` row per marker,
+  with its message.
+- **Prometheus**: `increase(…[1m]) > 0` at a 1-minute step, so a marker there is the minute, not the
+  instant.
+- **Elasticsearch**: a Lucene filter, `kind:detection AND host.keyword:$host` (or `kind:trigger`),
+  over the event documents. A detection's text is its `message` and its tag the `rule`; a trigger
+  document has no message, so its text is the `field` that crossed and its tag the `cause`.
+- **Graphite**: `aliasByNode($prefix.$host.detection.*, 3)` (or `.trigger.*`), the one point per
+  event the sink writes. Grafana draws a marker at every non-null point and titles it with the
+  series name, which is the rule or the cause. There is no message, because Graphite holds only
+  numbers, and the marker is at the time of the point Grafana gets back: Grafana asks for at most
+  100 points, so several events close together can come back as one.
+
+The Elasticsearch and Graphite layers are checked by the unit tests against what each sink writes;
+they have not been run in Grafana, because the import check walks panels only.
 
 The section captures further up are taken with both layers off, because the canned fake agent that
 fills the demonstration database fires a detection every few seconds and twenty minutes of that
@@ -641,6 +663,10 @@ probe decides is on [Import and check](https://jmrp.io/docs/mikroscope/dashboard
   5 minutes apart. The threshold has to exceed the widest bin a reader selects — at a 2-day range a
   12-column panel's bin is about 4 minutes — so a hole shorter than 5 minutes is still drawn as an
   interpolated line. Read holes from Sample continuity, not from the shape of a line.
+- **Their stat numbers are a fixed size.** A stat tile draws its value at 32 px and its title at
+  16 px instead of Grafana's automatic size. The automatic size fills the panel, and on a phone
+  every panel is full width at its own height: in the production dashboard at 390x844 on 2026-09-24
+  a single "0" was drawn about 60 px tall and each stat tile took about a third of the screen.
 - **Their figures are one router's.** Descriptions that quote a figure attribute it to the
   reference RB5009 with the date it was measured and say yours will differ. No title, query or
   threshold names a device, its core count, its interfaces or its memory size; the only fixed
@@ -653,10 +679,13 @@ probe decides is on [Import and check](https://jmrp.io/docs/mikroscope/dashboard
 > Grafana 12.3.0 (2026-09-21: `import` against the live InfluxDB 3 store, then `check` over a 15 min
 > window — 167 panels returned rows, the 9 known-empty ones were empty, and the Overview's
 > detections tile was empty because the store held no detection in that window, which is the one
-> case `check` reports and a browser reads as the healthy "none"). The panel options are written to
-> the schema Grafana 13.2.1 expects — the xychart's mark, for one, moved between Grafana 11 and
-> 13 — and `__requires` declares Grafana 11.0.0. No version other than those three has been tried,
-> and 12.3.0 was checked by query only, never rendered in a browser.
+> case `check` reports and a browser reads as the healthy "none"). On 2026-09-24 the InfluxDB
+> dashboard was imported into the production Grafana, whose health endpoint reported 13.2.2 when
+> read later that day, and rendered at 390x844 and 1600x1000 to check the 32 px stat text and the
+> memory time series; no row-by-row badge count was taken. The panel options are written to the
+> schema Grafana 13.2.1 expects — the xychart's mark, for one, moved between Grafana 11 and 13 —
+> and `__requires` declares Grafana 11.0.0. No version other than those four has been tried, and
+> 12.3.0 was checked by query only, never rendered in a browser.
 
 ### See also
 
@@ -721,12 +750,14 @@ script was loaded as. `sslmode` is yours to choose; `postgresVersion` only decid
 plugin may emit, and every query in this dashboard is plain SQL.
 
 The panels are the InfluxDB ones, rewritten: the bucket macro, the percentiles, the casts and the
-column names the SQL sink had to change because `user`, `from` and `to` are reserved words. Fifteen
+column names the SQL sink had to change because `user`, `from` and `to` are reserved words. Some
 panels are not rewritten and are **dropped silently** rather than moved into the "not available"
 row: the kernel-log panels, because the SQL schema has no count table for it, and the panels over
 `mikroscope_buddy` and the RouterOS interface counters, which are wide in InfluxDB and long in SQL,
-where a pivot is a different question. The PostgreSQL dashboard therefore carries 160 panels against
-InfluxDB's 175.
+where a pivot is a different question, and "Headroom under the container memory cap", because the
+cap rides on InfluxDB's `mikroscope_self` row and is a device fact in the SQL schema. The committed
+PostgreSQL dashboard therefore
+carries 161 panels against InfluxDB's 177.
 
 ### The Graphite datasource
 
@@ -758,8 +789,9 @@ absent rather than wrong.
 
 ### Importing by hand
 
-Grafana → Dashboards → New → Import, upload `dashboards/mikroscope-influxdb.json` or
-`mikroscope-prometheus.json`, and pick the datasource when Grafana asks for `DS_MIKROSCOPE`.
+Grafana → Dashboards → New → Import, upload the `dashboards/mikroscope-<store>.json` that matches
+your datasource (influxdb, prometheus, postgres, graphite or elasticsearch), and pick the datasource
+when Grafana asks for `DS_MIKROSCOPE`.
 
 A file uploaded this way carries the **compiled defaults**: the five panels the reference device
 cannot produce sit in the not-available row, and every other panel ships with its query, whether
@@ -783,6 +815,7 @@ mikroscope dashboards check  --store influxdb --datasource-uid <uid> --window 15
 | `--no-probe`       | off            | import, check | skip asking the datasource what it holds; use the compiled defaults       |
 | `--window`         | `15m`          | check         | length of the query window                                                |
 | `--end`            | now            | check         | the window's right edge, RFC 3339                                         |
+| `--var`            | none           | check         | set a dashboard variable, `name=value`, repeatable; Graphite needs `prefix` and `host`, Elasticsearch `host` |
 | `--out`            | `dashboards`   | gen           | the directory `gen` writes the eight files into                            |
 
 The token is read only from `GRAFANA_TOKEN`; there is no flag for it. It is a Grafana service
@@ -1110,11 +1143,25 @@ compiled in for one router.
 | ---------------------------------------------- | -----------------------------------------------: | -------------- |
 | `dashboards/mikroscope-alerts-influxdb.yaml`   |   14 | InfluxDB 3 SQL |
 | `dashboards/mikroscope-alerts-prometheus.yaml` | 15 | PromQL         |
-| `dashboards/mikroscope-alerts-postgres.yaml`   |   11 | PostgreSQL SQL |
+| `dashboards/mikroscope-alerts-postgres.yaml`   |   10 | PostgreSQL SQL |
 
 The InfluxDB file has one rule fewer because "The sampler is slipping ticks" has no SQL form yet.
 The counter itself does reach InfluxDB since 1.0.5 — the collector reads it from the agent's
 `/sampler` and writes `mikroscope_sampler.slipped` — so the rule could be written; it has not been.
+
+The PostgreSQL file is translated from the InfluxDB one, and it also leaves out the rules the SQL
+schema cannot answer in the same shape. `mikroscope-l2-loop` and `mikroscope-port-link-down` sum a
+per-sample count of kernel-log port records, and the SQL sink writes one row per kernel record
+instead, in `mikroscope_event`. `mikroscope-port-errors` names one column per MAC counter, and the
+SQL sink writes `mikroscope_api_ifcounter` one row per counter. `mikroscope-bridge-port-dark` is
+left out for the same reason: it names `rx_packet`, `tx_unicast` and `tx_broadcast` as columns, and
+reads `bridge`, which that table does not have either. The translation drops those rather than
+write a query that looks right and answers something else. The 1.2.0 file did not drop the
+dark-port rule: it carried a PostgreSQL form that read those four names as columns of
+`mikroscope_api_ifcounter`, which could not run on that schema. The generator now drops it, and a
+unit test checks every column each PostgreSQL alert query reads against the tables the SQL sink
+declares. That test reads the schema, not a database: no PostgreSQL alert query has been run
+against a real PostgreSQL.
 
 Each file is `apiVersion: 1` with one rule group, `mikroscope`, in a folder named `mikroscope`,
 organisation 1, evaluated every minute. The rules are provisioned rather than built into the
@@ -1137,8 +1184,10 @@ generated file's own header names. Use the file that matches the datasource the 
 Every rule has the same shape, the one Grafana's own rule editor writes:
 
 1. **A** — the query, against your datasource, with a relative time range of the last 600 s. Every
-   SQL query and every Prometheus counter query also bounds its own window (2 minutes, 5 minutes or 1
-   hour, below); the two Prometheus gauge rules, thermal and conntrack, read the latest value.
+   SQL query and every Prometheus counter query also bounds its own window (1, 2, 5 or 10 minutes,
+   or 1 hour, below; the wake-up rule also reads the 24 hours before its 10 minutes, whatever A's
+   600 s range says); the two Prometheus gauge rules, thermal and conntrack, read the latest value,
+   and the egress rule takes its gauge's maximum over the last minute.
 2. **B** — reduce A to one number per series with `last`, dropping non-numeric values.
 3. **C** — compare B against the threshold. C is the rule's condition.
 
@@ -1162,17 +1211,16 @@ The alert rules:
 | `mikroscope-l2-loop` | an own-address record on any port in the last 5 minutes | > 0 | critical | 0s | OK | both |
 | `mikroscope-port-link-down` | a link-down record on any port in the last 5 minutes | > 0 | warning | 0s | OK | both |
 | `mikroscope-port-errors` | any port's MAC counted a typed error — overflow, FCS, collision — for 5 minutes running | > 0 | warning | 5m | OK | both |
-| `mikroscope-bridge-port-dark` | a bridge port received packets while the bridge sent it neither a unicast nor a broadcast frame, for 10 minutes | > 0 | warning | 10m | OK | InfluxDB only |
+| `mikroscope-bridge-port-dark` | a bridge port received packets while the bridge sent it neither a unicast nor a broadcast frame, for 10 minutes | > 0 | warning | 10m | OK | both |
 | `mikroscope-wakeup-storm` | the context-switch rate over the last 10 minutes is more than 4 times its mean over the 24 hours before, for 10 minutes | > 4 | warning | 10m | OK | InfluxDB only |
 | `mikroscope-egress-queue-drops` | any port's own egress queue dropped a packet in every one of the last 10 minutes — sustained congestion, never a single burst | > 0 | warning | 10m | OK | InfluxDB only |
 | `mikroscope-ecc-failure` | the NAND reported an uncorrectable ECC failure in the last hour | > 0 | critical | 0s | OK | InfluxDB only |
 | `mikroscope-ticks-slipped` | the sampler slipped a tick in the last 5 minutes | > 0 | warning | 5m | OK | Prometheus only |
 
-The InfluxDB form of `mikroscope-conntrack-near-limit` is broken; the "what has not been tried" note
-at the end of this page says why. "No data means" is the rule's `noDataState`. The silent-agent rule is the one where silence is the
+"No data means" is the rule's `noDataState`. The silent-agent rule is the one where silence is the
 fault, so no data fires it; for every other rule no data is the healthy reading.
 
-Each rule's title, and under it its `summary` annotation verbatim, as generated:
+Each rule's title, and under it its `summary` annotation, shortened:
 
 - **mikroscope agent stopped delivering samples.** "No new samples reached the store in the last two
   minutes: the agent stopped, the collector stopped, or the path between them did. Every other rule
@@ -1212,7 +1260,8 @@ Each rule's title, and under it its `summary` annotation verbatim, as generated:
   not take. The commonest on a switched LAN is rx-overflow, the receive FIFO filling faster than the
   chip can drain it, and it is a microburst signature rather than a load one. FCS errors and
   collisions mean something else: cabling, duplex, a dying port. Needs the API tier: a MAC counter
-  is not visible from inside the container."
+  is not visible from inside the container. It cannot tell a real error from a counter reset, so a
+  router that reboots inside the window fires it once."
 - **A bridge port is receiving but the bridge sends it nothing.** "A port that is a member of a
   bridge has received packets for ten minutes while the bridge delivered it neither a unicast nor a
   broadcast frame. Whatever is behind it is transmitting and hearing nothing back: STP holds the port
@@ -1224,11 +1273,12 @@ Each rule's title, and under it its `summary` annotation verbatim, as generated:
   `broadcast-flood=no` or `horizon` set. Needs the API tier.
 - **The kernel is switching context four times as often as over its last day.** "Something started
   waking up very often: a busy-polling process or driver, a monitoring client, a container in a
-  tight loop." On the reference RB5009 it was a Home Assistant integration polling the router over
-  the API (2026-09-23): timer interrupts went from about 2 500 to about 35 000 a second, in bursts
-  of 20–90 s on one core at a time, and RouterOS's own profile barely showed it. Disabling the
-  integration brought the rate back within 30 s. A deliberate change, such as a new container or a
-  heavier ruleset, fires it too.
+  tight loop. Look at what started at the moment the rule fired (/user/active, new containers, a new
+  integration) and at the Interrupts and softirqs section." On the reference RB5009 it was a Home
+  Assistant integration polling the router over the API (2026-09-23): timer interrupts went from
+  about 2 500 to about 35 000 a second, in bursts of 20–90 s on one core at a time, and RouterOS's
+  own profile barely showed it. Disabling the integration brought the rate back within 30 s. A
+  deliberate change, such as a new container or a heavier ruleset, fires it too.
 - **A port's egress queue has been dropping every minute for ten minutes.** "A port's own egress
   queue has dropped packets in every one of the last ten minutes. Unlike the other counter rules,
   this one's counter is supposed to move: dropping is how a full queue tells a sender to slow down.
@@ -1274,7 +1324,8 @@ Each rule's title, and under it its `summary` annotation verbatim, as generated:
   sum(increase(mikroscope_mtd_ecc_failures_total[1h]))
   ```
 
-  All eleven read the collector's `/metrics`, which is the only exposition there is since 1.0.5 —
+  All 15 read the collector's `/metrics`, which is the
+  only exposition there is since 1.0.5 —
   [Import and check](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/#prometheus-one-scrape-job) has the one
   scrape job. `mikroscope_slipped_total` is among them and used to come from a second job against the
   agent: the agent still owns the ticker and is still the only thing that can count a slipped tick,
@@ -1294,7 +1345,7 @@ Each rule's title, and under it its `summary` annotation verbatim, as generated:
   -- mikroscope-detections              (> 0)
   SELECT count(1) AS value FROM mikroscope_detection WHERE time >= now() - interval '5 minutes'
   -- mikroscope-thermal-near-critical   (> 0)
-  SELECT count(1) AS value FROM (SELECT zone, max(celsius) AS c, max(critical_celsius) AS crit FROM mikroscope_thermal WHERE time >= now() - interval '2 minutes' AND critical_celsius IS NOT NULL GROUP BY zone) WHERE c >= 0.85 * crit
+  SELECT count(1) AS value FROM (SELECT zone, max(celsius) AS c, max(critical_celsius) AS crit FROM mikroscope_thermal WHERE time >= now() - interval '2 minutes' AND critical_celsius IS NOT NULL GROUP BY zone) AS zones WHERE c >= 0.85 * crit
   -- mikroscope-conntrack-near-limit    (> 0.8)
   SELECT max(active) * 1.0 / nullif(max("limit"), 0) AS value FROM mikroscope_slab WHERE time >= now() - interval '2 minutes' AND cache = 'nf_conntrack' AND "limit" IS NOT NULL
   -- mikroscope-agent-oom               (> 0)
@@ -1304,7 +1355,7 @@ Each rule's title, and under it its `summary` annotation verbatim, as generated:
   -- mikroscope-port-link-down          (> 0)
   SELECT coalesce(sum(count), 0)::BIGINT AS value FROM mikroscope_kmsg WHERE time >= now() - interval '5 minutes' AND kind = 'link-down'
   -- mikroscope-port-errors             (> 0)
-  SELECT coalesce(sum(v), 0)::BIGINT AS value FROM (SELECT interface, greatest(max(rx_overflow) - min(rx_overflow), 0)::BIGINT + greatest(max(rx_fcs_error) - min(rx_fcs_error), 0)::BIGINT + greatest(max(rx_fragment) - min(rx_fragment), 0)::BIGINT + greatest(max(rx_too_short) - min(rx_too_short), 0)::BIGINT + greatest(max(rx_too_long) - min(rx_too_long), 0)::BIGINT + greatest(max(rx_jabber) - min(rx_jabber), 0)::BIGINT + greatest(max(tx_fcs_error) - min(tx_fcs_error), 0)::BIGINT + greatest(max(tx_late_collision) - min(tx_late_collision), 0)::BIGINT + greatest(max(tx_excessive_collision) - min(tx_excessive_collision), 0)::BIGINT AS v FROM mikroscope_api_ifcounters WHERE time >= now() - interval '5 minutes' GROUP BY interface)
+  SELECT coalesce(sum(v), 0)::BIGINT AS value FROM (SELECT interface, greatest(max(rx_overflow) - min(rx_overflow), 0)::BIGINT + greatest(max(rx_fcs_error) - min(rx_fcs_error), 0)::BIGINT + greatest(max(rx_fragment) - min(rx_fragment), 0)::BIGINT + greatest(max(rx_too_short) - min(rx_too_short), 0)::BIGINT + greatest(max(rx_too_long) - min(rx_too_long), 0)::BIGINT + greatest(max(rx_jabber) - min(rx_jabber), 0)::BIGINT + greatest(max(tx_fcs_error) - min(tx_fcs_error), 0)::BIGINT + greatest(max(tx_late_collision) - min(tx_late_collision), 0)::BIGINT + greatest(max(tx_excessive_collision) - min(tx_excessive_collision), 0)::BIGINT AS v FROM mikroscope_api_ifcounters WHERE time >= now() - interval '5 minutes' GROUP BY interface) AS ports
   -- mikroscope-bridge-port-dark        (> 0)
   SELECT count(*)::BIGINT AS value FROM (SELECT interface, max(rx_packet) - min(rx_packet) AS drx, max(tx_unicast) - min(tx_unicast) AS dtu, max(tx_broadcast) - min(tx_broadcast) AS dtb FROM mikroscope_api_ifcounters WHERE time >= now() - interval '10 minutes' AND bridge IS NOT NULL AND bridge <> '' GROUP BY interface) AS ports WHERE drx > 0 AND dtu = 0 AND dtb = 0
   -- mikroscope-wakeup-storm            (> 4)
@@ -1312,14 +1363,44 @@ Each rule's title, and under it its `summary` annotation verbatim, as generated:
   -- mikroscope-egress-queue-drops      (> 0)
   SELECT coalesce(max(tx_queue_drops), 0)::BIGINT AS value FROM mikroscope_api_iface WHERE time >= now() - interval '1 minute'
   -- mikroscope-ecc-failure             (> 0)
-  SELECT coalesce(sum(delta), 0)::BIGINT AS value FROM (SELECT max(ecc_failures) - min(ecc_failures) AS delta FROM mikroscope_mtd WHERE time >= now() - interval '1 hour' AND ecc_failures IS NOT NULL GROUP BY "partition")
+  SELECT coalesce(sum(delta), 0)::BIGINT AS value FROM (SELECT max(ecc_failures) - min(ecc_failures) AS delta FROM mikroscope_mtd WHERE time >= now() - interval '1 hour' AND ecc_failures IS NOT NULL GROUP BY "partition") AS parts
+  ```
+
+- **PostgreSQL**
+
+  ```sql
+  -- mikroscope-agent-silent            (< 1)
+  SELECT count(1) AS value FROM mikroscope_cpu WHERE time >= now() - interval '2 minutes'
+  -- mikroscope-softnet-drops           (> 0)
+  SELECT coalesce(sum(dropped), 0)::BIGINT AS value FROM mikroscope_softnet WHERE time >= now() - interval '5 minutes'
+  -- mikroscope-oom-kill                (> 0)
+  SELECT coalesce(sum(oom_kill), 0)::BIGINT AS value FROM mikroscope_vm WHERE time >= now() - interval '5 minutes'
+  -- mikroscope-detections              (> 0)
+  SELECT count(1) AS value FROM mikroscope_detection WHERE time >= now() - interval '5 minutes'
+  -- mikroscope-thermal-near-critical   (> 0)
+  SELECT count(1) AS value FROM (SELECT zone, max(celsius) AS c, max(critical_celsius) AS crit FROM mikroscope_thermal WHERE time >= now() - interval '2 minutes' AND critical_celsius IS NOT NULL GROUP BY zone) AS zones WHERE c >= 0.85 * crit
+  -- mikroscope-conntrack-near-limit    (> 0.8)
+  SELECT max(active_objs) * 1.0 / nullif(max("limit_objs"), 0) AS value FROM mikroscope_slab WHERE time >= now() - interval '2 minutes' AND cache = 'nf_conntrack' AND "limit_objs" IS NOT NULL
+  -- mikroscope-agent-oom               (> 0)
+  SELECT coalesce(sum(oom_kill), 0)::BIGINT AS value FROM mikroscope_self WHERE time >= now() - interval '5 minutes' AND oom_kill IS NOT NULL
+  -- mikroscope-wakeup-storm            (> 4)
+  SELECT CASE WHEN base_min >= 720 THEN (now_sum / nullif(now_min * 60.0, 0)) / nullif(base_sum / (base_min * 60.0), 0) ELSE 0.0 END AS value FROM (SELECT sum(CASE WHEN time >= now() - interval '10 minutes' THEN CAST(ctxt AS BIGINT) ELSE 0 END) AS now_sum, count(DISTINCT CASE WHEN time >= now() - interval '10 minutes' THEN date_bin(interval '1 minute', time, TIMESTAMPTZ 'epoch') END) AS now_min, sum(CASE WHEN time < now() - interval '10 minutes' THEN CAST(ctxt AS BIGINT) ELSE 0 END) AS base_sum, count(DISTINCT CASE WHEN time < now() - interval '10 minutes' THEN date_bin(interval '1 minute', time, TIMESTAMPTZ 'epoch') END) AS base_min FROM mikroscope_stat WHERE time >= now() - interval '1450 minutes') AS w
+  -- mikroscope-egress-queue-drops      (> 0)
+  SELECT coalesce(max(tx_queue_drops), 0)::BIGINT AS value FROM mikroscope_api_iface WHERE time >= now() - interval '1 minute'
+  -- mikroscope-ecc-failure             (> 0)
+  SELECT coalesce(sum(delta), 0)::BIGINT AS value FROM (SELECT max(ecc_failures) - min(ecc_failures) AS delta FROM mikroscope_mtd WHERE time >= now() - interval '1 hour' AND ecc_failures IS NOT NULL GROUP BY "partition") AS parts
   ```
 
 ### Where the thresholds come from
 
 - **Zero, for a counter that should not move.** Kernel RX drops, kernel OOM kills, detections,
-  slipped ticks, the agent's own OOM kills, uncorrectable ECC failures, and the kernel-log port
-  records whose kind is `own-address` or `link-down`. A healthy device reads zero on each.
+  slipped ticks, the agent's own OOM kills, uncorrectable ECC failures, typed MAC errors on any
+  port, and the kernel-log port records whose kind is `own-address` or `link-down`. A healthy
+  device reads zero on each.
+- **Zero dark bridge ports, for ten minutes.** `mikroscope-bridge-port-dark` counts bridge ports
+  that received packets while the bridge sent them neither a unicast nor a broadcast frame; the
+  count is 0 on a healthy bridge, and the 10-minute pending period is what stops a quiet moment
+  from firing it.
 - **One sample, for the silent agent.** Fewer than one sample in two minutes is none at all, at any
   configured rate.
 - **A share of the board's own thermal trip.** 85 % of the lowest critical trip point each zone
@@ -1359,12 +1440,20 @@ sample's packet count was at or below its trailing median. See
 
 - **Which process.** The OOM rule says the kernel killed something. From inside the container there
   is no PID namespace to say what.
-- **Which port.** The two port-event queries sum over ports, so a firing rule says a loop signature
-  or a link-down happened, not on which cable. The port, its comment and its interface lists are on
-  the Kernel log section's two port-event panels.
+- **Which port.** Every port rule reduces to one number: the two kernel-log rules and the MAC-error
+  rule sum over ports, the egress rule takes the maximum, and the dark-bridge-port rule counts
+  ports. So a firing rule says a loop signature, a link-down or a dark port happened, not on which
+  cable. The port is on the Kernel log section's two port-event panels, with its comment and its
+  interface lists, or in the Interface traffic section.
 - **An unprivileged agent's blind spots.** The connection-table and ECC rules read sources that need
   a privileged container. Without one those measurements never reach the store, and on Prometheus a
   query over a missing metric returns no data — which these rules read as OK.
+- **A collector without the API tier.** The port-error, dark-bridge-port and egress-queue rules read
+  RouterOS counters that only the API tier polls. Under `--api-mode off` none of that reaches the
+  store: on Prometheus the three rules read no data, and on PostgreSQL the egress rule, the only one
+  of the three in that file, reads 0; both are OK. On
+  an InfluxDB store that has never held those tables the queries fail and `execErrState: Error`
+  applies instead.
 - **Anything while the silent-agent rule fires.** Every rule reads the same stream — including the
   slipped-ticks rule, whose only query is against the collector, not the agent — so with no samples
   arriving they read zero or no data, and both are OK.
@@ -1372,8 +1461,8 @@ sample's packet count was at or below its trailing median. See
 ### Loaded into Grafana, and what that found
 
 On 2026-09-21 the InfluxDB provisioning file was loaded into Grafana 13.2.1
-against the live InfluxDB 3 store and all twelve rules were watched through
-their own evaluation. **It found two defects, both fixed in this release**, and
+against the live InfluxDB 3 store and all twelve rules it held then were
+watched through their own evaluation. **It found two defects, both fixed in 1.1.0**, and
 one of them would have kept most of these rules from ever firing.
 
 **`coalesce()` over an unsigned aggregate returns nothing, silently.** The
@@ -1387,8 +1476,8 @@ them, *while the loop signature it exists to catch was running*: the same SQL
 over `/api/v3/query_sql` returned 109 at that moment. Every `coalesce()` over
 an aggregate now carries `::BIGINT`, and
 `TestCoalesceIsCastInAlertSQL` fails if a new rule omits it. This is the same
-fault [the panels already pinned for `greatest()`](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/),
-and worse: a panel at least fails loudly with a 500.
+fault the panels' SQL already pins by casting `greatest()` to `BIGINT`
+(`internal/dashboards/panels.go`), and worse: a panel at least fails loudly with a 500.
 
 **The conntrack rule named a column no InfluxDB store holds** — `limit_objs`,
 which is the SQL sink's name, while the InfluxDB sink writes the slab ceiling
@@ -1396,7 +1485,7 @@ as `limit`. This page predicted that defect before it was confirmed; the rule
 now reads `"limit"`, and the PostgreSQL translation turns it back into
 `limit_objs`.
 
-Afterwards all twelve rules returned a value, and `mikroscope-l2-loop` went to
+Afterwards all twelve rules then in the file returned a value, and `mikroscope-l2-loop` went to
 **Alerting** at 16:58:50Z on the live `own-address` signature. Grafana's own
 instance list for that rule still carried `Normal (NoData)` at 16:56:50Z from
 the run before the fix: the defect and its repair two minutes apart in the same
@@ -1404,11 +1493,21 @@ record.
 
 > **What has not been tried**
 >
-> **A rule resolving.** The loop signature on the reference device has not stopped, so the firing
-> rule has not been watched going back to Normal. **The Prometheus and PostgreSQL forms**, which
-> were not loaded into any Grafana — only the InfluxDB file was. **Notification delivery:** the run
-> configured no contact point, so what was watched is the rule's state, never a message leaving
-> Grafana. **The store-shaped failures**, because this store was not missing anything: the
+> **A rule resolving.** The loop on the reference device ended on 2026-09-23, but the return of
+> `mikroscope-l2-loop` to Normal has not been checked in Grafana's state history, so the resolve
+> path is still unobserved. **The two rules added in 1.2.0 inside Grafana.**
+> `mikroscope-bridge-port-dark` and `mikroscope-wakeup-storm` were not in the 2026-09-21 load, and
+> no Grafana has evaluated either since. Their InfluxDB SQL was run by hand against the reference
+> store instead: the dark-port rule's returned 1 on three windows inside the loop and 0 after it,
+> in a backtest over 2026-09-19 11:13 to 2026-09-23 22:44 UTC that marked only sfp-sfpplus1 and
+> ether2; the wake-up rule's returned 0.94–0.95 on two healthy windows and 35.7 at the storm of
+> 2026-09-23, beside a ratio that never exceeded 1.81 over 551 healthy windows (2026-09-20..23).
+> Their PromQL was checked for syntax only, and the wake-up rule's PostgreSQL SQL has not been run
+> at all (the dark-port rule has no PostgreSQL form; see [The files](https://jmrp.io/docs/mikroscope/dashboards/alerts/#the-files)). **The
+> Prometheus and PostgreSQL forms**,
+> which were not loaded into any Grafana — only the InfluxDB file was. **Notification delivery:**
+> the run configured no contact point, so what was watched is the rule's state, never a message
+> leaving Grafana. **The store-shaped failures**, because this store was not missing anything: the
 > collector creates `mikroscope_detection` with the first detection it writes, and InfluxDB 3
 > refuses a query naming a missing table when it plans it, so on a store that has never held a
 > detection the detections rule's query should fail and its `execErrState: Error` applies instead

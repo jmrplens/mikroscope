@@ -9,12 +9,17 @@ What `mikroscope install` does to a RouterOS device and in which order, and how 
 Source: <https://jmrp.io/docs/mikroscope/install/>
 
 This page answers two questions: what `mikroscope install` does to your router,
-and how you get the router back. `install` puts a 6.1 MiB
-agent image in a container on the router; `uninstall` removes it again.
+and how you get the router back. `install` puts the agent image in a container on the router (the 1.0.0 image
+was 6.1 MiB; the current image's size is to be measured on the published 1.2.1
+image); `uninstall` removes it again.
 On RB5009UG+S+, RouterOS 7.24.2, 2026-09-12, a scripted
 doctor → install → status → upgrade → uninstall round trip
 (`make roundtrip`, which passes `--ephemeral` to doctor, install and upgrade) left
-the router's `/export` byte-identical, its `#` header lines aside. Every object
+the router's `/export` byte-identical, its `#` header lines aside. That run
+predates 1.1.0, from which `uninstall` removes only with `--yes`.
+`scripts/roundtrip.sh` now passes `--yes` to its uninstall step (through 1.2.0 it did
+not, so it only listed there and its export check failed); the script in that form has
+not yet been run against the router. Every object
 install creates carries the comment `mikroscope:<name> (managed by mikroscope)`,
 except the envlist and the image file, which cannot; the envlist carries the
 tag as its `MIKROSCOPE_TAG` entry. Nothing is written before it is listed;
@@ -29,7 +34,8 @@ true for you: a container-capable architecture on RouterOS 7.24 or later, the
 physical button press or a power cycle.
 [What the router needs](https://jmrp.io/docs/mikroscope/install/prerequisites/) covers all three.
 `mikroscope doctor` checks them read-only, in one ssh connect, and prints the
-exact command or physical step for anything missing.
+exact command or physical step for anything missing; then, over HTTP, it reads
+the ring of an agent already running.
 
 One decision comes before the first install and not after it: where the agent
 image comes from. A checkout builds it, `--agent-tar` takes the one the release
@@ -55,8 +61,9 @@ script that installs without this CLI at all.
    `install --dry-run` stop here, before any ssh connect.
 
 3. **Runs `doctor`.** Any missing prerequisite stops the install with
-   `N prerequisite(s) missing; nothing was written`. `--no-doctor` skips this
-   step.
+   `N prerequisite(s) missing; nothing was written`. A `WARN` line is printed
+   and does not stop it. The agent-health section of standalone `doctor` is not
+   run here. `--no-doctor` skips this step.
 
 4. **Asks** `write the objects above to the router? [y/N]`. `--yes` skips the
    question.
@@ -164,6 +171,10 @@ without `--ephemeral` re-creates the container with its image and root on the
 internal flash and `start-on-boot=yes`. An upgrade of an `--expose` install
 without `--expose` and without a token (`--token` or `MIKROSCOPE_TOKEN`)
 re-creates the agent with no token, while the two LAN firewall rules stay.
+`doctor` catches that state afterwards: its `WARN` line
+`the installed agent published on the LAN asks for a token` shows
+`dst-nat=<n> token=unset`
+([What doctor checks](https://jmrp.io/docs/mikroscope/install/prerequisites/#what-doctor-checks)).
 
 ### Uninstall
 
@@ -183,13 +194,18 @@ Every object carries the comment `mikroscope:<name> (managed by mikroscope)`
 
 `uninstall` removes by exact tag plus identity, never by pattern, and fails naming the step if anything remains.
 
-`mikroscope uninstall` runs the removals newest first. A removal that fails or
+`mikroscope uninstall` on its own only lists: it prints
+`router objects (add --yes to remove them):` and the objects its flags describe,
+newest first, without connecting to the router, and removes nothing. With
+`--yes` it runs the removals newest first. A removal that fails or
 prints anything is reported as `skip` with what the router said, and the rest
 continue. A step whose selector finds nothing prints `gone` just the same, which
 is why the count, not the removal output, decides. Then it asks the ownership
 count of every step in one connect, prints one line per step, and
 either ends with `verified: nothing mikroscope created remains on the router` or
 fails with `uninstall left objects behind`, naming the steps still present.
+`--targets` chooses what goes: `router` (the default), `dashboard`, `data` or
+`all`; see [Commands and flags](https://jmrp.io/docs/mikroscope/reference/cli/).
 
 The container removal waits, because RouterOS does not: `/container/remove`
 returns before the container is gone, and a `/file/remove` of the image issued
@@ -224,12 +240,12 @@ the error, and no board line; `status` still exits 0.
 ### Day to day
 
 ```sh
-mikroscope doctor                      # read-only
+mikroscope doctor                      # read-only: prerequisites, then the running agent's ring
 mikroscope plan                        # every command, nothing written
 mikroscope install [--ephemeral]       # doctor, confirmation, writes, probe
 mikroscope status                      # ownership counts + agent health
 mikroscope upgrade                     # new image, container only
-mikroscope uninstall                   # removes and verifies
+mikroscope uninstall --yes             # removes and verifies (without --yes: lists only)
 mikroscope image --arch arm64          # the tar, for side-loading by hand
 mikroscope plan --rsc --out install.rsc # the same writes, as a RouterOS script
 ```
@@ -268,6 +284,11 @@ batches every read into one connect — `doctor` is one, `status` is one, the
 state questions of `install` are one — and each write takes one more, plus the
 `scp` upload. ssh is never a data path: `record` and `forward` reach the agent
 over HTTP or the RouterOS API.
+
+Measured on RB5009UG+S+ · 4 × 1.4 GHz Cortex-A72 · RouterOS 7.24.1 · 2026-08-26 · one ssh connect, for its duration
+
+That reading predates the agent and was taken on RouterOS 7.24.1; on 7.24.2, on 2026-09-11, the same
+cost showed in `/tool profile` as 17–33 % in one or two snapshots, not a measured window.
 
 > **Untested**
 >
@@ -349,8 +370,8 @@ Two arguments, which are also the `VERSION` and `BIN_DIR` variables so they can
 be set through a pipe:
 
 ```sh
-curl -fsSL .../install.sh | VERSION=1.0.9 BIN_DIR=~/bin bash
-./install.sh --version 1.0.9 --dir ~/bin      # the same, with the file downloaded first
+curl -fsSL .../install.sh | VERSION=1.2.0 BIN_DIR=~/bin bash
+./install.sh --version 1.2.0 --dir ~/bin      # the same, with the file downloaded first
 ```
 
 The rest of this page is what those scripts do, one platform at a time, for
@@ -377,7 +398,7 @@ Anything whose name starts with `mikroscope-agent` is the other program.
   1. Download the archive and the checksums:
 
      ```sh
-     VERSION=1.0.9
+     VERSION=1.2.0
      curl -fsSLO https://github.com/jmrplens/mikroscope/releases/download/v$VERSION/mikroscope_${VERSION}_linux_x86_64.tar.gz
      curl -fsSLO https://github.com/jmrplens/mikroscope/releases/download/v$VERSION/checksums.txt
      ```
@@ -404,7 +425,7 @@ Anything whose name starts with `mikroscope-agent` is the other program.
      `darwin_x86_64` for Intel — and the checksums:
 
      ```sh
-     VERSION=1.0.9
+     VERSION=1.2.0
      curl -fsSLO https://github.com/jmrplens/mikroscope/releases/download/v$VERSION/mikroscope_${VERSION}_darwin_arm64.tar.gz
      curl -fsSLO https://github.com/jmrplens/mikroscope/releases/download/v$VERSION/checksums.txt
      ```
@@ -435,13 +456,13 @@ Anything whose name starts with `mikroscope-agent` is the other program.
   2. Check it in PowerShell, against the line for your file in `checksums.txt`:
 
      ```powershell
-     Get-FileHash .\mikroscope_1.0.9_windows_x86_64.zip -Algorithm SHA256
+     Get-FileHash .\mikroscope_1.2.0_windows_x86_64.zip -Algorithm SHA256
      ```
 
   3. Unpack it somewhere permanent and put that folder on your `PATH`:
 
      ```powershell
-     Expand-Archive .\mikroscope_1.0.9_windows_x86_64.zip -DestinationPath $HOME\mikroscope
+     Expand-Archive .\mikroscope_1.2.0_windows_x86_64.zip -DestinationPath $HOME\mikroscope
      $env:PATH += ";$HOME\mikroscope"
      ```
 
@@ -494,15 +515,18 @@ mikroscope doctor --router user@192.168.88.1
 ```
 
 `doctor` writes nothing. It reads the device, prints what it is, and marks each
-prerequisite `ok` or `MISSING` with the command that fixes it — including the
-one nobody can do remotely. That is the first thing to run, before any install
-route.
+prerequisite `ok` or `MISSING`, and an advisory check that finds something
+`WARN`, with the command that fixes it — including the one nobody can do
+remotely — then reports what an agent already running shows
+([What the running agent shows](https://jmrp.io/docs/mikroscope/install/prerequisites/#what-the-running-agent-shows)).
+That is the first thing to run, before any install route.
 
 > **The flags have environment variables**
 >
-> `--router`, `--ssh-port`, `--ssh-key`, `--arch` and most of the rest read a default from a
-> `MIKROSCOPE_*` variable, so a shell that exports them turns every command below into
-> `mikroscope doctor`. [Environment variables](https://jmrp.io/docs/mikroscope/reference/environment/) is the list, and
+> `--router`, `--ssh-port`, `--ssh-key`, `--arch` and the other connection and naming flags read a
+> default from a `MIKROSCOPE_*` variable, so a shell that exports them turns the command above into
+> `mikroscope doctor`. `--rate`, `--buffer`, `--port` and the other agent settings do not, and must
+> be passed each time. [Environment variables](https://jmrp.io/docs/mikroscope/reference/environment/) is the list, and
 > `.env.example` in the repository is a template.
 
 ### See also
@@ -626,13 +650,13 @@ The checks doctor runs:
 | interface list <list> exists (raw rule trap) | the `--iface-list` list (default `LAN`) exists | `/interface/list/add name=…`, or pass the list your `in-interface-list=!…` drop rule uses |
 | address list <list> has entries (raw rule trap) | the `--addr-list` list (default `LANs`) has at least one entry | pass the list your `drop local if not from default IP range` rule uses; an empty list is fine only if there is no such rule |
 | veth name <veth> is free or ours | always reported `ok`, with the count found | none: a collision is caught by `install` itself |
-| the installed agent published on the LAN asks for a token | a warning, shown only when an install of this `--name` has a dst-nat on the LAN: its environment holds a `TOKEN`. Doctor counts the entries, never reads the value | `upgrade` with the same `--name` and `--token <secret>`, or `uninstall --expose` to take it off the LAN |
+| the installed agent published on the LAN asks for a token | a warning, shown only when an install of this `--name` has a dst-nat on the LAN: its environment holds a `TOKEN`. Doctor counts the entries, never reads the value | `upgrade` with the same `--name`, the flags it was installed with (`--expose --lan-address` among them) and `--token <secret>`; or remove the agent, LAN rules and container together, with `uninstall --name <name> --expose --lan-address <router LAN IPv4> --token <any> --yes` plus any other shape flag the install was given (`--port`, `--veth`, `--subnet`) |
 
 The flash check uses the real tar size under `install`. `doctor` on its own
 assumes a 7 MiB image, so it asks for 18.0 MiB. Twice the image because the tar
 and the root extracted from it are on the disk together until `install` deletes
-the tar; with `--remote-image` no tar is uploaded, so the check asks for the
-4 MiB of headroom alone. The memory threshold follows `--memory-max`: it asks
+the tar. With `--remote-image` no tar is uploaded, so both `install` and
+`doctor` on its own ask for the 4 MiB of headroom alone. The memory threshold follows `--memory-max`: it asks
 for at least what that flag asks for, which is 64 MiB by default, so
 `--memory-max 128M` on a router with 70 MiB free is caught here rather than by
 a container that will not start.
@@ -641,7 +665,7 @@ The `registry-url` check runs only with `--remote-image`, and only when the
 reference carries a registry host. `/container/config` is global to the device
 and shared with every other container on it, so mikroscope reads that setting
 and never writes it. RouterOS ships it as `https://registry-1.docker.io`, so the
-Docker Hub reference, `--remote-image jmrplens/mikroscope-agent:1.0.9`, needs
+Docker Hub reference, `--remote-image jmrplens/mikroscope-agent:1.2.0`, needs
 nothing set there on an untouched router, and the GHCR reference is the one that
 needs the setting changed first.
 [Four ways to install](https://jmrp.io/docs/mikroscope/install/routes/#a-registry-pull) has the
@@ -672,27 +696,62 @@ every other check with it.
 
 Standalone `doctor`, not the one inside `install`, then asks the agent that is
 already running what its ring holds: a `health` section, after the checks. It
-reads the ring once from this host — the same address `status` probes — and
-gives up after 3 s, saying so, when no agent answers. It never changes the exit
-status: the prerequisites decide that.
+reads the ring once, directly from this host, at the address `--subnet` and
+`--port` give — the one `status` probes — so pass the flags you installed with,
+and `--token` (or `MIKROSCOPE_TOKEN`) if the agent has one. It never goes
+through the relay or the `--expose` address. It never changes the exit status:
+the prerequisites decide that. It skips the section, saying why, in two cases:
+
+```text
+health (what the running agent's ring shows now):
+  skipped: no agent answered at 172.30.10.2:9123 from this host (…)
+```
+
+when nothing answers `/healthz` within 3 s, and
+`skipped: the agent answered /healthz but its ring could not be read (…)` when
+`/healthz` answers but the ring does not — a token agent read without `--token`,
+for one, since `/snapshot` then answers 401.
+
+When it reads the ring, it prints how much it read and either a clean line or
+one `WARN` per finding, each with its `fix:`. These are the health section's own
+`WARN` lines, indented under `health`, not the prerequisite list's:
+
+```text
+health (what the running agent's ring shows now):
+  read 600 samples covering 60 s
+  ok    no loop signature, STP churn, link flap or softnet drop in the window
+```
+
+```text
+  WARN  layer2-loop: 30 frames this router sent came back in on ether2 in the last 60 s, carrying the bridge's own address as their source
+        fix: something downstream of ether2 reaches the router by a second path. …
+```
 
 The ring is 60 s by default, so this sees what is happening now, not what
-happened this morning; the dashboards and the alert rules read history. What it
+happened this morning; the dashboards and the alert rules read history. It asks
+the agent for at most 10 000 samples, all within the same 3 s: the whole ring
+when it holds no more than that, and otherwise the newest 10 000 — the last
+1 000 s at 10 Hz, the last 100 s at 100 Hz. What it
 looks for, in counts of events a healthy router does not produce rather than
 thresholds tuned to one device:
 
 - **`layer2-loop`**: three or more frames in the window that came back in on a
   port carrying the bridge's own address as their source. The loop on the
-  reference RB5009 repeated it every 2.0 s, the STP hello interval, while every
+  reference RB5009 (2026-09-12, and again 2026-09-19 to 09-23) repeated it
+  every 2.00–2.01 s, the STP hello interval — thirty times in a 60 s ring — while every
   RouterOS counter showed the port healthy and STP kept it blocked, sending
   one packet a second, for days.
 - **`stp-churn`**: a port that STP moved to learning at least three more times
   than it let it forward, without that signature. Not a count of blocks: every
-  healthy link-up logs three of those at once, and reaches forwarding 2–3 s
-  later; on the reference router's 30 days of data, every healthy link-up left
-  learning minus forwarding at 0.
-- **`link-flap`**: two or more link-downs on one port, the count the collector's
-  own link-flap marker uses.
+  healthy link-up logs three of those at once, and reaches forwarding 2.1–2.8 s
+  later (ether7 on the reference RB5009, five link-ups on 2026-09-21); across
+  30 days of that router's store, every healthy link-up left learning minus
+  forwarding at 0.
+- **`link-flap`**: two or more link-downs on one port anywhere in the
+  samples it reads.
+  The collector's own `link-flap` detection is a different count: link-ups and
+  link-downs together, two or more on one port within 60 s. A cable pulled and
+  plugged back once is a flap there and not here.
 - **`softnet-drops`**: any packet the kernel dropped from its softnet backlog —
   lost inside the router, where no interface counter sees it. Squeezes are not
   counted: a squeeze is the kernel pacing itself.
@@ -700,6 +759,15 @@ thresholds tuned to one device:
 Each finding names the RouterOS port, on a board the port map knows, and the
 kernel's name otherwise. The kernel-log records are classified again here from
 their text, so an agent older than the classification is read the same way.
+
+What has run: on the reference RB5009 (RouterOS 7.24.4, 2026-09-23) the section
+read 600 samples from the live agent and found nothing. None of the four findings
+has fired against a live agent; they are exercised by tests that replay the
+reference loop's real kernel-log text at its 2.0 s cadence. Both prerequisite
+`WARN`s were reproduced on the same device and date: the credential one from a
+read-only `doctor --remote-image ghcr.io/…` with a Docker Hub username set, the
+token one from a throwaway install, exposed, then upgraded without a token, then
+removed.
 
 ### What your host needs
 
@@ -784,16 +852,16 @@ nothing uploaded:
 
 ```sh
 mikroscope install --router user@192.168.88.1 \
-  --remote-image jmrplens/mikroscope-agent:1.0.9
+  --remote-image jmrplens/mikroscope-agent:1.2.0
 ```
 
 Nothing is uploaded, no tar lands on the device, and `uninstall` has no file to
 account for: the container step becomes
-`/container/add remote-image="jmrplens/mikroscope-agent:1.0.9" …` and the plan
+`/container/add remote-image="jmrplens/mikroscope-agent:1.2.0" …` and the plan
 prints `the router pulls … (nothing is uploaded)` where the upload line would
 be. The release publishes the image twice, as
-`jmrplens/mikroscope-agent:1.0.9` on Docker Hub and as
-`ghcr.io/jmrplens/mikroscope-agent:1.0.9` on GHCR. Both carry `linux/amd64`,
+`jmrplens/mikroscope-agent:1.2.0` on Docker Hub and as
+`ghcr.io/jmrplens/mikroscope-agent:1.2.0` on GHCR. Both carry `linux/amd64`,
 `linux/arm64`, `linux/arm/v7` and `linux/arm/v5`, and RouterOS picks the one its
 architecture needs — which is why this route asks nothing about the board: the
 two kinds of 32-bit ARM MikroTik ships are both in the index.
@@ -818,13 +886,17 @@ registry, and it has to have room in RAM for the layers while it extracts them.
 > else to install a probe would be a change to somebody else's containers. `doctor` reads it
 > instead, and when the reference names a host the setting does not match it names the one command
 > to run — `/container/config/set registry-url=https://ghcr.io` for the GHCR reference. Install
-> with `--agent-tar` if you would rather not change it.
+> with `--agent-tar` if you would rather not change it. It also warns when a registry username is set
+> and the pull goes anywhere but Docker Hub: see
+> [What doctor checks](https://jmrp.io/docs/mikroscope/install/prerequisites/#what-doctor-checks).
 
-A reference with no host — `jmrplens/mikroscope-agent:1.0.9` — leaves the
+A reference with no host — `jmrplens/mikroscope-agent:1.2.0` — leaves the
 registry to whatever the router is already configured for, and `doctor` then
-checks nothing about it. `--remote-image` reads its default from
-`MIKROSCOPE_REMOTE_IMAGE`, and `upgrade` takes it too; `image` refuses it,
-because there is no tar to write.
+runs no `registry-url` check. It still reads the setting and whether a username
+is set, and prints `WARN no registry credential meant for another registry` when
+a username is set and the configured registry is not Docker Hub.
+`--remote-image` reads its default from `MIKROSCOPE_REMOTE_IMAGE`, and `upgrade`
+takes it too; `image` refuses it, because there is no tar to write.
 
 ### A RouterOS script
 
@@ -833,7 +905,7 @@ from another machine at all:
 
 ```sh
 mikroscope plan --rsc \
-  --remote-image jmrplens/mikroscope-agent:1.0.9 \
+  --remote-image jmrplens/mikroscope-agent:1.2.0 \
   --out install.rsc
 ```
 
@@ -904,9 +976,14 @@ help, because the router never asks anonymously.
 
 What follows for you: **a router whose `/container/config` holds a Docker Hub
 login cannot pull from GHCR**, and the fix is either a GHCR token in that same
-field or Docker Hub as the registry. A router with no credential set was not
-tried, because the reference router's password cannot be read back and so
-cannot be restored.
+field or Docker Hub as the registry. Since 1.2.0 `doctor` says so before the
+install, as `WARN no registry credential meant for another registry`, and names
+two ways out: install from a tar with `--agent-tar`, where nothing is pulled, or
+clear the username if nothing else on the router needs it
+([What doctor checks](https://jmrp.io/docs/mikroscope/install/prerequisites/#what-doctor-checks)).
+That warning was reproduced read-only on the same RB5009, RouterOS 7.24.4, on
+2026-09-23. A router with no credential set was not tried, because the
+reference router's password cannot be read back and so cannot be restored.
 
 The run also found a real bug, now fixed: a `--remote-image` install identified
 its container by the registry reference, which is the same string for every
@@ -962,7 +1039,7 @@ have, take the v5 tar**: MikroTik's container documentation says EN7562CT
 boards "support only arm32v5 container images", and an ARMv5 image runs on
 every 32-bit ARM MikroTik ships, while an ARMv7 one does not run on those.
 
-1. Download `mikroscope_1.0.9_<os>_<arch>.tar.gz` (`.zip` on Windows) and the
+1. Download `mikroscope_1.2.0_<os>_<arch>.tar.gz` (`.zip` on Windows) and the
    agent image tar from the table above, together with `checksums.txt` and
    `checksums.txt.sigstore.json`.
 
@@ -971,24 +1048,21 @@ every 32-bit ARM MikroTik ships, while an ARMv7 one does not run on those.
 3. Unpack the CLI and install:
 
    ```sh
-   tar xzf mikroscope_1.0.9_linux_x86_64.tar.gz
+   tar xzf mikroscope_1.2.0_linux_x86_64.tar.gz
    ./mikroscope install --router user@192.168.88.1 \
      --arch arm64 --agent-tar mikroscope-agent-arm64.tar
    ```
 
 The CLI reads the tar before it uploads it, which is what catches the wrong
-download: it prints what it read, as
-`using mikroscope-agent-arm64.tar: linux/arm64, agent <size> KiB`, and on the
-ARMv7 image it adds the note that an EN7562CT board needs the v5 one instead.
-
-It wants a one-image
-`manifest.json`, the config that manifest names, one layer, and
-`/mikroscope-agent` as the entrypoint; anything else fails as
+download. It wants a one-image `manifest.json`, the config that manifest names,
+one layer, and `/mikroscope-agent` as the entrypoint; anything else fails as
 `this is not a mikroscope agent image`. Then the image's architecture has to be
 the one `--arch` says, or the verb fails naming the asset to download instead —
 an `amd64` image on an arm64 board would otherwise install, start, and die with
 `exec format error` in the container log. On a tar it accepts it prints what it
-read, as `using mikroscope-agent-arm64.tar: linux/arm64, agent <size> KiB`.
+read, as `using mikroscope-agent-arm64.tar: linux/arm64, agent <size> KiB`, and
+on the ARMv7 image it adds the note that an EN7562CT board needs the v5 one
+instead.
 
 `--agent-tar` reads its default from `MIKROSCOPE_AGENT_TAR`, and `upgrade` and
 `image` take it too. From here on the install is the upload route: the tar goes
@@ -997,7 +1071,7 @@ up with `scp`, RouterOS extracts it at add time, and `install` deletes it.
 > **Two assets have similar names**
 >
 > `mikroscope-agent-arm64.tar` is the side-loadable container image, the one `--agent-tar` wants.
-> `mikroscope-agent_1.0.9_linux_arm64.tar.gz` is an archive of the bare agent binary, for reading or
+> `mikroscope-agent_1.2.0_linux_arm64.tar.gz` is an archive of the bare agent binary, for reading or
 > running it outside a container; `--agent-tar` rejects it.
 
 #### Verifying the download
@@ -1188,7 +1262,8 @@ would later have to find in a `/file` index that lagged for minutes after a
 container removal. So `install` waits up to 15 s for the container to appear,
 then 3 s more, deletes the tar, and only then starts the container. It does not
 check that the extraction finished; on the RB5009 a 1.8 MiB tar was extracted
-within the same second as the add (RouterOS 7.24.2, 2026-09-11).
+within the same second as the add (RouterOS 7.24.2, 2026-09-11). That tar was a build of that
+date, before 1.0.0, not the image `install` ships now.
 
 The container is created with `ignore-remote-image-change=yes`. With the
 default `no`, RouterOS watched the image and, once the tar was removed, stopped
@@ -1199,7 +1274,7 @@ which is why `doctor` asks for twice the image plus 4 MiB of free flash.
 
 With `--remote-image` none of this happens. RouterOS pulls the layers itself,
 no tar lands on the device, there is nothing to wait for and nothing to delete,
-`doctor` asks for the 4 MiB alone, and `uninstall` has no file to account for —
+`doctor` asks for the 4 MiB alone, run on its own or inside `install`, and `uninstall` has no file to account for —
 the container's ownership count is the container and the envlist. The container
 root still goes where `--disk` and `--ephemeral` say.
 
@@ -1217,7 +1292,7 @@ The entries install writes into the agent's envlist:
 | `BUFFER_S` | always | `--buffer`, default `60`, 10–3600 | the ring's length, in seconds |
 | `PORT` | always | `--port`, default `9123`, 1–65535 | the agent's HTTP port |
 | `ADDR` | always | `--subnet` | the agent's address, the `.2` of the /30; the agent binds only there |
-| `MEM_LIMIT_MB` | always | `--mem-limit-mb`, 8–1024 | the agent's Go soft memory limit, in MiB; derived from the ring since 1.0.6 (rate × buffer × line, × 2.5, floored at 16 MiB) rather than a flat number |
+| `MEM_LIMIT_MB` | always | `--mem-limit-mb`, 8–1024 | the agent's Go soft memory limit, in MiB; derived from the ring since 1.0.6 (rate × buffer × line, × 2.5, at least 16 MiB, at most three quarters of `--memory-max` while that still holds the ring) rather than a flat number |
 | `FLOOR_HZ` | only when above 0 | `--floor-hz`, default `0`, 0–1000 | one cadence for every level source, in Hz |
 | `CAPTURE_MB` | always | `--capture-mb`, default `4`, 0–256 | the triggered-capture budget, in MiB; `0` turns captures off |
 | `TRIGGERS` | only when set | `--triggers` | the trigger conditions; unset, the agent uses its default set |
@@ -1377,9 +1452,11 @@ characters. Both rules are removed by `uninstall` — given `--expose` again, as
 on RB5009UG+S+, RouterOS 7.24.2, 2026-09-11: the pair works, and both rules are removable by tag.
 
 A client you point at `http://<router LAN IP>:9123` uses it: Prometheus, `curl`.
-The CLI's own transports do not. `record`, `forward` and the probe after
-`install` build the agent's address from `--subnet` and `--port`, and this build
-has no flag that points them at the exposed address.
+The CLI's own transports do not. `record`, `forward`, the probe after `install`
+and the health read of standalone `doctor` build the agent's address from
+`--subnet` and `--port`, and this build has no flag that points them at the
+exposed address. `doctor`'s health read does not use the relay either: it reads
+directly or not at all.
 
 What a LAN-wide listener opens is on
 [What --expose opens](https://jmrp.io/docs/mikroscope/security/expose/).
@@ -1390,7 +1467,7 @@ What a LAN-wide listener opens is on
 | ---------- | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
 | direct     | a route from your host to the /30 through the router            | only the two list memberships `install` already adds                                                  |
 | relay      | an API user with `read,api,test`; `--transport relay` or `auto` | 64 512 B and 13 samples per call, ~1 s in about half the calls, no token |
-| `--expose` | `--lan-address` and a token; two firewall rules on the router   | reachable from the whole LAN; not used by `record`, `forward` or the probe                            |
+| `--expose` | `--lan-address` and a token; two firewall rules on the router   | reachable from the whole LAN; not used by `record`, `forward`, the probe or `doctor`'s health read    |
 
 > **True of this device, not of yours**
 >

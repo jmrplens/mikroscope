@@ -14,8 +14,9 @@ import walkthrough from "../../../assets/walkthrough/rb5009-walkthrough.svg";
 
 The question this tool exists for: _I am about to change something on the router — what does it
 actually do, at a resolution where I can see it?_ This page is the shortest path from a router
-that has never seen mikroscope to a chart that answers it: six steps with the commands as they
-are, and one real recording from the RB5009 read line by line.
+that has never seen mikroscope to a chart that answers it: five steps to the chart and two optional
+ones to keep it running, with the commands as they are, and one real recording from the RB5009
+read line by line.
 
 ## Before you start
 
@@ -30,10 +31,12 @@ the router's version in its first line but does not gate on it.
 
 The CLI does not read `.env` itself, and only some flags take their default from a
 `MIKROSCOPE_*` variable: the connection and naming ones (`ROUTER`, `SSH_PORT`, `SSH_KEY`, `NAME`,
-`VETH`, `SUBNET`, `IFACE_LIST`, `ADDR_LIST`, `DISK`, `ARCH`, `TOKEN`, `LAN_ADDRESS`), the API ones
-(`API_ADDR`, `API_USER`, `API_PASSWORD`), the sink URLs such as `INFLUX_URL`, `INTERFACES` and
-`HOST_TAG`. The rest, among them `--ephemeral`, `--rate`, `--for`, `--topics` and `--prom`, have
-plain defaults, whatever the CLI's usage text says. Export the variables you need, or copy
+`VETH`, `SUBNET`, `IFACE_LIST`, `ADDR_LIST`, `DISK`, `ARCH`, `TOKEN`, `LAN_ADDRESS`), the image
+source (`AGENT_TAR`, `REMOTE_IMAGE`), the API ones (`API_ADDR`, `API_USER`, `API_PASSWORD`), the
+sink URLs such as `INFLUX_URL`, `INTERFACES`, `HOST_TAG` and the `GRAFANA_*` settings of step 7.
+`GRAFANA_TOKEN` is read under that exact name, without the prefix. The rest, among them
+`--ephemeral`, `--rate`, `--for`, `--topics` and `--prom`, have plain defaults, whatever the CLI's
+usage text says. Export the variables you need, or copy
 `.env.example` to `.env` and source it with `set -a; . ./.env; set +a`;
 [environment variables](/mikroscope/reference/environment/) lists every one.
 
@@ -53,17 +56,18 @@ plain defaults, whatever the CLI's usage text says. Export the variables you nee
    time, for a machine where `curl | bash` is not something to type:
 
    ```sh wrap
-   tar xzf mikroscope_1.0.9_linux_x86_64.tar.gz   # a .zip on Windows
+   tar xzf mikroscope_1.2.0_linux_x86_64.tar.gz   # a .zip on Windows
    ./mikroscope version
    ```
 
-   The release carries the CLI as an archive per platform — linux, macOS, Windows and FreeBSD on
-   amd64, arm64 and arm — with `checksums.txt`, cosign signatures and SBOMs beside it. The agent
+   The release carries the CLI as an archive per platform — linux and FreeBSD on amd64, arm64 and
+   arm; macOS and Windows on amd64 and arm64 — with `checksums.txt`, cosign signatures and SBOMs
+   beside it. The agent
    travels separately, as four image tars, one per architecture
    (`mikroscope-agent-amd64.tar`, `-arm64`, `-armv5`, `-armv7` — 32-bit ARM was split in two in
    1.0.2, and the wrong tar is an `exec format error`) and as a registry image, published both as
-   `jmrplens/mikroscope-agent:1.0.9` on Docker Hub and as
-   `ghcr.io/jmrplens/mikroscope-agent:1.0.9` on GHCR; step 2 takes one of the two.
+   `jmrplens/mikroscope-agent:1.2.0` on Docker Hub and as
+   `ghcr.io/jmrplens/mikroscope-agent:1.2.0` on GHCR; step 2 takes one of the two.
 
    From a checkout instead:
 
@@ -88,6 +92,13 @@ plain defaults, whatever the CLI's usage text says. Export the variables you nee
    `write the objects above to the router? [y/N]` (`--yes` skips the question), writes, and then
    probes the agent from your host.
 
+   Since 1.2.0 a standalone `doctor` also has a second half, after the preflight:
+   `health (what the running agent's ring shows now):`. On a router with no agent yet it waits up
+   to 3 s and prints `skipped: no agent answered at …`, which is expected before the first
+   install. Re-run once the agent is up, it reads its ring (the last 60 s at the default
+   `--buffer`) and reports a layer-2 loop signature, STP churn, a link flap or softnet drops. What
+   it finds never changes `doctor`'s exit status, so the `&&` above still reaches `install`.
+
    Where the image comes from is your choice, and it is the only difference between the three
    installs:
 
@@ -98,22 +109,26 @@ plain defaults, whatever the CLI's usage text says. Export the variables you nee
      checkout. The CLI reads the tar before it uploads it — it has to be a mikroscope agent image
      and its architecture has to match `--arch`, or the verb stops and names the asset to download
      instead;
-   - **the registry**, `--remote-image jmrplens/mikroscope-agent:1.0.9`: the router pulls the image
+   - **the registry**, `--remote-image jmrplens/mikroscope-agent:1.2.0`: the router pulls the image
      itself, nothing is uploaded, and `uninstall` has no file to account for. RouterOS takes the
      registry host from the global `/container/config registry-url`, which mikroscope never writes
      because every container on the device shares it, and which ships as
      `https://registry-1.docker.io` — so the Docker Hub reference above runs on a stock router as
-     it stands. The GHCR reference, `ghcr.io/jmrplens/mikroscope-agent:1.0.9`, names a host of its
+     it stands. The GHCR reference, `ghcr.io/jmrplens/mikroscope-agent:1.2.0`, names a host of its
      own: `doctor` checks the setting against it and prints
      `/container/config/set registry-url=https://ghcr.io` when it does not match, or points at
-     `--agent-tar`. The pull needs the router to reach the registry and the free RAM for the layers.
+     `--agent-tar`. Since 1.2.0 it also prints `WARN` when `/container/config` holds a registry
+     username and the pull goes anywhere but Docker Hub: RouterOS presents that one credential to
+     every registry, and a Docker Hub account sent to GHCR ends the pull in `auth error`. A `WARN`
+     does not stop `install`. The pull needs the router to reach the registry and the free RAM
+     for the layers.
 
    `--arch` defaults to `arm64`, the RB5009's; it is not detected from the router, but `doctor`
    compares it with the architecture the router reports and names the `--arch` value to re-run with
    if they differ.
 
    On a router you only reach through WinBox or WebFig, there is a fourth way with no CLI on your
-   side at all: `mikroscope plan --rsc --remote-image jmrplens/mikroscope-agent:1.0.9 --out install.rsc`
+   side at all: `mikroscope plan --rsc --remote-image jmrplens/mikroscope-agent:1.2.0 --out install.rsc`
    writes the same commands, in the same order and with the same tags, as a RouterOS script to
    paste into the terminal or `/import`. [Installing the agent](/mikroscope/install/) has that path
    and its two caveats in full.
@@ -125,10 +140,10 @@ plain defaults, whatever the CLI's usage text says. Export the variables you nee
    creates it if it does not. Pass `--ephemeral` to `doctor` too: without it, `doctor` checks free
    flash instead.
 
-   `install` ends by probing the agent from your host, and prints one line:
+   `install` ends by probing the agent from your host; the last of its lines is the probe's:
 
    ```text wrap
-   direct transport ok: agent 1.0.0 (9ddd760) built 2026-09-16T08:38:27Z, 10 Hz, seq 29, 0 slipped, 7ms round trip
+     direct transport ok: agent 1.0.0 (9ddd760) built 2026-09-16T08:38:27Z, 10 Hz, seq 29, 0 slipped, 7ms round trip
    ```
 
    The first field is the agent's build identity: the version, which a release stamps from the
@@ -223,7 +238,9 @@ plain defaults, whatever the CLI's usage text says. Export the variables you nee
    exposition on `:9124` and to InfluxDB 3. From there,
    [import and check](/mikroscope/dashboards/import-and-check/) sets up the Grafana dashboards — five
    of them, one per store — and the datasource field an InfluxDB 3 import needs. One scrape job is
-   enough: the collector's.
+   enough: the collector's. The alert rules for InfluxDB 3, PostgreSQL and Prometheus ship beside
+   the dashboards and are imported separately; [alerts](/mikroscope/dashboards/alerts/) lists
+   them.
 
 7. **Let it set Grafana up for you (optional).**
 
@@ -299,15 +316,23 @@ the notes fall against it.
 <RouterWrites command="install" />
 
 ```sh wrap
-bin/mikroscope uninstall --ephemeral
+bin/mikroscope uninstall --ephemeral          # lists what it would remove
+bin/mikroscope uninstall --ephemeral --yes    # and removes it
 ```
 
 Pass the same `--ephemeral`, `--disk` and `--name` you installed with: `uninstall` and `status`
 rebuild the plan from their own flags, and without `--ephemeral` they look for the image tar on
 flash instead of on tmpfs. `uninstall` removes every step of the plan in reverse order, by exact tag, then counts what is
 left owned by mikroscope on the router and fails, naming the objects, if anything remains.
-`bin/mikroscope status --ephemeral` prints the same ownership counts at any time, plus the agent's health when
-it is reachable.
+Without `--yes` it only lists what it would remove. `bin/mikroscope status --ephemeral` prints the same ownership
+counts at any time, plus the agent's `/healthz` line (version, rate, sequence, uptime, slipped
+ticks) when it is reachable; `doctor` is the verb that reads its ring for faults.
+
+If you ran step 7, `uninstall --targets dashboard --grafana <url>` with `GRAFANA_TOKEN` set and the
+same sink flags as `forward` removes the dashboard and the datasource it created, never one adopted
+with `--grafana-datasource-uid`. `--targets data` with those sink flags empties what step 6 wrote
+into each store it can empty, and names the ones it cannot. Nothing goes without `--yes`;
+[`uninstall --targets`](/mikroscope/reference/cli/#uninstall---targets) has the table.
 
 <Aside type="note" title="ssh is not free on the router">
 	Every ssh connect costs the RB5009 <Measured id="ssh.connectCpu" /> CPU for its duration. The CLI

@@ -4,10 +4,22 @@
 #
 #   MIKROSCOPE_SUBNET=172.30.10.0/30   # the /30 `install` was given; the agent is its .2
 #   MIKROSCOPE_TOKEN=                  # only if the install has one
+#   GRAFANA_PASSWORD=admin
+#   GRAFANA_TOKEN=                     # a Grafana service-account token, step 2 below
 #
-# then `docker compose up -d`. Grafana is on http://localhost:3000, admin and
-# the password below, with the dashboard already in it and pointed at the
-# store beside it: the collector publishes both on start.
+# A fresh Grafana has no service-account token until someone makes one, so it
+# comes up in three steps:
+#
+#   1. `docker compose -f compose.influxdb-grafana.yaml up -d grafana`
+#   2. in Grafana (http://localhost:3000, admin and GRAFANA_PASSWORD) create a
+#      service account with the Admin role and a token for it, and put the
+#      token in .env as GRAFANA_TOKEN
+#   3. `docker compose -f compose.influxdb-grafana.yaml up -d`
+#
+# The collector then publishes the datasource and the dashboard on start,
+# pointed at the store beside it. Without GRAFANA_TOKEN it still collects into
+# InfluxDB, but logs "grafana: could not publish, carrying on without it:
+# --grafana needs GRAFANA_TOKEN…" and Grafana stays empty.
 #
 # THE COLLECTOR RUNS ON THE HOST'S NETWORK, and that is not a shortcut. The
 # agent answers on a /30 veth inside the router, and the route to it is the

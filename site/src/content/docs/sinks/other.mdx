@@ -1,6 +1,6 @@
 ---
 title: The file and the other sinks
-description: The JSONL file, standard output, SQL, Loki, OTLP, Graphite, Elasticsearch and Telegraf — what each one carries, how it delivers, and what its protocol cannot promise.
+description: The JSONL file, standard output, SQL and PostgreSQL, Loki, OTLP, Graphite, Elasticsearch and Telegraf — what each one carries, how it delivers, and what its protocol cannot promise.
 ---
 
 import { Aside } from "@astrojs/starlight/components";
@@ -10,21 +10,21 @@ import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
 
 Besides [Prometheus](/mikroscope/sinks/prometheus/) and [InfluxDB
-3](/mikroscope/sinks/influxdb/), `forward` writes to eight more destinations. This page
+3](/mikroscope/sinks/influxdb/), `forward` writes to nine more destinations. This page
 answers, for each one, which parts of the timeline it receives, how it is delivered,
 and what the destination's protocol means it cannot tell you. The queue, backoff and
 counters they share are on [the collector](/mikroscope/sinks/).
 
 ## What each sink receives
 
-<ScrollTable label="What each of the eight sinks receives">
+<ScrollTable label="What each of the nine sinks receives">
 
 | Sink          | Kernel samples            | Kernel-log text                 | API tier                            | Derived and detections                           | Triggers, gaps, device |
 | ------------- | ------------------------- | ------------------------------- | ----------------------------------- | ------------------------------------------------ | ---------------------- |
 | file          | verbatim agent lines      | inside the sample lines         | `{"api":…}` lines                   | `{"derived":…}`, `{"detection":…}`               | all three, as lines    |
 | stdout `json` | verbatim agent lines      | inside the sample lines         | `{"api":…}` lines                   | as the file                                      | all three, as lines    |
 | stdout `lp`   | the InfluxDB measurements | counts per level, port and kind | the InfluxDB measurements           | the InfluxDB measurements                        | all three              |
-| SQL           | one table per source      | `mikroscope_event` rows         | tables, plus `mikroscope_api_error` | `mikroscope_derived`, `mikroscope_detection`     | all three              |
+| SQL (`--sql`, `--postgres`) | one table per source | `mikroscope_event` rows         | tables, plus `mikroscope_api_error` | `mikroscope_derived`, `mikroscope_detection`     | all three              |
 | Loki          | no                        | one line per record             | per-command errors only             | detections only                                  | all three, as lines    |
 | OTLP          | sums and gauges           | no                              | gauges, and an error count          | gauges, a detection sum                          | all three              |
 | Graphite      | one path per value        | no                              | paths                               | paths                                            | numeric parts only     |
@@ -138,10 +138,15 @@ What the connection can do that a file cannot:
 - **It can describe its own Grafana datasource**, which the file sink can never do: see
   [import and check](/mikroscope/dashboards/import-and-check/).
 
+Unlike `--sql`, `--postgres` is queued like the remote sinks: one batch a second,
+64 KiB × `--queue-seconds` of budget with the oldest batch dropped first, each batch one
+transaction with a 30 s timeout, and the counters in batches. A slow server therefore never
+blocks the pull loop, which the pipe into `psql` can.
+
 What it gives up: nothing about the schema, and one dependency. `--postgres` links pgx
 into the collector binary. The **agent** does not link it — the agent links `procfs`,
-`sample`, `agent` and the standard library, and its image budget is unchanged at 6.5 MiB
-for arm64.
+`sample`, `agent` and the standard library, so its image carries nothing new, and CI's
+`agent-size` job still holds it under the <Measured id="budget.image" /> budget.
 
 The DSN is a flag rather than an environment-only secret because libpq's own conventions
 are the point: pgx reads `PGPASSWORD`, `~/.pgpass` and the service file the way `psql`
@@ -167,13 +172,20 @@ identical `information_schema.columns` for the whole schema.
 | `mikroscope_cpu`                                                                                           | `cpu`                      | `user_ticks` … `steal_ticks`, `busy_ratio`, `dt_ns`                                    |
 | `mikroscope_softnet`                                                                                       | `cpu`                      | `processed`, `dropped`, `time_squeeze`                                                 |
 | `mikroscope_irq`                                                                                           | `irq`                      | `name`, `count` summed over CPUs                                                       |
-| `mikroscope_mem`                                                                                           | —                          | levels: `free_kb`, `available_kb`, `cached_kb`, `slab_kb`, `sunreclaim_kb`             |
+| `mikroscope_mem`                                                                                           | —                          | levels: every `/proc/meminfo` field the agent reads, in `_kb`                          |
 | `mikroscope_load`                                                                                          | —                          | levels: load averages, `running`, `threads`, `procs_blocked`                           |
 | `mikroscope_stat`                                                                                          | —                          | deltas: `ctxt`, `intr`, `forks`, `irq_total`, `irq_err`, `pgfault`, `pgmajfault`       |
-| `mikroscope_self`                                                                                          | —                          | `cpu_us` delta; `rss`, `cgroup_mem` levels; cgroup events, NULL without cgroup2; `seq` |
+| `mikroscope_self`                                                                                          | —                          | `cpu_us` delta; `rss`, `cgroup_mem` levels; cgroup events `throttled`, `throttled_us`, `oom_kill`, NULL without cgroup2; `resets`, `kmsg_dropped`, `seq`, `wake_ns`, `read_ns` |
 | `mikroscope_buddy`                                                                                         | `node, zone, block_order`  | `free_blocks`, one row per zone and order                                              |
 | `mikroscope_mtd`                                                                                           | `device`                   | `partition`, ECC counters as read, thresholds NULL where unpublished                   |
 | `mikroscope_psi`                                                                                           | —                          | stall microseconds; no row where the kernel has no PSI                                 |
+| `mikroscope_sample`                                                                                        | —                          | `seq`, `dt_ns`, `mono_ns`: one row per tick                                            |
+| `mikroscope_softirq`                                                                                       | `kind, cpu`                | `count`, per vector and core                                                           |
+| `mikroscope_perf`                                                                                          | `counter, cpu`             | PMU `count`, `enabled_ns`, `running_ns`; no row without `privileged=yes` and a PMU     |
+| `mikroscope_vm`                                                                                            | —                          | `/proc/vmstat` deltas: faults, allocs and frees, reclaim scans and steals, stalls, `oom_kill`, swap |
+| `mikroscope_vm_level`                                                                                      | —                          | `/proc/vmstat` levels: `nr_free_pages`, `nr_dirty`, `nr_writeback`, slab pages         |
+| `mikroscope_cpufreq`                                                                                       | `cpu`                      | `khz`, and `max_khz` where the board publishes one                                     |
+| `mikroscope_irq_cpu`                                                                                       | `irq, cpu`                 | `name`, `count` per core                                                               |
 | `mikroscope_thermal`                                                                                       | `zone`                     | `celsius`, `critical_celsius`                                                          |
 | `mikroscope_slab`                                                                                          | `cache`                    | `active_objs`, `limit_objs` (NULL for every cache but `nf_conntrack`)                  |
 | `mikroscope_disk`                                                                                          | `device`                   | read and write deltas, `io_s`; `inflight` is a level                                   |
@@ -192,14 +204,20 @@ identical `information_schema.columns` for the whole schema.
 | `mikroscope_derived`                                                                                       | —                          | `seq`, `mem_pressure`, `burst`, `suspect`, per-packet values NULL where not computed   |
 | `mikroscope_derived_iface`                                                                                 | `interface`                | the four byte deltas and the two fast-path shares                                      |
 | `mikroscope_detection`                                                                                     | `rule, key`                | `seq`, `value`, `threshold`, `message`                                                 |
+| `mikroscope_sampler`                                                                                       | —                          | `ticks`, `slipped`, `captures_held`, `capture_bytes`, `capture_budget_bytes`, `capture_served_bytes` |
+| `mikroscope_trigger_count`                                                                                 | `condition`                | `fired`                                                                                |
+| `mikroscope_trigger_suppressed`                                                                            | `condition, reason`        | `count`                                                                                |
+| `mikroscope_capture_refused`                                                                               | `reason`                   | `count`                                                                                |
 | `mikroscope_device`, `mikroscope_device_thermal`, `mikroscope_device_cpufreq`, `mikroscope_device_cadence` | —, `zone`, `cpu`, `source` | [the device-info stream](/mikroscope/sinks/device-info/)                               |
 
 </ScrollTable>
 
 Columns never need quoting: the tick columns are `user_ticks` and friends because
 `user` is reserved, and `block_order` because `order` is. `dt_ns` rides on
-`mikroscope_cpu` only, so a rate over any other delta table joins `mikroscope_cpu` on
-`(time, host)` for the real interval rather than assuming the nominal period.
+`mikroscope_cpu` and `mikroscope_sample` only, so a rate over any other delta table joins
+`mikroscope_sample` on `(time, host)` for the real interval rather than assuming the
+nominal period. The last four tables are read from the agent's `GET /sampler` on the
+collector's health cadence, not produced by a tick.
 
 `mikroscope_api_ifinfo` holds one row per interface, written at collector start and on
 every `--labels-every` re-read (5 minutes by default), so a query joins it on `interface`
@@ -399,7 +417,7 @@ value becomes `none`, so a path's depth never changes.
 | `sample.{seq,dt_ns}`, `stat.{ctxt,intr,forks,procs_blocked,irq_total,irq_err}`                                                                       | the sample                        |
 | `cpu.<n>.{user,nice,system,idle,iowait,irq,softirq,steal,busy_ratio,freq_khz}`                                                                       | `/proc/stat`, cpufreq             |
 | `softnet.<n>.{processed,dropped,time_squeeze}`, `irq.<id>.<name>.count`, `softirq.<kind>.count`                                                      | softnet, interrupts, softirqs     |
-| `mem.{total,free,available,cached,slab,sunreclaim,dirty,writeback}_kb`, `load.{load1,load5,load15,running,threads}`                                  | meminfo, loadavg                  |
+| `mem.<field>_kb` for every `/proc/meminfo` level the agent reads (`total`, `free`, `available`, `cached`, `slab`, `sunreclaim`, `sreclaimable`, `dirty`, `writeback`, `anon`, `buffers`, `active`, `inactive`, `shmem`, `mapped`, `kernel_stack`, `page_tables`, `committed`, `commit_limit`), `load.{load1,load5,load15,running,threads}` | meminfo, loadavg |
 | `vm.{pgfault,pgmajfault,pgscan_kswapd,pgscan_direct,pgsteal_kswapd,pgsteal_direct,allocstall,oom_kill}`, `vmg.{nr_free_pages,nr_dirty,nr_writeback}` | vmstat                            |
 | `self.{cpu_us,rss_bytes,cgroup_mem,throttled,throttled_us,oom_kill}`                                                                                 | the agent's own cost              |
 | `psi.*_us`, `sched.<n>.{run_ns,wait_ns}`                                                                                                             | only where the kernel has them    |
@@ -410,7 +428,7 @@ value becomes `none`, so a path's depth never changes.
 | `derived.{mem_pressure,cycles_per_packet,instructions_per_packet,cache_misses_per_packet,packets_per_irq}`                                           | the derive stage                  |
 | `trigger.<cause>`, `detection.<rule>` — the value 1 at each event                                                                                    | triggers and detections           |
 | `device.{cores,conntrack_max,cgroup_mem_max}`, `device.thermal.<zone>.*`, `device.cpufreq.<n>.*`, `device.cadence.<source>.hz`                       | the device-info stream            |
-| `sampler.{ticks,slipped,captures_held,capture_bytes,capture_budget_bytes,capture_served_bytes}`                                                      | the agent's own counters, on the health cadence|
+| `sampler.{ticks,slipped,captures_held,capture_bytes,capture_budget_bytes,capture_served_bytes}`, `sampler.trigger_fired.<condition>`, `sampler.trigger_suppressed.<condition>.<reason>`, `sampler.capture_refused.<reason>` | the agent's own counters, on the health cadence|
 | `collector.gap.{samples,from,to}`                                                                                                                    | gaps, at the collector's clock    |
 
 </ScrollTable>
@@ -526,12 +544,20 @@ encoder writes the `/system/health` readings in Go map order, so records within 
 are not ordered stably — 12 renders of an 8-name map gave 7 orders (2026-09-12). Every
 record carries its own timestamp, so nothing is lost or mis-timed.
 
+Every sink on this page is tested against a local receiver that asserts the bytes its
+protocol accepts (development host, amd64, since 2026-09-12). Since 2026-09-17 the docker
+end-to-end suite also runs the collector, against a canned agent and with the API tier off,
+into the real stores and reads the data back through each store's own API: Loki 3, the
+OpenTelemetry Collector, graphite-statsd, Elasticsearch 9, Telegraf 1.39 over HTTP and
+PostgreSQL 18, through both `--sql` and `--postgres`, with the file sink as the oracle the
+others are compared against.
+
 <NotClaimed>
 	Apart from the file sink, which was one of the three sinks in the 2026-09-15 rate runs, none of
 	these sinks was part of the measured rate runs, and none has been fed from the RB5009 into a
-	running Loki, OTLP receiver, carbon, Elasticsearch, OpenSearch, Telegraf or TimescaleDB in a
-	recorded run. Each of those has been tested against a local receiver that asserts the bytes its
-	protocol accepts (development host, amd64, 2026-09-12).
+	running Loki, OTLP receiver, carbon, Elasticsearch, OpenSearch, Telegraf, PostgreSQL or
+	TimescaleDB in a recorded run. OpenSearch, TimescaleDB's hypertables and standard output have
+	never been run against a real store: they are covered by the byte-contract tests only.
 </NotClaimed>
 
 <SeeAlso>

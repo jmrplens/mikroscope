@@ -38,7 +38,7 @@ restarts starts every trailing window, bin and previous value from nothing.
 | Sink                            | Form                                                                                 |
 | ------------------------------- | ------------------------------------------------------------------------------------ |
 | InfluxDB, Telegraf, stdout `lp` | `mikroscope_detection{rule,key}` with `value`, `threshold`, `seq`, `message`         |
-| SQL                             | a `mikroscope_detection` row                                                         |
+| SQL (`--sql`, `--postgres`)     | a `mikroscope_detection` row                                                         |
 | file, stdout `json`             | a `{"detection":…}` line                                                             |
 | Prometheus                      | `mikroscope_collector_detections_total{rule}`, every rule at 0 from the first scrape |
 | Loki                            | a line in the `source="detection"`, `level="warn"` stream                            |
@@ -99,9 +99,13 @@ outside.
 	day. Since 1.0.4 `resync` rewinds the cursor to the new ring's oldest sample on the next health
 	read, one minute at most, and logs `agent restarted: its newest sample is N and the cursor was M;
 	resuming from 1`. The new agent's low sequence against the stage's previous one is exactly what
-	this rule matches, so it fires. `TestResyncAfterAgentRestart` covers the collector side, and the
-	reference RB5009 exercised it for real on 2026-09-19: the router rebooted at 00:43:30 and the
-	kernel tier resumed at 00:45:03.
+	this rule matches, so it fires. `TestResyncAfterAgentRestart` covers the collector side. The
+	reference RB5009 exercised the resync for real on 2026-09-19, when a RouterOS upgrade rebooted the
+	router at 00:43:30 CEST (22:43:30 UTC the day before) and the kernel tier resumed at 00:45:03.
+	Whether a `mikroscope_detection` row for `agent-restart` was written then was not checked, and the
+	store that would hold it was replaced later that day: the current one starts at 11:13 UTC. That
+	store holds one `agent-restart` row, at 08:08:54 UTC on 2026-09-24, `value` 1 against `threshold`
+	4 338 037, when the agent was upgraded to 1.2.0.
 </Aside>
 
 **May not claim** why the agent restarted. A collector restarted at the same time has no
@@ -134,7 +138,7 @@ sampler rate.
 
 **False positives, measured.** Squeezing is this device's background, not an event. On the
 reference RB5009 `time_squeeze` is 0 in 87.3 % of per-CPU samples, 1 in <Measured id="squeeze.backgroundOne" />,
-2 in <Measured id="squeeze.backgroundTwo" /> and 3 in <Measured id="squeeze.atLeastThree" />, while softnet dropped nothing at all
+2 in <Measured id="squeeze.backgroundTwo" /> and 3 in <Measured id="squeeze.exactlyThree" />, while softnet dropped nothing at all
 in those same 24 h. A trailing window of a distribution that is seven-eighths zeroes has a
 90th percentile of 1, so "above p90" is satisfied by any 2 — which is why the floor, and not
 the percentile, is what the rule runs on. Replayed over 6 h of stored samples, a floor of 2
@@ -180,7 +184,11 @@ names](/mikroscope/reference/port-names/).
 
 **May not claim** a fault. A cable pulled and reseated within a minute is a down and an up
 record, and fires. No provoked flap has been captured with this rule running; the flaps
-measured for the port table on 2026-09-15 were not.
+measured for the port table on 2026-09-15 were not. Unprovoked ones were: between
+2026-09-19 11:13 UTC and 2026-09-24 08:26 UTC the reference deployment's store holds 11
+`link-flap` rows, on `ether1`, `ether2`, `ether4`, `ether6` and `ether7`, each at 2 to 6
+link records in 60 s. Which of them was a cable, a device at the other end or something
+else was not checked.
 
 ### `conntrack-cliff`
 
@@ -247,13 +255,31 @@ history holds up to sixty.
 separates a memory-stall regime from a core going quiet, and the rule is per core, never
 across cores.
 
+## Doctor's checks are not these rules
+
+Since 1.2.0 standalone `doctor` reads the running agent's ring and runs four checks of its
+own: `layer2-loop`, `stp-churn`, `link-flap` and `softnet-drops`, described in [what the
+running agent shows](/mikroscope/install/prerequisites/#what-the-running-agent-shows). They
+are not detections: they run once, when `doctor` asks, over whatever the ring holds up to its
+newest 10 000 samples, 60 s by default, and write nothing to a sink.
+
+One name is shared and the rule is not. `doctor`'s `link-flap` counts link-downs only, two
+or more on one port anywhere in the ring; the detection counts link-ups and link-downs
+together, two or more within 60 s, so a cable pulled and reseated once fires the detection
+and not the check. A layer-2 loop is none of the eleven rules: `doctor`'s `layer2-loop`
+names it in the ring, and over history the `mikroscope-l2-loop` [alert
+rule](/mikroscope/dashboards/alerts/) watches the store for it.
+
 <NotClaimed variant="not-provoked">
-	Of the eleven rules, only `microburst` has a recorded behaviour on the reference device. The
-	others are exercised by the derive stage's unit tests against constructed samples. None of an OOM
-	kill inside the container, a reboot, a link flap, a conntrack flush or storm, a thermal excursion
-	or an IPC collapse has been provoked on the RB5009 with these rules running: it is the owner's
-	production router, reboots wait for a maintenance window, and a provoked conntrack storm risks
-	locking out the path being worked through.
+	Of the eleven rules, four have fired on the reference device, counted in its store between
+	2026-09-19 11:13 UTC and 2026-09-24 08:26 UTC: `microburst` 116 times, `ipc-collapse` 41 (on all
+	four cores), `link-flap` 11 and `agent-restart` once. Only `microburst` has had its behaviour
+	measured against the samples; the other three rows were counted, not checked against what the
+	router was doing. The remaining seven are exercised only by the derive stage's unit tests
+	against constructed samples. None of an OOM kill inside the container, a reboot, a link flap, a
+	conntrack flush or storm, a thermal excursion or an IPC collapse has been provoked on the RB5009
+	with these rules running: it is the owner's production router, reboots wait for a maintenance
+	window, and a provoked conntrack storm risks locking out the path being worked through.
 </NotClaimed>
 
 <SeeAlso>

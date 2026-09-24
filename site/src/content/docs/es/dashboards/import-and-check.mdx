@@ -4,6 +4,7 @@ description: Cómo enlazar los dashboards a una fuente de datos, qué preguntan 
 ---
 
 import { Aside, Tabs, TabItem } from "@astrojs/starlight/components";
+import DashboardCount from "../../../../components/DashboardCount.astro";
 import NotClaimed from "../../../../components/NotClaimed.astro";
 import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
@@ -56,11 +57,13 @@ puede emitir el complemento, y todas las consultas de este dashboard son SQL lla
 
 Los paneles son los de InfluxDB, reescritos: la macro de agrupación, los percentiles, los casts y
 los nombres de columna que el destino SQL tuvo que cambiar porque `user`, `from` y `to` son palabras
-reservadas. Quince paneles no se reescriben y **se caen en silencio**, en vez de pasar a la fila de «no
-disponible»: los del log del kernel, porque el esquema SQL no tiene tabla de recuentos para él, y
-los de `mikroscope_buddy` y los contadores de interfaz de RouterOS, anchos en InfluxDB y largos en
-SQL, donde un pivote es otra pregunta. El dashboard de PostgreSQL lleva por tanto 160 paneles frente
-a los 175 de InfluxDB.
+reservadas. Algunos paneles no se reescriben y **se caen en silencio**, en vez de pasar a la fila de
+«no disponible»: los del log del kernel, porque el esquema SQL no tiene tabla de recuentos para él,
+y los de `mikroscope_buddy` y los contadores de interfaz de RouterOS, anchos en InfluxDB y largos en
+SQL, donde un pivote es otra pregunta, y "Headroom under the container memory cap", porque el límite
+va en la fila `mikroscope_self` de InfluxDB y en el esquema SQL es un dato del equipo. El dashboard
+de PostgreSQL del repositorio lleva por
+tanto <DashboardCount store="postgres" of="panels" /> paneles frente a los <DashboardCount store="influxdb" of="panels" /> de InfluxDB.
 
 ## La fuente de datos de Graphite
 
@@ -92,8 +95,9 @@ escalares, y los de por núcleo están ausentes en vez de equivocados.
 
 ## Importar a mano
 
-Grafana → Dashboards → New → Import, sube `dashboards/mikroscope-influxdb.json` o
-`mikroscope-prometheus.json` y elige la fuente de datos cuando Grafana pida `DS_MIKROSCOPE`.
+Grafana → Dashboards → New → Import, sube el `dashboards/mikroscope-<almacén>.json` que corresponda
+a tu fuente de datos (influxdb, prometheus, postgres, graphite o elasticsearch) y elige la fuente de
+datos cuando Grafana pida `DS_MIKROSCOPE`.
 
 Un fichero subido así lleva los **valores compilados por defecto**: los cinco paneles que el equipo
 de referencia no puede producir están en la fila de no disponibles, y todos los demás paneles se
@@ -119,6 +123,7 @@ mikroscope dashboards check  --store influxdb --datasource-uid <uid> --window 15
 | `--no-probe`       | desactivada          | import, check | no preguntar a la fuente de datos qué contiene; usar los valores compilados por defecto       |
 | `--window`         | `15m`                | check         | longitud de la ventana de consulta                                                            |
 | `--end`            | ahora                | check         | el borde derecho de la ventana, en RFC 3339                                                   |
+| `--var`            | ninguna              | check         | fija una variable del dashboard, `nombre=valor`, repetible; Graphite necesita `prefix` y `host`, Elasticsearch `host` |
 | `--out`            | `dashboards`         | gen           | el directorio en el que `gen` escribe los ocho ficheros                                     |
 
 </ScrollTable>

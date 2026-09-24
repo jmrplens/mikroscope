@@ -6,17 +6,23 @@ description: What `mikroscope install` does to a RouterOS device and in which or
 import { Aside, Steps } from "@astrojs/starlight/components";
 import Measured from "../../../components/Measured.astro";
 import NotClaimed from "../../../components/NotClaimed.astro";
+import Provenance from "../../../components/Provenance.astro";
 import RouterWrites from "../../../components/RouterWrites.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
 import Verified from "../../../components/Verified.astro";
 
 This page answers two questions: what `mikroscope install` does to your router,
-and how you get the router back. `install` puts a <Measured id="image.size" />
-agent image in a container on the router; `uninstall` removes it again.
+and how you get the router back. `install` puts the agent image in a container on the router (the 1.0.0 image
+was <Measured id="image.size" />; the current image's size is to be measured on the published 1.2.1
+image); `uninstall` removes it again.
 On <Verified of="export-identical" />, a scripted
 doctor → install → status → upgrade → uninstall round trip
 (`make roundtrip`, which passes `--ephemeral` to doctor, install and upgrade) left
-the router's `/export` byte-identical, its `#` header lines aside. Every object
+the router's `/export` byte-identical, its `#` header lines aside. That run
+predates 1.1.0, from which `uninstall` removes only with `--yes`.
+`scripts/roundtrip.sh` now passes `--yes` to its uninstall step (through 1.2.0 it did
+not, so it only listed there and its export check failed); the script in that form has
+not yet been run against the router. Every object
 install creates carries the comment `mikroscope:<name> (managed by mikroscope)`,
 except the envlist and the image file, which cannot; the envlist carries the
 tag as its `MIKROSCOPE_TAG` entry. Nothing is written before it is listed;
@@ -31,7 +37,8 @@ true for you: a container-capable architecture on RouterOS 7.24 or later, the
 physical button press or a power cycle.
 [What the router needs](/mikroscope/install/prerequisites/) covers all three.
 `mikroscope doctor` checks them read-only, in one ssh connect, and prints the
-exact command or physical step for anything missing.
+exact command or physical step for anything missing; then, over HTTP, it reads
+the ring of an agent already running.
 
 One decision comes before the first install and not after it: where the agent
 image comes from. A checkout builds it, `--agent-tar` takes the one the release
@@ -59,8 +66,9 @@ script that installs without this CLI at all.
    `install --dry-run` stop here, before any ssh connect.
 
 3. **Runs `doctor`.** Any missing prerequisite stops the install with
-   `N prerequisite(s) missing; nothing was written`. `--no-doctor` skips this
-   step.
+   `N prerequisite(s) missing; nothing was written`. A `WARN` line is printed
+   and does not stop it. The agent-health section of standalone `doctor` is not
+   run here. `--no-doctor` skips this step.
 
 4. **Asks** `write the objects above to the router? [y/N]`. `--yes` skips the
    question.
@@ -148,18 +156,27 @@ without `--ephemeral` re-creates the container with its image and root on the
 internal flash and `start-on-boot=yes`. An upgrade of an `--expose` install
 without `--expose` and without a token (`--token` or `MIKROSCOPE_TOKEN`)
 re-creates the agent with no token, while the two LAN firewall rules stay.
+`doctor` catches that state afterwards: its `WARN` line
+`the installed agent published on the LAN asks for a token` shows
+`dst-nat=<n> token=unset`
+([What doctor checks](/mikroscope/install/prerequisites/#what-doctor-checks)).
 
 ## Uninstall
 
 <RouterWrites command="uninstall" />
 
-`mikroscope uninstall` runs the removals newest first. A removal that fails or
+`mikroscope uninstall` on its own only lists: it prints
+`router objects (add --yes to remove them):` and the objects its flags describe,
+newest first, without connecting to the router, and removes nothing. With
+`--yes` it runs the removals newest first. A removal that fails or
 prints anything is reported as `skip` with what the router said, and the rest
 continue. A step whose selector finds nothing prints `gone` just the same, which
 is why the count, not the removal output, decides. Then it asks the ownership
 count of every step in one connect, prints one line per step, and
 either ends with `verified: nothing mikroscope created remains on the router` or
 fails with `uninstall left objects behind`, naming the steps still present.
+`--targets` chooses what goes: `router` (the default), `dashboard`, `data` or
+`all`; see [Commands and flags](/mikroscope/reference/cli/).
 
 The container removal waits, because RouterOS does not: `/container/remove`
 returns before the container is gone, and a `/file/remove` of the image issued
@@ -194,12 +211,12 @@ the error, and no board line; `status` still exits 0.
 ## Day to day
 
 ```sh
-mikroscope doctor                      # read-only
+mikroscope doctor                      # read-only: prerequisites, then the running agent's ring
 mikroscope plan                        # every command, nothing written
 mikroscope install [--ephemeral]       # doctor, confirmation, writes, probe
 mikroscope status                      # ownership counts + agent health
 mikroscope upgrade                     # new image, container only
-mikroscope uninstall                   # removes and verifies
+mikroscope uninstall --yes             # removes and verifies (without --yes: lists only)
 mikroscope image --arch arm64          # the tar, for side-loading by hand
 mikroscope plan --rsc --out install.rsc # the same writes, as a RouterOS script
 ```
@@ -238,6 +255,11 @@ batches every read into one connect — `doctor` is one, `status` is one, the
 state questions of `install` are one — and each write takes one more, plus the
 `scp` upload. ssh is never a data path: `record` and `forward` reach the agent
 over HTTP or the RouterOS API.
+
+<Provenance of="ssh-connect" />
+
+That reading predates the agent and was taken on RouterOS 7.24.1; on 7.24.2, on 2026-09-11, the same
+cost showed in `/tool profile` as 17–33 % in one or two snapshots, not a measured window.
 
 <NotClaimed variant="untested">
 	Reboot survival of a persistent install: the reference router is production and is not rebooted

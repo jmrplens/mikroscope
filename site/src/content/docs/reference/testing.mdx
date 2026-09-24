@@ -47,7 +47,8 @@ that has nothing but `lo`.
 
 ## Layer 2 — the stores
 
-`make test-e2e-docker` starts nine stores with docker compose, runs the same
+`make test-e2e-docker` starts eight stores and a Grafana with docker compose,
+nine containers in all, runs the same
 collector against the same fake agent with every sink pointed at them, and then
 asks each store its own question with its own API. The file sink's JSONL is the
 oracle each store is compared against — value by value, not only by count.
@@ -57,7 +58,7 @@ oracle each store is compared against — value by value, not only by count.
 | Store                   | The question it is asked                                              |
 | ----------------------- | --------------------------------------------------------------------- |
 | InfluxDB 3 Core         | SQL over HTTP: the tables, a row count per table, every `ctxt` value   |
-| PostgreSQL 18           | the SQL sink's script through `psql`, then counts and the `ctxt` range |
+| PostgreSQL 18           | the SQL sink's script through `psql`, and the connecting PostgreSQL sink into a second database; counts, the `ctxt` range, and whether the two databases hold the same rows (34 tables byte for byte, 2026-09-20) |
 | Elasticsearch 9         | `_search` with an aggregation by kind, and one whole document          |
 | Loki 3                  | `query_range` for this run's labels, and the text of each record       |
 | Graphite                | `metrics/find` for the tree, `render` for the points and their order   |
@@ -66,6 +67,9 @@ oracle each store is compared against — value by value, not only by count.
 | Prometheus 3            | a scrape of the exporter, against the exposition it served             |
 
 </ScrollTable>
+
+The suite also publishes the five datasources with `forward --grafana` and
+empties every store again with `uninstall --targets data`.
 
 Each of those is there because that product refuses something a capture server
 accepts:
@@ -140,7 +144,8 @@ nothing.
 	fake agent or a captured `/proc` tree, never from a live device, and the
 	container stack runs on the development machine rather than across the
 	router's veth. File, Prometheus and InfluxDB 3 have carried real RB5009
-	samples end to end; the other seven have not.
+	samples end to end; the other eight — Loki, OTLP, Graphite, Elasticsearch,
+	SQL, PostgreSQL, Telegraf and stdout — have not.
 </NotClaimed>
 
 <SeeAlso>

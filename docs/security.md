@@ -18,21 +18,22 @@ connects out, and every credential that opens something other than the agent sta
 | Piece                                                            | Runs                                 | Reaches                                                                                                               | Credentials                                                     |
 | ---------------------------------------------------------------- | ------------------------------------ | --------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
 | `mikroscope-agent`                                               | in a scratch container on the router | serves HTTP on the veth address only; **no outbound connection**                                                      | none it presents; an optional bearer token it _requires_        |
-| `mikroscope doctor`, `install`, `upgrade`, `uninstall`, `status` | your host, when you run them         | the router over your own admin ssh; `install`, `upgrade` and `status` also probe the agent's `/healthz`               | your ssh key                                                    |
-| `mikroscope plan`, `install --dry-run`                           | your host                            | nothing: they build the image and print the listing without connecting to the router                                  | none, unless `plan --rsc` is given a token (below)              |
-| `mikroscope record`, `forward`                                   | your host                            | the agent over HTTP; the router's binary API for `forward`'s API tier, the relay transport and `record --log-markers` | the agent's token if one is set; a dedicated read-only API user |
+| `mikroscope doctor`, `install`, `upgrade`, `uninstall`, `status` | your host, when you run them         | the router over your own admin ssh; `install`, `upgrade` and `status` also probe the agent's `/healthz`, and `doctor` reads `/healthz` and then the agent's ring, the newest 10 000 samples at most | your ssh key; `doctor` also presents the agent's token if one is set |
+| `mikroscope plan`, `install --dry-run`, `upgrade --dry-run`      | your host                            | nothing: they build the image and print the listing without connecting to the router                                  | none, unless `plan --rsc` is given a token (below)              |
+| `mikroscope record`, `forward`                                   | your host                            | the agent over HTTP; the router's binary API for `forward`'s API tier, the relay transport and `record --log-markers` | the agent's token if one is set; a dedicated read-only API user; `GRAFANA_TOKEN` with `--grafana` |
 | `mikroscope mark`                                                | your host                            | the recording's local files; the router's binary API only with `--log-markers`; never the agent                       | the API user, only with `--log-markers`                         |
 | sinks                                                            | your host, inside `forward`          | serve `/metrics` for your Prometheus; push to InfluxDB and the other destinations you name                            | their tokens, in your environment                               |
 | `mikroscope dashboards import`, `check`                          | your host                            | your Grafana                                                                                                          | `GRAFANA_TOKEN`, in your environment                            |
 
-`plan` and `install --dry-run` never reach the router, so they do not run the ownership checks
-either; those run only on a real `install`.
+`plan`, `install --dry-run` and `upgrade --dry-run` never reach the router, so they do not run the
+ownership checks either; those run only on a real `install`.
 
 Nothing about the tool is reported anywhere. There is no update check. In the code, the agent's
 only network code is its HTTP server. The outbound connections all live in the CLI — the sinks
-(HTTP, TCP or UDP), the Grafana client, the RouterOS API client, the direct transport and the
-`/healthz` probe — and each goes only to an address you gave it or, for the agent, to the `.2` of
-`--subnet` (`172.30.10.2` unless you change it).
+(HTTP, TCP or UDP), the Grafana client, the RouterOS API client, the direct transport, the
+`/healthz` probe and `doctor`'s read of the ring, the last three over plain HTTP — and each goes only to
+an address you gave it or, for the agent, to the `.2` of `--subnet` (`172.30.10.2` unless you
+change it).
 
 The collector's own Prometheus exposition, `forward --prom <address>`, listens on the address you
 pass and serves `/metrics` with no authentication. Bind it to an address only your Prometheus
@@ -62,7 +63,7 @@ The entries install writes into the agent's envlist:
 | `BUFFER_S` | always | `--buffer`, default `60`, 10–3600 | the ring's length, in seconds |
 | `PORT` | always | `--port`, default `9123`, 1–65535 | the agent's HTTP port |
 | `ADDR` | always | `--subnet` | the agent's address, the `.2` of the /30; the agent binds only there |
-| `MEM_LIMIT_MB` | always | `--mem-limit-mb`, 8–1024 | the agent's Go soft memory limit, in MiB; derived from the ring since 1.0.6 (rate × buffer × line, × 2.5, floored at 16 MiB) rather than a flat number |
+| `MEM_LIMIT_MB` | always | `--mem-limit-mb`, 8–1024 | the agent's Go soft memory limit, in MiB; derived from the ring since 1.0.6 (rate × buffer × line, × 2.5, at least 16 MiB, at most three quarters of `--memory-max` while that still holds the ring) rather than a flat number |
 | `FLOOR_HZ` | only when above 0 | `--floor-hz`, default `0`, 0–1000 | one cadence for every level source, in Hz |
 | `CAPTURE_MB` | always | `--capture-mb`, default `4`, 0–256 | the triggered-capture budget, in MiB; `0` turns captures off |
 | `TRIGGERS` | only when set | `--triggers` | the trigger conditions; unset, the agent uses its default set |
@@ -82,13 +83,18 @@ refuses](https://jmrp.io/docs/mikroscope/security/installer/) has how to handle 
 ### Where the collector's credentials live
 
 On your host, the credentials that open something other than the agent are read from the
-environment only, never from a flag. The code gives the reason: a flag is visible in `ps` and in a
-shell history.
+environment only, never from a flag, with one exception: the PostgreSQL DSN, below. The code gives
+the reason: a flag is visible in `ps` and in a shell history.
 
 - The API user's password: `MIKROSCOPE_API_PASSWORD`. The address and user come from `--api` and
   `--api-user`, or `MIKROSCOPE_API_ADDR` and `MIKROSCOPE_API_USER`.
 - Sink credentials: `MIKROSCOPE_INFLUX_TOKEN`, `MIKROSCOPE_LOKI_TOKEN`, `MIKROSCOPE_OTLP_TOKEN`,
   `MIKROSCOPE_ELASTIC_AUTH`, `MIKROSCOPE_TELEGRAF_TOKEN`.
+- PostgreSQL (`--postgres`, or `MIKROSCOPE_POSTGRES_DSN`): the DSN is a flag, so keep the password
+  out of it and let the driver read `PGPASSWORD` or `~/.pgpass`, as psql does. A password written
+  in a DSN passed as the flag is visible in `ps`, and wherever the DSN comes from,
+  `forward --grafana` copies a password written in it into the Grafana datasource it creates. A
+  password found only in the environment or the password file is not copied.
 - Grafana: `GRAFANA_TOKEN`.
 
 The agent's token is the exception: it has a `--token` flag as well as `MIKROSCOPE_TOKEN`. The
@@ -109,7 +115,10 @@ The container runs an image, and which route puts it there decides what you are 
   `checksums.txt`.
 - `install --remote-image <reference>` uploads nothing: the router itself fetches the image from the
   registry its global `/container/config registry-url` names. You trust that registry and the
-  router's path to it, and mikroscope verifies nothing about what arrives.
+  router's path to it, and mikroscope verifies nothing about what arrives. The same setting holds
+  one registry username and password for the whole device, which RouterOS presents to whatever
+  registry it pulls from; [what the installer refuses](https://jmrp.io/docs/mikroscope/security/installer/) has what
+  that means and what `doctor` checks.
 - `plan --rsc` writes the same commands as a RouterOS script for you to paste or `/import`; the
   image still has to come from one of the two routes above that need no upload from the CLI.
 
@@ -123,7 +132,9 @@ written:
   namespace: no interface counters, no router conntrack table, no view of RouterOS's processes.
   [What privileged buys](https://jmrp.io/docs/mikroscope/limits/privileged/) has the measurements.
 - **`memory-max=64M`** (`--memory-max`), enforced as the container's cgroup limit, with the agent's
-  Go soft limit at 40 MiB (`--mem-limit-mb`) inside it.
+  Go soft limit (`--mem-limit-mb`) inside it. Unless you pass a number, that limit is derived from
+  the ring (rate × buffer × line, × 2.5, at least 16 MiB, at most three quarters of `memory-max`
+  while that still holds the ring): 16 MiB at the defaults.
 - **`restart-policy=on-failure`**, bounded to five retries ten seconds apart, so a broken image
   cannot loop at boot.
 - **`start-on-boot=yes`**, or `no` with `--ephemeral`, whose root lives on the tmpfs disk and does
@@ -364,7 +375,8 @@ What the token is, and is not:
 - It is stored in the envlist as `TOKEN`. `/container/print` returned the `envlist` property to a
   `read,api` user (RB5009UG+S+, RouterOS 7.24.2, 2026-09-11); reading the entries' values was not checked
   separately, and the design assumes a `read` user can. Treat it as guarding the agent's HTTP paths
-  from the LAN, not from the router's own `read` users.
+  from the LAN, not from the router's own `read` users. `doctor` counts the `TOKEN` entries and
+  never reads their value.
 - A token set without `--expose` is still written and still required.
 - The agent compares it as a plain string, over plain HTTP: the dst-nat carries no TLS, so the
   header crosses the LAN unencrypted.
@@ -376,19 +388,32 @@ The rules serve a client that addresses `<router LAN IP>:<port>` — a Prometheu
 
 - `record` and `forward` build the agent's URL from `--subnet` and `--port`, so they always
   dial the container's address. There is no flag that points them at the LAN address.
-- `install`, `upgrade` and `status` probe `/healthz` at the container's address too.
+- `install`, `upgrade` and `status` probe `/healthz` at the container's address too, and `doctor`
+  reads `/healthz` and then the agent's ring there, presenting the token if one is given.
 - The relay transport cannot carry the token: `/tool fetch` on the router sends no
   `Authorization` header. Against an agent with a token, the relay's `/healthz` answers and every
   sample request is refused. A token needs the direct transport, or a deployment without a token.
 
 ### Removing them
 
-`uninstall` removes both rules, selecting each by the tag together with the chain, destination
-address, port and protocol, then asks the router whether anything tagged is still there and fails
-naming the step if it is. Those `find` selectors quote the address and the port: unquoted, RouterOS
-parses them as typed values and matches nothing — an unquoted `dst-port=9123` found no rule
-on RB5009UG+S+, RouterOS 7.24.2, 2026-09-11, and an uninstall built that way would have reported success with the
-rule still in place.
+Only an `uninstall` given `--expose --lan-address … --token …`, as the install was, removes the
+rules: the rule steps exist only in a plan built with `--expose`, and `--expose` without a token is
+refused for every verb. That `uninstall` selects each rule by the tag together with the chain,
+destination address, port and protocol, then counts, for each step of its own plan, the tagged
+objects still there, and fails naming the step if one remains. A plain `uninstall` has no rule
+steps, so it neither removes the rules nor looks for them. On the reference RB5009 (RouterOS
+7.24.4, 2026-09-21) one removed everything else, printed `verified: nothing mikroscope created
+remains on the router`, and left the dst-nat pointing at an address that no longer existed; [pass
+the same shape](https://jmrp.io/docs/mikroscope/reference/cli/#pass-the-same-shape-to-status-upgrade-and-uninstall) has
+the run.
+
+Those `find` selectors quote every non-numeric value except the `chain` and `action` enums.
+Unquoted, an address or a port is parsed as a typed value and matches nothing — an unquoted
+`dst-port=9123` found no rule on RB5009UG+S+, RouterOS 7.24.2, 2026-09-11 — and a bare word such as `tcp` is
+read as a variable name, whose unset value is empty: over the same 15 dstnat rules on the reference
+RB5009 (7.24.4, 2026-09-21), `protocol=tcp` found 0 and `protocol="tcp"` found 10. Before 1.1.0 the
+protocol was the one value left unquoted, so `uninstall --expose` removed neither rule and then
+reported the router clean with both still in place.
 
 `upgrade` does not touch either rule. It removes the container step — the container, the envlist
 `<name>-env` and the image — and creates it again, writing the envlist from the flags given to
@@ -401,7 +426,12 @@ from its own flags exists, and a plan built without `--expose` has no rule steps
 > same tuning flags (`--rate`, `--mem-limit-mb`, `--privileged` and the rest), as the install. An
 > upgrade without the token passes its check, leaves both rules in place and writes an envlist with
 > no `TOKEN`: the agent is then reachable from the LAN with no token. A tuning flag left out comes
-> back at its default.
+> back at its default. Measured on the reference RB5009 (RouterOS 7.24.4, 2026-09-21): after such
+> an upgrade, `/snapshot` through the router's LAN address went from `401` to `200`. Since 1.2.0,
+> `doctor` catches this state: when an install of the same `--name` has a tagged dst-nat and no
+> `TOKEN` entry, it prints `WARN the installed agent published on the LAN asks for a token`. It
+> counts the entries and never reads their value. Run `doctor` after every `upgrade` of an exposed
+> install.
 
 ### See also
 
@@ -429,7 +459,9 @@ touch, what it treats as a failure, and how `uninstall` shows that it is done ra
 then, in this order:
 
 1. runs `doctor`, the read-only preflight, unless `--no-doctor` is given; a missing prerequisite
-   stops it with `N prerequisite(s) missing; nothing was written`;
+   stops it with `N prerequisite(s) missing; nothing was written`. A `WARN` line (a registry
+   credential meant for another registry, or an install already published on the LAN with no
+   token) is printed and does not stop it;
 2. asks `write the objects above to the router? [y/N]`, unless `--yes` is given; anything but `y` or
    `Y` stops it with `not confirmed; nothing written`;
 3. only then writes.
@@ -507,8 +539,13 @@ envlist and the image, which carry no comment, by `list="<name>-env"` and the ex
 only while the marker entry holding the exact tag exists. So `uninstall` cannot reach a hand-made
 setup, or anything else whose comment or name shares a substring with the container name.
 
-Every `find` quotes address and port attributes. Unquoted, RouterOS parses them as typed values and
-the comparison with the stored one comes back empty; verified for both on RB5009UG+S+, RouterOS 7.24.2, 2026-09-11.
+Every `find` quotes every non-numeric value except the `chain` and `action` enums. Unquoted, an
+address or a port is parsed as a typed value and the comparison with the stored one comes back
+empty; verified for both on RB5009UG+S+, RouterOS 7.24.2, 2026-09-11. A bare word such as `tcp` is read as a
+variable name, whose unset value is empty: on the same RB5009 running RouterOS 7.24.4, on
+2026-09-21, `find chain=dstnat protocol=tcp` returned 0 of 15 dstnat rules and
+`protocol="tcp"` returned 10. Before 1.1.0 the expose rules' `protocol` was the one value left
+unquoted, so `uninstall --expose` removed neither rule and reported them gone.
 
 ### A write that prints is a failure
 
@@ -582,9 +619,14 @@ check of its own before anything is written.
   writes that setting.** `doctor` reads it, and when the reference names a host the setting does not
   match it prints the one command to run
   (`/container/config/set registry-url=https://ghcr.io`, for the GHCR copy of the image) or says to
-  use `--agent-tar` instead. The Docker Hub reference `jmrplens/mikroscope-agent:1.0.9` carries no
-  host and leaves the setting as the router has it. Trust in the image is trust in that registry:
-  nothing in the CLI verifies what the router pulls.
+  use `--agent-tar` instead. The Docker Hub reference, `jmrplens/mikroscope-agent:<version>` (for
+  example `:1.2.0`), carries no host and leaves the setting as the router has it. Trust in the
+  image is trust in that registry: nothing in the CLI verifies what the router pulls. The same
+  setting holds one registry username and password for the whole device, and RouterOS presents
+  them to whatever registry it pulls from, so a Docker Hub account is sent to GHCR and the pull
+  ends in `auth error`. `doctor` warns about this (`WARN no registry credential meant for another
+  registry`) and reads only whether a username is set, never the name. The password cannot be read
+  back at all. `--agent-tar` pulls from no registry, so no registry credential is sent.
 
 ### A generated .rsc script is a credential
 
@@ -595,8 +637,8 @@ the router needs it. The script says so in its own header. Treat the file the wa
 token: do not commit it, do not paste it where it is logged, and delete it from the router's Files
 after `/import`. Without a token it holds no secret, only the plan.
 
-`plan` and `install --dry-run` mask the token in what they print to the terminal
-(`value="(token)"`); `--rsc` cannot, since the script has to run.
+`plan`, `install --dry-run` and `upgrade --dry-run` mask the token in what they print to the
+terminal (`value="(token)"`); `--rsc` cannot, since the script has to run.
 
 ### How uninstall proves it is done
 
@@ -605,6 +647,15 @@ in one connect, how many objects each step created are still there, prints one l
 the count, and fails naming every step whose count is not zero
 (`uninstall left objects behind: …`). A removal that printed nothing is not evidence; the count is.
 `status` runs the same count on its own.
+
+The count covers only the steps of the plan built from `uninstall`'s own flags, not everything on
+the router that carries the tag. Given other flags than the install had — no `--expose`, another
+`--name`, `--veth`, `--subnet`, `--port`, `--iface-list` or `--addr-list` — it passes over objects
+that are still there: on the reference RB5009 (RouterOS 7.24.4, 2026-09-21) an `uninstall` without
+`--expose` printed `verified: nothing mikroscope created remains on the router` with the expose
+dst-nat still in place. Pass it the flags `install` had; [commands and
+flags](https://jmrp.io/docs/mikroscope/reference/cli/#pass-the-same-shape-to-status-upgrade-and-uninstall) has the
+run.
 
 The container step is the slow one, and the order inside it is what keeps the count honest:
 
@@ -623,8 +674,9 @@ A doctor → install → status → upgrade → uninstall round trip (`make roun
 >
 > The byte-identical `/export` after that one round trip, and every RouterOS behaviour quoted on
 > this page — the silent `/file/remove`, the quoted `find` selectors, errors printed with exit
-> status 0 — were observed on one RB5009 running RouterOS 7.24.2. The refusal logic itself is
-> covered by tests against a fake router, not by a run on another board or RouterOS version.
+> status 0 — were observed on one RB5009 running RouterOS 7.24.2, except the bare `protocol=tcp`
+> case, measured on the same device on 7.24.4. The refusal logic itself is covered by tests against
+> a fake router, not by a run on another board or RouterOS version.
 
 ### See also
 

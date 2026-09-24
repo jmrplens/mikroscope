@@ -5,6 +5,7 @@ description: La arquitectura, el paquete container y el paso de device-mode que 
 
 import { Aside, Steps } from "@astrojs/starlight/components";
 import DoctorChecks from "../../../../components/DoctorChecks.astro";
+import Measured from "../../../../components/Measured.astro";
 import NotClaimed from "../../../../components/NotClaimed.astro";
 import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
@@ -119,8 +120,9 @@ primero las mismas comprobaciones salvo que pases `--no-doctor`.
 La comprobación de flash usa el tamaño real del tar dentro de `install`.
 `doctor` por sí solo supone una imagen de 7 MiB, así que pide 18.0 MiB. El doble
 de la imagen porque el tar y la raíz extraída de él conviven en el disco hasta
-que `install` borra el tar; con `--remote-image` no se sube ningún tar, así que
-la comprobación pide solo los 4 MiB de margen. El umbral de memoria sigue a
+que `install` borra el tar. Con `--remote-image` no se sube ningún tar, así que
+tanto `install` como `doctor` por sí solo piden solo los 4 MiB de margen. El
+umbral de memoria sigue a
 `--memory-max`: pide al menos lo que pide esa opción, que por defecto son
 64 MiB, de modo que `--memory-max 128M` en un router con 70 MiB libres se
 detecta aquí y no en un contenedor que no arranca.
@@ -130,7 +132,7 @@ cuando la referencia lleva un host de registro. `/container/config` es global al
 equipo y compartido con cualquier otro contenedor que tenga, así que mikroscope
 lee ese ajuste y nunca lo escribe. RouterOS lo trae puesto en
 `https://registry-1.docker.io`, así que la referencia de Docker Hub,
-`--remote-image jmrplens/mikroscope-agent:1.0.9`, no necesita fijar nada ahí en
+`--remote-image jmrplens/mikroscope-agent:1.2.0`, no necesita fijar nada ahí en
 un router sin tocar, y la de GHCR es la que exige cambiar antes el ajuste.
 [Cuatro formas de instalar](/mikroscope/es/install/routes/#un-pull-del-registro)
 tiene la orden para ponerlo a mano.
@@ -161,27 +163,62 @@ también todas las demás comprobaciones.
 
 `doctor` por sí solo, no el que va dentro de `install`, pregunta después al
 agente que ya está en marcha qué tiene su anillo: una sección `health`, tras las
-comprobaciones. Lee el anillo una vez desde esta máquina —la misma dirección que
-sondea `status`— y se rinde a los 3 s, diciéndolo, cuando no responde ningún
-agente. Nunca cambia el código de salida: eso lo deciden los requisitos.
+comprobaciones. Lee el anillo una vez, directamente desde esta máquina, en la
+dirección que dan `--subnet` y `--port` —la que sondea `status`—, así que pasa
+las opciones con las que instalaste, y `--token` (o `MIKROSCOPE_TOKEN`) si el
+agente tiene token. Nunca pasa por el relay ni por la dirección de `--expose`.
+Nunca cambia el código de salida: eso lo deciden los requisitos. Se salta la
+sección, diciendo por qué, en dos casos:
+
+```text
+health (what the running agent's ring shows now):
+  skipped: no agent answered at 172.30.10.2:9123 from this host (…)
+```
+
+cuando nada responde a `/healthz` en 3 s, y
+`skipped: the agent answered /healthz but its ring could not be read (…)` cuando
+`/healthz` responde pero el anillo no; por ejemplo, un agente con token leído sin
+`--token`, porque `/snapshot` contesta entonces 401.
+
+Cuando lee el anillo, imprime cuánto ha leído y o bien una línea limpia o bien un
+`WARN` por hallazgo, cada uno con su `fix:`. Son los `WARN` propios de la sección
+de salud, sangrados bajo `health`, no los de la lista de requisitos:
+
+```text
+health (what the running agent's ring shows now):
+  read 600 samples covering 60 s
+  ok    no loop signature, STP churn, link flap or softnet drop in the window
+```
+
+```text
+  WARN  layer2-loop: 30 frames this router sent came back in on ether2 in the last 60 s, carrying the bridge's own address as their source
+        fix: something downstream of ether2 reaches the router by a second path. …
+```
 
 El anillo es de 60 s por defecto, así que esto ve lo que pasa ahora, no lo que
-pasó esta mañana; el histórico lo leen los dashboards y las reglas de alerta. Lo
-que busca, en recuentos de sucesos que un router sano no produce y no en
-umbrales ajustados a un equipo:
+pasó esta mañana; el histórico lo leen los dashboards y las reglas de alerta.
+Pide al agente como mucho 10 000 muestras, y todo dentro de los mismos 3 s: el
+anillo entero cuando no guarda más que eso, y si no las 10 000 más recientes
+—los últimos 1 000 s a 10 Hz, los últimos 100 s a 100 Hz—. Lo que busca, en recuentos de sucesos que un router sano no
+produce y no en umbrales ajustados a un equipo:
 
 - **`layer2-loop`**: tres o más tramas en la ventana que volvieron a entrar por
   un puerto con la dirección propia del bridge como origen. El bucle del RB5009
-  de referencia lo repetía cada 2,0 s, el intervalo de hello de STP, mientras
+  de referencia (2026-09-12, y otra vez del 2026-09-19 al 09-23) lo repetía
+  cada <Measured id="loop.helloGap" />, el intervalo de hello de STP —treinta veces en un anillo de 60 s—, mientras
   todos los contadores de RouterOS mostraban el puerto sano y STP lo mantenía
   bloqueado, enviando un paquete por segundo, durante días.
 - **`stp-churn`**: un puerto que STP pasó a learning al menos tres veces más
   de las que le dejó reenviar, sin esa firma. No es un recuento de bloqueos:
-  cada link-up sano registra tres de golpe y llega a forwarding 2–3 s después;
-  en los 30 días de datos del router de referencia, todos los link-ups sanos
-  dejaron learning menos forwarding en 0.
-- **`link-flap`**: dos o más caídas de enlace en un puerto, el mismo recuento
-  que usa la marca de link-flap del propio colector.
+  cada link-up sano registra tres de golpe y llega a forwarding 2,1–2,8 s
+  después (ether7 en el RB5009 de referencia, cinco link-ups el 2026-09-21); en
+  30 días del almacén de ese router, todos los link-ups sanos dejaron learning
+  menos forwarding en 0.
+- **`link-flap`**: dos o más caídas de enlace en un puerto, en cualquier punto
+  de las muestras que lee. La detección `link-flap` del propio colector es otro
+  recuento: subidas y caídas de enlace juntas, dos o más en un puerto dentro de
+  60 s. Un
+  cable que se quita y se vuelve a enchufar una vez es un flap allí y no aquí.
 - **`softnet-drops`**: cualquier paquete que el kernel descartó de su cola
   softnet —perdido dentro del router, donde ningún contador de interfaz lo ve—.
   Los squeezes no cuentan: un squeeze es el kernel dosificándose.
@@ -190,6 +227,15 @@ Cada hallazgo nombra el puerto de RouterOS, en una placa que el mapa de puertos
 conoce, y el nombre del kernel en otro caso. Los registros del log del kernel se
 clasifican aquí otra vez a partir de su texto, de modo que un agente anterior a
 la clasificación se lee igual.
+
+Lo que se ha ejecutado: en el RB5009 de referencia (RouterOS 7.24.4, 2026-09-23)
+la sección leyó 600 muestras del agente en marcha y no encontró nada. Ninguno de
+los cuatro hallazgos ha saltado contra un agente real; los ejercitan tests que
+reproducen el texto real del log del kernel del bucle de referencia a su cadencia
+de 2,0 s. Los dos `WARN` de requisitos se reprodujeron en el mismo equipo y la
+misma fecha: el de la credencial con un `doctor --remote-image ghcr.io/…` de solo
+lectura y un usuario de Docker Hub puesto, y el del token con una instalación de
+usar y tirar, expuesta, actualizada después sin token y luego quitada.
 
 ## Lo que necesita tu máquina
 

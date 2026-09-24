@@ -73,8 +73,9 @@ es lo que `uninstall` tendría que encontrar después en un índice de `/file` q
 iba minutos por detrás tras quitar un contenedor. Así que `install` espera hasta 15 s a
 que el contenedor aparezca y luego 3 s más, borra el tar y solo entonces arranca
 el contenedor. No comprueba que la extracción haya terminado; en el RB5009 un
-tar de 1.8 MiB se extrajo en el mismo segundo del alta (RouterOS 7.24.2,
-2026-09-11).
+tar de 1,8 MiB se extrajo en el mismo segundo del alta (RouterOS 7.24.2,
+2026-09-11). Ese tar era una compilación de esa fecha, anterior a 1.0.0, no la imagen que
+`install` instala ahora.
 
 El contenedor se crea con `ignore-remote-image-change=yes`. Con el `no` por
 defecto, RouterOS vigilaba la imagen y, en cuanto se quitaba el tar, paraba y
@@ -85,7 +86,8 @@ eso `doctor` pide el doble de la imagen más 4 MiB de flash libre.
 
 Con `--remote-image` no pasa nada de esto. RouterOS se baja las capas él mismo,
 ningún tar aterriza en el equipo, no hay nada a lo que esperar ni nada que
-borrar, `doctor` pide solo los 4 MiB, y `uninstall` no tiene ningún fichero del
+borrar, `doctor` pide solo los 4 MiB, tanto por sí solo como dentro de
+`install`, y `uninstall` no tiene ningún fichero del
 que dar cuenta: el recuento de propiedad del contenedor son el contenedor y la
 envlist. La raíz del contenedor sigue yendo donde digan `--disk` y
 `--ephemeral`.

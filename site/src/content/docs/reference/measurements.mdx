@@ -3,7 +3,6 @@ title: InfluxDB and SQL measurements
 description: Every measurement the InfluxDB line-protocol encoder writes and every table the SQL sink creates, with tags, fields, columns, keys, units and whether each value is a delta or a level.
 ---
 
-import { Aside } from "@astrojs/starlight/components";
 import NotClaimed from "../../../components/NotClaimed.astro";
 import PrivilegedOnly from "../../../components/PrivilegedOnly.astro";
 import ScrollTable from "../../../components/ScrollTable.astro";
@@ -49,9 +48,9 @@ they are on [the file and the other sinks](/mikroscope/sinks/other/).
   `NULL` in SQL, never 0. The exception: InfluxDB's `mikroscope_mem`,
   `mikroscope_load`, `mikroscope_vm`, `mikroscope_vm_level`,
   `mikroscope_stat`, `mikroscope_sample` and `mikroscope_self`, and SQL's
-  `mikroscope_mem`, `mikroscope_load`, `mikroscope_stat` and
-  `mikroscope_self`, are written on every sample and read 0 for a source that
-  could not be read.
+  `mikroscope_mem`, `mikroscope_load`, `mikroscope_vm`, `mikroscope_vm_level`,
+  `mikroscope_stat`, `mikroscope_sample` and `mikroscope_self`, are written on
+  every sample and read 0 for a source that could not be read.
 - **One dimension, one name.** A processor is `cpu` in every tag and column.
 - **The unit is in the field name**: `_kb`, `_khz`, `_ns`, `_us`, `_s`,
   `_ms`, `_bps`, `_pps`. Temperatures are `celsius` beside `critical_celsius`;
@@ -120,16 +119,10 @@ delta of `pgscan` is an event rate and `nr_dirty` is a depth.
 </ScrollTable>
 
 `limit` is an SQL keyword, so an InfluxDB 3 SQL query double-quotes it, as
-the shipped connection-table panel does: `max("limit")`. The shipped CPU-frequency panel
+the shipped connection-table panel and the `mikroscope-conntrack-near-limit` alert do:
+`max("limit")`. The shipped CPU-frequency panel
 double-quotes the `cluster` field of `mikroscope_device_cpufreq` the same way
 (`internal/dashboards/panels_p5.go`); no source in the repository says why.
-
-<Aside type="caution" title="The generated InfluxDB alert asks for the SQL column name">
-	`mikroscope dashboards gen` writes a conntrack alert into `mikroscope-alerts-influxdb.yaml` whose
-	query reads `limit_objs` from `mikroscope_slab`. That is the SQL sink's column; InfluxDB's field
-	is `limit`. Read from `internal/dashboards/alerts.go` and `internal/sinks/influx.go`; the rule was
-	not run against a store for this page.
-</Aside>
 
 ### Observer, PMU and kernel log
 
@@ -137,7 +130,7 @@ double-quotes the `cluster` field of `mikroscope_device_cpufreq` the same way
 
 | Measurement       | Tags                                     | Fields                                                                                                                                                                                         | Kind                                                                                                                                                                                        |
 | ----------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `mikroscope_self` | none                                     | `cpu_us` (u); `rss`, `cgroup_mem` (u, bytes); `cgroup_mem_max` (u) on the samples that carry it; `throttled`, `throttled_us`, `oom_kill` (u) with cgroup2; `resets`, `kmsg_dropped`, `seq` (u) | `cpu_us`, `throttled`, `throttled_us`, `oom_kill`, `resets`, `kmsg_dropped` are deltas; `rss`, `cgroup_mem`, `cgroup_mem_max` levels                                                        |
+| `mikroscope_self` | none                                     | `cpu_us` (u); `rss`, `cgroup_mem` (u, bytes); `cgroup_mem_max` (u) on the samples that carry it; `throttled`, `throttled_us`, `oom_kill` (u) with cgroup2; `wake_ns`, `read_ns` (i) when the sample carries either; `resets`, `kmsg_dropped`, `seq` (u) | `cpu_us`, `throttled`, `throttled_us`, `oom_kill`, `resets`, `kmsg_dropped` are deltas; `rss`, `cgroup_mem`, `cgroup_mem_max` levels; `wake_ns`, `read_ns` this tick's timing                                                        |
 | `mikroscope_perf` | `counter`, `cpu`                         | `count` (u); `enabled_ns`, `running_ns` (u) when the kernel reported them                                                                                                                      | deltas; <PrivilegedOnly />; `running_ns` below `enabled_ns` means the count is multiplexed                                                                                                  |
 | `mikroscope_kmsg` | `level`, `port`, `kind`, `label`, `role` | `count` (u), records in this sample                                                                                                                                                            | per (level, port, kind); a record that names no port carries none of `port`, `kind`, `label` and `role`; `label` and `role` only where the inventory knows them; only non-zero combinations |
 
@@ -220,6 +213,10 @@ nothing that exists.
 | `mikroscope_device_thermal` | `zone`             | `critical_celsius` (float); `polling_ms` (i)                                                                                                                                         | the collector's clock                                      |
 | `mikroscope_device_cpufreq` | `cpu`              | `cluster` (i); `min_khz`, `max_khz` (u); `governor` (string); `steps` (string, space-separated kHz)                                                                                  | the collector's clock                                      |
 | `mikroscope_device_cadence` | `source`, `reason` | `hz` (float)                                                                                                                                                                         | the collector's clock                                      |
+| `mikroscope_sampler` | none | `ticks`, `slipped` (u); `captures_held`, `capture_bytes`, `capture_budget_bytes` (i) and `capture_served_bytes` (u) when captures are enabled | the collector's clock |
+| `mikroscope_trigger_count` | `condition` | `fired` (u) | the collector's clock; only when captures are enabled |
+| `mikroscope_trigger_suppressed` | `condition`, `reason` | `count` (u) | the collector's clock; only when captures are enabled |
+| `mikroscope_capture_refused` | `reason` | `count` (u) | the collector's clock; only when captures are enabled |
 
 </ScrollTable>
 
@@ -239,10 +236,17 @@ A derived value is written beside its inputs and never instead of them, so the
 store can recompute it. `suspect` marks a sample with a counter reset, where a
 per-packet figure would be a lower bound, so the per-packet fields are left
 out. The `board` and `kernel` tags read `unknown` when the agent could not
-establish them. The four `mikroscope_device*` measurements are written once
-when `forward` starts and again within a minute of the agent's capability hash
-changing, because the collector re-reads `/healthz` once a minute. A transport
+establish them. The four `mikroscope_device*` measurements are written when
+`forward` starts, again within a minute of the agent's capability hash changing
+(the collector re-reads `/healthz` once a minute), and otherwise repeated every
+five minutes so that any dashboard window holds them. A transport
 that cannot fetch `/capabilities` writes no device rows at all.
+The last four are the agent's [`/sampler`](/mikroscope/reference/http/#get-sampler), read when
+`forward` starts and then once a minute. `ticks`, `slipped`, `capture_served_bytes`, `fired` and
+the two `count` fields are running totals since the agent started, not deltas: a rate is the
+difference between two rows, and an agent restart takes them back to 0. `captures_held`,
+`capture_bytes` and `capture_budget_bytes` are levels. The capture fields and the three capture
+measurements are written only when captures are enabled (`CAPTURE_MB` above 0).
 What each value and rule means is on [what the collector
 derives](/mikroscope/sinks/derive/), [detections](/mikroscope/sinks/detections/)
 and [the device-info stream](/mikroscope/sinks/device-info/).
@@ -291,9 +295,10 @@ mikroscope forward --sql out.sql --for 10m && psql -f out.sql
   that falls behind blocks the collector's pull loop instead of dropping.
 - The sink counts events it wrote to the file, not rows the server stored.
 
-`dt_ns` is on `mikroscope_cpu` only. A rate over any other delta table joins
-`mikroscope_cpu` on `(time, host)` for the real interval rather than assuming
-the nominal period.
+`dt_ns` is on `mikroscope_sample`, one row per sample, and on every
+`mikroscope_cpu` row. A rate over any other delta table joins `mikroscope_sample`
+(or `mikroscope_cpu`) on `(time, host)` for the real interval rather than
+assuming the nominal period.
 
 ## SQL: kernel-tier tables
 
@@ -302,12 +307,18 @@ the nominal period.
 | Table                | Primary key                           | Columns after `time`                                                                                                                                                                        |
 | -------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `mikroscope_cpu`     | `time, host, cpu`                     | `host`, `cpu`, `user_ticks`, `nice_ticks`, `system_ticks`, `idle_ticks`, `iowait_ticks`, `irq_ticks`, `softirq_ticks`, `steal_ticks` (deltas), `busy_ratio`, `dt_ns`                        |
+| `mikroscope_cpufreq` | `time, host, cpu`                     | `host`, `cpu`, `khz`, `max_khz` (levels, on the samples that carry them; `max_khz` `NULL` unpublished) |
 | `mikroscope_softnet` | `time, host, cpu`                     | `host`, `cpu`, `processed`, `dropped`, `time_squeeze` (deltas)                                                                                                                              |
+| `mikroscope_softirq` | `time, host, kind, cpu`               | `host`, `kind`, `cpu`, `count` (delta; only non-zero (kind, cpu) pairs) |
 | `mikroscope_irq`     | `time, host, irq`                     | `host`, `irq`, `name`, `count` (delta, summed over CPUs; top-K lines)                                                                                                                       |
-| `mikroscope_mem`     | `time, host`                          | `host`, `free_kb`, `available_kb`, `cached_kb`, `slab_kb`, `sunreclaim_kb` (levels)                                                                                                         |
+| `mikroscope_irq_cpu` | `time, host, irq, cpu`                | `host`, `irq`, `name`, `cpu`, `count` (delta; only non-zero CPUs) |
+| `mikroscope_mem`     | `time, host`                          | `host`, `free_kb`, `available_kb`, `cached_kb`, `slab_kb`, `sunreclaim_kb`, `total_kb`, `buffers_kb`, `sreclaimable_kb`, `anon_kb`, `mapped_kb`, `dirty_kb`, `writeback_kb`, `kernel_stack_kb`, `page_tables_kb`, `committed_kb`, `commit_limit_kb`, `shmem_kb`, `active_kb`, `inactive_kb` (levels) |
 | `mikroscope_load`    | `time, host`                          | `host`, `load1`, `load5`, `load15`, `running`, `threads`, `procs_blocked` (levels)                                                                                                          |
 | `mikroscope_stat`    | `time, host`                          | `host`, `ctxt`, `intr`, `forks`, `irq_total`, `irq_err`, `pgfault`, `pgmajfault` (deltas)                                                                                                   |
-| `mikroscope_self`    | `time, host`                          | `host`, `cpu_us` (delta), `rss`, `cgroup_mem` (levels), `throttled`, `throttled_us`, `oom_kill` (deltas, `NULL` without cgroup2), `seq`                                                     |
+| `mikroscope_vm`      | `time, host`                          | `host`, `pgfault`, `pgmajfault`, `pgscan_kswapd`, `pgscan_direct`, `pgsteal_kswapd`, `pgsteal_direct`, `pgalloc`, `pgfree`, `allocstall`, `compact_stall`, `oom_kill`, `pswpin`, `pswpout` (deltas) |
+| `mikroscope_vm_level` | `time, host`                         | `host`, `nr_free_pages`, `nr_dirty`, `nr_writeback`, `nr_slab_reclaimable`, `nr_slab_unreclaimable` (levels, pages) |
+| `mikroscope_self`    | `time, host`                          | `host`, `cpu_us` (delta), `rss`, `cgroup_mem` (levels), `throttled`, `throttled_us`, `oom_kill` (deltas, `NULL` without cgroup2), `resets`, `kmsg_dropped` (deltas), `seq`, `wake_ns`, `read_ns` (this tick's timing, 0 when the sample carries none) |
+| `mikroscope_sample`  | `time, host`                          | `host`, `seq`, `dt_ns`, `mono_ns`: one row per sample |
 | `mikroscope_buddy`   | `time, host, node, zone, block_order` | `host`, `node`, `zone`, `block_order`, `free_blocks` (level; one row per zone and order, and `order` is reserved)                                                                           |
 | `mikroscope_mtd`     | `time, host, device`                  | `host`, `device`, `partition`, `corrected_bits`, `ecc_failures`, `bad_blocks`, `bbt_blocks`, `bitflip_threshold`, `ecc_strength` (levels; thresholds `NULL` unpublished)                    |
 | `mikroscope_psi`     | `time, host`                          | `host`, `cpu_some_us`, `mem_some_us`, `mem_full_us`, `io_some_us`, `io_full_us` (deltas)                                                                                                    |
@@ -315,6 +326,7 @@ the nominal period.
 | `mikroscope_slab`    | `time, host, cache`                   | `host`, `cache`, `active_objs`, `limit_objs` (`NULL` for caches with no published ceiling)                                                                                                  |
 | `mikroscope_disk`    | `time, host, device`                  | `host`, `device`, `reads`, `read_sectors`, `writes`, `write_sectors`, `io_s` (deltas), `inflight` (level)                                                                                   |
 | `mikroscope_flash`   | `time, host, device`                  | `host`, `device`, `page_writes`, `page_reads`, `erasures`, `gc_copies`, `gcs` (deltas), `bad_blocks`, `free_chunks` (levels)                                                                |
+| `mikroscope_perf`    | `time, host, counter, cpu`            | `host`, `counter`, `cpu`, `count` (delta), `enabled_ns`, `running_ns` (`NULL` where the kernel reported none; <PrivilegedOnly />) |
 | `mikroscope_event`   | `time, host, kernel_seq`              | `host`, `level`, `facility`, `kernel_seq`, `time_usec` (µs since boot, the kernel's monotonic clock, not `time`'s), `message`, `port`, `kind` (both `NULL` for a record that names no port) |
 
 </ScrollTable>
@@ -347,6 +359,10 @@ produces in one sample comes near 2^63.
 | `mikroscope_device_thermal` | `time, host, zone`               | `host`, `zone`, `critical_celsius`, `polling_ms`                                                                                                                                                   |
 | `mikroscope_device_cpufreq` | `time, host, cpu`                | `host`, `cpu`, `cluster`, `min_khz`, `max_khz`, `governor`, `steps`                                                                                                                                |
 | `mikroscope_device_cadence` | `time, host, source`             | `host`, `source`, `reason`, `hz`                                                                                                                                                                   |
+| `mikroscope_sampler` | `time, host` | `host`, `ticks`, `slipped`, `captures_held`, `capture_bytes`, `capture_budget_bytes`, `capture_served_bytes` (the capture columns 0, not `NULL`, when captures are off) |
+| `mikroscope_trigger_count` | `time, host, condition` | `host`, `condition`, `fired` |
+| `mikroscope_trigger_suppressed` | `time, host, condition, reason` | `host`, `condition`, `reason`, `count` |
+| `mikroscope_capture_refused` | `time, host, reason` | `host`, `reason`, `count` |
 
 </ScrollTable>
 
@@ -356,14 +372,9 @@ produces in one sample comes near 2^63.
 
 | Data                            | InfluxDB                                                                                                                            | SQL                                                                               |
 | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| CPU frequency                   | `mikroscope_cpufreq`                                                                                                                | `mikroscope_cpufreq`                                                                       |
-| per-CPU interrupts and softirqs | `mikroscope_irq_cpu`, `mikroscope_softirq`                                                                                          | `mikroscope_irq_cpu`, `mikroscope_softirq`                                    |
-| vmstat events and levels        | `mikroscope_vm`, `mikroscope_vm_level`                                                                                              | `mikroscope_vm`, `mikroscope_vm_level`                             |
-| PMU counters                    | `mikroscope_perf`                                                                                                                   | `mikroscope_perf`                                                                       |
-| sample sequence and clocks      | `mikroscope_sample`                                                                                                                 | `mikroscope_sample`                           |
-| `/proc/meminfo`                 | nineteen fields on `mikroscope_mem`                                                                                                 | nineteen columns on `mikroscope_mem`                                                  |
 | kernel log                      | counts per level, port and kind, `mikroscope_kmsg`; no text                                                                         | every record with its text, `port` and `kind`, `mikroscope_event`; no counts      |
-| observer extras                 | `cgroup_mem_max`, `resets`, `kmsg_dropped` on `mikroscope_self`                                                                     | all but `cgroup_mem_max`                                                                       |
+| observer extras                 | `cgroup_mem_max` on `mikroscope_self`; `wake_ns`, `read_ns` only on the samples that carry them | no `cgroup_mem_max` on `mikroscope_self` (it is on `mikroscope_device`); `wake_ns`, `read_ns` on every row, 0 when absent |
+| the agent's capture counters    | the capture fields of `mikroscope_sampler` omitted while captures are off | the capture columns of `mikroscope_sampler` written as 0 while captures are off |
 | slab ceiling                    | field `limit`                                                                                                                       | column `limit_objs`; population `active` against `active_objs`                    |
 | free lists                      | one row per zone, a field per order                                                                                                 | one row per zone and order                                                        |
 | what an interface is            | `label`, `type`, `role`, `bridge` as tags on `mikroscope_api_iface` and `mikroscope_api_ifcounters`, beside `mikroscope_api_ifinfo` | `label` alone on `mikroscope_api_iface`; the rest through `mikroscope_api_ifinfo` |

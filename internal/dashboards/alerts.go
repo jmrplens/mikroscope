@@ -93,7 +93,7 @@ var AlertRules = []AlertRule{
 		UID: "mikroscope-thermal-near-critical", Title: "A thermal zone is within 15 % of its own critical trip", Severity: "critical", For: "1m", Op: "gt", Threshold: 0, NoData: "OK",
 		Summary: "The reading is at or above 85 % of the zone's declared critical trip point (105 C on the reference RB5009). The ceiling is the board's own, read from /sys, not a number compiled in.",
 		PromQL:  `count(mikroscope_thermal_celsius >= on(zone) 0.85 * mikroscope_thermal_critical_celsius)`,
-		SQL:     `SELECT count(1) AS value FROM (SELECT zone, max(celsius) AS c, max(critical_celsius) AS crit FROM mikroscope_thermal WHERE time >= now() - interval '2 minutes' AND critical_celsius IS NOT NULL GROUP BY zone) WHERE c >= 0.85 * crit`,
+		SQL:     `SELECT count(1) AS value FROM (SELECT zone, max(celsius) AS c, max(critical_celsius) AS crit FROM mikroscope_thermal WHERE time >= now() - interval '2 minutes' AND critical_celsius IS NOT NULL GROUP BY zone) AS zones WHERE c >= 0.85 * crit`,
 	},
 	{
 		UID: "mikroscope-conntrack-near-limit", Title: "The connection table is above 80 % of nf_conntrack_max", Severity: "warning", For: "5m", Op: "gt", Threshold: 0.8, NoData: "OK",
@@ -129,7 +129,7 @@ var AlertRules = []AlertRule{
 		UID: "mikroscope-port-errors", Title: "A port is counting typed MAC errors", Severity: "warning", For: "5m", Op: "gt", Threshold: 0, NoData: "OK",
 		Summary: "A port's MAC is counting typed errors: frames it could not take. The commonest on a switched LAN is rx-overflow, the receive FIFO filling faster than the chip can drain it, and it is a microburst signature rather than a load one — on the reference RB5009 it ran at 0.5 % of the packets the NAS sent while the 2.5 GbE link sat at 0.36 % occupancy, because the sender was emitting TSO super-segments at line rate toward a 1 GbE destination. FCS errors and collisions mean something else: cabling, duplex, a dying port. Which port and which error is one row each in the dashboard's Interface traffic section; the procedure is in the port-errors playbook. Needs the API tier: a MAC counter is not visible from inside the container. It cannot tell a real error from a counter reset, so a router that reboots inside the window fires it once.",
 		PromQL:  `sum(increase(mikroscope_api_interface_counter_total{counter=~"rx-overflow|rx-fcs-error|rx-fragment|rx-too-short|rx-too-long|rx-jabber|tx-fcs-error|tx-late-collision|tx-excessive-collision"}[5m]))`,
-		SQL:     `SELECT coalesce(sum(v), 0)::BIGINT AS value FROM (SELECT interface, greatest(max(rx_overflow) - min(rx_overflow), 0)::BIGINT + greatest(max(rx_fcs_error) - min(rx_fcs_error), 0)::BIGINT + greatest(max(rx_fragment) - min(rx_fragment), 0)::BIGINT + greatest(max(rx_too_short) - min(rx_too_short), 0)::BIGINT + greatest(max(rx_too_long) - min(rx_too_long), 0)::BIGINT + greatest(max(rx_jabber) - min(rx_jabber), 0)::BIGINT + greatest(max(tx_fcs_error) - min(tx_fcs_error), 0)::BIGINT + greatest(max(tx_late_collision) - min(tx_late_collision), 0)::BIGINT + greatest(max(tx_excessive_collision) - min(tx_excessive_collision), 0)::BIGINT AS v FROM mikroscope_api_ifcounters WHERE time >= now() - interval '5 minutes' GROUP BY interface)`,
+		SQL:     `SELECT coalesce(sum(v), 0)::BIGINT AS value FROM (SELECT interface, greatest(max(rx_overflow) - min(rx_overflow), 0)::BIGINT + greatest(max(rx_fcs_error) - min(rx_fcs_error), 0)::BIGINT + greatest(max(rx_fragment) - min(rx_fragment), 0)::BIGINT + greatest(max(rx_too_short) - min(rx_too_short), 0)::BIGINT + greatest(max(rx_too_long) - min(rx_too_long), 0)::BIGINT + greatest(max(rx_jabber) - min(rx_jabber), 0)::BIGINT + greatest(max(tx_fcs_error) - min(tx_fcs_error), 0)::BIGINT + greatest(max(tx_late_collision) - min(tx_late_collision), 0)::BIGINT + greatest(max(tx_excessive_collision) - min(tx_excessive_collision), 0)::BIGINT AS v FROM mikroscope_api_ifcounters WHERE time >= now() - interval '5 minutes' GROUP BY interface) AS ports`,
 	},
 	{
 		UID: "mikroscope-bridge-port-dark", Title: "A bridge port is receiving but the bridge sends it nothing", Severity: "warning", For: "10m", Op: "gt", Threshold: 0, NoData: "OK",
@@ -198,7 +198,7 @@ var AlertRules = []AlertRule{
 		// different non-zero ecc_failures levels fired on the gap between two
 		// healthy partitions and not on any new failure. The Prometheus form
 		// never had this: increase() is per series before sum().
-		SQL: `SELECT coalesce(sum(delta), 0)::BIGINT AS value FROM (SELECT max(ecc_failures) - min(ecc_failures) AS delta FROM mikroscope_mtd WHERE time >= now() - interval '1 hour' AND ecc_failures IS NOT NULL GROUP BY "partition")`,
+		SQL: `SELECT coalesce(sum(delta), 0)::BIGINT AS value FROM (SELECT max(ecc_failures) - min(ecc_failures) AS delta FROM mikroscope_mtd WHERE time >= now() - interval '1 hour' AND ecc_failures IS NOT NULL GROUP BY "partition") AS parts`,
 	},
 }
 

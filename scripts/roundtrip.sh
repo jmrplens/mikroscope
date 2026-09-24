@@ -14,7 +14,7 @@ echo "== doctor";  bin/mikroscope doctor --router "$ROUTER" --ephemeral
 echo "== install"; bin/mikroscope install --router "$ROUTER" --ephemeral --yes --no-doctor | grep -E '^  |install done|transport'
 echo "== status";  bin/mikroscope status --router "$ROUTER" || true
 echo "== upgrade"; bin/mikroscope upgrade --router "$ROUTER" --ephemeral --yes | grep -E '^  |transport'
-echo "== uninstall"; bin/mikroscope uninstall --router "$ROUTER" | tail -1
+echo "== uninstall"; bin/mikroscope uninstall --router "$ROUTER" --yes | tail -1
 echo "== export hash after"; after=$(export_hash); echo "   $after"
 if [ "$before" != "$after" ]; then echo "FAIL: export changed"; exit 1; fi
 echo "round trip ok: export byte-identical"

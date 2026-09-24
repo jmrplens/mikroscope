@@ -70,7 +70,8 @@ would later have to find in a `/file` index that lagged for minutes after a
 container removal. So `install` waits up to 15 s for the container to appear,
 then 3 s more, deletes the tar, and only then starts the container. It does not
 check that the extraction finished; on the RB5009 a 1.8 MiB tar was extracted
-within the same second as the add (RouterOS 7.24.2, 2026-09-11).
+within the same second as the add (RouterOS 7.24.2, 2026-09-11). That tar was a build of that
+date, before 1.0.0, not the image `install` ships now.
 
 The container is created with `ignore-remote-image-change=yes`. With the
 default `no`, RouterOS watched the image and, once the tar was removed, stopped
@@ -81,7 +82,7 @@ which is why `doctor` asks for twice the image plus 4 MiB of free flash.
 
 With `--remote-image` none of this happens. RouterOS pulls the layers itself,
 no tar lands on the device, there is nothing to wait for and nothing to delete,
-`doctor` asks for the 4 MiB alone, and `uninstall` has no file to account for —
+`doctor` asks for the 4 MiB alone, run on its own or inside `install`, and `uninstall` has no file to account for —
 the container's ownership count is the container and the envlist. The container
 root still goes where `--disk` and `--ephemeral` say.
 

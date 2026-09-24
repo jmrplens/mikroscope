@@ -20,7 +20,9 @@ touch, what it treats as a failure, and how `uninstall` shows that it is done ra
 then, in this order:
 
 1. runs `doctor`, the read-only preflight, unless `--no-doctor` is given; a missing prerequisite
-   stops it with `N prerequisite(s) missing; nothing was written`;
+   stops it with `N prerequisite(s) missing; nothing was written`. A `WARN` line (a registry
+   credential meant for another registry, or an install already published on the LAN with no
+   token) is printed and does not stop it;
 2. asks `write the objects above to the router? [y/N]`, unless `--yes` is given; anything but `y` or
    `Y` stops it with `not confirmed; nothing written`;
 3. only then writes.
@@ -88,8 +90,13 @@ envlist and the image, which carry no comment, by `list="<name>-env"` and the ex
 only while the marker entry holding the exact tag exists. So `uninstall` cannot reach a hand-made
 setup, or anything else whose comment or name shares a substring with the container name.
 
-Every `find` quotes address and port attributes. Unquoted, RouterOS parses them as typed values and
-the comparison with the stored one comes back empty; verified for both on <Verified of="find-quoting" />.
+Every `find` quotes every non-numeric value except the `chain` and `action` enums. Unquoted, an
+address or a port is parsed as a typed value and the comparison with the stored one comes back
+empty; verified for both on <Verified of="find-quoting" />. A bare word such as `tcp` is read as a
+variable name, whose unset value is empty: on the same RB5009 running RouterOS 7.24.4, on
+2026-09-21, `find chain=dstnat protocol=tcp` returned 0 of 15 dstnat rules and
+`protocol="tcp"` returned 10. Before 1.1.0 the expose rules' `protocol` was the one value left
+unquoted, so `uninstall --expose` removed neither rule and reported them gone.
 
 ## A write that prints is a failure
 
@@ -167,9 +174,14 @@ check of its own before anything is written.
   writes that setting.** `doctor` reads it, and when the reference names a host the setting does not
   match it prints the one command to run
   (`/container/config/set registry-url=https://ghcr.io`, for the GHCR copy of the image) or says to
-  use `--agent-tar` instead. The Docker Hub reference `jmrplens/mikroscope-agent:1.0.9` carries no
-  host and leaves the setting as the router has it. Trust in the image is trust in that registry:
-  nothing in the CLI verifies what the router pulls.
+  use `--agent-tar` instead. The Docker Hub reference, `jmrplens/mikroscope-agent:<version>` (for
+  example `:1.2.0`), carries no host and leaves the setting as the router has it. Trust in the
+  image is trust in that registry: nothing in the CLI verifies what the router pulls. The same
+  setting holds one registry username and password for the whole device, and RouterOS presents
+  them to whatever registry it pulls from, so a Docker Hub account is sent to GHCR and the pull
+  ends in `auth error`. `doctor` warns about this (`WARN no registry credential meant for another
+  registry`) and reads only whether a username is set, never the name. The password cannot be read
+  back at all. `--agent-tar` pulls from no registry, so no registry credential is sent.
 
 ## A generated .rsc script is a credential
 
@@ -180,8 +192,8 @@ the router needs it. The script says so in its own header. Treat the file the wa
 token: do not commit it, do not paste it where it is logged, and delete it from the router's Files
 after `/import`. Without a token it holds no secret, only the plan.
 
-`plan` and `install --dry-run` mask the token in what they print to the terminal
-(`value="(token)"`); `--rsc` cannot, since the script has to run.
+`plan`, `install --dry-run` and `upgrade --dry-run` mask the token in what they print to the
+terminal (`value="(token)"`); `--rsc` cannot, since the script has to run.
 
 ## How uninstall proves it is done
 
@@ -190,6 +202,15 @@ in one connect, how many objects each step created are still there, prints one l
 the count, and fails naming every step whose count is not zero
 (`uninstall left objects behind: …`). A removal that printed nothing is not evidence; the count is.
 `status` runs the same count on its own.
+
+The count covers only the steps of the plan built from `uninstall`'s own flags, not everything on
+the router that carries the tag. Given other flags than the install had — no `--expose`, another
+`--name`, `--veth`, `--subnet`, `--port`, `--iface-list` or `--addr-list` — it passes over objects
+that are still there: on the reference RB5009 (RouterOS 7.24.4, 2026-09-21) an `uninstall` without
+`--expose` printed `verified: nothing mikroscope created remains on the router` with the expose
+dst-nat still in place. Pass it the flags `install` had; [commands and
+flags](/mikroscope/reference/cli/#pass-the-same-shape-to-status-upgrade-and-uninstall) has the
+run.
 
 The container step is the slow one, and the order inside it is what keeps the count honest:
 
@@ -207,8 +228,9 @@ A doctor → install → status → upgrade → uninstall round trip (`make roun
 <NotClaimed variant="device-specific">
 	The byte-identical `/export` after that one round trip, and every RouterOS behaviour quoted on
 	this page — the silent `/file/remove`, the quoted `find` selectors, errors printed with exit
-	status 0 — were observed on one RB5009 running RouterOS 7.24.2. The refusal logic itself is
-	covered by tests against a fake router, not by a run on another board or RouterOS version.
+	status 0 — were observed on one RB5009 running RouterOS 7.24.2, except the bare `protocol=tcp`
+	case, measured on the same device on 7.24.4. The refusal logic itself is covered by tests against
+	a fake router, not by a run on another board or RouterOS version.
 </NotClaimed>
 
 <SeeAlso>

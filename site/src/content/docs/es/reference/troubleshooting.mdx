@@ -27,8 +27,13 @@ significa y dónde está la explicación.
 | `doctor`: `registry-url is https://ghcr.io … registry-url=…`          | [El host del registro es global](#el-host-del-registro)                |
 | `doctor`: falla `free flash ≥ …`                                      | `--disk tmpfs` o `--ephemeral`, o libera espacio en la flash           |
 | `doctor`: `WARN no registry credential meant for another registry`    | [Una credencial para todos los registros](#una-credencial-para-todos-los-registros) |
-| `doctor`: `WARN the installed agent published on the LAN asks for a token` | `upgrade` con `--token`, o `uninstall --expose`                    |
+| `doctor`: `WARN the installed agent published on the LAN asks for a token` | `upgrade` con el mismo `--name`, las opciones de la instalación original y `--token`; o `uninstall --expose --lan-address … --token …`, que quita el agente entero |
 | `doctor`: `WARN layer2-loop` en la sección `health`                   | [Un bucle que RouterOS no muestra](#un-bucle-que-routeros-no-muestra)  |
+| `doctor`: `WARN stp-churn` en la sección `health`                     | Un segundo camino hasta el router, o una topología que no deja de cambiar detrás de ese puerto: [Lo que muestra el agente en marcha](/mikroscope/es/install/prerequisites/#lo-que-muestra-el-agente-en-marcha) |
+| `doctor`: `WARN link-flap` en la sección `health`                     | El cable, el conector, el equipo del otro extremo reiniciándose o una autonegociación que falla |
+| `doctor`: `WARN softnet-drops` en la sección `health`                 | Paquetes perdidos dentro del router, llegados más deprisa de lo que la ruta de recepción podía tomarlos: [Una inundación de paquetes](/mikroscope/es/playbooks/packet-flood/) |
+| `doctor`: `health … skipped: no agent answered`                       | El agente no está en marcha o esta máquina no alcanza su /30: pasa el `--subnet` y el `--port` con los que se instaló, mira [Llegar al agente](/mikroscope/es/install/reaching-the-agent/) |
+| `doctor`: `skipped: the agent answered /healthz but its ring could not be read` | Casi siempre, el agente tiene un `TOKEN`: pasa `--token` |
 
 </ScrollTable>
 
@@ -105,10 +110,19 @@ por cable y por radio a la vez es la causa habitual, y también un switch
 cableado dos veces. STP hace su trabajo y bloquea el puerto, así que nada se
 viene abajo, y RouterOS informa del puerto en marcha y sin errores —pero lo que
 hay detrás llega al router por otro lado o no llega—. En el RB5009 de referencia
-el puerto recibió de 12 a 13 paquetes por segundo y envió 1 en dos días del
-bucle (2026-09-21 y 22), y 192 y 178 el día después de desaparecer el segundo
-camino (2026-09-23). Encuentra el segundo
-camino y rómpelo; el hallazgo desaparece en un anillo.
+(RouterOS 7.24.4) el puerto recibió de 12 a 13 paquetes por segundo y envió 1 el
+2026-09-21 y el 22, durante el bucle; el 2026-09-23, después de quitar el
+segundo camino, recibió 192 y envió 178. Encuentra el segundo camino y rómpelo;
+el hallazgo desaparece en un anillo.
+
+`doctor` solo lee el anillo, más o menos el último minuto, así que un bucle que
+ya se ha resuelto o que va y viene puede haber desaparecido cuando se ejecuta.
+La alerta [`mikroscope-bridge-port-dark`](/mikroscope/es/dashboards/alerts/#las-reglas)
+lee el mismo fallo en el histórico: un puerto de bridge que ha recibido paquetes
+durante diez minutos sin que el bridge le enviara ni una trama unicast ni una de
+broadcast. Probada contra el almacén de referencia del 2026-09-19 al 2026-09-23,
+marcó los dos puertos del bucle de esa semana, sfp-sfpplus1 en 204 intervalos de
+diez minutos y ether2 en 376, y ningún otro puerto.
 
 ## El agente está instalado y no responde nada
 
@@ -261,14 +275,13 @@ consulta rota de una tranquila.
 
 ### `the <nombre> sink does not know the address Grafana would query`
 
-`forward --grafana` construye una fuente de datos solo para los destinos cuya
-**dirección de escritura es la que consulta Grafana**: `--influx` y
-`--elastic`. Los otros tres no pueden, y cada uno por su motivo — `--prom`
-sirve `/metrics` y lo raspan, así que el Prometheus que consulta Grafana es uno
-del que el colector no ha oído hablar; `--sql` escribe sentencias a un fichero
-y nunca conecta; `--graphite` habla el puerto de ingesta de carbon, que no es
-la API que consulta Grafana. Crea esas en Grafana y nómbralas en
-`--grafana-datasource-uid`, que además le dice a `forward` que no la toque.
+`forward --grafana` deriva una fuente de datos de la propia dirección del
+destino para `--influx`, `--elastic` y `--postgres`. A `--prom` lo raspan y
+`--graphite` escribe al puerto de ingesta de carbon, así que ninguno sabe dónde
+consultaría Grafana: pasa esa dirección en `--grafana-datasource-url`, o crea la
+fuente de datos en Grafana y nómbrala en `--grafana-datasource-uid`, que además
+le dice a `forward` que no la toque. `--sql` nunca conecta y falla con su propio
+mensaje, que apunta a `--postgres`.
 
 ### `--influx is a write URL this cannot take apart`
 
@@ -339,7 +352,9 @@ Cuando los datos ya llegan, la pregunta cambia de «por qué está roto esto» a
 router en reposo, y después siete fallos leídos contra ella—.
 
 <Aside type="tip" title="Pregunta a las herramientas antes de seguir leyendo">
-	`mikroscope doctor` nombra el arreglo de cualquier cosa que falte en el router, `mikroscope status`
+	`mikroscope doctor` nombra el arreglo de cualquier cosa que falte en el router y lee el anillo del
+	agente en marcha en busca de un bucle, churn de STP, flaps de enlace y descartes softnet,
+	`mikroscope status`
 	dice qué está instalado y si responde, y `mikroscope dashboards check` ejecuta la consulta de cada
 	panel e imprime cuáles volvieron sin nada. Entre los tres responden casi toda esta página para tu
 	propio equipo en vez de en general.

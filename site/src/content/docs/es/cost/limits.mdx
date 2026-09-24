@@ -26,7 +26,8 @@ observada cuando la racha termina, con la racha aún en curso en
 
 Los medidores de ventana móvil (`window="1s"|"10s"|"60s"`,
 `stat="max"|"min"|"p95"`) muestran el pico sea cual sea tu intervalo de scrape,
-porque el agente los calcula sobre su propio reloj y no sobre el tuyo. Para ver
+porque el colector los calcula sobre las marcas de tiempo de las propias muestras
+del agente y no sobre los instantes de tu scrape. Para ver
 la _forma_ de un transitorio en vez de su envolvente, grábalo con `record`, o
 deja que un disparador lo capture.
 

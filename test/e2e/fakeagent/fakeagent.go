@@ -79,7 +79,10 @@ const RateHz = 10
 // a sink not recording gaps.
 //
 // It is counted from the first PULL rather than from the first request of any
-// kind (see the mux), so the handshake before it costs nothing here.
+// kind (see the mux), so the handshake before it costs nothing here. The
+// suites give a collector 8 s rather than 5 for the same reason: under -race,
+// with the e2e tests running in parallel, a collector's start took most of a
+// 5 s window on 2026-09-24 and the Graphite test saw no gap.
 const (
 	GapAfter = 10
 	GapWidth = 4

@@ -35,6 +35,20 @@ The InfluxDB file has one rule fewer because "The sampler is slipping ticks" has
 The counter itself does reach InfluxDB since 1.0.5 — the collector reads it from the agent's
 `/sampler` and writes `mikroscope_sampler.slipped` — so the rule could be written; it has not been.
 
+The PostgreSQL file is translated from the InfluxDB one, and it also leaves out the rules the SQL
+schema cannot answer in the same shape. `mikroscope-l2-loop` and `mikroscope-port-link-down` sum a
+per-sample count of kernel-log port records, and the SQL sink writes one row per kernel record
+instead, in `mikroscope_event`. `mikroscope-port-errors` names one column per MAC counter, and the
+SQL sink writes `mikroscope_api_ifcounter` one row per counter. `mikroscope-bridge-port-dark` is
+left out for the same reason: it names `rx_packet`, `tx_unicast` and `tx_broadcast` as columns, and
+reads `bridge`, which that table does not have either. The translation drops those rather than
+write a query that looks right and answers something else. The 1.2.0 file did not drop the
+dark-port rule: it carried a PostgreSQL form that read those four names as columns of
+`mikroscope_api_ifcounter`, which could not run on that schema. The generator now drops it, and a
+unit test checks every column each PostgreSQL alert query reads against the tables the SQL sink
+declares. That test reads the schema, not a database: no PostgreSQL alert query has been run
+against a real PostgreSQL.
+
 Each file is `apiVersion: 1` with one rule group, `mikroscope`, in a folder named `mikroscope`,
 organisation 1, evaluated every minute. The rules are provisioned rather than built into the
 dashboards, so an operator who wants none copies nothing.
@@ -56,8 +70,10 @@ generated file's own header names. Use the file that matches the datasource the 
 Every rule has the same shape, the one Grafana's own rule editor writes:
 
 1. **A** — the query, against your datasource, with a relative time range of the last 600 s. Every
-   SQL query and every Prometheus counter query also bounds its own window (2 minutes, 5 minutes or 1
-   hour, below); the two Prometheus gauge rules, thermal and conntrack, read the latest value.
+   SQL query and every Prometheus counter query also bounds its own window (1, 2, 5 or 10 minutes,
+   or 1 hour, below; the wake-up rule also reads the 24 hours before its 10 minutes, whatever A's
+   600 s range says); the two Prometheus gauge rules, thermal and conntrack, read the latest value,
+   and the egress rule takes its gauge's maximum over the last minute.
 2. **B** — reduce A to one number per series with `last`, dropping non-numeric values.
 3. **C** — compare B against the threshold. C is the rule's condition.
 
@@ -69,11 +85,10 @@ fails is Grafana's behaviour, set out in its own documentation, and has not been
 
 <AlertRules show="table" />
 
-The InfluxDB form of `mikroscope-conntrack-near-limit` is broken; the "what has not been tried" note
-at the end of this page says why. "No data means" is the rule's `noDataState`. The silent-agent rule is the one where silence is the
+"No data means" is the rule's `noDataState`. The silent-agent rule is the one where silence is the
 fault, so no data fires it; for every other rule no data is the healthy reading.
 
-Each rule's title, and under it its `summary` annotation verbatim, as generated:
+Each rule's title, and under it its `summary` annotation, shortened:
 
 - **mikroscope agent stopped delivering samples.** "No new samples reached the store in the last two
   minutes: the agent stopped, the collector stopped, or the path between them did. Every other rule
@@ -113,7 +128,8 @@ Each rule's title, and under it its `summary` annotation verbatim, as generated:
   not take. The commonest on a switched LAN is rx-overflow, the receive FIFO filling faster than the
   chip can drain it, and it is a microburst signature rather than a load one. FCS errors and
   collisions mean something else: cabling, duplex, a dying port. Needs the API tier: a MAC counter
-  is not visible from inside the container."
+  is not visible from inside the container. It cannot tell a real error from a counter reset, so a
+  router that reboots inside the window fires it once."
 - **A bridge port is receiving but the bridge sends it nothing.** "A port that is a member of a
   bridge has received packets for ten minutes while the bridge delivered it neither a unicast nor a
   broadcast frame. Whatever is behind it is transmitting and hearing nothing back: STP holds the port
@@ -125,11 +141,12 @@ Each rule's title, and under it its `summary` annotation verbatim, as generated:
   `broadcast-flood=no` or `horizon` set. Needs the API tier.
 - **The kernel is switching context four times as often as over its last day.** "Something started
   waking up very often: a busy-polling process or driver, a monitoring client, a container in a
-  tight loop." On the reference RB5009 it was a Home Assistant integration polling the router over
-  the API (2026-09-23): timer interrupts went from about 2 500 to about 35 000 a second, in bursts
-  of 20–90 s on one core at a time, and RouterOS's own profile barely showed it. Disabling the
-  integration brought the rate back within 30 s. A deliberate change, such as a new container or a
-  heavier ruleset, fires it too.
+  tight loop. Look at what started at the moment the rule fired (/user/active, new containers, a new
+  integration) and at the Interrupts and softirqs section." On the reference RB5009 it was a Home
+  Assistant integration polling the router over the API (2026-09-23): timer interrupts went from
+  about 2 500 to about 35 000 a second, in bursts of 20–90 s on one core at a time, and RouterOS's
+  own profile barely showed it. Disabling the integration brought the rate back within 30 s. A
+  deliberate change, such as a new container or a heavier ruleset, fires it too.
 - **A port's egress queue has been dropping every minute for ten minutes.** "A port's own egress
   queue has dropped packets in every one of the last ten minutes. Unlike the other counter rules,
   this one's counter is supposed to move: dropping is how a full queue tells a sender to slow down.
@@ -145,7 +162,8 @@ Each rule's title, and under it its `summary` annotation verbatim, as generated:
 
 <AlertRules show="queries" store="prometheus" />
 
-All eleven read the collector's `/metrics`, which is the only exposition there is since 1.0.5 —
+All <DashboardCount store="prometheus" of="rules" /> read the collector's `/metrics`, which is the
+only exposition there is since 1.0.5 —
 [Import and check](/mikroscope/dashboards/import-and-check/#prometheus-one-scrape-job) has the one
 scrape job. `mikroscope_slipped_total` is among them and used to come from a second job against the
 agent: the agent still owns the ticker and is still the only thing that can count a slipped tick,
@@ -159,13 +177,23 @@ healthy device is the same alert.
 <AlertRules show="queries" store="influxdb" />
 
 </TabItem>
+<TabItem label="PostgreSQL">
+
+<AlertRules show="queries" store="postgres" />
+
+</TabItem>
 </Tabs>
 
 ## Where the thresholds come from
 
 - **Zero, for a counter that should not move.** Kernel RX drops, kernel OOM kills, detections,
-  slipped ticks, the agent's own OOM kills, uncorrectable ECC failures, and the kernel-log port
-  records whose kind is `own-address` or `link-down`. A healthy device reads zero on each.
+  slipped ticks, the agent's own OOM kills, uncorrectable ECC failures, typed MAC errors on any
+  port, and the kernel-log port records whose kind is `own-address` or `link-down`. A healthy
+  device reads zero on each.
+- **Zero dark bridge ports, for ten minutes.** `mikroscope-bridge-port-dark` counts bridge ports
+  that received packets while the bridge sent them neither a unicast nor a broadcast frame; the
+  count is 0 on a healthy bridge, and the 10-minute pending period is what stops a quiet moment
+  from firing it.
 - **One sample, for the silent agent.** Fewer than one sample in two minutes is none at all, at any
   configured rate.
 - **A share of the board's own thermal trip.** 85 % of the lowest critical trip point each zone
@@ -205,12 +233,20 @@ sample's packet count was at or below its trailing median. See
 
 - **Which process.** The OOM rule says the kernel killed something. From inside the container there
   is no PID namespace to say what.
-- **Which port.** The two port-event queries sum over ports, so a firing rule says a loop signature
-  or a link-down happened, not on which cable. The port, its comment and its interface lists are on
-  the Kernel log section's two port-event panels.
+- **Which port.** Every port rule reduces to one number: the two kernel-log rules and the MAC-error
+  rule sum over ports, the egress rule takes the maximum, and the dark-bridge-port rule counts
+  ports. So a firing rule says a loop signature, a link-down or a dark port happened, not on which
+  cable. The port is on the Kernel log section's two port-event panels, with its comment and its
+  interface lists, or in the Interface traffic section.
 - **An unprivileged agent's blind spots.** The connection-table and ECC rules read sources that need
   a privileged container. Without one those measurements never reach the store, and on Prometheus a
   query over a missing metric returns no data — which these rules read as OK.
+- **A collector without the API tier.** The port-error, dark-bridge-port and egress-queue rules read
+  RouterOS counters that only the API tier polls. Under `--api-mode off` none of that reaches the
+  store: on Prometheus the three rules read no data, and on PostgreSQL the egress rule, the only one
+  of the three in that file, reads 0; both are OK. On
+  an InfluxDB store that has never held those tables the queries fail and `execErrState: Error`
+  applies instead.
 - **Anything while the silent-agent rule fires.** Every rule reads the same stream — including the
   slipped-ticks rule, whose only query is against the collector, not the agent — so with no samples
   arriving they read zero or no data, and both are OK.
@@ -218,8 +254,8 @@ sample's packet count was at or below its trailing median. See
 ## Loaded into Grafana, and what that found
 
 On 2026-09-21 the InfluxDB provisioning file was loaded into Grafana 13.2.1
-against the live InfluxDB 3 store and all twelve rules were watched through
-their own evaluation. **It found two defects, both fixed in this release**, and
+against the live InfluxDB 3 store and all twelve rules it held then were
+watched through their own evaluation. **It found two defects, both fixed in 1.1.0**, and
 one of them would have kept most of these rules from ever firing.
 
 **`coalesce()` over an unsigned aggregate returns nothing, silently.** The
@@ -233,8 +269,8 @@ them, *while the loop signature it exists to catch was running*: the same SQL
 over `/api/v3/query_sql` returned 109 at that moment. Every `coalesce()` over
 an aggregate now carries `::BIGINT`, and
 `TestCoalesceIsCastInAlertSQL` fails if a new rule omits it. This is the same
-fault [the panels already pinned for `greatest()`](/mikroscope/dashboards/import-and-check/),
-and worse: a panel at least fails loudly with a 500.
+fault the panels' SQL already pins by casting `greatest()` to `BIGINT`
+(`internal/dashboards/panels.go`), and worse: a panel at least fails loudly with a 500.
 
 **The conntrack rule named a column no InfluxDB store holds** — `limit_objs`,
 which is the SQL sink's name, while the InfluxDB sink writes the slab ceiling
@@ -242,18 +278,28 @@ as `limit`. This page predicted that defect before it was confirmed; the rule
 now reads `"limit"`, and the PostgreSQL translation turns it back into
 `limit_objs`.
 
-Afterwards all twelve rules returned a value, and `mikroscope-l2-loop` went to
+Afterwards all twelve rules then in the file returned a value, and `mikroscope-l2-loop` went to
 **Alerting** at 16:58:50Z on the live `own-address` signature. Grafana's own
 instance list for that rule still carried `Normal (NoData)` at 16:56:50Z from
 the run before the fix: the defect and its repair two minutes apart in the same
 record.
 
 <NotClaimed variant="untested" title="What has not been tried">
-	**A rule resolving.** The loop signature on the reference device has not stopped, so the firing
-	rule has not been watched going back to Normal. **The Prometheus and PostgreSQL forms**, which
-	were not loaded into any Grafana — only the InfluxDB file was. **Notification delivery:** the run
-	configured no contact point, so what was watched is the rule's state, never a message leaving
-	Grafana. **The store-shaped failures**, because this store was not missing anything: the
+	**A rule resolving.** The loop on the reference device ended on 2026-09-23, but the return of
+	`mikroscope-l2-loop` to Normal has not been checked in Grafana's state history, so the resolve
+	path is still unobserved. **The two rules added in 1.2.0 inside Grafana.**
+	`mikroscope-bridge-port-dark` and `mikroscope-wakeup-storm` were not in the 2026-09-21 load, and
+	no Grafana has evaluated either since. Their InfluxDB SQL was run by hand against the reference
+	store instead: the dark-port rule's returned 1 on three windows inside the loop and 0 after it,
+	in a backtest over 2026-09-19 11:13 to 2026-09-23 22:44 UTC that marked only sfp-sfpplus1 and
+	ether2; the wake-up rule's returned 0.94–0.95 on two healthy windows and 35.7 at the storm of
+	2026-09-23, beside a ratio that never exceeded 1.81 over 551 healthy windows (2026-09-20..23).
+	Their PromQL was checked for syntax only, and the wake-up rule's PostgreSQL SQL has not been run
+	at all (the dark-port rule has no PostgreSQL form; see [The files](#the-files)). **The
+	Prometheus and PostgreSQL forms**,
+	which were not loaded into any Grafana — only the InfluxDB file was. **Notification delivery:**
+	the run configured no contact point, so what was watched is the rule's state, never a message
+	leaving Grafana. **The store-shaped failures**, because this store was not missing anything: the
 	collector creates `mikroscope_detection` with the first detection it writes, and InfluxDB 3
 	refuses a query naming a missing table when it plans it, so on a store that has never held a
 	detection the detections rule's query should fail and its `execErrState: Error` applies instead

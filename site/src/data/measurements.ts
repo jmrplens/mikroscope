@@ -55,6 +55,20 @@ export const RB5009 = {
 	routeros: "7.24.2",
 } as const;
 
+/**
+ * The RouterOS the reference device runs now, which is not the one most
+ * campaigns were measured on: `RB5009.routeros` is what every campaign
+ * inherits, and a campaign measured later names its own version. The device
+ * is first recorded on 7.24.4 on 2026-09-21 (campaign stream-2026-09-21, and
+ * the `uninstall --expose` reading in CHANGELOG [1.1.0]); the upgrade itself
+ * is not dated anywhere in the repository. The landing's "has run on" names
+ * both, and takes this one from here rather than from a campaign, so the next
+ * campaign on 7.24.4 cannot change what the sentence says.
+ */
+export const RB5009_NOW: { readonly routeros: string } = {
+	routeros: "7.24.4",
+};
+
 export const campaigns = {
 	"rates-2026-09-18": {
 		...RB5009,
@@ -102,17 +116,22 @@ export const campaigns = {
 		source: "site/src/content/docs/reference/http.mdx",
 	},
 	// The naive approach, measured once so the agent's cost has something to be
-	// compared against: a busybox shell loop reading the same file set at the
-	// same rate, which pays a fork per iteration where the Go agent pays none.
-	// The read cost beside it is the same campaign's ≈ 0.77 ms per sample.
+	// compared against: a busybox shell loop reading the agent's file set of
+	// that date (seven files; the agent reads far more now) at the same rate,
+	// which pays a fork per iteration where the Go agent pays none. Not
+	// re-measured against today's source set. The read cost beside it is the
+	// same campaign's ≈ 0.77 ms per sample.
 	"busybox-2026-09-11": {
 		...RB5009,
+		kernel: "5.6.3",
 		date: "2026-09-11",
+		windowS: 60,
 		conditions: {
-			en: "a busybox shell loop reading the full file set at 10 Hz, one fork per iteration, in a container on the router",
-			es: "un bucle de shell de busybox leyendo el conjunto completo de ficheros a 10 Hz, con un fork por iteración, en un contenedor del router",
+			en: "a busybox shell loop reading the agent's file set of that date, seven files, at 10 Hz, one fork per iteration, in a container on the router; two 60 s runs",
+			es: "un bucle de shell de busybox leyendo a 10 Hz el conjunto de ficheros que leía entonces el agente, siete ficheros, con un fork por iteración, en un contenedor del router; dos ejecuciones de 60 s",
 		},
-		source: "site/src/content/docs/cost/index.mdx",
+		source:
+			"site/src/content/docs/cost/index.mdx; measured on the RB5009, RouterOS 7.24.2, kernel 5.6.3, 2026-09-11: 7 files at 10 Hz, 2.40 and 2.48 % of one core over two 60 s runs, cgroup cpu.stat over /proc/uptime",
 	},
 	"netns-2026-09-12": {
 		...RB5009,
@@ -122,6 +141,21 @@ export const campaigns = {
 			es: "`privileged=yes` no cambia el espacio de nombres de red",
 		},
 		source: "site/src/content/docs/limits/namespaces.mdx",
+	},
+	// The privileged discovery round: a container reading the host's /proc
+	// once with privileged=yes, no agent. Its slabinfo is the one in
+	// testdata/proc/rb5009, and internal/procfs/slabinfo.go cites its
+	// nf_conntrack row.
+	"discovery-2026-09-12": {
+		...RB5009,
+		kernel: "5.6.3",
+		date: "2026-09-12",
+		conditions: {
+			en: "a privileged discovery container reading the host's `/proc` once, before the agent read slabinfo",
+			es: "un contenedor de descubrimiento privilegiado leyendo una vez el `/proc` del host, antes de que el agente leyera slabinfo",
+		},
+		source:
+			"site/src/content/docs/limits/namespaces.mdx; testdata/proc/rb5009/slabinfo (nf_conntrack 6582 active of 8075); the comment on Slab, internal/procfs/slabinfo.go",
 	},
 	"playbooks-2026-09-12": {
 		...RB5009,
@@ -145,7 +179,7 @@ export const campaigns = {
 			es: "un `record` de 60 s a 10 Hz, 600 muestras en 59,9 s, un bucle de script de RouterOS lanzado por ssh y el log del router añadido como marcadores",
 		},
 		source:
-			"site/src/content/docs/record/index.mdx; plan/phase0/rb5009/captures/burst.meta.json",
+			"site/src/content/docs/record/index.mdx; the recording's own .meta.json, which is not published",
 	},
 	// The recording the walkthrough's chart is drawn from: the router at rest,
 	// with three notes typed into `record`'s own terminal. The sample count and
@@ -161,37 +195,49 @@ export const campaigns = {
 		source:
 			"site/src/content/docs/start/walkthrough.mdx; site/src/assets/walkthrough/rb5009-walkthrough.svg subtitle",
 	},
-	// The next four have no date beside them in the sources cited, so they render "date not recorded"
-	// wherever a page gives them provenance; the pages that know more say it
-	// in their own prose, beside the figure.
+	// The next three predate the project's own measurement pages, and the date
+	// each carries is the one recorded beside it when it was measured. The ssh
+	// cost is older than the agent: it was measured on 2026-08-26, while the
+	// router still ran 7.24.1 (the 7.24.2 upgrade reboot was 2026-09-10), so it
+	// names its own version.
 	"ssh-connect": {
 		...RB5009,
-		date: null,
+		routeros: "7.24.1",
+		date: "2026-08-26",
 		conditions: {
 			en: "one ssh connect, for its duration",
 			es: "una conexión ssh, mientras dura",
 		},
-		source: "site/src/content/docs/install/index.mdx (undated there)",
+		source:
+			"site/src/content/docs/install/index.mdx; measured on the RB5009 on 2026-08-26 under RouterOS 7.24.1, before the 7.24.2 upgrade of 2026-09-10; the same cost showed in /tool profile on 7.24.2, 2026-09-11 (17–33 % for 1–2 snapshots)",
 	},
 	"relay-fetch": {
 		...RB5009,
-		date: null,
+		kernel: "5.6.3",
+		date: "2026-09-11",
 		conditions: {
 			en: "`/tool fetch output=user` called over the binary API",
 			es: "`/tool fetch output=user` llamado por la API binaria",
 		},
-		source: "site/src/content/docs/install/reaching-the-agent.mdx (undated)",
+		source:
+			"site/src/content/docs/install/reaching-the-agent.mdx; measured on the RB5009, RouterOS 7.24.2, kernel 5.6.3, 2026-09-11: truncates silently at 64 512 B for 64 K, 256 K, 1 M and 4 M bodies",
 	},
+	// The count and its latency are one set of ten calls. The pages place it
+	// "about a day before" the slab reading of 2026-09-12; the day is the one recorded
+	// with the ten calls.
 	"api-conntrack": {
 		...RB5009,
-		date: null,
+		kernel: "5.6.3",
+		date: "2026-09-11",
 		conditions: {
-			en: "the connection table counted over the RouterOS API",
-			es: "la tabla de conexiones contada por la API de RouterOS",
+			en: "the connection table counted over the RouterOS binary API, `/ip/firewall/connection/print count-only`, ten calls",
+			es: "la tabla de conexiones contada por la API binaria de RouterOS, `/ip/firewall/connection/print count-only`, diez llamadas",
 		},
 		source:
-			"site/src/content/docs/sinks/api-tier.mdx (undated); site/src/content/docs/playbooks/conntrack.mdx places the count a day before the slab reading",
+			"measured on the RB5009, RouterOS 7.24.2, kernel 5.6.3, 2026-09-11: 6 212 entries, median 1.3 ms, n = 10, min 1.1, first call 71 ms cold; site/src/content/docs/sinks/api-tier.mdx, playbooks/conntrack.mdx and reference/cli.mdx give that date; the time of day is not recorded",
 	},
+	// No date beside it in the source cited, so it renders "date not recorded"
+	// wherever a page gives it provenance.
 	"floors-overnight": {
 		...RB5009,
 		date: null,
@@ -235,7 +281,7 @@ export const campaigns = {
 			es: "ether1, el puerto de 2,5 GbE del NAS, en intervalos de contador de 10 s; las cifras de antes son las tres horas previas al arreglo y las de después los 39 minutos siguientes, con la misma carga",
 		},
 		source:
-			"plan/per-port-audit.md sections 8 to 13; the counters are RouterOS /interface/ethernet/print stats on ether1, read by the API tier every 10 s",
+			"a per-port audit of the RB5009 on 2026-09-19; the counters are RouterOS /interface/ethernet/print stats on ether1, read by the API tier every 10 s",
 	},
 	"line-size-2026-09-17": {
 		...RB5009,
@@ -285,7 +331,11 @@ export const campaigns = {
 	// The image tar's size is a property of the build, not of the router: the
 	// device fields are here only because every campaign has them, and
 	// Provenance refuses this campaign so no page can print "Measured on
-	// RB5009UG+S+" beside it.
+	// RB5009UG+S+" beside it. 6.1 MiB is the figure the 1.0.0 release notes
+	// give; v1.0.0 was tagged 2026-09-16, which is a release date, not a
+	// measurement date, so the date stays null. It is cited only as the 1.0.0
+	// image's size; the current image's size is to be measured on the published
+	// 1.2.1 image, and the pages say so rather than quote a figure for it.
 	image: {
 		...RB5009,
 		date: null,
@@ -293,7 +343,8 @@ export const campaigns = {
 			en: "agent image size",
 			es: "tamaño de la imagen del agente",
 		},
-		source: "site/src/content/docs/about/status.mdx (undated there)",
+		source:
+			'CHANGELOG.md [1.0.0], "Measured on the reference device" (v1.0.0 tagged 2026-09-16, a release date); site/src/content/docs/about/status.mdx quotes it as such; the current image is to be measured on the published 1.2.1 image',
 	},
 } satisfies Record<string, Campaign>;
 
@@ -507,11 +558,13 @@ const fixed = {
 	// site/src/content/docs/cost/index.mdx. The shell loop's own cost, and the cost of the reads it
 	// makes: the difference between the two is the fork, the pipes and the
 	// `sh` arithmetic, not the /proc reads, which both approaches pay.
+	// The two 60 s runs of 2026-09-11, 2.40 and 2.48 %.
 	"busybox.cpu": {
 		kind: "reading",
 		value: 2.4,
+		max: 2.48,
 		unit: "%",
-		digits: 1,
+		digits: 2,
 		campaign: "busybox-2026-09-11",
 	},
 	"procread.ms": {
@@ -537,6 +590,24 @@ const fixed = {
 		value: 1.45,
 		unit: "%",
 		digits: 2,
+		campaign: "rates-2026-09-18",
+	},
+	// site/src/content/docs/cost/rate-ceiling.mdx: the same 100 Hz window at the
+	// DEFAULT floors, the mean read against the worst. Both were first published
+	// with this campaign's table in 0e5321c (1.0.8), and the page is the only
+	// record: one window, no spread beyond the pair itself.
+	"read.100hz.meanMs": {
+		kind: "reading",
+		value: 1.2,
+		unit: "ms",
+		digits: 1,
+		campaign: "rates-2026-09-18",
+	},
+	"read.100hz.worstMs": {
+		kind: "reading",
+		value: 17.9,
+		unit: "ms",
+		digits: 1,
 		campaign: "rates-2026-09-18",
 	},
 	// The traffic the measurement campaigns ran under, so a reader knows what
@@ -695,7 +766,18 @@ const fixed = {
 		digits: 0,
 		campaign: "playbooks-2026-09-12",
 	},
-	// site/src/content/docs/sinks/api-tier.mdx ("the day before").
+	// The same cache read the same day by the privileged discovery container,
+	// before the agent: a different moment from conntrack.slab, not a second
+	// value for it.
+	"conntrack.slabDiscovery": {
+		kind: "reading",
+		value: 6582,
+		unit: "",
+		digits: 0,
+		campaign: "discovery-2026-09-12",
+	},
+	// site/src/content/docs/sinks/api-tier.mdx ("the day before"); the
+	// latency is the median of ten calls, min 1.1 ms, the first (cold) 71 ms.
 	"conntrack.api": {
 		kind: "reading",
 		value: 6212,
@@ -725,7 +807,9 @@ const fixed = {
 		digits: 1,
 		campaign: "squeeze-2026-09-16",
 	},
-	"squeeze.atLeastThree": {
+	// Exactly three squeezes: 0.212 % in the minSqueeze comment. Three or more
+	// would be 0.33 % (3: 0.212, 4: 0.063, 5 or more: 0.055).
+	"squeeze.exactlyThree": {
 		kind: "reading",
 		value: 0.21,
 		unit: "%",
@@ -773,8 +857,8 @@ const fixed = {
 		digits: 0,
 		campaign: "line-size-2026-09-17",
 	},
-	// The NAS port's receive overflow, before and after the shaper. See
-	// plan/per-port-audit.md and the port-errors playbook.
+	// The NAS port's receive overflow, before and after the shaper. See the
+	// port-errors playbook.
 	"overflow.shareBefore": {
 		kind: "reading",
 		value: 0.502,
@@ -913,6 +997,13 @@ for (const r of runs) {
 			`measurements.ts: the relay cap is now ${cap}, not ${measurements["relay.maxBatch"].value}. Update relay.maxBatch and the pages that quote it: install/reaching-the-agent, record/index, reference/cli, reference/http and sinks/index, in both locales.`,
 		);
 	}
+}
+// "on RouterOS 7.24.2 and later 7.24.4": src/data/home.ts notClaimed.body
+// names both versions, which says nothing if they are the same.
+if (RB5009_NOW.routeros === RB5009.routeros) {
+	throw new Error(
+		"measurements.ts: RB5009_NOW.routeros equals RB5009.routeros; rewrite home.ts notClaimed.body, which names both",
+	);
 }
 // "nothing was lost": cost/rate-ceiling.mdx (both locales), src/data/home.ts cost.after.
 if (runs.some((r) => r.gaps !== 0 || r.drops !== 0)) {

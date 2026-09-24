@@ -21,13 +21,13 @@ answers what one run does, how it keeps up with the agent, which clock each reco
 carries, and what "dropped" means when a destination stops answering.
 
 ```sh
-mikroscope forward --prom :9124 --influx "$MIKROSCOPE_INFLUX_URL" --interfaces bridge,ether1
+mikroscope forward --prom :9124 --influx "$MIKROSCOPE_INFLUX_URL" --influx-db "$MIKROSCOPE_INFLUX_DB" --interfaces bridge,ether1
 ```
 
 `forward` with no sink is an error, not a silent no-op: it would read the router and
 throw the data away. At least one of `--file`, `--prom`, `--influx`, `--loki`,
-`--otlp`, `--graphite`, `--elastic`, `--sql`, `--telegraf` or `--stdout` is
-required, and more than one at a time is the normal arrangement.
+`--otlp`, `--graphite`, `--elastic`, `--sql`, `--postgres`, `--telegraf` or
+`--stdout` is required, and more than one at a time is the normal arrangement.
 
 ## What one run does
 
@@ -39,13 +39,17 @@ required, and more than one at a time is the normal arrangement.
    pull batch and the derive stage's trailing baselines.
 
 2. **Hand every sink the device-info stream.** The agent's `/capabilities` — board,
-   kernel, ceilings, cadences — goes out once as its own record. See [the
-   device-info stream](/mikroscope/sinks/device-info/).
+   kernel, ceilings, cadences — goes out at start as its own record, again whenever
+   the capability hash changes, and otherwise every five minutes, so the device
+   panels have a row inside any window. See [the device-info
+   stream](/mikroscope/sinks/device-info/).
 
 3. **Pull the ring every `--poll`.** The first pull starts after the agent's newest
-   sample, so `forward` does not replay what the ring held before it started. Each
-   pull asks for samples after the last sequence number seen. A trigger marker rides among the samples in sequence
-   order and is forwarded as an annotation, never decoded as a sample.
+   sample, so `forward` does not replay what the ring held before it started: it
+   always starts at the agent's newest sample. `forward` has no `--from-start` and
+   refuses it as an unknown flag; only `record` backfills the ring. Each pull asks for samples after the last
+   sequence number seen. A trigger marker rides among the samples in sequence order
+   and is forwarded as an annotation, never decoded as a sample.
 
 4. **Derive, then fan out.** Every kernel sample goes through [the derive
    stage](/mikroscope/sinks/derive/), and the sample, its derived values and any
@@ -126,7 +130,8 @@ than asking you to run something new.
 | already run Prometheus                                      | `--prom`       | every family, recomputed from the samples        | **yes**, generated |
 | want to capture a window and look at it later               | `--file`       | the merged timeline as JSONL, nothing to install | no        |
 | keep long-term data in PostgreSQL or TimescaleDB            | `--sql`        | DDL and INSERTs for `psql`, no driver            | **yes**, generated |
-| want the kernel log and the detections where your logs are  | `--loki`       | **events only** — kmsg, detections, gaps         | no        |
+| write straight into a running PostgreSQL                    | `--postgres`   | the `--sql` statements, down a connection        | **yes**, generated |
+| want the kernel log and the detections where your logs are  | `--loki`       | **events only** — kmsg, detections, gaps, triggers, API errors, device records | no |
 | already run an OpenTelemetry pipeline                       | `--otlp`       | metrics as OTLP/HTTP                             | no        |
 | already run Graphite or Elasticsearch                       | `--graphite`, `--elastic` | every measurement, in that product's shape | **yes**, a smaller one |
 | already run Telegraf                                        | `--telegraf`   | every measurement, as line protocol              | no        |
@@ -140,8 +145,9 @@ Nothing stops you naming several at once, and that is the normal arrangement:
 go to the store the dashboards read.
 
 Two of these do not carry the same thing as the rest. **Loki takes events, not
-metrics** — the kernel-log records, the detections and the gaps — so a Loki-only
-run has no CPU or memory numbers in it at all. **`--prom` is scraped, not
+metrics** — the kernel-log records, the detections, the gaps, the triggers, the
+API tier's errors and the device records — so a Loki-only run has no CPU or memory
+numbers in it at all. **`--prom` is scraped, not
 pushed**: `forward` serves `/metrics` and Prometheus comes to it, which means
 the collector has to be reachable from the Prometheus host.
 
@@ -153,7 +159,7 @@ the collector has to be reachable from the Prometheus host.
 | -------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------ | ----------- | ---------------------------------------------------------------------- |
 | `--file path.jsonl`              | JSONL file                                      | —                                                                        | synchronous | [the file](/mikroscope/sinks/other/#the-file)                          |
 | `--prom :9124`                   | Prometheus `/metrics` on the collector host     | —                                                                        | in memory   | [Prometheus](/mikroscope/sinks/prometheus/)                            |
-| `--influx URL`                   | InfluxDB 3 line protocol                        | `MIKROSCOPE_INFLUX_URL`, `MIKROSCOPE_INFLUX_TOKEN`                       | queued      | [InfluxDB 3](/mikroscope/sinks/influxdb/)                              |
+| `--influx URL`, `--influx-db DB` | InfluxDB 3 line protocol                        | `MIKROSCOPE_INFLUX_URL`, `MIKROSCOPE_INFLUX_DB`, `MIKROSCOPE_INFLUX_TOKEN` | queued      | [InfluxDB 3](/mikroscope/sinks/influxdb/)                              |
 | `--sql path` or `--sql -`        | PostgreSQL / TimescaleDB statements, for `psql` | —                                                                        | synchronous | [SQL](/mikroscope/sinks/other/#sql-for-postgresql-and-timescaledb)     |
 | `--postgres DSN`                 | the same statements, into a running PostgreSQL  | `MIKROSCOPE_POSTGRES_DSN`                                                | queued      | [`--postgres`](/mikroscope/sinks/other/#--postgres-the-same-statements-down-a-connection) |
 | `--stdout lp` or `--stdout json` | standard output                                 | —                                                                        | queued      | [stdout](/mikroscope/sinks/other/#standard-output)                     |
@@ -183,14 +189,16 @@ a remote renders into memory and hands the bytes to a bounded queue that a
 goroutine of its own drains once a second:
 
 - The queue holds `--queue-seconds` (default 60) seconds' worth of a byte budget:
-  64 KiB per second for InfluxDB, Loki, OTLP, Elasticsearch, Telegraf and stdout,
-  256 KiB per second for Graphite, whose one-line-per-value format is bulkier.
+  64 KiB per second for InfluxDB, PostgreSQL (`--postgres`), Loki, OTLP,
+  Elasticsearch, Telegraf and stdout, 256 KiB per second for Graphite, whose
+  one-line-per-value format is bulkier.
 - Past the budget the **oldest** batch is evicted and counted; the newest is always
   kept, because fresh telemetry beats stale.
 - A failed delivery backs off 2 s, doubling to 60 s, and logs at most one line per
   minute. Everything else is in the counters.
 - Each HTTP post carries a 10 s timeout, and a dead pooled connection is an error
-  that is retried and counted, not a silent resend.
+  that is retried and counted, not a silent resend. `--postgres` sends each batch
+  as one transaction with a 30 s timeout.
 
 Three sinks are not queued. The file and SQL sinks write synchronously through a
 64 KiB buffer, because a local file does not stall the way a remote does; a write
@@ -264,10 +272,16 @@ collector wrote to three sinks at once, and every one reported 0 gaps and 0 drop
 <Provenance of="rates-2026-09-15" />
 
 <NotClaimed>
-	Loki, OTLP, Graphite, Elasticsearch, Telegraf, SQL and stdout have been tested against local
-	receivers that assert the bytes each protocol accepts (development host, amd64, 2026-09-12), not
-	fed from the RB5009 into a running backend. The byte sizes quoted for them on [the other
-	sinks](/mikroscope/sinks/other/) come from test fixtures, not from a device.
+	Loki, OTLP, Graphite, Elasticsearch, OpenSearch, Telegraf, SQL and stdout are tested against
+	local receivers that assert the bytes each protocol accepts (development host, amd64, since
+	2026-09-12). Since 2026-09-17 the docker end-to-end suite also runs the collector, against a
+	canned agent and with the API tier off, into Loki 3, the OpenTelemetry Collector,
+	graphite-statsd, Elasticsearch 9, Telegraf 1.39 over HTTP and PostgreSQL 18 (through `--sql`,
+	and through `--postgres` since that sink landed on 2026-09-21), and reads the data back through
+	each store's own API. None of them has been fed from the RB5009 into a running backend, and
+	OpenSearch, TimescaleDB's hypertables and stdout have never run against a real store. The byte
+	sizes quoted for them on [the other sinks](/mikroscope/sinks/other/) come from test fixtures,
+	not from a device.
 </NotClaimed>
 
 <SeeAlso>

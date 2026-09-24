@@ -60,8 +60,10 @@ at all. [Commands and flags](/mikroscope/reference/cli/) has every flag.
 </ScrollTable>
 
 `MIKROSCOPE_TOKEN` is two things at once. For `install` it is the token
-written into the agent's envlist, which the agent then requires. For `record`
-and `forward` it is the token the direct transport sends. The envlist is not
+written into the agent's envlist, which the agent then requires. For `record`,
+`forward` and `doctor`'s health section it is the token sent to the agent over
+the direct transport; without it, `doctor` skips the ring of an agent that has
+one. The envlist is not
 a secret store: any RouterOS user with the `read` policy can list every
 container's envlist over the API (verified on <Verified of="read-user-envlist" />), which is why the token
 is the only credential that goes there.
@@ -194,9 +196,12 @@ Before it listens, the agent checks the ring against the container's own
 `memory.max`: `RATE_HZ × BUFFER_S × 3 456 B` plus `CAPTURE_MB` must fit, or it
 refuses to start and names the three variables and `--memory-max`. If that
 figure is more than half of `MEM_LIMIT_MB`, it starts and logs a warning with
-the limit to raise to. 2 560 B is not itself a measurement: it is the mean
-line measured on the RB5009 with every source of that date (<Measured id="ring.lineBytes" />, 4 cores,
-`IRQ_TOP_K` 8, RouterOS 7.24.2, 2026-09-12) rounded up. A board with more cores
+the limit to raise to. 3 456 B is not itself a measurement: it is the Go
+allocator size class that serves the line measured on the RB5009 with every
+source on (<Measured id="ring.lineBytes" />, 4 cores, `IRQ_TOP_K` 8, RouterOS 7.24.2, 2026-09-17),
+because that class is what the heap is charged. The 2 560 B used before 1.0.5
+came from a 2 439 B line measured on 2026-09-12, before the PMU and the
+sampler's own timing were in it, and understated the ring by 35 %. A board with more cores
 or more interrupt lines writes longer lines, so the check errs open. When the
 agent cannot read its `memory.max`, the refusal check does not run.
 
@@ -230,9 +235,13 @@ source on) on 2026-09-17, four limits over four windows of about 12 000 samples 
 | limit          | ring multiple | RSS       | CPU per sample | |
 | -------------- | ------------- | --------- | -------------- | ------------------------ |
 | 40 MiB         | 4.0×          | 32.9 MiB  | 2 657 µs       | the limit never binds    |
-| 25 MiB (today) | 2.5×          | ~26 MiB   | ~2 780 µs      | no measurable cost       |
+| 24 MiB         | 2.4×          | 26.3 MiB  | 2 780 µs       | no measurable cost       |
 | 21 MiB         | 2.1×          | 23.5 MiB  | 3 250 µs       | +22 %, and climbing      |
 | 18 MiB         | 1.8×          | 20.4 MiB  | 14 800 µs      | +457 %, worst tick 52 ms |
+
+The rows are the ones the comment on `memLimitRingFactor` in `internal/router/options.go` records.
+The 2.5× factor `install` derives would be 25 MiB at 300 s; the window measured nearest it was
+24 MiB, and none of the four windows was written down with its spread.
 
 The same cliff was measured from the other side on 2026-09-12: <Measured id="gc.tight.cpu" /> of one core at 14 MiB against <Measured id="gc.roomy.cpu" /> with room, both with the ring full. `IRQ_TOP_K`, `CAPTURE_PRE_S`, `CAPTURE_POST_S`, `CAPTURE_POLICY`,
 `TRIGGER_REFRACTORY_S`, `SOURCES`, `PROC_ROOT` and `SYS_ROOT` have no flag, so an installed agent

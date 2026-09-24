@@ -36,7 +36,7 @@ todas las opciones de abajo; las notas dicen sobre qué verbo actúa cada una.
 | `--for`         | `0`                                         | `record`: para tras este tiempo. `0` graba hasta Ctrl-C.                                                                                                                   |
 | `--from-start`  | desactivada                                 | `record`: rellena todo lo que guarda el anillo del agente antes de pasar a directo.                                                                                        |
 | `--poll`        | `500ms`                                     | Cada cuánto se tira del anillo del agente.                                                                                                                                 |
-| `--batch`       | `0`                                         | Muestras por petición. `0` es el doble de lo que produce un intervalo de `--poll` a la cadencia del agente, con un mínimo de 20; el relay limita una petición a 18.        |
+| `--batch`       | `0`                                         | Muestras por petición. `0` es el doble de lo que produce un intervalo de `--poll` a la cadencia del agente, con un mínimo de 20; el relay limita una petición a <Measured id="relay.maxBatch" />. |
 | `--transport`   | `auto`                                      | `auto`, `direct` (HTTP a la veth) o `relay` (`/tool fetch` por la API de RouterOS).                                                                                        |
 | `--log-markers` | desactivada                                 | `record`: añade las líneas del log del router de la ventana cuando termina la grabación. `mark`: añade las líneas del log de la ventana de la grabación.                  |
 | `--topics`      | `system,interface,container`                | Temas del log que se conservan como marcadores; añade `firewall` o `script` cuando sus líneas son la historia.                                                             |
@@ -103,8 +103,11 @@ otro.
 	la clase de tamaño del asignador que hay por encima. Una petición llena de esas líneas son unos
 	45 kB. Una petición llena cuyas líneas promedien más de ese 134 % llegaría igualmente al tope y se
 	rechazaría, y no se ha medido cuánto miden las líneas con los suelos por fuente de hoy.
-	Con <Measured id="relay.maxBatch" /> muestras por petición y el `--poll` por defecto de 500 ms, el relay
-	lleva 26 muestras por segundo; por encima de eso, usa la vía directa.
+	Una petición lleva como mucho <Measured id="relay.maxBatch" /> muestras, y una llena se repite en el
+	acto, así que lo que limita al relay es la ida y vuelta de `/tool fetch`, no el `--poll`. Por
+	aritmética y sin medir: con cerca de 1 s en la mitad de las llamadas y unos 3 ms en el resto, eso
+	da del orden de 26 muestras por segundo, menos cuando las llamadas lentas se agrupan. Por encima
+	de eso, usa la vía directa.
 </Aside>
 
 [Llegar al agente](/mikroscope/es/install/reaching-the-agent/) explica qué
@@ -270,7 +273,9 @@ paneles comparten un eje de tiempo, en segundos desde que empezó la grabación:
 Cada marcador es una línea vertical discontinua que cruza los tres paneles, gris
 para notas y líneas de log y roja para huecos, con una etiqueta encima del primer
 panel. Las etiquetas se reparten en hasta seis filas para separarlas; una
-etiqueta de más de 40 caracteres se acorta. Los marcadores de log consecutivos, en
+etiqueta de más de 40 caracteres se acorta. Cuando no cabe en ninguna fila, la etiqueta se sigue
+acortando hasta que cabe, y una que quedaría por debajo de 12 caracteres se descarta: su línea
+discontinua sigue marcando el instante, pero su texto no se dibuja. Los marcadores de log consecutivos, en
 orden de tiempo, que caen en el mismo segundo se pliegan en una sola etiqueta,
 `<count>× <topics>: <first message>`, para que un planificador parlanchín no
 entierre el gráfico; una nota o un hueco entre ellos corta el pliegue, y las

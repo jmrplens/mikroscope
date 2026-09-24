@@ -8,7 +8,7 @@ import NotClaimed from "../../../../components/NotClaimed.astro";
 import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
 
-`--influx URL` escribe la línea temporal fusionada como protocolo de líneas de InfluxDB en
+`--influx` escribe la línea temporal fusionada como protocolo de líneas de InfluxDB en
 el `/api/v3/write_lp` de InfluxDB 3. Es el destino que conserva cada muestra a la cadencia
 del agente, y el que lee el panel de InfluxDB. Esta página responde a cómo apuntarlo a una
 base de datos, qué hace cuando la base de datos va lenta o rechaza, y qué medidas llegan
@@ -17,18 +17,29 @@ allí.
 ## La URL de escritura y el token
 
 ```sh
-export MIKROSCOPE_INFLUX_URL="http://host:8181/api/v3/write_lp?db=mikroscope&precision=nanosecond"
+export MIKROSCOPE_INFLUX_URL=http://host:8181
+export MIKROSCOPE_INFLUX_DB=mikroscope
 export MIKROSCOPE_INFLUX_TOKEN=…
-mikroscope forward --influx "$MIKROSCOPE_INFLUX_URL" --host-tag rb5009
+mikroscope forward --influx "$MIKROSCOPE_INFLUX_URL" --influx-db "$MIKROSCOPE_INFLUX_DB" --host-tag rb5009
 ```
 
-La opción toma su valor por defecto de `MIKROSCOPE_INFLUX_URL`. El token se lee solo de
+`--influx` acepta el servidor y `--influx-db` la base de datos; el destino arma con ellos la
+URL de escritura, `http://host:8181/api/v3/write_lp?db=mikroscope&precision=nanosecond`.
+Las opciones toman su valor por defecto de `MIKROSCOPE_INFLUX_URL` y `MIKROSCOPE_INFLUX_DB`.
+Un servidor sin base de datos se rechaza al arrancar: `--influx names a server but no
+database: pass --influx-db (MIKROSCOPE_INFLUX_DB)`.
+
+Un `--influx` que lleva ruta se toma tal cual como URL de escritura, que es la forma que
+tiene en su entorno todo despliegue de 1.0.x y la que hay que usar para el `/api/v2/write`
+de InfluxDB 2. Entonces `--influx-db` se ignora, y la base de datos que describe
+`forward --grafana` se lee del `db=` de la URL. El token se lee solo de
 `MIKROSCOPE_INFLUX_TOKEN`, nunca de una opción, y se envía como
 `Authorization: Bearer <token>`.
 
 <Aside type="caution" title="Pon la URL entre comillas">
-	Cuando la URL está en un fichero que cargas con `source`, ponla entre comillas: `&` es un operador
-	del shell, y un `…?db=mikroscope&precision=nanosecond` sin comillas se corta en el `&`.
+	Cuando una URL de escritura completa está en un fichero que cargas con `source`, ponla entre
+	comillas: `&` es un operador del shell, y un `…?db=mikroscope&precision=nanosecond` sin comillas
+	se corta en el `&`.
 </Aside>
 
 ## Entrega
@@ -192,8 +203,19 @@ Aprendido a base de golpes, contra InfluxDB 3 Core:
 - **Una columna solo existe cuando una fila la ha llevado.** `mikroscope_kmsg` no tiene
   columna `kind` hasta que se escribe el primer registro del log del kernel que nombra un
   puerto, y una consulta que filtre por ella antes falla al planificarse — por eso la
-  forma SQL de la regla de alerta del bucle de capa 2 necesita un almacén que ya haya
-  guardado un registro de puerto clasificado.
+  forma SQL de las reglas de alerta del bucle de capa 2 y de caída de enlace necesita un
+  almacén que ya haya guardado un registro de puerto clasificado.
+  `mikroscope_api_ifcounters` solo tiene los contadores que ha devuelto el router:
+  `bridge`, `rx_packet`, `tx_unicast` y `tx_broadcast`, que lee la regla bridge-port-dark,
+  solo existen cuando la capa de la API ya ha escrito contadores de puerto, y una columna
+  de error tipado que suma la regla port-errors, como `rx_jabber` o `tx_late_collision`,
+  solo si el router ha informado alguna vez de ese contador.
+- **Un tag negado dentro de un OR puede no devolver nada, en silencio.** El 2026-09-23,
+  `NOT (port='ether2' AND kind IN (…))` sobre `mikroscope_kmsg` devolvió 0 filas donde
+  coincidían 14, y lo mismo su forma de De Morgan y el OR explícito. Devolvió 14 en cuanto
+  se filtró también `port='ether2'` fuera del OR. Filtra en positivo, y comprueba cualquier
+  respuesta vacía con un `count(*)` simple. Los paneles y las reglas que se distribuyen no
+  usan ese patrón.
 
 El datasource de Grafana para InfluxDB 3 necesita dos campos seguros, no uno; consulta
 [importar y comprobar](/mikroscope/es/dashboards/import-and-check/).

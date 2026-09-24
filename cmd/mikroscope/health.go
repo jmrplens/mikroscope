@@ -37,10 +37,7 @@ func doctorHealth(ctx context.Context, w io.Writer, host string, port int, token
 		fmt.Fprintf(w, "  skipped: no agent answered at %s from this host (%v)\n", net.JoinHostPort(host, strconv.Itoa(port)), err)
 		return
 	}
-	since := uint64(0)
-	if h.OldestSeq > 0 {
-		since = h.OldestSeq - 1
-	}
+	since := healthSince(h.Seq, h.OldestSeq)
 	// Plain HTTP by design, as for every verb that talks to the agent: it
 	// answers on a /30 veth inside the router, or on a LAN dst-nat guarded by
 	// its bearer token, and a scratch container has no certificate to offer.
@@ -61,6 +58,23 @@ func doctorHealth(ctx context.Context, w io.Writer, host string, port int, token
 		}
 	}
 	printHealth(w, health.Analyze(h.Board, samples))
+}
+
+// healthSince is the sequence to pull after so that doctor reads the NEWEST
+// ringMax samples: from just before the oldest one when the ring holds no more
+// than ringMax, otherwise ringMax back from the newest. The agent answers
+// since=N&max=M with up to M samples after N, oldest first, so pulling from the
+// oldest end of a longer ring (BUFFER_S=3600 at 10 Hz holds 36 000) would read
+// an hour-old window and call it "now".
+func healthSince(seq, oldest uint64) uint64 {
+	since := uint64(0)
+	if oldest > 0 {
+		since = oldest - 1
+	}
+	if seq > ringMax && seq-ringMax > since {
+		since = seq - ringMax
+	}
+	return since
 }
 
 func printHealth(w io.Writer, rep health.Report) {

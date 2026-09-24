@@ -24,8 +24,8 @@ observed when the run ends, with the run still in progress in
 `…_run_open_seconds`.
 
 The trailing-window gauges (`window="1s"|"10s"|"60s"`, `stat="max"|"min"|"p95"`)
-show the peak whatever your scrape interval is, because the agent computes them
-over its own clock rather than over yours. To see the _shape_ of a transient
+show the peak whatever your scrape interval is, because the collector computes them
+over the agent's own sample timestamps rather than over your scrape times. To see the _shape_ of a transient
 rather than its envelope, `record` it, or let a trigger capture it.
 
 ## The sampler's own smear is published, not hidden

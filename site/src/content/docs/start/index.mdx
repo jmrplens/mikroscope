@@ -19,13 +19,17 @@ own `/proc`: `/proc/stat` per core, `/proc/interrupts`, `/proc/softirqs`,
 
 The **CLI** runs on your machine. It installs and removes the agent, records a
 window with markers, draws a deterministic SVG of it, and runs as a collector
-that pulls from the agent, merges a RouterOS API tier at 1 Hz, and writes to ten
+that pulls from the agent, merges a RouterOS API tier at 1 Hz, and writes to eleven
 sinks — file, Prometheus and InfluxDB 3 among them. It is released as an archive per platform —
-linux, macOS, Windows and FreeBSD on amd64, arm64 and arm — and the agent
+linux and FreeBSD on amd64, arm64 and arm; macOS and Windows on amd64 and arm64 — and the agent
 beside it as one image tar per architecture and as a registry image, on Docker
 Hub as `jmrplens/mikroscope-agent` and on GHCR as
 `ghcr.io/jmrplens/mikroscope-agent`, so installing needs a Go toolchain only
-when you want the agent built from your own tree.
+when you want the agent built from your own tree. Since 1.1.0 the collector is
+also an image, `jmrplens/mikroscope` and `ghcr.io/jmrplens/mikroscope`
+(linux/amd64, linux/arm64), and `deploy/` has two compose stacks that pair it
+with InfluxDB 3 or Prometheus and a Grafana. That image is for `forward`: the
+install verbs shell out to ssh and scp, which it leaves out on purpose.
 
 ## Four limits, stated before anything else
 
@@ -52,9 +56,10 @@ when you want the agent built from your own tree.
 4. **The observer costs something, and it is written down.** <Measured id="run.10hz.cpu" /> of
    one core at 10 Hz on an RB5009, <Measured id="run.100hz.cpu" /> at 100 Hz. [What it
    costs](/mikroscope/cost/) has the full table and the conditions. Every figure
-   on this site comes from that one device, an RB5009UG+S+ on RouterOS 7.24.2,
-   arm64: the arm and x86_64 builds are cross-built and checked in CI and have
-   never run on hardware.
+   on this site comes from that one device, an RB5009UG+S+, arm64: the cost
+   figures on RouterOS 7.24.2, later ones on 7.24.4, and each says which. The
+   arm and x86_64 builds are cross-built and checked in CI and have never run on
+   hardware.
 
 </Steps>
 

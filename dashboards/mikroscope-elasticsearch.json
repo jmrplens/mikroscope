@@ -32,14 +32,13 @@
         "enable": true,
         "iconColor": "red",
         "name": "detections",
+        "tagsField": "rule",
         "target": {
-          "expr": "increase(mikroscope_collector_detections_total[1m]) \u003e 0",
-          "refId": "Anno",
-          "step": "1m",
-          "tagKeys": "rule",
-          "textFormat": "detection: {{rule}}",
-          "titleFormat": "{{rule}}"
-        }
+          "query": "kind:detection AND host.keyword:$host",
+          "refId": "Anno"
+        },
+        "textField": "message",
+        "timeField": "@timestamp"
       },
       {
         "datasource": {
@@ -49,14 +48,13 @@
         "enable": false,
         "iconColor": "orange",
         "name": "triggers",
+        "tagsField": "cause",
         "target": {
-          "expr": "increase(mikroscope_trigger_fired_total[1m]) \u003e 0",
-          "refId": "Anno",
-          "step": "1m",
-          "tagKeys": "condition",
-          "textFormat": "capture armed: {{condition}}",
-          "titleFormat": "{{condition}}"
-        }
+          "query": "kind:trigger AND host.keyword:$host",
+          "refId": "Anno"
+        },
+        "textField": "field",
+        "timeField": "@timestamp"
       }
     ]
   },

@@ -12,8 +12,9 @@ shorter, repository-side version of it.
 Two Go binaries. `mikroscope-agent` runs on a container-capable RouterOS device,
 in a `FROM scratch` container, and samples the shared kernel's `/proc` and
 `/sys` at up to 100 Hz into a ring buffer it serves over HTTP on its veth. It
-links only this module's `procfs`, `sample`, `agent` and `version` packages and
-the standard library, and it makes no outbound connection. `mikroscope` runs on
+links only this module's `procfs`, `sample`, `agent` and `version` packages, the
+root package that embeds `VERSION`, and the standard library, and it makes no
+outbound connection. `mikroscope` runs on
 your machine: it installs, upgrades and removes the agent with every write
 listed first, records and plots a window, and runs as a collector that merges
 the kernel tier with the RouterOS API tier into eleven sinks. The agent ships raw
@@ -29,14 +30,20 @@ internal/procfs         parsers for the /proc and /sys files the agent reads
 internal/sample         one tick's raw values and the deltas between two
 internal/agent          the sampler, the ring, triggered captures, the HTTP server
 internal/router         deployment over ssh: doctor, plan, install, upgrade, uninstall
+internal/health         doctor's reading of the agent's ring: layer-2 loop, STP churn, link flap, softnet drops
+internal/transport      reaching the agent: direct HTTP to the veth, or the relay over /tool fetch
 internal/image          the agent image as a docker-save tar, built without Docker
 internal/rosapi         the RouterOS binary API client (vendored, MIT)
 internal/apitier        what the container cannot see, read over the API
 internal/forward        the collector loop; internal/derive its derive stage
-internal/sinks          file, Prometheus, InfluxDB 3, Loki, OTLP, Graphite, Elasticsearch, SQL, Telegraf, stdout
+internal/sinks          file, Prometheus, InfluxDB 3, Loki, OTLP, Graphite, Elasticsearch, SQL, PostgreSQL, Telegraf, stdout
+internal/expo           the cumulative counters behind the --prom exposition, never reset on scrape
+internal/teardown       uninstall --targets data: what a collector left in a store
 internal/record         recordings and markers; internal/chart draws them
 internal/dashboards     the Grafana dashboards and alert rules, generated
+internal/version        the build identity both binaries report; version.go at the root embeds VERSION
 test/e2e                both binaries against fake agents and fake sinks, no network
+test/e2e/docker         the collector against real stores in docker compose (build tag dockere2e)
 testdata/proc/rb5009    the reference device's captured /proc and /sys
 site/                   the documentation, from which docs/ is generated
 ```
@@ -185,9 +192,11 @@ Treat any device you test on the same way:
   Anything that writes (a container, a veth, a firewall object, a user) is a
   decision you make for that run, not one a script makes for you.
 - **One ssh connection, many commands.** Each ssh connect costs a small
-  RouterOS device a large share of a core for its duration (20 to 27 % on an
-  RB5009). Batch commands into one connection; never loop over connects, and
-  never use ssh as a data path.
+  RouterOS device a large share of a core for its duration (20 to 27 % on the
+  reference RB5009, measured on RouterOS 7.24.1 on 2026-08-26; see
+  [what ssh costs the router](https://jmrp.io/docs/mikroscope/install/#what-ssh-costs-the-router)).
+  Batch commands into one connection; never loop over connects, and never use
+  ssh as a data path.
 - **Exact tags only.** Everything `install` creates carries the comment
   `mikroscope:<name> (managed by mikroscope)`, and every selector that removes
   or changes something matches that tag exactly, plus identity. A change that
@@ -219,9 +228,20 @@ page on the site with its Spanish twin.
 
 **A new flag** means `.env.example` if it reads a variable, and the CLI
 reference page either way. Every value that reaches a RouterOS command is
-bounded by `internal/router` before the first connection; `--triggers` is the
-one exception, passed verbatim into the envlist and checked by the agent at
-start, and a second exception needs the same sentence in the README.
+bounded by `internal/router` before the first connection, `--triggers` included
+(through `agent.ParseTriggers`), and a new one gets a row in the table of bounds
+on the installer security page, in both languages.
+
+**A new alert rule** means the rule in `internal/dashboards/alerts.go` with its
+PromQL and SQL forms, `make gen-dashboards`, its `alertFiresWhen` entry in
+`site/src/data/dashboards.ts` in both languages, the alerts page and its
+Spanish twin, and a backtest over a real store that states the window, the
+device and how often the rule would have fired. It is judged against any
+user's healthy router, not only against the reference device's faults.
+
+**A new doctor check** means its item in `internal/router/doctor.go`, a test,
+its row in `site/src/data/doctor-checks.ts` in both languages, and the
+troubleshooting entry for its failure, with its Spanish twin.
 
 **A behaviour change** means a test that fails before it and passes after it,
 and a `CHANGELOG.md` entry.
@@ -235,8 +255,9 @@ and a `CHANGELOG.md` entry.
   than no comment.
 - Everything under version control is in English, except the Spanish pages
   under `site/src/content/docs/es/`.
-- Commit messages use conventional prefixes (`feat`, `fix`, `docs`, `lab` for a
-  change made or measured against a device; Dependabot uses `chore`).
+- Commit messages use conventional prefixes: `feat`, `fix`, `docs`, `test`, `ci`
+  and `chore` (a release is `chore(release): X.Y.Z`; Dependabot also uses
+  `chore`).
 - No attribution or co-author lines in commits or pull requests.
 
 ## Reporting something

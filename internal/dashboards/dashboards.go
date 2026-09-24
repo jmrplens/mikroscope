@@ -516,6 +516,42 @@ func annotationsFor(store Store, dsUID, pluginID string) []any {
 			mk("triggers", "orange", false, extra("SELECT time, concat('capture #', id, ' (', cause, '): ', field, ' = ', value) AS text, cause AS tags FROM mikroscope_trigger WHERE $__timeFilter(time) ORDER BY time")),
 		}
 	}
+	switch store {
+	case Elasticsearch:
+		// The sink writes each event as a document of its own, kind
+		// "detection" or "trigger", so the annotation is a Lucene filter
+		// on kind and host, and the marker's text and tags are fields of
+		// the document. The field mappings sit beside the target, not in
+		// it: that is where Grafana's Elasticsearch annotation editor keeps
+		// Time, Text and Tags. A trigger document has no message, so its
+		// text is the field that crossed and its tag the cause.
+		es := func(name, color string, enable bool, kind, text, tags string) map[string]any {
+			a := mk(name, color, enable, map[string]any{"query": "kind:" + kind + " AND host.keyword:$host"})
+			a["timeField"], a["textField"], a["tagsField"] = "@timestamp", text, tags
+			return a
+		}
+		return []any{
+			es("detections", "red", true, "detection", "message", "rule"),
+			es("triggers", "orange", false, "trigger", "field", "cause"),
+		}
+	case Graphite:
+		// Graphite has no events here, only the one-per-fire points the
+		// sink writes under detection.<rule> and trigger.<cause>. Grafana
+		// turns every non-null point of a target series into a marker
+		// titled with the series name, so aliasByNode leaves the rule or
+		// the cause as that title. There is no message: the text lives
+		// only in the stores that can hold a string.
+		gr := func(name, color string, enable bool, node string) map[string]any {
+			return mk(name, color, enable, map[string]any{
+				"target": "aliasByNode($prefix.$host." + node + ".*, 3)", "fromAnnotations": true, "textEditor": true,
+			})
+		}
+		return []any{
+			gr("detections", "red", true, "detection"),
+			gr("triggers", "orange", false, "trigger"),
+		}
+	case Influx, Postgres, Prometheus:
+	}
 	return []any{
 		mk("detections", "red", true, map[string]any{
 			"expr": "increase(mikroscope_collector_detections_total[1m]) > 0", "step": "1m",

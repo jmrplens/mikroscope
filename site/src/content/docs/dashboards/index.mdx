@@ -42,11 +42,11 @@ mikroscope dashboards gen --out /tmp/dash    # or into another directory
 ```
 
 All five dashboards are in Grafana's shareable export format: the datasource is a `${DS_MIKROSCOPE}`
-placeholder declared in `__inputs`, there is no `id`, and the `uid` is fixed —
-`mikroscope-influxdb` and `mikroscope-prometheus` — so a re-import updates the same dashboard in
-place instead of creating a second one. A test asserts that two generations of the InfluxDB
-dashboard are identical, and regenerating on 2026-09-15 reproduced all four committed files byte for
-byte.
+placeholder declared in `__inputs`, there is no `id`, and the `uid` is fixed, `mikroscope-<store>`,
+one per dashboard, so a re-import updates the same dashboard in place instead of creating a second
+one. A test asserts that two generations of the InfluxDB dashboard are identical; regenerating on
+2026-09-15 reproduced the committed files of that day byte for byte, and the files added since have
+not been re-checked that way.
 
 The InfluxDB dashboard queries InfluxDB 3 in SQL, and every query is bounded by `$__timeFilter`,
 because InfluxDB 3 Core refuses unbounded scans; where a column is named `cluster` the SQL quotes
@@ -86,11 +86,11 @@ whose panels are dropped emits no row at all.
 
 That is why the counts differ, and they differ in both directions. Most of the thermal and clock
 family, the flash wear section, the slab census and several memory panels have SQL and no PromQL,
-so they exist only on InfluxDB. The trigger suppressions live on the collector's
-`/metrics` only; the sampler's timing histograms and the capture budget have an InfluxDB form too. The busy run still in progress and the age of
-each held reading are Prometheus exposition families, on the collector's `/metrics` too, with no
-InfluxDB field. Neither group is written to InfluxDB, so the panels reading them exist only on
-Prometheus. Each panel below that is on one store only says which.
+so they exist only on InfluxDB. Three things exist only on Prometheus, because none of them is
+written to InfluxDB: the trigger suppressions, the busy run still in progress and the age of each
+held reading, all exposition families on the collector's `/metrics`. The sampler's timing
+histograms and the capture budget are on the collector's `/metrics` too, but also have an InfluxDB
+form. Each panel below that is on one store only says which.
 
 <DashboardCounts />
 
@@ -108,7 +108,7 @@ deliberately, and last what mikroscope costs the router it is measuring.
 
 Every section but the Overview ships **collapsed**. Grafana keeps a collapsed row's panels inside
 the row object and runs none of their queries until someone expands it, so the first render asks
-the store for the Overview's twelve panels and not for all <DashboardCount store="influxdb" of="panels" />.
+the store for the Overview's thirteen panels (twelve on PostgreSQL) and not for all <DashboardCount store="influxdb" of="panels" />.
 
 The defaults are a 3-hour range (`now-3h`) and a 5-minute refresh. The 5-minute refresh is kept for
 the case where someone expands a section: the slab census and the PMU and per-sample cost heatmaps
@@ -125,8 +125,9 @@ returns an aggregate; three tiles ("Reboots in the window", "Sample continuity" 
 delivered, this window") compute it with a window function over the window's raw samples.
 Most of them are copies of panels that also live in a later section, because a Grafana panel
 belongs to exactly one row. "Connections tracked right now", "Load average (1 min) against the core
-count", "Reboots in the window" and "Detections in the window" live only here, as does "OOM kills in
-the window" on Prometheus, where the Reclaim section's copy has no PromQL and is dropped. The copies
+count", "Reboots in the window", "Detections in the window" and "Port errors in the window" live
+only here, as does "OOM kills in the window" on Prometheus, where the Reclaim section's copy has no
+PromQL and is dropped. The copies
 share their SQL; on Prometheus the Overview's "OOM kills in the window" and the Observer's "Ticks
 never delivered, this window" differ from their counterparts (the Observer's carries a third query,
 the sampler's slipped ticks).
@@ -146,15 +147,21 @@ the sampler's slipped ticks).
 4. **Packets dropped in the kernel RX path (window total)**, **OOM kills in the window**, **Reboots
    in the window** and **Detections in the window** — each zero on a healthy device and colored on
    its own thresholds.
-5. **Ticks never delivered, this window**, beside the count of agent restarts.
+5. **Port errors in the window** (every typed MAC error on every port, summed; API tier, blank with
+   `--api-mode off`) and **Ticks never delivered, this window**, which also counts agent restarts.
 
 <NotClaimed variant="not-measured" title="One screen, measured once">
 	On 2026-09-14 an eleven-panel Overview measured 1 052 px tall in a 1 080 px browser viewport — one
-	desktop screen with nothing cut off. The Overview carries twelve panels, and the grid wraps "Ticks
-	never delivered" onto its own full-width line; that height has not been measured in a browser,
-	though the committed JSON of both dashboards makes it 31 grid units, row header included. On a
-	phone it is not one screen: Grafana stacks a 24-column row into one column below about 768 px, and
-	an eight-panel Overview rendered 2 188 px tall against an 844 px viewport on 2026-09-12.
+	desktop screen with nothing cut off. The Overview now carries thirteen panels on InfluxDB and
+	Prometheus, where "Port errors in the window" and "Ticks never delivered" share the last line, and
+	twelve on PostgreSQL, where "Ticks never delivered" has that line to itself; that height has not
+	been measured in a browser, though the committed JSON of those three dashboards makes it 31 grid
+	units, row header included (21 on Graphite, 14 on Elasticsearch). On a phone it is not one screen:
+	Grafana stacks a 24-column row into one column below about 768 px, and an eight-panel Overview
+	rendered 2 188 px tall against an 844 px viewport on 2026-09-12. On 2026-09-24 the InfluxDB
+	dashboard was imported into the production Grafana and captured at 390x844 and 1600x1000 to check
+	the fixed stat size, and the numbers read at a normal size on both; the Overview's height was not
+	measured that day.
 </NotClaimed>
 
 ## The four everyday questions
@@ -245,8 +252,23 @@ dashboards holds nothing else. Click the layer's name to hide its markers. That 
 it lasts for the session, and saving the dashboard keeps it. Nothing about the underlying rows
 changes, and the Detections section still counts them.
 
-On InfluxDB each annotation is one event row with its message; on Prometheus it is
-`increase(…[1m]) > 0` at a 1-minute step, so an annotation there marks the minute, not the instant.
+Each store draws the layers from what its sink writes, in its own query language:
+
+- **InfluxDB and PostgreSQL**: one `mikroscope_detection` or `mikroscope_trigger` row per marker,
+  with its message.
+- **Prometheus**: `increase(…[1m]) > 0` at a 1-minute step, so a marker there is the minute, not the
+  instant.
+- **Elasticsearch**: a Lucene filter, `kind:detection AND host.keyword:$host` (or `kind:trigger`),
+  over the event documents. A detection's text is its `message` and its tag the `rule`; a trigger
+  document has no message, so its text is the `field` that crossed and its tag the `cause`.
+- **Graphite**: `aliasByNode($prefix.$host.detection.*, 3)` (or `.trigger.*`), the one point per
+  event the sink writes. Grafana draws a marker at every non-null point and titles it with the
+  series name, which is the rule or the cause. There is no message, because Graphite holds only
+  numbers, and the marker is at the time of the point Grafana gets back: Grafana asks for at most
+  100 points, so several events close together can come back as one.
+
+The Elasticsearch and Graphite layers are checked by the unit tests against what each sink writes;
+they have not been run in Grafana, because the import check walks panels only.
 
 The section captures further up are taken with both layers off, because the canned fake agent that
 fills the demonstration database fires a detection every few seconds and twenty minutes of that
@@ -459,6 +481,10 @@ probe decides is on [Import and check](/mikroscope/dashboards/import-and-check/#
   5 minutes apart. The threshold has to exceed the widest bin a reader selects — at a 2-day range a
   12-column panel's bin is about 4 minutes — so a hole shorter than 5 minutes is still drawn as an
   interpolated line. Read holes from Sample continuity, not from the shape of a line.
+- **Their stat numbers are a fixed size.** A stat tile draws its value at 32 px and its title at
+  16 px instead of Grafana's automatic size. The automatic size fills the panel, and on a phone
+  every panel is full width at its own height: in the production dashboard at 390x844 on 2026-09-24
+  a single "0" was drawn about 60 px tall and each stat tile took about a third of the screen.
 - **Their figures are one router's.** Descriptions that quote a figure attribute it to the
   reference RB5009 with the date it was measured and say yours will differ. No title, query or
   threshold names a device, its core count, its interfaces or its memory size; the only fixed
@@ -470,10 +496,13 @@ probe decides is on [Import and check](/mikroscope/dashboards/import-and-check/#
 	Grafana 12.3.0 (2026-09-21: `import` against the live InfluxDB 3 store, then `check` over a 15 min
 	window — 167 panels returned rows, the 9 known-empty ones were empty, and the Overview's
 	detections tile was empty because the store held no detection in that window, which is the one
-	case `check` reports and a browser reads as the healthy "none"). The panel options are written to
-	the schema Grafana 13.2.1 expects — the xychart's mark, for one, moved between Grafana 11 and
-	13 — and `__requires` declares Grafana 11.0.0. No version other than those three has been tried,
-	and 12.3.0 was checked by query only, never rendered in a browser.
+	case `check` reports and a browser reads as the healthy "none"). On 2026-09-24 the InfluxDB
+	dashboard was imported into the production Grafana, whose health endpoint reported 13.2.2 when
+	read later that day, and rendered at 390x844 and 1600x1000 to check the 32 px stat text and the
+	memory time series; no row-by-row badge count was taken. The panel options are written to the
+	schema Grafana 13.2.1 expects — the xychart's mark, for one, moved between Grafana 11 and 13 —
+	and `__requires` declares Grafana 11.0.0. No version other than those four has been tried, and
+	12.3.0 was checked by query only, never rendered in a browser.
 </NotClaimed>
 
 <SeeAlso>

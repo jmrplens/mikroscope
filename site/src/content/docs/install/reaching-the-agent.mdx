@@ -96,9 +96,11 @@ characters. Both rules are removed by `uninstall` — given `--expose` again, as
 on <Verified of="expose-rules" />: the pair works, and both rules are removable by tag.
 
 A client you point at `http://<router LAN IP>:9123` uses it: Prometheus, `curl`.
-The CLI's own transports do not. `record`, `forward` and the probe after
-`install` build the agent's address from `--subnet` and `--port`, and this build
-has no flag that points them at the exposed address.
+The CLI's own transports do not. `record`, `forward`, the probe after `install`
+and the health read of standalone `doctor` build the agent's address from
+`--subnet` and `--port`, and this build has no flag that points them at the
+exposed address. `doctor`'s health read does not use the relay either: it reads
+directly or not at all.
 
 What a LAN-wide listener opens is on
 [What --expose opens](/mikroscope/security/expose/).
@@ -111,7 +113,7 @@ What a LAN-wide listener opens is on
 | ---------- | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
 | direct     | a route from your host to the /30 through the router            | only the two list memberships `install` already adds                                                  |
 | relay      | an API user with `read,api,test`; `--transport relay` or `auto` | <Measured id="relay.replyMaxBytes" /> and <Measured id="relay.maxBatch" /> samples per call, ~1 s in about half the calls, no token |
-| `--expose` | `--lan-address` and a token; two firewall rules on the router   | reachable from the whole LAN; not used by `record`, `forward` or the probe                            |
+| `--expose` | `--lan-address` and a token; two firewall rules on the router   | reachable from the whole LAN; not used by `record`, `forward`, the probe or `doctor`'s health read    |
 
 </ScrollTable>
 

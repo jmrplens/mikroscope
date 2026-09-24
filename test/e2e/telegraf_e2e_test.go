@@ -18,7 +18,7 @@ func TestTelegrafSinkPostsLineProtocolOverHTTP(t *testing.T) {
 
 	// A base URL with no path: http_listener_v2's default is /telegraf, and
 	// the sink has to supply it.
-	p := startForward(t, a, 5*time.Second, "--telegraf", rx.URL())
+	p := startForward(t, a, 8*time.Second, "--telegraf", rx.URL())
 	rx.Await(t, 1, 60*time.Second)
 	p.Wait(t, 90*time.Second)
 
@@ -70,7 +70,7 @@ func TestTelegrafSinkWritesLineProtocolOverTCP(t *testing.T) {
 	a := newFakeAgent(t, "")
 	rx := newLineListener(t)
 
-	p := startForward(t, a, 5*time.Second, "--telegraf", "tcp://"+rx.Addr())
+	p := startForward(t, a, 8*time.Second, "--telegraf", "tcp://"+rx.Addr())
 	rx.Await(t, 100, 60*time.Second)
 	p.Wait(t, 90*time.Second)
 
@@ -88,7 +88,7 @@ func TestTelegrafSinkCutsDatagramsOnLineBoundaries(t *testing.T) {
 	a := newFakeAgent(t, "")
 	rx := newUDPListener(t)
 
-	p := startForward(t, a, 5*time.Second, "--telegraf", "udp://"+rx.Addr())
+	p := startForward(t, a, 8*time.Second, "--telegraf", "udp://"+rx.Addr())
 	rx.Await(t, 1, 60*time.Second)
 	p.Wait(t, 90*time.Second)
 	packets := rx.Packets()

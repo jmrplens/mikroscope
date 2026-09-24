@@ -40,7 +40,8 @@ verbs
   plot       draw a recording as a deterministic SVG: plot --in <prefix>
   forward    run as a collector: kernel tier + API tier (1 Hz) → --file, --prom, --influx,
              --loki, --otlp, --graphite, --elastic, --sql, --postgres, --telegraf, --stdout
-  dashboards gen | import | check — Grafana dashboards for InfluxDB 3 and Prometheus
+  dashboards gen | import | check — Grafana dashboards for InfluxDB 3, Prometheus, PostgreSQL,
+             Graphite and Elasticsearch (--store influxdb|prometheus|postgres|graphite|elasticsearch)
   version    print the build identity
 
 The agent image comes from one of three places: this machine's Go toolchain
@@ -337,7 +338,7 @@ func doctor(c cli) error {
 	if err != nil {
 		return err
 	}
-	rep, err := router.Doctor(r, c.opts, 7<<20)
+	rep, err := router.Doctor(r, c.opts, doctorImageBytes(c))
 	if err != nil {
 		return err
 	}
@@ -351,6 +352,18 @@ func doctor(c cli) error {
 	}
 	fmt.Println("doctor: every prerequisite is met")
 	return nil
+}
+
+// doctorImageBytes is the image size standalone doctor sizes the flash check
+// for, since it builds nothing: 7 MiB for a tar, and none with --remote-image,
+// where install uploads no tar either and asks for the 4 MiB of headroom
+// alone. Doctor used to assume the tar under --remote-image too and asked for
+// 18.0 MiB that the install it was checking for would never use.
+func doctorImageBytes(c cli) int {
+	if c.opts.UsesRemoteImage() {
+		return 0
+	}
+	return 7 << 20
 }
 
 func install(c cli) error {

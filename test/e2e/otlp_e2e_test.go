@@ -69,7 +69,7 @@ func TestOTLPSinkPostsProtobufJSONMetrics(t *testing.T) {
 	a := newFakeAgent(t, "")
 	rx := newCapture(t, nil)
 
-	p := startForward(t, a, 5*time.Second, "--otlp", rx.URL()+"/v1/metrics")
+	p := startForward(t, a, 8*time.Second, "--otlp", rx.URL()+"/v1/metrics")
 	requests := rx.Await(t, 2, 60*time.Second)
 	p.Wait(t, 90*time.Second)
 

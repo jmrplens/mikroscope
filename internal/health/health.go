@@ -54,8 +54,12 @@ const (
 	// 0, and the loop of 2026-09-19..23 left up to 150 per 5 min on ether2.
 	stpStuckMin = 3
 	// linkDownMin: one link-down is an event — a cable pulled, a device
-	// switched off. Two in one window is a port flapping. The same count the
-	// collector's link-flap detection uses (internal/derive).
+	// switched off. Two in one window is a port flapping. Link-downs only,
+	// anywhere in the samples doctor reads (the whole ring, or its newest
+	// 10 000 when it holds more). It is NOT the count the
+	// collector's link-flap detection uses: internal/derive counts link-ups
+	// and link-downs together, and fires at two within 60 s, so one pulled
+	// and re-plugged cable is a flap there and not here.
 	linkDownMin = 2
 )
 

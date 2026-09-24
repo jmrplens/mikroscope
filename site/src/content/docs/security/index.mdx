@@ -21,23 +21,24 @@ connects out, and every credential that opens something other than the agent sta
 | Piece                                                            | Runs                                 | Reaches                                                                                                               | Credentials                                                     |
 | ---------------------------------------------------------------- | ------------------------------------ | --------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
 | `mikroscope-agent`                                               | in a scratch container on the router | serves HTTP on the veth address only; **no outbound connection**                                                      | none it presents; an optional bearer token it _requires_        |
-| `mikroscope doctor`, `install`, `upgrade`, `uninstall`, `status` | your host, when you run them         | the router over your own admin ssh; `install`, `upgrade` and `status` also probe the agent's `/healthz`               | your ssh key                                                    |
-| `mikroscope plan`, `install --dry-run`                           | your host                            | nothing: they build the image and print the listing without connecting to the router                                  | none, unless `plan --rsc` is given a token (below)              |
-| `mikroscope record`, `forward`                                   | your host                            | the agent over HTTP; the router's binary API for `forward`'s API tier, the relay transport and `record --log-markers` | the agent's token if one is set; a dedicated read-only API user |
+| `mikroscope doctor`, `install`, `upgrade`, `uninstall`, `status` | your host, when you run them         | the router over your own admin ssh; `install`, `upgrade` and `status` also probe the agent's `/healthz`, and `doctor` reads `/healthz` and then the agent's ring, the newest 10 000 samples at most | your ssh key; `doctor` also presents the agent's token if one is set |
+| `mikroscope plan`, `install --dry-run`, `upgrade --dry-run`      | your host                            | nothing: they build the image and print the listing without connecting to the router                                  | none, unless `plan --rsc` is given a token (below)              |
+| `mikroscope record`, `forward`                                   | your host                            | the agent over HTTP; the router's binary API for `forward`'s API tier, the relay transport and `record --log-markers` | the agent's token if one is set; a dedicated read-only API user; `GRAFANA_TOKEN` with `--grafana` |
 | `mikroscope mark`                                                | your host                            | the recording's local files; the router's binary API only with `--log-markers`; never the agent                       | the API user, only with `--log-markers`                         |
 | sinks                                                            | your host, inside `forward`          | serve `/metrics` for your Prometheus; push to InfluxDB and the other destinations you name                            | their tokens, in your environment                               |
 | `mikroscope dashboards import`, `check`                          | your host                            | your Grafana                                                                                                          | `GRAFANA_TOKEN`, in your environment                            |
 
 </ScrollTable>
 
-`plan` and `install --dry-run` never reach the router, so they do not run the ownership checks
-either; those run only on a real `install`.
+`plan`, `install --dry-run` and `upgrade --dry-run` never reach the router, so they do not run the
+ownership checks either; those run only on a real `install`.
 
 Nothing about the tool is reported anywhere. There is no update check. In the code, the agent's
 only network code is its HTTP server. The outbound connections all live in the CLI — the sinks
-(HTTP, TCP or UDP), the Grafana client, the RouterOS API client, the direct transport and the
-`/healthz` probe — and each goes only to an address you gave it or, for the agent, to the `.2` of
-`--subnet` (`172.30.10.2` unless you change it).
+(HTTP, TCP or UDP), the Grafana client, the RouterOS API client, the direct transport, the
+`/healthz` probe and `doctor`'s read of the ring, the last three over plain HTTP — and each goes only to
+an address you gave it or, for the agent, to the `.2` of `--subnet` (`172.30.10.2` unless you
+change it).
 
 The collector's own Prometheus exposition, `forward --prom <address>`, listens on the address you
 pass and serves `/metrics` with no authentication. Bind it to an address only your Prometheus
@@ -74,13 +75,18 @@ refuses](/mikroscope/security/installer/) has how to handle it.
 ## Where the collector's credentials live
 
 On your host, the credentials that open something other than the agent are read from the
-environment only, never from a flag. The code gives the reason: a flag is visible in `ps` and in a
-shell history.
+environment only, never from a flag, with one exception: the PostgreSQL DSN, below. The code gives
+the reason: a flag is visible in `ps` and in a shell history.
 
 - The API user's password: `MIKROSCOPE_API_PASSWORD`. The address and user come from `--api` and
   `--api-user`, or `MIKROSCOPE_API_ADDR` and `MIKROSCOPE_API_USER`.
 - Sink credentials: `MIKROSCOPE_INFLUX_TOKEN`, `MIKROSCOPE_LOKI_TOKEN`, `MIKROSCOPE_OTLP_TOKEN`,
   `MIKROSCOPE_ELASTIC_AUTH`, `MIKROSCOPE_TELEGRAF_TOKEN`.
+- PostgreSQL (`--postgres`, or `MIKROSCOPE_POSTGRES_DSN`): the DSN is a flag, so keep the password
+  out of it and let the driver read `PGPASSWORD` or `~/.pgpass`, as psql does. A password written
+  in a DSN passed as the flag is visible in `ps`, and wherever the DSN comes from,
+  `forward --grafana` copies a password written in it into the Grafana datasource it creates. A
+  password found only in the environment or the password file is not copied.
 - Grafana: `GRAFANA_TOKEN`.
 
 The agent's token is the exception: it has a `--token` flag as well as `MIKROSCOPE_TOKEN`. The
@@ -101,7 +107,10 @@ The container runs an image, and which route puts it there decides what you are 
   `checksums.txt`.
 - `install --remote-image <reference>` uploads nothing: the router itself fetches the image from the
   registry its global `/container/config registry-url` names. You trust that registry and the
-  router's path to it, and mikroscope verifies nothing about what arrives.
+  router's path to it, and mikroscope verifies nothing about what arrives. The same setting holds
+  one registry username and password for the whole device, which RouterOS presents to whatever
+  registry it pulls from; [what the installer refuses](/mikroscope/security/installer/) has what
+  that means and what `doctor` checks.
 - `plan --rsc` writes the same commands as a RouterOS script for you to paste or `/import`; the
   image still has to come from one of the two routes above that need no upload from the CLI.
 
@@ -115,7 +124,9 @@ written:
   namespace: no interface counters, no router conntrack table, no view of RouterOS's processes.
   [What privileged buys](/mikroscope/limits/privileged/) has the measurements.
 - **`memory-max=64M`** (`--memory-max`), enforced as the container's cgroup limit, with the agent's
-  Go soft limit at 40 MiB (`--mem-limit-mb`) inside it.
+  Go soft limit (`--mem-limit-mb`) inside it. Unless you pass a number, that limit is derived from
+  the ring (rate × buffer × line, × 2.5, at least 16 MiB, at most three quarters of `memory-max`
+  while that still holds the ring): 16 MiB at the defaults.
 - **`restart-policy=on-failure`**, bounded to five retries ten seconds apart, so a broken image
   cannot loop at boot.
 - **`start-on-boot=yes`**, or `no` with `--ephemeral`, whose root lives on the tmpfs disk and does
