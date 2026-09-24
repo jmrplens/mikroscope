@@ -8,6 +8,17 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The agent closed its sources while the sampler could still be reading
+  them.** `Run` closes the source (the perf-event descriptors among it) as soon
+  as `RunWith` returns, and `RunWith` returned without waiting for the sampler's
+  goroutine; when the HTTP server failed rather than the context ending,
+  nothing told the sampler to stop at all. It now has a context of its own and
+  `RunWith` waits for it. Found by the race detector in the full suite on
+  2026-09-24; a test with a source whose reads take 15 of every 20 ms fails on
+  the old code in the first round.
+- **`record` read the last sequence and the marker count unsynchronised** while
+  the goroutine that turns typed notes into markers wrote them. Both are now
+  guarded. Found by the race detector the same day.
 - **The PostgreSQL form of `mikroscope-bridge-port-dark` could not run.** It
   read `rx_packet`, `tx_unicast`, `tx_broadcast` and `bridge` as columns, and
   the SQL sink's `mikroscope_api_ifcounter` table holds

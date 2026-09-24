@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -142,8 +143,13 @@ func TestSamplerProducesAtRateWithoutSlips(t *testing.T) {
 	if n := s.Seq(); n < 9 || n > 12 {
 		t.Fatalf("20 Hz for 550 ms produced %d samples", n)
 	}
-	if s.Slipped() != 0 {
-		t.Fatalf("slipped %d ticks on an idle host", s.Slipped())
+	// At most two of the ~11 ticks may slip. The test host is not idle when
+	// the whole suite runs under -race: one 50 ms tick slipped there on
+	// 2026-09-24 and failed a test that asserted none. What this pins is
+	// that a healthy sampler keeps its rate, not that a busy test machine
+	// never schedules it late.
+	if s.Slipped() > 2 {
+		t.Fatalf("slipped %d of %d ticks", s.Slipped(), s.Seq())
 	}
 	last := ring.Tail(1)[0]
 	var decoded sample.Sample
@@ -614,5 +620,60 @@ func TestNewProcSourceReleasesFilesWhenTheProbeFails(t *testing.T) {
 	}
 	if after := open(); after > before+2 {
 		t.Fatalf("50 failed starts left %d more open descriptors (%d → %d)", after-before, before, after)
+	}
+}
+
+// slowSource is a Source whose reads take long enough that a sampler stopped
+// at a random moment is very likely to be inside one, and which records any
+// read that is still running, or starts, after the test declares it closed.
+type slowSource struct {
+	*fakeSource
+	reading  atomic.Bool
+	closed   atomic.Bool
+	lateRead atomic.Int64
+}
+
+func (s *slowSource) Read(dst *sample.Raw) error {
+	if s.closed.Load() {
+		s.lateRead.Add(1)
+	}
+	s.reading.Store(true)
+	defer s.reading.Store(false)
+	time.Sleep(15 * time.Millisecond)
+	return s.fakeSource.Read(dst)
+}
+
+// RunWith must not return while the sampler can still be reading: Run closes
+// the source the moment it does, and on the reference agent that closes the
+// perf-event file descriptors a read in flight is using. The race detector
+// caught it in the suite on 2026-09-24; this makes it deterministic enough to
+// fail without the detector: reads take 15 of every 20 ms, so a RunWith that
+// did not wait returned mid-read nearly every time.
+func TestRunWithWaitsForTheSamplerBeforeReturning(t *testing.T) {
+	src := &slowSource{fakeSource: newFakeSource(t, nil)}
+	ln, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := Config{RateHz: 50, BufferS: 10, Addr: "127.0.0.1", Port: ln.Addr().(*net.TCPAddr).Port, IRQTopK: 8}
+	_ = ln.Close()
+	for round := range 5 {
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() { done <- RunWith(ctx, cfg, src, "t", func(string) {}) }()
+		time.Sleep(time.Duration(90+17*round) * time.Millisecond)
+		cancel()
+		if runErr := <-done; runErr != nil {
+			t.Fatal(runErr)
+		}
+		if src.reading.Load() {
+			t.Fatalf("round %d: RunWith returned while the sampler was inside Read", round)
+		}
+		src.closed.Store(true) // what Run's deferred Close does now
+		time.Sleep(40 * time.Millisecond)
+		if n := src.lateRead.Load(); n != 0 {
+			t.Fatalf("round %d: %d read(s) after RunWith returned", round, n)
+		}
+		src.closed.Store(false)
 	}
 }

@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jmrplens/mikroscope/internal/agent"
@@ -81,12 +82,14 @@ func ReadMeta(prefix string) (Meta, error) {
 
 // Recorder pulls from a transport and writes the three files.
 type Recorder struct {
-	Puller  transport.Puller
-	Opts    Options
-	Notes   io.Reader // stdin: one marker per line; nil for none
-	Log     func(string)
-	skewNS  int64
-	lastSeq uint64
+	Puller transport.Puller
+	Opts   Options
+	Notes  io.Reader // stdin: one marker per line; nil for none
+	Log    func(string)
+	skewNS int64
+	// lastSeq is written by the pull loop and read by readNotes, which runs
+	// in its own goroutine: a note is stamped with the newest sample seen.
+	lastSeq atomic.Uint64
 	mu      sync.Mutex
 	nMark   int
 }
@@ -150,7 +153,7 @@ func (rc *Recorder) Run(ctx context.Context) (Summary, error) {
 		case <-ctx.Done():
 			// One last pull drains what arrived while we were waiting.
 			_ = rc.pull(context.WithoutCancel(ctx), files, &sum, &since)
-			sum.Markers = rc.nMark
+			sum.Markers = rc.markCount()
 			return sum, files.flush()
 		case <-ticker.C:
 		}
@@ -202,7 +205,7 @@ func (rc *Recorder) pullOnce(ctx context.Context, files *outputs, sum *Summary, 
 		sum.Samples++
 		sum.LastSeq = s.Seq
 		*since = s.Seq
-		rc.lastSeq = s.Seq
+		rc.lastSeq.Store(s.Seq)
 	}
 	return len(lines), nil
 }
@@ -217,7 +220,7 @@ func (rc *Recorder) readNotes(ctx context.Context) {
 		if text == "" {
 			continue
 		}
-		rc.mark(Marker{WallNS: time.Now().UnixNano() + rc.skewNS, Seq: rc.lastSeq, Kind: "note", Label: text})
+		rc.mark(Marker{WallNS: time.Now().UnixNano() + rc.skewNS, Seq: rc.lastSeq.Load(), Kind: "note", Label: text})
 	}
 }
 
@@ -241,6 +244,14 @@ func (rc *Recorder) mark(m Marker) {
 		return
 	}
 	rc.nMark++
+}
+
+// markCount reads nMark under the lock mark takes: readNotes may still be
+// writing a note from its own goroutine when Run finishes.
+func (rc *Recorder) markCount() int {
+	rc.mu.Lock()
+	defer rc.mu.Unlock()
+	return rc.nMark
 }
 
 // openOutput opens one of the recording's files for writing, emptying whatever

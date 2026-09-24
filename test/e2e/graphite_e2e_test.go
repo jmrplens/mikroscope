@@ -15,7 +15,7 @@ func TestGraphiteSinkWritesPlaintextOverTCP(t *testing.T) {
 
 	// No --graphite-prefix, so the default "mikroscope" is what is under
 	// test, and no --host-tag either, so the default host node is too.
-	p := startForward(t, a, 5*time.Second, "--graphite", rx.Addr())
+	p := startForward(t, a, 8*time.Second, "--graphite", rx.Addr())
 	rx.Await(t, 200, 60*time.Second)
 	p.Wait(t, 90*time.Second)
 	lines := rx.Lines()
@@ -127,7 +127,7 @@ func TestGraphiteSinkHonoursItsPrefixAndHostNodes(t *testing.T) {
 	a := newFakeAgent(t, "")
 	rx := newLineListener(t)
 
-	p := startForward(t, a, 4*time.Second,
+	p := startForward(t, a, 8*time.Second,
 		"--graphite", rx.Addr(),
 		"--graphite-prefix", "routers",
 		"--host-tag", "rb5009-lab")

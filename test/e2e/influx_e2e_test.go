@@ -37,7 +37,7 @@ func TestInfluxSinkPostsLineProtocol(t *testing.T) {
 	// The full endpoint an InfluxDB 3 write takes, path and query included,
 	// because the sink must not rewrite either.
 	endpoint := rx.URL() + "/api/v3/write_lp?db=mikroscope&precision=nanosecond"
-	p := startForward(t, a, 5*time.Second, "--influx", endpoint)
+	p := startForward(t, a, 8*time.Second, "--influx", endpoint)
 	requests := rx.Await(t, 2, 60*time.Second)
 	p.Wait(t, 90*time.Second)
 
