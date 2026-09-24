@@ -23,9 +23,9 @@ alert rules generated beside them are on [Alert rules](https://jmrp.io/docs/mikr
   - mikroscope-postgres.json 161 panels, PostgreSQL / TimescaleDB
   - mikroscope-graphite.json 41 panels, Graphite
   - mikroscope-elasticsearch.json 30 panels, Elasticsearch
-  - mikroscope-alerts-influxdb.yaml 12 rules
-  - mikroscope-alerts-prometheus.yaml 13 rules
-  - mikroscope-alerts-postgres.yaml 9 rules
+  - mikroscope-alerts-influxdb.yaml 13 rules
+  - mikroscope-alerts-prometheus.yaml 14 rules
+  - mikroscope-alerts-postgres.yaml 10 rules
 
 ```sh
 mikroscope dashboards gen                    # writes the eight files into ./dashboards
@@ -1107,9 +1107,9 @@ device itself published. None is a number compiled in for one router.
 
 | File                                           |                                            Rules | Query language |
 | ---------------------------------------------- | -----------------------------------------------: | -------------- |
-| `dashboards/mikroscope-alerts-influxdb.yaml`   |   12 | InfluxDB 3 SQL |
-| `dashboards/mikroscope-alerts-prometheus.yaml` | 13 | PromQL         |
-| `dashboards/mikroscope-alerts-postgres.yaml`   |   9 | PostgreSQL SQL |
+| `dashboards/mikroscope-alerts-influxdb.yaml`   |   13 | InfluxDB 3 SQL |
+| `dashboards/mikroscope-alerts-prometheus.yaml` | 14 | PromQL         |
+| `dashboards/mikroscope-alerts-postgres.yaml`   |   10 | PostgreSQL SQL |
 
 The InfluxDB file has one rule fewer because "The sampler is slipping ticks" has no SQL form yet.
 The counter itself does reach InfluxDB since 1.0.5 — the collector reads it from the agent's
@@ -1161,6 +1161,7 @@ The alert rules:
 | `mikroscope-l2-loop` | an own-address record on any port in the last 5 minutes | > 0 | critical | 0s | OK | both |
 | `mikroscope-port-link-down` | a link-down record on any port in the last 5 minutes | > 0 | warning | 0s | OK | both |
 | `mikroscope-port-errors` | any port's MAC counted a typed error — overflow, FCS, collision — for 5 minutes running | > 0 | warning | 5m | OK | both |
+| `mikroscope-bridge-port-dark` | a bridge port received packets while the bridge sent it neither a unicast nor a broadcast frame, for 10 minutes | > 0 | warning | 10m | OK | InfluxDB only |
 | `mikroscope-egress-queue-drops` | any port's own egress queue dropped a packet in every one of the last 10 minutes — sustained congestion, never a single burst | > 0 | warning | 10m | OK | InfluxDB only |
 | `mikroscope-ecc-failure` | the NAND reported an uncorrectable ECC failure in the last hour | > 0 | critical | 0s | OK | InfluxDB only |
 | `mikroscope-ticks-slipped` | the sampler slipped a tick in the last 5 minutes | > 0 | warning | 5m | OK | Prometheus only |
@@ -1210,6 +1211,15 @@ Each rule's title, and under it its `summary` annotation verbatim, as generated:
   chip can drain it, and it is a microburst signature rather than a load one. FCS errors and
   collisions mean something else: cabling, duplex, a dying port. Needs the API tier: a MAC counter
   is not visible from inside the container."
+- **A bridge port is receiving but the bridge sends it nothing.** "A port that is a member of a
+  bridge has received packets for ten minutes while the bridge delivered it neither a unicast nor a
+  broadcast frame. Whatever is behind it is transmitting and hearing nothing back: STP holds the port
+  discarding, or the bridge learned every host behind it on another path. RouterOS shows the port
+  running and error-free throughout." On the reference RB5009 this was the steady state of the
+  layer-2 loop of 2026-09-19..23: 34 h on sfp-sfpplus1, then 62 h on ether2. A backtest over those
+  four days marks those two ports in those two stretches and nothing else. It is expected to fire on
+  a redundant design, where an RSTP alternate port discards on purpose, and on a port with
+  `broadcast-flood=no` or `horizon` set. Needs the API tier.
 - **A port's egress queue has been dropping every minute for ten minutes.** "A port's own egress
   queue has dropped packets in every one of the last ten minutes. Unlike the other counter rules,
   this one's counter is supposed to move: dropping is how a full queue tells a sender to slow down.
@@ -1245,6 +1255,8 @@ Each rule's title, and under it its `summary` annotation verbatim, as generated:
   sum(increase(mikroscope_kmsg_port_records_total{kind="link-down"}[5m]))
   # mikroscope-port-errors             (> 0)
   sum(increase(mikroscope_api_interface_counter_total{counter=~"rx-overflow|rx-fcs-error|rx-fragment|rx-too-short|rx-too-long|rx-jabber|tx-fcs-error|tx-late-collision|tx-excessive-collision"}[5m]))
+  # mikroscope-bridge-port-dark        (> 0)
+  count((sum by (interface) (increase(mikroscope_api_interface_counter_total{counter="rx-packet"}[10m])) > 0) and on (interface) (sum by (interface) (increase(mikroscope_api_interface_counter_total{counter="tx-unicast"}[10m])) == 0) and on (interface) (sum by (interface) (increase(mikroscope_api_interface_counter_total{counter="tx-broadcast"}[10m])) == 0) and on (interface) (mikroscope_api_interface_info{bridge!=""}))
   # mikroscope-egress-queue-drops      (> 0)
   max(max_over_time(mikroscope_api_interface{kind="tx_queue_drops"}[1m]))
   # mikroscope-ecc-failure             (> 0)
@@ -1282,6 +1294,8 @@ Each rule's title, and under it its `summary` annotation verbatim, as generated:
   SELECT coalesce(sum(count), 0)::BIGINT AS value FROM mikroscope_kmsg WHERE time >= now() - interval '5 minutes' AND kind = 'link-down'
   -- mikroscope-port-errors             (> 0)
   SELECT coalesce(sum(v), 0)::BIGINT AS value FROM (SELECT interface, greatest(max(rx_overflow) - min(rx_overflow), 0)::BIGINT + greatest(max(rx_fcs_error) - min(rx_fcs_error), 0)::BIGINT + greatest(max(rx_fragment) - min(rx_fragment), 0)::BIGINT + greatest(max(rx_too_short) - min(rx_too_short), 0)::BIGINT + greatest(max(rx_too_long) - min(rx_too_long), 0)::BIGINT + greatest(max(rx_jabber) - min(rx_jabber), 0)::BIGINT + greatest(max(tx_fcs_error) - min(tx_fcs_error), 0)::BIGINT + greatest(max(tx_late_collision) - min(tx_late_collision), 0)::BIGINT + greatest(max(tx_excessive_collision) - min(tx_excessive_collision), 0)::BIGINT AS v FROM mikroscope_api_ifcounters WHERE time >= now() - interval '5 minutes' GROUP BY interface)
+  -- mikroscope-bridge-port-dark        (> 0)
+  SELECT count(*)::BIGINT AS value FROM (SELECT interface, max(rx_packet) - min(rx_packet) AS drx, max(tx_unicast) - min(tx_unicast) AS dtu, max(tx_broadcast) - min(tx_broadcast) AS dtb FROM mikroscope_api_ifcounters WHERE time >= now() - interval '10 minutes' AND bridge IS NOT NULL AND bridge <> '' GROUP BY interface) AS ports WHERE drx > 0 AND dtu = 0 AND dtb = 0
   -- mikroscope-egress-queue-drops      (> 0)
   SELECT coalesce(max(tx_queue_drops), 0)::BIGINT AS value FROM mikroscope_api_iface WHERE time >= now() - interval '1 minute'
   -- mikroscope-ecc-failure             (> 0)

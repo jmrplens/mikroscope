@@ -113,6 +113,15 @@ Each rule's title, and under it its `summary` annotation verbatim, as generated:
   chip can drain it, and it is a microburst signature rather than a load one. FCS errors and
   collisions mean something else: cabling, duplex, a dying port. Needs the API tier: a MAC counter
   is not visible from inside the container."
+- **A bridge port is receiving but the bridge sends it nothing.** "A port that is a member of a
+  bridge has received packets for ten minutes while the bridge delivered it neither a unicast nor a
+  broadcast frame. Whatever is behind it is transmitting and hearing nothing back: STP holds the port
+  discarding, or the bridge learned every host behind it on another path. RouterOS shows the port
+  running and error-free throughout." On the reference RB5009 this was the steady state of the
+  layer-2 loop of 2026-09-19..23: 34 h on sfp-sfpplus1, then 62 h on ether2. A backtest over those
+  four days marks those two ports in those two stretches and nothing else. It is expected to fire on
+  a redundant design, where an RSTP alternate port discards on purpose, and on a port with
+  `broadcast-flood=no` or `horizon` set. Needs the API tier.
 - **A port's egress queue has been dropping every minute for ten minutes.** "A port's own egress
   queue has dropped packets in every one of the last ten minutes. Unlike the other counter rules,
   this one's counter is supposed to move: dropping is how a full queue tells a sender to slow down.

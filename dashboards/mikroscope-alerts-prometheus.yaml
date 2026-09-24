@@ -295,6 +295,32 @@ groups:
           - refId: C
             datasourceUid: __expr__
             model: {refId: C, type: threshold, expression: B, conditions: [{evaluator: {type: gt, params: [0]}}]}
+      - uid: mikroscope-bridge-port-dark
+        title: "A bridge port is receiving but the bridge sends it nothing"
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          source: mikroscope
+        annotations:
+          summary: "A port that is a member of a bridge has received packets for ten minutes while the bridge delivered it neither a unicast nor a broadcast frame. Whatever is behind it is transmitting and hearing nothing back: STP holds the port discarding, or the bridge learned every host behind it on another path. RouterOS shows the port running and error-free throughout. On the reference RB5009 this was the steady state of a layer-2 loop through a mesh access point: 34 h on sfp-sfpplus1 and then 62 h on ether2 (2026-09-19..23), which carried 12 packets a second in and 1 out until the second path was broken. For most of the first phase the own-address rule had pointed at ether2, the wrong port. EXPECTED TO FIRE on a redundant design: an RSTP alternate port discards on purpose, and so does a port with broadcast-flood=no or horizon set; silence it for that port. Needs the API tier: the port counters are not visible from inside the container."
+        data:
+          - refId: A
+            relativeTimeRange: {from: 600, to: 0}
+            datasourceUid: DS_UID_PLACEHOLDER
+            model:
+              refId: A
+              expr: "count((sum by (interface) (increase(mikroscope_api_interface_counter_total{counter=\"rx-packet\"}[10m])) > 0) and on (interface) (sum by (interface) (increase(mikroscope_api_interface_counter_total{counter=\"tx-unicast\"}[10m])) == 0) and on (interface) (sum by (interface) (increase(mikroscope_api_interface_counter_total{counter=\"tx-broadcast\"}[10m])) == 0) and on (interface) (mikroscope_api_interface_info{bridge!=\"\"}))"
+              instant: true
+              range: false
+          - refId: B
+            datasourceUid: __expr__
+            model: {refId: B, type: reduce, expression: A, reducer: last, settings: {mode: dropNN}}
+          - refId: C
+            datasourceUid: __expr__
+            model: {refId: C, type: threshold, expression: B, conditions: [{evaluator: {type: gt, params: [0]}}]}
       - uid: mikroscope-egress-queue-drops
         title: "A port's egress queue has been dropping every minute for ten minutes"
         condition: C
