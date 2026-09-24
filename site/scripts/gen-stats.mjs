@@ -57,12 +57,32 @@ const verbs = [...verbBlock.matchAll(/^ {2}(\w[\w-]*) /gm)].map((m) => m[1]);
 
 // The detection rules, from the list the derive stage publishes so that a sink
 // can render a counter per rule before the first event.
+// An entry is a string literal or the name of a string constant declared in the
+// same file (the informational rules are named once, as constants, so Rules,
+// derive.Informational and the code that fires them agree on the spelling);
+// a name with no declaration fails the build rather than drop the rule.
+const deriveSource = read("internal/derive/derive.go");
 const ruleList = one(
-	read("internal/derive/derive.go"),
+	deriveSource,
 	/var Rules = \[\]string\{([^}]*)\}/,
 	"derive.Rules",
 );
-const detectionRules = [...ruleList.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+const detectionRules = ruleList
+	.split(",")
+	.map((entry) => entry.trim())
+	.filter(Boolean)
+	.map((entry) => {
+		const literal = /^"([^"]+)"$/.exec(entry);
+		if (literal) return literal[1];
+		const constant = new RegExp(`^\\s*${entry}\\s*=\\s*"([^"]+)"`, "m").exec(
+			deriveSource,
+		);
+		if (!constant)
+			throw new Error(
+				`gen-stats: derive.Rules names ${entry}, which is neither a string nor a constant in derive.go`,
+			);
+		return constant[1];
+	});
 
 // The /proc, /sys and /dev sources the agent reports in /capabilities.
 const sourceMap = one(
