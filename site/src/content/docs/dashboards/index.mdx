@@ -14,6 +14,7 @@ import DashboardCaptures from "../../../components/DashboardCaptures.astro";
 import DashboardPanels from "../../../components/DashboardPanels.astro";
 import Measured from "../../../components/Measured.astro";
 import NotClaimed from "../../../components/NotClaimed.astro";
+import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
 import Src from "../../../components/Src.astro";
 
@@ -242,10 +243,14 @@ having to scroll to the Detections section to find out that anything happened at
 
 Two layers ship with every dashboard:
 
+<ScrollTable label="The two annotation layers">
+
 | Layer          | Colour | Default | What each marker is                                                                                     |
 | -------------- | ------ | ------- | ------------------------------------------------------------------------------------------------------- |
 | **detections** | red    | on      | one row of `mikroscope_detection`: the rule, its key and its message, from the collector's derive stage |
 | **triggers**   | orange | off     | one capture marker from the agent: the condition that fired, the field and the value                    |
+
+</ScrollTable>
 
 Hovering a marker shows the message the row carries, so the line answers *what* as well as *when*.
 The triggers layer is off by default so that a quiet dashboard stays quiet; turn it on when you are

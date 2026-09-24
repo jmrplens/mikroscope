@@ -447,20 +447,33 @@ const PAIRS = [
 		bg: "--sl-color-black",
 		minimum: NORMAL_TEXT,
 	},
-	/* `--sl-color-bg-inline-code` is gray-5 in the dark theme and gray-6 in the
-	 * light one (Starlight props.css); it is not redeclared in theme.css, so
-	 * both of its sources are gated, in both themes. */
+	/* theme.css points `--sl-color-bg-inline-code` at `--ms-code-bg` in both
+	 * themes. The chip's text is gated on it; the chip against the grounds it
+	 * sits on is printed, not gated: it is a fill behind text that already
+	 * clears 4.5:1, and 1.4.11 does not apply to it. */
 	{
-		label: "inline code (dark source: sl gray-5)",
+		label: "inline code on its chip",
 		fg: "--ms-body",
-		bg: "--sl-color-gray-5",
+		bg: "--sl-color-bg-inline-code",
 		minimum: NORMAL_TEXT,
 	},
 	{
-		label: "inline code (light source: sl gray-6)",
-		fg: "--ms-body",
-		bg: "--sl-color-gray-6",
+		label: "a link's inline code on its chip",
+		fg: "--sl-color-text-accent",
+		bg: "--sl-color-bg-inline-code",
 		minimum: NORMAL_TEXT,
+	},
+	{
+		label: "a chip against the page",
+		fg: "--ms-code-bg",
+		bg: "--ms-page",
+		minimum: null,
+	},
+	{
+		label: "a chip against a surface",
+		fg: "--ms-code-bg",
+		bg: "--ms-surface",
+		minimum: null,
 	},
 	{
 		label: "sl gray-4 (dividers)",

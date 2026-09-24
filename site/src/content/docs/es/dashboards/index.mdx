@@ -14,6 +14,7 @@ import DashboardCaptures from "../../../../components/DashboardCaptures.astro";
 import DashboardPanels from "../../../../components/DashboardPanels.astro";
 import Measured from "../../../../components/Measured.astro";
 import NotClaimed from "../../../../components/NotClaimed.astro";
+import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
 import Src from "../../../../components/Src.astro";
 
@@ -259,10 +260,14 @@ parpadeó — sin tener que bajar a la sección de detecciones para enterarte de
 
 Cada dashboard trae dos capas:
 
+<ScrollTable label="Las dos capas de anotaciones">
+
 | Capa           | Color   | Por defecto | Qué es cada marca                                                                                                  |
 | -------------- | ------- | ----------- | ------------------------------------------------------------------------------------------------------------------ |
 | **detections** | rojo    | activada    | una fila de `mikroscope_detection`: la regla, su clave y su mensaje, de la etapa de derivación del colector        |
 | **triggers**   | naranja | desactivada | un marcador de captura del agente: la condición que se disparó, el campo y el valor                                 |
+
+</ScrollTable>
 
 Al pasar el ratón por una marca sale el mensaje que lleva la fila, así que la raya responde al *qué*
 además de al *cuándo*. La capa de disparos viene apagada para que un dashboard tranquilo siga

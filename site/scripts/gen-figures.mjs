@@ -527,12 +527,16 @@ const CHART = {
 		panel: 116,
 		stroke: 1.6,
 	},
+	// Drawn 360 wide and shown in a column of 328-358 px, so it is scaled by
+	// 0.91-0.99 on a phone: at `small: 10` the ticks, legends and notes
+	// rendered at 9.1-9.8 px (conntrack, loop and port-errors, WebKit 390 px
+	// and Chromium 360 px, 2026-09-24). 11 renders at 10-10.9 px.
 	narrow: {
 		width: 360,
-		left: 42,
+		left: 44,
 		right: 10,
-		font: 11.5,
-		small: 10,
+		font: 12,
+		small: 11,
 		panel: 100,
 		stroke: 1.4,
 	},
@@ -594,7 +598,14 @@ function chart({
 		y += rows * (L.small + 3) + 8;
 	}
 
+	const stripBottom = y;
 	let lastBottom = y;
+	// Where each plot area is. The shading, the markers and the time grid are
+	// drawn inside these and not from the band strip to the last axis: drawn
+	// through, they crossed every panel's title, legend and note ("a se¦cond",
+	// "recibidos en"), with the markers on top of the words (the three charts,
+	// both layouts, 2026-09-24).
+	const plots = [];
 	for (const p of panels) {
 		y += 6;
 		for (const line of wrapWords(p.label, L.width - 4, L.font)) {
@@ -634,9 +645,13 @@ function chart({
 				front.push(label(2, y, line, { size: L.small, fill: C.muted }));
 			}
 		}
-		y += 8;
+		// Room for the top tick label, which is centred on the top gridline and
+		// so reaches above it: with 8 alone a wrapped note sat 3 px over "3 000"
+		// (port-errors, narrow, 2026-09-24).
+		y += 6 + Math.ceil(L.small * 0.6);
 		const top = y;
 		const bottom = y + L.panel;
+		plots.push({ top, bottom });
 		const yOf =
 			p.scale === "log"
 				? (v) => {
@@ -698,24 +713,36 @@ function chart({
 		lastBottom = bottom;
 	}
 
+	// A band is shaded behind its own label strip and inside each plot.
+	const shaded = [
+		...(stripBottom > bandTop ? [{ top: bandTop, bottom: stripBottom }] : []),
+		...plots,
+	];
 	for (const b of bands) {
 		back.unshift(
-			`<rect x="${r1(xOf(b.from))}" y="${bandTop}" width="${r1(xOf(b.to) - xOf(b.from))}" height="${r1(lastBottom - bandTop)}" fill="${b.fill}"/>`,
+			...shaded.map(
+				({ top, bottom }) =>
+					`<rect x="${r1(xOf(b.from))}" y="${r1(top)}" width="${r1(xOf(b.to) - xOf(b.from))}" height="${r1(bottom - top)}" fill="${b.fill}"/>`,
+			),
 		);
 	}
 	for (const t of markers) {
-		front.push(
-			`<line x1="${r1(xOf(t))}" y1="${bandTop}" x2="${r1(xOf(t))}" y2="${lastBottom}" stroke="${C.strong}" stroke-width="1" stroke-dasharray="4 3"/>`,
-		);
+		for (const { top, bottom } of plots) {
+			front.push(
+				`<line x1="${r1(xOf(t))}" y1="${r1(top)}" x2="${r1(xOf(t))}" y2="${r1(bottom)}" stroke="${C.strong}" stroke-width="1" stroke-dasharray="4 3"/>`,
+			);
+		}
 	}
 
 	// The time axis, labelled once under the last panel.
 	y = lastBottom + L.small + 6;
 	for (const t of xTicks(t0, t1)) {
 		const tx = xOf(t.at);
-		back.push(
-			`<line x1="${r1(tx)}" y1="${bandTop}" x2="${r1(tx)}" y2="${lastBottom}" stroke="${C.border}" stroke-width="1" stroke-dasharray="2 3"/>`,
-		);
+		for (const { top, bottom } of plots) {
+			back.push(
+				`<line x1="${r1(tx)}" y1="${r1(top)}" x2="${r1(tx)}" y2="${r1(bottom)}" stroke="${C.border}" stroke-width="1" stroke-dasharray="2 3"/>`,
+			);
+		}
 		front.push(
 			label(tx, y, t.label, { size: L.small, fill: C.muted, anchor: "middle" }),
 		);

@@ -1301,7 +1301,7 @@ a forward accept placed before the first forward drop, both tagged, both removed
 by `uninstall --expose --lan-address <the same address> --token …`: the dst-nat
 selector matches the LAN address, and `--expose` is refused without a token even
 though no selector uses it. What that opens and why the token becomes mandatory is
-on [What --expose opens](https://jmrp.io/docs/mikroscope/security/expose/); how to use it is on
+on [What `--expose` opens](https://jmrp.io/docs/mikroscope/security/expose/); how to use it is on
 [Reaching the agent](https://jmrp.io/docs/mikroscope/install/reaching-the-agent/).
 
 > **True of this device, not of yours**
@@ -1316,7 +1316,7 @@ on [What --expose opens](https://jmrp.io/docs/mikroscope/security/expose/); how 
 - [Reaching the agent](https://jmrp.io/docs/mikroscope/install/reaching-the-agent/): what to do when the memberships
   are not enough.
 - [What the router needs](https://jmrp.io/docs/mikroscope/install/prerequisites/): the `doctor` checks for both lists.
-- [What --expose opens](https://jmrp.io/docs/mikroscope/security/expose/): the two rules, and who can reach the agent
+- [What `--expose` opens](https://jmrp.io/docs/mikroscope/security/expose/): the two rules, and who can reach the agent
   afterwards.
 
 ## Where things go
@@ -1548,7 +1548,7 @@ permissions (9)` rather than empty. [The API user](https://jmrp.io/docs/mikrosco
 answer and `--api` and `--api-user` are set, it tries the relay; otherwise it
 fails naming `install --expose`.
 
-### --expose, on the router's LAN address
+### `--expose`, on the router's LAN address
 
 **What `install --expose` adds**
 
@@ -1578,7 +1578,7 @@ exposed address. `doctor`'s health read does not use the relay either: it reads
 directly or not at all.
 
 What a LAN-wide listener opens is on
-[What --expose opens](https://jmrp.io/docs/mikroscope/security/expose/).
+[What `--expose` opens](https://jmrp.io/docs/mikroscope/security/expose/).
 
 ### Choosing
 
@@ -1600,5 +1600,5 @@ What a LAN-wide listener opens is on
   depends on.
 - [The API user](https://jmrp.io/docs/mikroscope/security/api-user/): the user the relay needs, and where to restrict
   it.
-- [What --expose opens](https://jmrp.io/docs/mikroscope/security/expose/): the two rules and the token.
+- [What `--expose` opens](https://jmrp.io/docs/mikroscope/security/expose/): the two rules and the token.
 - [The collector](https://jmrp.io/docs/mikroscope/sinks/): what pulls from the agent once it is reachable.

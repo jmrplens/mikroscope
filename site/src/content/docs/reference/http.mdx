@@ -47,7 +47,7 @@ board has no port map, and a token should not be needed for that.
 The relay transport cannot present a token. `/tool fetch` runs on the router
 and sends no `Authorization` header (<Src path="internal/transport/transport.go" />), so
 the relay reaches `/healthz` and nothing else on an agent that has one.
-`--expose` makes the token mandatory; [what --expose
+`--expose` makes the token mandatory; [what `--expose`
 opens](/mikroscope/security/expose/) says why.
 
 ## The paths
@@ -378,6 +378,6 @@ capture](/mikroscope/record/triggers/).
   these paths.
 - [Prometheus metric families](/mikroscope/reference/metrics/): what the collector's `/metrics` carries.
 - [Triggered capture](/mikroscope/record/triggers/): the conditions behind `/captures`.
-- [What --expose opens](/mikroscope/security/expose/): when the token becomes mandatory.
+- [What `--expose` opens](/mikroscope/security/expose/): when the token becomes mandatory.
 
 </SeeAlso>

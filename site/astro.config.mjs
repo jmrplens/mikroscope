@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { isRedirectStub } from "./scripts/redirect-stub.mjs";
 import { decodedFragments } from "./src/lib/decoded-fragments.mjs";
 import { inlineCodeNowrap } from "./src/lib/inline-code.mjs";
+import { nowrapValues } from "./src/lib/nowrap-values.mjs";
 import { lastmodTable } from "./src/lib/lastmod.mjs";
 import { metaCsp } from "./src/lib/meta-csp.mjs";
 import { readRelease } from "./src/lib/release.mjs";
@@ -180,7 +181,7 @@ function siteMarkdownPlugins() {
 					);
 					return;
 				}
-				plugins.push(inlineCodeNowrap(), decodedFragments());
+				plugins.push(inlineCodeNowrap(), nowrapValues(), decodedFragments());
 			},
 		},
 	};

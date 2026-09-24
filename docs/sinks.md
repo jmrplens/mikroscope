@@ -836,7 +836,7 @@ are the point: pgx reads `PGPASSWORD`, `~/.pgpass` and the service file the way 
 does, so a DSN with no password in it works the same way every other PostgreSQL client
 does. `MIKROSCOPE_POSTGRES_DSN` sets the default.
 
-> **A password in a DSN is visible in `ps`**
+> **A password in a DSN is visible in the process list**
 >
 > A connection string passed on the command line is readable by any process on the
 > machine. Put the password in `~/.pgpass` or `PGPASSWORD`, or in

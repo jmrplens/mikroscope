@@ -159,7 +159,7 @@ justamente el punto: pgx lee `PGPASSWORD`, `~/.pgpass` y el fichero de servicio 
 `psql`, así que un DSN sin contraseña funciona como en cualquier otro cliente de
 PostgreSQL. `MIKROSCOPE_POSTGRES_DSN` fija el valor por defecto.
 
-<Aside type="caution" title="Una contraseña en un DSN se ve en `ps`">
+<Aside type="caution" title="Una contraseña en un DSN se ve en la lista de procesos">
   Una cadena de conexión pasada por línea de órdenes la puede leer cualquier proceso de la
   máquina. Pon la contraseña en `~/.pgpass` o en `PGPASSWORD`, o en
   `MIKROSCOPE_POSTGRES_DSN` dentro de un fichero de entorno, y no en la opción.

@@ -65,6 +65,8 @@ No queda nada que contar dos veces, ni lista de `keep` que mantener.
 
 ### Lo que sabe el colector, y de dónde
 
+<ScrollTable label="De dónde salen las familias del colector">
+
 | Familia                                                            | De dónde sale                                                             |
 | ------------------------------------------------------------------ | ------------------------------------------------------------------------- |
 | todas las familias del tier de kernel                              | plegadas desde las muestras, con el mismo código que antes corría el agente |
@@ -73,6 +75,8 @@ No queda nada que contar dos veces, ni lista de `keep` que mantener.
 | `mikroscope_trigger_fired_total`, `_suppressed_total`              | lo mismo, una serie por condición configurada, presente a 0               |
 | `mikroscope_captures_held`, `mikroscope_capture_bytes`, `mikroscope_capture_budget_bytes`, `mikroscope_capture_bytes_served_total`, `mikroscope_capture_refused_total{reason}` | lo mismo: lo que el agente retiene, ha servido y ha rechazado |
 | `mikroscope_api_*`, `mikroscope_derived_*`, `_collector_*`         | lo propio del colector: el tier de API, la derivación, sus contadores     |
+
+</ScrollTable>
 
 Lo único que cambió de significado: estas cifras son ahora tan frescas como la cadencia
 de salud del colector, un minuto, en vez de tan frescas como el scrape. Para contadores

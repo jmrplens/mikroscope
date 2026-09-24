@@ -122,7 +122,7 @@ Each rule's title, and under it its `summary` annotation, shortened:
   CPU quota throttled the agent (see the observer's throttling counter)."
 - **mikroscope's own container was OOM-killed.** "The kernel killed a process inside the agent's
   cgroup: the capture ring and the captures are gone, and every number in the window is suspect.
-  Raise --memory-max or lower RATE_HZ, BUFFER_S or CAPTURE_MB."
+  Raise `--memory-max` or lower RATE_HZ, BUFFER_S or CAPTURE_MB."
 - **The bridge received its own address back: a layer-2 loop signature.** "The kernel log reported
   `received packet on <port> with own address as source address`: a frame the router sent came back
   in, which is what a loop through a downstream switch or access point looks like. The port label

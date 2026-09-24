@@ -192,12 +192,16 @@ The hypothesis was "the device on `ether2` has a second path to the router
 through the other APs, which hang off the switch". Two changes were made on the
 switch first, and the honest result is that **they did nothing**:
 
+<ScrollTable label="Event rate after each change on the switch">
+
 | Change          | Event rate                          |
 | --------------- | ----------------------------------- |
 | baseline        | <Measured id="loop.eventsBefore" /> |
 | switch change 1 | 1.67 /s                             |
 | switch change 2 | 1.47 /s                             |
 | (noise band)    | ±0.2 /s                             |
+
+</ScrollTable>
 
 One further reading in the same series, 1.50 /s, was also inside that band.
 
@@ -223,11 +227,15 @@ records around it), appeared **zero** times in 300 s.
 The second, independent confirmation is the one worth internalising: the bridge's
 view became _coherent_.
 
+<ScrollTable label="The bridge before and after the firmware update">
+
 |                        | Before | After    |
 | ---------------------- | ------ | -------- |
 | MACs on `ether2`       | 0      | **24**   |
 | MACs on `sfp-sfpplus1` | 60     | **36**   |
 | `ether2` `edge`        | false  | **true** |
+
+</ScrollTable>
 
 The same 60 devices, redistributed 36/24 instead of 60/0. While the loop existed,
 the router was learning nearly every device on the wrong port; the Zigbee

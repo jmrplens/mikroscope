@@ -191,7 +191,7 @@ not vulnerabilities.
 
 - [The API user](https://jmrp.io/docs/mikroscope/security/api-user/): the RouterOS user the collector needs, and the
   policy it gets.
-- [What --expose opens](https://jmrp.io/docs/mikroscope/security/expose/): the two firewall rules, and why the token
+- [What `--expose` opens](https://jmrp.io/docs/mikroscope/security/expose/): the two firewall rules, and why the token
   becomes mandatory.
 - [What the installer refuses](https://jmrp.io/docs/mikroscope/security/installer/): the objects it will not build on,
   and the values it will not put in a command.
@@ -498,7 +498,7 @@ same `write the objects above to the router? [y/N]` — and since 1.1.0 it does 
 its own, the container step alone. It still runs no `doctor` first; with `--remote-image` it reads `registry-url` and whether
 a registry username is set, in the same connect that checks the install is there, and prints doctor's credential check before the
 question. On `y` it removes the container, the envlist and the image
-and writes them again, the envlist from the flags given to `upgrade`; [what --expose
+and writes them again, the envlist from the flags given to `upgrade`; [what `--expose`
 opens](https://jmrp.io/docs/mikroscope/security/expose/) has what that means for the token.
 
 **What `install` writes to your router**
@@ -711,6 +711,6 @@ A doctor → install → status → upgrade → uninstall round trip (`make roun
   of this.
 - [Where things go](https://jmrp.io/docs/mikroscope/install/layout/): every object `install` creates, and the flag that
   moves it.
-- [What --expose opens](https://jmrp.io/docs/mikroscope/security/expose/): the two optional firewall rules and their
+- [What `--expose` opens](https://jmrp.io/docs/mikroscope/security/expose/): the two optional firewall rules and their
   selectors.
 - [Commands and flags](https://jmrp.io/docs/mikroscope/reference/cli/): every flag with its default and variable.

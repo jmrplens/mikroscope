@@ -11,6 +11,7 @@ import { measurements } from "../../data/measurements";
 import { gapsDrops, type HomeContent } from "../../data/home";
 import { formatQuantity } from "../../lib/format";
 import { langOf } from "../../lib/lang";
+import { valuesInHtml } from "../../lib/nowrap-values.mjs";
 
 interface Props {
 	readout: HomeContent["readout"];
@@ -34,4 +35,4 @@ const value = (id: HomeContent["readout"]["items"][number]["id"]) =>
 		))
 	}
 </div>
-<p class="ms-readout-claim" set:html={readout.claim} />
+<p class="ms-readout-claim" set:html={valuesInHtml(readout.claim)} />

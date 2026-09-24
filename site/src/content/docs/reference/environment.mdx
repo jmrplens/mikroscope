@@ -234,12 +234,16 @@ rate: the same 40 left 8 MiB unused at 10 Hz and is below the ring itself at 50 
 The factor is measured, not chosen. On the reference RB5009 (RouterOS 7.24.2, 10 Hz, 300 s, every
 source on) on 2026-09-17, four limits over four windows of about 12 000 samples each:
 
-| limit          | ring multiple | RSS       | CPU per sample | |
+<ScrollTable label="Memory limit against RSS and CPU per sample, RB5009, 2026-09-17" nowrap sticky={false}>
+
+| limit          | ring multiple | RSS       | CPU per sample | What it cost |
 | -------------- | ------------- | --------- | -------------- | ------------------------ |
 | 40 MiB         | 4.0×          | 32.9 MiB  | 2 657 µs       | the limit never binds    |
 | 24 MiB         | 2.4×          | 26.3 MiB  | 2 780 µs       | no measurable cost       |
 | 21 MiB         | 2.1×          | 23.5 MiB  | 3 250 µs       | +22 %, and climbing      |
 | 18 MiB         | 1.8×          | 20.4 MiB  | 14 800 µs      | +457 %, worst tick 52 ms |
+
+</ScrollTable>
 
 The rows are the ones the comment on `memLimitRingFactor` in <Src path="internal/router/options.go" /> records.
 The 2.5× factor `install` derives would be 25 MiB at 300 s; the window measured nearest it was

@@ -34,3 +34,21 @@
 .sl-markdown-content table {
 	font-variant-numeric: tabular-nums;
 }
+
+/* A phone keeps its width for the words. The browser's 40 px list indent was
+ * 11 % of a 358 px column for every list in running text, and a list nested in
+ * a numbered step started 84-100 px in (dashboards, start/walkthrough, 248
+ * lists on 94 pages, WebKit 390 px and Chromium 360 px, 2026-09-24). The
+ * indent left is what the marker needs: a bullet, or "10." for an ordered
+ * list. Markdown's own lists only, which carry no class; component lists
+ * (steps, tabs, the file tree, the landing's cards) keep their own. Desktop
+ * keeps the default. */
+@media (max-width: 49.99rem) {
+	.sl-markdown-content ul:not([class], [role], :where(.not-content *)) {
+		padding-inline-start: 1.25rem;
+	}
+
+	.sl-markdown-content ol:not([class], [role], :where(.not-content *)) {
+		padding-inline-start: 1.625rem;
+	}
+}

@@ -12,8 +12,24 @@
  *
  * So: code of up to SHORT characters never breaks. In longer code, each
  * whitespace-separated token that starts with dashes keeps `--name` together,
- * and a long token gets a `<wbr>` after each `_`, `/` or `.`, so
- * `mikroscope_cpu_busy_ticks` may wrap at an underscore and nowhere else. No
+ * and a long token gets a `<wbr>` after each `_`, `/`, `.` or `,`, so
+ * `mikroscope_cpu_busy_ticks` may wrap at an underscore and nowhere else.
+ *
+ * Three places are not breaks even so, because the halves read as two values
+ * (all 116 pages at WebKit 390 px and Chromium 360 px, 2026-09-24):
+ *
+ * - after a LEADING separator: `/` then `system/package/enable container`,
+ *   `.` then `proplist=…`, a lone character at the end of a line on 17-20
+ *   pages;
+ * - before a digit: `mikroscope-agent:1.` / `2.2`, `172.30.10.` / `0/30`;
+ * - after a `.` that opens a short last part: `prometheus.` / `go`,
+ *   `ghcr.` / `io/…`.
+ *
+ * The comma is a break for the opposite reason: in
+ * `mikroscope_api_interface_info{interface,label,type,role,bridge,default_name}`
+ * the 46 characters from `info{` to `default_` had no break opportunity, so
+ * Starlight's `overflow-wrap: anywhere` in list items split them mid-word,
+ * "def|ault_name" (sinks/api-tier and three more pages, both locales). No
  * character is inserted: `<wbr>` is not text, so a copied flag or metric name
  * is exactly what the page shows. A word joiner would travel with the copy and
  * break it in a shell.
@@ -61,11 +77,17 @@ export function inlineCodeParts(text) {
 			push(rest);
 			continue;
 		}
-		for (const piece of rest.split(/(?<=[_/.])/)) {
+		const pieces = rest.split(/(?<=[_/.,])/);
+		if (pieces.length > 1 && pieces[0].length === 1)
+			pieces.splice(0, 2, pieces[0] + pieces[1]);
+		pieces.forEach((piece, i) => {
 			push(piece);
-			if (/[_/.]$/.test(piece)) parts.push({ kind: "wbr" });
-		}
-		if (parts.at(-1)?.kind === "wbr") parts.pop();
+			const next = pieces[i + 1];
+			if (next === undefined || /^\d/.test(next)) return;
+			if (piece.endsWith(".") && next.replace(/[_/.,]$/, "").length <= 3)
+				return;
+			parts.push({ kind: "wbr" });
+		});
 	}
 	return { nowrap: false, parts };
 }

@@ -242,12 +242,16 @@ El factor está medido, no elegido. En el RB5009 de referencia (RouterOS 7.24.2,
 las fuentes activas) el 2026-09-17, cuatro límites sobre cuatro ventanas de unas 12 000 muestras cada
 una:
 
-| límite        | múltiplo del anillo | RSS       | CPU por muestra | |
+<ScrollTable label="Límite de memoria frente a RSS y CPU por muestra, RB5009, 2026-09-17" nowrap sticky={false}>
+
+| límite        | múltiplo del anillo | RSS       | CPU por muestra | Lo que costó |
 | ------------- | ------------------- | --------- | --------------- | ------------------------- |
 | 40 MiB        | 4,0×                | 32,9 MiB  | 2 657 µs        | el límite nunca aprieta   |
 | 24 MiB        | 2,4×                | 26,3 MiB  | 2 780 µs        | sin coste medible         |
 | 21 MiB        | 2,1×                | 23,5 MiB  | 3 250 µs        | +22 %, y subiendo         |
 | 18 MiB        | 1,8×                | 20,4 MiB  | 14 800 µs       | +457 %, peor tick 52 ms   |
+
+</ScrollTable>
 
 Las filas son las que registra el comentario de `memLimitRingFactor` en el
 fichero <Src path="internal/router/options.go" />. El factor 2,5× que deriva `install` daría 25 MiB a 300 s; la ventana

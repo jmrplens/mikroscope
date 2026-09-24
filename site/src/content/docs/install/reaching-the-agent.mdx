@@ -82,7 +82,7 @@ permissions (9)` rather than empty. [The API user](/mikroscope/security/api-user
 answer and `--api` and `--api-user` are set, it tries the relay; otherwise it
 fails naming `install --expose`.
 
-## --expose, on the router's LAN address
+## `--expose`, on the router's LAN address
 
 <RouterWrites command="expose" />
 
@@ -104,7 +104,7 @@ exposed address. `doctor`'s health read does not use the relay either: it reads
 directly or not at all.
 
 What a LAN-wide listener opens is on
-[What --expose opens](/mikroscope/security/expose/).
+[What `--expose` opens](/mikroscope/security/expose/).
 
 ## Choosing
 
@@ -132,7 +132,7 @@ What a LAN-wide listener opens is on
   depends on.
 - [The API user](/mikroscope/security/api-user/): the user the relay needs, and where to restrict
   it.
-- [What --expose opens](/mikroscope/security/expose/): the two rules and the token.
+- [What `--expose` opens](/mikroscope/security/expose/): the two rules and the token.
 - [The collector](/mikroscope/sinks/): what pulls from the agent once it is reachable.
 
 </SeeAlso>

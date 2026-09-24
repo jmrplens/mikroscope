@@ -11,6 +11,10 @@
  * `LANDING_CAMPAIGN`, the same constant src/lib/page-markdown.mjs gives the
  * markdown twin, so the page and its twin cannot name two campaigns again.
  *
+ * The copy is HTML strings, which the markdown pass that keeps a date or a
+ * number and its unit on one line never sees, so it goes through the same
+ * rule here (src/lib/nowrap-values.mjs).
+ *
  * The release line opens the install section, where the reader is about to
  * download it, rather than the page: at the top it would sit over figures
  * measured on an earlier build and read as their version.
@@ -33,6 +37,7 @@ import RouterWrites from "../RouterWrites.astro";
 import RunsTable from "../RunsTable.astro";
 import Version from "../Version.astro";
 import { langOf } from "../../lib/lang";
+import { valuesInHtml } from "../../lib/nowrap-values.mjs";
 import Readout from "./Readout.astro";
 
 interface Props {
@@ -57,7 +62,7 @@ if (content.lang !== lang) {
 
 	<section class="ms-home-hides" aria-labelledby="ms-home-hides">
 		<h2 id="ms-home-hides">{content.hides.title}</h2>
-		{content.hides.paragraphs.map((p) => <p set:html={p} />)}
+		{content.hides.paragraphs.map((p) => <p set:html={valuesInHtml(p)} />)}
 		<p><a href={content.hides.href} set:html={content.hides.linkText} /></p>
 	</section>
 
@@ -77,7 +82,7 @@ if (content.lang !== lang) {
 				[content.tiers.kernel, content.tiers.api].map((tier) => (
 					<div class="ms-tier">
 						<h3>{tier.title}</h3>
-						<p set:html={tier.body} />
+						<p set:html={valuesInHtml(tier.body)} />
 					</div>
 				))
 			}
@@ -90,7 +95,7 @@ if (content.lang !== lang) {
 			{content.release.label} <Version link />, <Version show="date" /> ·{" "}
 			<a href={release.changelogUrl}>{content.release.changelog}</a>
 		</p>
-		<p set:html={content.install.prereq} />
+		<p set:html={valuesInHtml(content.install.prereq)} />
 		<ol class="ms-steps">
 			{
 				content.install.steps.map((step) => (
@@ -107,7 +112,7 @@ if (content.lang !== lang) {
 	<section class="ms-home-not-claimed" aria-labelledby="ms-home-not-claimed">
 		<h2 id="ms-home-not-claimed">{content.notClaimed.title}</h2>
 		<NotClaimed variant="not-measured">
-			{content.notClaimed.paragraphs.map((p) => <p class="ms-home-claim" set:html={p} />)}
+			{content.notClaimed.paragraphs.map((p) => <p class="ms-home-claim" set:html={valuesInHtml(p)} />)}
 		</NotClaimed>
 	</section>
 
