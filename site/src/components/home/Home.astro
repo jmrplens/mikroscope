@@ -6,7 +6,14 @@
  * numbers are, why a one-second average is not enough, what the observer
  * costs, what it can and cannot see, what it does to the router, what is not
  * claimed, and where to read on. Copy comes from src/data/home.ts, numbers
- * from src/data/measurements.ts; nothing here is typed per locale.
+ * from src/data/measurements.ts, the release from src/data/release.ts; nothing
+ * here is typed per locale. The campaign under the cost table is
+ * `LANDING_CAMPAIGN`, the same constant src/lib/page-markdown.mjs gives the
+ * markdown twin, so the page and its twin cannot name two campaigns again.
+ *
+ * The release line opens the install section, where the reader is about to
+ * download it, rather than the page: at the top it would sit over figures
+ * measured on an earlier build and read as their version.
  *
  * Only `h2` and `h3` are rendered: the hero owns the page's one `h1`. The
  * install commands are frameless: five one-line commands each in a terminal
@@ -18,11 +25,13 @@
  * while the fence on es/cost/ said "¡Copiado!" (dist, 2026-09-15).
  */
 import { Code } from "@astrojs/starlight/components";
-import type { HomeContent } from "../../data/home";
+import { LANDING_CAMPAIGN, type HomeContent } from "../../data/home";
+import { release } from "../../data/release";
 import NotClaimed from "../NotClaimed.astro";
 import Provenance from "../Provenance.astro";
 import RouterWrites from "../RouterWrites.astro";
 import RunsTable from "../RunsTable.astro";
+import Version from "../Version.astro";
 import { langOf } from "../../lib/lang";
 import Readout from "./Readout.astro";
 
@@ -49,12 +58,13 @@ if (content.lang !== lang) {
 	<section class="ms-home-hides" aria-labelledby="ms-home-hides">
 		<h2 id="ms-home-hides">{content.hides.title}</h2>
 		{content.hides.paragraphs.map((p) => <p set:html={p} />)}
+		<p><a href={content.hides.href} set:html={content.hides.linkText} /></p>
 	</section>
 
 	<section class="ms-home-cost" aria-labelledby="ms-home-cost">
 		<h2 id="ms-home-cost">{content.cost.title}</h2>
 		<p>{content.cost.lead}</p>
-		<Provenance of="rates-2026-09-18" />
+		<Provenance of={LANDING_CAMPAIGN} />
 		<RunsTable only={content.cost.runs} />
 		<p>{content.cost.after}</p>
 		<p><a href={content.cost.href}>{content.cost.linkText}</a></p>
@@ -76,6 +86,10 @@ if (content.lang !== lang) {
 
 	<section class="ms-home-install" aria-labelledby="ms-home-install">
 		<h2 id="ms-home-install">{content.install.title}</h2>
+		<p class="ms-home-release">
+			{content.release.label} <Version link />, <Version show="date" /> ·{" "}
+			<a href={release.changelogUrl}>{content.release.changelog}</a>
+		</p>
 		<p set:html={content.install.prereq} />
 		<ol class="ms-steps">
 			{
@@ -93,7 +107,7 @@ if (content.lang !== lang) {
 	<section class="ms-home-not-claimed" aria-labelledby="ms-home-not-claimed">
 		<h2 id="ms-home-not-claimed">{content.notClaimed.title}</h2>
 		<NotClaimed variant="not-measured">
-			<p set:html={content.notClaimed.body} />
+			{content.notClaimed.paragraphs.map((p) => <p class="ms-home-claim" set:html={p} />)}
 		</NotClaimed>
 	</section>
 
@@ -113,3 +127,13 @@ if (content.lang !== lang) {
 		</ul>
 	</section>
 </div>
+
+<style>
+	/* The callout's statements, one subject each. home.css zeroes the
+	 * landing's sibling margins, so without this they ran together as one
+	 * block (390 px render, 2026-09-24); the gap is the one a NotClaimed on a
+	 * doc page gets from Starlight between its paragraphs. */
+	.ms-home-claim + .ms-home-claim {
+		margin-top: var(--sl-content-gap-y);
+	}
+</style>

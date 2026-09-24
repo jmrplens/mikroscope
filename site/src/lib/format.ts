@@ -42,6 +42,11 @@ export function formatQuantity(
 	return m.unit === "" ? n : `${n}${NBSP}${m.unit}`;
 }
 
+/**
+ * The site's one table of number words, zero to twenty. Stat.astro and the
+ * markdown reduction in page-markdown.mjs spell a count from src/data/stats.json
+ * with it, and spellCount below uses its first eleven.
+ */
 const WORDS: Record<Lang, readonly string[]> = {
 	en: [
 		"zero",
@@ -55,6 +60,16 @@ const WORDS: Record<Lang, readonly string[]> = {
 		"eight",
 		"nine",
 		"ten",
+		"eleven",
+		"twelve",
+		"thirteen",
+		"fourteen",
+		"fifteen",
+		"sixteen",
+		"seventeen",
+		"eighteen",
+		"nineteen",
+		"twenty",
 	],
 	es: [
 		"cero",
@@ -68,8 +83,29 @@ const WORDS: Record<Lang, readonly string[]> = {
 		"ocho",
 		"nueve",
 		"diez",
+		"once",
+		"doce",
+		"trece",
+		"catorce",
+		"quince",
+		"dieciséis",
+		"diecisiete",
+		"dieciocho",
+		"diecinueve",
+		"veinte",
 	],
 };
+
+/**
+ * A count from zero to twenty as a word, or undefined past twenty (or for a
+ * number that is not a whole count), where the caller writes digits. Spanish
+ * "uno" is not agreed in gender.
+ */
+export function numberWord(n: number, lang: Lang): string | undefined {
+	return Number.isInteger(n) && n >= 0 && n < WORDS[lang].length
+		? WORDS[lang][n]
+		: undefined;
+}
 
 /**
  * A small count as a word ("five runs", "cinco ejecuciones"), which is how the
@@ -78,10 +114,7 @@ const WORDS: Record<Lang, readonly string[]> = {
  * Spanish "uno" is not agreed in gender; no count on the site is 1 today.
  */
 export function spellCount(n: number, lang: Lang, capital = false): string {
-	const word =
-		Number.isInteger(n) && n >= 0 && n < WORDS[lang].length
-			? WORDS[lang][n]
-			: undefined;
+	const word = n <= 10 ? numberWord(n, lang) : undefined;
 	if (word === undefined) return formatNumber(n, lang, 0);
 	return capital ? word[0].toUpperCase() + word.slice(1) : word;
 }

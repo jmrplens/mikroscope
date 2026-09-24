@@ -1,11 +1,12 @@
 ---
 title: Getting the CLI onto your machine
-description: How to have the `mikroscope` command on Linux, macOS or Windows — which archive to download for your own computer as opposed to the router, how to verify it, where to put it so the shell finds it, and how to check it works.
+description: The `mikroscope` CLI on Linux, macOS or Windows — which archive is for your computer rather than the router, how to verify it, and where it goes.
 ---
 
 import { Aside, Steps, Tabs, TabItem } from "@astrojs/starlight/components";
 import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
+import Src from "../../../components/Src.astro";
 
 Two programs are released together and they run on two different machines:
 
@@ -31,9 +32,9 @@ or, in PowerShell on Windows:
 irm https://raw.githubusercontent.com/jmrplens/mikroscope/main/install.ps1 | iex
 ```
 
-Either script does by itself everything the rest of this page does by hand:
-work out your platform, resolve the newest version, download that archive and
-the release's `checksums.txt`, and **refuse to install anything whose SHA-256
+Either script, <Src path="install.sh" /> or <Src path="install.ps1" />, does by itself everything
+the rest of this page does by hand: work out your platform, resolve the newest version, download
+that archive and the release's `checksums.txt`, and **refuse to install anything whose SHA-256
 is not the one the release published**. There is no flag to skip that check. A
 script piped into a shell is the least inspectable way to install anything, so
 the one thing it must not do is trust what it just downloaded. Where `cosign`
@@ -58,8 +59,8 @@ Two arguments, which are also the `VERSION` and `BIN_DIR` variables so they can
 be set through a pipe:
 
 ```sh
-curl -fsSL .../install.sh | VERSION=1.2.0 BIN_DIR=~/bin bash
-./install.sh --version 1.2.0 --dir ~/bin      # the same, with the file downloaded first
+curl -fsSL .../install.sh | VERSION={{MIKROSCOPE_VERSION}} BIN_DIR=~/bin bash
+./install.sh --version {{MIKROSCOPE_VERSION}} --dir ~/bin      # the same, with the file downloaded first
 ```
 
 The rest of this page is what those scripts do, one platform at a time, for
@@ -94,7 +95,7 @@ Anything whose name starts with `mikroscope-agent` is the other program.
 1. Download the archive and the checksums:
 
    ```sh
-   VERSION=1.2.0
+   VERSION={{MIKROSCOPE_VERSION}}
    curl -fsSLO https://github.com/jmrplens/mikroscope/releases/download/v$VERSION/mikroscope_${VERSION}_linux_x86_64.tar.gz
    curl -fsSLO https://github.com/jmrplens/mikroscope/releases/download/v$VERSION/checksums.txt
    ```
@@ -127,7 +128,7 @@ Anything whose name starts with `mikroscope-agent` is the other program.
    `darwin_x86_64` for Intel — and the checksums:
 
    ```sh
-   VERSION=1.2.0
+   VERSION={{MIKROSCOPE_VERSION}}
    curl -fsSLO https://github.com/jmrplens/mikroscope/releases/download/v$VERSION/mikroscope_${VERSION}_darwin_arm64.tar.gz
    curl -fsSLO https://github.com/jmrplens/mikroscope/releases/download/v$VERSION/checksums.txt
    ```
@@ -164,13 +165,13 @@ Anything whose name starts with `mikroscope-agent` is the other program.
 2. Check it in PowerShell, against the line for your file in `checksums.txt`:
 
    ```powershell
-   Get-FileHash .\mikroscope_1.2.0_windows_x86_64.zip -Algorithm SHA256
+   Get-FileHash .\mikroscope_{{MIKROSCOPE_VERSION}}_windows_x86_64.zip -Algorithm SHA256
    ```
 
 3. Unpack it somewhere permanent and put that folder on your `PATH`:
 
    ```powershell
-   Expand-Archive .\mikroscope_1.2.0_windows_x86_64.zip -DestinationPath $HOME\mikroscope
+   Expand-Archive .\mikroscope_{{MIKROSCOPE_VERSION}}_windows_x86_64.zip -DestinationPath $HOME\mikroscope
    $env:PATH += ";$HOME\mikroscope"
    ```
 
@@ -242,7 +243,7 @@ That is the first thing to run, before any install route.
 	default from a `MIKROSCOPE_*` variable, so a shell that exports them turns the command above into
 	`mikroscope doctor`. `--rate`, `--buffer`, `--port` and the other agent settings do not, and must
 	be passed each time. [Environment variables](/mikroscope/reference/environment/) is the list, and
-	`.env.example` in the repository is a template.
+	the repository's <Src path=".env.example" /> is a template.
 </Aside>
 
 <SeeAlso>

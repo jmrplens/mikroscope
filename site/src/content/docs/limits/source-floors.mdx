@@ -1,6 +1,9 @@
 ---
 title: Each source at its own floor
-description: Which sources the agent reads on every tick and which it reads or stores less often, the named reason each one reports, and FLOOR_HZ, the one setting that turns every floor off.
+description: Which kernel sources the agent reads every tick and which less often, the named reason each reports, and FLOOR_HZ, which turns every floor off.
+head:
+  - tag: title
+    content: "How often each RouterOS kernel source is read | mikroscope"
 ---
 
 import CadenceReasons from "../../../components/CadenceReasons.astro";
@@ -8,6 +11,7 @@ import Measured from "../../../components/Measured.astro";
 import NotClaimed from "../../../components/NotClaimed.astro";
 import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
+import Src from "../../../components/Src.astro";
 
 Not every source changes as fast as the sampler ticks, and recording a value more often than
 the hardware refreshes it is storage for no information. This page answers which sources the
@@ -28,7 +32,7 @@ Three more are read every tick with their own rule:
   read. A device's row is stored only when its delta is non-zero, which on the reference
   device is a few times a minute. The RB5009 also lists sixteen idle `nbd` devices, and a row
   per tick for each would be payload and nothing else.
-- **The kernel log (`/dev/kmsg`)** is drained every tick and never slowed. An event's value
+- **The kernel log ([`/dev/kmsg`](https://docs.kernel.org/admin-guide/abi-testing.html#symbols-under-dev-kmsg))** is drained every tick and never slowed. An event's value
   is its timestamp, and a marker delayed by a second no longer lines up with the spike it
   explains.
 
@@ -66,7 +70,7 @@ A slower cadence is a whole number of ticks: the sampler rate divided by the flo
 the nearest integer and never less than one. So the reported rate is what actually happens,
 not the nominal floor.
 
-**Temperature.** On the reference RB5009 both zones declare a `polling_delay` of 1 000 ms
+**Temperature.** On the reference RB5009 both zones declare a [`polling_delay`](https://docs.kernel.org/driver-api/thermal/sysfs-api.html) of 1 000 ms
 (`polling-delay-passive` 250 ms, read 2026-09-14), so the kernel itself re-reads the sensor at
 1 Hz; at 10 Hz the agent reads every 10th tick. The sensor quantises to about <Measured id="thermal.quantumC" /> steps and the raw
 reading dithers across a boundary tens of times a second. Storing on change would store that
@@ -76,7 +80,7 @@ drops the dither. On a board that declares no cadence the zones are read every t
 **CPU frequency.** A frequency step is a real DVFS transition, not noise, so the frequency is
 read every tick and stored when any core moves. On a device with a pinned clock that stores
 nothing after the first reading but the heartbeat; on a scaling device it catches every move.
-The reference RB5009's governor read `userspace` on 2026-09-14, so by the rule above its
+The reference RB5009's [cpufreq governor](https://docs.kernel.org/admin-guide/pm/cpufreq.html#policy-interface-in-sysfs) read `userspace` on 2026-09-14, so by the rule above its
 reason reads `policy` there.
 
 **`/proc/slabinfo`** is the expensive one: 13 833 bytes and 129 lines per read on the
@@ -120,7 +124,7 @@ is one board, one idle night, its clock pinned at the owner's setting. "cpufreq 
 means it did not change _that night_. A router with a scaling clock, a busy dirty-page
 workload, or a different board has different floors.
 
-The floors are named constants in `internal/agent/source.go` rather than numbers buried
+The floors are named constants in <Src path="internal/agent/source.go" /> rather than numbers buried
 in the logic.
 
 <NotClaimed variant="device-specific">

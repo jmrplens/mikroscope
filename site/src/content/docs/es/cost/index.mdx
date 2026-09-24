@@ -1,6 +1,9 @@
 ---
 title: El coste del observador
-description: Lo que cuesta el agente en un RB5009, medido desde su propio cgroup, y cómo medirlo en un equipo que no sea este.
+description: Lo que le cuesta el agente a un MikroTik RB5009 de 10 a 100 Hz, medido desde su propio cgroup, y cómo medirlo en un equipo que no sea este.
+head:
+  - tag: title
+    content: El coste del observador en un MikroTik RB5009 | mikroscope
 ---
 
 import { Aside } from "@astrojs/starlight/components";
@@ -8,8 +11,14 @@ import Measured from "../../../../components/Measured.astro";
 import Provenance from "../../../../components/Provenance.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
 
+Con los valores por defecto de la instalación — 10 Hz, los suelos por fuente por defecto, anillo
+de 60 s — el agente le cuesta a un MikroTik RB5009 **un <Measured id="run.10hz.cpu" /> de un núcleo
+y un <Measured id="run.10hz.rss" /> de RSS**, leído desde su propio cgroup:
+
+<Provenance of="rates-2026-09-18" />
+
 Un observador que cuesta un 20 % de aquello que observa no está midiendo el
-router: se está midiendo a sí mismo. Por eso aquí este número es un resultado de
+router: se está midiendo a sí mismo. Por eso aquí ese número es un resultado de
 primera clase y no una nota al pie: el agente lo publica en cada muestra, y CI comprueba el presupuesto de tamaño de la imagen.
 
 ## El presupuesto, y lo que cuesta de verdad
@@ -19,13 +28,7 @@ RSS, ≤ <Measured id="budget.image" /> de imagen**. La imagen arm64 publicada 
 el artefacto de la versión el 2026-09-24); la de 1.0.0 medía <Measured id="image.size.v100" />, la
 cifra que dan las notas de esa versión. Los
 otros dos dependen de la cadencia y de cuánto le pidas leer, y la respuesta honesta es una tabla, no
-un número.
-
-Con los valores por defecto de la instalación — 10 Hz, suelos por fuente por defecto, anillo de
-60 s — el agente cuesta **un <Measured id="run.10hz.cpu" /> de un núcleo y
-un <Measured id="run.10hz.rss" /> de RSS**, desde su propio cgroup:
-
-<Provenance of="rates-2026-09-18" />
+un número: [el techo de muestreo](/mikroscope/es/cost/rate-ceiling/) es esa tabla.
 
 **La memoria está dentro del presupuesto y la CPU no.** <Measured id="run.10hz.rss" /> frente a
 los <Measured id="budget.rss" /> que pide el presupuesto, y un <Measured id="run.10hz.cpu" /> frente

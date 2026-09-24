@@ -1,0 +1,136 @@
+---
+title: Frente a las alternativas
+description: Qué leen de un router MikroTik SNMP, The Dude, Graphing, el Profiler, mktxp y mikrotik-exporter, junto a mikroscope, y cuándo conviene usarlos en su lugar.
+head:
+  - tag: title
+    content: mikroscope frente a SNMP, mktxp y The Dude en MikroTik RouterOS
+---
+
+import Measured from "../../../../components/Measured.astro";
+import NotClaimed from "../../../../components/NotClaimed.astro";
+import Provenance from "../../../../components/Provenance.astro";
+import ScrollTable from "../../../../components/ScrollTable.astro";
+import SeeAlso from "../../../../components/SeeAlso.astro";
+
+mikroscope lee el kernel Linux de un router MikroTik desde dentro de un contenedor de RouterOS, a
+entre 1 y 100 Hz. SNMP, The Dude, Graphing y el Profiler del propio RouterOS, mktxp y
+mikrotik-exporter leen lo que informa el propio RouterOS. Esta página pone los siete uno junto a
+otro, dice de dónde sale cada celda y dice cuándo uno de los otros seis es mejor opción.
+
+## De un vistazo
+
+<ScrollTable label="mikroscope junto a otras seis formas de vigilar un router MikroTik">
+
+| Herramienta | Dónde corre | Qué lee | Vista de CPU más fina | softirq y softnet por núcleo | Log del kernel | Contadores de interfaz | Lo que necesita en el router |
+| ----------- | ----------- | ------- | --------------------- | ---------------------------- | -------------- | ---------------------- | ---------------------------- |
+| mikroscope | un agente en un contenedor de RouterOS; la CLI y el colector en tu máquina | el kernel del router: `/proc`, `/sys`, `/dev/kmsg`, `perf_event_open` | por núcleo, los ticks crudos de `/proc/stat` a 1–100 Hz; una muestra de 100 ms resuelve un núcleo en pasos de <Measured id="tick.stepOneCore" /> | sí, por CPU, en cada tick | sí, `/dev/kmsg`, con `privileged=yes` | de la API de RouterOS, fusionados: el espacio de nombres de red del contenedor oculta los del router | RouterOS 7.24 o posterior, el paquete `container`, `device-mode container=yes`; arm64, arm o x86_64 |
+| [SNMP](https://help.mikrotik.com/docs/spaces/ROS/pages/8978519/SNMP) | un agente integrado en RouterOS; el sondeador en otra máquina | MIB: MIB-2, HOST-RESOURCES-MIB, IF-MIB, MIKROTIK-MIB y otras | `hrProcessorLoad` por procesador, definido como una media de un minuto ([RFC 2790](https://datatracker.ietf.org/doc/html/rfc2790)) | ningún objeto para ninguno de los dos en la [MIKROTIK-MIB de la 7.24.4](https://download.mikrotik.com/routeros/7.24.4/mikrotik.mib) | no; los traps avisan de cambios de interfaz, del arranque del servicio SNMP y de un umbral de temperatura (`temp-exception`) | sí, IF-MIB | `/snmp set enabled=yes` (desactivado por defecto) y una comunidad o un usuario SNMPv3 |
+| [The Dude](https://help.mikrotik.com/docs/spaces/ROS/pages/377225250/Dude) | el paquete `dude` (arm, arm64, mmips, tile, x86, CHR); MikroTik lo da por descontinuado | no lo dicen las páginas actuales de MikroTik | no lo dicen las páginas actuales de MikroTik | no lo dicen las páginas actuales de MikroTik | no consta | no lo dicen las páginas actuales de MikroTik | el paquete `dude`; las páginas actuales de MikroTik no dicen nada más |
+| [Graphing](https://help.mikrotik.com/docs/spaces/ROS/pages/22773810/Graphing) | dentro de RouterOS; las gráficas en WebFig y WinBox | las cifras de recursos y tráfico del propio RouterOS | no consta; `store-every`, 5 min por defecto, es cada cuánto escribe en disco | no: dibuja recursos, interfaces y colas simples | no | tráfico por interfaz | entradas en `/tool graphing`; desactivado por defecto |
+| [Profiler](https://help.mikrotik.com/docs/spaces/ROS/pages/8323153/Profiler) | dentro de RouterOS, `/tool/profile`, a mano | la contabilidad de CPU por proceso de RouterOS | por núcleo y por clase de proceso; instantáneas de un segundo en [las ejecuciones de este proyecto](/mikroscope/es/sinks/api-tier/#lo-que-le-cuesta-al-router) | no: CPU por clase de proceso | no | no | nada: viene integrado |
+| [mktxp](https://github.com/akpw/mktxp) | tu máquina: Python 3.9 o posterior en Linux, macOS o FreeBSD, o Docker | la API de RouterOS | `cpu-load` de `/system/resource`: una sola cifra para todo el router | ningún colector para ninguno de los dos (código en `1e4412a`) | no; el syslog de RouterOS va al [MKTXP Stack](https://github.com/akpw/mktxp-stack), un proyecto aparte | sí, por la API | un usuario de la API con `api,read` |
+| [mikrotik-exporter](https://github.com/nshttpd/mikrotik-exporter) | tu máquina | la API de RouterOS | `cpu-load` de `/system/resource/print`: una sola cifra para todo el router | ningún colector para ninguno de los dos (código en `428dbfc`) | no | sí, `/interface/print` | un usuario de la API con `api,read,winbox` |
+
+</ScrollTable>
+
+Las otras seis filas son lo que dice la documentación o el código de cada herramienta, leídos el
+2026-09-24, con "no consta" o "no lo dicen" donde no dicen nada. Las fuentes son las páginas de
+MikroTik sobre
+[paquetes](https://help.mikrotik.com/docs/spaces/ROS/pages/40992872/Packages) y
+[`/system/resource`](https://help.mikrotik.com/docs/spaces/ROS/pages/40992875/Resource) además de
+las cuatro enlazadas en la tabla; el fichero MIKROTIK-MIB de RouterOS 7.24.4, ninguno de cuyos
+objetos se llama ni se describe como contador de softirq, de softnet, de interrupciones o de log; la
+[guía del exportador](https://github.com/akpw/mktxp/blob/1e4412a3349db95f59281c81d3b3bc65f2f7f963/docs/exporter.md) y el
+[colector de recursos](https://github.com/akpw/mktxp/blob/1e4412a3349db95f59281c81d3b3bc65f2f7f963/mktxp/collector/resource_collector.py)
+de mktxp en el commit `1e4412a` (2026-09-21); y el
+[colector de recursos](https://github.com/nshttpd/mikrotik-exporter/blob/428dbfcc37d05d52ee6a326fa45719a375a89d02/collector/resource_collector.go)
+de mikrotik-exporter en el commit `428dbfc` (2026-07-03). Las herramientas de terceros cambian:
+comprueba sus páginas antes de fiarte de una celda.
+
+La fila de mikroscope sale de este sitio: [qué es](/mikroscope/es/start/), [el suelo de
+resolución](/mikroscope/es/limits/), [lo que aporta privileged](/mikroscope/es/limits/privileged/),
+[la red del contenedor](/mikroscope/es/limits/namespaces/) y [lo que necesita el
+router](/mikroscope/es/install/prerequisites/). La resolución de su celda de CPU es aritmética a
+partir del tick del kernel, no una lectura:
+
+<Provenance of="kernel-2026-09-11" />
+
+## Qué es `cpu-load` para los dos exportadores
+
+mktxp y mikrotik-exporter leen los dos `cpu-load`, que MikroTik define como el porcentaje de
+recursos de CPU usados con todas las CPU juntas. En un RB5009 este proyecto lo midió como [una
+media móvil de más o menos un
+segundo](/mikroscope/es/sinks/api-tier/#cuántos-segundos-promedia-el-cpu-load-de-routeros), así
+que una ráfaga más corta que ese segundo queda promediada dentro. Las cifras por núcleo existen en
+`/system/resource/cpu` de RouterOS, que la capa de la API de mikroscope lee y que el código de
+ninguno de los dos exportadores pide.
+
+## Lo que solo mostró el kernel
+
+El 2026-09-12 un bucle de capa 2 en la red de producción del router de referencia dejó el log y el
+monitor de puertos de RouterOS informando de un equipo sano, mientras el log del kernel llevaba la
+propia dirección del router volviendo a entrar en el bridge en cada hello de STP. mikroscope lo
+encontró por `/dev/kmsg`, y de ninguno de los otros seis consta que lea ese log. [Un bucle que solo
+veía el kernel](/mikroscope/es/playbooks/loop/) tiene el diagnóstico.
+
+Tampoco sustituye a la API de RouterOS: los bytes y paquetes por interfaz salen de esa API, y el
+colector los fusiona con las muestras del kernel en el reloj del agente.
+
+## Lo que le cuesta cada uno al router
+
+Con la instalación por defecto, a 10 Hz, el agente cuesta <Measured id="run.10hz.cpu" /> de un
+núcleo y <Measured id="run.10hz.rss" /> de RSS, según su propio cgroup:
+
+<Provenance of="rates-2026-09-18" />
+
+Su capa de la API, que le pregunta a RouterOS una ronda por segundo, tiene un coste propio, medido
+con `/tool profile` en un perfil de 60 s por condición y sin dispersión: [lo que le cuesta al
+router](/mikroscope/es/sinks/api-tier/#lo-que-le-cuesta-al-router).
+
+<NotClaimed>
+	Ninguna de las otras seis herramientas se ejecutó para esta página. Cada celda de sus filas es lo
+	que dice su propia documentación o su código, leídos el 2026-09-24, y ninguna es una medición. No
+	se midió lo que le cuesta a un router el sondeo SNMP, The Dude, Graphing, el Profiler, mktxp o
+	mikrotik-exporter, ni cada cuánto puede sondearlo cada uno con provecho, ni qué pone RouterOS en
+	`hrProcessorLoad`. El coste de la capa de la API enlazado arriba es el del propio cliente de mikroscope
+	con sus propias órdenes, no el de un exportador.
+</NotClaimed>
+
+## Cuándo no usar mikroscope
+
+- **Un router MIPS, TILE o PPC.** El agente no es nada sin un contenedor, y MikroTik publica el
+  paquete `container` solo para arm, arm64, x86 y CHR. `/system/resource/print` dice el
+  `architecture-name` de tu router. SNMP, o un exportador de la API como mktxp, lee lo que informa
+  RouterOS en cualquiera de ellos.
+- **RouterOS anterior a la 7.24.** El paso del contenedor escribe `privileged=`, un atributo que
+  RouterOS añadió en la 7.24, así que en una 7.x anterior ese paso debería fallar. Eso sale del
+  código: no se ha probado ninguna instalación ahí. Actualiza RouterOS, o usa SNMP o mktxp, que no
+  necesitan contenedor.
+- **Sin paquete `container`, o sin nadie que pulse el botón.** `device-mode container=yes` exige
+  pulsar el botón de reset o de modo, o un arranque en frío, en los cinco minutos siguientes a la
+  orden. [La página de device-mode de
+  MikroTik](https://help.mikrotik.com/docs/spaces/ROS/pages/93749258/Device-mode) exige acceso
+  físico a propósito, así que ninguna sesión remota puede concederlo. SNMP solo necesita un
+  servicio activado, y un exportador, un usuario de la API.
+- **Solo quieres el tráfico de las interfaces a un intervalo de scrape.** mikroscope saca los bytes
+  y paquetes por interfaz de la misma API de RouterOS que lee un exportador, porque el contenedor
+  no los ve. Un exportador los obtiene sin poner nada en el router.
+- **Necesitas verlo funcionar antes en tu placa.** Todas las ejecuciones hasta ahora fueron en un
+  único RB5009 arm64; las versiones para arm y x86_64 se compilan de forma cruzada y se
+  comprueban en CI, y nunca han corrido en hardware. [En qué punto está](/mikroscope/es/about/status/)
+  lleva esa lista.
+
+<SeeAlso>
+
+## Véase también
+
+- [Qué es](/mikroscope/es/start/): el agente, la CLI y los cuatro límites que ningún diseño puede
+  quitar.
+- [Respuestas cortas](/mikroscope/es/start/questions/): MIPS, la 7.24, el coste, un router de
+  producción, en un párrafo cada una.
+- [La capa de la API de RouterOS](/mikroscope/es/sinks/api-tier/): lo que el colector sigue
+  preguntando a RouterOS, y lo que resultó medir `cpu-load`.
+- [Lo que necesita el router](/mikroscope/es/install/prerequisites/): la arquitectura, el paquete y
+  el paso de device-mode.
+
+</SeeAlso>

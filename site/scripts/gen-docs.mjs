@@ -80,7 +80,7 @@ const publicUrl = (route) => (route ? `${PUBLIC}/${route}/` : `${PUBLIC}/`);
 // docs/<file> <- the site pages it holds, in the order they are read in.
 //
 // The first six names are the ones README.md and CLAUDE.md already link to and
-// keep their old scope; the other five are the sections the site grew that the
+// keep their old scope; the others are the sections the site grew that the
 // hand-written docs/ never had. The grouping is by what a reader arrives with
 // a question about, which is how the sidebar is ordered too, so a file reads
 // as one document rather than as pages stapled together.
@@ -90,6 +90,14 @@ const MANIFEST = [
 		file: "walkthrough.md",
 		title: "Five minutes with a router",
 		routes: ["start", "start/walkthrough"],
+	},
+	// What a reader asks before installing, answered in a paragraph each from
+	// the page that measured it, and the other tools set beside this one. Not
+	// in walkthrough.md, whose scope README.md and CLAUDE.md already name.
+	{
+		file: "questions.md",
+		title: "Short answers, and the alternatives",
+		routes: ["start/questions", "start/compared"],
 	},
 	// Getting it onto a router: prerequisites, the four routes the image can
 	// take, the writes, the firewall, where things land, and how the CLI
@@ -176,7 +184,8 @@ const MANIFEST = [
 			"security/installer",
 		],
 	},
-	// The tables: flags, variables, endpoints, metric families, measurements.
+	// The tables: flags, variables, endpoints, metric families, measurements,
+	// and last the glossary of the terms all of them use.
 	{
 		file: "reference.md",
 		title: "Reference",
@@ -189,13 +198,15 @@ const MANIFEST = [
 			"reference/port-names",
 			"reference/testing",
 			"reference/troubleshooting",
+			"reference/glossary",
 		],
 	},
-	// Where the project stands, what the mark is, and what it was built from.
+	// Where the project stands, what each release publishes, what the mark is,
+	// and what it was built from.
 	{
 		file: "about.md",
 		title: "About the project",
-		routes: ["about/status", "about/brand", "about/lineage"],
+		routes: ["about/status", "about/changelog", "about/brand", "about/lineage"],
 	},
 ];
 

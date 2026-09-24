@@ -1,9 +1,13 @@
 ---
 title: Conntrack without the API
-description: The container’s own namespace reports zero tracked connections, but the global slab allocator does not — how to read the router’s real conntrack population and its ceiling from files, and why no storm was provoked to show it.
+description: "The real conntrack count of a MikroTik router from inside a RouterOS container: the nf_conntrack slab where the namespace says 0, checked against the API."
+head:
+  - tag: title
+    content: "RouterOS conntrack count from a container | mikroscope"
 ---
 
 import FaultSignature from "../../../components/FaultSignature.astro";
+import Figure from "../../../components/Figure.astro";
 import Measured from "../../../components/Measured.astro";
 import NotClaimed from "../../../components/NotClaimed.astro";
 import Provenance from "../../../components/Provenance.astro";
@@ -13,6 +17,14 @@ This page answers how many connections the router is tracking, without a table
 scan over an API session. The ceiling and the timeouts were both read on 2026-09-14.
 
 <Provenance of="playbooks-2026-09-12" />
+
+**In short:** inside the agent's container `nf_conntrack_count` reads 0 however
+busy the router is, because it belongs to the container's network namespace. The
+router's real connection count is the active objects of the `nf_conntrack` slab
+cache in `/proc/slabinfo`, readable with `privileged=yes`, and its ceiling,
+`nf_conntrack_max`, reads the same from the container as from RouterOS. Over five
+days of hourly means in the reference store, that slab count tracked the API's
+`count-only` and stayed a few percent above it.
 
 ## The namespace reports zero
 
@@ -57,6 +69,13 @@ slab readings. Those, on 2026-09-12, were <Measured id="conntrack.slabDiscovery"
 privileged discovery container and <Measured id="conntrack.slab" /> from the agent, and the
 snippet above caught a third, undated moment, 6 240. A day apart, these show the same order of magnitude, not that
 the two track: on your own device, run the count and read the slab in the same minute.
+
+The reference store has since done that for five days. With
+`forward --conntrack-every` set, the collector asked the API for the count while
+the agent read the slab, and the chart has both as hourly means, with the ratio between
+them underneath:
+
+<Figure name="conntrack-2026-09-19" />
 
 The two will not match exactly even then — they are sampled at different instants,
 and the slab counts objects the allocator still holds. The difference in cost is
@@ -112,8 +131,8 @@ They are worth watching for their own sake:
 <NotClaimed variant="not-provoked">
 	A conntrack storm. Generating thousands of connections against a production router risks tripping
 	its own firewall or a CrowdSec-style bouncer and locking out the very path you are working
-	through. The cross-check above ties the counter to the API's count without that risk, to the
-	same order of magnitude, but what a storm looks like in these caches was not observed.
+	through. The cross-check above ties the counter to the API's count without that risk, hour by
+	hour over five days, but what a storm looks like in these caches was not observed.
 </NotClaimed>
 
 <SeeAlso>

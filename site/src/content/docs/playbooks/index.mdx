@@ -1,6 +1,9 @@
 ---
 title: How to read what it shows
-description: Eight readings of kernel and port data from one RB5009 — two production faults found without looking for them, three events provoked on purpose, two that needed no provoking, and the idle shape they are read against.
+description: "Eight readings of kernel and port data from a MikroTik RB5009: two production faults, three provoked events, two unprovoked ones and the idle baseline."
+head:
+  - tag: title
+    content: "Reading MikroTik RouterOS faults in kernel data | mikroscope"
 ---
 
 import { Aside } from "@astrojs/starlight/components";
@@ -14,6 +17,14 @@ numbers are arriving — what does a fault look like in them?_ Each page is one
 shape, read from data the agent (or, for port errors, the API tier) collected on
 the reference router, with the commands that produced it so you can reproduce it
 on your own device.
+
+**In short:** each page below reads a fault as a change against the idle shape,
+such as a kernel log that is normally silent carrying a steady stream, one core
+pinned while the device total stays modest, or one interrupt line rising
+several-fold. Three of them carry a chart drawn from the reference InfluxDB
+store, whose history begins on 2026-09-19: the loop's return, the conntrack
+cross-check and the port losing frames. The readings of 2026-09-12 predate that
+store and are tables.
 
 Every number in these pages except the port-errors page comes from one campaign
 on the reference router, an aarch64 kernel on a board with 1 GB of RAM:

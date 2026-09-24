@@ -1,0 +1,60 @@
+---
+title: Releases
+description: The current mikroscope release and its date, read at build from VERSION and CHANGELOG.md, what every release publishes, and where the full history is.
+head:
+  - tag: title
+    content: mikroscope releases for MikroTik RouterOS
+---
+
+import SeeAlso from "../../../components/SeeAlso.astro";
+import Version from "../../../components/Version.astro";
+
+The current release of mikroscope is <Version link />, released on <Version show="date" />. Neither is typed
+on this page: both are read at build from the repository's `VERSION` file and from the dated heading
+that version has in `CHANGELOG.md`, and the site does not build when that heading is missing. The
+install commands on every page carry the same version, from the same file.
+
+## Where the history is
+
+- [`CHANGELOG.md`](https://github.com/jmrplens/mikroscope/blob/main/CHANGELOG.md) has one section
+  per release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) form.
+  Its headings carry a date from 1.1.0 on. Not every earlier section became a published release:
+  on 2026-09-24, 1.0.5 and 1.0.8 had no tag, and 1.0.6 a tag and no release page.
+- [GitHub Releases](https://github.com/jmrplens/mikroscope/releases) has each tag's notes, archives,
+  image tars, checksums, signatures and SBOMs.
+- [The releases feed](https://github.com/jmrplens/mikroscope/releases.atom) is the same list as
+  Atom, for a feed reader.
+
+Version numbers follow [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html), as the
+changelog states. A sentence on this site about a past release, such as "since 1.1.0", keeps that
+release's number, because it was checked against that release and not against a later one.
+
+## What a release publishes
+
+- **The CLI**, as an archive per platform: linux and FreeBSD on amd64, arm64 and arm; macOS and
+  Windows on amd64 and arm64.
+- **The agent**, as one side-loadable image tar per architecture, and as a registry image,
+  `jmrplens/mikroscope-agent` on Docker Hub and `ghcr.io/jmrplens/mikroscope-agent` on GHCR, whose
+  index carries `linux/amd64`, `linux/arm64`, `linux/arm/v7` and `linux/arm/v5`.
+- **The collector**, since 1.1.0, as the image `jmrplens/mikroscope` and
+  `ghcr.io/jmrplens/mikroscope` for `linux/amd64` and `linux/arm64`.
+- **`checksums.txt`** over every archive and every agent image tar, signed keylessly with cosign,
+  and an SPDX SBOM per archive with a signature of its own. [Verifying the
+  download](/mikroscope/install/routes/#verifying-the-download) has the commands.
+
+This is the short form. The full list, with the bare agent archives, the name of each image tar
+and the releases that were never tagged, is [What the release
+publishes](/mikroscope/about/status/#what-the-release-publishes) on the status page.
+
+<SeeAlso>
+
+## See also
+
+- [Four ways to install](/mikroscope/install/routes/): which of those files each install route
+  takes, and how to verify it.
+- [Getting the CLI onto your machine](/mikroscope/install/cli/): the archive, `go install` or the
+  install script, at the current release.
+- [Where the project stands](/mikroscope/about/status/): what the current release has run on, and
+  what it has not.
+
+</SeeAlso>

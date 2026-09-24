@@ -19,3 +19,24 @@ export const safeJsonLd = (value) =>
 		.replace(/&/g, "\\u0026")
 		.replace(/\u2028/g, "\\u2028")
 		.replace(/\u2029/g, "\\u2029");
+
+/**
+ * One text in both of the site's languages, as JSON-LD language-tagged
+ * values: `[{"@value": \u2026, "@language": "en"}, {"@value": \u2026, "@language": "es"}]`.
+ *
+ * For the nodes every page carries (the website, the software). They are one
+ * node each, identified by one `@id` on every page, and a consumer that reads
+ * both an English and a Spanish page merges them by that `@id`. Giving each
+ * locale its own plain string would hand that consumer two different values
+ * for the same property of the same node; giving the Spanish pages the English
+ * one, which is what they did until 2026-09-24, describes the software to a
+ * Spanish reader in English. Both languages on every page is the one form that
+ * is identical everywhere and still says which text is which.
+ *
+ * @param {{ en: string, es: string }} text the English and the Spanish text
+ * @returns {{ "@value": string, "@language": "en" | "es" }[]}
+ */
+export const inBothLanguages = ({ en, es }) => [
+	{ "@value": en, "@language": "en" },
+	{ "@value": es, "@language": "es" },
+];

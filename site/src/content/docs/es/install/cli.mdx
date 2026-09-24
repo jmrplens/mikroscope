@@ -1,11 +1,12 @@
 ---
 title: Tener la CLI en tu máquina
-description: Cómo tener la orden `mikroscope` en Linux, macOS o Windows — qué archivo descargar para tu propio ordenador y no para el router, cómo verificarlo, dónde ponerlo para que el intérprete lo encuentre y cómo comprobar que funciona.
+description: La CLI `mikroscope` en Linux, macOS o Windows — qué archivo es para tu ordenador y no para el router, cómo verificarlo y dónde ponerlo.
 ---
 
 import { Aside, Steps, Tabs, TabItem } from "@astrojs/starlight/components";
 import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
+import Src from "../../../../components/Src.astro";
 
 Se publican dos programas a la vez y se ejecutan en máquinas distintas:
 
@@ -31,9 +32,9 @@ o, en PowerShell en Windows:
 irm https://raw.githubusercontent.com/jmrplens/mikroscope/main/install.ps1 | iex
 ```
 
-Cualquiera de los dos hace por su cuenta todo lo que el resto de esta página
-hace a mano: averigua tu plataforma, resuelve la versión más reciente, descarga
-ese archivo y el `checksums.txt` de la release, y **se niega a instalar nada
+Cualquiera de los dos, <Src path="install.sh" /> o <Src path="install.ps1" />, hace por su cuenta
+todo lo que el resto de esta página hace a mano: averigua tu plataforma, resuelve la versión más
+reciente, descarga ese archivo y el `checksums.txt` de la release, y **se niega a instalar nada
 cuyo SHA-256 no sea el que publicó la release**. No hay opción para saltarse esa
 comprobación. Un script metido por una tubería a una shell es la forma menos
 inspeccionable de instalar algo, así que lo único que no debe hacer es fiarse de
@@ -59,8 +60,8 @@ Dos argumentos, que son también las variables `VERSION` y `BIN_DIR` para poder
 fijarlos a través de una tubería:
 
 ```sh
-curl -fsSL .../install.sh | VERSION=1.2.0 BIN_DIR=~/bin bash
-./install.sh --version 1.2.0 --dir ~/bin      # lo mismo, con el fichero descargado antes
+curl -fsSL .../install.sh | VERSION={{MIKROSCOPE_VERSION}} BIN_DIR=~/bin bash
+./install.sh --version {{MIKROSCOPE_VERSION}} --dir ~/bin      # lo mismo, con el fichero descargado antes
 ```
 
 El resto de esta página es lo que hacen esos scripts, plataforma por plataforma,
@@ -95,7 +96,7 @@ Todo lo que empiece por `mikroscope-agent` es el otro programa.
 1. Descarga el archivo y las sumas de verificación:
 
    ```sh
-   VERSION=1.2.0
+   VERSION={{MIKROSCOPE_VERSION}}
    curl -fsSLO https://github.com/jmrplens/mikroscope/releases/download/v$VERSION/mikroscope_${VERSION}_linux_x86_64.tar.gz
    curl -fsSLO https://github.com/jmrplens/mikroscope/releases/download/v$VERSION/checksums.txt
    ```
@@ -128,7 +129,7 @@ Todo lo que empiece por `mikroscope-agent` es el otro programa.
    `darwin_x86_64` para Intel— y las sumas de verificación:
 
    ```sh
-   VERSION=1.2.0
+   VERSION={{MIKROSCOPE_VERSION}}
    curl -fsSLO https://github.com/jmrplens/mikroscope/releases/download/v$VERSION/mikroscope_${VERSION}_darwin_arm64.tar.gz
    curl -fsSLO https://github.com/jmrplens/mikroscope/releases/download/v$VERSION/checksums.txt
    ```
@@ -166,13 +167,13 @@ Todo lo que empiece por `mikroscope-agent` es el otro programa.
 2. Compruébalo en PowerShell, contra la línea de tu archivo en `checksums.txt`:
 
    ```powershell
-   Get-FileHash .\mikroscope_1.2.0_windows_x86_64.zip -Algorithm SHA256
+   Get-FileHash .\mikroscope_{{MIKROSCOPE_VERSION}}_windows_x86_64.zip -Algorithm SHA256
    ```
 
 3. Descomprímelo en un sitio permanente y pon esa carpeta en tu `PATH`:
 
    ```powershell
-   Expand-Archive .\mikroscope_1.2.0_windows_x86_64.zip -DestinationPath $HOME\mikroscope
+   Expand-Archive .\mikroscope_{{MIKROSCOPE_VERSION}}_windows_x86_64.zip -DestinationPath $HOME\mikroscope
    $env:PATH += ";$HOME\mikroscope"
    ```
 
@@ -247,7 +248,7 @@ Es lo primero que hay que ejecutar, antes de cualquier ruta de instalación.
 	su valor por defecto de una variable `MIKROSCOPE_*`, así que un intérprete que las exporte convierte
 	la orden de arriba en `mikroscope doctor`; `--rate`, `--buffer`, `--port` y los demás ajustes del
 	agente no, y hay que pasarlos cada vez. [Variables de entorno](/mikroscope/es/reference/environment/) es la lista, y
-	`.env.example` en el repositorio es una plantilla.
+	el <Src path=".env.example" /> del repositorio es una plantilla.
 </Aside>
 
 <SeeAlso>

@@ -1,6 +1,9 @@
 ---
 title: El suelo de resolución es del kernel
-description: Por qué una lectura de CPU no puede ser más fina que el tick de 10 ms del kernel, la única fuente que lee por debajo de él y hasta dónde puede recordar el agente.
+description: Por qué la CPU de un router MikroTik no se lee más fina que el tick de 10 ms del kernel, la única fuente que baja de él y cuánto recuerda el agente.
+head:
+  - tag: title
+    content: "Por qué la CPU de RouterOS no baja del tick | mikroscope"
 ---
 
 import Measured from "../../../../components/Measured.astro";
@@ -15,8 +18,8 @@ kernel de referencia y cuánto sobrevive una muestra en el agente antes de desap
 
 ## Ticks, no tiempo
 
-Un tick dura <Measured id="tick.ms" />. `/proc/stat` no cuenta tiempo, cuenta ticks de `USER_HZ`,
-100 por segundo. Una muestra de 100 ms puede contener por tanto 10 ticks por núcleo, así que la
+Un tick dura <Measured id="tick.ms" />. [`/proc/stat`](https://man7.org/linux/man-pages/man5/proc_stat.5.html) no cuenta tiempo, cuenta ticks de
+`USER_HZ`, 100 por segundo. Una muestra de 100 ms puede contener por tanto 10 ticks por núcleo, así que la
 fracción de ocupación de un núcleo se resuelve en escalones del <Measured id="tick.stepOneCore" />,
 y la media de cuatro núcleos en escalones del <Measured id="tick.stepFourCores" />. Sobre 1 s, la resolución de un núcleo es del <Measured id="tick.stepOneSecond" />.
 
@@ -38,7 +41,7 @@ cadencia mayor está en [el techo de muestreo](/mikroscope/es/cost/rate-ceiling/
 ## La única fuente por debajo: los contadores de la propia CPU
 
 Una fuente lee por debajo del tick: la unidad de monitorización del rendimiento de la CPU (PMU),
-a través de `perf_event_open`, que el agente recoge como la fuente `perf` cuando el contenedor
+a través de [`perf_event_open`](https://man7.org/linux/man-pages/man2/perf_event_open.2.html), que el agente recoge como la fuente `perf` cuando el contenedor
 es privilegiado. Es la única fuente de mikroscope que no viene de un fichero.
 
 Medido en el RB5009 y registrado el 2026-09-12: en una muestra de 100,4 ms en la que `/proc/stat`
@@ -77,7 +80,8 @@ con las demás reglas en [detecciones](/mikroscope/es/sinks/detections/).
 
 ## Ningún reloj más fino desde el kernel
 
-No esperes un reloj más fino de PSI ni de `schedstat`. El kernel de RouterOS 7.24.2 del RB5009
+No esperes un reloj más fino de [PSI](https://docs.kernel.org/accounting/psi.html), cuyos totales de espera van en microsegundos, ni
+de [`schedstat`](https://docs.kernel.org/scheduler/sched-stats.html), cuyos tiempos de ejecución y espera van en nanosegundos. El kernel de RouterOS 7.24.2 del RB5009
 (Linux 5.6.3) no tiene ni `/proc/pressure` ni `/proc/schedstat`, y la columna `irq` de su
 `/proc/stat` vale siempre 0, así que el tiempo de IRQ hardware se cuenta dentro de `system`:
 
@@ -102,8 +106,11 @@ de una captura: `TestParsePressureReadsTheRunningKernel` y
 comparan el resultado con una segunda lectura independiente de esos mismos
 bytes, y se saltan la prueba donde los ficheros no están —que es justo el caso
 del RB5009—. En el equipo de desarrollo amd64 (kernel 6.12.107) pasan, y el
-`/proc/pressure/cpu` de ese kernel lleva línea `full`, cosa que la mayoría de
-los kernels no hace.
+`/proc/pressure/cpu` de ese kernel lleva línea `full`, toda a cero al volver a
+leerla el 2026-09-24: la documentación de PSI del kernel dice que el `full` de
+CPU no está definido para el sistema entero y que se publica desde la 5.13 a
+cero, así que un kernel más antiguo no tiene esa línea y el analizador acepta
+las dos formas.
 
 El conjunto de contadores de la PMU de ese equipo se registró el 2026-09-21:
 seis contadores —`cycles`, `instructions`, `cache-references`, `cache-misses`,

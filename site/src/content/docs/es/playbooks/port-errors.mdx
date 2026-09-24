@@ -1,9 +1,13 @@
 ---
 title: Un puerto perdiendo tramas
-description: La tesela del Overview se puso roja — cómo pasar de un número a qué puerto, qué error y si es carga o una ráfaga, con el caso que llevó el enlace del NAS del router de referencia del 0,5 % de paquetes perdidos a ninguno.
+description: "Un puerto MikroTik que cuenta rx-overflow: distinguir carga de microrráfaga con los contadores del puerto, qué no lo arregló y el ritmo del emisor que sí."
+head:
+  - tag: title
+    content: "rx-overflow en un puerto MikroTik: ¿carga o ráfaga? | mikroscope"
 ---
 
 import FaultSignature from "../../../../components/FaultSignature.astro";
+import Figure from "../../../../components/Figure.astro";
 import Measured from "../../../../components/Measured.astro";
 import NotClaimed from "../../../../components/NotClaimed.astro";
 import Provenance from "../../../../components/Provenance.astro";
@@ -18,6 +22,15 @@ La página entera es un fallo real del RB5009 de referencia, encontrado el
 2026-09-19 y arreglado esa misma tarde.
 
 <Provenance of="port-overflow-2026-09-19" />
+
+**En resumen:** un `rx-overflow` en un puerto cuyos intervalos con desborde llevan
+una fracción pequeña de la capacidad del enlace es una ráfaga, no una carga. Aquí
+era un emisor de 2,5 Gbit/s soltando ráfagas hacia un puerto de 1 Gbit/s, con los
+intervalos que desbordaban al <Measured id="overflow.occupancy" /> del enlace. Ni
+una MTU menor ni el control de flujo de Ethernet lo pararon; marcar el ritmo del
+emisor por debajo de lo que puede vaciar el destino más lento sí,
+de <Measured id="overflow.perHourBefore" /> desbordes por hora a ninguno en los 39
+minutos medidos.
 
 ## De la tesela al puerto
 
@@ -117,6 +130,15 @@ El resultado en el equipo de referencia, con el mismo volumen de tráfico: el
 desborde pasó de 1 054–3 681 cada 20 minutos a **0**, y el `tx-queue-drop` de
 `ether4` a 0 con él. El coste fue nada medible: el segundo más alto de salida
 observado fue de 70 Mbit/s contra un tope de 900.
+
+El almacén InfluxDB de referencia siguió contando después de los 39 minutos que
+cubren esas cifras. En lo que quedaba de ese día, el desborde de `ether1` se paró
+en los diez minutos anteriores a las 15:30 UTC, siguió a cero dos horas y luego
+volvió de pocos en pocos, con un ritmo de recepción muy parecido. No quedó
+registrado si el shaper siguió puesto el resto del día, así que esas horas no
+dicen nada, ni a favor ni en contra, de si aguanta.
+
+<Figure name="port-overflow-2026-09-19" />
 
 ## La firma
 

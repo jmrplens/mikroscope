@@ -1,6 +1,9 @@
 ---
 title: InfluxDB 3
-description: El destino de protocolo de líneas de InfluxDB 3 — la URL de escritura y el token, cómo se entregan y se descartan los lotes, cada medida que escribe y lo que rechaza InfluxDB 3 Core.
+description: "La telemetría del kernel de MikroTik RouterOS en InfluxDB 3 por /api/v3/write_lp: URL y token, entrega y descartes, cada medida y lo que rechaza Core."
+head:
+  - tag: title
+    content: Telemetría de MikroTik RouterOS en InfluxDB 3 | mikroscope
 ---
 
 import { Aside } from "@astrojs/starlight/components";
@@ -8,11 +11,12 @@ import NotClaimed from "../../../../components/NotClaimed.astro";
 import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
 
-`--influx` escribe la línea temporal fusionada como protocolo de líneas de InfluxDB en
-el `/api/v3/write_lp` de InfluxDB 3. Es el destino que conserva cada muestra a la cadencia
-del agente, y el que lee el panel de InfluxDB. Esta página responde a cómo apuntarlo a una
-base de datos, qué hace cuando la base de datos va lenta o rechaza, y qué medidas llegan
-allí.
+`--influx` escribe la línea temporal fusionada como [protocolo de
+líneas](https://docs.influxdata.com/influxdb3/core/reference/line-protocol/) de InfluxDB en el
+[`/api/v3/write_lp`](https://docs.influxdata.com/influxdb3/core/write-data/http-api/v3-write-lp/)
+de InfluxDB 3. Es el destino que conserva cada muestra a la cadencia del agente, y el que lee el
+panel de InfluxDB. Esta página responde a cómo apuntarlo a una base de datos, qué hace cuando la
+base de datos va lenta o rechaza, y qué medidas llegan allí.
 
 ## La URL de escritura y el token
 
@@ -193,8 +197,9 @@ acumulado sea 0, que es lo que era en todas las interfaces del RB5009 de referen
 
 Aprendido a base de golpes, contra InfluxDB 3 Core:
 
-- **Un nodo guarda como mucho cinco bases de datos.** Una sexta escritura falla con 422 —
-  el primer destino real, el 2026-09-12, respondió `422: would exceed limit of 5 databases`.
+- **Un nodo guarda como mucho cinco bases de datos**, el límite que [InfluxData documenta
+  para Core](https://docs.influxdata.com/influxdb3/core/admin/databases/). Una sexta escritura falla con
+  422 — el primer destino real, el 2026-09-12, respondió `422: would exceed limit of 5 databases`.
   El destino espera y sigue intentándolo, así que el síntoma es una cuenta de `errors` que
   sube, no una ejecución fallida. Las ejecuciones medidas usaron una instancia de
   InfluxDB 3 Core propia.

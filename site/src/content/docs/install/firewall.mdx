@@ -1,6 +1,9 @@
 ---
 title: The two firewall traps
-description: The two raw rules in the MikroTik default firewall that silently drop every packet a container sends, what `install` adds so they do not, and what to pass when your lists have other names.
+description: Two raw rules in a MikroTik firewall can silently drop every packet a container sends — what `install` adds so they do not, and which lists to name.
+head:
+  - tag: title
+    content: The two RouterOS firewall traps for containers | mikroscope
 ---
 
 import NotClaimed from "../../../components/NotClaimed.astro";
@@ -9,20 +12,25 @@ import SeeAlso from "../../../components/SeeAlso.astro";
 import Verified from "../../../components/Verified.astro";
 
 This page answers why an agent that is running can still be unreachable on a
-router with the MikroTik default firewall, and what `install` changes in that
-firewall so it is not. It adds two list memberships and nothing else; without
+router whose raw firewall carries MikroTik's `defconf:` rules, and what `install`
+changes in that firewall so it is not. It adds two list memberships and nothing else; without
 `--expose` it writes no firewall rule.
 
 ## Two rules that drop everything a container sends
 
-The MikroTik default firewall carries two raw rules that silently drop every
-packet a container sends:
+MikroTik's [Building Advanced Firewall](https://help.mikrotik.com/docs/spaces/ROS/pages/328513/Building+Advanced+Firewall)
+guide adds raw rules commented `defconf:`, and two of them, in the form the
+reference RB5009 carries them, silently drop every packet a container sends:
 
 - `drop the rest (in-interface-list=!LAN)` matches a packet that enters on an
   interface outside the `LAN` interface list, and a new veth is outside it.
 - `drop local if not from default IP range (src-address-list=!LANs)` matches a
   source address outside the `LANs` address list, and the container's /30 is
   outside it.
+
+The guide writes the second rule with the range itself, `src-address=!192.168.88.0/24`, rather
+than a list, and no list membership gets a /30 outside that range past it; for that form
+`install` adds nothing that helps.
 
 The drop is silent. From your host the agent does not answer, and that looks
 the same as a container that is not running — which is why the probe after
@@ -92,7 +100,8 @@ on [What --expose opens](/mikroscope/security/expose/); how to use it is on
 <NotClaimed variant="device-specific">
 	One firewall was measured: the RB5009's, on 2026-09-11, where the two memberships were enough. A
 	firewall with other drop rules in `raw`, `input` or `forward` may drop the container's traffic
-	somewhere else, and `install` adds nothing for that case beyond the two memberships.
+	somewhere else, and `install` adds nothing for that case beyond the two memberships. Whether a
+	router's factory default configuration carries these two raw rules was not checked.
 </NotClaimed>
 
 <SeeAlso>

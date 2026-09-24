@@ -1,6 +1,9 @@
 ---
 title: InfluxDB 3
-description: The InfluxDB 3 line-protocol sink — the write URL and token, how batches are delivered and dropped, every measurement it writes, and what InfluxDB 3 Core refuses.
+description: "MikroTik RouterOS kernel telemetry into InfluxDB 3 over /api/v3/write_lp: URL and token, delivery and drops, every measurement, and what Core refuses."
+head:
+  - tag: title
+    content: MikroTik RouterOS kernel telemetry in InfluxDB 3 | mikroscope
 ---
 
 import { Aside } from "@astrojs/starlight/components";
@@ -8,10 +11,12 @@ import NotClaimed from "../../../components/NotClaimed.astro";
 import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
 
-`--influx` writes the merged timeline as InfluxDB line protocol to InfluxDB 3's
-`/api/v3/write_lp`. It is the sink that keeps every sample at the agent's rate, and the
-one the InfluxDB dashboard reads. This page answers how to point it at a database,
-what it does when the database is slow or refusing, and which measurements land there.
+`--influx` writes the merged timeline as InfluxDB [line
+protocol](https://docs.influxdata.com/influxdb3/core/reference/line-protocol/) to InfluxDB 3's
+[`/api/v3/write_lp`](https://docs.influxdata.com/influxdb3/core/write-data/http-api/v3-write-lp/).
+It is the sink that keeps every sample at the agent's rate, and the one the InfluxDB
+dashboard reads. This page answers how to point it at a database, what it does when the
+database is slow or refusing, and which measurements land there.
 
 ## The write URL and the token
 
@@ -186,8 +191,9 @@ RB5009 on 2026-09-16 after hundreds of GB transmitted.
 
 Learned the hard way, against InfluxDB 3 Core:
 
-- **A node holds at most five databases.** A sixth write fails with 422 — the first real
-  target, on 2026-09-12, answered `422: would exceed limit of 5 databases`. The sink
+- **A node holds at most five databases**, the limit [InfluxData documents for
+  Core](https://docs.influxdata.com/influxdb3/core/admin/databases/). A sixth write fails with 422 — the
+  first real target, on 2026-09-12, answered `422: would exceed limit of 5 databases`. The sink
   backs off and keeps trying, so the symptom is a rising `errors` count, not a failed
   run. The measured runs used an InfluxDB 3 Core instance of their own.
 - **Every query must be time-bounded.**

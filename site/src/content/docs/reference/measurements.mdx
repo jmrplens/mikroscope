@@ -1,19 +1,20 @@
 ---
 title: InfluxDB and SQL measurements
-description: Every measurement the InfluxDB line-protocol encoder writes and every table the SQL sink creates, with tags, fields, columns, keys, units and whether each value is a delta or a level.
+description: Every InfluxDB measurement and SQL table mikroscope writes, with tags, fields, columns, keys, units, and whether each value is a delta or a level.
 ---
 
 import NotClaimed from "../../../components/NotClaimed.astro";
 import PrivilegedOnly from "../../../components/PrivilegedOnly.astro";
 import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
+import Src from "../../../components/Src.astro";
 
 This page answers what a row in the store holds: which measurement or table,
 which tags or key columns identify it, which fields it carries, in what unit,
 and whether a value is a delta over the sample's interval or a level. It is
-read from `internal/sinks/influx.go`, `device.go` and `sql.go`. The two stores
-do not hold the same set; [where they differ](#where-the-two-stores-differ)
-is the last section.
+read from <Src path="internal/sinks/influx.go" />, <Src path="internal/sinks/device.go" />
+and <Src path="internal/sinks/sql.go" />. The two stores do not hold the same set;
+[where they differ](#where-the-two-stores-differ) is the last section.
 
 ## Which sinks write these
 
@@ -21,8 +22,8 @@ is the last section.
 - `forward --stdout lp` and `forward --telegraf` render with the same encoder,
   so they write the same measurements and lines. The order of the
   `mikroscope_api_health`, `mikroscope_softirq` and `mikroscope_slab` lines
-  within a batch is not stable: the encoder walks Go maps for them, and
-  `internal/sinks/telegraf.go` records 12 renders of an 8-name map giving 7
+  within a batch is not stable: the encoder walks Go maps for them, and the
+  file <Src path="internal/sinks/telegraf.go" /> records 12 renders of an 8-name map giving 7
   distinct orders (2026-09-12).
 - `forward --sql` writes its own PostgreSQL tables, listed further down.
 
@@ -57,8 +58,9 @@ they are on [the file and the other sinks](/mikroscope/sinks/other/).
   block-device busy time is `io_s`, converted once from the kernel's
   milliseconds.
 
-In line protocol a trailing `u` is an unsigned integer, `i` a signed one, a
-bare number a float, `true`/`false` a boolean, and a quoted value a string.
+In [line protocol](https://docs.influxdata.com/influxdb3/core/reference/line-protocol/) a trailing
+`u` is an unsigned integer, `i` a signed one, a bare number a float,
+`true`/`false` a boolean, and a quoted value a string.
 
 ## InfluxDB: the kernel tier
 
@@ -122,7 +124,7 @@ delta of `pgscan` is an event rate and `nr_dirty` is a depth.
 the shipped connection-table panel and the `mikroscope-conntrack-near-limit` alert do:
 `max("limit")`. The shipped CPU-frequency panel
 double-quotes the `cluster` field of `mikroscope_device_cpufreq` the same way
-(`internal/dashboards/panels_p5.go`); no source in the repository says why.
+(<Src path="internal/dashboards/panels_p5.go" />); no source in the repository says why.
 
 ### Observer, PMU and kernel log
 

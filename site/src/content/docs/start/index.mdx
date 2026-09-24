@@ -1,6 +1,9 @@
 ---
 title: What it is
-description: An agent inside the router reading the shared kernel, a CLI outside it, and the four limits that cannot be engineered away.
+description: An agent in a MikroTik RouterOS 7.24+ container reads the router's kernel at 1 to 100 Hz; a CLI installs, records and forwards. Four limits, stated first.
+head:
+  - tag: title
+    content: "What it is: an agent inside a MikroTik router | mikroscope"
 ---
 
 import { Steps } from "@astrojs/starlight/components";
@@ -8,44 +11,57 @@ import Measured from "../../../components/Measured.astro";
 import Provenance from "../../../components/Provenance.astro";
 import RouterWrites from "../../../components/RouterWrites.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
+import Src from "../../../components/Src.astro";
 
-mikroscope is two programs and one container.
+mikroscope is open-source, MIT-licensed kernel telemetry for MikroTik routers
+that run RouterOS 7.24 or later: a static Go agent that runs in a RouterOS
+container and samples the router's own kernel counters at 1 to 100 Hz, and a
+CLI that installs it, records a window, plots it and forwards the samples to
+eleven sinks. It is two programs and one container.
 
-The **agent** is a static Go binary in a scratch container on the router. A
+The **agent** is a static Go binary in a [scratch container](/mikroscope/reference/glossary/#scratch-container) on the router. A
 RouterOS container shares the host kernel, so `/proc` inside it is the router's
 own `/proc`: `/proc/stat` per core, `/proc/interrupts`, `/proc/softirqs`,
-`/proc/net/softnet_stat`, `/proc/meminfo`, `/proc/vmstat`, `/proc/diskstats`,
-`/dev/kmsg`. It samples them on a ticker at 1 to 100 Hz (10 Hz by default; 10, 20, 50 and 100 Hz measured), keeps the last 60 seconds in a ring, and serves them. It has no outbound connection and presents no credential; the only secret it holds is the optional token it requires of whoever reads it.
+[`/proc/net/softnet_stat`](/mikroscope/reference/glossary/#softnet), `/proc/meminfo`, `/proc/vmstat`, `/proc/diskstats`,
+`/dev/kmsg`. The container runs privileged by default, which also lets the agent open the CPU's
+[PMU](/mikroscope/reference/glossary/#pmu) counters system-wide through `perf_event_open`. It samples them on a ticker at 1 to 100 Hz (10 Hz by default; 10, 20, 50 and 100 Hz measured), keeps the last 60 seconds in a [ring](/mikroscope/reference/glossary/#ring), and serves them over HTTP on its
+[veth](/mikroscope/reference/glossary/#veth) address. It has no outbound connection and presents no credential; the only secret it holds is the optional token it requires of whoever reads it, which `install` writes into the container's
+[envlist](/mikroscope/reference/glossary/#envlist).
 
 The **CLI** runs on your machine. It installs and removes the agent, records a
 window with markers, draws a deterministic SVG of it, and runs as a collector
-that pulls from the agent, merges a RouterOS API tier at 1 Hz, and writes to eleven
-sinks — file, Prometheus and InfluxDB 3 among them. It is released as an archive per platform —
+that pulls from the agent, merges a RouterOS [API tier](/mikroscope/reference/glossary/#api-tier) at 1 Hz, and writes to eleven
+[sinks](/mikroscope/reference/glossary/#sink) — file, Prometheus and InfluxDB 3 among them. It is released as an archive per platform —
 linux and FreeBSD on amd64, arm64 and arm; macOS and Windows on amd64 and arm64 — and the agent
 beside it as one image tar per architecture and as a registry image, on Docker
 Hub as `jmrplens/mikroscope-agent` and on GHCR as
 `ghcr.io/jmrplens/mikroscope-agent`, so installing needs a Go toolchain only
 when you want the agent built from your own tree. Since 1.1.0 the collector is
 also an image, `jmrplens/mikroscope` and `ghcr.io/jmrplens/mikroscope`
-(linux/amd64, linux/arm64), and `deploy/` has two compose stacks that pair it
+(linux/amd64, linux/arm64), and <Src path="deploy/" /> has two compose stacks that pair it
 with InfluxDB 3 or Prometheus and a Grafana. That image is for `forward`: the
-install verbs shell out to ssh and scp, which it leaves out on purpose.
+install verbs shell out to ssh and scp, which it leaves out on purpose. Both
+programs are under the MIT licence, in <Src path="LICENSE" />.
 
 ## Four limits, stated before anything else
 
 <Steps>
 
 1. **The prerequisites the tool cannot remove.** RouterOS 7.24 or later with the
-   `container` package and `device-mode container=yes` — which MikroTik gates
+   [`container` package](https://help.mikrotik.com/docs/spaces/ROS/pages/84901929/Container) and
+   [`device-mode container=yes`](https://help.mikrotik.com/docs/spaces/ROS/pages/93749258/Device-mode) — which MikroTik gates
    behind a physical reset-button press or a power cycle. 7.24 is the floor
-   because the container step writes `privileged=`, an attribute MikroTik added
-   in that release; `--privileged=false` changes its value, not whether it is
+   because the container step writes `privileged=`, an attribute MikroTik
+   [added in that release](https://download.mikrotik.com/routeros/7.24/CHANGELOG);
+   `--privileged=false` changes its value, not whether it is
    written. arm64, arm and x86_64; not MIPS, not TILE.
 
-2. **The resolution floor is the kernel's, not the tool's.** `/proc/stat` ticks
-   at 100 Hz, so a 100 ms window resolves one core to <Measured id="tick.stepOneCore" /> steps.
-   The agent ships raw ticks so you choose the window. Do not expect PSI: the
-   RB5009's kernel has neither PSI nor schedstat.
+2. **The resolution floor is the kernel's, not the tool's.** `/proc/stat` counts CPU time in
+   [`USER_HZ` ticks](https://docs.kernel.org/filesystems/proc.html#miscellaneous-kernel-statistics-in-proc-stat),
+   100 a second, so a 100 ms window resolves one core to <Measured id="tick.stepOneCore" /> steps.
+   The agent ships raw ticks so you choose the window. Do not expect
+   [PSI](/mikroscope/reference/glossary/#psi): the RB5009's kernel has neither PSI nor
+   [schedstat](/mikroscope/reference/glossary/#schedstat).
 
    <Provenance of="kernel-2026-09-11" />
 
@@ -79,7 +95,11 @@ because it never computes one.
 - [The cost of the observer](/mikroscope/cost/): the budget, the measured result and how to
   measure it on your own device.
 - [The rate ceiling](/mikroscope/cost/rate-ceiling/): the six runs behind the figures in point 4.
-- [What the numbers do not say](/mikroscope/cost/limits/): what one device on one day cannot tell
-  you.
+- [What the numbers do not say](/mikroscope/cost/limits/): what one device, under its own traffic,
+  cannot tell you.
+- [Short answers](/mikroscope/start/questions/): ten common questions, each answered from a page
+  that has the evidence.
+- [Compared with the alternatives](/mikroscope/start/compared/): SNMP, mktxp, The Dude and the
+  rest, what each reads, and when not to use mikroscope.
 
 </SeeAlso>

@@ -1,0 +1,47 @@
+---
+/**
+ * The release this build documents, inline in prose, from src/data/release.ts
+ * (VERSION, and the date of its CHANGELOG.md heading).
+ *
+ *   <Version />                "1.2.2"
+ *   <Version show="tag" />     "v1.2.2"
+ *   <Version show="date" />    "2026-09-24", as a <time>
+ *   <Version link />           "1.2.2", linked to that tag's release page
+ *
+ * For prose only. Inside a fenced code block or an inline code span, where no
+ * component can go, write {{MIKROSCOPE_VERSION}} instead:
+ *
+ *   ```sh
+ *   mikroscope install --remote-image jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}
+ *   ```
+ *
+ * The Sätteri plugin in src/lib/version-placeholder.mjs replaces it in the
+ * HTML, and src/lib/page-markdown.mjs in the markdown twins, llms-full.txt and
+ * docs/. scripts/check-version.mjs fails when a page pins a literal version in
+ * an install command instead, and when the placeholder reaches the output.
+ *
+ * Use it only where the sentence is about the current release. A statement
+ * about a past one — "since 1.1.0", "the published 1.2.1 image is …" — keeps
+ * that release's number, because what it says was true of that release and
+ * has not been checked against any later one.
+ *
+ * Inline, so it never opens a line in the source (check-i18n-parity.mjs), and
+ * it renders on one line of output, because a line break inside an inline
+ * element is a space before the punctuation that follows it. The locale does
+ * not change it: a version and an ISO date are written the same in both.
+ */
+import { release } from "../data/release";
+
+interface Props {
+	show?: "version" | "tag" | "date";
+	link?: boolean;
+}
+
+const { show = "version", link = false } = Astro.props;
+if (show !== "version" && show !== "tag" && show !== "date") {
+	throw new Error(`Version: show="${show}" is not "version", "tag" or "date"`);
+}
+const text = show === "tag" ? release.tag : show === "date" ? release.date : release.version;
+---
+
+{link ? <a href={release.notesUrl}>{show === "date" ? <time datetime={release.date}>{text}</time> : text}</a> : show === "date" ? <time datetime={release.date}>{text}</time> : text}

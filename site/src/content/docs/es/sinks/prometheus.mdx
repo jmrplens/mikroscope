@@ -1,6 +1,9 @@
 ---
 title: Prometheus
-description: El `/metrics` propio del colector — cada familia del agente recalculada a partir de las muestras, más la capa de la API, la etapa de derivación y los contadores del colector — y el trabajo de scrape que lo acompaña.
+description: "Métricas de kernel de MikroTik RouterOS en /metrics del colector: familias del agente recalculadas, la capa de la API, lo derivado y un trabajo de scrape."
+head:
+  - tag: title
+    content: Métricas de MikroTik RouterOS en Prometheus | mikroscope
 ---
 
 import { Aside } from "@astrojs/starlight/components";
@@ -8,10 +11,11 @@ import NotClaimed from "../../../../components/NotClaimed.astro";
 import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
 
-`--prom :9124` hace que el colector sirva texto de Prometheus en `GET /metrics` en esa
-dirección. Esta página responde a qué lleva esa exposición y qué no puede
-llevar a ningún destino. Solo hay una cosa a la que hacer scrape: el agente no sirve
-exposición desde 1.0.5.
+`--prom :9124` hace que el colector sirva el [formato de texto de
+Prometheus](https://prometheus.io/docs/instrumenting/exposition_formats/)
+(`text/plain; version=0.0.4`) en `GET /metrics` en esa dirección. Esta página responde a qué
+lleva esa exposición y qué no puede llevar a ningún destino. Solo hay una cosa a la que hacer
+scrape: el agente no sirve exposición desde 1.0.5.
 
 ## Recalculado a partir de las muestras
 
@@ -160,10 +164,12 @@ uno de los sesenta y pico contadores de ese puerto en cada edición. Únelo en l
 mikroscope_api_interface_counter_total * on(interface) group_left(label, type, role) mikroscope_api_interface_info
 ```
 
-Toda interfaz del inventario tiene serie, tenga comentario o no; un valor vacío de
-`label` es como Prometheus escribe «ninguno», así que el juego de etiquetas es el mismo
-en todas. `type` dice qué significan los contadores de esa interfaz: un puerto `ether`
-de un bridge cuenta su cable, incluidas las tramas que el chip de switching reenvió por
+Toda interfaz del inventario tiene serie, tenga comentario o no. Un valor vacío de
+`label` es como Prometheus escribe «ninguno» —su [modelo de
+datos](https://prometheus.io/docs/concepts/data_model/) trata una etiqueta con valor vacío
+como una que no existe—, así que todas las series de la exposición llevan los mismos nombres
+de etiqueta. `type` dice qué significan los contadores de esa interfaz: un puerto `ether` de
+un bridge cuenta su cable, incluidas las tramas que el chip de switching reenvió por
 hardware, mientras que el `bridge` cuenta su lado de CPU. Ninguno es un subconjunto del
 otro — en el RB5009 de referencia (RouterOS 7.24.2, 2026-09-16) ether1 recibió 255,8 GB
 en el cable y entregó 29,7 GB a la CPU — así que no sumes un puerto y su bridge.

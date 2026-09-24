@@ -9,7 +9,13 @@
  * nothing about a real router is in it. The caption and the alt text are the
  * page's, because they say what THIS picture is being shown for, and that
  * differs per page and per language.
+ *
+ * Responsive the same way as DashboardCaptures.astro, with the same widths and
+ * `sizes`: `<Image>` writes a 640, a 1024 and a 1600 px variant, the browser
+ * picks one, and the link opens the committed 1600 px file.
  */
+import { Image } from "astro:assets";
+
 interface Props {
 	/** The file stem under src/assets/dashboards, e.g. `annotations`. */
 	name: string;
@@ -32,12 +38,19 @@ if (!key) {
 	);
 }
 const image = images[key].default;
+
+/** The variants written for `srcset`; the largest is the committed file's own width. */
+const WIDTHS = [640, 1024, 1600];
+/** At most the prose column (`--sl-content-width`, 50rem in chrome.css), else the viewport. */
+const SIZES = "(min-width: 50rem) 50rem, 100vw";
 ---
 
 <figure class="ms-capture ms-capture-single">
 	<a href={image.src}>
-		<img
-			src={image.src}
+		<Image
+			src={image}
+			widths={WIDTHS}
+			sizes={SIZES}
 			width={image.width}
 			height={image.height}
 			loading="lazy"
@@ -49,19 +62,16 @@ const image = images[key].default;
 </figure>
 
 <style>
-	.ms-capture-single {
-		margin: 1.5rem 0;
+	/* The border, radius, width and caption come from `.ms-capture` in
+	 * components.css. What differs is the height: that rule caps a section
+	 * thumbnail at 30rem and crops the rest, and a single picture shown for
+	 * what is in it, down to the tile in its bottom corner, is shown whole.
+	 * Both selectors name the two classes so they outrank that rule wherever
+	 * the stylesheets land in the page. */
+	.ms-capture.ms-capture-single {
+		margin-block: 1.5rem;
 	}
-	.ms-capture-single img {
-		width: 100%;
-		height: auto;
-		border: 1px solid var(--sl-color-gray-5);
-		border-radius: 0.5rem;
-		display: block;
-	}
-	.ms-capture-single figcaption {
-		margin-top: 0.5rem;
-		font-size: var(--sl-text-sm);
-		color: var(--sl-color-gray-3);
+	.ms-capture.ms-capture-single :global(img) {
+		max-block-size: none;
 	}
 </style>

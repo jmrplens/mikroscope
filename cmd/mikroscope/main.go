@@ -107,9 +107,9 @@ func parseWith(verb string, args []string, fs *flag.FlagSet) (cli, error) {
 	fs.BoolVar(&c.opts.Ephemeral, "ephemeral", false, "root on the tmpfs disk, start-on-boot=no: nothing written to flash, nothing survives a reboot")
 	fs.StringVar(&c.opts.Arch, "arch", env("ARCH", c.opts.Arch), "device architecture: arm64, arm, amd64")
 	// 5, not the toolchain's 7. MikroTik's container documentation says the
-	// package exists for arm, arm64 and x86 only, and that "devices with
-	// EN7562CT CPU support only arm32v5 container images" — the hEX Refresh
-	// line. An ARMv5 binary runs on every 32-bit ARM MikroTik ships; an ARMv7
+	// package exists for arm, arm64 and x86 only, and that "for devices with
+	// EN7562CT CPU like the hEX Refresh, only arm32v5 container images are
+	// supported". An ARMv5 binary runs on every 32-bit ARM MikroTik ships; an ARMv7
 	// one does not run on those. So the default is the one that starts
 	// everywhere, and --goarm 7 is there for a board where the faster
 	// instruction set is wanted and known to work. What that costs has not

@@ -1,6 +1,9 @@
 ---
 title: Cinco dashboards, una sola lista
-description: Qué contienen los dashboards de InfluxDB 3, Prometheus, PostgreSQL, Graphite y Elasticsearch, sección a sección y en el orden en que se leen, y por qué los cinco almacenes no llevan los mismos paneles.
+description: "Cinco dashboards de Grafana para telemetría de kernel de MikroTik RouterOS, uno por almacén y de una sola lista: cada sección y panel, y por qué difieren."
+head:
+  - tag: title
+    content: Dashboards de Grafana para MikroTik RouterOS | mikroscope
 ---
 
 import { FileTree } from "@astrojs/starlight/components";
@@ -12,10 +15,12 @@ import DashboardPanels from "../../../../components/DashboardPanels.astro";
 import Measured from "../../../../components/Measured.astro";
 import NotClaimed from "../../../../components/NotClaimed.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
+import Src from "../../../../components/Src.astro";
 
-`dashboards/` contiene un dashboard de Grafana por almacén —cinco— todos generados por
-`mikroscope dashboards gen` a partir de una única lista de paneles en `internal/dashboards`. Esta
-página responde a qué hay en ellos: qué secciones, qué paneles en cada una, qué muestra el Overview
+El directorio <Src path="dashboards/" /> contiene un dashboard de Grafana por almacén para la
+telemetría de un equipo MikroTik RouterOS —cinco— todos generados por `mikroscope dashboards gen`
+a partir de una única lista de paneles en <Src path="internal/dashboards/" />. Esta página
+responde a qué hay en ellos: qué secciones, qué paneles en cada una, qué muestra el Overview
 antes de desplegar nada y qué paneles no puede llevar cada almacén. Importarlos y
 comprobarlos contra un Grafana en marcha está en
 [Importar y comprobar](/mikroscope/es/dashboards/import-and-check/); las reglas de alerta que se
@@ -71,8 +76,8 @@ el dashboard. Cada una enlaza al fichero a tamaño completo.
 <NotClaimed title="Esto es una base de demostración, no un router">
 	Todas las capturas de abajo son el dashboard de InfluxDB sobre una ejecución del mismo agente
 	simulado enlatado que usan las baterías de extremo a extremo, escrita en un almacén en contenedor
-	por el paso de llenado de `test/e2e/docker` y fotografiada por
-	`site/scripts/gen-dashboard-captures.mjs`. Nada en ellas viene de un equipo real, el host se llama
+	por el paso de llenado de <Src path="test/e2e/docker/" /> y fotografiada por el
+	script <Src path="site/scripts/gen-dashboard-captures.mjs" />. Nada en ellas viene de un equipo real, el host se llama
 	`rb5009` porque el agente simulado imita el `/proc` capturado de esa placa, y las cifras son las
 	que publique el simulador: léelas como «esta es la forma de la página», nunca como una medición.
 	Un panel vacío en una captura es uno para el que el agente simulado no produce nada; en un router

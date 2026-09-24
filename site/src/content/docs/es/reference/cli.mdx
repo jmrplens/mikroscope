@@ -1,6 +1,6 @@
 ---
 title: Órdenes y opciones
-description: Cada verbo de la CLI de mikroscope y cada opción con su valor por defecto, su rango y la variable MIKROSCOPE_* que la fija, leídos de cmd/mikroscope.
+description: Cada verbo y opción de la CLI de mikroscope, con su valor por defecto, su rango aceptado y la variable MIKROSCOPE_* que la fija, leídos del código Go.
 ---
 
 import { Aside } from "@astrojs/starlight/components";
@@ -10,12 +10,13 @@ import NotClaimed from "../../../../components/NotClaimed.astro";
 import RouterWrites from "../../../../components/RouterWrites.astro";
 import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
+import Src from "../../../../components/Src.astro";
 
 Esta página responde a una pregunta por cada opción de `mikroscope`: qué hace,
 qué valor toma por defecto, qué rango acepta y si una variable de entorno puede
-fijarla. Está leída de `cmd/mikroscope/*.go` y de
-`internal/router/options.go`, no del texto de ayuda, y donde los dos difieren
-la página lo dice.
+fijarla. Está leída de los ficheros Go de <Src path="cmd/mikroscope/" /> y
+de <Src path="internal/router/options.go" />, no del texto de ayuda, y donde los
+dos difieren la página lo dice.
 
 ## Uso y estado de salida
 
@@ -35,17 +36,24 @@ se desactiva con `-privileged=false`.
 | Estado | Cuándo                                                                                                                                                                                                                                                        |
 | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `0`    | el verbo terminó                                                                                                                                                                                                                                              |
-| `1`    | el verbo se ejecutó y falló (un requisito que falta, un error del router, un destino que no se pudo construir, un panel sin datos), el verbo es desconocido, o una opción de `record`, `mark`, `plot`, `forward` o `dashboards` no se pudo analizar o validar |
-| `2`    | no se dio ningún verbo, o una opción de un verbo de despliegue no se pudo analizar o validar; no se envió nada al router                                                                                                                                      |
+| `1`    | el verbo se ejecutó y falló (un requisito que falta, un error del router, un destino que no se pudo construir, un panel sin datos), el verbo es desconocido, o una opción de `uninstall`, `record`, `mark`, `plot`, `forward` o `dashboards` no se pudo analizar o validar |
+| `2`    | no se dio ningún verbo, o una opción de `doctor`, `plan`, `install`, `upgrade`, `status` o `image` no se pudo analizar o validar; no se envió nada al router                                                                                                                                      |
 
 </ScrollTable>
 
-Todas las opciones se comprueban antes de la primera conexión, en `Finish` de
-`internal/router/options.go`, que se ejecuta igual para los verbos de
-despliegue que para `record`, `mark`, `plot` y `forward`. `--triggers` pasa por
-el `ParseTriggers` del propio agente, así que una condición desconocida, un
-umbral mal escrito, una comilla o un punto y coma hacen fallar el verbo con
-estado 2 y no se envía nada. El agente vuelve a analizar `TRIGGERS` al
+mikroscope valida las opciones de despliegue y de conexión antes de conectarse a
+nada, así que un valor malo detiene el verbo sin enviar nada al router: estado
+de salida 2 para `doctor`, `plan`, `install`, `upgrade`, `status` e `image`, y
+1 para `uninstall`, `record`, `mark`, `plot` y `forward`. La comprobación es
+`Finish` en <Src path="internal/router/options.go" />, una sola función para los
+once verbos. Comprobado el 2026-09-24 con una compilación de la 1.2.2 y sin
+ningún router al alcance: `install --rate 500`, `image --rate 500` y
+`doctor --name bad/name` salieron con 2, y `uninstall --rate 500`,
+`record --port 0` y `forward --port 0` con 1, cada uno mostrando el valor que
+rechazó. `--triggers` pasa por el `ParseTriggers` del propio agente, así que
+una condición desconocida, un umbral mal escrito, una comilla o un punto y coma hacen fallar el
+verbo, con estado 2 para `doctor`, `plan`, `install`, `upgrade`, `status` e `image` y 1 para
+`uninstall`, y no se envía nada. El agente vuelve a analizar `TRIGGERS` al
 arrancar, que es lo que detecta una envlist editada a mano en el router: un
 valor malo ahí aparece como un contenedor que sale con estado `2` tras una
 línea `mikroscope-agent: bad configuration:` en el log del router, y que
@@ -92,9 +100,9 @@ el estado de salida.
 
 <Aside type="note" title="Tres maneras de conseguir la imagen del agente, a una opción de distancia">
 	`plan`, `install`, `upgrade` e `image` necesitan una imagen del agente, y `buildImage` en
-	`cmd/mikroscope/main.go` la consigue por la vía que pidan las opciones. Sin ninguna de las dos
+	el fichero <Src path="cmd/mikroscope/main.go" /> la consigue por la vía que pidan las opciones. Sin ninguna de las dos
 	ejecutan `go build -trimpath ./cmd/mikroscope-agent` con `CGO_ENABLED=0`, `GOOS=linux` y el
-	`--arch` como `GOARCH` (`internal/image/image.go`), que necesita una copia del repositorio y una
+	`--arch` como `GOARCH` (<Src path="internal/image/image.go" />), que necesita una copia del repositorio y una
 	cadena de herramientas de Go en el `PATH`. Con `--agent-tar` leen el tar publicado, comprueban
 	que es una imagen del agente mikroscope para `--arch` y suben ese. Con `--remote-image` no se
 	compila ni se sube nada: el router se descarga la imagen él mismo, e `image` se niega, porque no
@@ -125,7 +133,7 @@ el estado de salida.
 | `--arch`         | `arm64`                                    | `MIKROSCOPE_ARCH`         | `^[a-z0-9]{1,16}$`; `doctor` conoce `arm64`, `arm`, `amd64`  | arquitectura del equipo, usada como `GOARCH` y en el manifiesto de la imagen                                                                                                                                                                                                                                                                                              |
 | `--goarm`        | `5`                                        | ninguna                   |                                                              | nivel de `GOARM`, usado solo con `--arch arm`: 5 arranca en todos los ARM de 32 bits que vende MikroTik, 7 no arranca en las placas EN7562CT (hEX Refresh)                                                                                                                                                                                                                                                                                                                             |
 | `--agent-tar`    | vacío (compilar el agente aquí)            | `MIKROSCOPE_AGENT_TAR`    | una ruta a un tar de imagen del agente                       | `plan`, `install`, `upgrade`, `image`: sube este tar en vez de compilar uno, así no hace falta ni cadena de herramientas de Go ni una copia del repositorio. El tar se comprueba antes: uno que no sea una imagen del agente mikroscope, o que esté compilado para una arquitectura distinta de `--arch`, hace fallar el verbo nombrando el recurso que hay que descargar |
-| `--remote-image` | vacío (subir un tar)                       | `MIKROSCOPE_REMOTE_IMAGE` | una referencia de registro, `owner/name:tag`, o con host, `host/owner/name:tag`         | `plan`, `install`, `upgrade`: el router se descarga la imagen él mismo, así que no se compila ni se sube nada, y no queda ningún tar en el equipo. RouterOS toma el host del registro del ajuste global `/container/config registry-url`, que viene puesto en `https://registry-1.docker.io` y que mikroscope nunca escribe; `doctor` compara ese ajuste con las referencias que nombran un host propio, como la de GHCR, y nombra la orden que hay que ejecutar                                      |
+| `--remote-image` | vacío (subir un tar)                       | `MIKROSCOPE_REMOTE_IMAGE` | una referencia de registro, `owner/name:tag`, o con host, `host/owner/name:tag`         | `plan`, `install`, `upgrade`: el router se descarga la imagen él mismo, así que no se compila ni se sube nada, y no queda ningún tar en el equipo. RouterOS toma el host del registro del ajuste global `/container/config registry-url`, que mikroscope nunca escribe; su valor por defecto en RouterOS desde la 7.18 es `https://lscr.io`, donde no está la imagen, y en el RB5009 de referencia vale `https://registry-1.docker.io`; `doctor` compara ese ajuste con las referencias que nombran un host propio, como la de GHCR, y nombra la orden que hay que ejecutar                                      |
 | `--rsc`          | `false`                                    | ninguna                   |                                                              | `plan`: escribe un script de RouterOS que instala desde el propio router, en vez del listado                                                                                                                                                                                                                                                                              |
 | `--port`         | `9123`                                     | ninguna                   | 1–65535                                                      | puerto HTTP del agente en la veth                                                                                                                                                                                                                                                                                                                                         |
 | `--rate`         | `10`                                       | ninguna                   | 1–100                                                        | cadencia del muestreador en Hz (envlist `RATE_HZ`); 10, 50 y 100 Hz medidos sin pérdidas en la RB5009 ([techo de muestreo](/mikroscope/es/cost/rate-ceiling/))                                                                                                                                                                                                            |
@@ -150,7 +158,7 @@ Tres ajustes del contenedor no son opciones: `logging=yes`,
 `restart-policy=on-failure` con `restart-max-count=5` y
 `restart-interval=10s`, e `ignore-remote-image-change=yes`. Los valores de
 reinicio son los que fija `Defaults()`; los tres son lo que escribe `install`
-(`internal/router/steps.go`). `start-on-boot` tampoco tiene opción propia: es
+(<Src path="internal/router/steps.go" />). `start-on-boot` tampoco tiene opción propia: es
 `no` con `--ephemeral` y `yes` sin ella.
 
 ### Pasa la misma forma a status, upgrade y uninstall
@@ -305,7 +313,7 @@ que significa algo para un hermano se acepta y se ignora: `plot --for 5m` se
 analiza y no hace nada. La tabla marca qué verbo lee cada opción. `--from-start`
 es la excepción: solo `record` la registra, y `forward`, `mark` y `plot` la
 rechazan como opción desconocida. `forward` empieza siempre por la muestra más
-reciente del agente (`internal/forward`); hasta la 1.2.0 mostraba la opción y
+reciente del agente (<Src path="internal/forward/" />); hasta la 1.2.0 mostraba la opción y
 la ignoraba.
 
 <ScrollTable label="Opciones de record, mark y plot">
@@ -427,7 +435,7 @@ errores de cada destino. Cuando la capa de la API ha fallado o ha reconectado a�
 
 El destino Prometheus del colector dimensiona su histograma de ticks ocupados
 para 10 Hz sea cual sea la cadencia del agente (`promHistogramRateHz` en
-`cmd/mikroscope/sinkflags.go`), así que la disposición de los buckets no cambia
+el fichero <Src path="cmd/mikroscope/sinkflags.go" />), así que la disposición de los buckets no cambia
 cuando se reconecta a un agente configurado de otra forma. [Familias de
 métricas de Prometheus](/mikroscope/es/reference/metrics/) cuenta qué más se
 sigue de esa constante.
@@ -492,8 +500,8 @@ sin el prefijo `MIKROSCOPE_`.
 
 ## version
 
-`mikroscope version` imprime `mikroscope` y la identidad de compilación de
-`internal/version`. No admite opciones.
+`mikroscope version` imprime `mikroscope` y la identidad de compilación del
+paquete <Src path="internal/version/" />. No admite opciones.
 
 <SeeAlso>
 

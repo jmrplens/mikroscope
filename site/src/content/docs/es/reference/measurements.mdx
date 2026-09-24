@@ -1,18 +1,19 @@
 ---
 title: Medidas de InfluxDB y SQL
-description: Cada medida que escribe el codificador de line protocol de InfluxDB y cada tabla que crea el destino SQL, con etiquetas, campos, columnas, claves, unidades y si cada valor es un delta o un nivel.
+description: Cada medida de InfluxDB y cada tabla SQL que escribe mikroscope, con etiquetas, campos, columnas, claves, unidades y si cada valor es un delta o un nivel.
 ---
 
 import NotClaimed from "../../../../components/NotClaimed.astro";
 import PrivilegedOnly from "../../../../components/PrivilegedOnly.astro";
 import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
+import Src from "../../../../components/Src.astro";
 
 Esta página responde qué contiene una fila en el almacén: qué medida o tabla,
 qué etiquetas o columnas de clave la identifican, qué campos lleva, en qué
 unidad, y si un valor es un delta sobre el intervalo de la muestra o un nivel.
-Está leída de `internal/sinks/influx.go`, `device.go` y `sql.go`. Los dos
-almacenes no guardan el mismo conjunto; [dónde
+Está leída de <Src path="internal/sinks/influx.go" />, <Src path="internal/sinks/device.go" /> y del
+fichero <Src path="internal/sinks/sql.go" />. Los dos almacenes no guardan el mismo conjunto; [dónde
 difieren](#dónde-difieren-los-dos-almacenes) es la última sección.
 
 ## Qué destinos escriben esto
@@ -22,7 +23,7 @@ difieren](#dónde-difieren-los-dos-almacenes) es la última sección.
   codificador, así que escriben las mismas medidas y líneas. El orden de las
   líneas de `mikroscope_api_health`, `mikroscope_softirq` y `mikroscope_slab`
   dentro de un lote no es estable: el codificador recorre mapas de Go para
-  ellas, e `internal/sinks/telegraf.go` registra 12 renderizados de un mapa de
+  ellas, y el fichero <Src path="internal/sinks/telegraf.go" /> registra 12 renderizados de un mapa de
   8 nombres que dieron 7 órdenes distintos (2026-09-12).
 - `forward --sql` escribe sus propias tablas de PostgreSQL, que se enumeran más
   abajo.
@@ -60,9 +61,9 @@ están en [el fichero y los demás destinos](/mikroscope/es/sinks/other/).
   `critical_celsius`; el tiempo ocupado de un dispositivo de bloques es `io_s`,
   convertido una sola vez desde los milisegundos del kernel.
 
-En line protocol, una `u` final es un entero sin signo, `i` uno con signo, un
-número a secas un float, `true`/`false` un booleano, y un valor entre comillas
-una cadena.
+En [line protocol](https://docs.influxdata.com/influxdb3/core/reference/line-protocol/), una `u`
+final es un entero sin signo, `i` uno con signo, un número a secas un float,
+`true`/`false` un booleano, y un valor entre comillas una cadena.
 
 ## InfluxDB: la capa del kernel
 
@@ -127,7 +128,7 @@ la pone entre comillas dobles, como hacen el panel de la tabla de conexiones
 que se distribuye y la alerta `mikroscope-conntrack-near-limit`:
 `max("limit")`. El panel de frecuencia de CPU
 que se distribuye pone igual entre comillas dobles el campo `cluster` de
-`mikroscope_device_cpufreq` (`internal/dashboards/panels_p5.go`); ninguna
+`mikroscope_device_cpufreq` (<Src path="internal/dashboards/panels_p5.go" />); ninguna
 fuente del repositorio dice por qué.
 
 ### Observador, PMU y log del kernel

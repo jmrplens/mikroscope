@@ -1,0 +1,112 @@
+---
+/**
+ * Starlight's footer, and under it a line saying who wrote the site.
+ *
+ * Until 2026-09-24 the author was named only in the JSON-LD. No page named him,
+ * and the prose calls him "the owner". This line names him where a reader
+ * looks, on every page and in both languages, and links the two places the
+ * canonical Person node points at: his site (`url`) and his GitHub profile
+ * (in `sameAs`).
+ *
+ * The name, the site and the profile are read from that node, which
+ * src/lib/identity.mjs already fetches for the JSON-LD: one request per build,
+ * shared with Head.astro. So the visible line names the person the graph names,
+ * in the graph's own words, and identity.mjs says why nothing about the person
+ * is typed into this repository by hand. `name` is the node's canonical form,
+ * and the pages that name him in prose (about/status, about/lineage,
+ * about/brand and their twins) use that same form, so a page never shows two.
+ *
+ * `<address>` because it is the contact information for the document, which
+ * is what that element is for. It is not a landmark, so it adds nothing to the
+ * landmark list the a11y check walks.
+ *
+ * This wraps the stock footer rather than copying it, so a Starlight upgrade
+ * still reaches the edit link, the date and the pagination.
+ */
+import Default from "@astrojs/starlight/components/Footer.astro";
+import { personNode } from "../../lib/identity.mjs";
+
+const person = await personNode();
+const name = String(person.name);
+const home = String(person.url);
+const github = (Array.isArray(person.sameAs) ? person.sameAs : [])
+	.map(String)
+	.find((url) => /^https:\/\/github\.com\/[^/]+\/?$/.test(url));
+if (!github) {
+	throw new Error(
+		"Footer.astro: the canonical Person node lists no GitHub profile in sameAs, so the byline has nothing to link. src/lib/identity.mjs names the node.",
+	);
+}
+const handle = new URL(github).pathname.replaceAll("/", "");
+const site = new URL(home).host;
+---
+
+<Default />
+<address class="ms-byline">
+	<span>{Astro.locals.t("ms.footer.byline")}{" "}<span translate="no">{name} ({handle})</span></span>
+	<span class="ms-byline-sep ms-byline-lead" aria-hidden="true">·</span>
+	<span class="ms-byline-links">
+		<a href={home} rel="author" translate="no">{site}</a>
+		<span class="ms-byline-sep" aria-hidden="true">·</span>
+		<a href={github} translate="no">GitHub</a>
+	</span>
+</address>
+
+<style>
+	.ms-byline {
+		container: ms-byline / inline-size;
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.25rem 0.5rem;
+		margin-top: 1.5rem;
+		padding-top: 1rem;
+		border-top: 1px solid var(--ms-rule);
+		font-size: var(--sl-text-xs);
+		font-style: normal;
+		color: var(--ms-muted);
+	}
+	.ms-byline-links {
+		display: inline-flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.25rem 0.5rem;
+	}
+	/* Where the line wraps, the links take a line of their own rather than
+	 * opening it with a separator. The byline's own width decides, not the
+	 * viewport's, because the sidebar narrows the column from 50rem up. The
+	 * whole line is 525 px in English and 508 in Spanish at its 13 px size
+	 * (about 40.4em, measured in Chromium on 2026-09-24), so below 42em it
+	 * would wrap. A longer name or translation needs this raised. */
+	@container ms-byline (max-width: 42em) {
+		.ms-byline-lead {
+			display: none;
+		}
+		.ms-byline-links {
+			flex-basis: 100%;
+		}
+	}
+	.ms-byline a {
+		color: inherit;
+		text-decoration: underline;
+		text-underline-offset: 0.2em;
+	}
+	.ms-byline a:hover {
+		color: var(--ms-heading);
+	}
+	/* A link in a row of links, not in a sentence, so WCAG 2.5.8's inline
+	 * exception does not cover it: on a touch screen it gets the height the
+	 * pagination links get in chrome.css. */
+	@media (pointer: coarse) {
+		.ms-byline a {
+			display: inline-flex;
+			align-items: center;
+			min-height: 2.75rem;
+		}
+	}
+	@media print {
+		.ms-byline a {
+			text-decoration: none;
+		}
+	}
+</style>

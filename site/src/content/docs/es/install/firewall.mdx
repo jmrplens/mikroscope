@@ -1,6 +1,9 @@
 ---
 title: Las dos trampas del cortafuegos
-description: Las dos reglas raw del cortafuegos por defecto de MikroTik que descartan en silencio cada paquete que envía un contenedor, lo que añade `install` para que no lo hagan y qué pasar cuando tus listas tienen otros nombres.
+description: "Dos reglas raw de un cortafuegos MikroTik pueden descartar en silencio lo que envía un contenedor: qué añade `install` para evitarlo y qué listas nombrar."
+head:
+  - tag: title
+    content: Las dos trampas del cortafuegos de RouterOS | mikroscope
 ---
 
 import NotClaimed from "../../../../components/NotClaimed.astro";
@@ -9,14 +12,16 @@ import SeeAlso from "../../../../components/SeeAlso.astro";
 import Verified from "../../../../components/Verified.astro";
 
 Esta página responde a por qué un agente que está en marcha puede seguir siendo
-inalcanzable en un router con el cortafuegos por defecto de MikroTik, y qué
-cambia `install` en ese cortafuegos para que no lo sea. Añade dos pertenencias
+inalcanzable en un router cuyo cortafuegos raw lleva las reglas `defconf:` de
+MikroTik, y qué cambia `install` en ese cortafuegos para que no lo sea. Añade dos pertenencias
 a listas y nada más; sin `--expose` no escribe ninguna regla de cortafuegos.
 
 ## Dos reglas que descartan todo lo que envía un contenedor
 
-El cortafuegos por defecto de MikroTik lleva dos reglas raw que descartan en
-silencio cada paquete que envía un contenedor:
+La guía [Building Advanced Firewall](https://help.mikrotik.com/docs/spaces/ROS/pages/328513/Building+Advanced+Firewall)
+de MikroTik añade reglas raw comentadas `defconf:`, y dos de ellas, en la forma
+en que las lleva el RB5009 de referencia, descartan en silencio cada paquete que
+envía un contenedor:
 
 - `drop the rest (in-interface-list=!LAN)` casa con un paquete que entra por una
   interfaz fuera de la lista de interfaces `LAN`, y una veth nueva está fuera
@@ -24,6 +29,10 @@ silencio cada paquete que envía un contenedor:
 - `drop local if not from default IP range (src-address-list=!LANs)` casa con
   una dirección de origen fuera de la address-list `LANs`, y la /30 del
   contenedor está fuera de ella.
+
+La guía escribe la segunda regla con el rango en sí, `src-address=!192.168.88.0/24`, y no con una
+lista, y ninguna pertenencia a una lista hace pasar por ella a una /30 fuera de ese rango; para esa
+forma, `install` no añade nada que sirva.
 
 El descarte es silencioso. Desde tu máquina el agente no responde, y eso se ve
 igual que un contenedor que no está en marcha — por eso el sondeo tras
@@ -98,7 +107,8 @@ el token pasa a ser obligatorio está en
 	Se midió un único cortafuegos: el del RB5009, el 2026-09-11, donde las dos pertenencias bastaron.
 	Un cortafuegos con otras reglas de descarte en `raw`, `input` o `forward` puede descartar el
 	tráfico del contenedor en otro punto, e `install` no añade nada para ese caso más allá de las dos
-	pertenencias.
+	pertenencias. No se comprobó si la configuración de fábrica de un router lleva estas dos reglas
+	raw.
 </NotClaimed>
 
 <SeeAlso>

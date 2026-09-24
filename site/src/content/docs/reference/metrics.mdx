@@ -1,6 +1,9 @@
 ---
 title: Prometheus metric families
-description: Every family on the collector’s --prom exposition, grouped by source, with its type, its labels and when it is absent.
+description: Every Prometheus metric family mikroscope's collector exposes for a MikroTik RouterOS device, by source, with its type, its labels and when it is absent.
+head:
+  - tag: title
+    content: Prometheus metric families for MikroTik RouterOS | mikroscope
 ---
 
 import { Aside } from "@astrojs/starlight/components";
@@ -8,11 +11,13 @@ import NotClaimed from "../../../components/NotClaimed.astro";
 import Provenance from "../../../components/Provenance.astro";
 import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
+import Src from "../../../components/Src.astro";
 
-This page lists every metric family mikroscope exposes in Prometheus text
-format: its name, its type, its labels, what it counts, and when it is not
-there. It is read from `internal/expo/expo.go`, `internal/agent/capture.go`
-and `internal/sinks/prometheus.go`. A family is listed under the source it
+This page lists every metric family mikroscope exposes in the [Prometheus text
+format](https://prometheus.io/docs/instrumenting/exposition_formats/): its name,
+its type, its labels, what it counts, and when it is not there. It is read
+from <Src path="internal/expo/expo.go" />, <Src path="internal/agent/capture.go" />
+and <Src path="internal/sinks/prometheus.go" />. A family is listed under the source it
 comes from, because that is what decides whether a given board has it.
 
 ## One exposition, and where each family comes from
@@ -53,7 +58,7 @@ read rather than as fresh as the scrape.
 ### What the collector's copy does differently
 
 The collector's sink is built for a nominal 10 Hz whatever rate the agent runs
-at (`promHistogramRateHz` in `cmd/mikroscope/sinkflags.go`), so that its
+at (`promHistogramRateHz` in <Src path="cmd/mikroscope/sinkflags.go" />), so that its
 bucket layout does not change when it reconnects to a differently configured
 agent. Five things follow from that constant, read from the code:
 
@@ -84,7 +89,7 @@ carried the buckets `le="0"` through `le="11"` plus `+Inf` at both; and
 `window="1s"`, `window="10s"` and `window="60s"` were all present at both.
 
 <NotClaimed variant="untested">
-	The last two are still arithmetic, from `internal/expo/expo.go`: the collector's `Totals` is
+	The last two are still arithmetic, from <Src path="internal/expo/expo.go" />: the collector's `Totals` is
 	sized once at the nominal 10 Hz and `SetSamplerRate` resizes only the ring, never re-buckets, so
 	the 1/600 weight and the 36 000-sample eviction stand whatever the agent's rate. Neither was
 	watched happening — the eviction needs an interrupt line to fall out of the top-K and stay out,
@@ -298,7 +303,7 @@ A change to `nf_conntrack_max` shows after the agent restarts.
 A block device that did nothing is not in the sample and so not here either;
 on the reference RB5009 (RouterOS 7.24.2, kernel 5.6.3) on 2026-09-12,
 `nbd0`–`nbd15` were present and idle and `mtdblock0`–`2` read all-zero
-(`internal/dashboards/panels.go`, the disk in-flight panel). Unlike the floored
+(<Src path="internal/dashboards/panels.go" />, the disk in-flight panel). Unlike the floored
 sources in the conventions above, the flash levels and `mikroscope_disk_inflight`
 are not carried forward, so they are missing from most scrapes of a quiet
 board.

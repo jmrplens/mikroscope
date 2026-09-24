@@ -77,8 +77,9 @@ func TestTarShape(t *testing.T) {
 // built for, and that no other architecture declares one at all.
 //
 // The level matters on RouterOS: MikroTik's container documentation states
-// that the package exists for arm, arm64 and x86 only, and that "devices with
-// EN7562CT CPU support only arm32v5 container images" — the hEX Refresh line.
+// that the package exists for arm, arm64 and x86 only, and that "for devices
+// with EN7562CT CPU like the hEX Refresh, only arm32v5 container images are
+// supported".
 // An OCI consumer matches `linux/arm` on this variant, so an image that says
 // v7 is not one of those boards will run. Read from MikroTik's documentation,
 // not measured: this project has run on one device, the reference RB5009,

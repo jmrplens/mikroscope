@@ -7,10 +7,14 @@ import Measured from "../../../components/Measured.astro";
 import NotClaimed from "../../../components/NotClaimed.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
 
-Every measurement on this site was taken on one device, on one day, under one
-load. This page is the list of things it therefore does not tell you — kept
-here, in the documentation, rather than left for a reader to discover by being
-wrong.
+Every router measurement on this site was taken on one device, the reference
+RB5009UG+S+, under that router's own traffic and the few events
+[provoked on purpose](/mikroscope/playbooks/). They were not taken on one day:
+the oldest, the cost of an ssh connect, dates from 2026-08-26 on RouterOS
+7.24.1, and the others that carry a date from 2026-09-11 on, on 7.24.2 and later
+7.24.4, and each says which. This page is the list of things they therefore do
+not tell you — kept here, in the documentation, rather than left for a reader
+to discover by being wrong.
 
 ## What `/metrics` can recover, and what it cannot
 

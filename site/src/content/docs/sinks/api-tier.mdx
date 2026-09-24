@@ -1,6 +1,9 @@
 ---
 title: The RouterOS API tier
-description: What the collector still asks RouterOS over its binary API, why most of it is optional, and the flags and presets that decide how much to ask.
+description: On an RB5009, RouterOS cpu-load fitted a ~1 s trailing mean of /proc/stat. What else the collector asks the binary API, and the presets that ask less.
+head:
+  - tag: title
+    content: The RouterOS API tier and what cpu-load averages | mikroscope
 ---
 
 import { Aside } from "@astrojs/starlight/components";
@@ -11,10 +14,11 @@ import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
 
 Beside the kernel tier it pulls from the agent, `forward` can hold one persistent
-session to the RouterOS binary API for the API tier (a second one when the kernel tier
-itself comes through the relay) and read what the container cannot see. This page
-answers what that tier reads, which of it the agent already covers, how to choose how
-much of it to run, and what a missing value means.
+session to the [RouterOS binary
+API](https://help.mikrotik.com/docs/spaces/ROS/pages/47579160/API) for the API tier (a
+second one when the kernel tier itself comes through the relay) and read what the
+container cannot see. This page answers what that tier reads, which of it the agent
+already covers, how to choose how much of it to run, and what a missing value means.
 
 ## What the agent already reads, and what it cannot
 
@@ -30,17 +34,26 @@ What is left is **per-interface bytes and packets**. They live in the router's n
 namespace and stay out of reach whatever the container is given; see [the router's CPU,
 the container's network](/mikroscope/limits/namespaces/).
 
-## What `cpu-load` actually averages
+## How many seconds does RouterOS `cpu-load` average over?
 
-`/system/resource` reports `cpu-load` as an integer percent, and this page calls it
-a one-second average. That is measured, not assumed: the API series was correlated
-against the agent's own per-core busy ratio, which is the same `/proc/stat` jiffies
-read at 10 Hz, over two separate hours.
+RouterOS `cpu-load` averages about one second: on a MikroTik RB5009 running RouterOS
+7.24.2 it tracked a trailing mean of **<Measured id="cpuLoad.window1" /> that reached
+the API <Measured id="cpuLoad.delay1" /> late** in one hour and **a mean of <Measured id="cpuLoad.window2" />, <Measured id="cpuLoad.delay2" />
+late** in another, each the best fit against the kernel's own `/proc/stat` busy ratio
+read at 10 Hz on 2026-09-15 (r = <Measured id="cpuLoad.r1" /> over the hour's <Measured id="cpuLoad.samples1" />
+API samples, and r = <Measured id="cpuLoad.r2" /> over the other's <Measured id="cpuLoad.samples2" />).
 
-The best fit is a **1.0 s trailing mean with 0.6 s of delay, r = 0.9825** over 3 499
-API samples, and **1.1 s with 0.1 s of delay, r = 0.9734** over 3 594 in the second
-hour. Widening the window only makes the fit worse — 1.5 s gives 0.955, 2 s gives
-0.919, 5 s gives 0.822, 8 s gives 0.791.
+MikroTik's [`/system/resource`
+documentation](https://help.mikrotik.com/docs/spaces/ROS/pages/40992875/Resource)
+defines `cpu-load` as the percentage of used CPU resources, all CPUs combined, and
+names no window (read on 2026-09-24). The rest of this section is how the window was
+measured rather than assumed.
+
+`/system/resource` reports `cpu-load` as an integer percent. The API series was
+correlated against the agent's own per-core busy ratio, which is the same
+`/proc/stat` jiffies, for a range of window lengths and delays, and the fits above
+are the best of each hour. Widening the window only makes the fit worse — 1.5 s
+gives 0.955, 2 s gives 0.919, 5 s gives 0.822, 8 s gives 0.791.
 
 A sixty-second average is ruled out twice over. Its correlation is 0.238, and the
 step response has no ramp in it: at the sharpest load step in the day the kernel
@@ -271,9 +284,10 @@ it; it takes the per-port counters, and only the API has those.
 
 ## What the tier costs the router
 
-Measured on the reference RB5009 (RouterOS 7.24.2, 2026-09-16) with `/tool profile
-duration=60s cpu=total`, once with the collector stopped and once with it running
-`--interfaces bridge,ether1,PPPoE_DIGI --counters-every 10s --api-every 1s`. The first
+Measured on the reference RB5009 (RouterOS 7.24.2, 2026-09-16) with RouterOS's own
+[profiler](https://help.mikrotik.com/docs/spaces/ROS/pages/8323153/Profiler),
+`/tool profile duration=60s cpu=total`, once with the collector stopped and once with it
+running `--interfaces bridge,ether1,PPPoE_DIGI --counters-every 10s --api-every 1s`. The first
 five one-second snapshots of each profile are dropped: they hold the SSH connect that
 asked for it.
 
@@ -318,7 +332,7 @@ finished, so the tier redials and retries that one command on the new
 connection. A **`!trap`** does not redial: the router is alive and refusing the
 command, and asking again would only spend its CPU on the same bad question. A
 **`!fatal`** does, because that is the word RouterOS sends as it closes the
-session.
+session, as [MikroTik's API documentation](https://help.mikrotik.com/docs/spaces/ROS/pages/47579160/API) states.
 
 Attempts are spaced at five seconds. One round issues four or five commands, so
 a router that is down would otherwise be dialed several times a second, and
@@ -385,5 +399,7 @@ same minute on your own device to compare them.
   `ether2` to the kernel's `eth1`.
 - [Conntrack without the API](/mikroscope/playbooks/conntrack/): reading the connection count from
   the slab instead.
+- [Compared with the alternatives](/mikroscope/start/compared/): what SNMP, the RouterOS API and
+  the other tools read on a MikroTik router, beside what the agent reads.
 
 </SeeAlso>

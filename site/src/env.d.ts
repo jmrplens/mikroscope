@@ -9,3 +9,11 @@ declare module "virtual:starlight/components/*" {
 	const Component: (props: Record<string, unknown>) => unknown;
 	export default Component;
 }
+
+// The per-page "Last updated" table, served by the Vite plugin in
+// astro.config.mjs from src/lib/lastmod.mjs: a site-relative source path
+// (a route entry's `filePath`) to an ISO 8601 date.
+declare module "virtual:mikroscope/lastmod" {
+	const dates: Record<string, string>;
+	export default dates;
+}

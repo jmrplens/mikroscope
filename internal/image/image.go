@@ -94,9 +94,9 @@ func ArmVariant(goarm string) string {
 // VariantNote is what an operator needs to be told about an image they chose
 // by hand, or the empty string when there is nothing to say.
 //
-// 32-bit ARM is the only case. MikroTik's container documentation states that
-// devices with the EN7562CT CPU — the hEX Refresh line — "support only arm32v5
-// container images", and its other 32-bit ARM boards run an ARMv7 userland. An
+// 32-bit ARM is the only case. MikroTik's container documentation states "for
+// devices with EN7562CT CPU like the hEX Refresh, only arm32v5 container images
+// are supported", and its other 32-bit ARM boards run an ARMv7 userland. An
 // ARMv5 image runs on both, an ARMv7 one does not run on the first, and the
 // way that fails is an `exec format error` in the container log after an
 // install that reported success. So the v7 image is the one that needs a word,
@@ -241,9 +241,9 @@ func Tar(binary []byte, arch, goarm string) ([]byte, error) {
 	if arch == "arm" {
 		// The variant is what an OCI consumer matches on for linux/arm, and on
 		// RouterOS it is not one value. MikroTik's container documentation says
-		// the package exists for arm, arm64 and x86 only, and that "devices
-		// with EN7562CT CPU support only arm32v5 container images" — the hEX
-		// Refresh line. The rest of MikroTik's 32-bit ARM devices run an
+		// the package exists for arm, arm64 and x86 only, and that "for devices
+		// with EN7562CT CPU like the hEX Refresh, only arm32v5 container images
+		// are supported". The rest of MikroTik's 32-bit ARM devices run an
 		// ARMv7 userland. So the level the binary was built for is what goes
 		// in, and the release publishes both.
 		configMap["variant"] = ArmVariant(goarm)

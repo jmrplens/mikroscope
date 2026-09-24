@@ -1,6 +1,6 @@
 ---
 title: Importar y comprobar
-description: Cómo enlazar los dashboards a una fuente de datos, qué preguntan primero import y check al almacén, y qué demuestra check contra un Grafana en marcha y qué no puede ver.
+description: Enlazar los dashboards a una fuente de datos de Grafana, qué preguntan antes import y check al almacén, y qué demuestra check en un Grafana real y qué no.
 ---
 
 import { Aside, Tabs, TabItem } from "@astrojs/starlight/components";
@@ -8,6 +8,7 @@ import DashboardCount from "../../../../components/DashboardCount.astro";
 import NotClaimed from "../../../../components/NotClaimed.astro";
 import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
+import Src from "../../../../components/Src.astro";
 
 Esta página responde a cómo meter los cinco dashboards en un Grafana, qué necesita la fuente de datos
 antes de que puedan devolver algo y qué te dice `mikroscope dashboards check` una vez están allí. La
@@ -20,8 +21,9 @@ Lo primero es la base de datos: `influxdb3 create database mikroscope` en el nod
 un token que pueda leerla y escribirla — la misma base de datos y el mismo token en los que escribe
 el destino, en [InfluxDB 3](/mikroscope/es/sinks/influxdb/).
 
-La fuente de datos es de tipo `influxdb`, `version: SQL`, `dbName: mikroscope`, con **los dos**
-campos seguros rellenos:
+La fuente de datos es de tipo `influxdb`, `version: SQL`, `dbName: mikroscope` —los campos del
+[ejemplo de aprovisionamiento del propio Grafana para InfluxDB 3 con SQL](https://grafana.com/docs/grafana/latest/datasources/influxdb/configure/)—,
+con **los dos** campos seguros rellenos:
 
 - `httpHeaderValue1` = `Bearer <token>` (la ruta HTTP)
 - `token` = `<token>` (la ruta FlightSQL)
@@ -95,9 +97,11 @@ escalares, y los de por núcleo están ausentes en vez de equivocados.
 
 ## Importar a mano
 
-Grafana → Dashboards → New → Import, sube el `dashboards/mikroscope-<almacén>.json` que corresponda
-a tu fuente de datos (influxdb, prometheus, postgres, graphite o elasticsearch) y elige la fuente de
-datos cuando Grafana pida `DS_MIKROSCOPE`.
+Grafana → Dashboards → New → Import, como lo describe la [guía de importación del propio
+Grafana](https://grafana.com/docs/grafana/latest/visualizations/dashboards/build-dashboards/import-dashboards/): sube el
+`mikroscope-<almacén>.json` de <Src path="dashboards/" /> que corresponda a tu fuente de datos
+(influxdb, prometheus, postgres, graphite o elasticsearch) y elige la fuente de datos cuando
+Grafana pida `DS_MIKROSCOPE`.
 
 Un fichero subido así lleva los **valores compilados por defecto**: los cinco paneles que el equipo
 de referencia no puede producir están en la fila de no disponibles, y todos los demás paneles se
@@ -315,7 +319,7 @@ measurements it holds`, con el motivo, y siguen con los valores compilados por d
 `gen` a secas, ya que no tiene fuente de datos a la que preguntar.
 
 **Solo se puede sondear InfluxDB y Prometheus.** La consulta de arriba se escribe por tipo de fuente
-de datos, y `internal/dashboards/grafana.go` tiene una para esos dos y `cannot probe a "…"
+de datos, y <Src path="internal/dashboards/grafana.go" /> tiene una para esos dos y `cannot probe a "…"
 datasource` para el resto. Con `--store postgres`, `--store graphite` o `--store elasticsearch` el
 sondeo falla siempre, avisa siempre y entrega siempre los valores compilados: el mismo resultado que
 pasar `--no-probe`. Es una carencia, no una decisión de diseño: esos tres almacenes reciben el

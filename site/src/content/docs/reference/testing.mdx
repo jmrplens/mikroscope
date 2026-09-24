@@ -1,12 +1,13 @@
 ---
 title: How the project tests itself
-description: The three layers of test — the bytes each sink puts on the wire, whether a real store accepts them, and whether the dashboards' own queries answer — what each one proves, what none of them prove, and the command for each.
+description: "Three test layers: the bytes each sink sends, whether a real store takes them, whether the dashboards' queries answer; what each proves and what none does."
 ---
 
 import { Aside } from "@astrojs/starlight/components";
 import NotClaimed from "../../../components/NotClaimed.astro";
 import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
+import Src from "../../../components/Src.astro";
 
 A sink can be wrong in three places, and each one needs a different test. It
 can encode the wrong bytes. It can encode bytes a store refuses — which a
@@ -27,7 +28,7 @@ The project therefore has three layers, and they are three commands.
 
 None of the three touches a router. Layers 1 and 2 drive the collector against
 a fake agent that serves canned samples, and layer 1 also drives the real agent
-binary against `testdata/proc/rb5009`, a captured `/proc` and `/sys` tree of
+binary against <Src path="testdata/proc/rb5009/" />, a captured `/proc` and `/sys` tree of
 the reference device. That is what makes a run reproducible on any machine, and
 what keeps the router out of the loop.
 

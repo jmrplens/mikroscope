@@ -1,6 +1,6 @@
 ---
 title: Llegar al agente
-description: Cómo llega la máquina que ejecuta `record` o `forward` a un agente que solo escucha en la dirección de su veth, qué te dice el sondeo tras `install` cuando no puede y qué cuesta cada vía, directa, relay y `--expose`.
+description: El agente solo escucha en su veth — cómo llega a él tu máquina, directa, por el relay de la API de RouterOS o con `--expose`, y qué cuesta cada vía.
 ---
 
 import Measured from "../../../../components/Measured.astro";
@@ -8,6 +8,7 @@ import NotClaimed from "../../../../components/NotClaimed.astro";
 import RouterWrites from "../../../../components/RouterWrites.astro";
 import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
+import Src from "../../../../components/Src.astro";
 import Verified from "../../../../components/Verified.astro";
 
 El agente escucha solo en la dirección de la veth — `http://172.30.10.2:9123`
@@ -26,8 +27,8 @@ versión del agente, la cadencia, el número de secuencia, los ticks retrasados 
 tiempo de ida y vuelta, como en
 `direct transport ok: agent 1.0.0, 10 Hz, seq 29, 0 slipped, 7ms round trip`.
 La versión es la de la propia CLI: `install` graba en el agente que compila su
-`internal/version.Version`, y tanto el Makefile como la release lo toman del
-fichero VERSION, así que un agente puesto ahí por 1.0.0 informa `1.0.0`. Un
+`internal/version.Version`, y tanto el <Src path="Makefile" /> como la release lo toman del
+fichero <Src path="VERSION" />, así que un agente puesto ahí por 1.0.0 informa `1.0.0`. Un
 agente que se bajó el router informa la etiqueta con la que se publicó.
 En el RB5009 (RouterOS 7.24.2, 2026-09-12) el agente respondió 3 s después de la
 instalación, con un tiempo de ida y vuelta de 5–7 ms.

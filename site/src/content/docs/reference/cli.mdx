@@ -1,6 +1,6 @@
 ---
 title: Commands and flags
-description: Every verb of the mikroscope CLI, every flag with its default, its range and the MIKROSCOPE_* variable that sets it, read from cmd/mikroscope.
+description: Every verb and flag of the mikroscope CLI, with its default, its accepted range and the MIKROSCOPE_* variable that sets it, read from the Go source.
 ---
 
 import { Aside } from "@astrojs/starlight/components";
@@ -10,12 +10,13 @@ import NotClaimed from "../../../components/NotClaimed.astro";
 import RouterWrites from "../../../components/RouterWrites.astro";
 import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
+import Src from "../../../components/Src.astro";
 
 This page answers one question for each flag of `mikroscope`: what it does,
 what it defaults to, what range is accepted, and whether an environment
-variable can set it. It is read from `cmd/mikroscope/*.go` and
-`internal/router/options.go`, not from the help text, and where the two differ
-the page says so.
+variable can set it. It is read from the Go files in <Src path="cmd/mikroscope/" />
+and from <Src path="internal/router/options.go" />, not from the help text, and
+where the two differ the page says so.
 
 ## Usage and exit status
 
@@ -35,16 +36,23 @@ and `--rate 50` are the same, and a boolean is turned off with
 | Status | When                                                                                                                                                                                                                                      |
 | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `0`    | the verb finished                                                                                                                                                                                                                         |
-| `1`    | the verb ran and failed (a missing prerequisite, a router error, a sink that could not be built, a panel with no data), the verb is unknown, or a flag of `record`, `mark`, `plot`, `forward` or `dashboards` failed to parse or validate |
-| `2`    | no verb was given, or a flag of a deployment verb failed to parse or validate; nothing was sent to the router                                                                                                                             |
+| `1`    | the verb ran and failed (a missing prerequisite, a router error, a sink that could not be built, a panel with no data), the verb is unknown, or a flag of `uninstall`, `record`, `mark`, `plot`, `forward` or `dashboards` failed to parse or validate |
+| `2`    | no verb was given, or a flag of `doctor`, `plan`, `install`, `upgrade`, `status` or `image` failed to parse or validate; nothing was sent to the router                                                                                                                             |
 
 </ScrollTable>
 
-Every flag is checked before the first connection, by `Finish` in
-`internal/router/options.go`, which runs for the deployment verbs and for
-`record`, `mark`, `plot` and `forward` alike. `--triggers` goes through the
+mikroscope validates the deployment and connection flags before it connects to
+anything, so a bad value stops the verb with nothing sent to the router: exit
+status 2 for `doctor`, `plan`, `install`, `upgrade`, `status` and `image`, and
+1 for `uninstall`, `record`, `mark`, `plot` and `forward`. The check is
+`Finish` in <Src path="internal/router/options.go" />, one function for all
+eleven verbs. Checked on 2026-09-24 with a build of 1.2.2 and no router in
+reach: `install --rate 500`, `image --rate 500` and `doctor --name bad/name`
+exited 2, and `uninstall --rate 500`, `record --port 0` and `forward --port 0`
+exited 1, each printing the value it refused. `--triggers` goes through the
 agent's own `ParseTriggers`, so an unknown condition, a bad threshold, a quote
-or a semicolon fails the verb with exit 2 and nothing is sent. The agent parses
+or a semicolon fails the verb, with exit 2 for `doctor`, `plan`, `install`,
+`upgrade`, `status` and `image` and 1 for `uninstall`, and nothing is sent. The agent parses
 `TRIGGERS` again when it starts, which is what catches an envlist edited by
 hand on the router: a bad value there shows up as a container that exits with
 status `2` after a `mikroscope-agent: bad configuration:` line in the router
@@ -90,10 +98,10 @@ shows](/mikroscope/install/prerequisites/#what-the-running-agent-shows) and neve
 status.
 
 <Aside type="note" title="Three ways to get the agent image, one flag apart">
-	`plan`, `install`, `upgrade` and `image` need an agent image, and `buildImage` in
-	`cmd/mikroscope/main.go` gets it by whichever of three routes the flags ask for. With neither
+	`plan`, `install`, `upgrade` and `image` need an agent image, and `buildImage` in the
+	file <Src path="cmd/mikroscope/main.go" /> gets it by whichever of three routes the flags ask for. With neither
 	flag they run `go build -trimpath ./cmd/mikroscope-agent` with `CGO_ENABLED=0`, `GOOS=linux` and
-	the `--arch` as `GOARCH` (`internal/image/image.go`), which needs a checkout of the repository
+	the `--arch` as `GOARCH` (<Src path="internal/image/image.go" />), which needs a checkout of the repository
 	and a Go toolchain on `PATH`. With `--agent-tar` they read the published tar instead, check that
 	it is a mikroscope agent image for `--arch`, and upload that. With `--remote-image` nothing is
 	built and nothing is uploaded: the router pulls the image itself, and `image` refuses, because
@@ -124,7 +132,7 @@ status.
 | `--arch`         | `arm64`                         | `MIKROSCOPE_ARCH`         | `^[a-z0-9]{1,16}$`; `doctor` knows `arm64`, `arm`, `amd64` | device architecture, used as `GOARCH` and in the image manifest                                                                                                                                                                                                                                                 |
 | `--goarm`        | `5`                             | none                      |                                                            | `GOARM` level, used only with `--arch arm`: 5 runs on every 32-bit ARM MikroTik ships, 7 does not run on EN7562CT boards (hEX Refresh)                                                                                                                                                                                                                                                                      |
 | `--agent-tar`    | empty (build the agent here)    | `MIKROSCOPE_AGENT_TAR`    | a path to an agent image tar                               | `plan`, `install`, `upgrade`, `image`: upload this tar instead of building one, so neither a Go toolchain nor a checkout is needed. The tar is checked first: one that is not a mikroscope agent image, or is built for an architecture other than `--arch`, fails the verb naming the asset to download        |
-| `--remote-image` | empty (upload a tar)            | `MIKROSCOPE_REMOTE_IMAGE` | a registry reference, `owner/name:tag` or `host/owner/name:tag`             | `plan`, `install`, `upgrade`: the router pulls the image itself, so nothing is built and nothing is uploaded, and no tar lands on the device. RouterOS takes the registry host from the global `/container/config registry-url`, which ships as `https://registry-1.docker.io` and which mikroscope never writes; `doctor` checks that setting against a reference that names a host of its own, such as the GHCR one, and names the command to run |
+| `--remote-image` | empty (upload a tar)            | `MIKROSCOPE_REMOTE_IMAGE` | a registry reference, `owner/name:tag` or `host/owner/name:tag`             | `plan`, `install`, `upgrade`: the router pulls the image itself, so nothing is built and nothing is uploaded, and no tar lands on the device. RouterOS takes the registry host from the global `/container/config registry-url`, which mikroscope never writes; its RouterOS default since 7.18 is `https://lscr.io`, which does not carry the image, and on the reference RB5009 it reads `https://registry-1.docker.io`; `doctor` checks that setting against a reference that names a host of its own, such as the GHCR one, and names the command to run |
 | `--rsc`          | `false`                         | none                      |                                                            | `plan`: write a RouterOS script that installs from the router itself, instead of the listing                                                                                                                                                                                                                    |
 | `--port`         | `9123`                          | none                      | 1–65535                                                    | agent HTTP port on the veth                                                                                                                                                                                                                                                                                     |
 | `--rate`         | `10`                            | none                      | 1–100                                                      | sampler rate in Hz (envlist `RATE_HZ`); 10, 50 and 100 Hz measured lossless on the RB5009 ([rate ceiling](/mikroscope/cost/rate-ceiling/))                                                                                                                                                                      |
@@ -149,7 +157,7 @@ Three settings of the container are not flags: `logging=yes`,
 `restart-policy=on-failure` with `restart-max-count=5` and
 `restart-interval=10s`, and `ignore-remote-image-change=yes`. The restart
 values are the ones `Defaults()` sets; all three are what `install` writes
-(`internal/router/steps.go`). `start-on-boot` has no flag of its own either: it
+(<Src path="internal/router/steps.go" />). `start-on-boot` has no flag of its own either: it
 is `no` with `--ephemeral` and `yes` without.
 
 ### Pass the same shape to status, upgrade and uninstall
@@ -300,7 +308,7 @@ something to a sibling is accepted and ignored: `plot --for 5m` parses and
 does nothing. The table marks which verb reads each flag. `--from-start` is
 the exception: only `record` registers it, and `forward`, `mark` and `plot`
 refuse it as an unknown flag. `forward` always starts at the agent's newest
-sample (`internal/forward`); through 1.2.0 it listed the flag and ignored it.
+sample (<Src path="internal/forward/" />); through 1.2.0 it listed the flag and ignored it.
 
 <ScrollTable label="Flags of record, mark and plot">
 
@@ -420,7 +428,7 @@ tier has failed or reconnected it adds `api: N failed round(s), N reconnect(s)`.
 
 The collector's Prometheus sink sizes its busy-tick histogram for 10 Hz
 whatever rate the agent runs at (`promHistogramRateHz` in
-`cmd/mikroscope/sinkflags.go`), so the bucket layout does not change when it
+the file <Src path="cmd/mikroscope/sinkflags.go" />), so the bucket layout does not change when it
 reconnects to an agent configured differently. [Prometheus metric
 families](/mikroscope/reference/metrics/) says what else follows from that
 constant.
@@ -485,8 +493,8 @@ fails. The variables are `GRAFANA_URL` and `GRAFANA_TOKEN`, without the
 
 ## version
 
-`mikroscope version` prints `mikroscope` and the build identity from
-`internal/version`. It takes no flags.
+`mikroscope version` prints `mikroscope` and the build identity from the
+package <Src path="internal/version/" />. It takes no flags.
 
 <SeeAlso>
 

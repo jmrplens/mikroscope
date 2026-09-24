@@ -74,6 +74,7 @@ export const collections = {
 				"ms.alerts.both": z.string().optional(),
 				"ms.alerts.all": z.string().optional(),
 				"ms.breadcrumb.home": z.string().optional(),
+				"ms.footer.byline": z.string().optional(),
 			}),
 		}),
 	}),

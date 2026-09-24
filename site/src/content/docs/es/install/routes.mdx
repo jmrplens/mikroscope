@@ -1,6 +1,9 @@
 ---
 title: Cuatro formas de instalar
-description: Las cuatro rutas por las que la imagen del agente llega al router — un checkout con Go, el tar publicado, un registro del que tira el router, o un script de RouterOS que pegas — qué necesita cada una, qué escribe cada una, y cómo verificar una descarga de la release.
+description: Cuatro rutas para la imagen del agente, todas probadas en un RB5009 — registro, script de RouterOS, checkout de Go, el tar — y cómo verificar una release.
+head:
+  - tag: title
+    content: Cuatro formas de instalar el agente en RouterOS | mikroscope
 ---
 
 import { Aside, Steps } from "@astrojs/starlight/components";
@@ -21,16 +24,17 @@ ninguna ruta lo esquiva.
 
 <ScrollTable label="Las cuatro rutas de instalación, con lo que necesita cada una">
 
-| Ruta                                                   | Necesita                                                            | Prefiérela cuando                                                     |
-| ------------------------------------------------------ | ------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| **[Un pull del registro](#un-pull-del-registro)** — empieza por aquí | que el router llegue a Docker Hub; nada más            | casi siempre: una orden, nada que elegir, nada que subir               |
-| [Un script de RouterOS](#un-script-de-routeros)        | una terminal en el router; `--remote-image`                         | llegas al router por WinBox o WebFig y no por ssh                      |
-| [Un checkout, con Go](#un-checkout-con-go)             | Go 1.27 y el repositorio; ssh al router                             | trabajas en mikroscope y quieres el agente de tu propio árbol          |
-| [El tar publicado](#el-tar-publicado)                  | los artefactos de la release, el correcto para la placa; ssh al router | el router no llega a ningún registro                                 |
+| Ruta                                                                 | Necesita                                                               | Prefiérela cuando                                                                                             |
+| -------------------------------------------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| **[Un pull del registro](#un-pull-del-registro)** — empieza por aquí | que el router llegue a Docker Hub, y que `registry-url` lo nombre      | `registry-url` ya nombra Docker Hub, o todos los contenedores del router son tuyos: una orden, nada que subir |
+| [Un script de RouterOS](#un-script-de-routeros)                      | una terminal en el router; `--remote-image`                            | llegas al router por WinBox o WebFig y no por ssh                                                             |
+| [Un checkout, con Go](#un-checkout-con-go)                           | Go 1.27 y el repositorio; ssh al router                                | trabajas en mikroscope y quieres el agente de tu propio árbol                                                 |
+| [El tar publicado](#el-tar-publicado)                                | los artefactos de la release, el correcto para la placa; ssh al router | el router no llega a ningún registro                                                                          |
 
 </ScrollTable>
 
-**Toma la primera salvo que algo te lo impida.** Un pull del registro es una
+**Toma la primera salvo que algo te lo impida**, como un `registry-url` que sigue en el valor por
+defecto de RouterOS en un router cuyos otros contenedores no son tuyos. Un pull del registro es una
 sola orden sin nada que elegir: el índice de imágenes publicado lleva todas las
 plataformas que puede ser un contenedor de MikroTik, así que el router
 reconoce la suya y nadie tiene que saber si la placa es ARM de 64 bits o una de
@@ -50,36 +54,42 @@ subir:
 
 ```sh
 mikroscope install --router usuario@192.168.88.1 \
-  --remote-image jmrplens/mikroscope-agent:1.2.0
+  --remote-image jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}
 ```
 
 No se sube nada, ningún tar aterriza en el equipo, y `uninstall` no tiene
 ningún fichero del que dar cuenta: el paso del contenedor pasa a ser
-`/container/add remote-image="jmrplens/mikroscope-agent:1.2.0" …` y el plan
+`/container/add remote-image="jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}" …` y el plan
 imprime `the router pulls … (nothing is uploaded)` donde iría la línea de
 subida. La release publica la imagen dos veces, como
-`jmrplens/mikroscope-agent:1.2.0` en Docker Hub y como
-`ghcr.io/jmrplens/mikroscope-agent:1.2.0` en GHCR. Las dos llevan `linux/amd64`,
+`jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}` en Docker Hub y como
+`ghcr.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}` en GHCR. Las dos llevan `linux/amd64`,
 `linux/arm64`, `linux/arm/v7` y `linux/arm/v5`, y RouterOS toma la que necesita
 su arquitectura —que es la razón de que esta ruta no pregunte nada sobre la
 placa: las dos clases de ARM de 32 bits que vende MikroTik están en el índice.
 
 La referencia de arriba es la de Docker Hub, y no lleva host de registro: el
-router se la descarga del que ya nombre `/container/config registry-url`, y
-RouterOS trae ese ajuste puesto en `https://registry-1.docker.io`. En un router
-donde nadie lo haya tocado, la orden de arriba no necesita fijar nada antes —en
-la RB5009 sobre la que se mide este proyecto, ese ajuste vale
-`https://registry-1.docker.io`—. La referencia de GHCR es la alternativa, y
-necesita antes `/container/config/set registry-url=https://ghcr.io` en el
-equipo, que es un cambio para todos sus contenedores.
+router se la descarga del que ya nombre `/container/config registry-url`. En la
+RB5009 sobre la que se mide este proyecto, ese ajuste vale
+`https://registry-1.docker.io`, y la orden de arriba no necesitó fijar nada antes.
+RouterOS no lo trae así: desde la
+[7.18](https://download.mikrotik.com/routeros/7.18/CHANGELOG) su valor por defecto
+es `https://lscr.io`, el mismo que da la [documentación de contenedores](https://help.mikrotik.com/docs/spaces/ROS/pages/84901929/Container)
+de MikroTik, y la imagen solo se publica en Docker Hub y en GHCR. Lee antes el
+tuyo con `/container/config/print`. En un router que siga con ese valor por
+defecto, la orden de arriba necesita antes
+`/container/config/set registry-url=https://registry-1.docker.io`, y la
+referencia de GHCR, la alternativa, necesita
+`/container/config/set registry-url=https://ghcr.io`; cualquiera de los dos es
+un cambio para todos los contenedores del equipo.
 
 Necesita dos cosas que las otras rutas no: que el router llegue al registro, y
 que tenga sitio en RAM para las capas mientras las extrae.
 
 <Aside type="caution" title="El host del registro es un ajuste global del router">
-	RouterOS toma el host del registro de `/container/config registry-url`, que es global al equipo y
-	compartido con cualquier otro contenedor que tenga, y solo el resto de la referencia va a
-	`remote-image=`. mikroscope nunca escribe ese ajuste: apuntar el registro de tu router a otro
+	mikroscope pone solo el resto de la referencia en `remote-image=` y deja el host del registro a
+	`/container/config registry-url`, que es global al equipo y compartido con cualquier otro
+	contenedor que tenga. mikroscope nunca escribe ese ajuste: apuntar el registro de tu router a otro
 	sitio para instalar una sonda sería cambiar los contenedores de otra persona. `doctor` lo lee en
 	su lugar y, cuando la referencia nombra un host que no cuadra con el ajuste, nombra la única
 	orden que hay que ejecutar: `/container/config/set registry-url=https://ghcr.io` para la
@@ -88,7 +98,7 @@ que tenga sitio en RAM para las capas mientras las extrae.
 	[Lo que comprueba doctor](/mikroscope/es/install/prerequisites/#lo-que-comprueba-doctor).
 </Aside>
 
-Una referencia sin host —`jmrplens/mikroscope-agent:1.2.0`— deja el registro a
+Una referencia sin host —`jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}`— deja el registro a
 lo que el router ya tenga configurado, y `doctor` no hace entonces la
 comprobación de `registry-url`; sí lee el ajuste y si hay usuario, y avisa con
 `WARN no registry credential meant for another registry` cuando hay usuario y
@@ -103,7 +113,7 @@ otra máquina en absoluto:
 
 ```sh
 mikroscope plan --rsc \
-  --remote-image jmrplens/mikroscope-agent:1.2.0 \
+  --remote-image jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}} \
   --out install.rsc
 ```
 
@@ -241,13 +251,15 @@ toolchain de Go y sin checkout.
 `mikroscope doctor --router …` imprime la arquitectura leída del equipo, así
 que ejecútalo primero y deja que te lo diga. **Si no sabes qué placa ARM de
 32 bits tienes, toma el tar v5**: la documentación de contenedores de MikroTik
-dice que las placas EN7562CT «solo admiten imágenes de contenedor arm32v5», y
+dice que en los equipos con CPU EN7562CT, como el hEX Refresh, «only arm32v5
+container images are supported» —solo se admiten imágenes de contenedor
+arm32v5—, y
 una imagen ARMv5 funciona en todos los ARM de 32 bits que vende MikroTik,
 mientras que una ARMv7 no arranca en aquellas.
 
 <Steps>
 
-1. Descarga `mikroscope_1.2.0_<so>_<arch>.tar.gz` (`.zip` en Windows) y el tar
+1. Descarga `mikroscope_{{MIKROSCOPE_VERSION}}_<so>_<arch>.tar.gz` (`.zip` en Windows) y el tar
    de la imagen del agente de la tabla de arriba, junto con `checksums.txt` y
    `checksums.txt.sigstore.json`.
 
@@ -256,7 +268,7 @@ mientras que una ARMv7 no arranca en aquellas.
 3. Desempaqueta la CLI e instala:
 
    ```sh
-   tar xzf mikroscope_1.2.0_linux_x86_64.tar.gz
+   tar xzf mikroscope_{{MIKROSCOPE_VERSION}}_linux_x86_64.tar.gz
    ./mikroscope install --router usuario@192.168.88.1 \
      --arch arm64 --agent-tar mikroscope-agent-arm64.tar
    ```
@@ -281,7 +293,7 @@ subida: el tar sube con `scp`, RouterOS lo extrae al añadir el contenedor, e
 
 <Aside type="tip" title="Dos artefactos con nombres parecidos">
 	`mikroscope-agent-arm64.tar` es la imagen de contenedor para cargar de lado, la que quiere
-	`--agent-tar`. `mikroscope-agent_1.2.0_linux_arm64.tar.gz` es un archivo con el binario del agente
+	`--agent-tar`. `mikroscope-agent_{{MIKROSCOPE_VERSION}}_linux_arm64.tar.gz` es un archivo con el binario del agente
 	a secas, para leerlo o ejecutarlo fuera de un contenedor; `--agent-tar` lo rechaza.
 </Aside>
 

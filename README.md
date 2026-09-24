@@ -14,12 +14,35 @@
 ![CLI platforms](https://img.shields.io/badge/CLI-linux%20%7C%20macOS%20%7C%20windows%20%7C%20freebsd-lightgrey)
 
 Sub-second, kernel-level telemetry for container-capable MikroTik RouterOS
-devices. A static Go agent runs **on** the router, in a scratch container, and
-reads the shared kernel's `/proc` at 10 Hz — per-core CPU with the `softirq`
-split, softnet drops, interrupt affinity — where every existing exporter is
-stuck at the 1 s `cpu-load` the API reports. A CLI on your machine installs it,
-records a window with markers, draws the chart, or runs as a collector into
-Prometheus, InfluxDB and nine other stores.
+devices: RouterOS 7.24 or later, on arm64, 32-bit ARM or x86_64. A static Go
+agent runs **on** the router, in a scratch container, and reads the shared
+kernel's `/proc` at 1 to 100 Hz, 10 by default — per-core CPU with the
+`softirq` split, softnet drops, interrupts per CPU — where an exporter that
+polls the RouterOS API, such as mktxp or mikrotik-exporter, reads `cpu-load`:
+all cores in one figure, a trailing mean of about one second on the RB5009 it
+was measured on. A CLI on your machine
+installs it, records a window with markers, draws the chart, or runs as a
+collector into eleven sinks, Prometheus and InfluxDB 3 among them. Two
+MIT-licensed binaries.
+
+<!-- The figures below come from site/src/data/measurements.ts: run.10hz.cpu,
+     run.10hz.rss, budget.cpu and budget.rss, campaign rates-2026-09-18. A new
+     campaign changes them there, and here by hand; `pnpm run readme:check` in
+     site/ (part of its lint) fails until it does. -->
+
+What the observer costs the router is measured rather than promised: at the
+10 Hz install default the agent used **2.69 % of one core and 13.2 MiB of
+resident memory**, read from its own cgroup, on an RB5009UG+S+ (4 × 1.4 GHz
+Cortex-A72, RouterOS 7.24.2) — one 300 s window at steady state, the shipped
+configuration, the collector forwarding to InfluxDB 3, on 2026-09-18. That is
+inside the project's ≤ 16 MiB memory budget and above its ≤ 2 % CPU one. The
+2.85 % and 31.3 MiB that 1.0.0 published were measured with a 300 s ring,
+which 1.0.6 cut to 60 s: the memory fell with the ring, and 2.85 % against
+2.69 % is the noise between two windows. None of it transfers to a board that
+is not this one: [What it costs](https://jmrp.io/docs/mikroscope/cost/) says how
+the figure is taken and how to take it on your own device, and
+[the rate ceiling](https://jmrp.io/docs/mikroscope/cost/rate-ceiling/) has all
+six runs, from 10 to 100 Hz.
 
 ## Install
 
@@ -115,7 +138,7 @@ the datasource and publishes the one for the store it writes to, at start,
 before the first sample.
 
 Beside them, `dashboards/` ships Grafana alert rules for InfluxDB, PostgreSQL
-and Prometheus (14, 11 and 15 rules): counters that should not move, a bridge
+and Prometheus (14, 10 and 15 rules): counters that should not move, a bridge
 port the bridge has stopped delivering to, and a wake-up storm judged against
 the device's own previous day rather than a fixed number.
 [Alert rules](https://jmrp.io/docs/mikroscope/dashboards/alerts/) lists them.

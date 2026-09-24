@@ -1,6 +1,9 @@
 ---
 title: A CPU-bound workload
-description: A console loop that saturates one core of the reference RB5009 for a minute — why the device total reads 29 %, how the scheduler’s migration shows at 10 Hz, and what the temperature and frequency did.
+description: "One saturated core of a MikroTik RB5009 read at 10 Hz: why the device total hides it, the scheduler moving the load between cores, and the temperature."
+head:
+  - tag: title
+    content: "Per-core CPU on a MikroTik RB5009 at 10 Hz | mikroscope"
 ---
 
 import FaultSignature from "../../../components/FaultSignature.astro";
@@ -13,6 +16,12 @@ This page answers what a single-threaded bottleneck looks like in the per-core
 data, and why the device total hides it. The workload was provoked on purpose.
 
 <Provenance of="playbooks-2026-09-12" />
+
+**In short:** one saturated core on the four-core RB5009 reads as about 29 % of
+the device, so it is the per-core row, not the total, that shows a
+single-threaded bottleneck: here one core at 99.8 % while three idled. At 10 Hz
+the scheduler moving the load between cores is visible for about 20 s before it
+settles; sampled once a second, that is a vague plateau.
 
 ## How it was provoked
 
@@ -28,7 +37,9 @@ It ran 58.8 s.
 ## What the agent recorded
 
 In 5-second buckets. The agent ships raw tick deltas; the percentages below were
-computed from them afterwards.
+computed from them afterwards. There is no chart of this run: it was read on
+2026-09-12, before the history of the reference InfluxDB store begins on
+2026-09-19.
 
 ```text
    t  busy%   per-core busy%          ctxt/s  temp   MHz

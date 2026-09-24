@@ -8,12 +8,13 @@ import Measured from "../../../components/Measured.astro";
 import PrivilegedOnly from "../../../components/PrivilegedOnly.astro";
 import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
+import Src from "../../../components/Src.astro";
 
 The agent is an HTTP server and nothing else: it has no outbound connection.
 This page answers what each path returns, which query parameters it takes,
 which status codes it answers with, and what one line of its NDJSON looks
-like. It is read from `internal/agent/http.go`, `capture.go`, `source.go` and
-`internal/sample/sample.go`.
+like. It is read from <Src path="internal/agent/http.go" />, <Src path="internal/agent/capture.go" />, <Src path="internal/agent/source.go" />
+and <Src path="internal/sample/sample.go" />.
 
 ## Where it listens
 
@@ -25,7 +26,7 @@ that address, directly, through the relay or through `--expose`, is on
 [reaching the agent](/mikroscope/install/reaching-the-agent/).
 
 The server gives a client 5 s to send its request headers and 30 s to take a
-response (`ReadHeaderTimeout` and `WriteTimeout` in `internal/agent/agent.go`).
+response (`ReadHeaderTimeout` and `WriteTimeout` in <Src path="internal/agent/agent.go" />).
 
 ## Authentication
 
@@ -44,7 +45,7 @@ purpose: it carries the board string an operator is asked to send when their
 board has no port map, and a token should not be needed for that.
 
 The relay transport cannot present a token. `/tool fetch` runs on the router
-and sends no `Authorization` header (`internal/transport/transport.go`), so
+and sends no `Authorization` header (<Src path="internal/transport/transport.go" />), so
 the relay reaches `/healthz` and nothing else on an agent that has one.
 `--expose` makes the token mandatory; [what --expose
 opens](/mikroscope/security/expose/) says why.

@@ -6,6 +6,7 @@ description: Nine sample bars and the line of their own mean, why none of it is 
 import Mark from "../../../assets/mark-inline.svg";
 import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
+import Src from "../../../components/Src.astro";
 
 This page answers what the mikroscope mark says, how it is made, and why its
 colours are the ones they are — with the contrast of every tone measured
@@ -87,8 +88,8 @@ README on GitHub, an `og:image` in a chat client, a favicon over browser chrome
 
 WCAG 1.4.11 asks **3:1** of a graphical object, and 1.4.3 exempts logotypes
 from any minimum at all. 4.5:1 on every bar is a house rule stricter than the
-standard, chosen by the owner on 2026-09-15 over the smaller change of lifting
-the alphas to 3:1.
+standard, chosen by the project's maintainer, José Manuel Requena Plens, on
+2026-09-15 over the smaller change of lifting the alphas to 3:1.
 
 ## Amber also means threshold
 
@@ -97,7 +98,7 @@ orange before it turns red. The two do not collide literally — the panels use
 Grafana's own named colours and never these hexes — but a reader who has learnt
 "amber means look at this" on a dashboard is being asked to read the same hue
 as the project's own mark. That is the cost of the choice, made knowingly
-(owner, 2026-09-15).
+(the maintainer, 2026-09-15).
 
 ## The bars are proportions, not packets
 
@@ -121,7 +122,7 @@ own `#0e1316` ground instead, because an `.ico` has no way to ask.
 
 ## One generator, three families of files
 
-The mark lives as a generator, `cmd/gen_brand`, rather than as a folder of
+The mark lives as a generator, <Src path="cmd/gen_brand/" />, rather than as a folder of
 hand-drawn files, because changing the palette or the bar count is then one
 edit instead of nine in each of a dozen files. It is a build-time tool and is
 not one of the two released binaries. From the root of the repository:
@@ -135,7 +136,7 @@ go run ./cmd/gen_brand icons -out site/public   # the favicon and the touch icon
 `mark` is pure text. `compose` reads the three `bg-*.png` backgrounds from the
 directory it writes to and shells out to `rsvg-convert` for the PNGs that ship.
 `icons` shells out to `rsvg-convert` and to ImageMagick for the `.ico`, and is
-the only one that writes outside `brand/`. Every coordinate is written with two
+the only one that writes outside <Src path="brand/" />. Every coordinate is written with two
 decimals, rounded half to even, so the files are meant to reproduce byte for
 byte on any machine; `TestMarkIsByteForByteReproducible` checks that two runs on
 the same host give the same four mark and favicon files.

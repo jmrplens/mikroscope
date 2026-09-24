@@ -1,11 +1,12 @@
 ---
 title: La marca
-description: Nueve barras de muestra y la línea de su propia media, por qué nada de ello se dibuja con opacidad parcial, y el contraste que mide cada tono contra su página.
+description: Nueve barras de muestra y la línea de su propia media, por qué nada se dibuja con opacidad parcial y el contraste que mide cada tono contra su página.
 ---
 
 import Mark from "../../../../assets/mark-inline.svg";
 import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
+import Src from "../../../../components/Src.astro";
 
 Esta página responde qué dice la marca de mikroscope, cómo está hecha y por qué
 sus colores son los que son — con el contraste de cada tono medido contra el
@@ -94,8 +95,8 @@ recibe el lector.
 
 WCAG 1.4.11 pide **3:1** a un objeto gráfico, y 1.4.3 exime a los logotipos de
 cualquier mínimo. 4,5:1 en cada barra es una norma de la casa más estricta que
-el estándar, elegida por el propietario el 2026-09-15 frente al cambio menor de
-subir los alfas hasta 3:1.
+el estándar, elegida por el mantenedor del proyecto, José Manuel Requena Plens, el
+2026-09-15 frente al cambio menor de subir los alfas hasta 3:1.
 
 ## El ámbar también significa umbral
 
@@ -104,7 +105,7 @@ panel se pone naranja antes de ponerse rojo. Los dos no chocan literalmente —
 los paneles usan los colores con nombre propios de Grafana y nunca estos
 hexadecimales — pero a un lector que ha aprendido en un panel que "ámbar
 significa mira esto" se le pide leer el mismo tono en la marca del proyecto.
-Ese es el coste de la elección, hecha a sabiendas (propietario, 2026-09-15).
+Ese es el coste de la elección, hecha a sabiendas (el mantenedor, 2026-09-15).
 
 ## Las barras son proporciones, no paquetes
 
@@ -131,7 +132,7 @@ tiene forma de preguntar.
 
 ## Un generador, tres familias de ficheros
 
-La marca vive como un generador, `cmd/gen_brand`, y no como una carpeta de
+La marca vive como un generador, <Src path="cmd/gen_brand/" />, y no como una carpeta de
 ficheros dibujados a mano, porque así cambiar la paleta o el número de barras
 es una edición en vez de nueve en cada uno de una docena de ficheros. Es una
 herramienta de tiempo de compilación y no es uno de los dos binarios
@@ -146,7 +147,7 @@ go run ./cmd/gen_brand icons -out site/public   # el favicon y los iconos tácti
 `mark` es texto puro. `compose` lee los tres fondos `bg-*.png` del directorio
 en el que escribe y llama a `rsvg-convert` para los PNG que se publican.
 `icons` llama a `rsvg-convert` y a ImageMagick para el `.ico`, y es el único
-que escribe fuera de `brand/`. Cada coordenada se escribe con dos decimales,
+que escribe fuera de <Src path="brand/" />. Cada coordenada se escribe con dos decimales,
 redondeada al más cercano y, en caso de empate, al par, así que los ficheros
 están pensados para reproducirse byte a byte en cualquier máquina;
 `TestMarkIsByteForByteReproducible` comprueba que dos ejecuciones en el mismo

@@ -1,6 +1,9 @@
 ---
 title: El techo de muestreo
-description: Seis ejecuciones medidas a 10, 20, 50 y 100 Hz en un RB5009, con la configuración que se envía — ninguna pierde una muestra — y lo que muestrear más rápido compra de verdad.
+description: Seis ejecuciones medidas a 10, 20, 50 y 100 Hz en un RB5009 con la configuración de serie, sin perder ni una muestra, y lo que aporta muestrear más rápido.
+head:
+  - tag: title
+    content: El techo de muestreo en un MikroTik RB5009 | mikroscope
 ---
 
 import { Aside } from "@astrojs/starlight/components";
@@ -108,11 +111,11 @@ Resolución de porcentaje de CPU no. El jiffie son 10 ms, así que a 100 Hz un
 muestra contiene 0 o 1 ticks ocupados y la proporción de ocupación por muestra
 tiene dos valores posibles. Por encima de unos 20 Hz los contadores de ticks
 dejan de ser un porcentaje y pasan a ser un indicador de ocupación; a partir de
-ahí la resolución la pone el PMU.
+ahí la resolución la pone la PMU.
 
 Lo que sí compra una cadencia mayor es todo lo que no está cuantizado por el
 jiffie — cuentas de paquetes de softnet, deltas de interrupciones, contadores
-del PMU, las marcas de tiempo del propio log del kernel — y una cota más
+de la PMU, las marcas de tiempo del propio log del kernel — y una cota más
 estrecha sobre cuánto puede esconderse una ráfaga entre dos muestras.
 
 <NotClaimed>

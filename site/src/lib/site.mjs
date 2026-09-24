@@ -65,6 +65,21 @@ export const withoutLocale = (route) =>
 	route === "es" ? "" : route.replace(/^es\//, "");
 
 /**
+ * The same page in the other language: "es/sinks/prometheus" for
+ * "sinks/prometheus" and back, "es" for the English home and "" for the
+ * Spanish one. Whether that page was built is the caller's question; this only
+ * says where it would be.
+ *
+ * @param {string} route @returns {string} the route of the page's translation.
+ */
+export const translationRoute = (route) =>
+	localeOf(route) === "es"
+		? withoutLocale(route)
+		: route === ""
+			? "es"
+			: `es/${route}`;
+
+/**
  * The two not-found routes. Starlight builds the English one as dist/404.html,
  * which GitHub Pages serves for every address that does not exist; the Spanish
  * one is an ordinary page at /es/404/, which the language menu of the English

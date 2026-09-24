@@ -1,6 +1,9 @@
 ---
 title: Flash wear
-description: The reference RB5009 writes to its NAND at idle without being asked — how to see it in the YAFFS counters, trace it to a logging rule, and read the ECC counters that warn before a block is lost.
+description: "A MikroTik RB5009 writes to its NAND at idle: see it in the YAFFS counters, trace it to a logging rule, and read the ECC counters that warn before a loss."
+head:
+  - tag: title
+    content: "MikroTik NAND flash wear: YAFFS and ECC counters | mikroscope"
 ---
 
 import FaultSignature from "../../../components/FaultSignature.astro";
@@ -15,10 +18,19 @@ agent's `yaffs` source shows it. The MTD figures are from 2026-09-14.
 
 <Provenance of="playbooks-2026-09-12" />
 
+**In short:** the reference RB5009 wrote to its NAND at idle because a logging
+rule sent the `dns` topic to disk; the YAFFS page-write and erasure counters show
+writes like these, and `/system/logging` finds their cause. Whether the flash
+itself is wearing is a question for the ECC counters, readable with
+`privileged=yes`: `corrected_bits` rising warns before a block is lost, and every
+one of them read 0 on 2026-09-14.
+
 ## What the router writes at idle
 
 Over one 30-second window at idle, the Main partition took **2 page writes and
-14 page reads**; over another, zero.
+14 page reads**; over another, zero. There is no chart of those windows: they
+were read in the campaign of 2026-09-12, before the history of the reference
+InfluxDB store begins on 2026-09-19.
 
 The cause is findable:
 

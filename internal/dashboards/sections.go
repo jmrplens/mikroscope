@@ -20,8 +20,10 @@ package dashboards
 // eight-panel Overview rendered 2 188 px tall against an 844 px viewport,
 // about 2.6 screens. Grafana stacks a 24-column row into one column below
 // ~768 px, so an overview of this size cannot be one phone screen; making it
-// so would mean a separate mobile section list, which the reference project
-// does and this one does not yet.
+// so would mean a separate mobile section list, which this generator does not
+// have. Neither does the reference project, ghchronicle: it keeps one Sections
+// list and fits the phone by grouping stat tiles instead (its
+// internal/dashboards/mobile_test.go, read on 2026-09-24).
 //
 // THE ORDER IS BY HOW OFTEN THE SECTION IS OPENED, not by taxonomy, and that
 // is a change from the first arrangement (owner, 2026-09-13: "normalmente lo

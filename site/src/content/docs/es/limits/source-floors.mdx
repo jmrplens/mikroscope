@@ -1,6 +1,9 @@
 ---
 title: Cada fuente a su propio suelo
-description: Qué fuentes lee el agente en cada tick y cuáles lee o guarda con menos frecuencia, el motivo con nombre que publica cada una, y FLOOR_HZ, el único ajuste que desactiva todos los suelos.
+description: Qué fuentes del kernel lee el agente en cada tick y cuáles menos a menudo, el motivo con nombre de cada una y FLOOR_HZ, que desactiva todos los suelos.
+head:
+  - tag: title
+    content: "Cada cuánto se lee cada fuente del kernel RouterOS | mikroscope"
 ---
 
 import CadenceReasons from "../../../../components/CadenceReasons.astro";
@@ -8,6 +11,7 @@ import Measured from "../../../../components/Measured.astro";
 import NotClaimed from "../../../../components/NotClaimed.astro";
 import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
+import Src from "../../../../components/Src.astro";
 
 No todas las fuentes cambian tan rápido como hace tick el muestreador, y registrar un valor más a
 menudo de lo que el hardware lo refresca es almacenamiento sin información. Esta página responde
@@ -28,7 +32,7 @@ Otras tres fuentes se leen en cada tick con su propia regla:
   y baratos de leer. La fila de un dispositivo solo se guarda cuando su delta no es cero, lo que en
   el equipo de referencia ocurre unas pocas veces por minuto. El RB5009 lista además dieciséis
   dispositivos `nbd` ociosos, y una fila por tick para cada uno sería carga útil y nada más.
-- **El log del kernel (`/dev/kmsg`)** se vacía en cada tick y nunca se ralentiza. El valor de un
+- **El log del kernel ([`/dev/kmsg`](https://docs.kernel.org/admin-guide/abi-testing.html#symbols-under-dev-kmsg))** se vacía en cada tick y nunca se ralentiza. El valor de un
   evento es su marca de tiempo, y un marcador retrasado un segundo ya no cuadra con el pico que
   explica.
 
@@ -67,7 +71,7 @@ Una cadencia más lenta es un número entero de ticks: la cadencia del muestread
 suelo, redondeada al entero más cercano y nunca menor que uno. Así que la cadencia publicada es lo
 que ocurre de verdad, no el suelo nominal.
 
-**Temperatura.** En el RB5009 de referencia ambas zonas declaran un `polling_delay` de 1 000 ms
+**Temperatura.** En el RB5009 de referencia ambas zonas declaran un [`polling_delay`](https://docs.kernel.org/driver-api/thermal/sysfs-api.html) de 1 000 ms
 (`polling-delay-passive` 250 ms, leído el 2026-09-14), así que el propio kernel vuelve a leer el
 sensor a 1 Hz; a 10 Hz el agente lee uno de cada 10 ticks. El sensor cuantiza en escalones de unos <Measured id="thermal.quantumC" /> y la lectura en
 bruto tiembla a ambos lados de un escalón decenas de veces por segundo. Guardar al cambiar
@@ -77,7 +81,7 @@ real y descarta el temblor. En una placa que no declara cadencia, las zonas se l
 **Frecuencia de CPU.** Un salto de frecuencia es una transición DVFS real, no ruido, así que la
 frecuencia se lee en cada tick y se guarda cuando se mueve cualquier núcleo. En un equipo con el
 reloj fijado eso no guarda nada tras la primera lectura salvo el latido; en un equipo que escala
-recoge cada movimiento. El gobernador del RB5009 de referencia marcaba `userspace` el 2026-09-14,
+recoge cada movimiento. El [gobernador de cpufreq](https://docs.kernel.org/admin-guide/pm/cpufreq.html#policy-interface-in-sysfs) del RB5009 de referencia marcaba `userspace` el 2026-09-14,
 así que por la regla de arriba su motivo ahí es `policy`.
 
 **`/proc/slabinfo`** es la cara: 13 833 bytes y 129 líneas por lectura en el equipo de referencia
@@ -123,7 +127,7 @@ captura es una placa, una noche en reposo, con el reloj fijado en el ajuste del 
 «cpufreq nunca cambió» significa que no cambió _esa noche_. Un router con un reloj que escala,
 una carga con muchas páginas sucias o una placa distinta tienen suelos distintos.
 
-Los suelos son constantes con nombre en `internal/agent/source.go` y no números enterrados en la
+Los suelos son constantes con nombre en <Src path="internal/agent/source.go" /> y no números enterrados en la
 lógica.
 
 <NotClaimed variant="device-specific">
@@ -137,11 +141,11 @@ lógica.
 Todos los suelos se pueden anular a la vez, sin recompilar:
 
 ```sh
-mikroscope install --rate 10 --floor-hz 10   # escribe FLOOR_HZ=10 en el envlist del agente
+mikroscope install --rate 10 --floor-hz 10   # escribe FLOOR_HZ=10 en la envlist del agente
 ```
 
 `FLOOR_HZ` es la variable de entorno del agente; `--floor-hz` es la opción de despliegue
-(`install`, `upgrade`, y `plan` para el listado) que la escribe en el envlist del contenedor, solo
+(`install`, `upgrade`, y `plan` para el listado) que la escribe en la envlist del contenedor, solo
 cuando es mayor que cero. Es un único
 ajuste global en hercios, de 0 a 1000.
 

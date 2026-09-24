@@ -39,9 +39,9 @@ CGO_ENABLED=0 go build -trimpath \
 
 # One tar per thing a MikroTik device can be. The container package exists for
 # arm, arm64 and x86 only (MikroTik's own container documentation), and 32-bit
-# ARM is two things rather than one: the same documentation says devices with
-# the EN7562CT CPU — the hEX Refresh line — "support only arm32v5 container
-# images", while the rest of MikroTik's 32-bit ARM boards run an ARMv7
+# ARM is two things rather than one: the same documentation says "for devices
+# with EN7562CT CPU like the hEX Refresh, only arm32v5 container images are
+# supported", while the rest of MikroTik's 32-bit ARM boards run an ARMv7
 # userland. An ARMv5 binary runs on both; an ARMv7 one does not run on the
 # first. Both are published so that neither kind of board has to know, and the
 # names say which is which rather than leaving `-arm` to mean one of them.

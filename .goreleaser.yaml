@@ -43,9 +43,9 @@ builds:
 
   # The agent, for everything a MikroTik device can be. The container package
   # exists for arm, arm64 and x86 only (MikroTik's container documentation),
-  # and 32-bit ARM is two things: the same documentation says devices with the
-  # EN7562CT CPU — the hEX Refresh line — "support only arm32v5 container
-  # images", while MikroTik's other 32-bit ARM boards run an ARMv7 userland.
+  # and 32-bit ARM is two things: the same documentation says "for devices
+  # with EN7562CT CPU like the hEX Refresh, only arm32v5 container images are
+  # supported", while MikroTik's other 32-bit ARM boards run an ARMv7 userland.
   # An ARMv5 binary runs on both and an ARMv7 one does not run on the first,
   # so both levels are built and published, and the board picks its own.
   - id: mikroscope-agent
@@ -149,11 +149,13 @@ dockers_v2:
   - id: agent
     ids: [mikroscope-agent]
     # Two registries, one build. GHCR is where a GitHub user looks first;
-    # Docker Hub is where a RouterOS device looks by default, because
-    # `/container/config registry-url` ships pointing at registry-1.docker.io
-    # and that setting is global to the device — a reader who wants
-    # `install --remote-image` should not have to repoint their router's
-    # registry to try this project.
+    # Docker Hub is the registry MikroTik's container documentation points
+    # `/container/config registry-url` at in its examples
+    # (https://registry-1.docker.io), and the one the reference RB5009 is set
+    # to. RouterOS's own default has been https://lscr.io since 7.18
+    # (download.mikrotik.com/routeros/7.18/CHANGELOG), where this image is not
+    # published, so a router at that default needs the setting changed either
+    # way; the site's install/routes page says so.
     images:
       - "ghcr.io/jmrplens/mikroscope-agent"
       - "docker.io/jmrplens/mikroscope-agent"
@@ -169,12 +171,18 @@ dockers_v2:
     # Labels describe each architecture's image; GHCR reads a multi-arch
     # package page's description from the INDEX annotations instead, so the
     # two say the same thing on purpose. Reword them together.
+    #
+    # `documentation` is the site, at the address the README and the generated
+    # docs/ hand out (`publicDocs` in site/astro.config.mjs; jmrp.io 301s it to
+    # the GitHub Pages copy). It named the docs/ tree before, which is Markdown
+    # generated from the English pages for a reader of a checkout, and has no
+    # Spanish.
     labels:
       "org.opencontainers.image.title": "mikroscope-agent"
       "org.opencontainers.image.description": "Sub-second kernel telemetry agent for container-capable RouterOS devices"
       "org.opencontainers.image.source": "https://github.com/jmrplens/mikroscope"
       "org.opencontainers.image.url": "https://github.com/jmrplens/mikroscope"
-      "org.opencontainers.image.documentation": "https://github.com/jmrplens/mikroscope/tree/main/docs"
+      "org.opencontainers.image.documentation": "https://jmrp.io/docs/mikroscope/"
       "org.opencontainers.image.licenses": "MIT"
       "org.opencontainers.image.vendor": "jmrplens"
       "org.opencontainers.image.version": "{{ .Version }}"
@@ -185,7 +193,7 @@ dockers_v2:
       "index:org.opencontainers.image.description": "Sub-second kernel telemetry agent for container-capable RouterOS devices"
       "index:org.opencontainers.image.source": "https://github.com/jmrplens/mikroscope"
       "index:org.opencontainers.image.url": "https://github.com/jmrplens/mikroscope"
-      "index:org.opencontainers.image.documentation": "https://github.com/jmrplens/mikroscope/tree/main/docs"
+      "index:org.opencontainers.image.documentation": "https://jmrp.io/docs/mikroscope/"
       "index:org.opencontainers.image.licenses": "MIT"
       "index:org.opencontainers.image.vendor": "jmrplens"
       "index:org.opencontainers.image.version": "{{ .Version }}"
@@ -216,7 +224,7 @@ dockers_v2:
       "org.opencontainers.image.description": "Collector for mikroscope: pulls the agent's ring and forwards it to eleven sinks"
       "org.opencontainers.image.source": "https://github.com/jmrplens/mikroscope"
       "org.opencontainers.image.url": "https://github.com/jmrplens/mikroscope"
-      "org.opencontainers.image.documentation": "https://github.com/jmrplens/mikroscope/tree/main/docs"
+      "org.opencontainers.image.documentation": "https://jmrp.io/docs/mikroscope/"
       "org.opencontainers.image.licenses": "MIT"
       "org.opencontainers.image.vendor": "jmrplens"
       "org.opencontainers.image.version": "{{ .Version }}"
@@ -227,7 +235,7 @@ dockers_v2:
       "index:org.opencontainers.image.description": "Collector for mikroscope: pulls the agent's ring and forwards it to eleven sinks"
       "index:org.opencontainers.image.source": "https://github.com/jmrplens/mikroscope"
       "index:org.opencontainers.image.url": "https://github.com/jmrplens/mikroscope"
-      "index:org.opencontainers.image.documentation": "https://github.com/jmrplens/mikroscope/tree/main/docs"
+      "index:org.opencontainers.image.documentation": "https://jmrp.io/docs/mikroscope/"
       "index:org.opencontainers.image.licenses": "MIT"
       "index:org.opencontainers.image.vendor": "jmrplens"
       "index:org.opencontainers.image.version": "{{ .Version }}"
@@ -247,8 +255,17 @@ release:
     # The side-loadable agent images, built by the before hook above;
     # `mikroscope install` builds the same bytes itself.
     - glob: build/agent-images/*.tar
+  # With the changelog disabled above, this footer is the whole release body,
+  # so the link to the documentation goes first, at the address the README
+  # hands out, where a reader of the release page meets it before the tables.
   footer: |
     ---
+    **Documentation:** https://jmrp.io/docs/mikroscope/, in English and
+    Spanish: [installing it](https://jmrp.io/docs/mikroscope/install/),
+    [what it costs the router](https://jmrp.io/docs/mikroscope/cost/), and
+    [where it stands](https://jmrp.io/docs/mikroscope/about/status/): what has
+    run on hardware and what has not.
+
     ## Which file do I need?
 
     Two different programs are published here, and they run on two different
@@ -277,19 +294,22 @@ release:
     | CHR, x86 RouterOS | `x86_64` | `mikroscope-agent-amd64.tar` |
 
     MikroTik's container package exists for **arm, arm64 and x86 only**, and its
-    documentation states that EN7562CT boards "support only arm32v5 container
-    images" — an ARMv5 image runs on every 32-bit ARM MikroTik ships, an ARMv7
-    one does not run on those. If you are not sure which 32-bit board you have,
+    documentation states that "for devices with EN7562CT CPU like the hEX
+    Refresh, only arm32v5 container images are supported" — an ARMv5 image runs
+    on every 32-bit ARM MikroTik ships, an ARMv7 one does not run on those. If you are not sure which 32-bit board you have,
     take the **v5** tar. `--remote-image` avoids the question entirely: the
     image index carries all four platforms and the router picks its own.
 
     Run `mikroscope doctor --router user@<address>` first; it reads the
     architecture off the device and says which of these it wants.
 
-    **Agent image:** `jmrplens/mikroscope-agent:{{ .Version }}` on Docker Hub,
-    which is the registry a RouterOS device is pointed at out of the box, and
-    `ghcr.io/jmrplens/mikroscope-agent:{{ .Version }}`
-    (linux/amd64, linux/arm64, linux/arm/v7, linux/arm/v5).
+    **Agent image:** `jmrplens/mikroscope-agent:{{ .Version }}` on Docker Hub
+    and `ghcr.io/jmrplens/mikroscope-agent:{{ .Version }}`
+    (linux/amd64, linux/arm64, linux/arm/v7, linux/arm/v5). RouterOS pulls from
+    the host in `/container/config registry-url`, whose default since 7.18 is
+    `https://lscr.io`, where the image is not published: read yours with
+    `/container/config/print`, and point it at `https://registry-1.docker.io`
+    (or `https://ghcr.io`) before `--remote-image`.
 
     **Verify the checksums** (keyless, no key to fetch); `checksums.txt` also
     covers the agent image tars:

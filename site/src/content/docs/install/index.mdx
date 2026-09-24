@@ -1,6 +1,9 @@
 ---
 title: Installing the agent
-description: What `mikroscope install` does to a RouterOS device and in which order, and how `upgrade` and `uninstall` change or remove it without touching anything they did not create.
+description: A scripted round trip left the RB5009's /export byte-identical apart from its header — what `install` writes to RouterOS, in order, and how it is removed.
+head:
+  - tag: title
+    content: Installing the agent on a MikroTik router | mikroscope
 ---
 
 import { Aside, Steps } from "@astrojs/starlight/components";
@@ -9,6 +12,7 @@ import NotClaimed from "../../../components/NotClaimed.astro";
 import Provenance from "../../../components/Provenance.astro";
 import RouterWrites from "../../../components/RouterWrites.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
+import Src from "../../../components/Src.astro";
 import Verified from "../../../components/Verified.astro";
 
 This page answers two questions: what `mikroscope install` does to your router,
@@ -18,8 +22,8 @@ On <Verified of="export-identical" />, a scripted
 doctor → install → status → upgrade → uninstall round trip
 (`make roundtrip`, which passes `--ephemeral` to doctor, install and upgrade) left
 the router's `/export` byte-identical, its `#` header lines aside. That run
-predates 1.1.0, from which `uninstall` removes only with `--yes`.
-`scripts/roundtrip.sh` now passes `--yes` to its uninstall step (through 1.2.0 it did
+predates 1.1.0, from which `uninstall` removes only with `--yes`, and <Src path="scripts/roundtrip.sh" />
+now passes `--yes` to its uninstall step (through 1.2.0 it did
 not, so it only listed there and its export check failed); the script in that form has
 not yet been run against the router. Every object
 install creates carries the comment `mikroscope:<name> (managed by mikroscope)`,
@@ -32,8 +36,9 @@ verified by ownership counts.
 
 Three things have to be true on the router, and the tool cannot make any of them
 true for you: a container-capable architecture on RouterOS 7.24 or later, the
-`container` package, and `device-mode container=yes` — the last one needs a
-physical button press or a power cycle.
+`container` package, and
+[`device-mode container=yes`](https://help.mikrotik.com/docs/spaces/ROS/pages/93749258/Device-mode)
+— the last one needs a physical button press or a power cycle.
 [What the router needs](/mikroscope/install/prerequisites/) covers all three.
 `mikroscope doctor` checks them read-only, in one ssh connect, and prints the
 exact command or physical step for anything missing; then, over HTTP, it reads
@@ -85,7 +90,8 @@ script that installs without this CLI at all.
    is no upload and no tar to wait for or delete: the container is added with
    `remote-image=` and started. Either way the container is added with
    `privileged=`, which RouterOS knows from 7.24: on an earlier 7.x this is the
-   step that fails, and `--privileged=false` is the way through.
+   step expected to fail, whatever `--privileged` says (read from the code, not
+   tried on a router), and upgrading RouterOS is the way through.
 
 7. **Probes the agent** from your host and says which transport works:
    [Reaching the agent](/mikroscope/install/reaching-the-agent/).
@@ -229,7 +235,7 @@ For these verbs, the flags that read their default from a variable are
 `--router`, `--ssh-port`, `--ssh-key`, `--name`, `--veth`, `--subnet`,
 `--iface-list`, `--addr-list`, `--disk`, `--arch`, `--token`, `--lan-address`,
 `--agent-tar` and `--remote-image` (`MIKROSCOPE_ROUTER`, `MIKROSCOPE_SSH_PORT`
-and so on); `.env.example` documents them. The CLI does not read `.env` itself:
+and so on); <Src path=".env.example" /> documents them. The CLI does not read `.env` itself:
 
 ```sh
 set -a; . ./.env; set +a

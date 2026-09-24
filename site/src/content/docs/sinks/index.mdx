@@ -1,6 +1,9 @@
 ---
 title: The collector
-description: What `mikroscope forward` does between the agent and your stores — pull, merge, derive, fan out — and what it promises when a store is slow.
+description: "How mikroscope forward takes MikroTik RouterOS kernel telemetry to eleven sinks: pull, merge, derive, fan out, and what it drops when a store is slow."
+head:
+  - tag: title
+    content: MikroTik RouterOS telemetry collector and its sinks | mikroscope
 ---
 
 import { Aside, Steps } from "@astrojs/starlight/components";
@@ -14,8 +17,8 @@ import SeeAlso from "../../../components/SeeAlso.astro";
 
 <Figure name="data-path" />
 
-`mikroscope forward` is the collector. It pulls the kernel tier from the agent,
-samples the RouterOS API tier, stamps both in the agent's clock, runs the derive
+`mikroscope forward` is the collector. It pulls the kernel tier from the agent on
+the MikroTik router, samples the RouterOS API tier, stamps both in the agent's clock, runs the derive
 stage over them and writes the merged timeline to every sink you name. This page
 answers what one run does, how it keeps up with the agent, which clock each record
 carries, and what "dropped" means when a destination stops answering.

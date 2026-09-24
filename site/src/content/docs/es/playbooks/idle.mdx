@@ -1,6 +1,9 @@
 ---
 title: La forma de un router en reposo
-description: Sesenta segundos del RB5009 de referencia sin hacer nada en particular — el suelo de ocupación, el squeeze que nunca llega a cero y el silencio de un log del kernel sano.
+description: "Sesenta segundos en reposo de un MikroTik RB5009 leídos a 10 Hz: el suelo de ocupación, un squeeze de softnet que nunca es cero y un log del kernel mudo."
+head:
+  - tag: title
+    content: "Un MikroTik RB5009 en reposo, por núcleo, a 10 Hz | mikroscope"
 ---
 
 import Measured from "../../../../components/Measured.astro";
@@ -13,6 +16,12 @@ tengan algo respecto a lo que ser anómalas. Conoce esta forma antes de salir a
 buscar anomalías, o las encontrarás en todas partes.
 
 <Provenance of="playbooks-2026-09-12" />
+
+**En resumen:** en reposo, los cuatro núcleos del RB5009 de referencia están
+ocupados un 6–8 %, `time_squeeze` nunca es cero (unos 200 cada 20 s) y el log
+del kernel calla. Lee todas las demás páginas contra esa forma: un flujo
+constante de sucesos del kernel en reposo es la anomalía, y un squeeze distinto
+de cero, por sí solo, no.
 
 ## Sesenta segundos en reposo
 
@@ -27,6 +36,9 @@ Tres tramos de 20 segundos:
 
 Los porcentajes de esa tabla se calcularon a posteriori a partir de los deltas de
 ticks en bruto que envía el agente; el agente nunca los convierte en porcentajes.
+
+No hay gráfico de estos sesenta segundos: se leyeron el 2026-09-12, antes de que
+empiece el historial del almacén InfluxDB de referencia, el 2026-09-19.
 
 ## Qué leer
 

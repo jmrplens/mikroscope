@@ -4,6 +4,73 @@ Notable changes per release. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the versions
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **What `/container/config registry-url` defaults to.** The documentation,
+  the release notes and the [1.0.1] entry below said RouterOS ships it as
+  `https://registry-1.docker.io`, so the Docker Hub image would pull with
+  nothing set. RouterOS's default has been `https://lscr.io` since 7.18
+  (its 7.18 changelog: `container - add default registry-url=https://lscr.io`),
+  and the image is not published there: an anonymous request for the agent's
+  1.2.2 manifest on lscr.io answered 404 on 2026-09-24. The reference RB5009
+  reads `https://registry-1.docker.io`, which is why the Docker Hub route ran
+  there. The pages now say to read the setting with `/container/config/print`
+  and, at the default, to set it to `https://registry-1.docker.io` (or
+  `https://ghcr.io`) first. `doctor` still does not check the setting for a
+  reference with no host; not changed here, and not tried on a router at the
+  default.
+- **`--privileged=false` is not a way onto RouterOS before 7.24.** Three pages
+  and their Spanish twins said it was. The container step writes `privileged=` with either value, so
+  an earlier 7.x is expected to reject it either way, read from the code: no
+  install has been tried on a RouterOS before 7.24. Upgrading RouterOS is the
+  way through.
+- **Exit status of a bad flag.** The CLI reference said a deployment verb
+  exits 2 on a bad flag; `uninstall` exits 1, checked on the 1.2.2 binary on
+  2026-09-24 against an unreachable address.
+- The README said the PostgreSQL alert file has 11 rules; it has had 10 since
+  1.2.1.
+- **Reporting a vulnerability.** `SECURITY.md` named GitHub's private
+  vulnerability reporting as the only channel, and on 2026-09-24 the
+  repository's API answered `{"enabled": false}` for it, so there was no
+  button to press. The policy and the security page now also say what to do
+  when the button is missing: an issue that asks for a private channel and
+  carries no details.
+- The port-errors playbook's reading of 2026-09-19 is now attributed to
+  RouterOS 7.24.4, not 7.24.2: the router reported 7.24.4 on 2026-09-24 with
+  no reboot since about 2026-09-18 22:43 UTC.
+- The quotations of MikroTik's container documentation now use its own words:
+  "For devices with EN7562CT CPU like the hEX Refresh, only arm32v5 container
+  images are supported".
+- CI: the pull-request site job checks out the full history, which the
+  structured-data check needs for each page's `datePublished`.
+
+### Changed
+
+- **Documentation site.** New pages in both languages: a comparison with SNMP,
+  The Dude, RouterOS Graphing and Profiler, mktxp and mikrotik-exporter (from
+  their own documentation and source, and "not stated" where those say
+  nothing; none of them was run), ten short answers, a
+  glossary, and a releases page. The `cpu-load` section of the API tier page
+  is now the question it answers, with the answer first. Three playbooks
+  carry a chart drawn from the reference InfluxDB store (loop, conntrack,
+  port errors). Pages link MikroTik's, the kernel's and each sink's own
+  documentation where a claim rests on them, and name the maintainer.
+- **What the site tells machines.** The structured data takes the version
+  from `VERSION` (it said 1.0.0 on every page), links each page to its
+  translation and dates it from git; "Last updated", the sitemap and the
+  structured data share one date per page, which counts the data a page
+  renders; `llms-core.txt` and one `llms/<section>.txt` per sidebar group sit
+  beside `llms-full.txt`; every page carries a Content-Security-Policy; the
+  dashboard captures are served at 640, 1024 or 1600 px by screen width; and
+  `og.png` went from 605 194 to 158 857 bytes with no visible change.
+- **Release notes** open with a link to the documentation, and the images'
+  `org.opencontainers.image.documentation` label names the site rather than
+  the `docs/` tree.
+- **The documentation deploy** submits the pages it changed to IndexNow, and
+  a manual run can submit every page once.
+
 ## [1.2.2] - 2026-09-24
 
 ### Changed

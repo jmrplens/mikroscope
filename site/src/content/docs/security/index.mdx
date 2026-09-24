@@ -1,12 +1,16 @@
 ---
 title: What runs where
-description: Which piece of mikroscope runs on the router and which on your host, what each one reaches, and where every credential lives.
+description: Which piece of mikroscope runs on the MikroTik router and which on your host, what each reaches, where every credential lives, and how to report a flaw.
+head:
+  - tag: title
+    content: "Security: what runs on the MikroTik router | mikroscope"
 ---
 
 import EnvlistKeys from "../../../components/EnvlistKeys.astro";
 import NotClaimed from "../../../components/NotClaimed.astro";
 import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
+import Src from "../../../components/Src.astro";
 import Verified from "../../../components/Verified.astro";
 
 This page answers the question to ask before putting anything on a production router: what
@@ -119,7 +123,7 @@ The container runs an image, and which route puts it there decides what you are 
 `install` creates one container with these settings, all printed by `plan` before anything is
 written:
 
-- **`privileged=yes` by default**, `--privileged=false` to opt out. The setting needs RouterOS 7.24 or later. It drops the container's user namespace (verified on <Verified of="privileged-namespaces" />), which is what makes the kernel log, `/proc/slabinfo`,
+- **`privileged=yes` by default**, `--privileged=false` to opt out. The setting needs RouterOS 7.24 or later, whose [changelog](https://download.mikrotik.com/routeros/7.24/CHANGELOG) added privileged mode for containers. It drops the container's user namespace (verified on <Verified of="privileged-namespaces" />), which is what makes the kernel log, `/proc/slabinfo`,
   `/proc/pagetypeinfo` and the MTD ECC counters readable. It does **not** drop the network or PID
   namespace: no interface counters, no router conntrack table, no view of RouterOS's processes.
   [What privileged buys](/mikroscope/limits/privileged/) has the measurements.
@@ -156,6 +160,26 @@ either.
 	not rebooted for tests. The container settings above were verified on one RB5009 running RouterOS
 	7.24.2 and re-exercised on 7.24.4; no other board was tried.
 </NotClaimed>
+
+## Reporting a vulnerability
+
+Report a vulnerability privately, never with its details in a public issue: open the repository's
+[Security tab](https://github.com/jmrplens/mikroscope/security) and choose **Report a
+vulnerability**. GitHub then opens a private advisory that only the maintainer can see. If that
+button is not there, open an issue that asks for a private channel and says nothing else about the
+problem, and wait there for a reply that names one. Include the version (`mikroscope version`, and
+`mikroscope-agent -version` if it differs), the RouterOS version and board, what an attacker gains,
+and the smallest way to reproduce it. If a proof of concept needs a credential, a router address or
+an export, do not send it: describe it.
+
+The policy itself is <Src path="SECURITY.md" />. It promises an acknowledgement within a week and,
+once a report is confirmed, a fix released before the advisory is published; a reporter who wants
+credit gets it in the advisory, and one who does not is not named. Only the latest release is supported, because a fix ships as a new
+tag rather than as a patch to an older one. It also sets out what is worth reporting: anything that
+breaks the separation this page describes, such as a way for something other than the configured
+collector to reach the agent, or a credential appearing where it does not belong. The prerequisites
+RouterOS imposes, and the agent's token being readable by every `read` user, are documented choices,
+not vulnerabilities.
 
 <SeeAlso>
 

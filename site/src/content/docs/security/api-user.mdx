@@ -1,11 +1,15 @@
 ---
 title: The API user
 description: The dedicated RouterOS user the collector logs in as, the policy it needs for each command, and what that policy lets it read.
+head:
+  - tag: title
+    content: "Least-privilege RouterOS API user for the collector | mikroscope"
 ---
 
 import { Aside } from "@astrojs/starlight/components";
 import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
+import Src from "../../../components/Src.astro";
 import Verified from "../../../components/Verified.astro";
 
 The agent needs no RouterOS account. Three things on your host do: the collector's API tier, the
@@ -55,8 +59,8 @@ there; it shows up as a failed login, `api <address>: …`.
 
 ## The group and the user
 
-A group that grants `read`, `api` and `test` and denies every other policy by name, and a user in
-it restricted to the collector's address:
+A group that grants `read`, `api` and `test` and denies by name every other policy
+[RouterOS defines](https://help.mikrotik.com/docs/spaces/ROS/pages/8978504/User), and a user in it restricted to the collector's address:
 
 ```text
 /user/group/add name=mikroscope policy=read,api,test,!write,!ftp,!local,!telnet,!ssh,!reboot,!policy,!winbox,!password,!web,!sniff,!sensitive,!romon,!rest-api
@@ -101,7 +105,7 @@ still ask for every container's properties.
 </ScrollTable>
 
 The password has no flag on purpose: a flag is visible in `ps` and in a shell history.
-`.env.example` gives the address as `192.168.88.1:8728`.
+The repository's <Src path=".env.example" /> gives the address as `192.168.88.1:8728`.
 
 <Aside type="caution" title="The API connection is not encrypted">
 	`record`, `mark` and `forward` connect to the plain binary API. The vendored client can dial TLS,

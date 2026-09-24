@@ -1,0 +1,111 @@
+---
+title: Respuestas cortas
+description: Diez preguntas sobre mikroscope en MikroTik RouterOS, de MIPS y la 7.24 al coste, la seguridad y cpu-load, respondidas desde la página con la medición.
+head:
+  - tag: title
+    content: mikroscope en MikroTik RouterOS, preguntas respondidas
+---
+
+import Measured from "../../../../components/Measured.astro";
+import Provenance from "../../../../components/Provenance.astro";
+import SeeAlso from "../../../../components/SeeAlso.astro";
+import Verified from "../../../../components/Verified.astro";
+
+Cada respuesta es la versión corta de una página que tiene la evidencia, y enlaza a ella. Una cifra
+aquí es la que da esa página, con el equipo, la versión de RouterOS y la fecha al lado.
+
+## ¿Funciona mikroscope en routers MIPS o TILE?
+
+No. El agente corre en un contenedor de RouterOS, y MikroTik publica el paquete `container` solo
+para arm, arm64, x86 y CHR ([la lista de paquetes de
+MikroTik](https://help.mikrotik.com/docs/spaces/ROS/pages/40992872/Packages)). mikroscope compila
+su agente para arm64, arm y x86_64. En una placa MIPS o TILE, la herramienta es SNMP o un
+exportador de la API: [cuándo no usar mikroscope](/mikroscope/es/start/compared/#cuándo-no-usar-mikroscope).
+
+## ¿En qué routers ha funcionado de verdad?
+
+En uno: un RB5009UG+S+ arm64, con RouterOS 7.24.2 y después 7.24.4. Las versiones para arm y
+x86_64 se compilan de forma cruzada y se comprueban en CI, y nunca han corrido en hardware; el hEX S
+que servirá para probar RouterOS de 32 bits no ha llegado. Todas las cifras de este sitio salen de
+ese router: [qué es](/mikroscope/es/start/).
+
+## ¿Por qué necesita RouterOS 7.24 o posterior?
+
+El paso del contenedor escribe `privileged=`, un atributo que RouterOS añadió en la 7.24, diga lo
+que diga `--privileged`, así que en una 7.x anterior ese paso debería fallar, y la instalación retira
+el tar que subió cuando falla ese paso. Eso sale del código: no se ha probado ninguna instalación en un
+RouterOS anterior a la 7.24. Solo se ha instalado en 7.24.2 y 7.24.4: [un equipo capaz de ejecutar
+contenedores](/mikroscope/es/install/prerequisites/#un-equipo-capaz-de-ejecutar-contenedores).
+
+## ¿Por qué device-mode necesita pulsar un botón?
+
+MikroTik lo diseñó así. Device-mode limita lo que permite un router, para protegerlo de un
+atacante que logre entrar, así que cambiarlo exige acceso físico: tras
+`/system/device-mode/update container=yes`, alguien pulsa el botón de reset o de modo, o apaga y
+enciende el router, en cinco minutos ([la página de device-mode de
+MikroTik](https://help.mikrotik.com/docs/spaces/ROS/pages/93749258/Device-mode)). Ninguna
+herramienta puede hacerlo a distancia: [device-mode
+container=yes](/mikroscope/es/install/prerequisites/#device-mode-containeryes).
+
+## ¿Cuánto le cuesta al router?
+
+Con la instalación por defecto, a 10 Hz, el agente cuesta <Measured id="run.10hz.cpu" /> de un
+núcleo y <Measured id="run.10hz.rss" /> de memoria, según su propio cgroup, y <Measured id="run.100hz.cpu" />
+a 100 Hz. Eso queda por encima del presupuesto de CPU del propio proyecto, <Measured id="budget.cpu" />, y
+dentro de su presupuesto de memoria, <Measured id="budget.rss" />: [el coste del
+observador](/mikroscope/es/cost/).
+
+<Provenance of="rates-2026-09-18" />
+
+## ¿Es seguro en un router de producción?
+
+Se construyó sobre uno: el RB5009 de referencia está en producción. El agente nunca abre
+conexiones hacia fuera ni presenta credenciales. Cada escritura se lista antes de
+hacerse, y se etiqueta, y una ida y vuelta automatizada dejó el `/export` del router idéntico byte
+a byte (<Verified of="export-identical" />). Corre con `privileged=yes`, una concesión real: [qué
+se ejecuta dónde](/mikroscope/es/security/).
+
+## ¿Ve el tráfico de las interfaces?
+
+No desde dentro del contenedor. `/proc/net/dev` y los demás ficheros de red van por espacio de
+nombres de red, así que allí cuentan la veth del propio contenedor, y `privileged=yes` no lo
+cambia. Los bytes y paquetes por interfaz salen de la API de RouterOS, que el colector fusiona en
+el reloj del agente: [la red del contenedor](/mikroscope/es/limits/namespaces/#la-red-es-la-del-contenedor).
+
+<Provenance of="netns-2026-09-12" />
+
+## ¿Cuántos segundos promedia el `cpu-load` de RouterOS?
+
+Más o menos uno. Ajustado a la ocupación que da `/proc/stat` leído a 10 Hz en un RB5009,
+`cpu-load` siguió una media móvil de aproximadamente un segundo, con una fracción de segundo de
+retraso, en dos horas distintas; una media de sesenta segundos queda descartada. Los ajustes están
+en [la capa de la API de RouterOS](/mikroscope/es/sinks/api-tier/#cuántos-segundos-promedia-el-cpu-load-de-routeros).
+
+<Provenance of="cpu-load-window-2026-09-15" />
+
+## ¿Sustituye a SNMP o a mktxp?
+
+No. Tampoco sustituye a la API de RouterOS: saca de ella el tráfico por interfaz. Añade la vista
+del propio kernel, que de ninguno de los otros consta que lea: ticks por núcleo a hasta 100 Hz,
+softirqs, descartes y squeezes de softnet, y el log del kernel. Sin contenedor, la herramienta es
+SNMP o mktxp: [la comparación](/mikroscope/es/start/compared/).
+
+## ¿Envía el agente algo fuera del router?
+
+No. Sirve HTTP en la dirección de su veth, no abre conexiones hacia fuera y no busca
+actualizaciones. Tu colector tira de él, y todo token de destino y credencial de la API se queda en
+tu máquina, porque lo que haya en la envlist se da por legible para cualquier usuario de RouterOS
+con `read`: [qué se ejecuta dónde](/mikroscope/es/security/).
+
+<SeeAlso>
+
+## Véase también
+
+- [Frente a las alternativas](/mikroscope/es/start/compared/): SNMP, The Dude, Graphing, el
+  Profiler, mktxp y mikrotik-exporter, celda a celda.
+- [Glosario](/mikroscope/es/reference/glossary/): envlist, veth, PMU, PSI, softnet y los demás
+  términos que usan estas respuestas.
+- [En qué punto está](/mikroscope/es/about/status/): lo que ha corrido en el router de referencia y
+  lo que no.
+
+</SeeAlso>

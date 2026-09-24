@@ -1,6 +1,9 @@
 ---
 title: Familias de métricas de Prometheus
-description: Todas las familias de la exposición --prom del colector, agrupadas por fuente, con su tipo, sus labels y cuándo faltan.
+description: Cada familia de métricas Prometheus que expone el colector de mikroscope para un MikroTik RouterOS, por fuente, con su tipo, sus labels y cuándo falta.
+head:
+  - tag: title
+    content: Familias de métricas Prometheus de MikroTik RouterOS | mikroscope
 ---
 
 import { Aside } from "@astrojs/starlight/components";
@@ -8,13 +11,15 @@ import NotClaimed from "../../../../components/NotClaimed.astro";
 import Provenance from "../../../../components/Provenance.astro";
 import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
+import Src from "../../../../components/Src.astro";
 
 Esta página enumera todas las familias de métricas que mikroscope expone en el
-formato de texto de Prometheus: su nombre, su tipo, sus labels, qué cuenta y
-cuándo no está. Está leída de `internal/expo/expo.go`,
-`internal/agent/capture.go` e `internal/sinks/prometheus.go`. Cada familia
-aparece bajo la fuente de la que sale, porque eso es lo que decide si una placa
-concreta la tiene.
+[formato de texto de
+Prometheus](https://prometheus.io/docs/instrumenting/exposition_formats/): su
+nombre, su tipo, sus labels, qué cuenta y cuándo no está. Está leída
+de <Src path="internal/expo/expo.go" />, <Src path="internal/agent/capture.go" />
+y <Src path="internal/sinks/prometheus.go" />. Cada familia aparece bajo la fuente de la
+que sale, porque eso es lo que decide si una placa concreta la tiene.
 
 ## Una exposición, y de dónde sale cada familia
 
@@ -54,7 +59,7 @@ minuto, no como el scrape.
 ### Lo que hace distinto la copia del colector
 
 El destino del colector está construido para 10 Hz nominales sea cual sea la
-cadencia del agente (`promHistogramRateHz` en `cmd/mikroscope/sinkflags.go`),
+cadencia del agente (`promHistogramRateHz` en <Src path="cmd/mikroscope/sinkflags.go" />),
 para que la disposición de sus buckets no cambie cuando se reconecta a un
 agente configurado de otra forma. De esa constante se siguen cinco cosas,
 leídas del código:
@@ -89,7 +94,7 @@ los dos; y `window="1s"`, `window="10s"` y `window="60s"` estaban los tres
 presentes en los dos.
 
 <NotClaimed variant="untested">
-	Las dos últimas siguen siendo aritmética, de `internal/expo/expo.go`: el `Totals` del colector se
+	Las dos últimas siguen siendo aritmética, de <Src path="internal/expo/expo.go" />: el `Totals` del colector se
 	dimensiona una sola vez con los 10 Hz nominales y `SetSamplerRate` solo redimensiona el anillo,
 	nunca rehace los cubos, así que el peso de 1/600 y el desalojo a las 36 000 muestras valen sea
 	cual sea la cadencia del agente. No se ha visto ocurrir ninguna de las dos: el desalojo necesita
@@ -254,13 +259,13 @@ una muestra muestra un fallo de página o un nivel de páginas libres, porque un
 
 ## PMU y frecuencia de CPU
 
-<ScrollTable label="Familias del PMU y de la frecuencia de CPU">
+<ScrollTable label="Familias de la PMU y de la frecuencia de CPU">
 
 | Familia                                      | Tipo    | Labels           | Falta cuando                        | Significado                                                                                                                                                                             |
 | -------------------------------------------- | ------- | ---------------- | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `mikroscope_perf_events_total`               | counter | `counter`, `cpu` | sin privileged, o sin PMU accesible | eventos de contadores hardware de `perf_event_open`; un contador que la CPU no implementa falta                                                                                         |
 | `mikroscope_perf_time_enabled_seconds_total` | counter | `counter`, `cpu` | lo mismo                            | segundos que cada contador estuvo activado                                                                                                                                              |
-| `mikroscope_perf_time_running_seconds_total` | counter | `counter`, `cpu` | lo mismo                            | segundos que estuvo contando de verdad; por debajo de `enabled` el PMU está multiplexado y los recuentos se escalan a la baja por running sobre enabled                                 |
+| `mikroscope_perf_time_running_seconds_total` | counter | `counter`, `cpu` | lo mismo                            | segundos que estuvo contando de verdad; por debajo de `enabled` la PMU está multiplexada y los recuentos se escalan a la baja por running sobre enabled                                 |
 | `mikroscope_cpu_clock_cycles_total`          | counter | `cpu`            | sin cpufreq                         | la frecuencia del gobernador integrada sobre el intervalo de cada muestra: ciclos nominales ofrecidos, no ciclos ejecutados. Su `rate()` es la frecuencia media sobre cualquier ventana |
 | `mikroscope_cpu_frequency_hertz`             | gauge   | `cpu`            | sin cpufreq                         | la frecuencia del gobernador en la emisión más reciente                                                                                                                                 |
 
@@ -310,7 +315,7 @@ Un cambio en `nf_conntrack_max` se ve después de reiniciar el agente.
 Un dispositivo de bloques que no hizo nada no está en la muestra, y por tanto
 tampoco aquí; en el RB5009 de referencia (RouterOS 7.24.2, kernel 5.6.3) el
 2026-09-12, `nbd0`–`nbd15` estaban presentes e inactivos y `mtdblock0`–`2`
-daban todo ceros (`internal/dashboards/panels.go`, el panel de E/S en curso de
+daban todo ceros (<Src path="internal/dashboards/panels.go" />, el panel de E/S en curso de
 disco). A diferencia de las fuentes con suelo de las convenciones de arriba,
 los niveles de flash y `mikroscope_disk_inflight` no se arrastran, así que
 faltan en la mayoría de los scrapes de una placa tranquila.
@@ -431,7 +436,7 @@ par de condición y motivo se escribe desde el principio a 0.
 | `mikroscope_collector_detections_total`      | counter | `rule`                               | eventos de detección por regla, todas las reglas a 0 desde el primer scrape: `counter-reset`, `agent-restart`, `agent-oom`, `microburst`, `reboot`, `link-flap`, `conntrack-cliff`, `conntrack-high`, `thermal-high`, `thermal-rising`, `ipc-collapse` |
 | `mikroscope_collector_bursts_total`          | counter | ninguna                              | muestras marcadas como ráfaga más corta que una muestra                                                                                                                                                                                                |
 | `mikroscope_derived_memory_pressure`         | gauge   | ninguna                              | la escalera del asignador en la muestra más reciente: 0 nada, 1 kswapd escaneó, 2 reclamación directa, 3 una asignación se bloqueó o se sacó una página a swap, 4 actuó el OOM killer                                                                  |
-| `mikroscope_derived_cycles_per_packet`       | gauge   | ninguna                              | ciclos del PMU por paquete, sumados sobre los núcleos; falta sin PMU, en una muestra sin paquetes y en una con un reinicio de contador                                                                                                                 |
+| `mikroscope_derived_cycles_per_packet`       | gauge   | ninguna                              | ciclos de la PMU por paquete, sumados sobre los núcleos; falta sin PMU, en una muestra sin paquetes y en una con un reinicio de contador                                                                                                                 |
 | `mikroscope_derived_instructions_per_packet` | gauge   | ninguna                              | lo mismo, instrucciones                                                                                                                                                                                                                                |
 | `mikroscope_derived_cache_misses_per_packet` | gauge   | ninguna                              | lo mismo, fallos de caché                                                                                                                                                                                                                              |
 | `mikroscope_derived_packets_per_interrupt`   | gauge   | ninguna                              | paquetes por interrupción del dispositivo, la profundidad de agrupación de NAPI; falta cuando la fila del temporizador no estaba en el top-K de la muestra                                                                                             |

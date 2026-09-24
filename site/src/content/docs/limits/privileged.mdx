@@ -1,6 +1,9 @@
 ---
 title: What privileged buys
-description: Why the agent’s container runs with privileged=yes by default, the sources that setting makes readable, and the network, processes and sensors it still does not reach.
+description: Why the agent’s RouterOS container runs privileged=yes by default, what that makes readable, and the network, processes and sensors it still cannot reach.
+head:
+  - tag: title
+    content: "RouterOS container privileged=yes: what it reads | mikroscope"
 ---
 
 import { Aside } from "@astrojs/starlight/components";
@@ -19,11 +22,12 @@ open however it is configured, and what you give up by turning it off.
 The container runs `privileged=yes` unless you pass `--privileged=false` to `install` or
 `upgrade`, which recreates the container. It is a boolean flag, so it takes `=false`; a
 separate `false` argument is not read as its value. The setting exists on RouterOS 7.24 and
-later.
+later: RouterOS added privileged mode for containers in 7.24, as its
+[changelog](https://download.mikrotik.com/routeros/7.24/CHANGELOG) records.
 
 Reading the device's internal state is what mikroscope is for, and privileged is what makes
-the root-only kernel files readable. An ordinary RouterOS container is placed in a user
-namespace where its root maps to host uid 32768, so `/proc/slabinfo` and `/dev/kmsg` come
+the root-only kernel files readable. An ordinary RouterOS container is placed in a
+[user namespace](https://man7.org/linux/man-pages/man7/user_namespaces.7.html) where its root maps to host uid 32768, so `/proc/slabinfo` and `/dev/kmsg` come
 back `EACCES`. `privileged=yes` drops that user namespace.
 
 It is still a real grant of privilege, which is why `plan` and `install --dry-run` print it
@@ -47,9 +51,10 @@ agent except where the table says otherwise:
 </ScrollTable>
 
 The PMU needs privileged for a different reason from the files: its counters are opened
-system-wide (`pid = -1`), which takes `CAP_PERFMON` or `CAP_SYS_ADMIN` against the host.
-`perf_event_paranoid` reads 2 on the reference device and does not block a privileged
-container. What the PMU shows that no tick counter can is on
+system-wide (`pid = -1`), which [`perf_event_open(2)`](https://man7.org/linux/man-pages/man2/perf_event_open.2.html) says takes `CAP_SYS_ADMIN`
+against the host, `CAP_PERFMON` from Linux 5.8 (the reference kernel is 5.6.3), or a
+`perf_event_paranoid` below 1. `perf_event_paranoid` reads 2 on the reference device and does
+not block a privileged container. What the PMU shows that no tick counter can is on
 [the resolution floor](/mikroscope/limits/).
 
 The kernel log is read without blocking and capped at 64 records per tick. It is opened at
