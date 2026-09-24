@@ -28,7 +28,9 @@
  * Inline, so it never opens a line in the source (check-i18n-parity.mjs), and
  * it renders on one line of output, because a line break inside an inline
  * element is a space before the punctuation that follows it. The locale does
- * not change it: a version and an ISO date are written the same in both.
+ * not change it: a version and an ISO date are written the same in both. The
+ * date is `.ms-nowrap`, the rule src/lib/nowrap-values.mjs gives a date in a
+ * page's own text, which never reaches a component's output.
  */
 import { release } from "../data/release";
 
@@ -44,4 +46,4 @@ if (show !== "version" && show !== "tag" && show !== "date") {
 const text = show === "tag" ? release.tag : show === "date" ? release.date : release.version;
 ---
 
-{link ? <a href={release.notesUrl}>{show === "date" ? <time datetime={release.date}>{text}</time> : text}</a> : show === "date" ? <time datetime={release.date}>{text}</time> : text}
+{link ? <a href={release.notesUrl}>{show === "date" ? <time class="ms-nowrap" datetime={release.date}>{text}</time> : text}</a> : show === "date" ? <time class="ms-nowrap" datetime={release.date}>{text}</time> : text}

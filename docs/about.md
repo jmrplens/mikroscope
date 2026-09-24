@@ -309,7 +309,7 @@ and the hardware watchdog at `/sys/class/watchdog/watchdog0`.
 ### What the release publishes
 
 The repository's [`VERSION`](https://github.com/jmrplens/mikroscope/blob/main/VERSION) file holds **1.3.0**, which the
-changelog, [`CHANGELOG.md`](https://github.com/jmrplens/mikroscope/blob/main/CHANGELOG.md), dates 2026-09-24. It is
+changelog, [`CHANGELOG.md`](https://github.com/jmrplens/mikroscope/blob/main/CHANGELOG.md), dates 2026-09-25. It is
 compiled into both binaries and reported by `mikroscope version`, and the
 changelog says what every release changed. Not every number has a release of its own: 1.0.5, 1.0.8
 and 1.0.10 were never tagged, and v1.0.6 was tagged but its release run failed.
@@ -373,7 +373,7 @@ The current mikroscope release and its date, read at build from VERSION and CHAN
 
 Source: <https://jmrp.io/docs/mikroscope/about/changelog/>
 
-The current release of mikroscope is [1.3.0](https://github.com/jmrplens/mikroscope/releases/tag/v1.3.0), released on 2026-09-24. Neither is typed
+The current release of mikroscope is [1.3.0](https://github.com/jmrplens/mikroscope/releases/tag/v1.3.0), released on 2026-09-25. Neither is typed
 on this page: both are read at build from the repository's `VERSION` file and from the dated heading
 that version has in `CHANGELOG.md`, and the site does not build when that heading is missing. The
 install commands on every page carry the same version, from the same file.

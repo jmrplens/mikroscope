@@ -4,7 +4,7 @@ Notable changes per release. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the versions
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.3.0] - 2026-09-24
+## [1.3.0] - 2026-09-25
 
 ### Fixed
 
@@ -118,11 +118,30 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     phone the indent is what the marker needs, and lists inside See also and
     the other boxes take 20 px at every width. Tab labels stay on one line
     where the tab list overflowed by 27 to 42 px at 360 px; the file tree
-    fits its box; an aside's icon sits on its title's first line; a `wrap`
-    code block breaks at spaces only, where it broke inside flags such as
-    `--e`/`phemeral` 17 or 18 times a page; dates in prose do not break at
-    their hyphens; and `mikroscope:<name>` in the box of router writes no
-    longer breaks after its colon (WebKit, Spanish).
+    fits its box; an aside's icon sits on its title's first line; and
+    `mikroscope:<name>` in the box of router writes no longer breaks after
+    its colon (WebKit, Spanish).
+  - The walkthrough's code blocks marked `wrap` broke inside flags and
+    addresses, `install --`/`ephemeral`, `-`/`-yes`, `192.1`/`68.88.1`: 13
+    times a page at WebKit 390 px (2026-09-25). Each word of such a block is
+    now one box: a line breaks at a space, and a word that fits the box
+    moves to the next line whole. A word wider than the whole box, such as
+    the installer's URL, breaks where inline code of the same text may, after
+    a `/`, `_` or `.` but not before a digit. Measured on 2026-09-25 over the
+    walkthrough's 12 such blocks per language, at WebKit 390 px and Chromium
+    360 and 1280 px: every break not at a space falls between two of those
+    pieces of a word wider than the box (6, 8 and 1 a page), and no block
+    scrolls sideways.
+    Inline code shares the rule and no longer offers a break between two
+    separators, as in `http:/`/`/host:4318/…`, inside the 20 chips that had
+    one.
+  - A date does not break at its hyphens, nor a number part from its unit,
+    in the pages' prose or in the tables and lines the components draw from
+    data. At WebKit 390 px 100 dates broke at a hyphen and 103 numbers left
+    their unit behind, on 77 pages (2026-09-24), and the doctor-checks
+    table broke "2026-" / "09-21" at Chromium 360 px (Spanish). On
+    2026-09-25 none of the 786 dates in the text of the 116 pages, and no
+    number with a unit, is left where a line may break inside it.
   - In the light theme an inline code chip had the ground of See also, table
     headers and the other boxes, 1.00:1 (238 chips on 84 pages). It has a
     token of its own, `--ms-code-bg`, one step off every ground a chip sits

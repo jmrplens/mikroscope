@@ -29,7 +29,7 @@ Por encima de ellas el colector añade lo que solo tiene él: los gauges de la c
 API de RouterOS, los valores de la etapa de derivación, sus contadores de detecciones y
 de huecos, y las familias de datos del equipo que salen de las `/capabilities` del agente.
 
-<Aside type="caution" title="Dimensionado para 10 Hz, vaya el agente a lo que vaya">
+<Aside type="caution" title="Dimensionado para 10 Hz, vaya el agente a lo que vaya">
 	El colector dimensiona su histograma `mikroscope_cpu_busy_ticks` a partir de 10 Hz fijos, no del
 	agente conectado, para que la disposición de los buckets no cambie cuando se reconecta a un agente
 	configurado de otra forma. Leído del código, no medido, la misma constante fija más cosas, y

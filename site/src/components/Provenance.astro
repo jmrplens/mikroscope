@@ -15,16 +15,14 @@
  * pages (WebKit 390 px, 2026-09-24; Chromium never did). Inside a segment
  * the spaces are U+00A0, so "RouterOS 7.24.2" never splits. The conditions
  * are a clause, not a segment, and wrap freely, except inside a value: they
- * are data strings the markdown pass never sees, so they go through the same
- * src/lib/nowrap-values.mjs rule ("a 60 s ring" broke as "60" / "s" on six
- * pages at WebKit 390 px, 2026-09-24).
+ * are data strings the markdown pass never sees, so CodeText gives them the
+ * same src/lib/nowrap-values.mjs rule ("a 60 s ring" broke as "60" / "s" on
+ * six pages at WebKit 390 px, 2026-09-24).
  */
 import { campaigns, describeCpu, isCampaignId } from "../data/measurements";
 import { unbreakable } from "../lib/format";
-import { codeRuns } from "../lib/inline-code.mjs";
 import { langOf } from "../lib/lang";
-import { valueParts } from "../lib/nowrap-values.mjs";
-import InlineCode from "./InlineCode.astro";
+import CodeText from "./CodeText.astro";
 
 interface Props {
 	of: string;
@@ -74,13 +72,5 @@ const facts = [
 		)
 	}
 	{SEP}
-	{
-		codeRuns(c.conditions[lang]).map((part) =>
-			part.kind === "code" ? (
-				<InlineCode text={part.value} before={part.before} after={part.after} />
-			) : (
-				valueParts(part.value).map((v) => (v.kind === "date" ? <span class="ms-nowrap">{v.value}</span> : v.value))
-			),
-		)
-	}
+	<CodeText text={c.conditions[lang]} />
 </p>

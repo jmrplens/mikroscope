@@ -25,6 +25,14 @@
  * - after a `.` that opens a short last part: `prometheus.` / `go`,
  *   `ghcr.` / `io/…`.
  *
+ * Nor, fourth, between two separators: `https:/` / `/raw.…`. The built site
+ * offered such a break inside 20 chips (2026-09-25): after the first slash
+ * of `http://` or `https://` in 10, between `_` and `.` of a character class
+ * `[A-Za-z0-9_.-]` in 8, inside `$__interval` in 2; whether any of them fell
+ * at a line end was not measured. It was ruled out when the installer's URL
+ * in a `wrap` code block began to break at these same places
+ * (src/lib/code-wrap-words.mjs).
+ *
  * The comma is a break for the opposite reason: in
  * `mikroscope_api_interface_info{interface,label,type,role,bridge,default_name}`
  * the 46 characters from `info{` to `default_` had no break opportunity, so
@@ -53,9 +61,11 @@
  * punctuation marks on the wrong line at WebKit 390 px, Chromium 360 px and
  * Chromium 1280 px, all 116 pages (2026-09-25).
  *
- * Used three ways: by the Sätteri hast plugins below for markdown, by
+ * Used four ways: by the Sätteri hast plugins below for markdown, by
  * <InlineCode> and <CodeText> for code the components render from data
- * strings (codeRuns), and by codeInHtml for the landing's HTML strings.
+ * strings (codeRuns), by codeInHtml for the landing's HTML strings, and by
+ * src/lib/code-wrap-words.mjs for a word too wide for a `wrap` code block
+ * (breakOffsets).
  */
 
 const SHORT = 24;
@@ -83,6 +93,7 @@ function pieces(rest) {
 		const glued =
 			prev !== undefined &&
 			(/^\d/.test(piece) ||
+				/^[_/.,]+$/.test(piece) ||
 				(prev.endsWith(".") && piece.replace(/[_/.,]$/, "").length <= 3));
 		if (glued) joined[joined.length - 1] += piece;
 		else joined.push(piece);
@@ -131,6 +142,23 @@ export function inlineCodeParts(text) {
 		if (p.kind === "keep") p.unit = i > 0 && i < parts.length - 1;
 	});
 	return { nowrap: false, parts };
+}
+
+/**
+ * Where one long word of code may break, as offsets into it: the places
+ * inlineCodeParts puts a `<wbr>`. None for a word of up to SHORT characters.
+ * @param {string} word
+ * @returns {number[]}
+ */
+export function breakOffsets(word) {
+	/** @type {number[]} */
+	const out = [];
+	let at = 0;
+	for (const part of inlineCodeParts(word).parts) {
+		if (part.kind === "wbr") out.push(at);
+		else at += part.value.length;
+	}
+	return out;
 }
 
 // What a unit takes from the text around it: the characters that touch it

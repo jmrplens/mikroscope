@@ -620,10 +620,19 @@ a > .ms-code-unit {
  * "--e|phemeral", "&|&", "192.16|8.88.1", "-|-log-markers", 17-18 breaks per
  * page in each engine at 390 and 360 px (2026-09-24). A reader copying by eye
  * sees a different flag, the failure src/lib/inline-code.mjs exists to stop
- * in inline code. Lines now break at spaces only; a single token longer than
- * the box scrolls with the box, as it does in every unwrapped fence. */
-.expressive-code pre.wrap .ec-line .code {
-	overflow-wrap: normal;
+ * in inline code. No `overflow-wrap` value stops the break after a hyphen,
+ * so src/lib/code-wrap-words.mjs puts each space-separated word of such a
+ * line in a `.ms-code-word`, drawn here as one inline block: a word that
+ * fits the box moves to the next line whole. A long word is also cut into
+ * `.ms-code-piece` blocks where inline code of the same text may break, and
+ * a word wider than the box breaks between those, and a piece wider than
+ * the box where the box ends, instead of running under its edge. Expressive
+ * Code already resets `text-indent` on every element inside a line, so a
+ * word keeps no share of the line's hanging indent. */
+.expressive-code pre.wrap .ec-line .code :is(.ms-code-word, .ms-code-piece) {
+	display: inline-block;
+	max-inline-size: 100%;
+	overflow-wrap: anywhere;
 }
 
 /* ------------------------------------------------- Inline code, two details */

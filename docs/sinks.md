@@ -299,7 +299,7 @@ On top of them the collector adds what only it has: the RouterOS API tier's gaug
 the derive stage's values, its detection and gap counters, and the device-info
 families from the agent's `/capabilities`.
 
-> **Sized for 10 Hz, whatever the agent runs at**
+> **Sized for 10 Hz, whatever the agent runs at**
 >
 > The collector sizes its `mikroscope_cpu_busy_ticks` histogram from a constant 10 Hz, not from the
 > connected agent, so the bucket layout does not change when it reconnects to an agent configured
