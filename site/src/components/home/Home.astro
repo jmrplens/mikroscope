@@ -37,6 +37,7 @@ import RouterWrites from "../RouterWrites.astro";
 import RunsTable from "../RunsTable.astro";
 import Version from "../Version.astro";
 import { langOf } from "../../lib/lang";
+import { codeInHtml } from "../../lib/inline-code.mjs";
 import { valuesInHtml } from "../../lib/nowrap-values.mjs";
 import Readout from "./Readout.astro";
 
@@ -62,7 +63,7 @@ if (content.lang !== lang) {
 
 	<section class="ms-home-hides" aria-labelledby="ms-home-hides">
 		<h2 id="ms-home-hides">{content.hides.title}</h2>
-		{content.hides.paragraphs.map((p) => <p set:html={valuesInHtml(p)} />)}
+		{content.hides.paragraphs.map((p) => <p set:html={valuesInHtml(codeInHtml(p))} />)}
 		<p><a href={content.hides.href} set:html={content.hides.linkText} /></p>
 	</section>
 
@@ -82,7 +83,7 @@ if (content.lang !== lang) {
 				[content.tiers.kernel, content.tiers.api].map((tier) => (
 					<div class="ms-tier">
 						<h3>{tier.title}</h3>
-						<p set:html={valuesInHtml(tier.body)} />
+						<p set:html={valuesInHtml(codeInHtml(tier.body))} />
 					</div>
 				))
 			}
@@ -95,7 +96,7 @@ if (content.lang !== lang) {
 			{content.release.label} <Version link />, <Version show="date" /> ·{" "}
 			<a href={release.changelogUrl}>{content.release.changelog}</a>
 		</p>
-		<p set:html={valuesInHtml(content.install.prereq)} />
+		<p set:html={valuesInHtml(codeInHtml(content.install.prereq))} />
 		<ol class="ms-steps">
 			{
 				content.install.steps.map((step) => (
@@ -112,7 +113,7 @@ if (content.lang !== lang) {
 	<section class="ms-home-not-claimed" aria-labelledby="ms-home-not-claimed">
 		<h2 id="ms-home-not-claimed">{content.notClaimed.title}</h2>
 		<NotClaimed variant="not-measured">
-			{content.notClaimed.paragraphs.map((p) => <p class="ms-home-claim" set:html={valuesInHtml(p)} />)}
+			{content.notClaimed.paragraphs.map((p) => <p class="ms-home-claim" set:html={valuesInHtml(codeInHtml(p))} />)}
 		</NotClaimed>
 	</section>
 

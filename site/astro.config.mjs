@@ -6,7 +6,7 @@ import starlightLinksValidator from "starlight-links-validator";
 import { fileURLToPath } from "node:url";
 import { isRedirectStub } from "./scripts/redirect-stub.mjs";
 import { decodedFragments } from "./src/lib/decoded-fragments.mjs";
-import { inlineCodeNowrap } from "./src/lib/inline-code.mjs";
+import { inlineCodeNowrap, inlineCodeUnits } from "./src/lib/inline-code.mjs";
 import { nowrapValues } from "./src/lib/nowrap-values.mjs";
 import { lastmodTable } from "./src/lib/lastmod.mjs";
 import { metaCsp } from "./src/lib/meta-csp.mjs";
@@ -159,6 +159,16 @@ const META_CSP = true;
  * page without it would publish `{{MIKROSCOPE_VERSION}}` in a command a reader
  * copies, so a processor that cannot take it fails the build rather than
  * warning.
+ *
+ * Neither is the heading-attributes syntax, `## Heading {#id}`. A heading's id
+ * is a public address computed from the heading's text: writing `--expose` as
+ * code in "`--expose`, on the router's LAN address" (install/reaching-the-agent,
+ * both locales, 2026-09-24) moved it from `#expose-on-the-routers-lan-address`
+ * to `#--expose-on-…`, because the plain `--` it replaced had been set as an
+ * en dash, which the slug drops. `{#id}` keeps the published address when the
+ * text has to change, and scripts/check-anchors.mjs fails a build that loses
+ * one. MDX reads a brace as an expression, so without the feature such a page
+ * does not compile at all.
  * @returns {import("astro").AstroIntegration}
  */
 function siteMarkdownPlugins() {
@@ -168,12 +178,14 @@ function siteMarkdownPlugins() {
 			"astro:config:setup": ({ config, logger }) => {
 				const processor = /** @type {any} */ (config.markdown)?.processor;
 				const mdast = processor?.options?.mdastPlugins;
-				if (!Array.isArray(mdast)) {
+				const features = processor?.options?.features;
+				if (!Array.isArray(mdast) || typeof features !== "object") {
 					throw new Error(
-						"the markdown processor has no mdastPlugins list, so {{MIKROSCOPE_VERSION}} in the pages' code would not be replaced. src/lib/version-placeholder.mjs is written for Sätteri.",
+						"the markdown processor has no mdastPlugins list or no features, so {{MIKROSCOPE_VERSION}} in the pages' code would not be replaced and a heading's `{#id}` would not compile. src/lib/version-placeholder.mjs is written for Sätteri.",
 					);
 				}
 				mdast.push(versionPlaceholder(release.version));
+				features.headingAttributes = true;
 				const plugins = processor?.options?.hastPlugins;
 				if (!Array.isArray(plugins)) {
 					logger.warn(
@@ -181,7 +193,12 @@ function siteMarkdownPlugins() {
 					);
 					return;
 				}
-				plugins.push(inlineCodeNowrap(), nowrapValues(), decodedFragments());
+				plugins.push(
+					inlineCodeNowrap(),
+					inlineCodeUnits(),
+					nowrapValues(),
+					decodedFragments(),
+				);
 			},
 		},
 	};

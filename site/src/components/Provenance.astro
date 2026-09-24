@@ -20,7 +20,8 @@
  * pages at WebKit 390 px, 2026-09-24).
  */
 import { campaigns, describeCpu, isCampaignId } from "../data/measurements";
-import { codeSpans, unbreakable } from "../lib/format";
+import { unbreakable } from "../lib/format";
+import { codeRuns } from "../lib/inline-code.mjs";
 import { langOf } from "../lib/lang";
 import { valueParts } from "../lib/nowrap-values.mjs";
 import InlineCode from "./InlineCode.astro";
@@ -74,11 +75,11 @@ const facts = [
 	}
 	{SEP}
 	{
-		codeSpans(c.conditions[lang]).map((part) =>
-			part.code ? (
-				<InlineCode text={part.text} />
+		codeRuns(c.conditions[lang]).map((part) =>
+			part.kind === "code" ? (
+				<InlineCode text={part.value} before={part.before} after={part.after} />
 			) : (
-				valueParts(part.text).map((v) => (v.kind === "date" ? <span class="ms-nowrap">{v.value}</span> : v.value))
+				valueParts(part.value).map((v) => (v.kind === "date" ? <span class="ms-nowrap">{v.value}</span> : v.value))
 			),
 		)
 	}

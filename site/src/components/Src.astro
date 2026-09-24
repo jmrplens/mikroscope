@@ -19,7 +19,10 @@
  * (`pnpm run src:check`, part of `pnpm run lint`).
  *
  * Inline, so it never opens a line in the source (check-i18n-parity.mjs), and
- * a twin cites the same `path` as its English page.
+ * a twin cites the same `path` as its English page. A short path is drawn as
+ * one box with the punctuation beside it by the markdown plugin
+ * (inlineCodeUnits in src/lib/inline-code.mjs), around the whole link: this
+ * component cannot see what the page writes after it.
  */
 import { srcUrl } from "../lib/src-link.mjs";
 import InlineCode from "./InlineCode.astro";
@@ -32,4 +35,4 @@ const { path } = Astro.props;
 const href = srcUrl(path, "Src");
 ---
 
-<a class="ms-src" href={href}><InlineCode text={path} /></a>
+<a class="ms-src" href={href}><InlineCode text={path} unit={false} /></a>

@@ -156,8 +156,11 @@
 	content: counter(ms-step);
 	position: absolute;
 	z-index: 2;
+	/* Centred in the strip, like the copy button on its other side, and as far
+	 * from the box's left edge as the button is from its right (the strip's
+	 * 0.5rem `padding-inline-end`, components.css). */
 	inset-block-start: calc((var(--ms-copy-strip, 2.125rem) - 1.5rem) / 2);
-	inset-inline-start: 0.625rem;
+	inset-inline-start: 0.5rem;
 	display: grid;
 	place-items: center;
 	inline-size: 1.5rem;

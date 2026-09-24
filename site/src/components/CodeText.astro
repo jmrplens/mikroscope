@@ -4,9 +4,11 @@
  *
  * The data files keep a flag or a path in backticks so that one string serves
  * both a table cell and a sentence; this turns it into markup without
- * `set:html`, which the MDX pipeline here mangles (astro.config.mjs).
+ * `set:html`, which the MDX pipeline here mangles (astro.config.mjs). Each
+ * short code is drawn as a unit with the punctuation that touches it
+ * (codeRuns in src/lib/inline-code.mjs).
  */
-import { codeSpans } from "../lib/format";
+import { codeRuns } from "../lib/inline-code.mjs";
 import InlineCode from "./InlineCode.astro";
 
 interface Props {
@@ -16,4 +18,4 @@ interface Props {
 const { text } = Astro.props;
 ---
 
-{codeSpans(text).map((p) => (p.code ? <InlineCode text={p.text} /> : p.text))}
+{codeRuns(text).map((p) => (p.kind === "code" ? <InlineCode text={p.value} before={p.before} after={p.after} /> : p.value))}

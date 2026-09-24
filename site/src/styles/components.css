@@ -39,21 +39,35 @@
 /* ------------------------------------------------------ Inline code */
 
 /* Set by src/lib/inline-code.mjs on short inline code and on a long one's
- * leading flag, so `--for` never renders as "-" / "-for".
- *
- * Not `display: inline-block`, though that stops a WebKit fault: a nowrap
- * chip that does not fit the rest of a line can make WebKit paint the word
- * before it twice, "the list your / your `in-interface-list=!…`"
- * (install/prerequisites, reference/cli, playbooks/flash-wear; WebKit 390 px
- * only, 2026-09-24). An atomic inline is a break opportunity on both sides,
- * so punctuation came loose from the chip it belongs to: "(" left at a line
- * end, ")", "," or ":" opening the next line. That was 123 cases at WebKit
- * 390 px, 161 at Chromium 360 px and 186 at Chromium 1280 px, against 0 for
- * an inline chip (all 116 pages, 2026-09-24). Keeping inline-block would need
- * the punctuation glued to the chip in markup; until then the WebKit fault
- * stays open. */
+ * flags, so `--for` never renders as "-" / "-for". */
 .sl-markdown-content .ms-code-nowrap {
 	white-space: nowrap;
+}
+
+/* A chip and the characters that touch it, "(`--for`),", drawn as one box.
+ *
+ * As a nowrap inline, a chip that did not fit the rest of its line made
+ * WebKit paint the word before it twice, "the list your / your
+ * `in-interface-list=!…`" (install/prerequisites, reference/cli,
+ * playbooks/flash-wear, sinks/api-tier; WebKit 390 px, 2026-09-24). A box does
+ * not, and the characters it takes (src/lib/inline-code.mjs) are what an
+ * atomic inline would otherwise let loose: without them it left "(" at a line
+ * end and opened the next line with ")", "," or ":" 123 times at WebKit 390 px,
+ * 161 at Chromium 360 px and 186 at Chromium 1280 px (all 116 pages). The
+ * chip inside the box stays an inline, so its padding does not make a line
+ * taller: page heights with the boxes and without them differ only where a
+ * line breaks in another place (a whole line, on 3-8 of 116 pages per
+ * engine) and by 0.8 px on two pages at Chromium 360 px (2026-09-25). */
+.ms-code-unit {
+	display: inline-block;
+	white-space: nowrap;
+}
+
+/* A box does not take the underline of a link around it (CSS Text Decoration
+ * 3 §2.1: decorations do not propagate into atomic inlines), so "[What
+ * `--expose` opens](…)" showed its chip without the line under the rest. */
+a > .ms-code-unit {
+	text-decoration: inherit;
 }
 
 /* ------------------------------------------------------ Values in prose */
@@ -343,7 +357,12 @@
 	font-weight: 600;
 }
 
-/* The 41-character tag breaks at its spaces on a phone, never mid-word. */
+/* The 41-character tag breaks at its spaces on a phone, never mid-word. Its
+ * name, `mikroscope:<name>`, is a unit (RouterWrites.astro): as plain text
+ * WebKit broke it after the colon, "mikroscope:" / "<name> (managed by
+ * mikroscope)", in the Spanish box at 390 px (2026-09-24), where the lead-in
+ * is longer. The whole tag is about 345 px of mono and does not fit the box's
+ * 322 px on a phone, so the rest still breaks at its spaces. */
 .ms-writes-tag {
 	white-space: normal;
 	overflow-wrap: normal;
@@ -547,6 +566,12 @@
  * ::after on the button and the "Copied!" tooltip as a ::before on a sibling
  * div, so only the box, the colours and the states are the site's business. */
 .expressive-code .copy button {
+	/* Centred in the strip. Expressive Code sets `align-self: flex-end`, which
+	 * beat the strip's `align-items: center` and sat the button on the strip's
+	 * bottom edge, 6 px from its top and 0 from the code: 3 px lower than the
+	 * landing's step numbers centred in the same strip (WebKit 390 px and
+	 * Chromium 360 px, 2026-09-24). */
+	align-self: center;
 	opacity: 1;
 	inline-size: 1.75rem;
 	block-size: 1.75rem;

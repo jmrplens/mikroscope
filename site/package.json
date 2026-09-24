@@ -19,6 +19,8 @@
     "htmlhint": "test -n \"$(find dist -name '*.html' -print -quit 2>/dev/null)\" || { echo 'No HTML in dist. Run pnpm build first.' >&2; exit 1; }; htmlhint \"dist/**/*.html\"",
     "pa11y": "node scripts/run-pa11y.mjs",
     "a11y:check": "node scripts/check-headings-labels.mjs",
+    "anchors:check": "node scripts/check-anchors.mjs",
+    "anchors": "node scripts/check-anchors.mjs --write",
     "schema:check": "node scripts/check-structured-data.mjs",
     "directives:check": "node scripts/check-directives.mjs",
     "layout:check": "node scripts/check-layout.mjs",
@@ -35,7 +37,7 @@
     "stats:check": "node scripts/gen-stats.mjs --check",
     "figures": "node scripts/gen-figures.mjs",
     "figures:check": "node scripts/gen-figures.mjs --check",
-    "lint": "pnpm run check && pnpm run contrast:check && pnpm run i18n:check && pnpm run src:check && pnpm run readme:check && pnpm run llms:check && pnpm run docs:check && pnpm run stats:check && pnpm run figures:check && pnpm run eslint && pnpm run format:check && pnpm run html-validate && pnpm run htmlhint && pnpm run a11y:check && pnpm run schema:check && pnpm run directives:check && pnpm run twins:check && pnpm run version:check",
+    "lint": "pnpm run check && pnpm run contrast:check && pnpm run i18n:check && pnpm run src:check && pnpm run readme:check && pnpm run llms:check && pnpm run docs:check && pnpm run stats:check && pnpm run figures:check && pnpm run eslint && pnpm run format:check && pnpm run html-validate && pnpm run htmlhint && pnpm run a11y:check && pnpm run anchors:check && pnpm run schema:check && pnpm run directives:check && pnpm run twins:check && pnpm run version:check",
     "test:a11y": "pnpm run pa11y",
     "analyze": "pnpm run build && pnpm run lint && pnpm run test:a11y",
     "astro": "astro"

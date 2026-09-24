@@ -47,10 +47,14 @@ const WRITTEN = {
 						</th>
 						<td>{t(WRITTEN[e.written])}</td>
 						<td>
-							{e.flag !== null && <InlineCode text={e.flag} />}
-							{/* Separators as strings: Astro drops the whitespace a line break leaves. */}
-							{e.default !== null && [`, ${t("ms.envlist.default")} `, <InlineCode text={e.default} />]}
-							{e.range !== null && `, ${e.range}`}
+							{/* One string, so the comma after a flag is drawn in its unit (codeRuns). */}
+							<CodeText
+								text={[
+									e.flag !== null ? `\`${e.flag}\`` : "",
+									e.default !== null ? `, ${t("ms.envlist.default")} \`${e.default}\`` : "",
+									e.range !== null ? `, ${e.range}` : "",
+								].join("")}
+							/>
 						</td>
 						<td>
 							<CodeText text={e.holds[lang]} />

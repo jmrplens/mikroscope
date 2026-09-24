@@ -90,9 +90,15 @@
 	 * sat between outlined pills like loose text (WebKit 390 and Chromium
 	 * 360, both locales, 2026-09-24). Labels stay on one line now; the two
 	 * outlined secondaries share the second row, and the minimal link, which
-	 * is a link and not a button, takes a row of its own under them. */
+	 * is a link and not a button, takes a row of its own under them.
+	 *
+	 * A zero basis, so the two that share a row are the same width: with
+	 * `auto` each got its label's width plus half the room left, and "What it
+	 * costs" and "Download" came out 166 and 180 px at WebKit 390 px. The
+	 * widest label in either locale needs 136 px (Chromium, "Descargar"), and
+	 * half the row is 158 px at 360 px (2026-09-24). */
 	.hero .actions .sl-link-button {
-		flex: 1 1 auto;
+		flex: 1 1 0;
 		justify-content: center;
 		white-space: nowrap;
 	}
@@ -168,5 +174,22 @@
 	.sl-markdown-content starlight-file-tree {
 		--x-space: 0.75rem;
 		padding: 0.75rem 0.5rem;
+	}
+}
+
+/* Steps. Starlight's number rail is a 1.75rem bubble plus 1rem of gap, 44 px of
+ * a 358 px column at WebKit 390 px, and every line of every step starts after
+ * it (install/cli, install/prerequisites, install/routes, start/walkthrough,
+ * both locales, 2026-09-24): the indent the owner reported on the landing,
+ * whose steps have no rail now (home.css). On a phone the bubble is 1.375rem,
+ * still clear of its two-digit numbers at Starlight's 0.8125rem, and the gap
+ * 0.5rem: 30 px. The guide line and the first line's alignment are computed
+ * from `--bullet-size` by Starlight, so they follow. */
+@media (max-width: 49.99rem) {
+	.sl-markdown-content .sl-steps {
+		--bullet-size: 1.375rem;
+	}
+	.sl-markdown-content .sl-steps > li {
+		padding-inline-start: calc(var(--bullet-size) + 0.5rem);
 	}
 }
