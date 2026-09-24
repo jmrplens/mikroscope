@@ -269,6 +269,10 @@ export const alertFiresWhen: Record<string, Record<Lang, string>> = {
 		en: "a bridge port received packets while the bridge sent it neither a unicast nor a broadcast frame, for 10 minutes",
 		es: "un puerto de bridge recibió paquetes mientras el bridge no le envió ni una trama unicast ni una broadcast, durante 10 minutos",
 	},
+	"mikroscope-wakeup-storm": {
+		en: "the context-switch rate over the last 10 minutes is more than 4 times its mean over the 24 hours before, for 10 minutes",
+		es: "la tasa de cambios de contexto de los últimos 10 minutos supera 4 veces su media de las 24 horas anteriores, durante 10 minutos",
+	},
 	"mikroscope-port-errors": {
 		en: "any port's MAC counted a typed error — overflow, FCS, collision — for 5 minutes running",
 		es: "el MAC de algún puerto contó un error tipificado —desbordamiento, FCS, colisión— durante 5 minutos seguidos",

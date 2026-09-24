@@ -16,8 +16,8 @@ alertas unificadas de Grafana con las reglas que se desprenden de los propios co
 los dashboards, del registro del kernel que lee el agente y de las detecciones del colector. Esta página responde a qué reglas son, con qué salta
 cada una y qué significa para ella el silencio, cómo instalar el fichero y de dónde sale cada umbral.
 Todo umbral es cero (un contador que no debería moverse), una muestra (la regla del agente en
-silencio) o una proporción de un techo que publicó el propio equipo. Ninguno es un número compilado
-para un router concreto.
+silencio), una proporción de un techo que publicó el propio equipo o, en una regla, un múltiplo del
+último día del propio equipo. Ninguno es un número compilado para un router concreto.
 
 ## Los ficheros
 
@@ -133,6 +133,14 @@ El título de cada regla, en inglés como aparece en Grafana, y debajo una tradu
   esos cuatro días marca esos dos puertos en esos dos tramos y nada más. Se espera que salte en un
   diseño redundante, donde un puerto alternate de RSTP descarta a propósito, y en un puerto con
   `broadcast-flood=no` u `horizon`. Necesita la capa de API.
+- **The kernel is switching context four times as often as over its last day.** Algo empezó a
+  despertarse muy a menudo: un proceso o un driver en espera activa, un cliente de monitorización,
+  un contenedor en un bucle cerrado. En el RB5009 de referencia fue una integración de Home
+  Assistant que consultaba el router por la API (2026-09-23): las interrupciones del temporizador
+  pasaron de unas 2 500 a unas 35 000 por segundo, en ráfagas de 20–90 s en un núcleo cada vez, y el
+  perfil del propio RouterOS apenas lo mostraba. Al desactivar la integración la tasa volvió en
+  30 s. Un cambio deliberado, como un contenedor nuevo o un conjunto de reglas más pesado, también
+  la dispara.
 - **A port's egress queue has been dropping every minute for ten minutes.** La cola de salida de un
   puerto ha descartado paquetes en cada uno de los últimos diez minutos. A diferencia de las demás
   reglas de contador, el contador de esta **sí** debe moverse: descartar es como una cola llena le
@@ -189,6 +197,15 @@ contador que vale 0 en un equipo sano es la misma alerta.
   perdió 3 337 paquetes en seis ráfagas de un segundo a lo largo de 6,5 h, con picos de 436
   paquetes/s: real, visible en el panel de cola de salida, y correctamente no una alerta. Esta es la
   forma que hay que copiar para cualquier regla futura cuya lectura sana no sea cero.
+- **Un múltiplo del último día del propio equipo.** Una tasa de cambios de contexto no tiene un valor
+  sano que sirva para todas las placas, así que `mikroscope-wakeup-storm` compara el router consigo
+  mismo: la tasa media de los últimos diez minutos frente a la media de las 24 horas anteriores, y
+  salta por encima de 4. Cada lado se divide entre los minutos que cubre de verdad, y la regla espera
+  a tener 12 horas de base, de modo que un almacén con menos de un día no parece una tormenta. En el
+  RB5009 de referencia, en 551 ventanas de diez minutos con un día completo detrás (2026-09-20..23),
+  el cociente sano nunca pasó de 1,81; la tormenta del 2026-09-23 empezó en 35,7. La regla anuncia
+  un cambio de régimen y se apaga cuando la nueva tasa pasa a ser la base, allí al cabo de unas
+  cuatro horas.
 
 Las reglas no alertan por squeezes de softnet. Medido en el RB5009 de referencia el 2026-09-15 sobre
 3 738 704 muestras por CPU en 24 h, alrededor del <Measured id="squeeze.backgroundOne" /> de las muestras llevan un squeeze, y alertar con "squeeze > 0" te
