@@ -4,7 +4,7 @@ Notable changes per release. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the versions
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.3.0] - 2026-09-24
 
 ### Fixed
 
@@ -61,6 +61,82 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   images are supported".
 - CI: the pull-request site job checks out the full history, which the
   structured-data check needs for each page's `datePublished`.
+- **The documentation site on a phone.** Measured on 2026-09-24 by a layout
+  script driven through Playwright, kept outside the repository, over all 116
+  pages (58 per language) in WebKit with the iPhone 13 profile at 390 px and
+  in Chromium at 360 px, each in both themes: 456 page-runs, the two
+  `port-names` redirect stubs left out. Before the change:
+  - every code block without a title had its copy button above the code,
+    over a page-coloured band outside the code's box: all 416 measurements of
+    such a block, on 50 pages, in both engines and both themes, and the band
+    was there at 1280 px too. The strip the button sits in is now inside the
+    box and takes its background, border and corners;
+  - in Chromium, `reference/troubleshooting` scrolled sideways by 8 px in
+    both languages, because the word "data" of the `uninstall --targets data`
+    heading ran 20 px past its column, and the `#` links of headings on four
+    other pages started 4 to 8 px off the left edge: 4 page-runs overflowed,
+    12 had an element past the edge;
+  - in WebKit, an inline code chip, or the punctuation after one, hung up to
+    4.8 px past the column (14 page-runs on 7 pages), and the word before a
+    chip that does not wrap was painted twice, at the end of one line and
+    again at the start of the next: "your" on `install/prerequisites` and
+    `reference/cli`, "of" on `playbooks/flash-wear`, "DIGI" on
+    `sinks/api-tier`. A short chip is now drawn as one box with the brackets,
+    quotes and punctuation that touch it, so none of them starts or ends a
+    line alone.
+
+  After it, the script finds none of these in either engine or theme, no
+  word is painted twice in WebKit in either theme, no punctuation is left
+  apart from its chip at 390, 360 or 1280 px, and no page overflows at
+  1280 px in either engine.
+- **Smaller faults on a phone, in the same run.**
+  - The landing's five steps showed no numbers in WebKit, which clipped the
+    list markers inside each command's scrolling box while the list still
+    kept a 24 px indent for them; this was reported from an iPhone, and is
+    the same at 1280 px. The number is now drawn in the code box's copy
+    strip, level with the copy button: both centres 17 px from the top of the
+    box, each 8 px from its edge. Expressive Code's `align-self: flex-end`
+    had put the button 3 px low, and centring it moves it 3 px up in every
+    code block of the site.
+  - The landing's three secondary actions shared a row in equal thirds, so
+    "What it costs" and "On GitHub" ("Lo que cuesta", "En GitHub") broke onto
+    two lines, 48 px tall beside a 40 px primary. The two outlined ones now
+    share a row at equal widths, 173 px at 390 and 158 px at 360, in both
+    languages, and each label is one line.
+  - The number rail of the step lists took 44 px of a 328 to 358 px column.
+    Below 50rem it is 30 px, a 22 px number and an 8 px gap, with the guide
+    line and the first line of text still centred on the number; a desktop
+    keeps 44.
+  - A table turned into cards put 16 px between the fields of one card and
+    8 px between cards, so a card's fields drifted into the next; cards are
+    now 12 px apart, and a card's fields have only their own padding between
+    them. The 208 stacked tables on 75 pages were 491 627 px tall at 390 px;
+    201 of them stack now, 7 with a short last column fit as tables, and the
+    total is 418 719 px.
+  - A list in running text had the browser's 40 px indent, and one inside a
+    numbered step started 84 to 100 px in (248 lists on 94 pages); on a
+    phone the indent is what the marker needs, and lists inside See also and
+    the other boxes take 20 px at every width. Tab labels stay on one line
+    where the tab list overflowed by 27 to 42 px at 360 px; the file tree
+    fits its box; an aside's icon sits on its title's first line; a `wrap`
+    code block breaks at spaces only, where it broke inside flags such as
+    `--e`/`phemeral` 17 or 18 times a page; dates in prose do not break at
+    their hyphens; and `mikroscope:<name>` in the box of router writes no
+    longer breaks after its colon (WebKit, Spanish).
+  - In the light theme an inline code chip had the ground of See also, table
+    headers and the other boxes, 1.00:1 (238 chips on 84 pages). It has a
+    token of its own, `--ms-code-bg`, one step off every ground a chip sits
+    on in both themes.
+
+  Not done: nothing here was measured on a physical phone; every width was
+  set in Playwright's emulation, the desktop checks at 1280 × 900. Firefox, a
+  tablet width and widths other than 360, 390 and 1280 px were not measured.
+  The step lists' code blocks are still indented 30 px on a phone, which the
+  script lists as information (its threshold is 20 px; 40 page-runs on 10
+  pages, was 48 on 12). The loop chart's note, "1 798", was checked and left
+  as it is: it and the axis's "2 000" come from one formatter with the same
+  narrow no-break space, and its rendered gap is 3.4 to 4.2 px against 2.1
+  to 4.6 px in the axis's numbers.
 
 ### Changed
 
@@ -153,6 +229,14 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the `docs/` tree.
 - **The documentation deploy** submits the pages it changed to IndexNow, and
   a manual run can submit every page once.
+- **The site's lint checks heading ids**, which are addresses readers and
+  other pages link to. The phone work wrote the two `--expose` headings of
+  `install/reaching-the-agent` as code, which changed their ids; an explicit
+  `{#id}` keeps `#expose-on-the-routers-lan-address` and
+  `#expose-en-la-dirección-lan-del-router`, and the build's 1346 heading ids
+  are the same as those of the build before that work. `pnpm run lint` now
+  fails a build that loses an id listed in `site/scripts/anchors.txt`, or has
+  one the list lacks.
 
 ## [1.2.2] - 2026-09-24
 

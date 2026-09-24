@@ -145,7 +145,7 @@ otras—, y [variables de entorno](/mikroscope/es/reference/environment/) lista 
      valor de fábrica. La referencia de GHCR,
      `ghcr.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}`, sale igual con su propio host. Desde
      la 1.2.0 `doctor` imprime `WARN` cuando `/container/config` tiene un usuario de registro que
-     puede no pertenecer al registro de la descarga; después de la 1.2.2 lo decide comparando el
+     puede no pertenecer al registro de la descarga; desde la 1.3.0 lo decide comparando el
      host que nombra `registry-url` con el del que viene la imagen. Esa credencial es una para todo
      el equipo, y una cuenta de Docker Hub enviada a GHCR terminó una descarga en `auth error`. Un
      `WARN` no detiene `install`. La descarga necesita que el router llegue al registro y que haya

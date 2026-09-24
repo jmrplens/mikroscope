@@ -2417,7 +2417,7 @@ not run on the first. So:
 mikroscope 1.2.2 and earlier put the reference into `remote-image=` without its
 registry host, so RouterOS took the host from `/container/config registry-url`,
 one setting for the whole device, and `doctor` checked that setting against a
-reference that named a host. mikroscope after 1.2.2 sends the whole reference,
+reference that named a host. Since 1.3.0 mikroscope sends the whole reference,
 registry host included, and neither checks the setting nor needs it: on the
 reference router the host inside `remote-image=` overrode `registry-url`
 (verified on RB5009UG+S+, RouterOS 7.24.4, 2026-09-24), and Docker Hub served the
