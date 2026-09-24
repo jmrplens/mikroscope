@@ -41,12 +41,15 @@ SQL no puede responder con la misma forma. `mikroscope-l2-loop` y `mikroscope-po
 un recuento por muestra de registros de puerto del kernel, y el destino SQL escribe en su lugar una
 fila por registro del kernel, en `mikroscope_event`. `mikroscope-port-errors` nombra una
 columna por contador del MAC, y el destino SQL escribe `mikroscope_api_ifcounter` con una fila por
-contador. La traducción las descarta en vez de escribir una consulta que parece correcta y responde
-a otra cosa. No descarta `mikroscope-bridge-port-dark`, que tiene el mismo problema: su forma de
-PostgreSQL está en el fichero pero lee `rx_packet`, `tx_unicast`, `tx_broadcast` y `bridge` como
-columnas de `mikroscope_api_ifcounter`, que no tiene ninguna de ellas, así que la consulta no puede
-ejecutarse sobre ese esquema y se aplica el `execErrState: Error` de la regla. Es un defecto del
-generador, todavía sin corregir; tampoco se ha ejecutado contra un PostgreSQL real.
+contador. `mikroscope-bridge-port-dark` queda fuera por la misma razón: nombra `rx_packet`,
+`tx_unicast` y `tx_broadcast` como columnas, y lee `bridge`, que esa tabla tampoco tiene. La
+traducción las descarta en vez de escribir una consulta que parece correcta y responde a otra cosa.
+El fichero de 1.2.0 no descartaba la regla de puerto a oscuras: llevaba una forma de PostgreSQL que
+leía esos cuatro nombres como columnas de `mikroscope_api_ifcounter`, y no podía ejecutarse sobre
+ese esquema. El generador ahora la descarta, y una prueba unitaria comprueba cada columna que lee
+cada consulta de alerta de PostgreSQL contra las tablas que declara el destino SQL. Esa prueba lee
+el esquema, no una base de datos: ninguna consulta de alerta de PostgreSQL se ha ejecutado contra un
+PostgreSQL real.
 
 Cada fichero es `apiVersion: 1` con un grupo de reglas, `mikroscope`, en una carpeta llamada
 `mikroscope`, organización 1, evaluado cada minuto. Las reglas se aprovisionan en vez de ir dentro de
@@ -259,8 +262,8 @@ o por debajo. Consulta
 - **Un colector sin la capa de API.** Las reglas de errores de puerto, de puerto de bridge a
   oscuras y de cola de salida leen contadores de RouterOS que solo consulta la capa de API. Con
   `--api-mode off` nada de eso llega al almacén: en Prometheus las tres reglas no leen datos y en
-  PostgreSQL la de la cola de salida lee 0, y las dos cosas son OK (la de puerto a oscuras de
-  PostgreSQL falla de todos modos; véase [Los ficheros](#los-ficheros)). En un almacén InfluxDB que
+  PostgreSQL la de la cola de salida, la única de las tres en ese fichero, lee 0; las dos cosas son
+  OK. En un almacén InfluxDB que
   nunca ha tenido esas tablas las consultas fallan y se aplica `execErrState: Error`.
 - **Nada mientras salta la regla del agente en silencio.** Todas las reglas leen el mismo flujo —
   incluida la de ticks perdidos por retraso, cuya única consulta va contra el colector, no contra el
@@ -312,8 +315,9 @@ arreglo con dos minutos de diferencia en el mismo registro.
 	2026-09-23 22:44 UTC que solo marcó sfp-sfpplus1 y ether2; el de la regla de despertares devolvió
 	0,94–0,95 en dos ventanas sanas y 35,7 en la tormenta del 2026-09-23, junto a un cociente que
 	nunca pasó de 1,81 en 551 ventanas sanas (2026-09-20..23). Su PromQL solo se comprobó en
-	sintaxis, y su SQL de PostgreSQL no se ha ejecutado nunca (el de puerto a oscuras no puede
-	ejecutarse; véase [Los ficheros](#los-ficheros)). **Las formas de Prometheus y de PostgreSQL**,
+	sintaxis, y el SQL de PostgreSQL de la regla de despertares no se ha ejecutado nunca (la de puerto
+	a oscuras no tiene forma de PostgreSQL; véase [Los ficheros](#los-ficheros)). **Las formas de
+	Prometheus y de PostgreSQL**,
 	que no se cargaron en ningún Grafana: solo se cargó el fichero de InfluxDB. **La entrega de
 	avisos:** la ejecución no configuró ningún punto de contacto, así que lo que se observó es el
 	estado de la regla, nunca un mensaje saliendo de Grafana. **Los fallos que dependen de la forma

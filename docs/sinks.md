@@ -17,7 +17,7 @@ answers what one run does, how it keeps up with the agent, which clock each reco
 carries, and what "dropped" means when a destination stops answering.
 
 ```sh
-mikroscope forward --prom :9124 --influx "$MIKROSCOPE_INFLUX_URL" --interfaces bridge,ether1
+mikroscope forward --prom :9124 --influx "$MIKROSCOPE_INFLUX_URL" --influx-db "$MIKROSCOPE_INFLUX_DB" --interfaces bridge,ether1
 ```
 
 `forward` with no sink is an error, not a silent no-op: it would read the router and
@@ -39,9 +39,9 @@ throw the data away. At least one of `--file`, `--prom`, `--influx`, `--loki`,
    stream](https://jmrp.io/docs/mikroscope/sinks/device-info/).
 
 3. **Pull the ring every `--poll`.** The first pull starts after the agent's newest
-   sample, so `forward` does not replay what the ring held before it started.
-   `forward --help` lists `--from-start`, but `forward` accepts it and ignores it:
-   only `record` backfills the ring. Each pull asks for samples after the last
+   sample, so `forward` does not replay what the ring held before it started: it
+   always starts at the agent's newest sample. `forward` has no `--from-start` and
+   refuses it as an unknown flag; only `record` backfills the ring. Each pull asks for samples after the last
    sequence number seen. A trigger marker rides among the samples in sequence order
    and is forwarded as an annotation, never decoded as a sample.
 
@@ -141,7 +141,7 @@ the collector has to be reachable from the Prometheus host.
 | -------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------ | ----------- | ---------------------------------------------------------------------- |
 | `--file path.jsonl`              | JSONL file                                      | —                                                                        | synchronous | [the file](https://jmrp.io/docs/mikroscope/sinks/other/#the-file)                          |
 | `--prom :9124`                   | Prometheus `/metrics` on the collector host     | —                                                                        | in memory   | [Prometheus](https://jmrp.io/docs/mikroscope/sinks/prometheus/)                            |
-| `--influx URL`                   | InfluxDB 3 line protocol                        | `MIKROSCOPE_INFLUX_URL`, `MIKROSCOPE_INFLUX_TOKEN`                       | queued      | [InfluxDB 3](https://jmrp.io/docs/mikroscope/sinks/influxdb/)                              |
+| `--influx URL`, `--influx-db DB` | InfluxDB 3 line protocol                        | `MIKROSCOPE_INFLUX_URL`, `MIKROSCOPE_INFLUX_DB`, `MIKROSCOPE_INFLUX_TOKEN` | queued      | [InfluxDB 3](https://jmrp.io/docs/mikroscope/sinks/influxdb/)                              |
 | `--sql path` or `--sql -`        | PostgreSQL / TimescaleDB statements, for `psql` | —                                                                        | synchronous | [SQL](https://jmrp.io/docs/mikroscope/sinks/other/#sql-for-postgresql-and-timescaledb)     |
 | `--postgres DSN`                 | the same statements, into a running PostgreSQL  | `MIKROSCOPE_POSTGRES_DSN`                                                | queued      | [`--postgres`](https://jmrp.io/docs/mikroscope/sinks/other/#--postgres-the-same-statements-down-a-connection) |
 | `--stdout lp` or `--stdout json` | standard output                                 | —                                                                        | queued      | [stdout](https://jmrp.io/docs/mikroscope/sinks/other/#standard-output)                     |
@@ -253,10 +253,16 @@ Measured on RB5009UG+S+ · 4 × 1.4 GHz Cortex-A72 · RouterOS 7.24.2 · 202
 
 > **Not measured, so not claimed**
 >
-> Loki, OTLP, Graphite, Elasticsearch, Telegraf, SQL and stdout have been tested against local
-> receivers that assert the bytes each protocol accepts (development host, amd64, 2026-09-12), not
-> fed from the RB5009 into a running backend. The byte sizes quoted for them on [the other
-> sinks](https://jmrp.io/docs/mikroscope/sinks/other/) come from test fixtures, not from a device.
+> Loki, OTLP, Graphite, Elasticsearch, OpenSearch, Telegraf, SQL and stdout are tested against
+> local receivers that assert the bytes each protocol accepts (development host, amd64, since
+> 2026-09-12). Since 2026-09-17 the docker end-to-end suite also runs the collector, against a
+> canned agent and with the API tier off, into Loki 3, the OpenTelemetry Collector,
+> graphite-statsd, Elasticsearch 9, Telegraf 1.39 over HTTP and PostgreSQL 18 (through `--sql`,
+> and through `--postgres` since that sink landed on 2026-09-21), and reads the data back through
+> each store's own API. None of them has been fed from the RB5009 into a running backend, and
+> OpenSearch, TimescaleDB's hypertables and stdout have never run against a real store. The byte
+> sizes quoted for them on [the other sinks](https://jmrp.io/docs/mikroscope/sinks/other/) come from test fixtures,
+> not from a device.
 
 ### See also
 
@@ -1556,11 +1562,14 @@ in [Troubleshooting](https://jmrp.io/docs/mikroscope/reference/troubleshooting/#
 ### The conntrack count
 
 `--conntrack-every 10s` asks `/ip/firewall/connection/print count-only` at that
-cadence: 1.3 ms at 6 212 entries on the RB5009 (about 2026-09-11, a day before the slab reading; not recorded more precisely), a single reading with no spread. It is off by default because it
+cadence: 1.3 ms at 6 212 entries on the RB5009 (2026-09-11, the day before the slab readings; the time of day is not recorded), a single reading with no spread. It is off by default because it
 is a table scan over an API session, and under `privileged=yes` the agent's
 `nf_conntrack` slab count is the same population read from a file at the sampler's rate.
-The two do not match exactly — they are sampled at different instants, and the slab
-counts objects the allocator still holds — but they track: the API said 6 212 the day before the slab said 6 287.
+The two will not match exactly — they are sampled at different instants, and the slab
+counts objects the allocator still holds. Whether they track has not been measured: the API
+said 6 212 the day before the agent's slab said 6 287,
+which shows the same order of magnitude and no more. Run the count and read the slab in the
+same minute on your own device to compare them.
 
 > **Not measured, so not claimed**
 >
@@ -2024,8 +2033,8 @@ across cores.
 Since 1.2.0 standalone `doctor` reads the running agent's ring and runs four checks of its
 own: `layer2-loop`, `stp-churn`, `link-flap` and `softnet-drops`, described in [what the
 running agent shows](https://jmrp.io/docs/mikroscope/install/prerequisites/#what-the-running-agent-shows). They
-are not detections: they run once, when `doctor` asks, over whatever the ring holds, 60 s
-by default, and write nothing to a sink.
+are not detections: they run once, when `doctor` asks, over whatever the ring holds up to its
+newest 10 000 samples, 60 s by default, and write nothing to a sink.
 
 One name is shared and the rule is not. `doctor`'s `link-flap` counts link-downs only, two
 or more on one port anywhere in the ring; the detection counts link-ups and link-downs
@@ -2141,7 +2150,7 @@ never mixed into a sample row.
 | Sink                            | Form                                                                                                                                               |
 | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
 | InfluxDB, Telegraf, stdout `lp` | `mikroscope_device{board,kernel}`, `mikroscope_device_thermal{zone}`, `mikroscope_device_cpufreq{cpu}`, `mikroscope_device_cadence{source,reason}` |
-| SQL                             | the tables `mikroscope_device`, `mikroscope_device_thermal`, `mikroscope_device_cpufreq`, `mikroscope_device_cadence`                              |
+| SQL (`--sql`, `--postgres`)     | the tables `mikroscope_device`, `mikroscope_device_thermal`, `mikroscope_device_cpufreq`, `mikroscope_device_cadence`                              |
 | file, stdout `json`             | a `{"device":…}` line holding the capabilities as fetched                                                                                          |
 | Elasticsearch                   | a document with `kind: device`                                                                                                                     |
 | Graphite                        | the numeric facts under `device.*`; board, kernel and governor have no Graphite form                                                               |

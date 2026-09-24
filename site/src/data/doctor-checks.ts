@@ -165,8 +165,8 @@ export const doctorChecks: readonly DoctorCheck[] = [
 			es: "un aviso, que solo aparece cuando una instalación con este `--name` tiene un dst-nat en la LAN: su entorno contiene un `TOKEN`. Doctor cuenta las entradas, nunca lee el valor",
 		},
 		fix: {
-			en: "`upgrade` with the same `--name` and `--token <secret>`, or `uninstall --expose` to take it off the LAN",
-			es: "`upgrade` con el mismo `--name` y `--token <secreto>`, o `uninstall --expose` para retirarlo de la LAN",
+			en: "`upgrade` with the same `--name`, the flags it was installed with (`--expose --lan-address` among them) and `--token <secret>`; or remove the agent, LAN rules and container together, with `uninstall --name <name> --expose --lan-address <router LAN IPv4> --token <any> --yes` plus any other shape flag the install was given (`--port`, `--veth`, `--subnet`)",
+			es: "`upgrade` con el mismo `--name`, las opciones con que se instaló (entre ellas `--expose --lan-address`) y `--token <secreto>`; o retira el agente, reglas de LAN y contenedor juntos, con `uninstall --name <nombre> --expose --lan-address <IPv4 LAN del router> --token <cualquiera> --yes` más cualquier otra opción de forma que tuviera la instalación (`--port`, `--veth`, `--subnet`)",
 		},
 	},
 ];

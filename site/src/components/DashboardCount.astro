@@ -4,7 +4,13 @@
  * has, inline, counted from `dashboards/` (src/data/dashboards.ts). The number
  * changes when `dashboards gen` does. Output on one line, like Measured.
  */
-import { alertRules, panelTotal, STORES, type Store } from "../data/dashboards";
+import {
+	ALERT_STORES,
+	alertRules,
+	panelTotal,
+	STORES,
+	type Store,
+} from "../data/dashboards";
 import { formatNumber } from "../lib/format";
 import { langOf } from "../lib/lang";
 
@@ -15,10 +21,19 @@ interface Props {
 
 const { store, of } = Astro.props;
 if (!STORES.includes(store)) {
-	throw new Error(`DashboardCount: unknown store "${store}"; use "influxdb" or "prometheus"`);
+	throw new Error(
+		`DashboardCount: unknown store "${store}"; use one of ${STORES.map((s) => `"${s}"`).join(", ")}`,
+	);
 }
 if (of !== "panels" && of !== "rules") {
 	throw new Error(`DashboardCount: of must be "panels" or "rules", got "${of}"`);
+}
+// Graphite and Elasticsearch have dashboards and no alert file, so a rule
+// count for them would render "0" as if the file existed and were empty.
+if (of === "rules" && !ALERT_STORES.includes(store)) {
+	throw new Error(
+		`DashboardCount: "${store}" has no alert file; rules exist for ${ALERT_STORES.map((s) => `"${s}"`).join(", ")}`,
+	);
 }
 const n = of === "panels" ? panelTotal(store) : alertRules[store].length;
 const lang = langOf(Astro.locals.starlightRoute);

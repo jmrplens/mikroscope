@@ -72,7 +72,7 @@ where it says so), not only against fakes:
   2026-09-17, 57, 98, 136, 35 and 28 panels returned data and none failed.
   On 2026-09-16, in Grafana 13.2.1, against the RB5009 with
   the default triggers and a 30-minute `forward` into both stores,
-  `dashboards check` passed 171 InfluxDB panels (0 failing, 10 known-empty
+  `dashboards check` passed the 171 InfluxDB panels the dashboard had then (0 failing, 10 known-empty
   tolerated) and 133 Prometheus panels (0 failing, 9 known-empty tolerated).
   The headless row-by-row render walk of both dashboards — 0 error badges, 0
   "No data" — is from 2026-09-15 and covers 168 and 130 panels; it has not been
@@ -85,7 +85,7 @@ where it says so), not only against fakes:
   dashboards were not captured.
 - **The alert rules** number 14 for
   InfluxDB 3, 15 for Prometheus
-  and 11 for PostgreSQL. On
+  and 10 for PostgreSQL. On
   2026-09-21 the twelve InfluxDB rules of that date were loaded into Grafana
   13.2.1 against the owner's store and watched evaluate, which found seven that
   could never fire; after the 1.1.0 fix all twelve returned a value. The two
@@ -156,13 +156,14 @@ the 16 MiB RSS one — it was over on both until the 60 s ring and the derived
 memory limit of 1.0.6. The budget is guidance rather than a contract: cost scales with the device, the
 source set and the ring size. The image budget is 8 MiB; the one image size on
 record is 6.1 MiB, the figure the 1.0.0 release notes give for that release's
-image (v1.0.0, tagged 2026-09-16). No later image has been measured; CI's `agent-size` job holds
+image (v1.0.0, tagged 2026-09-16). No later image has been measured; the current image's size is to be measured on the published
+1.2.1 image. CI's `agent-size` job holds
 the agent binary, which is all the image carries, under 8 MiB on arm64, armv7 and amd64.
 
 Two rules keep the cost figure honest: wait out the ring (`BUFFER_S`) before
 quoting a steady-state figure — on the RB5009, at a 14 MiB soft memory limit, a
 reading taken in the first minute after install came back at 1.47 % of one core
-against a 9.38 % steady state — and read cost from the collector's
+against a 9.38 % steady state — and read cost from the collector's
 `/metrics`, or from `cpu_us` and `rss` in `mikroscope_self` in whichever store
 you write to, rather than from a large `/snapshot`, whose ~1.9 MB response the
 agent must serialise.

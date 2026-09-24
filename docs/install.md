@@ -9,15 +9,17 @@ What `mikroscope install` does to a RouterOS device and in which order, and how 
 Source: <https://jmrp.io/docs/mikroscope/install/>
 
 This page answers two questions: what `mikroscope install` does to your router,
-and how you get the router back. `install` puts a 6.1 MiB
-agent image in a container on the router; `uninstall` removes it again.
+and how you get the router back. `install` puts the agent image in a container on the router (the 1.0.0 image
+was 6.1 MiB; the current image's size is to be measured on the published 1.2.1
+image); `uninstall` removes it again.
 On RB5009UG+S+, RouterOS 7.24.2, 2026-09-12, a scripted
 doctor → install → status → upgrade → uninstall round trip
 (`make roundtrip`, which passes `--ephemeral` to doctor, install and upgrade) left
 the router's `/export` byte-identical, its `#` header lines aside. That run
-predates 1.1.0, from which `uninstall` removes only with `--yes`;
-`scripts/roundtrip.sh` does not pass it yet, so the script as shipped only lists
-at its uninstall step and its export check then fails. Every object
+predates 1.1.0, from which `uninstall` removes only with `--yes`.
+`scripts/roundtrip.sh` now passes `--yes` to its uninstall step (through 1.2.0 it did
+not, so it only listed there and its export check failed); the script in that form has
+not yet been run against the router. Every object
 install creates carries the comment `mikroscope:<name> (managed by mikroscope)`,
 except the envlist and the image file, which cannot; the envlist carries the
 tag as its `MIKROSCOPE_TAG` entry. Nothing is written before it is listed;
@@ -282,6 +284,11 @@ batches every read into one connect — `doctor` is one, `status` is one, the
 state questions of `install` are one — and each write takes one more, plus the
 `scp` upload. ssh is never a data path: `record` and `forward` reach the agent
 over HTTP or the RouterOS API.
+
+Measured on RB5009UG+S+ · 4 × 1.4 GHz Cortex-A72 · RouterOS 7.24.1 · 2026-08-26 · one ssh connect, for its duration
+
+That reading predates the agent and was taken on RouterOS 7.24.1; on 7.24.2, on 2026-09-11, the same
+cost showed in `/tool profile` as 17–33 % in one or two snapshots, not a measured window.
 
 > **Untested**
 >
@@ -643,15 +650,13 @@ The checks doctor runs:
 | interface list <list> exists (raw rule trap) | the `--iface-list` list (default `LAN`) exists | `/interface/list/add name=…`, or pass the list your `in-interface-list=!…` drop rule uses |
 | address list <list> has entries (raw rule trap) | the `--addr-list` list (default `LANs`) has at least one entry | pass the list your `drop local if not from default IP range` rule uses; an empty list is fine only if there is no such rule |
 | veth name <veth> is free or ours | always reported `ok`, with the count found | none: a collision is caught by `install` itself |
-| the installed agent published on the LAN asks for a token | a warning, shown only when an install of this `--name` has a dst-nat on the LAN: its environment holds a `TOKEN`. Doctor counts the entries, never reads the value | `upgrade` with the same `--name` and `--token <secret>`, or `uninstall --expose` to take it off the LAN |
+| the installed agent published on the LAN asks for a token | a warning, shown only when an install of this `--name` has a dst-nat on the LAN: its environment holds a `TOKEN`. Doctor counts the entries, never reads the value | `upgrade` with the same `--name`, the flags it was installed with (`--expose --lan-address` among them) and `--token <secret>`; or remove the agent, LAN rules and container together, with `uninstall --name <name> --expose --lan-address <router LAN IPv4> --token <any> --yes` plus any other shape flag the install was given (`--port`, `--veth`, `--subnet`) |
 
 The flash check uses the real tar size under `install`. `doctor` on its own
 assumes a 7 MiB image, so it asks for 18.0 MiB. Twice the image because the tar
 and the root extracted from it are on the disk together until `install` deletes
-the tar; under `install --remote-image` no tar is uploaded, so the check there
-asks for the 4 MiB of headroom alone. `doctor` on its own does not make that
-exception: with `--remote-image` it still assumes the 7 MiB image and asks for
-18.0 MiB. The memory threshold follows `--memory-max`: it asks
+the tar. With `--remote-image` no tar is uploaded, so both `install` and
+`doctor` on its own ask for the 4 MiB of headroom alone. The memory threshold follows `--memory-max`: it asks
 for at least what that flag asks for, which is 64 MiB by default, so
 `--memory-max 128M` on a router with 70 MiB free is caught here rather than by
 a container that will not start.
@@ -724,16 +729,16 @@ health (what the running agent's ring shows now):
 
 The ring is 60 s by default, so this sees what is happening now, not what
 happened this morning; the dashboards and the alert rules read history. It asks
-the agent for at most 10 000 samples, starting from the oldest the ring holds,
-all within the same 3 s: a ring longer than that — more than 1 000 s at 10 Hz,
-more than 100 s at 100 Hz — is read from its oldest end, not its newest. What it
+the agent for at most 10 000 samples, all within the same 3 s: the whole ring
+when it holds no more than that, and otherwise the newest 10 000 — the last
+1 000 s at 10 Hz, the last 100 s at 100 Hz. What it
 looks for, in counts of events a healthy router does not produce rather than
 thresholds tuned to one device:
 
 - **`layer2-loop`**: three or more frames in the window that came back in on a
   port carrying the bridge's own address as their source. The loop on the
-  reference RB5009 (2026-09-12, and again 2026-09-19 to 09-23) repeated it every
-  2.0 s, the STP hello interval — thirty times in a 60 s ring — while every
+  reference RB5009 (2026-09-12, and again 2026-09-19 to 09-23) repeated it
+  every 2.00–2.01 s, the STP hello interval — thirty times in a 60 s ring — while every
   RouterOS counter showed the port healthy and STP kept it blocked, sending
   one packet a second, for days.
 - **`stp-churn`**: a port that STP moved to learning at least three more times
@@ -742,8 +747,11 @@ thresholds tuned to one device:
   later (ether7 on the reference RB5009, five link-ups on 2026-09-21); across
   30 days of that router's store, every healthy link-up left learning minus
   forwarding at 0.
-- **`link-flap`**: two or more link-downs on one port, the count the collector's
-  own link-flap marker uses.
+- **`link-flap`**: two or more link-downs on one port anywhere in the
+  samples it reads.
+  The collector's own `link-flap` detection is a different count: link-ups and
+  link-downs together, two or more on one port within 60 s. A cable pulled and
+  plugged back once is a flap there and not here.
 - **`softnet-drops`**: any packet the kernel dropped from its softnet backlog —
   lost inside the router, where no interface counter sees it. Squeezes are not
   counted: a squeeze is the kernel pacing itself.
@@ -1254,7 +1262,8 @@ would later have to find in a `/file` index that lagged for minutes after a
 container removal. So `install` waits up to 15 s for the container to appear,
 then 3 s more, deletes the tar, and only then starts the container. It does not
 check that the extraction finished; on the RB5009 a 1.8 MiB tar was extracted
-within the same second as the add (RouterOS 7.24.2, 2026-09-11).
+within the same second as the add (RouterOS 7.24.2, 2026-09-11). That tar was a build of that
+date, before 1.0.0, not the image `install` ships now.
 
 The container is created with `ignore-remote-image-change=yes`. With the
 default `no`, RouterOS watched the image and, once the tar was removed, stopped
@@ -1265,7 +1274,7 @@ which is why `doctor` asks for twice the image plus 4 MiB of free flash.
 
 With `--remote-image` none of this happens. RouterOS pulls the layers itself,
 no tar lands on the device, there is nothing to wait for and nothing to delete,
-`doctor` asks for the 4 MiB alone, and `uninstall` has no file to account for —
+`doctor` asks for the 4 MiB alone, run on its own or inside `install`, and `uninstall` has no file to account for —
 the container's ownership count is the container and the envlist. The container
 root still goes where `--disk` and `--ephemeral` say.
 
@@ -1283,7 +1292,7 @@ The entries install writes into the agent's envlist:
 | `BUFFER_S` | always | `--buffer`, default `60`, 10–3600 | the ring's length, in seconds |
 | `PORT` | always | `--port`, default `9123`, 1–65535 | the agent's HTTP port |
 | `ADDR` | always | `--subnet` | the agent's address, the `.2` of the /30; the agent binds only there |
-| `MEM_LIMIT_MB` | always | `--mem-limit-mb`, 8–1024 | the agent's Go soft memory limit, in MiB; derived from the ring since 1.0.6 (rate × buffer × line, × 2.5, floored at 16 MiB) rather than a flat number |
+| `MEM_LIMIT_MB` | always | `--mem-limit-mb`, 8–1024 | the agent's Go soft memory limit, in MiB; derived from the ring since 1.0.6 (rate × buffer × line, × 2.5, at least 16 MiB, at most three quarters of `--memory-max` while that still holds the ring) rather than a flat number |
 | `FLOOR_HZ` | only when above 0 | `--floor-hz`, default `0`, 0–1000 | one cadence for every level source, in Hz |
 | `CAPTURE_MB` | always | `--capture-mb`, default `4`, 0–256 | the triggered-capture budget, in MiB; `0` turns captures off |
 | `TRIGGERS` | only when set | `--triggers` | the trigger conditions; unset, the agent uses its default set |

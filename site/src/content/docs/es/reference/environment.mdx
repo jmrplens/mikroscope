@@ -244,13 +244,13 @@ una:
 | límite        | múltiplo del anillo | RSS       | CPU por muestra | |
 | ------------- | ------------------- | --------- | --------------- | ------------------------- |
 | 40 MiB        | 4,0×                | 32,9 MiB  | 2 657 µs        | el límite nunca aprieta   |
-| 25 MiB (el factor 2,5× a 300 s) | 2,5×                | ~26 MiB   | ~2 780 µs       | sin coste medible         |
+| 24 MiB        | 2,4×                | 26,3 MiB  | 2 780 µs        | sin coste medible         |
 | 21 MiB        | 2,1×                | 23,5 MiB  | 3 250 µs        | +22 %, y subiendo         |
 | 18 MiB        | 1,8×                | 20,4 MiB  | 14 800 µs       | +457 %, peor tick 52 ms   |
 
-La fila de 25 MiB es aproximada. El comentario de `memLimitRingFactor` en
-`internal/router/options.go` registra esa ventana como 24 MiB (2,4×), con 26,3 MiB de RSS y
-2 780 µs por muestra, y ninguna de las cuatro ventanas se anotó con su dispersión.
+Las filas son las que registra el comentario de `memLimitRingFactor` en
+`internal/router/options.go`. El factor 2,5× que deriva `install` daría 25 MiB a 300 s; la ventana
+medida más cercana fue la de 24 MiB, y ninguna de las cuatro ventanas se anotó con su dispersión.
 
 El mismo acantilado se midió desde el otro lado el 2026-09-12: <Measured id="gc.tight.cpu" /> de un núcleo con 14 MiB frente a <Measured id="gc.roomy.cpu" /> con margen, ambos con el anillo lleno. `IRQ_TOP_K`,
 `CAPTURE_PRE_S`, `CAPTURE_POST_S`, `CAPTURE_POLICY`, `TRIGGER_REFRACTORY_S`, `SOURCES`, `PROC_ROOT`

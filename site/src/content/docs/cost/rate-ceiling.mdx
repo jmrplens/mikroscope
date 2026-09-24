@@ -79,8 +79,8 @@ of reads past 5 ms — and not one read of 29 996 came in under 2 ms — and 
 are the ticks that slip: <Measured id="run.100hz-floor.slippedPct" /> of them at 100 Hz with every
 source on every tick, against <Measured id="run.100hz.slippedPct" /> at the default floors. The CPU headroom is
 larger than the timing headroom, which is why the ceiling is a statement about
-I/O rather than about the A72. Even at the default floors at 100 Hz the mean read was 1.2 ms but the
-worst 17.9 ms, and a tick whose read outlasts its period is late by definition. That, and not a
+I/O rather than about the A72. Even at the default floors at 100 Hz the mean read was <Measured id="read.100hz.meanMs" /> but the
+worst <Measured id="read.100hz.worstMs" />, and a tick whose read outlasts its period is late by definition. That, and not a
 CPU wall at <Measured id="run.100hz.cpu" /> of one core, is where the few slips there come from.
 
 ## The memory a rate costs, and where to buy it

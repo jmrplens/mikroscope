@@ -15,7 +15,8 @@ primera clase y no una nota al pie: el agente lo publica en cada muestra, y CI c
 ## El presupuesto, y lo que cuesta de verdad
 
 El presupuesto es **≤ <Measured id="budget.cpu" /> de un núcleo, ≤ <Measured id="budget.rss" /> de
-RSS, ≤ <Measured id="budget.image" /> de imagen**. La imagen son <Measured id="image.size" />. Los
+RSS, ≤ <Measured id="budget.image" /> de imagen**. La imagen de 1.0.0 medía <Measured id="image.size" />, la cifra que dan las notas de esa versión;
+el tamaño de la imagen actual está por medir sobre la imagen publicada de 1.2.1. Los
 otros dos dependen de la cadencia y de cuánto le pidas leer, y la respuesta honesta es una tabla, no
 un número.
 
@@ -63,7 +64,9 @@ comparar con <Measured id="run.10hz.cpu" />.
 </Aside>
 
 Quien tira del agente se suma a eso. Además del colector y de `record`, un `doctor` independiente
-lee el anillo entero una vez, en una sola petición, unos 1,9 MB con los 10 Hz por defecto, y esa
+lee el anillo una vez, en una sola petición: el anillo entero cuando no guarda más de 10 000
+muestras, y si no las 10 000 más recientes. Con los valores por defecto es el anillo entero de
+60 s, unos 1,9 MB a 10 Hz, y esa
 petición se sirve en el núcleo del muestreador; el coste de esa lectura en el RB5009 no se ha
 medido.
 

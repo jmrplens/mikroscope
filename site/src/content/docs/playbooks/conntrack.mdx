@@ -49,11 +49,13 @@ measured changing at. It is stored on change, plus a heartbeat once every 60 s.
 Cross-check it against the API once, so you trust it thereafter:
 
 ```text
-/ip/firewall/connection/print count-only     # 6 212, about a day before the slab readings (date not recorded)
+/ip/firewall/connection/print count-only
 ```
 
-The slab readings on 2026-09-12 were 6 582 and <Measured id="conntrack.slab" />, and the snippet
-above caught a third moment, 6 240. A day apart, these show the same order of magnitude, not that
+On the RB5009 that count read <Measured id="conntrack.api" /> on 2026-09-11, the day before the
+slab readings. Those, on 2026-09-12, were <Measured id="conntrack.slabDiscovery" /> in the
+privileged discovery container and <Measured id="conntrack.slab" /> from the agent, and the
+snippet above caught a third, undated moment, 6 240. A day apart, these show the same order of magnitude, not that
 the two track: on your own device, run the count and read the slab in the same minute.
 
 The two will not match exactly even then — they are sampled at different instants,

@@ -193,7 +193,7 @@ Treat any device you test on the same way:
   decision you make for that run, not one a script makes for you.
 - **One ssh connection, many commands.** Each ssh connect costs a small
   RouterOS device a large share of a core for its duration (20 to 27 % on the
-  reference RB5009, RouterOS 7.24.2, not yet dated; see
+  reference RB5009, measured on RouterOS 7.24.1 on 2026-08-26; see
   [what ssh costs the router](https://jmrp.io/docs/mikroscope/install/#what-ssh-costs-the-router)).
   Batch commands into one connection; never loop over connects, and never use
   ssh as a data path.

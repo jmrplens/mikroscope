@@ -137,7 +137,8 @@ que está en su tabla, nombra los puertos sin preguntar a RouterOS:
   ciegas.
 
 `mikroscope doctor`, que es la CLI y no el agente, lee esos mismos registros del
-anillo entero del agente en marcha, 60 s por defecto (el `BUFFER_S` del agente).
+anillo del agente en marcha: el anillo entero cuando no guarda más de 10 000 muestras, y si
+no las 10 000 más recientes; 60 s por defecto (el `BUFFER_S` del agente).
 Vuelve a clasificar cada registro del log del kernel a partir de su texto, con la
 placa que el agente declara en `/healthz`, en lugar de fiarse del `kind` del
 agente: de lo contrario, un agente que envía registros sin él haría pasar todas

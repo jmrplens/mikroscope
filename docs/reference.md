@@ -84,7 +84,7 @@ The checks doctor runs:
 | interface list <list> exists (raw rule trap) | the `--iface-list` list (default `LAN`) exists | `/interface/list/add name=…`, or pass the list your `in-interface-list=!…` drop rule uses |
 | address list <list> has entries (raw rule trap) | the `--addr-list` list (default `LANs`) has at least one entry | pass the list your `drop local if not from default IP range` rule uses; an empty list is fine only if there is no such rule |
 | veth name <veth> is free or ours | always reported `ok`, with the count found | none: a collision is caught by `install` itself |
-| the installed agent published on the LAN asks for a token | a warning, shown only when an install of this `--name` has a dst-nat on the LAN: its environment holds a `TOKEN`. Doctor counts the entries, never reads the value | `upgrade` with the same `--name` and `--token <secret>`, or `uninstall --expose` to take it off the LAN |
+| the installed agent published on the LAN asks for a token | a warning, shown only when an install of this `--name` has a dst-nat on the LAN: its environment holds a `TOKEN`. Doctor counts the entries, never reads the value | `upgrade` with the same `--name`, the flags it was installed with (`--expose --lan-address` among them) and `--token <secret>`; or remove the agent, LAN rules and container together, with `uninstall --name <name> --expose --lan-address <router LAN IPv4> --token <any> --yes` plus any other shape flag the install was given (`--port`, `--veth`, `--subnet`) |
 
 Standalone `doctor`, but not the doctor that `install` runs, then pulls the agent's ring once
 over HTTP from the `--subnet` .2 address on `--port`, sending `--token`, and gives up after 3 s.
@@ -337,7 +337,10 @@ One store needs a word about what "deleted" means to it:
 
 The three verbs share one flag set with `forward`, so a flag that means
 something to a sibling is accepted and ignored: `plot --for 5m` parses and
-does nothing. The table marks which verb reads each flag.
+does nothing. The table marks which verb reads each flag. `--from-start` is
+the exception: only `record` registers it, and `forward`, `mark` and `plot`
+refuse it as an unknown flag. `forward` always starts at the agent's newest
+sample (`internal/forward`); through 1.2.0 it listed the flag and ignored it.
 
 | Flag            | Default                      | Variable              | Read by                     | Meaning                                                                                                                                                                                                                                                                                                                |
 | --------------- | ---------------------------- | --------------------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -388,7 +391,7 @@ refuses to start without at least one sink.
 | `--api-mode`        | `full`  | none                    | preset. `off` sets `--api-every 0` unless you set it yourself, so the collector opens no API-tier session; the relay transport still uses the API. `slow` runs the tier every 10 s with no `/system/health` and no conntrack count; `/system/resource`, `/system/resource/cpu`, `monitor-traffic` on `--interfaces` and the `--counters-every` port counters are still read. `full` (the flag defaults) reads everything. An explicit flag below wins over it |
 | `--api-every`       | `1s`    | none                    | API-tier cadence; `0` disables the tier. `off` sets it to `0`, `slow` to `10s`                                                                                                                                                                                                                                                                                                                                                                                |
 | `--interfaces`      | empty   | `MIKROSCOPE_INTERFACES` | comma-separated interfaces for `monitor-traffic`, one call for all                                                                                                                                                                                                                                                                                                                                                                                            |
-| `--conntrack-every` | `0`     | none                    | ask the conntrack count this often; `0` never, because it is a table scan. One scan took 1.3 ms at 6 212 entries on the RB5009 (date not recorded). `slow` sets it to `0` unless given explicitly                                                                                                                                                                                                        |
+| `--conntrack-every` | `0`     | none                    | ask the conntrack count this often; `0` never, because it is a table scan. One scan took 1.3 ms at 6 212 entries on the RB5009 (2026-09-11). `slow` sets it to `0` unless given explicitly                                                                                                                                                                                                        |
 | `--counters-every`  | `10s`   | none                    | read every port's cumulative counters (typed errors, fast-path split, link-downs, frame sizes) this often; `0` never                                                                                                                                                                                                                                                                                                                                          |
 | `--labels-every`    | `5m`    | none                    | re-read what each interface is (label from its comment, type, interface lists, bridge, MTU); read once before the first kernel pull and again this often; `0` takes the 5 min default                                                                                                                                                                                                                                                                         |
 | `--no-health`       | `false` | none                    | skip `/system/health`. `slow` sets it                                                                                                                                                                                                                                                                                                                                                                                                                         |
@@ -498,8 +501,7 @@ first ask the datasource which measurements it holds; if that question fails
 they warn and continue with the compiled defaults. `check` prints one line per
 panel (`ok`, `none` for a known-empty panel, `FAIL`) and exits 1 if any panel
 fails. The variables are `GRAFANA_URL` and `GRAFANA_TOKEN`, without the
-`MIKROSCOPE_` prefix. The top-level help still describes `dashboards` as "Grafana dashboards for
-InfluxDB 3 and Prometheus"; the code accepts the five stores in the table above.
+`MIKROSCOPE_` prefix.
 
 ### version
 
@@ -705,7 +707,7 @@ The entries install writes into the agent's envlist:
 | `BUFFER_S` | always | `--buffer`, default `60`, 10–3600 | the ring's length, in seconds |
 | `PORT` | always | `--port`, default `9123`, 1–65535 | the agent's HTTP port |
 | `ADDR` | always | `--subnet` | the agent's address, the `.2` of the /30; the agent binds only there |
-| `MEM_LIMIT_MB` | always | `--mem-limit-mb`, 8–1024 | the agent's Go soft memory limit, in MiB; derived from the ring since 1.0.6 (rate × buffer × line, × 2.5, floored at 16 MiB) rather than a flat number |
+| `MEM_LIMIT_MB` | always | `--mem-limit-mb`, 8–1024 | the agent's Go soft memory limit, in MiB; derived from the ring since 1.0.6 (rate × buffer × line, × 2.5, at least 16 MiB, at most three quarters of `--memory-max` while that still holds the ring) rather than a flat number |
 | `FLOOR_HZ` | only when above 0 | `--floor-hz`, default `0`, 0–1000 | one cadence for every level source, in Hz |
 | `CAPTURE_MB` | always | `--capture-mb`, default `4`, 0–256 | the triggered-capture budget, in MiB; `0` turns captures off |
 | `TRIGGERS` | only when set | `--triggers` | the trigger conditions; unset, the agent uses its default set |
@@ -734,13 +736,13 @@ The entries install writes into the agent's envlist:
 > | limit          | ring multiple | RSS       | CPU per sample | |
 > | -------------- | ------------- | --------- | -------------- | ------------------------ |
 > | 40 MiB         | 4.0×          | 32.9 MiB  | 2 657 µs       | the limit never binds    |
-> | 25 MiB (the 2.5× factor at 300 s) | 2.5×          | ~26 MiB   | ~2 780 µs      | no measurable cost       |
+> | 24 MiB         | 2.4×          | 26.3 MiB  | 2 780 µs       | no measurable cost       |
 > | 21 MiB         | 2.1×          | 23.5 MiB  | 3 250 µs       | +22 %, and climbing      |
 > | 18 MiB         | 1.8×          | 20.4 MiB  | 14 800 µs      | +457 %, worst tick 52 ms |
 >
-> The 25 MiB row is approximate. The comment on `memLimitRingFactor` in `internal/router/options.go`
-> records that window as 24 MiB (2.4×), with 26.3 MiB of RSS and 2 780 µs a sample, and none of the
-> four windows was written down with its spread.
+> The rows are the ones the comment on `memLimitRingFactor` in `internal/router/options.go` records.
+> The 2.5× factor `install` derives would be 25 MiB at 300 s; the window measured nearest it was
+> 24 MiB, and none of the four windows was written down with its spread.
 >
 > The same cliff was measured from the other side on 2026-09-12: 9.38 % of one core at 14 MiB against 1.39 % with room, both with the ring full. `IRQ_TOP_K`, `CAPTURE_PRE_S`, `CAPTURE_POST_S`, `CAPTURE_POLICY`,
 > `TRIGGER_REFRACTORY_S`, `SOURCES`, `PROC_ROOT` and `SYS_ROOT` have no flag, so an installed agent
@@ -836,7 +838,8 @@ router with `405`.
 The CLI uses `wall_ns` against its own clock to measure skew, `seq` and
 `oldest_seq` to plan a backfill, and `capabilities_hash` to notice that the
 kernel or the source set under it changed; `doctor` reads `board` to classify
-kernel-log records and `oldest_seq` to read the whole ring. No CLI code reads
+kernel-log records and `seq` with `oldest_seq` to read the whole ring, or its newest 10 000
+samples when it holds more. No CLI code reads
 `mono_ns`. The
 probe after `install` prints this reply as
 `direct transport ok: agent <version>, <rate> Hz, seq <n>, <n> slipped, <rtt> round trip`,
@@ -894,7 +897,8 @@ Writes NDJSON and closes. Two forms, chosen by whether `since` is present.
 
 A value outside its range is `400` with a one-line reason. The `since` form is
 what `record` and `forward` pull, over both transports, and what `doctor`
-reads the whole ring with (`since` one below `oldest_seq`, `max=10000`, direct
+reads the ring with (`since` one below `oldest_seq`, or `seq` − 10 000 when the ring holds more
+than 10 000 samples, `max=10000`, direct
 transport only, with the bearer token when `TOKEN` is set). It adds two line
 kinds the `seconds` form does not: a gap line first when `since` is older than
 the ring, and a trigger line before each sample a capture condition fired on.
@@ -2035,7 +2039,8 @@ its table, names ports without asking RouterOS:
   as `ports_from`, so nobody has to take the mapping on trust.
 
 `mikroscope doctor`, which is the CLI and not the agent, reads the same records
-from the running agent's whole ring, 60 s by default (the agent's `BUFFER_S`).
+from the running agent's ring: the whole ring when it holds no more than 10 000 samples,
+otherwise the newest 10 000; 60 s by default (the agent's `BUFFER_S`).
 It classifies each kernel-log record again from its text, with the board the
 agent reports on `/healthz`, rather than trusting the agent's `kind`: an agent
 that ships records without one would otherwise make every port check pass by

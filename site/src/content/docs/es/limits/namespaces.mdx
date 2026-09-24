@@ -79,7 +79,7 @@ denominador de presupuesto: es cosa del espacio de nombres, no del agente.
 
 El número de conexiones es la excepción. Con `privileged=yes` el agente lee `/proc/slabinfo`, y el
 asignador slab es global: la cuenta de objetos activos de la caché `nf_conntrack` es la población
-real de conntrack del router. En el RB5009, el 2026-09-12, marcaba 6 582 en el contenedor de
+real de conntrack del router. En el RB5009, el 2026-09-12, marcaba <Measured id="conntrack.slabDiscovery" /> en el contenedor de
 descubrimiento y <Measured id="conntrack.slab" /> desde el agente ese mismo día, mientras el espacio de nombres propio del
 contenedor informaba de 0; la API de RouterOS había contado <Measured id="conntrack.api" /> el día anterior.
 

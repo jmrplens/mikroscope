@@ -15,7 +15,8 @@ a footnote: it is reported by the agent on every sample, and the image-size budg
 ### The budget, and what it actually costs
 
 The budget is **≤ 2 % of one core, ≤ 16 MiB RSS,
-≤ 8 MiB image**. The image is 6.1 MiB. The other two
+≤ 8 MiB image**. The 1.0.0 image was 6.1 MiB, the figure that release's notes give; the size of
+the current image is to be measured on the published 1.2.1 image. The other two
 depend on the rate and on how much you ask it to read, and the honest answer is a table rather than
 a number.
 
@@ -41,10 +42,10 @@ about the rate. Nothing about the sampling changed: the CPU moved from 2.85 % t
 The budget says what the agent is allowed to cost. The other comparison, the
 one a reader usually wants, is against doing it the obvious way: a busybox shell
 loop. On 2026-09-11, on the same router, a loop reading the agent's file set of that date at
-10 Hz cost **2.4 % of one core**, while the reads themselves took
+10 Hz cost **2.40–2.48 % of one core**, while the reads themselves took
 about 0.77 ms per sample.
 
-Measured on RB5009UG+S+ · 4 × 1.4 GHz Cortex-A72 · RouterOS 7.24.2 · 2026-09-11 · a busybox shell loop reading the full file set at 10 Hz, one fork per iteration, in a container on the router
+Measured on RB5009UG+S+ · 4 × 1.4 GHz Cortex-A72 · RouterOS 7.24.2 · Linux 5.6.3 · 2026-09-11 · a busybox shell loop reading the agent's file set of that date, seven files, at 10 Hz, one fork per iteration, in a container on the router; two 60 s runs
 
 So most of the shell loop's cost was not the reading. It pays a fork per
 iteration and the agent pays none: one process starts, opens its files once and
@@ -62,8 +63,9 @@ against 2.69 %.
 > `/metrics` 60 s apart, at steady state with the ring already full, is the measurement — the agent
 > has served no exposition of its own since 1.0.5. RouterOS `/tool profile` shows the same process as `mikroscope-agent`.
 
-Pullers add to it. Besides the collector and `record`, a standalone `doctor` reads the whole ring
-once, in one request, about 1.9 MB at the 10 Hz default, and that request is served on the
+Pullers add to it. Besides the collector and `record`, a standalone `doctor` reads the ring once,
+in one request: the whole ring when it holds no more than 10 000 samples, otherwise the newest
+10 000. At the defaults that is the whole 60 s ring, about 1.9 MB at 10 Hz, and that request is served on the
 sampler's core; the cost of that read on the RB5009 has not been measured.
 
 ### Size the memory limit to the data
@@ -427,7 +429,8 @@ The other hard bound is depth, not resolution. The agent keeps its samples in a 
 samples. Nothing older exists anywhere on the router.
 
 That depth is also the whole window of `doctor`'s `health` section, which reads the ring once
-(at most 10 000 samples, so the shorter of `--buffer` and 10 000 / rate seconds) and prints how
+(the whole ring when it holds no more than 10 000 samples, otherwise the newest 10 000, so the
+shorter of `--buffer` and 10 000 / rate seconds) and prints how
 many seconds it covered. A clean `doctor` says there was no loop, STP churn, link flap or softnet
 drop in the last minute at the defaults, not today; a fault that happens once a day belongs to the
 dashboards and the alert rules.
@@ -532,8 +535,8 @@ is the namespace's doing, not the agent's.
 
 The connection count is the exception. Under `privileged=yes` the agent reads
 `/proc/slabinfo`, and the slab allocator is global: the `nf_conntrack` cache's active-object
-count is the router's real conntrack population. On the RB5009 on 2026-09-12 it read
-6 582 in the discovery container and 6 287 from the agent the same day, while the
+count is the router's real conntrack population. On the RB5009 on 2026-09-12 it
+read 6 582 in the discovery container and 6 287 from the agent the same day, while the
 container's own namespace reported 0; the RouterOS API had counted 6 212 the day before.
 
 That replaces an API table scan with a file read, and it is why the collector never polls

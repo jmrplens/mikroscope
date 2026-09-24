@@ -235,13 +235,13 @@ source on) on 2026-09-17, four limits over four windows of about 12 000 samples 
 | limit          | ring multiple | RSS       | CPU per sample | |
 | -------------- | ------------- | --------- | -------------- | ------------------------ |
 | 40 MiB         | 4.0×          | 32.9 MiB  | 2 657 µs       | the limit never binds    |
-| 25 MiB (the 2.5× factor at 300 s) | 2.5×          | ~26 MiB   | ~2 780 µs      | no measurable cost       |
+| 24 MiB         | 2.4×          | 26.3 MiB  | 2 780 µs       | no measurable cost       |
 | 21 MiB         | 2.1×          | 23.5 MiB  | 3 250 µs       | +22 %, and climbing      |
 | 18 MiB         | 1.8×          | 20.4 MiB  | 14 800 µs      | +457 %, worst tick 52 ms |
 
-The 25 MiB row is approximate. The comment on `memLimitRingFactor` in `internal/router/options.go`
-records that window as 24 MiB (2.4×), with 26.3 MiB of RSS and 2 780 µs a sample, and none of the
-four windows was written down with its spread.
+The rows are the ones the comment on `memLimitRingFactor` in `internal/router/options.go` records.
+The 2.5× factor `install` derives would be 25 MiB at 300 s; the window measured nearest it was
+24 MiB, and none of the four windows was written down with its spread.
 
 The same cliff was measured from the other side on 2026-09-12: <Measured id="gc.tight.cpu" /> of one core at 14 MiB against <Measured id="gc.roomy.cpu" /> with room, both with the ring full. `IRQ_TOP_K`, `CAPTURE_PRE_S`, `CAPTURE_POST_S`, `CAPTURE_POLICY`,
 `TRIGGER_REFRACTORY_S`, `SOURCES`, `PROC_ROOT` and `SYS_ROOT` have no flag, so an installed agent

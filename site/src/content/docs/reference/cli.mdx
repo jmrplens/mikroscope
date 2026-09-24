@@ -297,7 +297,10 @@ One store needs a word about what "deleted" means to it:
 
 The three verbs share one flag set with `forward`, so a flag that means
 something to a sibling is accepted and ignored: `plot --for 5m` parses and
-does nothing. The table marks which verb reads each flag.
+does nothing. The table marks which verb reads each flag. `--from-start` is
+the exception: only `record` registers it, and `forward`, `mark` and `plot`
+refuse it as an unknown flag. `forward` always starts at the agent's newest
+sample (`internal/forward`); through 1.2.0 it listed the flag and ignored it.
 
 <ScrollTable label="Flags of record, mark and plot">
 
@@ -354,7 +357,7 @@ refuses to start without at least one sink.
 | `--api-mode`        | `full`  | none                    | preset. `off` sets `--api-every 0` unless you set it yourself, so the collector opens no API-tier session; the relay transport still uses the API. `slow` runs the tier every 10 s with no `/system/health` and no conntrack count; `/system/resource`, `/system/resource/cpu`, `monitor-traffic` on `--interfaces` and the `--counters-every` port counters are still read. `full` (the flag defaults) reads everything. An explicit flag below wins over it |
 | `--api-every`       | `1s`    | none                    | API-tier cadence; `0` disables the tier. `off` sets it to `0`, `slow` to `10s`                                                                                                                                                                                                                                                                                                                                                                                |
 | `--interfaces`      | empty   | `MIKROSCOPE_INTERFACES` | comma-separated interfaces for `monitor-traffic`, one call for all                                                                                                                                                                                                                                                                                                                                                                                            |
-| `--conntrack-every` | `0`     | none                    | ask the conntrack count this often; `0` never, because it is a table scan. One scan took <Measured id="api.conntrackMs" /> at <Measured id="conntrack.api" /> entries on the RB5009 (date not recorded). `slow` sets it to `0` unless given explicitly                                                                                                                                                                                                        |
+| `--conntrack-every` | `0`     | none                    | ask the conntrack count this often; `0` never, because it is a table scan. One scan took <Measured id="api.conntrackMs" /> at <Measured id="conntrack.api" /> entries on the RB5009 (2026-09-11). `slow` sets it to `0` unless given explicitly                                                                                                                                                                                                        |
 | `--counters-every`  | `10s`   | none                    | read every port's cumulative counters (typed errors, fast-path split, link-downs, frame sizes) this often; `0` never                                                                                                                                                                                                                                                                                                                                          |
 | `--labels-every`    | `5m`    | none                    | re-read what each interface is (label from its comment, type, interface lists, bridge, MTU); read once before the first kernel pull and again this often; `0` takes the 5 min default                                                                                                                                                                                                                                                                         |
 | `--no-health`       | `false` | none                    | skip `/system/health`. `slow` sets it                                                                                                                                                                                                                                                                                                                                                                                                                         |
@@ -478,8 +481,7 @@ first ask the datasource which measurements it holds; if that question fails
 they warn and continue with the compiled defaults. `check` prints one line per
 panel (`ok`, `none` for a known-empty panel, `FAIL`) and exits 1 if any panel
 fails. The variables are `GRAFANA_URL` and `GRAFANA_TOKEN`, without the
-`MIKROSCOPE_` prefix. The top-level help still describes `dashboards` as "Grafana dashboards for
-InfluxDB 3 and Prometheus"; the code accepts the five stores in the table above.
+`MIKROSCOPE_` prefix.
 
 ## version
 

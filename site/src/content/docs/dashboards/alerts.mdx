@@ -39,13 +39,15 @@ The PostgreSQL file is translated from the InfluxDB one, and it also leaves out 
 schema cannot answer in the same shape. `mikroscope-l2-loop` and `mikroscope-port-link-down` sum a
 per-sample count of kernel-log port records, and the SQL sink writes one row per kernel record
 instead, in `mikroscope_event`. `mikroscope-port-errors` names one column per MAC counter, and the
-SQL sink writes `mikroscope_api_ifcounter` one row per counter. The translation drops those rather
-than write a query that looks right and answers something else. It does not drop
-`mikroscope-bridge-port-dark`, which has the same problem: its PostgreSQL form is in the file but
-reads `rx_packet`, `tx_unicast`, `tx_broadcast` and `bridge` as columns of
-`mikroscope_api_ifcounter`, which has none of them, so the query cannot run on that schema and the
-rule's `execErrState: Error` applies. That is a defect in the generator, not yet fixed; it has not
-been run against a real PostgreSQL either.
+SQL sink writes `mikroscope_api_ifcounter` one row per counter. `mikroscope-bridge-port-dark` is
+left out for the same reason: it names `rx_packet`, `tx_unicast` and `tx_broadcast` as columns, and
+reads `bridge`, which that table does not have either. The translation drops those rather than
+write a query that looks right and answers something else. The 1.2.0 file did not drop the
+dark-port rule: it carried a PostgreSQL form that read those four names as columns of
+`mikroscope_api_ifcounter`, which could not run on that schema. The generator now drops it, and a
+unit test checks every column each PostgreSQL alert query reads against the tables the SQL sink
+declares. That test reads the schema, not a database: no PostgreSQL alert query has been run
+against a real PostgreSQL.
 
 Each file is `apiVersion: 1` with one rule group, `mikroscope`, in a folder named `mikroscope`,
 organisation 1, evaluated every minute. The rules are provisioned rather than built into the
@@ -241,8 +243,8 @@ sample's packet count was at or below its trailing median. See
   query over a missing metric returns no data — which these rules read as OK.
 - **A collector without the API tier.** The port-error, dark-bridge-port and egress-queue rules read
   RouterOS counters that only the API tier polls. Under `--api-mode off` none of that reaches the
-  store: on Prometheus the three rules read no data, and on PostgreSQL the egress rule reads 0, both
-  of which are OK (the PostgreSQL dark-port rule fails either way; see [The files](#the-files)). On
+  store: on Prometheus the three rules read no data, and on PostgreSQL the egress rule, the only one
+  of the three in that file, reads 0; both are OK. On
   an InfluxDB store that has never held those tables the queries fail and `execErrState: Error`
   applies instead.
 - **Anything while the silent-agent rule fires.** Every rule reads the same stream — including the
@@ -292,8 +294,9 @@ record.
 	in a backtest over 2026-09-19 11:13 to 2026-09-23 22:44 UTC that marked only sfp-sfpplus1 and
 	ether2; the wake-up rule's returned 0.94–0.95 on two healthy windows and 35.7 at the storm of
 	2026-09-23, beside a ratio that never exceeded 1.81 over 551 healthy windows (2026-09-20..23).
-	Their PromQL was checked for syntax only, and their PostgreSQL SQL has not been run at all (the
-	dark-port one cannot run; see [The files](#the-files)). **The Prometheus and PostgreSQL forms**,
+	Their PromQL was checked for syntax only, and the wake-up rule's PostgreSQL SQL has not been run
+	at all (the dark-port rule has no PostgreSQL form; see [The files](#the-files)). **The
+	Prometheus and PostgreSQL forms**,
 	which were not loaded into any Grafana — only the InfluxDB file was. **Notification delivery:**
 	the run configured no contact point, so what was watched is the rule's state, never a message
 	leaving Grafana. **The store-shaped failures**, because this store was not missing anything: the

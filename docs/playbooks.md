@@ -511,6 +511,20 @@ Before you conclude anything from a CPU number, confirm
 after the next tick was due, and the sampler's own accounting is then the first
 thing you should distrust.
 
+### When the cores are not busy but the kernel is
+
+The opposite shape reached the reference RB5009 on its own, on RouterOS 7.24.4, at
+2026-09-23 12:08:50 UTC: a Home Assistant MikroTik integration started a wake-up storm.
+Timer interrupts went from about 2 500 to about 35 000 a second, in bursts of 20–90 s on
+one core at a time, while user time and traffic stayed flat, and it barely showed in
+RouterOS's own profile. The busy columns above would not have caught it; the context-switch
+rate, which on that router moved with the timer interrupts (r = 1.0), did. Disabling the
+integration on 2026-09-24 brought the timer back to about 2 500 a second within 30 s. It
+is one event on one router, read from the InfluxDB reference store, and it has no reading
+page of its own yet: the rule that watches for it is `mikroscope-wakeup-storm` in
+[Alert rules](https://jmrp.io/docs/mikroscope/dashboards/alerts/), which compares the last ten minutes' context-switch
+rate with the router's own previous 24 hours.
+
 ### The signature
 
 **Provoked on purpose** · 2026-09-12
@@ -814,11 +828,13 @@ measured changing at. It is stored on change, plus a heartbeat once every 60 s.
 Cross-check it against the API once, so you trust it thereafter:
 
 ```text
-/ip/firewall/connection/print count-only     # 6 212, about a day before the slab readings (date not recorded)
+/ip/firewall/connection/print count-only
 ```
 
-The slab readings on 2026-09-12 were 6 582 and 6 287, and the snippet
-above caught a third moment, 6 240. A day apart, these show the same order of magnitude, not that
+On the RB5009 that count read 6 212 on 2026-09-11, the day before the
+slab readings. Those, on 2026-09-12, were 6 582 in the
+privileged discovery container and 6 287 from the agent, and the
+snippet above caught a third, undated moment, 6 240. A day apart, these show the same order of magnitude, not that
 the two track: on your own device, run the count and read the slab in the same minute.
 
 The two will not match exactly even then — they are sampled at different instants,

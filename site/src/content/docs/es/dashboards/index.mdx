@@ -269,9 +269,24 @@ Prometheus y PostgreSQL no lleva nada más. Pulsa el nombre de la capa para ocul
 ajuste de vista: dura la sesión, y guardar el dashboard lo conserva. No cambia nada de las filas
 subyacentes, y la sección de detecciones las sigue contando.
 
-En InfluxDB cada anotación es una fila de suceso con su mensaje; en Prometheus es
-`increase(…[1m]) > 0` con un paso de 1 minuto, así que allí una anotación marca el minuto, no el
-instante.
+Cada almacén dibuja las capas a partir de lo que escribe su sink, en su propio lenguaje de consulta:
+
+- **InfluxDB y PostgreSQL**: una fila de `mikroscope_detection` o `mikroscope_trigger` por marca,
+  con su mensaje.
+- **Prometheus**: `increase(…[1m]) > 0` con un paso de 1 minuto, así que allí una marca es el
+  minuto, no el instante.
+- **Elasticsearch**: un filtro Lucene, `kind:detection AND host.keyword:$host` (o `kind:trigger`),
+  sobre los documentos de suceso. El texto de una detección es su `message` y su etiqueta la `rule`;
+  un documento de disparo no lleva mensaje, así que su texto es el `field` que cruzó y su etiqueta la
+  `cause`.
+- **Graphite**: `aliasByNode($prefix.$host.detection.*, 3)` (o `.trigger.*`), el punto por suceso
+  que escribe el sink. Grafana pone una marca en cada punto no nulo y la titula con el nombre de la
+  serie, que es la regla o la causa. No hay mensaje, porque Graphite solo guarda números, y la marca
+  cae en el instante del punto que Grafana recibe: Grafana pide como mucho 100 puntos, así que
+  varios sucesos muy juntos pueden volver como uno.
+
+Las capas de Elasticsearch y Graphite las comprueban los tests unitarios contra lo que escribe cada
+sink; no se han ejecutado en Grafana, porque la comprobación de importación solo recorre paneles.
 
 Las capturas por sección de más arriba están tomadas con las dos capas apagadas, porque el agente
 simulado que llena la base de demostración dispara una detección cada pocos segundos y veinte minutos

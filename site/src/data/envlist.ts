@@ -89,8 +89,8 @@ export const envlist: readonly EnvlistEntry[] = [
 		default: null,
 		range: "8–1024",
 		holds: {
-			en: "the agent's Go soft memory limit, in MiB; derived from the ring since 1.0.6 (rate × buffer × line, × 2.5, floored at 16 MiB) rather than a flat number",
-			es: "el límite blando de memoria de Go del agente, en MiB; desde 1.0.6 se deriva del anillo (cadencia × buffer × línea, × 2,5, con suelo de 16 MiB) en vez de ser un número fijo",
+			en: "the agent's Go soft memory limit, in MiB; derived from the ring since 1.0.6 (rate × buffer × line, × 2.5, at least 16 MiB, at most three quarters of `--memory-max` while that still holds the ring) rather than a flat number",
+			es: "el límite blando de memoria de Go del agente, en MiB; desde 1.0.6 se deriva del anillo (cadencia × búfer × línea, × 2,5, con un mínimo de 16 MiB y un máximo de tres cuartos de `--memory-max` mientras en él aún quepa el anillo) en vez de ser un número fijo",
 		},
 	},
 	{

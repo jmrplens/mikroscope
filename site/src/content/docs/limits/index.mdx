@@ -126,7 +126,8 @@ The other hard bound is depth, not resolution. The agent keeps its samples in a 
 samples. Nothing older exists anywhere on the router.
 
 That depth is also the whole window of `doctor`'s `health` section, which reads the ring once
-(at most 10 000 samples, so the shorter of `--buffer` and 10 000 / rate seconds) and prints how
+(the whole ring when it holds no more than 10 000 samples, otherwise the newest 10 000, so the
+shorter of `--buffer` and 10 000 / rate seconds) and prints how
 many seconds it covered. A clean `doctor` says there was no loop, STP churn, link flap or softnet
 drop in the last minute at the defaults, not today; a fault that happens once a day belongs to the
 dashboards and the alert rules.

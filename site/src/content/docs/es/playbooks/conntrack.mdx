@@ -50,11 +50,13 @@ cambia, más un latido cada 60 s.
 Compruébalo contra la API una vez, para fiarte de él a partir de entonces:
 
 ```text
-/ip/firewall/connection/print count-only     # 6 212, más o menos un día antes de las lecturas del slab (la fecha no consta)
+/ip/firewall/connection/print count-only
 ```
 
-Las lecturas del slab del 2026-09-12 fueron 6 582 y <Measured id="conntrack.slab" />, y el fragmento
-de arriba recogió un tercer momento, 6 240. Con un día de diferencia, muestran el mismo orden de
+En el RB5009 esa cuenta dio <Measured id="conntrack.api" /> el 2026-09-11, el día antes de las
+lecturas del slab. Esas, el 2026-09-12, fueron <Measured id="conntrack.slabDiscovery" /> en el
+contenedor de descubrimiento privilegiado y <Measured id="conntrack.slab" /> desde el agente, y el
+fragmento de arriba recogió un tercer momento, sin fecha, 6 240. Con un día de diferencia, muestran el mismo orden de
 magnitud, no que los dos se sigan: en tu equipo, haz el recuento y lee el slab en el mismo minuto.
 
 Ni aun así coincidirán exactamente — se muestrean en instantes distintos, y el

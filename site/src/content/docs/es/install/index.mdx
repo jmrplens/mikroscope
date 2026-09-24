@@ -6,20 +6,22 @@ description: Qué hace `mikroscope install` en un equipo RouterOS y en qué orde
 import { Aside, Steps } from "@astrojs/starlight/components";
 import Measured from "../../../../components/Measured.astro";
 import NotClaimed from "../../../../components/NotClaimed.astro";
+import Provenance from "../../../../components/Provenance.astro";
 import RouterWrites from "../../../../components/RouterWrites.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
 import Verified from "../../../../components/Verified.astro";
 
 Esta página responde a dos preguntas: qué le hace `mikroscope install` a tu
-router y cómo recuperas el router después. `install` pone una imagen del agente
-de <Measured id="image.size" /> en un contenedor del router; `uninstall` la
-vuelve a quitar. En <Verified of="export-identical" />, un ciclo
+router y cómo recuperas el router después. `install` pone la imagen del agente en
+un contenedor del router (la imagen de 1.0.0 medía <Measured id="image.size" />; el tamaño de la
+imagen actual está por medir sobre la imagen publicada de 1.2.1); `uninstall` la vuelve a quitar. En <Verified of="export-identical" />, un ciclo
 completo con guion doctor → install → status → upgrade → uninstall
 (`make roundtrip`, que pasa `--ephemeral` a doctor, install y upgrade) dejó el `/export` del router idéntico byte a byte, salvo sus líneas
 de cabecera `#`. Esa ejecución es anterior a 1.1.0, desde la que `uninstall`
-solo quita con `--yes`; `scripts/roundtrip.sh` aún no lo pasa, así que el guion
-tal como se publica solo enumera en su paso de desinstalación y su comprobación
-del export falla después. Cada objeto que crea install lleva el comentario
+solo quita con `--yes`. `scripts/roundtrip.sh` pasa ahora `--yes` a su paso de
+desinstalación (hasta 1.2.0 no lo hacía, así que ahí solo enumeraba y su
+comprobación del export fallaba); el guion en esa forma aún no se ha ejecutado
+contra el router. Cada objeto que crea install lleva el comentario
 `mikroscope:<name> (managed by mikroscope)`, salvo la envlist y el fichero de la
 imagen, que no lo admiten; la envlist lleva la etiqueta en su entrada
 `MIKROSCOPE_TAG`. No se escribe nada antes de listarlo; la eliminación
@@ -263,6 +265,12 @@ la CLI agrupa cada lectura en una sola conexión — `doctor` es una, `status` e
 una, las preguntas de estado de `install` son una — y cada escritura cuesta una
 más, además de la subida por `scp`. ssh nunca es un camino de datos: `record` y
 `forward` llegan al agente por HTTP o por la API de RouterOS.
+
+<Provenance of="ssh-connect" />
+
+Esa lectura es anterior al agente y se tomó sobre RouterOS 7.24.1; sobre 7.24.2, el 2026-09-11, el
+mismo coste apareció en `/tool profile` como un 17–33 % en una o dos instantáneas, no en una ventana
+medida.
 
 <NotClaimed variant="untested">
 	Que una instalación persistente sobreviva a un reinicio: el router de referencia está en

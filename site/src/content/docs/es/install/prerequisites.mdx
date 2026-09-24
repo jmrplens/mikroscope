@@ -5,6 +5,7 @@ description: La arquitectura, el paquete container y el paso de device-mode que 
 
 import { Aside, Steps } from "@astrojs/starlight/components";
 import DoctorChecks from "../../../../components/DoctorChecks.astro";
+import Measured from "../../../../components/Measured.astro";
 import NotClaimed from "../../../../components/NotClaimed.astro";
 import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
@@ -119,10 +120,9 @@ primero las mismas comprobaciones salvo que pases `--no-doctor`.
 La comprobación de flash usa el tamaño real del tar dentro de `install`.
 `doctor` por sí solo supone una imagen de 7 MiB, así que pide 18.0 MiB. El doble
 de la imagen porque el tar y la raíz extraída de él conviven en el disco hasta
-que `install` borra el tar; en `install --remote-image` no se sube ningún tar,
-así que ahí la comprobación pide solo los 4 MiB de margen. `doctor` por sí solo
-no hace esa excepción: con `--remote-image` sigue suponiendo la imagen de 7 MiB
-y pide 18.0 MiB. El umbral de memoria sigue a
+que `install` borra el tar. Con `--remote-image` no se sube ningún tar, así que
+tanto `install` como `doctor` por sí solo piden solo los 4 MiB de margen. El
+umbral de memoria sigue a
 `--memory-max`: pide al menos lo que pide esa opción, que por defecto son
 64 MiB, de modo que `--memory-max 128M` en un router con 70 MiB libres se
 detecta aquí y no en un contenedor que no arranca.
@@ -197,16 +197,15 @@ health (what the running agent's ring shows now):
 
 El anillo es de 60 s por defecto, así que esto ve lo que pasa ahora, no lo que
 pasó esta mañana; el histórico lo leen los dashboards y las reglas de alerta.
-Pide al agente como mucho 10 000 muestras, empezando por la más antigua que
-guarda el anillo, y todo dentro de los mismos 3 s: un anillo más largo —más de
-1 000 s a 10 Hz, más de 100 s a 100 Hz— se lee por su extremo más antiguo, no
-por el más reciente. Lo que busca, en recuentos de sucesos que un router sano no
+Pide al agente como mucho 10 000 muestras, y todo dentro de los mismos 3 s: el
+anillo entero cuando no guarda más que eso, y si no las 10 000 más recientes
+—los últimos 1 000 s a 10 Hz, los últimos 100 s a 100 Hz—. Lo que busca, en recuentos de sucesos que un router sano no
 produce y no en umbrales ajustados a un equipo:
 
 - **`layer2-loop`**: tres o más tramas en la ventana que volvieron a entrar por
   un puerto con la dirección propia del bridge como origen. El bucle del RB5009
-  de referencia (2026-09-12, y otra vez del 2026-09-19 al 09-23) lo repetía cada
-  2,0 s, el intervalo de hello de STP —treinta veces en un anillo de 60 s—, mientras
+  de referencia (2026-09-12, y otra vez del 2026-09-19 al 09-23) lo repetía
+  cada <Measured id="loop.helloGap" />, el intervalo de hello de STP —treinta veces en un anillo de 60 s—, mientras
   todos los contadores de RouterOS mostraban el puerto sano y STP lo mantenía
   bloqueado, enviando un paquete por segundo, durante días.
 - **`stp-churn`**: un puerto que STP pasó a learning al menos tres veces más
@@ -215,8 +214,11 @@ produce y no en umbrales ajustados a un equipo:
   después (ether7 en el RB5009 de referencia, cinco link-ups el 2026-09-21); en
   30 días del almacén de ese router, todos los link-ups sanos dejaron learning
   menos forwarding en 0.
-- **`link-flap`**: dos o más caídas de enlace en un puerto, el mismo recuento
-  que usa la marca de link-flap del propio colector.
+- **`link-flap`**: dos o más caídas de enlace en un puerto, en cualquier punto
+  de las muestras que lee. La detección `link-flap` del propio colector es otro
+  recuento: subidas y caídas de enlace juntas, dos o más en un puerto dentro de
+  60 s. Un
+  cable que se quita y se vuelve a enchufar una vez es un flap allí y no aquí.
 - **`softnet-drops`**: cualquier paquete que el kernel descartó de su cola
   softnet —perdido dentro del router, donde ningún contador de interfaz lo ve—.
   Los squeezes no cuentan: un squeeze es el kernel dosificándose.

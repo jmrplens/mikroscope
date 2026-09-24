@@ -248,11 +248,17 @@ exposición Prometheus del colector, un documento `trigger` en Elasticsearch,
 `trigger.<cause>` en Graphite, una línea `source="trigger"` en Loki, la suma
 `mikroscope.trigger.fired{cause}` en OTLP y la propia línea en el destino de fichero.
 Los cinco dashboards de Grafana llevan una anotación `triggers`, desactivada por
-defecto en la barra de conmutadores, y funciona en tres de ellos: en InfluxDB y
-PostgreSQL lee las filas de `mikroscope_trigger`, en Prometheus el
-`mikroscope_trigger_fired_total` del colector. Los dashboards de Elasticsearch y
-Graphite llevan esa misma expresión PromQL contra su propio datasource, así que su
-anotación `triggers`, igual que la de `detections`, no devuelve nada. La captura en
+defecto en la barra de conmutadores, junto a una `detections` que está activada, y
+cada una lee su propio almacén: en InfluxDB y PostgreSQL las filas de
+`mikroscope_trigger`, en Prometheus el `mikroscope_trigger_fired_total` del colector.
+En Elasticsearch es un filtro Lucene, `kind:trigger AND host.keyword:$host`, que marca
+cada documento `trigger` con su `field` como texto y su `cause` como etiqueta
+(`kind:detection`, `message` y `rule` para las detecciones). En Graphite es
+`aliasByNode($prefix.$host.trigger.*, 3)`, un marcador por punto titulado con la
+causa, sin texto, porque Graphite no guarda cadenas (`detection.*` y la regla para las
+detecciones). Hasta 1.2.0 estos dos dashboards llevaban en su lugar la expresión de
+Prometheus y no mostraban nada. Las formas de Elasticsearch y Graphite solo se han
+comprobado como JSON generado; no se han ejecutado en un Grafana real. La captura en
 sí se queda en el agente, en `/captures/<id>`.
 
 `record` aún no reconoce la línea — [Grabar, marcar,

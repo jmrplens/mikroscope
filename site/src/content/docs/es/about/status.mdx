@@ -75,16 +75,15 @@ simulaciones:
   las reglas. A los dos almacenes SQL se les hace la misma pregunta en dos
   dialectos: los paneles de PostgreSQL son los de InfluxDB reescritos, y las 216
   consultas las planifica un PostgreSQL real en la batería de contenedores.
-  Graphite y Elasticsearch llevan menos paneles a propósito (41 y 30 frente a
-  177): Graphite no tiene etiquetas y Elasticsearch no tiene documentos
+  Graphite y Elasticsearch llevan menos paneles a propósito (<DashboardCount store="graphite" of="panels" /> y <DashboardCount store="elasticsearch" of="panels" /> frente a <DashboardCount store="influxdb" of="panels" />): Graphite no tiene etiquetas y Elasticsearch no tiene documentos
   anidados, así que lo que no pueden expresar está ausente en vez de
   equivocado. Los cinco se importan en un Grafana real sobre los almacenes que
   llenó la batería, y se le pregunta a cada panel: el 2026-09-17 devolvieron
   datos 57, 98, 136, 35 y 28 paneles, y no falló ninguno.
   El 2026-09-16, en Grafana 13.2.1,
   contra el RB5009 con los disparadores por defecto y un `forward` de 30 minutos
-  hacia los dos almacenes, `dashboards check` dio por buenos 171 paneles de
-  InfluxDB (0 fallidos, 10 vacíos conocidos tolerados) y 133 paneles de
+  hacia los dos almacenes, `dashboards check` dio por buenos los 171 paneles
+  que tenía entonces el de InfluxDB (0 fallidos, 10 vacíos conocidos tolerados) y 133 paneles de
   Prometheus (0 fallidos, 9 vacíos conocidos tolerados). El recorrido sin
   interfaz, fila a fila, de los dos dashboards — 0 insignias de error y 0 "No
   data" — es del 2026-09-15 y cubre 168 y 130 paneles; no se ha repetido para
@@ -171,14 +170,15 @@ límite de memoria derivado de 1.0.6. El presupuesto es orientativo, no un contr
 conjunto de fuentes y del tamaño del anillo. El presupuesto de imagen es <Measured id="budget.image" />;
 el único tamaño de imagen registrado es <Measured id="image.size" />, la cifra que dan las notas de
 la versión 1.0.0 para la imagen de esa versión (v1.0.0, etiquetada el 2026-09-16). No se ha medido
-ninguna imagen posterior; el trabajo `agent-size` de la CI mantiene el binario del agente, que es
+ninguna imagen posterior; el tamaño de la imagen actual está por medir sobre la imagen publicada de
+1.2.1. El trabajo `agent-size` de la CI mantiene el binario del agente, que es
 todo lo que lleva la imagen, por debajo de 8 MiB en arm64, armv7 y amd64.
 
 Dos reglas mantienen honesta la cifra de coste: esperar a que se llene el
 anillo (`BUFFER_S`) antes de citar una cifra de régimen estacionario — en el
 RB5009, con un límite blando de memoria de 14 MiB, una lectura tomada en el
-primer minuto tras la instalación dio un 1,47 % de un núcleo frente a un 9,38 %
-en régimen estacionario — y leer el coste del `/metrics` del colector, o de
+primer minuto tras la instalación dio un 1,47 % de un núcleo frente a
+un <Measured id="gc.tight.cpu" /> en régimen estacionario — y leer el coste del `/metrics` del colector, o de
 `cpu_us` y `rss` en `mikroscope_self` en el almacén que uses, en vez de un
 `/snapshot` grande, cuya respuesta de ~1,9 MB tiene que serializar el agente.
 

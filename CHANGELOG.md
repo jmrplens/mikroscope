@@ -4,6 +4,48 @@ Notable changes per release. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the versions
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **The PostgreSQL form of `mikroscope-bridge-port-dark` could not run.** It
+  read `rx_packet`, `tx_unicast`, `tx_broadcast` and `bridge` as columns, and
+  the SQL sink's `mikroscope_api_ifcounter` table holds
+  `(host, interface, counter, value)`. The rule is now dropped from the
+  PostgreSQL file, as port-errors already was. A new unit test checks every
+  PostgreSQL alert query against the columns the sink declares; it catches an
+  undeclared table or column, not a type or syntax error.
+- **Two PostgreSQL alert rules used a subquery in `FROM` with no alias**, the
+  thermal-near-critical and ECC ones; PostgreSQL before 16 rejects that. Each
+  subquery now has one, as does the InfluxDB port-errors form.
+- **`doctor` read the oldest samples of a ring longer than 10 000.** It pulled
+  from the ring's oldest end, so at `BUFFER_S=3600` and 10 Hz it judged an
+  hour-old window as now. It now reads the whole ring up to 10 000 samples and
+  otherwise the newest 10 000.
+- **Standalone `doctor --remote-image` asked for 18.0 MiB of flash.** It
+  assumed the 7 MiB tar that a remote-image install never uploads; it now asks
+  for the 4.0 MiB of headroom `install` asks for.
+- **`forward` listed `--from-start` and ignored it.** It always starts at the
+  agent's newest sample. Only `record` registers the flag now; `forward`,
+  `mark` and `plot` refuse it as unknown.
+- **The Elasticsearch and Graphite dashboards' annotations queried PromQL**
+  against their own datasource and showed nothing. They now use a Lucene filter
+  on `kind` and `host`, and `aliasByNode` over `detection.*` and `trigger.*`.
+  Checked as generated JSON by a unit test, not in a real Grafana.
+- **The fix text of doctor's exposed-token warning gave an incomplete
+  `uninstall` command.** `uninstall --expose` alone is refused; the text now
+  names `--lan-address`, `--token`, `--yes` and the install's shape flags.
+- **The top-level usage named only two dashboard stores**, InfluxDB 3 and
+  Prometheus. It now names all five and the `--store` values.
+- **`scripts/roundtrip.sh` did not pass `--yes` to `uninstall`**, so since
+  1.1.0 it only listed at that step and its export check failed. It passes it
+  now; the script in that form has not been run against the router.
+
+### Documentation
+
+- **A full review of the site, README and CONTRIBUTING against the code**:
+  206 verified findings, each fixed in the English page and its Spanish twin.
+
 ## [1.2.0] - 2026-09-24
 
 ### Added

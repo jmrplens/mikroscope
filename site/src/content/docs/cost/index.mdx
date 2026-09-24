@@ -15,7 +15,8 @@ a footnote: it is reported by the agent on every sample, and the image-size budg
 ## The budget, and what it actually costs
 
 The budget is **≤ <Measured id="budget.cpu" /> of one core, ≤ <Measured id="budget.rss" /> RSS,
-≤ <Measured id="budget.image" /> image**. The image is <Measured id="image.size" />. The other two
+≤ <Measured id="budget.image" /> image**. The 1.0.0 image was <Measured id="image.size" />, the figure that release's notes give; the size of
+the current image is to be measured on the published 1.2.1 image. The other two
 depend on the rate and on how much you ask it to read, and the honest answer is a table rather than
 a number.
 
@@ -62,8 +63,9 @@ against <Measured id="run.10hz.cpu" />.
 	has served no exposition of its own since 1.0.5. RouterOS `/tool profile` shows the same process as `mikroscope-agent`.
 </Aside>
 
-Pullers add to it. Besides the collector and `record`, a standalone `doctor` reads the whole ring
-once, in one request, about 1.9 MB at the 10 Hz default, and that request is served on the
+Pullers add to it. Besides the collector and `record`, a standalone `doctor` reads the ring once,
+in one request: the whole ring when it holds no more than 10 000 samples, otherwise the newest
+10 000. At the defaults that is the whole 60 s ring, about 1.9 MB at 10 Hz, and that request is served on the
 sampler's core; the cost of that read on the RB5009 has not been measured.
 
 ## Size the memory limit to the data

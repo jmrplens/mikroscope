@@ -83,7 +83,7 @@ de 5 ms —y ni una sola de 29 996 bajó de 2 ms—, y esos son los ticks que
 retrasan: el <Measured id="run.100hz-floor.slippedPct" /> de ellos a 100 Hz con cada fuente en cada
 tick, frente al <Measured id="run.100hz.slippedPct" /> con los suelos por defecto. El margen de CPU es mayor que el margen de tiempo,
 que es por lo que el techo es una afirmación sobre E/S y no sobre el A72. Incluso con los suelos
-por defecto a 100 Hz la lectura media fue de 1,2 ms pero la peor de 17,9 ms, y un tick cuya lectura
+por defecto a 100 Hz la lectura media fue de <Measured id="read.100hz.meanMs" /> pero la peor de <Measured id="read.100hz.worstMs" />, y un tick cuya lectura
 dura más que su período llega tarde por definición. De ahí, y no de un muro de CPU con
 un <Measured id="run.100hz.cpu" /> de un núcleo, vienen los pocos retrasos de esa ejecución.
 

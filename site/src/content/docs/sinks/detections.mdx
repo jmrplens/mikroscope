@@ -138,7 +138,7 @@ sampler rate.
 
 **False positives, measured.** Squeezing is this device's background, not an event. On the
 reference RB5009 `time_squeeze` is 0 in 87.3 % of per-CPU samples, 1 in <Measured id="squeeze.backgroundOne" />,
-2 in <Measured id="squeeze.backgroundTwo" /> and 3 in <Measured id="squeeze.atLeastThree" />, while softnet dropped nothing at all
+2 in <Measured id="squeeze.backgroundTwo" /> and 3 in <Measured id="squeeze.exactlyThree" />, while softnet dropped nothing at all
 in those same 24 h. A trailing window of a distribution that is seven-eighths zeroes has a
 90th percentile of 1, so "above p90" is satisfied by any 2 — which is why the floor, and not
 the percentile, is what the rule runs on. Replayed over 6 h of stored samples, a floor of 2
@@ -260,8 +260,8 @@ across cores.
 Since 1.2.0 standalone `doctor` reads the running agent's ring and runs four checks of its
 own: `layer2-loop`, `stp-churn`, `link-flap` and `softnet-drops`, described in [what the
 running agent shows](/mikroscope/install/prerequisites/#what-the-running-agent-shows). They
-are not detections: they run once, when `doctor` asks, over whatever the ring holds, 60 s
-by default, and write nothing to a sink.
+are not detections: they run once, when `doctor` asks, over whatever the ring holds up to its
+newest 10 000 samples, 60 s by default, and write nothing to a sink.
 
 One name is shared and the rule is not. `doctor`'s `link-flap` counts link-downs only, two
 or more on one port anywhere in the ring; the detection counts link-ups and link-downs

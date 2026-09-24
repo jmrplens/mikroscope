@@ -133,7 +133,8 @@ its table, names ports without asking RouterOS:
   as `ports_from`, so nobody has to take the mapping on trust.
 
 `mikroscope doctor`, which is the CLI and not the agent, reads the same records
-from the running agent's whole ring, 60 s by default (the agent's `BUFFER_S`).
+from the running agent's ring: the whole ring when it holds no more than 10 000 samples,
+otherwise the newest 10 000; 60 s by default (the agent's `BUFFER_S`).
 It classifies each kernel-log record again from its text, with the board the
 agent reports on `/healthz`, rather than trusting the agent's `kind`: an agent
 that ships records without one would otherwise make every port check pass by

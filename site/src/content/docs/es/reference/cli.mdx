@@ -302,7 +302,11 @@ Un almacén necesita una palabra sobre qué significa «borrada» para él:
 
 Los tres verbos comparten un juego de opciones con `forward`, así que una opción
 que significa algo para un hermano se acepta y se ignora: `plot --for 5m` se
-analiza y no hace nada. La tabla marca qué verbo lee cada opción.
+analiza y no hace nada. La tabla marca qué verbo lee cada opción. `--from-start`
+es la excepción: solo `record` la registra, y `forward`, `mark` y `plot` la
+rechazan como opción desconocida. `forward` empieza siempre por la muestra más
+reciente del agente (`internal/forward`); hasta la 1.2.0 mostraba la opción y
+la ignoraba.
 
 <ScrollTable label="Opciones de record, mark y plot">
 
@@ -358,7 +362,7 @@ sus propias opciones de abajo. Se niega a arrancar sin al menos un destino.
 | `--api-mode`        | `full`      | ninguna                 | preajuste. `off` pone `--api-every 0` salvo que la fijes tú, así que el colector no abre ninguna sesión de la capa de la API; el transporte de relay sigue usando la API. `slow` ejecuta la capa cada 10 s sin `/system/health` y sin recuento de conntrack; se siguen leyendo `/system/resource`, `/system/resource/cpu`, `monitor-traffic` sobre `--interfaces` y los contadores de puerto de `--counters-every`. `full` (los valores por defecto de las opciones) lo lee todo. Una opción explícita de las de abajo gana sobre él |
 | `--api-every`       | `1s`        | ninguna                 | cadencia de la capa de la API; `0` desactiva la capa. `off` la pone a `0`, `slow` a `10s`                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `--interfaces`      | vacío       | `MIKROSCOPE_INTERFACES` | interfaces separadas por comas para `monitor-traffic`, una sola llamada para todas                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `--conntrack-every` | `0`         | ninguna                 | pregunta el recuento de conntrack con esta frecuencia; `0` nunca, porque es un recorrido de tabla. Un recorrido tardó <Measured id="api.conntrackMs" /> con <Measured id="conntrack.api" /> entradas en el RB5009 (fecha no registrada). `slow` la pone a `0` salvo que se dé explícitamente                                                                                                                                                                                                                                         |
+| `--conntrack-every` | `0`         | ninguna                 | pregunta el recuento de conntrack con esta frecuencia; `0` nunca, porque es un recorrido de tabla. Un recorrido tardó <Measured id="api.conntrackMs" /> con <Measured id="conntrack.api" /> entradas en el RB5009 (2026-09-11). `slow` la pone a `0` salvo que se dé explícitamente                                                                                                                                                                                                                                         |
 | `--counters-every`  | `10s`       | ninguna                 | lee los contadores acumulados de cada puerto (errores por tipo, reparto de fast-path, caídas de enlace, tamaños de trama) con esta frecuencia; `0` nunca                                                                                                                                                                                                                                                                                                                                                                             |
 | `--labels-every`    | `5m`        | ninguna                 | vuelve a leer qué es cada interfaz (etiqueta a partir de su comentario, tipo, listas de interfaces, bridge, MTU); se lee una vez antes del primer tirón del kernel y luego con esta frecuencia; `0` toma el valor por defecto de 5 min                                                                                                                                                                                                                                                                                               |
 | `--no-health`       | `false`     | ninguna                 | se salta `/system/health`. `slow` la activa                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
@@ -484,8 +488,7 @@ preguntan a la fuente de datos qué medidas contiene; si esa pregunta falla,
 avisan y siguen con los valores compilados por defecto. `check` imprime una
 línea por panel (`ok`, `none` para un panel que se sabe vacío, `FAIL`) y sale
 con 1 si falla algún panel. Las variables son `GRAFANA_URL` y `GRAFANA_TOKEN`,
-sin el prefijo `MIKROSCOPE_`. La ayuda general aún describe `dashboards` como "Grafana dashboards
-for InfluxDB 3 and Prometheus"; el código acepta los cinco almacenes de la tabla de arriba.
+sin el prefijo `MIKROSCOPE_`.
 
 ## version
 

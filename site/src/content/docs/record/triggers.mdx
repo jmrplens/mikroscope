@@ -238,11 +238,17 @@ collector's Prometheus exposition, a `trigger` document in Elasticsearch,
 `trigger.<cause>` in Graphite, a `source="trigger"` line in Loki, the
 `mikroscope.trigger.fired{cause}` sum in OTLP, and the line itself in the file sink.
 All five Grafana dashboards carry a `triggers` annotation, off by default in the
-toggle bar, and it works on three of them: on InfluxDB and PostgreSQL it reads the
-`mikroscope_trigger` rows, on Prometheus the collector's
-`mikroscope_trigger_fired_total`. The Elasticsearch and Graphite dashboards carry
-that same PromQL expression against their own datasource, so their `triggers`
-annotation, like their `detections` one, returns nothing. The capture itself stays
+toggle bar, beside a `detections` one that is on, and each reads its own store: on
+InfluxDB and PostgreSQL the `mikroscope_trigger` rows, on Prometheus the collector's
+`mikroscope_trigger_fired_total`. On Elasticsearch it is a Lucene filter,
+`kind:trigger AND host.keyword:$host`, that marks each `trigger` document with its
+`field` as text and its `cause` as tag (`kind:detection`, `message` and `rule` for
+detections). On Graphite it is `aliasByNode($prefix.$host.trigger.*, 3)`, one marker
+per point titled with the cause, with no text, because Graphite holds no string
+(`detection.*` and the rule for detections). Through 1.2.0 both of these dashboards
+carried the Prometheus expression instead and showed nothing. The Elasticsearch and
+Graphite forms are checked only as generated JSON; they have not been run in a real
+Grafana. The capture itself stays
 on the agent, under `/captures/<id>`.
 
 `record` does not recognise the line yet — [Record, mark,

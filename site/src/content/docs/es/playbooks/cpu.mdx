@@ -70,6 +70,21 @@ Antes de concluir nada de un número de CPU, confirma que
 después de que tocara el siguiente tick, y entonces la propia contabilidad del
 muestreador es lo primero de lo que deberías desconfiar.
 
+## Cuando los núcleos no están ocupados pero el kernel sí
+
+La forma contraria llegó sola al RB5009 de referencia, con RouterOS 7.24.4, el 2026-09-23 a
+las 12:08:50 UTC: una integración MikroTik de Home Assistant desató una tormenta de
+despertares. Las interrupciones del temporizador pasaron de unas 2 500 a unas 35 000 por
+segundo, en ráfagas de 20–90 s en un núcleo cada vez, mientras el tiempo de usuario y el
+tráfico seguían planos, y apenas se vio en el propio profile de RouterOS. Las columnas de
+ocupación de arriba no la habrían recogido; la tasa de cambios de contexto, que en ese router
+se movió con las interrupciones del temporizador (r = 1,0), sí. Desactivar la integración el
+2026-09-24 devolvió el temporizador a unas 2 500 por segundo en 30 s. Es un solo evento en un
+solo router, leído del almacén InfluxDB de referencia, y aún no tiene página de lectura propia:
+la regla que la vigila es `mikroscope-wakeup-storm`, en [Reglas de
+alerta](/mikroscope/es/dashboards/alerts/), que compara la tasa de cambios de contexto de los
+últimos diez minutos con las 24 horas anteriores del propio router.
+
 ## La firma
 
 <FaultSignature origin="provoked" date="2026-09-12">

@@ -25,7 +25,7 @@ alert rules generated beside them are on [Alert rules](https://jmrp.io/docs/mikr
   - mikroscope-elasticsearch.json 30 panels, Elasticsearch
   - mikroscope-alerts-influxdb.yaml 14 rules
   - mikroscope-alerts-prometheus.yaml 15 rules
-  - mikroscope-alerts-postgres.yaml 11 rules
+  - mikroscope-alerts-postgres.yaml 10 rules
 
 ```sh
 mikroscope dashboards gen                    # writes the eight files into ./dashboards
@@ -338,8 +338,23 @@ dashboards holds nothing else. Click the layer's name to hide its markers. That 
 it lasts for the session, and saving the dashboard keeps it. Nothing about the underlying rows
 changes, and the Detections section still counts them.
 
-On InfluxDB each annotation is one event row with its message; on Prometheus it is
-`increase(…[1m]) > 0` at a 1-minute step, so an annotation there marks the minute, not the instant.
+Each store draws the layers from what its sink writes, in its own query language:
+
+- **InfluxDB and PostgreSQL**: one `mikroscope_detection` or `mikroscope_trigger` row per marker,
+  with its message.
+- **Prometheus**: `increase(…[1m]) > 0` at a 1-minute step, so a marker there is the minute, not the
+  instant.
+- **Elasticsearch**: a Lucene filter, `kind:detection AND host.keyword:$host` (or `kind:trigger`),
+  over the event documents. A detection's text is its `message` and its tag the `rule`; a trigger
+  document has no message, so its text is the `field` that crossed and its tag the `cause`.
+- **Graphite**: `aliasByNode($prefix.$host.detection.*, 3)` (or `.trigger.*`), the one point per
+  event the sink writes. Grafana draws a marker at every non-null point and titles it with the
+  series name, which is the rule or the cause. There is no message, because Graphite holds only
+  numbers, and the marker is at the time of the point Grafana gets back: Grafana asks for at most
+  100 points, so several events close together can come back as one.
+
+The Elasticsearch and Graphite layers are checked by the unit tests against what each sink writes;
+they have not been run in Grafana, because the import check walks panels only.
 
 The section captures further up are taken with both layers off, because the canned fake agent that
 fills the demonstration database fires a detection every few seconds and twenty minutes of that
@@ -1128,7 +1143,7 @@ compiled in for one router.
 | ---------------------------------------------- | -----------------------------------------------: | -------------- |
 | `dashboards/mikroscope-alerts-influxdb.yaml`   |   14 | InfluxDB 3 SQL |
 | `dashboards/mikroscope-alerts-prometheus.yaml` | 15 | PromQL         |
-| `dashboards/mikroscope-alerts-postgres.yaml`   |   11 | PostgreSQL SQL |
+| `dashboards/mikroscope-alerts-postgres.yaml`   |   10 | PostgreSQL SQL |
 
 The InfluxDB file has one rule fewer because "The sampler is slipping ticks" has no SQL form yet.
 The counter itself does reach InfluxDB since 1.0.5 — the collector reads it from the agent's
@@ -1138,13 +1153,15 @@ The PostgreSQL file is translated from the InfluxDB one, and it also leaves out 
 schema cannot answer in the same shape. `mikroscope-l2-loop` and `mikroscope-port-link-down` sum a
 per-sample count of kernel-log port records, and the SQL sink writes one row per kernel record
 instead, in `mikroscope_event`. `mikroscope-port-errors` names one column per MAC counter, and the
-SQL sink writes `mikroscope_api_ifcounter` one row per counter. The translation drops those rather
-than write a query that looks right and answers something else. It does not drop
-`mikroscope-bridge-port-dark`, which has the same problem: its PostgreSQL form is in the file but
-reads `rx_packet`, `tx_unicast`, `tx_broadcast` and `bridge` as columns of
-`mikroscope_api_ifcounter`, which has none of them, so the query cannot run on that schema and the
-rule's `execErrState: Error` applies. That is a defect in the generator, not yet fixed; it has not
-been run against a real PostgreSQL either.
+SQL sink writes `mikroscope_api_ifcounter` one row per counter. `mikroscope-bridge-port-dark` is
+left out for the same reason: it names `rx_packet`, `tx_unicast` and `tx_broadcast` as columns, and
+reads `bridge`, which that table does not have either. The translation drops those rather than
+write a query that looks right and answers something else. The 1.2.0 file did not drop the
+dark-port rule: it carried a PostgreSQL form that read those four names as columns of
+`mikroscope_api_ifcounter`, which could not run on that schema. The generator now drops it, and a
+unit test checks every column each PostgreSQL alert query reads against the tables the SQL sink
+declares. That test reads the schema, not a database: no PostgreSQL alert query has been run
+against a real PostgreSQL.
 
 Each file is `apiVersion: 1` with one rule group, `mikroscope`, in a folder named `mikroscope`,
 organisation 1, evaluated every minute. The rules are provisioned rather than built into the
@@ -1194,7 +1211,7 @@ The alert rules:
 | `mikroscope-l2-loop` | an own-address record on any port in the last 5 minutes | > 0 | critical | 0s | OK | both |
 | `mikroscope-port-link-down` | a link-down record on any port in the last 5 minutes | > 0 | warning | 0s | OK | both |
 | `mikroscope-port-errors` | any port's MAC counted a typed error — overflow, FCS, collision — for 5 minutes running | > 0 | warning | 5m | OK | both |
-| `mikroscope-bridge-port-dark` | a bridge port received packets while the bridge sent it neither a unicast nor a broadcast frame, for 10 minutes | > 0 | warning | 10m | OK | InfluxDB only |
+| `mikroscope-bridge-port-dark` | a bridge port received packets while the bridge sent it neither a unicast nor a broadcast frame, for 10 minutes | > 0 | warning | 10m | OK | both |
 | `mikroscope-wakeup-storm` | the context-switch rate over the last 10 minutes is more than 4 times its mean over the 24 hours before, for 10 minutes | > 4 | warning | 10m | OK | InfluxDB only |
 | `mikroscope-egress-queue-drops` | any port's own egress queue dropped a packet in every one of the last 10 minutes — sustained congestion, never a single burst | > 0 | warning | 10m | OK | InfluxDB only |
 | `mikroscope-ecc-failure` | the NAND reported an uncorrectable ECC failure in the last hour | > 0 | critical | 0s | OK | InfluxDB only |
@@ -1328,7 +1345,7 @@ Each rule's title, and under it its `summary` annotation, shortened:
   -- mikroscope-detections              (> 0)
   SELECT count(1) AS value FROM mikroscope_detection WHERE time >= now() - interval '5 minutes'
   -- mikroscope-thermal-near-critical   (> 0)
-  SELECT count(1) AS value FROM (SELECT zone, max(celsius) AS c, max(critical_celsius) AS crit FROM mikroscope_thermal WHERE time >= now() - interval '2 minutes' AND critical_celsius IS NOT NULL GROUP BY zone) WHERE c >= 0.85 * crit
+  SELECT count(1) AS value FROM (SELECT zone, max(celsius) AS c, max(critical_celsius) AS crit FROM mikroscope_thermal WHERE time >= now() - interval '2 minutes' AND critical_celsius IS NOT NULL GROUP BY zone) AS zones WHERE c >= 0.85 * crit
   -- mikroscope-conntrack-near-limit    (> 0.8)
   SELECT max(active) * 1.0 / nullif(max("limit"), 0) AS value FROM mikroscope_slab WHERE time >= now() - interval '2 minutes' AND cache = 'nf_conntrack' AND "limit" IS NOT NULL
   -- mikroscope-agent-oom               (> 0)
@@ -1338,7 +1355,7 @@ Each rule's title, and under it its `summary` annotation, shortened:
   -- mikroscope-port-link-down          (> 0)
   SELECT coalesce(sum(count), 0)::BIGINT AS value FROM mikroscope_kmsg WHERE time >= now() - interval '5 minutes' AND kind = 'link-down'
   -- mikroscope-port-errors             (> 0)
-  SELECT coalesce(sum(v), 0)::BIGINT AS value FROM (SELECT interface, greatest(max(rx_overflow) - min(rx_overflow), 0)::BIGINT + greatest(max(rx_fcs_error) - min(rx_fcs_error), 0)::BIGINT + greatest(max(rx_fragment) - min(rx_fragment), 0)::BIGINT + greatest(max(rx_too_short) - min(rx_too_short), 0)::BIGINT + greatest(max(rx_too_long) - min(rx_too_long), 0)::BIGINT + greatest(max(rx_jabber) - min(rx_jabber), 0)::BIGINT + greatest(max(tx_fcs_error) - min(tx_fcs_error), 0)::BIGINT + greatest(max(tx_late_collision) - min(tx_late_collision), 0)::BIGINT + greatest(max(tx_excessive_collision) - min(tx_excessive_collision), 0)::BIGINT AS v FROM mikroscope_api_ifcounters WHERE time >= now() - interval '5 minutes' GROUP BY interface)
+  SELECT coalesce(sum(v), 0)::BIGINT AS value FROM (SELECT interface, greatest(max(rx_overflow) - min(rx_overflow), 0)::BIGINT + greatest(max(rx_fcs_error) - min(rx_fcs_error), 0)::BIGINT + greatest(max(rx_fragment) - min(rx_fragment), 0)::BIGINT + greatest(max(rx_too_short) - min(rx_too_short), 0)::BIGINT + greatest(max(rx_too_long) - min(rx_too_long), 0)::BIGINT + greatest(max(rx_jabber) - min(rx_jabber), 0)::BIGINT + greatest(max(tx_fcs_error) - min(tx_fcs_error), 0)::BIGINT + greatest(max(tx_late_collision) - min(tx_late_collision), 0)::BIGINT + greatest(max(tx_excessive_collision) - min(tx_excessive_collision), 0)::BIGINT AS v FROM mikroscope_api_ifcounters WHERE time >= now() - interval '5 minutes' GROUP BY interface) AS ports
   -- mikroscope-bridge-port-dark        (> 0)
   SELECT count(*)::BIGINT AS value FROM (SELECT interface, max(rx_packet) - min(rx_packet) AS drx, max(tx_unicast) - min(tx_unicast) AS dtu, max(tx_broadcast) - min(tx_broadcast) AS dtb FROM mikroscope_api_ifcounters WHERE time >= now() - interval '10 minutes' AND bridge IS NOT NULL AND bridge <> '' GROUP BY interface) AS ports WHERE drx > 0 AND dtu = 0 AND dtb = 0
   -- mikroscope-wakeup-storm            (> 4)
@@ -1346,7 +1363,7 @@ Each rule's title, and under it its `summary` annotation, shortened:
   -- mikroscope-egress-queue-drops      (> 0)
   SELECT coalesce(max(tx_queue_drops), 0)::BIGINT AS value FROM mikroscope_api_iface WHERE time >= now() - interval '1 minute'
   -- mikroscope-ecc-failure             (> 0)
-  SELECT coalesce(sum(delta), 0)::BIGINT AS value FROM (SELECT max(ecc_failures) - min(ecc_failures) AS delta FROM mikroscope_mtd WHERE time >= now() - interval '1 hour' AND ecc_failures IS NOT NULL GROUP BY "partition")
+  SELECT coalesce(sum(delta), 0)::BIGINT AS value FROM (SELECT max(ecc_failures) - min(ecc_failures) AS delta FROM mikroscope_mtd WHERE time >= now() - interval '1 hour' AND ecc_failures IS NOT NULL GROUP BY "partition") AS parts
   ```
 
 - **PostgreSQL**
@@ -1361,19 +1378,17 @@ Each rule's title, and under it its `summary` annotation, shortened:
   -- mikroscope-detections              (> 0)
   SELECT count(1) AS value FROM mikroscope_detection WHERE time >= now() - interval '5 minutes'
   -- mikroscope-thermal-near-critical   (> 0)
-  SELECT count(1) AS value FROM (SELECT zone, max(celsius) AS c, max(critical_celsius) AS crit FROM mikroscope_thermal WHERE time >= now() - interval '2 minutes' AND critical_celsius IS NOT NULL GROUP BY zone) WHERE c >= 0.85 * crit
+  SELECT count(1) AS value FROM (SELECT zone, max(celsius) AS c, max(critical_celsius) AS crit FROM mikroscope_thermal WHERE time >= now() - interval '2 minutes' AND critical_celsius IS NOT NULL GROUP BY zone) AS zones WHERE c >= 0.85 * crit
   -- mikroscope-conntrack-near-limit    (> 0.8)
   SELECT max(active_objs) * 1.0 / nullif(max("limit_objs"), 0) AS value FROM mikroscope_slab WHERE time >= now() - interval '2 minutes' AND cache = 'nf_conntrack' AND "limit_objs" IS NOT NULL
   -- mikroscope-agent-oom               (> 0)
   SELECT coalesce(sum(oom_kill), 0)::BIGINT AS value FROM mikroscope_self WHERE time >= now() - interval '5 minutes' AND oom_kill IS NOT NULL
-  -- mikroscope-bridge-port-dark        (> 0)
-  SELECT count(*)::BIGINT AS value FROM (SELECT interface, max(rx_packet) - min(rx_packet) AS drx, max(tx_unicast) - min(tx_unicast) AS dtu, max(tx_broadcast) - min(tx_broadcast) AS dtb FROM mikroscope_api_ifcounter WHERE time >= now() - interval '10 minutes' AND bridge IS NOT NULL AND bridge <> '' GROUP BY interface) AS ports WHERE drx > 0 AND dtu = 0 AND dtb = 0
   -- mikroscope-wakeup-storm            (> 4)
   SELECT CASE WHEN base_min >= 720 THEN (now_sum / nullif(now_min * 60.0, 0)) / nullif(base_sum / (base_min * 60.0), 0) ELSE 0.0 END AS value FROM (SELECT sum(CASE WHEN time >= now() - interval '10 minutes' THEN CAST(ctxt AS BIGINT) ELSE 0 END) AS now_sum, count(DISTINCT CASE WHEN time >= now() - interval '10 minutes' THEN date_bin(interval '1 minute', time, TIMESTAMPTZ 'epoch') END) AS now_min, sum(CASE WHEN time < now() - interval '10 minutes' THEN CAST(ctxt AS BIGINT) ELSE 0 END) AS base_sum, count(DISTINCT CASE WHEN time < now() - interval '10 minutes' THEN date_bin(interval '1 minute', time, TIMESTAMPTZ 'epoch') END) AS base_min FROM mikroscope_stat WHERE time >= now() - interval '1450 minutes') AS w
   -- mikroscope-egress-queue-drops      (> 0)
   SELECT coalesce(max(tx_queue_drops), 0)::BIGINT AS value FROM mikroscope_api_iface WHERE time >= now() - interval '1 minute'
   -- mikroscope-ecc-failure             (> 0)
-  SELECT coalesce(sum(delta), 0)::BIGINT AS value FROM (SELECT max(ecc_failures) - min(ecc_failures) AS delta FROM mikroscope_mtd WHERE time >= now() - interval '1 hour' AND ecc_failures IS NOT NULL GROUP BY "partition")
+  SELECT coalesce(sum(delta), 0)::BIGINT AS value FROM (SELECT max(ecc_failures) - min(ecc_failures) AS delta FROM mikroscope_mtd WHERE time >= now() - interval '1 hour' AND ecc_failures IS NOT NULL GROUP BY "partition") AS parts
   ```
 
 ### Where the thresholds come from
@@ -1435,8 +1450,8 @@ sample's packet count was at or below its trailing median. See
   query over a missing metric returns no data — which these rules read as OK.
 - **A collector without the API tier.** The port-error, dark-bridge-port and egress-queue rules read
   RouterOS counters that only the API tier polls. Under `--api-mode off` none of that reaches the
-  store: on Prometheus the three rules read no data, and on PostgreSQL the egress rule reads 0, both
-  of which are OK (the PostgreSQL dark-port rule fails either way; see [The files](https://jmrp.io/docs/mikroscope/dashboards/alerts/#the-files)). On
+  store: on Prometheus the three rules read no data, and on PostgreSQL the egress rule, the only one
+  of the three in that file, reads 0; both are OK. On
   an InfluxDB store that has never held those tables the queries fail and `execErrState: Error`
   applies instead.
 - **Anything while the silent-agent rule fires.** Every rule reads the same stream — including the
@@ -1487,8 +1502,9 @@ record.
 > in a backtest over 2026-09-19 11:13 to 2026-09-23 22:44 UTC that marked only sfp-sfpplus1 and
 > ether2; the wake-up rule's returned 0.94–0.95 on two healthy windows and 35.7 at the storm of
 > 2026-09-23, beside a ratio that never exceeded 1.81 over 551 healthy windows (2026-09-20..23).
-> Their PromQL was checked for syntax only, and their PostgreSQL SQL has not been run at all (the
-> dark-port one cannot run; see [The files](https://jmrp.io/docs/mikroscope/dashboards/alerts/#the-files)). **The Prometheus and PostgreSQL forms**,
+> Their PromQL was checked for syntax only, and the wake-up rule's PostgreSQL SQL has not been run
+> at all (the dark-port rule has no PostgreSQL form; see [The files](https://jmrp.io/docs/mikroscope/dashboards/alerts/#the-files)). **The
+> Prometheus and PostgreSQL forms**,
 > which were not loaded into any Grafana — only the InfluxDB file was. **Notification delivery:**
 > the run configured no contact point, so what was watched is the rule's state, never a message
 > leaving Grafana. **The store-shaped failures**, because this store was not missing anything: the

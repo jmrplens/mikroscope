@@ -368,12 +368,14 @@ equipo de referencia está en
 ## El número de conexiones
 
 `--conntrack-every 10s` pregunta `/ip/firewall/connection/print count-only` con esa
-cadencia: <Measured id="api.conntrackMs" /> con <Measured id="conntrack.api" /> entradas en el RB5009 (hacia el 2026-09-11, un día antes de la lectura del slab; sin más precisión), una sola lectura sin dispersión. Está apagado por
+cadencia: <Measured id="api.conntrackMs" /> con <Measured id="conntrack.api" /> entradas en el RB5009 (el 2026-09-11, el día antes de las lecturas del slab; la hora no consta), una sola lectura sin dispersión. Está apagado por
 defecto porque es un recorrido de tabla sobre una sesión de API, y con `privileged=yes` la
 cuenta slab `nf_conntrack` del agente es la misma población leída de un fichero a la
-cadencia del muestreador. Las dos no coinciden exactamente — se muestrean en instantes
-distintos, y el slab cuenta objetos que el asignador todavía retiene — pero se siguen: la
-API dijo <Measured id="conntrack.api" /> el día antes de que el slab dijera <Measured id="conntrack.slab" />.
+cadencia del muestreador. Las dos no coincidirán exactamente — se muestrean en instantes
+distintos, y el slab cuenta objetos que el asignador todavía retiene. Si se siguen no se ha
+medido: la API dijo <Measured id="conntrack.api" /> el día antes de que el slab del
+agente dijera <Measured id="conntrack.slab" />, lo que muestra el mismo orden de magnitud y nada más. Para
+compararlas en tu propio equipo, pide la cuenta y lee el slab en el mismo minuto.
 
 <NotClaimed>
 	La capa de la API ha funcionado en una sola placa, el RB5009 de referencia. Las cifras de

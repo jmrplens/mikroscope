@@ -21,7 +21,7 @@ answers what one run does, how it keeps up with the agent, which clock each reco
 carries, and what "dropped" means when a destination stops answering.
 
 ```sh
-mikroscope forward --prom :9124 --influx "$MIKROSCOPE_INFLUX_URL" --interfaces bridge,ether1
+mikroscope forward --prom :9124 --influx "$MIKROSCOPE_INFLUX_URL" --influx-db "$MIKROSCOPE_INFLUX_DB" --interfaces bridge,ether1
 ```
 
 `forward` with no sink is an error, not a silent no-op: it would read the router and
@@ -45,9 +45,9 @@ throw the data away. At least one of `--file`, `--prom`, `--influx`, `--loki`,
    stream](/mikroscope/sinks/device-info/).
 
 3. **Pull the ring every `--poll`.** The first pull starts after the agent's newest
-   sample, so `forward` does not replay what the ring held before it started.
-   `forward --help` lists `--from-start`, but `forward` accepts it and ignores it:
-   only `record` backfills the ring. Each pull asks for samples after the last
+   sample, so `forward` does not replay what the ring held before it started: it
+   always starts at the agent's newest sample. `forward` has no `--from-start` and
+   refuses it as an unknown flag; only `record` backfills the ring. Each pull asks for samples after the last
    sequence number seen. A trigger marker rides among the samples in sequence order
    and is forwarded as an annotation, never decoded as a sample.
 
@@ -159,7 +159,7 @@ the collector has to be reachable from the Prometheus host.
 | -------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------ | ----------- | ---------------------------------------------------------------------- |
 | `--file path.jsonl`              | JSONL file                                      | —                                                                        | synchronous | [the file](/mikroscope/sinks/other/#the-file)                          |
 | `--prom :9124`                   | Prometheus `/metrics` on the collector host     | —                                                                        | in memory   | [Prometheus](/mikroscope/sinks/prometheus/)                            |
-| `--influx URL`                   | InfluxDB 3 line protocol                        | `MIKROSCOPE_INFLUX_URL`, `MIKROSCOPE_INFLUX_TOKEN`                       | queued      | [InfluxDB 3](/mikroscope/sinks/influxdb/)                              |
+| `--influx URL`, `--influx-db DB` | InfluxDB 3 line protocol                        | `MIKROSCOPE_INFLUX_URL`, `MIKROSCOPE_INFLUX_DB`, `MIKROSCOPE_INFLUX_TOKEN` | queued      | [InfluxDB 3](/mikroscope/sinks/influxdb/)                              |
 | `--sql path` or `--sql -`        | PostgreSQL / TimescaleDB statements, for `psql` | —                                                                        | synchronous | [SQL](/mikroscope/sinks/other/#sql-for-postgresql-and-timescaledb)     |
 | `--postgres DSN`                 | the same statements, into a running PostgreSQL  | `MIKROSCOPE_POSTGRES_DSN`                                                | queued      | [`--postgres`](/mikroscope/sinks/other/#--postgres-the-same-statements-down-a-connection) |
 | `--stdout lp` or `--stdout json` | standard output                                 | —                                                                        | queued      | [stdout](/mikroscope/sinks/other/#standard-output)                     |
@@ -272,10 +272,16 @@ collector wrote to three sinks at once, and every one reported 0 gaps and 0 drop
 <Provenance of="rates-2026-09-15" />
 
 <NotClaimed>
-	Loki, OTLP, Graphite, Elasticsearch, Telegraf, SQL and stdout have been tested against local
-	receivers that assert the bytes each protocol accepts (development host, amd64, 2026-09-12), not
-	fed from the RB5009 into a running backend. The byte sizes quoted for them on [the other
-	sinks](/mikroscope/sinks/other/) come from test fixtures, not from a device.
+	Loki, OTLP, Graphite, Elasticsearch, OpenSearch, Telegraf, SQL and stdout are tested against
+	local receivers that assert the bytes each protocol accepts (development host, amd64, since
+	2026-09-12). Since 2026-09-17 the docker end-to-end suite also runs the collector, against a
+	canned agent and with the API tier off, into Loki 3, the OpenTelemetry Collector,
+	graphite-statsd, Elasticsearch 9, Telegraf 1.39 over HTTP and PostgreSQL 18 (through `--sql`,
+	and through `--postgres` since that sink landed on 2026-09-21), and reads the data back through
+	each store's own API. None of them has been fed from the RB5009 into a running backend, and
+	OpenSearch, TimescaleDB's hypertables and stdout have never run against a real store. The byte
+	sizes quoted for them on [the other sinks](/mikroscope/sinks/other/) come from test fixtures,
+	not from a device.
 </NotClaimed>
 
 <SeeAlso>

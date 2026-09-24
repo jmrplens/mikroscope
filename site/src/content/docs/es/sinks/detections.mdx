@@ -141,7 +141,7 @@ cualquier cadencia del muestreador.
 
 **Falsos positivos, medidos.** En este equipo el squeeze es el fondo, no un suceso. En el
 RB5009 de referencia `time_squeeze` es 0 en el 87,3 % de las muestras por CPU, 1 en el <Measured id="squeeze.backgroundOne" />,
-2 en el <Measured id="squeeze.backgroundTwo" /> y 3 en el <Measured id="squeeze.atLeastThree" />, mientras que softnet no descartó nada
+2 en el <Measured id="squeeze.backgroundTwo" /> y 3 en el <Measured id="squeeze.exactlyThree" />, mientras que softnet no descartó nada
 en esas mismas 24 h. Una ventana móvil de una distribución que es siete octavos ceros tiene
 un percentil 90 de 1, así que «por encima de p90» lo cumple cualquier 2 — por eso quien
 manda es el suelo y no el percentil. Reejecutada sobre 6 h de muestras almacenadas, con
@@ -273,7 +273,7 @@ Desde 1.2.0, `doctor` a secas lee el anillo del agente en marcha y hace cuatro c
 propias: `layer2-loop`, `stp-churn`, `link-flap` y `softnet-drops`, descritas en [lo que
 muestra el agente en marcha](/mikroscope/es/install/prerequisites/#lo-que-muestra-el-agente-en-marcha).
 No son detecciones: se ejecutan una vez, cuando `doctor` las pide, sobre lo que guarde el
-anillo, 60 s por defecto, y no escriben nada en ningún destino.
+anillo hasta sus 10 000 muestras más recientes, 60 s por defecto, y no escriben nada en ningún destino.
 
 Un nombre se comparte y la regla no. El `link-flap` de `doctor` cuenta solo las caídas de
 enlace, dos o más en un puerto en cualquier punto del anillo; la detección cuenta subidas y

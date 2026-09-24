@@ -5,6 +5,7 @@ description: The architecture, the container package and the device-mode step th
 
 import { Aside, Steps } from "@astrojs/starlight/components";
 import DoctorChecks from "../../../components/DoctorChecks.astro";
+import Measured from "../../../components/Measured.astro";
 import NotClaimed from "../../../components/NotClaimed.astro";
 import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
@@ -114,10 +115,8 @@ checks first unless you pass `--no-doctor`.
 The flash check uses the real tar size under `install`. `doctor` on its own
 assumes a 7 MiB image, so it asks for 18.0 MiB. Twice the image because the tar
 and the root extracted from it are on the disk together until `install` deletes
-the tar; under `install --remote-image` no tar is uploaded, so the check there
-asks for the 4 MiB of headroom alone. `doctor` on its own does not make that
-exception: with `--remote-image` it still assumes the 7 MiB image and asks for
-18.0 MiB. The memory threshold follows `--memory-max`: it asks
+the tar. With `--remote-image` no tar is uploaded, so both `install` and
+`doctor` on its own ask for the 4 MiB of headroom alone. The memory threshold follows `--memory-max`: it asks
 for at least what that flag asks for, which is 64 MiB by default, so
 `--memory-max 128M` on a router with 70 MiB free is caught here rather than by
 a container that will not start.
@@ -190,16 +189,16 @@ health (what the running agent's ring shows now):
 
 The ring is 60 s by default, so this sees what is happening now, not what
 happened this morning; the dashboards and the alert rules read history. It asks
-the agent for at most 10 000 samples, starting from the oldest the ring holds,
-all within the same 3 s: a ring longer than that — more than 1 000 s at 10 Hz,
-more than 100 s at 100 Hz — is read from its oldest end, not its newest. What it
+the agent for at most 10 000 samples, all within the same 3 s: the whole ring
+when it holds no more than that, and otherwise the newest 10 000 — the last
+1 000 s at 10 Hz, the last 100 s at 100 Hz. What it
 looks for, in counts of events a healthy router does not produce rather than
 thresholds tuned to one device:
 
 - **`layer2-loop`**: three or more frames in the window that came back in on a
   port carrying the bridge's own address as their source. The loop on the
-  reference RB5009 (2026-09-12, and again 2026-09-19 to 09-23) repeated it every
-  2.0 s, the STP hello interval — thirty times in a 60 s ring — while every
+  reference RB5009 (2026-09-12, and again 2026-09-19 to 09-23) repeated it
+  every <Measured id="loop.helloGap" />, the STP hello interval — thirty times in a 60 s ring — while every
   RouterOS counter showed the port healthy and STP kept it blocked, sending
   one packet a second, for days.
 - **`stp-churn`**: a port that STP moved to learning at least three more times
@@ -208,8 +207,11 @@ thresholds tuned to one device:
   later (ether7 on the reference RB5009, five link-ups on 2026-09-21); across
   30 days of that router's store, every healthy link-up left learning minus
   forwarding at 0.
-- **`link-flap`**: two or more link-downs on one port, the count the collector's
-  own link-flap marker uses.
+- **`link-flap`**: two or more link-downs on one port anywhere in the
+  samples it reads.
+  The collector's own `link-flap` detection is a different count: link-ups and
+  link-downs together, two or more on one port within 60 s. A cable pulled and
+  plugged back once is a flap there and not here.
 - **`softnet-drops`**: any packet the kernel dropped from its softnet backlog —
   lost inside the router, where no interface counter sees it. Squeezes are not
   counted: a squeeze is the kernel pacing itself.

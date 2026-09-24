@@ -70,6 +70,20 @@ Before you conclude anything from a CPU number, confirm
 after the next tick was due, and the sampler's own accounting is then the first
 thing you should distrust.
 
+## When the cores are not busy but the kernel is
+
+The opposite shape reached the reference RB5009 on its own, on RouterOS 7.24.4, at
+2026-09-23 12:08:50 UTC: a Home Assistant MikroTik integration started a wake-up storm.
+Timer interrupts went from about 2 500 to about 35 000 a second, in bursts of 20–90 s on
+one core at a time, while user time and traffic stayed flat, and it barely showed in
+RouterOS's own profile. The busy columns above would not have caught it; the context-switch
+rate, which on that router moved with the timer interrupts (r = 1.0), did. Disabling the
+integration on 2026-09-24 brought the timer back to about 2 500 a second within 30 s. It
+is one event on one router, read from the InfluxDB reference store, and it has no reading
+page of its own yet: the rule that watches for it is `mikroscope-wakeup-storm` in
+[Alert rules](/mikroscope/dashboards/alerts/), which compares the last ten minutes' context-switch
+rate with the router's own previous 24 hours.
+
 ## The signature
 
 <FaultSignature origin="provoked" date="2026-09-12">

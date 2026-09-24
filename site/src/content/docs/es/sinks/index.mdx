@@ -22,7 +22,7 @@ agente, qué reloj lleva cada registro y qué significa «descartado» cuando un
 deja de responder.
 
 ```sh
-mikroscope forward --prom :9124 --influx "$MIKROSCOPE_INFLUX_URL" --interfaces bridge,ether1
+mikroscope forward --prom :9124 --influx "$MIKROSCOPE_INFLUX_URL" --influx-db "$MIKROSCOPE_INFLUX_DB" --interfaces bridge,ether1
 ```
 
 `forward` sin ningún destino es un error, no algo que no hace nada en silencio: leería
@@ -47,8 +47,9 @@ el router y tiraría los datos. Hace falta al menos uno de `--file`, `--prom`,
 
 3. **Tira del anillo cada `--poll`.** La primera extracción empieza después de la
    muestra más reciente del agente, así que `forward` no reproduce lo que el anillo
-   tenía antes de arrancar. `forward --help` muestra `--from-start`, pero `forward`
-   lo acepta y lo ignora: solo `record` recupera el anillo. Cada extracción pide las
+   tenía antes de arrancar: siempre empieza en la muestra más reciente del agente.
+   `forward` no tiene `--from-start` y lo rechaza como opción desconocida; solo
+   `record` recupera el anillo. Cada extracción pide las
    muestras posteriores al último número de secuencia visto. Un marcador de disparo
    viaja entre las muestras en orden de secuencia y se reenvía como anotación, nunca
    se decodifica como muestra.
@@ -166,7 +167,7 @@ de Prometheus.
 | ------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------------ | ---------- | ----------------------------------------------------------------------- |
 | `--file path.jsonl`             | fichero JSONL                                       | —                                                                        | síncrono   | [el fichero](/mikroscope/es/sinks/other/#el-fichero)                    |
 | `--prom :9124`                  | `/metrics` de Prometheus en la máquina del colector | —                                                                        | en memoria | [Prometheus](/mikroscope/es/sinks/prometheus/)                          |
-| `--influx URL`                  | protocolo de líneas de InfluxDB 3                   | `MIKROSCOPE_INFLUX_URL`, `MIKROSCOPE_INFLUX_TOKEN`                       | en cola    | [InfluxDB 3](/mikroscope/es/sinks/influxdb/)                            |
+| `--influx URL`, `--influx-db DB` | protocolo de líneas de InfluxDB 3                  | `MIKROSCOPE_INFLUX_URL`, `MIKROSCOPE_INFLUX_DB`, `MIKROSCOPE_INFLUX_TOKEN` | en cola    | [InfluxDB 3](/mikroscope/es/sinks/influxdb/)                            |
 | `--sql path` o `--sql -`        | sentencias PostgreSQL / TimescaleDB, para `psql`    | —                                                                        | síncrono   | [SQL](/mikroscope/es/sinks/other/#sql-para-postgresql-y-timescaledb)    |
 | `--postgres DSN`                | las mismas sentencias, a un PostgreSQL en marcha    | `MIKROSCOPE_POSTGRES_DSN`                                                | en cola    | [`--postgres`](/mikroscope/es/sinks/other/#--postgres-las-mismas-sentencias-por-una-conexión) |
 | `--stdout lp` o `--stdout json` | salida estándar                                     | —                                                                        | en cola    | [stdout](/mikroscope/es/sinks/other/#salida-estándar)                   |
@@ -280,11 +281,16 @@ a la vez, y todos informaron de 0 huecos y 0 descartes a 10, 50 y 100 Hz:
 <Provenance of="rates-2026-09-15" />
 
 <NotClaimed>
-	Loki, OTLP, Graphite, Elasticsearch, Telegraf, SQL y stdout se han probado contra receptores
-	locales que comprueban los bytes que acepta cada protocolo (máquina de desarrollo, amd64,
-	2026-09-12), no alimentados desde el RB5009 hacia un backend en marcha. Los tamaños en bytes que
-	se citan para ellos en [los demás destinos](/mikroscope/es/sinks/other/) salen de fixtures de
-	pruebas, no de un equipo.
+	Loki, OTLP, Graphite, Elasticsearch, OpenSearch, Telegraf, SQL y stdout se prueban contra
+	receptores locales que comprueban los bytes que acepta cada protocolo (máquina de desarrollo,
+	amd64, desde el 2026-09-12). Desde el 2026-09-17 la suite de extremo a extremo con docker además
+	ejecuta el colector, contra un agente enlatado y con la capa de la API apagada, hacia Loki 3, el
+	OpenTelemetry Collector, graphite-statsd, Elasticsearch 9, Telegraf 1.39 por HTTP y PostgreSQL 18
+	(con `--sql`, y con `--postgres` desde que ese destino llegó el 2026-09-21), y lee los datos de
+	vuelta por la API de cada almacén. Ninguno se ha alimentado desde el RB5009 hacia un backend en
+	marcha, y OpenSearch, las hypertables de TimescaleDB y stdout nunca se han probado contra un
+	almacén real. Los tamaños en bytes que se citan para ellos en [los demás
+	destinos](/mikroscope/es/sinks/other/) salen de fixtures de pruebas, no de un equipo.
 </NotClaimed>
 
 <SeeAlso>
