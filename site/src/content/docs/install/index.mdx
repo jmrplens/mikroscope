@@ -12,9 +12,8 @@ import SeeAlso from "../../../components/SeeAlso.astro";
 import Verified from "../../../components/Verified.astro";
 
 This page answers two questions: what `mikroscope install` does to your router,
-and how you get the router back. `install` puts the agent image in a container on the router (the 1.0.0 image
-was <Measured id="image.size" />; the current image's size is to be measured on the published 1.2.1
-image); `uninstall` removes it again.
+and how you get the router back. `install` puts the agent image in a container on the router (the
+published 1.2.1 image for arm64 is <Measured id="image.size" />, almost all of it the agent binary); `uninstall` removes it again.
 On <Verified of="export-identical" />, a scripted
 doctor → install → status → upgrade → uninstall round trip
 (`make roundtrip`, which passes `--ephemeral` to doctor, install and upgrade) left

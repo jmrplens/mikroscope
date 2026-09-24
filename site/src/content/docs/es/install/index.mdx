@@ -13,8 +13,8 @@ import Verified from "../../../../components/Verified.astro";
 
 Esta página responde a dos preguntas: qué le hace `mikroscope install` a tu
 router y cómo recuperas el router después. `install` pone la imagen del agente en
-un contenedor del router (la imagen de 1.0.0 medía <Measured id="image.size" />; el tamaño de la
-imagen actual está por medir sobre la imagen publicada de 1.2.1); `uninstall` la vuelve a quitar. En <Verified of="export-identical" />, un ciclo
+un contenedor del router (la
+imagen publicada de 1.2.1 para arm64 mide <Measured id="image.size" />, casi todo el binario del agente); `uninstall` la vuelve a quitar. En <Verified of="export-identical" />, un ciclo
 completo con guion doctor → install → status → upgrade → uninstall
 (`make roundtrip`, que pasa `--ephemeral` a doctor, install y upgrade) dejó el `/export` del router idéntico byte a byte, salvo sus líneas
 de cabecera `#`. Esa ejecución es anterior a 1.1.0, desde la que `uninstall`
