@@ -235,7 +235,7 @@ and the hardware watchdog at `/sys/class/watchdog/watchdog0`.
 
 ### What the release publishes
 
-`VERSION` is **1.2.0**, compiled into both binaries and reported by
+`VERSION` is **1.2.1**, compiled into both binaries and reported by
 `mikroscope version`. Not every number has a release of its own: 1.0.5, 1.0.8
 and 1.0.10 were never tagged, and v1.0.6 was tagged but its release run failed.
 1.0.5's and 1.0.6's changes ship in v1.0.7, 1.0.8's in v1.0.9 and 1.0.10's in
