@@ -289,6 +289,34 @@ groups:
           - refId: C
             datasourceUid: __expr__
             model: {refId: C, type: threshold, expression: B, conditions: [{evaluator: {type: gt, params: [0]}}]}
+      - uid: mikroscope-bridge-port-dark
+        title: "A bridge port is receiving but the bridge sends it nothing"
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          source: mikroscope
+        annotations:
+          summary: "A port that is a member of a bridge has received packets for ten minutes while the bridge delivered it neither a unicast nor a broadcast frame. Whatever is behind it is transmitting and hearing nothing back: STP holds the port discarding, or the bridge learned every host behind it on another path. RouterOS shows the port running and error-free throughout. On the reference RB5009 this was the steady state of a layer-2 loop through a mesh access point: 34 h on sfp-sfpplus1 and then 62 h on ether2 (2026-09-19..23), which carried 12 packets a second in and 1 out until the second path was broken. For most of the first phase the own-address rule had pointed at ether2, the wrong port. EXPECTED TO FIRE on a redundant design: an RSTP alternate port discards on purpose, and so does a port with broadcast-flood=no or horizon set; silence it for that port. Needs the API tier: the port counters are not visible from inside the container."
+        data:
+          - refId: A
+            relativeTimeRange: {from: 600, to: 0}
+            datasourceUid: DS_UID_PLACEHOLDER
+            model:
+              refId: A
+              rawQuery: true
+              editorMode: code
+              format: table
+              dataset: iox
+              rawSql: "SELECT count(*)::BIGINT AS value FROM (SELECT interface, max(rx_packet) - min(rx_packet) AS drx, max(tx_unicast) - min(tx_unicast) AS dtu, max(tx_broadcast) - min(tx_broadcast) AS dtb FROM mikroscope_api_ifcounters WHERE time >= now() - interval '10 minutes' AND bridge IS NOT NULL AND bridge <> '' GROUP BY interface) AS ports WHERE drx > 0 AND dtu = 0 AND dtb = 0"
+          - refId: B
+            datasourceUid: __expr__
+            model: {refId: B, type: reduce, expression: A, reducer: last, settings: {mode: dropNN}}
+          - refId: C
+            datasourceUid: __expr__
+            model: {refId: C, type: threshold, expression: B, conditions: [{evaluator: {type: gt, params: [0]}}]}
       - uid: mikroscope-egress-queue-drops
         title: "A port's egress queue has been dropping every minute for ten minutes"
         condition: C

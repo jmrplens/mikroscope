@@ -124,6 +124,15 @@ El título de cada regla, en inglés como aparece en Grafana, y debajo una tradu
   llenándose más rápido de lo que el chip la drena, y es una firma de microrráfaga y no de carga. Los
   errores de FCS y las colisiones significan otra cosa: cableado, dúplex, un puerto muriéndose.
   Necesita la capa de API: un contador del MAC no se ve desde dentro del contenedor.
+- **A bridge port is receiving but the bridge sends it nothing.** Un puerto miembro de un bridge ha
+  recibido paquetes durante diez minutos mientras el bridge no le entregó ni una trama unicast ni una
+  broadcast. Lo que hay detrás transmite y no recibe nada de vuelta: STP mantiene el puerto
+  descartando, o el bridge aprendió todos los hosts de detrás por otro camino. RouterOS muestra el
+  puerto en marcha y sin errores todo el tiempo. En el RB5009 de referencia fue el estado estable del
+  bucle de capa 2 del 2026-09-19..23: 34 h en sfp-sfpplus1 y después 62 h en ether2. Un backtest sobre
+  esos cuatro días marca esos dos puertos en esos dos tramos y nada más. Se espera que salte en un
+  diseño redundante, donde un puerto alternate de RSTP descarta a propósito, y en un puerto con
+  `broadcast-flood=no` u `horizon`. Necesita la capa de API.
 - **A port's egress queue has been dropping every minute for ten minutes.** La cola de salida de un
   puerto ha descartado paquetes en cada uno de los últimos diez minutos. A diferencia de las demás
   reglas de contador, el contador de esta **sí** debe moverse: descartar es como una cola llena le
