@@ -5,6 +5,7 @@
 #
 #   MIKROSCOPE_SUBNET=172.30.10.0/30   # the /30 `install` was given; the agent is its .2
 #   MIKROSCOPE_TOKEN=                  # only if the install has one
+#   GRAFANA_PASSWORD=admin
 #
 # then `docker compose up -d`. Grafana is on http://localhost:3000.
 #
@@ -13,12 +14,25 @@
 # Prometheus therefore scrapes host.docker.internal, which is the host as seen
 # from a container — on Linux that name needs the extra_hosts line below.
 #
-# `--grafana` is NOT passed here. The collector can describe an InfluxDB or an
-# Elasticsearch datasource from its own write URL, but a Prometheus one is an
-# address it is scraped AT rather than writes to, so Grafana has to be told:
-# pass --grafana-datasource-uid with a datasource you made, or import the
-# dashboard yourself. `mikroscope dashboards import --store prometheus` does
-# the second.
+# THAT PUTS /metrics ON EVERY HOST INTERFACE. --prom=0.0.0.0:9124 on the host's
+# network listens on the LAN too, with no token. Firewall 9124 on the host, or
+# narrow the address to the one host.docker.internal resolves to (host-gateway,
+# docker0's address, 172.17.0.1 unless the daemon was configured otherwise).
+#
+# `--grafana` is NOT passed here. The collector can describe an InfluxDB, an
+# Elasticsearch or a PostgreSQL datasource from the address it writes to, but a
+# Prometheus one is an address it is scraped AT, so Grafana has to be told. All
+# three ways need a service-account token (see compose.influxdb-grafana.yaml):
+#
+#   - add --grafana=http://127.0.0.1:3000 and
+#     --grafana-datasource-url=http://prometheus:9090 to the collector's
+#     command, and GRAFANA_TOKEN: ${GRAFANA_TOKEN:-} to its environment; it
+#     then creates the datasource and publishes the dashboard on start
+#   - or make the datasource yourself (URL http://prometheus:9090) and pass
+#     --grafana with --grafana-datasource-uid naming it
+#   - or make it and import the dashboard yourself: `mikroscope dashboards
+#     import --store prometheus --grafana http://localhost:3000
+#     --datasource-uid <uid>`
 
 name: mikroscope
 
