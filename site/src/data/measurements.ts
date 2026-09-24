@@ -60,9 +60,16 @@ export const RB5009 = {
  * campaigns were measured on: `RB5009.routeros` is what every campaign
  * inherits, and a campaign measured later names its own version. The device
  * is first recorded on 7.24.4 on 2026-09-21 (campaign stream-2026-09-21, and
- * the `uninstall --expose` reading in CHANGELOG [1.1.0]); the upgrade itself
- * is not dated anywhere in the repository. The landing's "has run on" names
- * both, and takes this one from here rather than from a campaign, so the next
+ * the `uninstall --expose` reading in CHANGELOG [1.1.0]). The upgrade itself
+ * was not written down, but it can be bounded: 7.24.4's build-time is
+ * 2026-09-16 11:32:21, and on 2026-09-24 the router reported 7.24.4 with an
+ * uptime of 5d15h49m12s, a boot at about 2026-09-18 22:43 UTC, and the API
+ * tier's uptime in the reference store grows at clock rate from 2026-09-19
+ * 11:13:35 UTC on (src/data/figures/data/*.json). An upgrade needs a reboot,
+ * so the router has run 7.24.4 since that boot at the latest. Campaigns dated
+ * 2026-09-16 to 2026-09-18 still inherit 7.24.2 from `RB5009`; this bound
+ * neither confirms nor refutes that. The landing's "has run on" names both,
+ * and takes this one from here rather than from a campaign, so the next
  * campaign on 7.24.4 cannot change what the sentence says.
  */
 export const RB5009_NOW: { readonly routeros: string } = {
@@ -273,8 +280,12 @@ export const campaigns = {
 	// gives the date, and the rest of the conditions were checked on the
 	// reference device and are written down nowhere that publishes. It predates the PMU, buddyinfo and MTD sources and
 	// the per-source floors.
+	// 7.24.4, not the inherited 7.24.2: the router has not rebooted since
+	// about 2026-09-18 22:43 UTC and ran 7.24.4 when that was read (see
+	// RB5009_NOW), so it ran 7.24.4 all of 2026-09-19.
 	"port-overflow-2026-09-19": {
 		...RB5009,
+		routeros: "7.24.4",
 		date: "2026-09-19",
 		conditions: {
 			en: "ether1, the 2.5 GbE port to the NAS, over 10 s counter intervals; the before figures are the three hours preceding the fix and the after figures the 39 minutes following it, at the same load",
@@ -934,6 +945,68 @@ const fixed = {
 		digits: 0,
 		campaign: "line-size-2026-09-17",
 	},
+	// The trailing mean RouterOS `cpu-load` fits best in the first hour, and the
+	// delay it reaches the API with; sinks/api-tier states the answer from these.
+	"cpuLoad.window1": {
+		kind: "reading",
+		value: 1.0,
+		unit: "s",
+		digits: 1,
+		campaign: "cpu-load-window-2026-09-15",
+	},
+	"cpuLoad.delay1": {
+		kind: "reading",
+		value: 0.6,
+		unit: "s",
+		digits: 1,
+		campaign: "cpu-load-window-2026-09-15",
+	},
+	// Pearson r of that fit against the kernel's busy ratio, over this many 1 Hz
+	// API samples.
+	"cpuLoad.r1": {
+		kind: "reading",
+		value: 0.9825,
+		unit: "",
+		digits: 4,
+		campaign: "cpu-load-window-2026-09-15",
+	},
+	"cpuLoad.samples1": {
+		kind: "reading",
+		value: 3499,
+		unit: "",
+		digits: 0,
+		campaign: "cpu-load-window-2026-09-15",
+	},
+	// The same fit in a second, separate hour: the spread between the two is the
+	// figure's spread.
+	"cpuLoad.window2": {
+		kind: "reading",
+		value: 1.1,
+		unit: "s",
+		digits: 1,
+		campaign: "cpu-load-window-2026-09-15",
+	},
+	"cpuLoad.delay2": {
+		kind: "reading",
+		value: 0.1,
+		unit: "s",
+		digits: 1,
+		campaign: "cpu-load-window-2026-09-15",
+	},
+	"cpuLoad.r2": {
+		kind: "reading",
+		value: 0.9734,
+		unit: "",
+		digits: 4,
+		campaign: "cpu-load-window-2026-09-15",
+	},
+	"cpuLoad.samples2": {
+		kind: "reading",
+		value: 3594,
+		unit: "",
+		digits: 0,
+		campaign: "cpu-load-window-2026-09-15",
+	},
 } satisfies Record<string, Measurement>;
 
 type RunMetric = "cpu" | "rss" | "usPerSample" | "slippedPct";
@@ -979,18 +1052,19 @@ export const isMeasurementId = (id: string): id is MeasurementId =>
 const installDefault = runs.find((r) => r.installDefault);
 if (installDefault === undefined)
 	throw new Error("measurements.ts: no run is the install default");
-// "inside on memory, over on CPU": cost/index.mdx (both locales),
-// src/data/home.ts readout.claim. It was over on both until the 60 s ring and
+// "inside on memory, over on CPU": cost/index.mdx, start/questions.mdx and
+// about/status.mdx (both locales), src/data/home.ts readout.claim, and the
+// README's cost paragraph, which is typed by hand. It was over on both until the 60 s ring and
 // the derived memory limit of 1.0.6, and the assertion that guarded the older
 // sentence is what caught the day the prose stopped being true.
 if (!(installDefault.cpuPct > measurements["budget.cpu"].value)) {
 	throw new Error(
-		"measurements.ts: the install-default run is no longer above the CPU budget; rewrite cost/index.mdx and home.ts, which say it is",
+		"measurements.ts: the install-default run is no longer above the CPU budget; rewrite cost/index.mdx, start/questions.mdx and about/status.mdx (both locales), home.ts and README.md, which say it is",
 	);
 }
 if (!(installDefault.rssMiB <= measurements["budget.rss"].value)) {
 	throw new Error(
-		"measurements.ts: the install-default run no longer fits the memory budget; rewrite cost/index.mdx and home.ts, which say it does",
+		"measurements.ts: the install-default run no longer fits the memory budget; rewrite cost/index.mdx, start/questions.mdx and about/status.mdx (both locales), home.ts and README.md, which say it does",
 	);
 }
 // Every slipped percentage is its own count over its own window. Stated because

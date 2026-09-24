@@ -1,6 +1,6 @@
 ---
 title: El fichero y los demás destinos
-description: El fichero JSONL, la salida estándar, SQL y PostgreSQL, Loki, OTLP, Graphite, Elasticsearch y Telegraf — qué lleva cada uno, cómo entrega y lo que su protocolo no puede prometer.
+description: "El fichero JSONL, stdout, SQL y PostgreSQL, Loki, OTLP, Graphite, Elasticsearch y Telegraf: qué lleva cada destino, cómo entrega y qué no puede prometer."
 ---
 
 import { Aside } from "@astrojs/starlight/components";
@@ -279,8 +279,10 @@ mikroscope forward --loki "$MIKROSCOPE_LOKI_URL" --loki-tenant team-a
 Loki recibe los **eventos** de la línea temporal, no sus muestras. Una muestra es una
 medida y pertenece a un almacén de métricas; 10 Hz de números en un almacén de logs son
 una copia más lenta y más grande. Lo que llega es lo que pasó una vez, en un momento
-conocido. Un token bearer sale de `MIKROSCOPE_LOKI_TOKEN`, y `--loki-tenant`
-(`MIKROSCOPE_LOKI_TENANT`) fija `X-Scope-OrgID` para un Loki multi-tenant.
+conocido, enviado como JSON al [endpoint de push](https://grafana.com/docs/loki/latest/reference/loki-http-api/)
+de Loki, `/loki/api/v1/push`. Un token bearer sale de `MIKROSCOPE_LOKI_TOKEN`, y
+`--loki-tenant` (`MIKROSCOPE_LOKI_TENANT`) fija `X-Scope-OrgID`, la cabecera de la que un
+[Loki multi-tenant](https://grafana.com/docs/loki/latest/operations/multi-tenancy/) lee el tenant.
 
 Los streams llevan tres etiquetas y ninguna más — `host`, `source` y `level` — porque Loki
 indexa las etiquetas y la cardinalidad es un coste:
@@ -338,7 +340,12 @@ mikroscope forward --otlp http://collector:4318/v1/metrics
 `--otlp` envía métricas de OpenTelemetry a un receptor OTLP/HTTP en la codificación JSON,
 una petición por segundo. Un token bearer sale de `MIKROSCOPE_OTLP_TOKEN`. JSON en vez de
 protobuf es una decisión de dependencias: protobuf añadiría un generador de código y un
-runtime, y todo receptor OTLP acepta `application/json` en el mismo endpoint. El recurso
+runtime. La [especificación de OTLP](https://opentelemetry.io/docs/specs/otlp/) dice que
+un servidor SHOULD —debería, no está obligado a— aceptar cargas codificadas en JSON en el
+mismo puerto que el protobuf binario, así que un receptor que solo acepte protobuf la
+cumple al pie de la letra. El único receptor real contra el que se ha ejecutado este
+destino, el OpenTelemetry Collector de la batería de extremo a extremo con docker, acepta
+JSON. El recurso
 lleva `host.name` (la etiqueta de host) y `service.name=mikroscope`; el scope lleva la
 versión del colector.
 
@@ -397,7 +404,8 @@ infinito se descarta. Los registros del log del kernel no se emiten: su sitio so
 OTLP en `/v1/logs`, que este destino no implementa.
 
 Un **éxito parcial** de OTLP — un 2xx cuyo cuerpo rechaza algunos puntos — cuenta como
-escrito y se registra, no se reintenta. El rechazo es determinista (un receptor OTLP de
+escrito y se registra, no se reintenta, que es lo que la especificación de OTLP exige a un
+cliente. El rechazo es determinista (un receptor OTLP de
 Prometheus que rechaza un punto más antiguo que su ventana es el caso habitual), así que el
 mismo lote se rechazaría igual.
 
@@ -415,7 +423,8 @@ núcleos, con su top-K real de interrupciones, renderiza más; no medido.
 mikroscope forward --graphite carbon:2003 --graphite-prefix mikroscope
 ```
 
-`--graphite` (`MIKROSCOPE_GRAPHITE_ADDR`) escribe el protocolo de texto plano de carbon —
+`--graphite` (`MIKROSCOPE_GRAPHITE_ADDR`) escribe el [protocolo de texto
+plano](https://graphite.readthedocs.io/en/latest/feeding-carbon.html) de carbon —
 `path value timestamp`, una línea por valor — sobre una única conexión TCP persistente.
 Graphite no tiene etiquetas, así que cada dimensión es un nodo de ruta bajo
 `<prefix>.<host>.`; `--graphite-prefix` vale `mikroscope` por defecto. En un nodo solo
@@ -481,7 +490,9 @@ mikroscope forward --elastic http://opensearch:9200 --elastic-index 'mikroscope-
 ```
 
 `--elastic` (`MIKROSCOPE_ELASTIC_URL`) escribe a través de la API bulk que comparten los
-dos productos. `/_bulk` se añade a la raíz de un clúster, conservando cualquier query
+dos productos: la de [Elasticsearch](https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-bulk) y la de
+[OpenSearch](https://docs.opensearch.org/latest/api-reference/document-apis/bulk/) aceptan el mismo JSON delimitado por
+saltos de línea. `/_bulk` se añade a la raíz de un clúster, conservando cualquier query
 string. Un `MIKROSCOPE_ELASTIC_AUTH` con `user:password` se envía como autenticación
 básica, y cualquier otra cosa como `Authorization: ApiKey`; las credenciales incrustadas en
 la URL se ocultan en el nombre del destino que se imprime.
@@ -542,7 +553,8 @@ El esquema del endpoint elige el transporte:
 
 - `http://` o `https://` — envía a una entrada `http_listener_v2` o
   `influxdb_v2_listener`. Un `host:port` sin más se interpreta como HTTP, y a un endpoint
-  HTTP sin ruta se le da `/telegraf`, el valor por defecto de `http_listener_v2`: un
+  HTTP sin ruta se le da `/telegraf`, la ruta que da la [configuración de ejemplo de
+  `http_listener_v2`](https://github.com/influxdata/telegraf/blob/master/plugins/inputs/http_listener_v2/README.md): un
   listener responde 404 en `/` y el cuerpo no dice por qué. Un `MIKROSCOPE_TELEGRAF_TOKEN`
   con `user:password` se envía como autenticación básica, y cualquier otra cosa como
   `Authorization: Token …`.

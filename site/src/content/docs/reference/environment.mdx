@@ -9,13 +9,15 @@ import Measured from "../../../components/Measured.astro";
 import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
 import Verified from "../../../components/Verified.astro";
+import Src from "../../../components/Src.astro";
 
 Two programs read environment variables, and they read different ones. The
 **CLI** on your machine reads `MIKROSCOPE_*` variables as flag defaults, plus a
 handful of credentials that have no flag, plus `GRAFANA_URL` and
 `GRAFANA_TOKEN`. The **agent** on the router reads unprefixed variables
 (`RATE_HZ`, `TOKEN` …) from its container envlist, which `install` writes. This
-page lists both, from `cmd/mikroscope/*.go` and `internal/agent/config.go`.
+page lists both, from the Go files in <Src path="cmd/mikroscope/" /> and
+from <Src path="internal/agent/config.go" />.
 
 ## How the CLI reads them
 
@@ -28,7 +30,7 @@ page lists both, from `cmd/mikroscope/*.go` and `internal/agent/config.go`.
   ```
 
 - Quote a URL that holds `&` when it lives in a file you `source`:
-  unquoted, `&` is a shell operator. `.env.example` quotes
+  unquoted, `&` is a shell operator. <Src path=".env.example" /> quotes
   `MIKROSCOPE_INFLUX_URL` for that reason.
 
 Most deployment flags have **no** variable. `--rate`, `--buffer`, `--port`,
@@ -40,7 +42,7 @@ at all. [Commands and flags](/mikroscope/reference/cli/) has every flag.
 
 <ScrollTable label="MIKROSCOPE_* variables for the router and the deployment">
 
-| Variable                  | Flag             | Read by                                               | Default in the code          | Value in `.env.example` |
+| Variable                  | Flag             | Read by                                               | Default in the code          | Value in <Src path=".env.example" /> |
 | ------------------------- | ---------------- | ----------------------------------------------------- | ---------------------------- | ----------------------- |
 | `MIKROSCOPE_ROUTER`       | `--router`       | `doctor`, `install`, `upgrade`, `uninstall`, `status` | none (required)              | set                   |
 | `MIKROSCOPE_SSH_PORT`     | `--ssh-port`     | the same                                              | ssh config                   | `22`                    |
@@ -74,10 +76,10 @@ is the only credential that goes there.
 
 | Variable                  | Flag           | Read by                     | Meaning                                                                                            |
 | ------------------------- | -------------- | --------------------------- | -------------------------------------------------------------------------------------------------- |
-| `MIKROSCOPE_API_ADDR`     | `--api`        | `record`, `mark`, `forward` | RouterOS binary API `host:port`; `.env.example` has `192.168.88.1:8728`                            |
+| `MIKROSCOPE_API_ADDR`     | `--api`        | `record`, `mark`, `forward` | RouterOS binary API `host:port`; <Src path=".env.example" /> has `192.168.88.1:8728`                            |
 | `MIKROSCOPE_API_USER`     | `--api-user`   | `record`, `mark`, `forward` | the dedicated API user                                                                             |
 | `MIKROSCOPE_API_PASSWORD` | none           | `record`, `mark`, `forward` | that user's password; there is deliberately no flag                                                |
-| `MIKROSCOPE_INTERFACES`   | `--interfaces` | `forward`                   | comma-separated interfaces for `monitor-traffic`; `.env.example` has `bridge,ether1` commented out |
+| `MIKROSCOPE_INTERFACES`   | `--interfaces` | `forward`                   | comma-separated interfaces for `monitor-traffic`; <Src path=".env.example" /> has `bridge,ether1` commented out |
 
 </ScrollTable>
 
@@ -101,7 +103,7 @@ user](/mikroscope/security/api-user/) has the policy that user needs.
 | `MIKROSCOPE_GRAPHITE_ADDR` | `--graphite`    | empty               | carbon plaintext `host:port`                                                     |
 | `MIKROSCOPE_ELASTIC_URL`   | `--elastic`     | empty               | Elasticsearch or OpenSearch base URL                                             |
 | `MIKROSCOPE_TELEGRAF_URL`  | `--telegraf`    | empty               | Telegraf listener URL (`http://`, `tcp://` or `udp://`)                          |
-| `MIKROSCOPE_HOST_TAG`      | `--host-tag`    | `router`            | host tag on every point in every sink; `.env.example` has `rb5009` commented out |
+| `MIKROSCOPE_HOST_TAG`      | `--host-tag`    | `router`            | host tag on every point in every sink; <Src path=".env.example" /> has `rb5009` commented out |
 
 </ScrollTable>
 
@@ -132,8 +134,8 @@ is read from the environment only.
 ## Grafana
 
 `dashboards import` and `dashboards check` read `GRAFANA_URL` (the default of
-`--grafana`) and `GRAFANA_TOKEN`. Neither has the `MIKROSCOPE_` prefix.
-`.env.example` carries both, commented out, in its Grafana block.
+`--grafana`) and `GRAFANA_TOKEN`. Neither has the `MIKROSCOPE_` prefix. The
+file <Src path=".env.example" /> carries both, commented out, in its Grafana block.
 
 `forward` has its own `--grafana`, which publishes at start, and its variables
 **do** carry the prefix, because they are collector settings rather than the
@@ -239,7 +241,7 @@ source on) on 2026-09-17, four limits over four windows of about 12 000 samples 
 | 21 MiB         | 2.1×          | 23.5 MiB  | 3 250 µs       | +22 %, and climbing      |
 | 18 MiB         | 1.8×          | 20.4 MiB  | 14 800 µs      | +457 %, worst tick 52 ms |
 
-The rows are the ones the comment on `memLimitRingFactor` in `internal/router/options.go` records.
+The rows are the ones the comment on `memLimitRingFactor` in <Src path="internal/router/options.go" /> records.
 The 2.5× factor `install` derives would be 25 MiB at 300 s; the window measured nearest it was
 24 MiB, and none of the four windows was written down with its spread.
 

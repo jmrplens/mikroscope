@@ -1,6 +1,9 @@
 ---
 title: Lo que necesita el router
-description: La arquitectura, el paquete container y el paso de device-mode que exige una mano en el router, más lo que necesita tu propia máquina, y cómo comprueba `doctor` cada cosa.
+description: RouterOS 7.24 o posterior, el paquete container y un paso de device-mode que exige tocar el router; lo que pide tu máquina y cómo lo comprueba `doctor`.
+head:
+  - tag: title
+    content: "Requisitos del router: RouterOS 7.24+ y device-mode | mikroscope"
 ---
 
 import { Aside, Steps } from "@astrojs/starlight/components";
@@ -18,7 +21,7 @@ comprueba, y lo que necesita la máquina desde la que lo ejecutas.
 imprime la orden exacta o el paso físico para lo que falte.
 
 <Aside type="caution" title="Un paso exige tus manos en el router">
-	`device-mode container=yes` no se puede activar en remoto. Tras la orden, RouterOS espera cinco
+	[`device-mode container=yes`](https://help.mikrotik.com/docs/spaces/ROS/pages/93749258/Device-mode) no se puede activar en remoto. Tras la orden, RouterOS espera cinco
 	minutos a que alguien pulse el botón de reset o el de modo, o haga un ciclo de alimentación del
 	equipo. Ninguna sesión ssh, llamada a la API ni opción de esta herramienta puede dar ese paso.
 	Cuenta con estar junto al router.
@@ -31,14 +34,18 @@ arm64, arm (RouterOS de 32 bits en la línea renovada hEX) o x86_64. Ni MIPS ni
 TILE.
 
 7.24 es el suelo porque el paso del contenedor escribe `privileged=`, un
-atributo que RouterOS añadió en esa versión. `doctor` imprime la versión y no
-comprueba nada contra ella, así que en una 7.x anterior la instalación llega
-hasta el contenedor y falla ahí con el error de RouterOS sobre un parámetro
-`privileged` desconocido —y una escritura que imprime algo cuenta como fallo,
-de modo que la instalación se detiene y se lleva de vuelta el tar que había
-subido—. `--privileged=false` es la forma de pasar, al precio de todo lo que
-oculta el espacio de nombres de usuario del contenedor:
-[Lo que aporta privileged](/mikroscope/es/limits/privileged/) lo enumera.
+atributo que RouterOS [añadió en esa versión](https://download.mikrotik.com/routeros/7.24/CHANGELOG)
+(«container - added ability to run containers in privileged mode»). `doctor`
+imprime la versión y no
+comprueba nada contra ella, así que en una 7.x anterior se espera que la
+instalación llegue hasta el contenedor y falle ahí por un parámetro
+`privileged` desconocido —una escritura que imprime algo cuenta como fallo, de
+modo que la instalación se detendría y se llevaría de vuelta el tar que había
+subido—. Eso sale del código, no de haberlo visto en un router.
+`--privileged=false` no lo evita: cambia el valor que se escribe, no
+que se escriba `privileged=`, así que en una 7.x anterior la salida es
+actualizar a la 7.24. Lo que cambia ese atributo desde la 7.24 está en
+[Lo que aporta privileged](/mikroscope/es/limits/privileged/).
 
 Dile a la CLI cuál con `--arch`: `arm64` (por defecto), `arm` o `amd64`.
 `doctor` la compara con el `architecture-name` del router y, si no coinciden,
@@ -55,10 +62,11 @@ nombra la opción con la que volver a ejecutar.
 
 </ScrollTable>
 
-**El ARM de 32 bits no es una cosa, son dos.** La documentación de contenedores
-de MikroTik dice que los equipos con CPU EN7562CT —la serie hEX Refresh—
-«solo admiten imágenes de contenedor arm32v5», mientras que sus demás placas
-ARM de 32 bits ejecutan un espacio de usuario ARMv7. Un binario ARMv5 funciona
+**El ARM de 32 bits no es una cosa, son dos.** La
+[documentación de contenedores](https://help.mikrotik.com/docs/spaces/ROS/pages/84901929/Container)
+de MikroTik dice que en los equipos con CPU EN7562CT, como el hEX Refresh, «solo se admiten imágenes
+de contenedor arm32v5», mientras que sus demás placas ARM de 32 bits ejecutan
+un espacio de usuario ARMv7. Un binario ARMv5 funciona
 en las dos; uno ARMv7 no arranca en las primeras, y falla con un
 `exec format error` en el registro del contenedor después de una instalación
 correcta. Por eso `--goarm` vale **5** por defecto, que es el nivel que arranca
@@ -103,7 +111,8 @@ MikroTik protege los contenedores tras un paso físico:
 
 Tras tres intentos fallidos el router dice
 `too many unsuccessful attempts … to reset attempt-count` y necesita un ciclo de
-alimentación antes de aceptar otro.
+alimentación, o una pulsación del botón de reset o del de modo, antes de aceptar
+otro.
 
 ## Lo que comprueba doctor
 
@@ -130,10 +139,16 @@ detecta aquí y no en un contenedor que no arranca.
 La comprobación de `registry-url` solo se ejecuta con `--remote-image`, y solo
 cuando la referencia lleva un host de registro. `/container/config` es global al
 equipo y compartido con cualquier otro contenedor que tenga, así que mikroscope
-lee ese ajuste y nunca lo escribe. RouterOS lo trae puesto en
-`https://registry-1.docker.io`, así que la referencia de Docker Hub,
-`--remote-image jmrplens/mikroscope-agent:1.2.0`, no necesita fijar nada ahí en
-un router sin tocar, y la de GHCR es la que exige cambiar antes el ajuste.
+lee ese ajuste y nunca lo escribe. RouterOS lo trae puesto en `https://lscr.io`
+desde la [7.18](https://download.mikrotik.com/routeros/7.18/CHANGELOG), el mismo
+valor por defecto que da la
+[documentación de contenedores](https://help.mikrotik.com/docs/spaces/ROS/pages/84901929/Container)
+de MikroTik, y ese host no es ni Docker Hub ni GHCR. Así que la referencia de Docker Hub,
+`--remote-image jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}`, necesita el ajuste en
+`https://registry-1.docker.io`, que es lo que vale en el RB5009 de referencia, y la de GHCR lo
+necesita en `https://ghcr.io`. La referencia de Docker Hub no nombra ningún host, así que para
+ella esta comprobación no se ejecuta: lee tú el ajuste con `/container/config/print` antes de
+contar con él.
 [Cuatro formas de instalar](/mikroscope/es/install/routes/#un-pull-del-registro)
 tiene la orden para ponerlo a mano.
 
@@ -205,7 +220,7 @@ produce y no en umbrales ajustados a un equipo:
 - **`layer2-loop`**: tres o más tramas en la ventana que volvieron a entrar por
   un puerto con la dirección propia del bridge como origen. El bucle del RB5009
   de referencia (2026-09-12, y otra vez del 2026-09-19 al 09-23) lo repetía
-  cada <Measured id="loop.helloGap" />, el intervalo de hello de STP —treinta veces en un anillo de 60 s—, mientras
+  cada <Measured id="loop.helloGap" />, el intervalo de hello de STP ([valor por defecto de RouterOS](https://help.mikrotik.com/docs/spaces/ROS/pages/21725254/Spanning+Tree+Protocol#SpanningTreeProtocol-Defaultvalues)) —treinta veces en un anillo de 60 s—, mientras
   todos los contadores de RouterOS mostraban el puerto sano y STP lo mantenía
   bloqueado, enviando un paquete por segundo, durante días.
 - **`stp-churn`**: un puerto que STP pasó a learning al menos tres veces más

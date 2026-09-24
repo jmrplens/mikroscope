@@ -12,7 +12,24 @@ on:
       # docs/ is generated from site/, so a hand edit to it is exactly what
       # `pnpm run docs:check` below exists to catch.
       - "docs/**"
+      # The install commands and the status page carry the release number,
+      # read from VERSION at build time (site/src/lib/release.mjs), so a
+      # release commit need touch nothing under site/, and without this line
+      # the published commands would stay a release behind until the next site
+      # change. CHANGELOG.md is read too, for the release date, but its dated
+      # heading is written in the commit that bumps VERSION, and listing it
+      # would redeploy the site for every Unreleased entry.
+      - "VERSION"
   workflow_dispatch:
+    inputs:
+      indexnow_all:
+        description: >-
+          Tell IndexNow about every page in the sitemap, not only the ones
+          this deploy changed. Once, for a site IndexNow has not been told
+          about and only if a deploy's own submission failed; see the
+          "List the pages this deploy changes" step.
+        type: boolean
+        default: false
 
 # One deployment at a time, and never cancel one in flight: a half-deployed
 # Pages site is a broken Pages site.
@@ -34,6 +51,10 @@ jobs:
     # between them. A hung browser must not hold a runner for the six-hour
     # default.
     timeout-minutes: 20
+    # The pages the indexnow job submits once this build is deployed: a JSON
+    # array of URLs, written by the "List the pages this deploy changes" step.
+    outputs:
+      indexnow_urls: ${{ steps.changed.outputs.urls }}
     defaults:
       run:
         working-directory: site
@@ -91,6 +112,8 @@ jobs:
         run: |
           pnpm run contrast:check
           pnpm run i18n:check
+          pnpm run src:check
+          pnpm run readme:check
           pnpm run check
           pnpm run eslint
           pnpm run docs:check
@@ -114,6 +137,7 @@ jobs:
           pnpm run directives:check
           pnpm run twins:check
           pnpm run llms:check
+          pnpm run version:check
 
       # pa11y drives a real browser, and the `pa11y` script points it at
       # Playwright's Chromium. That is a download outside any lockfile, so it is
@@ -147,6 +171,79 @@ jobs:
       - name: Accessibility (pa11y)
         run: pnpm run pa11y
 
+      # Which pages this deploy adds, changes or removes, for the indexnow job.
+      # IndexNow is for changed URLs: its FAQ (indexnow.org/faq) says it "is
+      # not designed for submitting every URL on your site at once", and the
+      # sitemap already lists every page. So each page in the built sitemap is
+      # compared with the one Pages serves now, before this build replaces it:
+      # its Markdown twin byte for byte, which is the page's text with every
+      # figure and version rendered, and its <title> and description tags,
+      # because a `head` title in the frontmatter changes the <title> a result
+      # page shows without touching the twin. Twins are stable between builds:
+      # on 2026-09-24 two builds of one tree wrote all 114 twins byte for byte
+      # alike. The first deploy of the branch that added this step differs
+      # from the live site on every page, because it made each twin's links
+      # absolute, so that deploy submits every URL by itself; the manual
+      # indexnow_all run is needed only if its indexnow job did not get a 200
+      # or 202. A fetch that fails
+      # counts as a change, so an error can add a URL but never lose one, and
+      # so does every page still unread after BUDGET seconds, so a slow or
+      # unreachable live site costs at most that long. Never fatal: the step's
+      # own timeout is a step failure, which continue-on-error absorbs, so it
+      # cannot run the job into its 20 minutes and hold the deploy back; at
+      # worst nothing is submitted.
+      - name: List the pages this deploy changes
+        id: changed
+        continue-on-error: true
+        timeout-minutes: 4
+        env:
+          BASE: https://jmrplens.github.io/mikroscope/
+          ALL: ${{ github.event_name == 'workflow_dispatch' && inputs.indexnow_all }}
+          BUDGET: 120
+        run: |
+          set -u
+          # Every pipeline that may fail ends in `|| true`, so the script reads
+          # the same under the runner's `bash -e` and under pipefail.
+          locs() { grep -oE '<loc>[^<]+</loc>' | sed -E 's#</?loc>##g' | grep -F "$BASE" || true; }
+          shown() { grep -oE '<title>[^<]*</title>|<meta name="description" content="[^"]*"' || true; }
+          built=$(cat dist/sitemap-[0-9]*.xml | locs || true)
+          if [ -z "$built" ]; then
+            echo "::warning title=IndexNow::the built sitemap lists no pages, so nothing will be submitted"
+            exit 0
+          fi
+          changed=""
+          if [ "$ALL" = "true" ]; then
+            changed="$built"
+          else
+            fetch() { curl -fsS --connect-timeout 5 --max-time 10 "$@"; }
+            while IFS= read -r url; do
+              rel="${url#"$BASE"}"
+              if [ "$SECONDS" -lt "$BUDGET" ] &&
+                fetch -o live.md "${url}index.md" &&
+                cmp -s live.md "dist/${rel}index.md" &&
+                [ "$(fetch "$url" | shown || true)" = "$(shown < "dist/${rel}index.html" || true)" ]; then
+                continue
+              fi
+              changed+="$url"$'\n'
+            done <<< "$built"
+            if [ "$SECONDS" -ge "$BUDGET" ]; then
+              echo "::warning title=IndexNow::the live site was slow to answer; pages not compared within ${BUDGET} s count as changed"
+            fi
+            rm -f live.md
+            # A page this build no longer has is a change too: IndexNow takes
+            # removed URLs, and the engine then finds the 404 itself.
+            sitemaps=$(fetch "${BASE}sitemap-index.xml" | grep -oE '<loc>[^<]+</loc>' | sed -E 's#</?loc>##g' || true)
+            live=""
+            while IFS= read -r sitemap; do
+              if [ -n "$sitemap" ]; then live+="$(fetch "$sitemap" | locs || true)"$'\n'; fi
+            done <<< "$sitemaps"
+            changed+="$(comm -13 <(sort -u <<< "$built") <({ grep . <<< "$live" || true; } | sort -u))"
+          fi
+          urls=$({ grep . <<< "$changed" || true; } | sort -u | jq -Rsc 'split("\n") | map(select(length > 0))')
+          echo "urls=$urls" >> "$GITHUB_OUTPUT"
+          echo "$(jq length <<< "$urls") of $(grep -c . <<< "$built") pages to submit to IndexNow after the deploy:"
+          jq -r '.[]' <<< "$urls"
+
       - name: Upload the site
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
@@ -167,3 +264,52 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+
+  # Tells the search engines that take IndexNow which pages this deploy
+  # changed, instead of waiting for them to recrawl the sitemap. One POST to
+  # the global endpoint is shared with every participant; indexnow.org/faq
+  # lists them (Amazon, Bing, Naver, Seznam.cz, Yandex and Yep, read
+  # 2026-09-24). Best effort: the job never fails the run, and a refusal is a
+  # warning in its log.
+  #
+  # The key is not a secret. IndexNow proves that the submitter controls the
+  # host by fetching the key from it, so it is public by design:
+  # https://jmrplens.github.io/dc7e97bcf6a14edea77efc1983e3e751.txt, served by
+  # the jmrplens.github.io repository, the same key that site submits with. A
+  # key file at the root of the host covers every URL on it, /mikroscope/
+  # included (indexnow.org/documentation, "Option 2"). It runs no code from
+  # this repository and needs no token, hence `permissions: {}`.
+  indexnow:
+    name: Tell IndexNow
+    needs: [build, deploy]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    continue-on-error: true
+    permissions: {}
+    steps:
+      - name: Submit the pages this deploy changed
+        env:
+          URLS: ${{ needs.build.outputs.indexnow_urls }}
+          HOST: jmrplens.github.io
+          KEY: dc7e97bcf6a14edea77efc1983e3e751
+        run: |
+          set -u
+          count=$(jq 'length' <<< "${URLS:-[]}" 2>/dev/null || echo 0)
+          if [ "$count" = 0 ]; then
+            echo "No page was added, changed or removed by this deploy; nothing to submit."
+            exit 0
+          fi
+          body=$(jq -nc --arg host "$HOST" --arg key "$KEY" --argjson urls "$URLS" \
+            '{host: $host, key: $key, keyLocation: "https://\($host)/\($key).txt", urlList: $urls}')
+          code=$(curl -sS -o response.txt -w '%{http_code}' --max-time 30 \
+            -H 'Content-Type: application/json; charset=utf-8' \
+            --data "$body" https://api.indexnow.org/indexnow) || code=000
+          # 200 is submitted, 202 is received with the key still being checked;
+          # anything else (400, 403, 422, 429) is in indexnow.org/documentation.
+          case "$code" in
+            200 | 202) echo "IndexNow took $count URL(s): HTTP $code" ;;
+            *)
+              echo "::warning title=IndexNow::HTTP $code for $count URL(s); the deploy stands and the pages wait for the next crawl"
+              if [ -s response.txt ]; then cat response.txt; echo; fi
+              ;;
+          esac

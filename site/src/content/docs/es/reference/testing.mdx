@@ -1,12 +1,13 @@
 ---
 title: Cómo se prueba el proyecto a sí mismo
-description: Las tres capas de pruebas — los bytes que cada destino pone en el cable, si un almacén real los acepta y si las consultas de los propios paneles responden —, qué demuestra cada una, qué no demuestra ninguna y la orden de cada una.
+description: "Tres capas de pruebas: los bytes de cada destino, si un almacén real los acepta, si responden los paneles; qué prueba cada una y qué no prueba ninguna."
 ---
 
 import { Aside } from "@astrojs/starlight/components";
 import NotClaimed from "../../../../components/NotClaimed.astro";
 import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
+import Src from "../../../../components/Src.astro";
 
 Un destino puede equivocarse en tres sitios, y cada uno pide una prueba
 distinta. Puede codificar los bytes equivocados. Puede codificar bytes que un
@@ -28,7 +29,7 @@ El proyecto tiene por eso tres capas, y son tres órdenes.
 
 Ninguna de las tres toca un router. Las capas 1 y 2 ejecutan el colector contra
 un agente simulado que sirve muestras enlatadas, y la capa 1 ejecuta además el
-binario real del agente contra `testdata/proc/rb5009`, un árbol `/proc` y
+binario real del agente contra <Src path="testdata/proc/rb5009/" />, un árbol `/proc` y
 `/sys` capturado del equipo de referencia. Eso es lo que hace que una ejecución
 sea reproducible en cualquier máquina, y lo que deja al router fuera del bucle.
 

@@ -1,6 +1,9 @@
 ---
 title: El colector
-description: Lo que hace `mikroscope forward` entre el agente y tus almacenes — extraer, fusionar, derivar, repartir — y lo que promete cuando un almacén va lento.
+description: Cómo lleva forward la telemetría de kernel de MikroTik RouterOS a once destinos (extraer, fusionar, derivar, repartir) y qué descarta con un almacén lento.
+head:
+  - tag: title
+    content: El colector de telemetría de MikroTik RouterOS | mikroscope
 ---
 
 import { Aside, Steps } from "@astrojs/starlight/components";
@@ -14,10 +17,10 @@ import SeeAlso from "../../../../components/SeeAlso.astro";
 
 <Figure name="data-path" />
 
-`mikroscope forward` es el colector. Tira de la capa del kernel del agente, muestrea
-la capa de la API de RouterOS, marca las dos con el reloj del agente, pasa la etapa
-de derivación sobre ellas y escribe la línea temporal fusionada en cada destino que
-indiques. Esta página responde a qué hace una ejecución, cómo sigue el ritmo del
+`mikroscope forward` es el colector. Tira de la capa del kernel del agente en el
+router MikroTik, muestrea la capa de la API de RouterOS, marca las dos con el reloj
+del agente, pasa la etapa de derivación sobre ellas y escribe la línea temporal
+fusionada en cada destino que indiques. Esta página responde a qué hace una ejecución, cómo sigue el ritmo del
 agente, qué reloj lleva cada registro y qué significa «descartado» cuando un destino
 deja de responder.
 

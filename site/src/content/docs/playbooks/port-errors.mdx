@@ -1,9 +1,13 @@
 ---
 title: A port losing frames
-description: The Overview tile went red — how to go from one number to which port, which error and whether it is load or a burst, using the case that took the reference router's NAS link from 0.5 % of packets lost to none.
+description: "A MikroTik port counting rx-overflow: telling a load from a microburst with the port counters, what did not fix it, and the sender pacing that did."
+head:
+  - tag: title
+    content: "MikroTik port rx-overflow: load or microburst? | mikroscope"
 ---
 
 import FaultSignature from "../../../components/FaultSignature.astro";
+import Figure from "../../../components/Figure.astro";
 import Measured from "../../../components/Measured.astro";
 import NotClaimed from "../../../components/NotClaimed.astro";
 import Provenance from "../../../components/Provenance.astro";
@@ -18,6 +22,14 @@ The whole page is one real fault on the reference RB5009, found on 2026-09-19
 and fixed the same afternoon.
 
 <Provenance of="port-overflow-2026-09-19" />
+
+**In short:** an `rx-overflow` on one port whose overflowing intervals carry a
+small fraction of the link's capacity is a burst, not a load. Here it was a
+2.5 Gbit/s sender bursting into a 1 Gbit/s port, with the overflowing intervals
+at <Measured id="overflow.occupancy" /> of the link. A smaller MTU and Ethernet
+flow control both failed to stop it; pacing the sender below what the slowest
+destination can drain did, from <Measured id="overflow.perHourBefore" /> overflows
+an hour to none in the 39 minutes measured.
 
 ## From the tile to the port
 
@@ -110,6 +122,15 @@ The result on the reference device, at the same traffic volume: the overflow
 went from 1 054–3 681 per 20 minutes to **0**, and `ether4`'s `tx-queue-drop`
 to 0 with it. The cost was nothing measurable — the highest second of egress
 observed was 70 Mbit/s against a 900 Mbit cap.
+
+The reference InfluxDB store kept counting past the 39 minutes those figures
+cover. Over the rest of that day, `ether1`'s overflow stopped in the ten minutes
+to 15:30 UTC, stayed at zero for two hours and then came back a few at a time, at
+much the same received rate. Whether the shaper stayed in place for the rest of
+the day was not recorded, so those hours say nothing either way about whether it
+holds.
+
+<Figure name="port-overflow-2026-09-19" />
 
 ## The signature
 

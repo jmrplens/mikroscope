@@ -1,6 +1,9 @@
 ---
 title: Five minutes with a router
-description: Get the CLI, install the agent, record a window while you change something, add the router’s own log as markers, and draw the chart — with a real recording from an RB5009.
+description: A real RB5009 recording read line by line, and the five steps that make one — get the CLI, install the agent, record, add the router’s log, plot.
+head:
+  - tag: title
+    content: Five minutes with a MikroTik router | mikroscope
 ---
 
 import { Aside, Steps } from "@astrojs/starlight/components";
@@ -8,7 +11,9 @@ import Measured from "../../../components/Measured.astro";
 import NotClaimed from "../../../components/NotClaimed.astro";
 import Provenance from "../../../components/Provenance.astro";
 import RouterWrites from "../../../components/RouterWrites.astro";
+import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
+import Src from "../../../components/Src.astro";
 import Verified from "../../../components/Verified.astro";
 import walkthrough from "../../../assets/walkthrough/rb5009-walkthrough.svg";
 
@@ -20,25 +25,42 @@ read line by line.
 
 ## Before you start
 
-The router needs what the tool cannot give it: RouterOS 7.24 or later with the `container` package
-and `device-mode container=yes`, which MikroTik gates behind a reset-button press or a power cycle.
-7.24 is the floor because the container step writes `privileged=`, an attribute MikroTik added in
-that release; `--privileged=false` changes its value, not whether it is written, so an older 7.x
-rejects the command either way. Everything on this page was measured on 7.24.2. `doctor` reports
+The router needs what the tool cannot give it: RouterOS 7.24 or later with the
+[`container` package](https://help.mikrotik.com/docs/spaces/ROS/pages/84901929/Container) and
+[`device-mode container=yes`](https://help.mikrotik.com/docs/spaces/ROS/pages/93749258/Device-mode),
+which MikroTik gates behind a reset-button press or a power cycle. 7.24 is the floor because the
+container step writes `privileged=`, an attribute MikroTik
+[added in that release](https://download.mikrotik.com/routeros/7.24/CHANGELOG);
+`--privileged=false` changes its value, not whether it is written, so an older 7.x
+is expected to reject the command either way (read from the code; not tried on a router). Everything on this page was measured on 7.24.2. `doctor` reports
 the router's version in its first line but does not gate on it.
 [What the router needs](/mikroscope/install/prerequisites/) has the whole list, and
 `mikroscope doctor` checks the rest read-only and names the fix for anything missing.
 
-The CLI does not read `.env` itself, and only some flags take their default from a
-`MIKROSCOPE_*` variable: the connection and naming ones (`ROUTER`, `SSH_PORT`, `SSH_KEY`, `NAME`,
-`VETH`, `SUBNET`, `IFACE_LIST`, `ADDR_LIST`, `DISK`, `ARCH`, `TOKEN`, `LAN_ADDRESS`), the image
-source (`AGENT_TAR`, `REMOTE_IMAGE`), the API ones (`API_ADDR`, `API_USER`, `API_PASSWORD`), the
-sink URLs such as `INFLUX_URL`, `INTERFACES`, `HOST_TAG` and the `GRAFANA_*` settings of step 7.
-`GRAFANA_TOKEN` is read under that exact name, without the prefix. The rest, among them
-`--ephemeral`, `--rate`, `--for`, `--topics` and `--prom`, have plain defaults, whatever the CLI's
-usage text says. Export the variables you need, or copy
-`.env.example` to `.env` and source it with `set -a; . ./.env; set +a`;
-[environment variables](/mikroscope/reference/environment/) lists every one.
+The commands on this page need six environment variables:
+
+<ScrollTable label="The six environment variables the commands on this page need">
+
+| Variable                  | Flag         | Read in                            |
+| ------------------------- | ------------ | ---------------------------------- |
+| `MIKROSCOPE_ROUTER`       | `--router`   | step 2, and the removal at the end |
+| `MIKROSCOPE_API_ADDR`     | `--api`      | steps 4, 6 and 7                   |
+| `MIKROSCOPE_API_USER`     | `--api-user` | steps 4, 6 and 7                   |
+| `MIKROSCOPE_API_PASSWORD` | none         | steps 4, 6 and 7                   |
+| `MIKROSCOPE_INFLUX_URL`   | `--influx`   | step 6                             |
+| `GRAFANA_TOKEN`           | none         | step 7, and the removal at the end |
+
+</ScrollTable>
+
+A variable with a flag only sets that flag's default, and the flag on the command line wins; the
+two with none are credentials, which the CLI reads from the environment only so they stay out of
+`ps` and your shell history. `GRAFANA_TOKEN` is read under that exact name, without the prefix.
+The CLI never reads `.env` itself: export the variables, or copy <Src path=".env.example" /> to
+`.env` and source it with `set -a; . ./.env; set +a`. The same commands also read other
+`MIKROSCOPE_*` variables whenever they are set, `MIKROSCOPE_TOKEN` and `MIKROSCOPE_SUBNET` among
+them. Most flags have no variable at all —
+`--ephemeral`, `--rate`, `--for`, `--topics` and `--prom` among them — and
+[environment variables](/mikroscope/reference/environment/) lists every one that does.
 
 ## The path
 
@@ -56,7 +78,7 @@ usage text says. Export the variables you need, or copy
    time, for a machine where `curl | bash` is not something to type:
 
    ```sh wrap
-   tar xzf mikroscope_1.2.0_linux_x86_64.tar.gz   # a .zip on Windows
+   tar xzf mikroscope_{{MIKROSCOPE_VERSION}}_linux_x86_64.tar.gz   # a .zip on Windows
    ./mikroscope version
    ```
 
@@ -66,8 +88,8 @@ usage text says. Export the variables you need, or copy
    travels separately, as four image tars, one per architecture
    (`mikroscope-agent-amd64.tar`, `-arm64`, `-armv5`, `-armv7` — 32-bit ARM was split in two in
    1.0.2, and the wrong tar is an `exec format error`) and as a registry image, published both as
-   `jmrplens/mikroscope-agent:1.2.0` on Docker Hub and as
-   `ghcr.io/jmrplens/mikroscope-agent:1.2.0` on GHCR; step 2 takes one of the two.
+   `jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}` on Docker Hub and as
+   `ghcr.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}` on GHCR; step 2 takes one of the two.
 
    From a checkout instead:
 
@@ -109,12 +131,16 @@ usage text says. Export the variables you need, or copy
      checkout. The CLI reads the tar before it uploads it — it has to be a mikroscope agent image
      and its architecture has to match `--arch`, or the verb stops and names the asset to download
      instead;
-   - **the registry**, `--remote-image jmrplens/mikroscope-agent:1.2.0`: the router pulls the image
+   - **the registry**, `--remote-image jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}`: the router pulls the image
      itself, nothing is uploaded, and `uninstall` has no file to account for. RouterOS takes the
      registry host from the global `/container/config registry-url`, which mikroscope never writes
-     because every container on the device shares it, and which ships as
-     `https://registry-1.docker.io` — so the Docker Hub reference above runs on a stock router as
-     it stands. The GHCR reference, `ghcr.io/jmrplens/mikroscope-agent:1.2.0`, names a host of its
+     because every container on the device shares it. On the RB5009 it reads
+     `https://registry-1.docker.io`, and the Docker Hub reference above pulled from there as it
+     stood. RouterOS itself has shipped it as `https://lscr.io` since
+     [7.18](https://download.mikrotik.com/routeros/7.18/CHANGELOG), which is neither of the two
+     registries the image is published on, and `doctor` does not check it for a reference with no
+     host: on a router nobody has pointed at Docker Hub, set it to `https://registry-1.docker.io`
+     first, or take the tar. The GHCR reference, `ghcr.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}`, names a host of its
      own: `doctor` checks the setting against it and prints
      `/container/config/set registry-url=https://ghcr.io` when it does not match, or points at
      `--agent-tar`. Since 1.2.0 it also prints `WARN` when `/container/config` holds a registry
@@ -128,7 +154,7 @@ usage text says. Export the variables you need, or copy
    if they differ.
 
    On a router you only reach through WinBox or WebFig, there is a fourth way with no CLI on your
-   side at all: `mikroscope plan --rsc --remote-image jmrplens/mikroscope-agent:1.2.0 --out install.rsc`
+   side at all: `mikroscope plan --rsc --remote-image jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}} --out install.rsc`
    writes the same commands, in the same order and with the same tags, as a RouterOS script to
    paste into the terminal or `/import`. [Installing the agent](/mikroscope/install/) has that path
    and its two caveats in full.
@@ -146,8 +172,8 @@ usage text says. Export the variables you need, or copy
      direct transport ok: agent 1.0.0 (9ddd760) built 2026-09-16T08:38:27Z, 10 Hz, seq 29, 0 slipped, 7ms round trip
    ```
 
-   The first field is the agent's build identity: the version, which a release stamps from the
-   `VERSION` file, then the commit and the build date. An unstamped `go build` inside a checkout
+   The first field is the agent's build identity: the version, which a release stamps from the <Src path="VERSION" />
+   file, then the commit and the build date. An unstamped `go build` inside a checkout
    reports that same version with the commit and time the Go toolchain records, so the field is
    never `dev` and never a bare hash. An agent from the tar or the registry reports what the
    release build stamped into it; an agent `install` built from your tree carries the CLI's own

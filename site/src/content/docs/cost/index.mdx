@@ -1,6 +1,9 @@
 ---
 title: The cost of the observer
-description: What the agent costs on an RB5009, measured from its own cgroup, and how to measure it on a device that is not this one.
+description: What the agent costs a MikroTik RB5009 at 10 to 100 Hz, measured from its own cgroup, and how to measure it on a device that is not this one.
+head:
+  - tag: title
+    content: The cost of the observer on a MikroTik RB5009 | mikroscope
 ---
 
 import { Aside } from "@astrojs/starlight/components";
@@ -8,9 +11,15 @@ import Measured from "../../../components/Measured.astro";
 import Provenance from "../../../components/Provenance.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
 
+At the install default — 10 Hz, the default per-source floors, a 60 s ring — the agent costs a
+MikroTik RB5009 **<Measured id="run.10hz.cpu" /> of one core and <Measured id="run.10hz.rss" /> RSS**,
+read from its own cgroup:
+
+<Provenance of="rates-2026-09-18" />
+
 An observer that costs 20 % of the thing it observes is not measuring the
-router, it is measuring itself. So this number is a first-class result here, not
-a footnote: it is reported by the agent on every sample, and the image-size budget is asserted in CI.
+router, it is measuring itself. So that number is a first-class result here, not
+a footnote: the agent reports it on every sample, and CI asserts the image-size budget.
 
 ## The budget, and what it actually costs
 
@@ -19,13 +28,7 @@ The budget is **≤ <Measured id="budget.cpu" /> of one core, ≤ <Measured id
 the release asset on 2026-09-24); the 1.0.0 image was <Measured id="image.size.v100" />, the figure
 that release's notes give. The other two
 depend on the rate and on how much you ask it to read, and the honest answer is a table rather than
-a number.
-
-At the install default — 10 Hz, default per-source floors, a 60 s ring — the agent costs
-**<Measured id="run.10hz.cpu" /> of one core and <Measured id="run.10hz.rss" /> RSS**, from its own
-cgroup:
-
-<Provenance of="rates-2026-09-18" />
+a number: [the rate ceiling](/mikroscope/cost/rate-ceiling/) is that table.
 
 **The memory is inside the budget and the CPU is not.** <Measured id="run.10hz.rss" /> against
 the <Measured id="budget.rss" /> the budget asks for, and <Measured id="run.10hz.cpu" /> against

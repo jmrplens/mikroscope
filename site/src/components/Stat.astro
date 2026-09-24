@@ -15,6 +15,7 @@
  * catches a count that grew past the table.
  */
 import stats from "../data/stats.json";
+import { numberWord } from "../lib/format";
 import { langOf } from "../lib/lang";
 
 /** The keys of stats.json whose value is a count. */
@@ -39,21 +40,8 @@ if (typeof value !== "number") {
 	);
 }
 
-const WORDS: Record<string, readonly string[]> = {
-	en: [
-		"zero", "one", "two", "three", "four", "five", "six", "seven", "eight",
-		"nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen",
-		"sixteen", "seventeen", "eighteen", "nineteen", "twenty",
-	],
-	es: [
-		"cero", "uno", "dos", "tres", "cuatro", "cinco", "seis", "siete", "ocho",
-		"nueve", "diez", "once", "doce", "trece", "catorce", "quince",
-		"dieciséis", "diecisiete", "dieciocho", "diecinueve", "veinte",
-	],
-};
-
 const lang = langOf(Astro.locals.starlightRoute) === "es" ? "es" : "en";
-const word = WORDS[lang][value];
+const word = numberWord(value, lang);
 const text = as === "word" && word ? word : String(value);
 ---
 

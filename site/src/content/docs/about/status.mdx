@@ -1,6 +1,9 @@
 ---
 title: Where the project stands
-description: What works end to end, what it costs on the one device it has run on, what was found and not fixed, and what the release publishes.
+description: What works end to end on a MikroTik RB5009, what the agent costs there, what was found and not fixed, and what each release publishes.
+head:
+  - tag: title
+    content: "Project status: what works on MikroTik RouterOS | mikroscope"
 ---
 
 import DashboardCount from "../../../components/DashboardCount.astro";
@@ -10,139 +13,199 @@ import Provenance from "../../../components/Provenance.astro";
 import RunsTable from "../../../components/RunsTable.astro";
 import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
+import Src from "../../../components/Src.astro";
+import Version from "../../../components/Version.astro";
 
-This page answers what a reader deciding whether to try mikroscope needs first:
-which parts work end to end, on what hardware that was shown, what the
-observer costs today, which defects are known and still open, and whether
-there is anything to download. It is checked against the code as of 2026-09-24 (1.2.0).
+This page answers what a reader deciding whether to try mikroscope, the kernel telemetry agent and
+collector for MikroTik RouterOS, needs first: which parts work end to end, on what hardware that
+was shown, what the observer costs today, which defects are known and still open, and whether
+there is anything to download. It was checked against the code at 1.2.0 on 2026-09-24, and what
+1.2.1 and 1.2.2 changed was checked against the code at 1.2.2 the same day; the current release
+is <Version link />.
 
 ## What works end to end
 
 Everything below except the test suites, the eight sinks and the alert-rule forms
 marked as such has run against the reference RB5009 (RouterOS 7.24.2, and 7.24.4
-where it says so), not only against fakes:
+where it says so), not only against fakes. That RB5009 is the production router
+of the project's maintainer, José Manuel Requena Plens, whom the rest of this page
+calls the owner. Each part below opens with its verdict and the date behind it,
+and then gives the evidence.
 
-- **The agent** reads the shared kernel's `/proc`, `/sys`, `/dev/kmsg` and
-  `perf_event_open` counters on a fixed ticker at 1 to 100 Hz (10 Hz by
-  default; 10, 20, 50 and 100 Hz measured), keeps the samples in a ring, and
-  serves them: `/healthz`, `/capabilities`, `/snapshot`, `/stream`, `/sampler`,
-  and the triggered-capture endpoints `/captures` and `/capture`. It serves no
-  `/metrics`: since 1.0.5 the exposition is the collector's alone.
-- **The deployment CLI** installs, upgrades and removes it — `doctor`, `plan`,
-  `install`, `status`, `upgrade`, `uninstall` — with every write listed before
-  it happens and every removal verified by ownership counts. On 2026-09-12,
-  `doctor` → `install` → `status` → `upgrade` → `uninstall` left the router's
-  `/export` byte-identical, compared by hash in memory and never written to
-  disk. The agent answered 3 s after install, at a 5–7 ms round trip. On
-  2026-09-17 all four install routes were run against the same device, one
-  after another and each removed before the next: the checkout build, the
-  published agent tar, the router's own pull from Docker Hub, and the
-  `plan --rsc` script imported on the router with no CLI in the install itself.
-  The agent answered in every one, and the `/export` after the four was
-  byte-identical to the one before them. Since 1.2.0 standalone `doctor` also
-  pulls the running agent's ring once and names four faults RouterOS's own
-  tools do not show — a layer-2 loop, STP churn, a link flap and softnet drops —
-  and reports an agent that does not answer within 3 s and skips it; its
-  findings never change the exit status. It also carries two `WARN` checks, which change
-  neither its exit status nor whether `install` proceeds: with
-  `--remote-image`, a `/container/config` username set while the pull goes
-  anywhere but Docker Hub, and an install of the same `--name` published on the
-  LAN with no `TOKEN` in its environment. It reads whether a username is set
-  and how many `TOKEN` entries exist, never a value. Where each ran is under
-  [One device, two RouterOS versions](#one-device-two-routeros-versions).
-- **`record`, `mark` and `plot`** work end to end. A 60 s recording at 10 Hz on
-  2026-09-12 yielded exactly 600 samples, 0 gaps and −7 ms of clock skew.
-- **`forward`**, the collector, merges the kernel tier with the RouterOS API
-  tier and writes to eleven sinks. File, Prometheus and InfluxDB 3 have run from
-  the RB5009; Loki, OTLP, Graphite, Elasticsearch, SQL, PostgreSQL, Telegraf
-  and stdout have not yet had router samples pushed through them, but every one of them
-  now writes into the real product — InfluxDB 3, PostgreSQL, Elasticsearch,
-  Graphite, Loki, an OpenTelemetry Collector, Telegraf and Prometheus in
-  containers — and the suite reads each one back through its own API
-  (2026-09-16). Its derive stage adds derived values and detection events
-  beside the raw rows, and it emits a device-info stream once per capability
-  hash.
-- **Five Grafana dashboards**, one per store — InfluxDB 3, Prometheus,
-  PostgreSQL, Graphite and Elasticsearch — generated from one panel list, with
-  alert rules for the three whose query language the rules are written in. The
-  two SQL stores are asked the same question in two dialects: the PostgreSQL
-  panels are the InfluxDB ones rewritten, and every one of its 216 queries is
-  planned by a real PostgreSQL in the container suite. Graphite and
-  Elasticsearch carry fewer panels on purpose (<DashboardCount store="graphite" of="panels" /> and <DashboardCount store="elasticsearch" of="panels" /> against <DashboardCount store="influxdb" of="panels" />): Graphite
-  has no labels and Elasticsearch no nested documents, so what they cannot
-  express is absent rather than wrong. All five are imported into a real
-  Grafana over the stores the suite filled, and every panel is asked: on
-  2026-09-17, 57, 98, 136, 35 and 28 panels returned data and none failed.
-  On 2026-09-16, in Grafana 13.2.1, against the RB5009 with
-  the default triggers and a 30-minute `forward` into both stores,
-  `dashboards check` passed the 171 InfluxDB panels the dashboard had then (0 failing, 10 known-empty
-  tolerated) and 133 Prometheus panels (0 failing, 9 known-empty tolerated).
-  The headless row-by-row render walk of both dashboards — 0 error badges, 0
-  "No data" — is from 2026-09-15 and covers 168 and 130 panels; it has not been
-  repeated for the two port-event panels and the interface-inventory table it
-  does not cover. A walk on 2026-09-14, against a 10.5 h capture from the same
-  device, rendered 140 InfluxDB panels with the same result. The 1.2.0 layout
-  changes — stat numbers at a fixed 32 px, memory in use as a time series —
-  were checked on 2026-09-24 by importing the InfluxDB dashboard into the
-  owner's Grafana and capturing it at 390x844 and 1600x1000; the other four
-  dashboards were not captured.
-- **The alert rules** number <DashboardCount store="influxdb" of="rules" /> for
-  InfluxDB 3, <DashboardCount store="prometheus" of="rules" /> for Prometheus
-  and <DashboardCount store="postgres" of="rules" /> for PostgreSQL. On
-  2026-09-21 the twelve InfluxDB rules of that date were loaded into Grafana
-  13.2.1 against the owner's store and watched evaluate, which found seven that
-  could never fire; after the 1.1.0 fix all twelve returned a value. The two
-  rules 1.2.0 added were backtested in SQL on the InfluxDB 3 reference store:
-  `mikroscope-bridge-port-dark` marks sfp-sfpplus1 in 204 ten-minute bins and
-  ether2 in 376 between 2026-09-19 11:13 and 2026-09-23 22:44 UTC, the two
-  phases of that week's layer-2 loop, and no other port;
-  `mikroscope-wakeup-storm` never exceeded 1.81 over 551 healthy ten-minute
-  windows (2026-09-20..23) and opened at 35.7 on the wake-up storm of
-  2026-09-23. The PromQL forms of both were checked for syntax only, since that
-  store holds no history here, and their PostgreSQL forms have no recorded run
-  against data.
-- **`forward --grafana`** reconciles a datasource and a dashboard per store the
-  collector writes to, at start, before the first sample. It has run against
-  the owner's Grafana (2026-09-19, InfluxDB 3) and against the container suite's
-  for all five stores (2026-09-20), where every panel of every dashboard was
-  then asked through Grafana's own API **against the datasource the collector
-  had built**. Three stores derive their own datasource and two are told the
-  address; `--sql` can never describe one and says so. Nothing is published
-  unless `--grafana` is passed, a failure is a warning rather than a refusal to
-  start, and nothing is ever deleted by it.
-- **`uninstall --targets`** takes away what this put anywhere: the router
-  objects (the default, as before), the dashboard and datasource it published,
-  and the tables, indices and files the sinks wrote. The stores are asked what
-  they hold rather than told from a compiled list, nothing is removed without
-  `--yes`, and the container suite asserts that a table this project did not
-  write, in the same database and schema, is neither listed nor removed
-  (2026-09-20). It has NOT been run against the owner's production store.
-- **An end-to-end suite** builds both binaries and drives them against a
-  captured `/proc` tree of the reference device and against a fake agent, with
-  one receiver per sink protocol asserting the bytes. It needs no router, no
-  Grafana and no network, and runs in CI on macOS and Windows as well as Linux,
-  which is where a difference in the executable's name, in the files the file
-  and SQL sinks write, or in how a child process is stopped would surface.
-- **A second suite against the stores themselves** (`make test-e2e-docker`)
-  starts nine of them with docker compose, runs the same collector against the
-  same fake agent with every sink pointed at them, and then asks each store its
-  own question with its own API: SQL against InfluxDB 3, `psql` against the
-  script the SQL sink wrote, a search against Elasticsearch, `query_range`
-  against Loki, `render` against Graphite, the decoded OTLP the collector
-  received, the line protocol Telegraf parsed, and a scrape of the exporter
-  stored in Prometheus. It then imports all five dashboards into Grafana and runs
-  every panel's query through Grafana's own API. It needs Docker and no router:
-  the samples are the same canned ones, so the run is reproducible anywhere.
-  The first full run, on 2026-09-16, found a panel that named two columns the
-  store only has when the API tier ran. It now also runs the SQL sink and the
-  connecting PostgreSQL sink side by side into two databases and asks the
-  server whether they hold the same thing — 34 tables matching byte for byte
-  on 2026-09-20 — publishes all five datasources and checks their dashboards
-  against them, and empties the stores again with `uninstall --targets data`.
+### The agent
+
+**The agent works on the reference RB5009: the installed one was running there on
+2026-09-23, when `doctor` read 600 samples from its ring.** It reads the shared
+kernel's `/proc`, `/sys`, `/dev/kmsg` and `perf_event_open` counters on a fixed
+ticker at 1 to 100 Hz (10 Hz by default; 10, 20, 50 and 100 Hz measured), keeps
+the samples in a ring, and serves them: `/healthz`, `/capabilities`, `/snapshot`,
+`/stream`, `/sampler`, and the triggered-capture endpoints `/captures` and
+`/capture`. It serves no `/metrics`: since 1.0.5 the exposition is the
+collector's alone.
+
+### The deployment CLI
+
+**All six deployment commands work on the reference RB5009, and all six have run
+there on RouterOS 7.24.4, the last of them on 2026-09-23.** `doctor`, `plan`,
+`install`, `status`, `upgrade` and `uninstall` install, upgrade and remove the
+agent, with every write listed before it happens and every removal verified by
+ownership counts. On 2026-09-12, `doctor` → `install` → `status` → `upgrade` →
+`uninstall` left the router's `/export` byte-identical, compared by hash in
+memory and never written to disk. The agent answered 3 s after install, at a
+5–7 ms round trip. On 2026-09-17 all four install routes were run against the
+same device, one after another and each removed before the next: the checkout
+build, the published agent tar, the router's own pull from Docker Hub, and the
+`plan --rsc` script imported on the router with no CLI in the install itself.
+The agent answered in every one, and the `/export` after the four was
+byte-identical to the one before them.
+
+Since 1.2.0 standalone `doctor` also pulls the running agent's ring once and
+names four faults RouterOS's own tools do not show — a layer-2 loop, STP churn,
+a link flap and softnet drops — and reports an agent that does not answer within
+3 s and skips it; its findings never change the exit status. It also carries two
+`WARN` checks, which change neither its exit status nor whether `install`
+proceeds: with `--remote-image`, a `/container/config` username set while the
+pull goes anywhere but Docker Hub, and an install of the same `--name` published
+on the LAN with no `TOKEN` in its environment. It reads whether a username is set
+and how many `TOKEN` entries exist, never a value. Where each ran is under
+[One device, two RouterOS versions](#one-device-two-routeros-versions).
+
+### `record`, `mark` and `plot`
+
+**`record`, `mark` and `plot` work end to end, shown by a recording made on the
+reference RB5009 on 2026-09-12.** That recording, 60 s at 10 Hz, yielded exactly
+600 samples, 0 gaps and −7 ms of clock skew.
+
+### `forward`
+
+**`forward` has run from the RB5009 into three of its eleven sinks, file,
+Prometheus and InfluxDB 3, all three at once on 2026-09-15; the other eight have
+been read back only from real products in containers, since 2026-09-16.**
+`forward` is the collector: it merges the kernel tier with the RouterOS API tier
+and writes to eleven sinks. Loki, OTLP, Graphite, Elasticsearch, SQL, PostgreSQL,
+Telegraf and stdout have not yet had router samples pushed through them, but
+every one of them now writes into the real product — InfluxDB 3, PostgreSQL,
+Elasticsearch, Graphite, Loki, an OpenTelemetry Collector, Telegraf and
+Prometheus in containers — and the suite reads each one back through its own API
+(2026-09-16). Its derive stage adds derived values and detection events beside
+the raw rows, and it emits a device-info stream once per capability hash.
+
+### The dashboards
+
+**Every panel of all five dashboards answered without error in a real Grafana
+over the container suite's stores (2026-09-17), and the InfluxDB and Prometheus
+dashboards passed `dashboards check` over the RB5009's own data (2026-09-16).**
+There is one per store — InfluxDB 3, Prometheus,
+PostgreSQL, Graphite and Elasticsearch — generated from one panel list, with
+alert rules for the three whose query language the rules are written in. The two
+SQL stores are asked the same question in two dialects: the PostgreSQL panels are
+the InfluxDB ones rewritten, and the container suite has a real PostgreSQL plan
+every one of their queries. Graphite and Elasticsearch carry fewer panels on
+purpose (<DashboardCount store="graphite" of="panels" /> and <DashboardCount store="elasticsearch" of="panels" /> against <DashboardCount store="influxdb" of="panels" />):
+Graphite has no labels and Elasticsearch no nested documents, so what they
+cannot express is absent rather than wrong.
+
+All five are imported into a real Grafana over the stores the suite filled, and
+every panel is asked: on 2026-09-17, 57, 98, 136, 35 and 28 panels returned data
+and none failed. The Elasticsearch and Graphite annotations, which queried PromQL
+against their own datasource until 1.2.1 fixed them, have since been checked
+only as generated JSON by a unit test, not in a real Grafana.
+
+On 2026-09-16, in Grafana 13.2.1, against the RB5009 with the default triggers
+and a 30-minute `forward` into both stores, `dashboards check` passed the 171
+InfluxDB panels the dashboard had then (0 failing, 10 known-empty tolerated) and
+133 Prometheus panels (0 failing, 9 known-empty tolerated). The headless
+row-by-row render walk of both dashboards — 0 error badges, 0 "No data" — is from
+2026-09-15 and covers 168 and 130 panels; it has not been repeated for the two
+port-event panels and the interface-inventory table it does not cover. A walk on
+2026-09-14, against a 10.5 h capture from the same device, rendered 140 InfluxDB
+panels with the same result. The 1.2.0 layout changes — stat numbers at a fixed
+32 px, memory in use as a time series — were checked on 2026-09-24 by importing
+the InfluxDB dashboard into the owner's Grafana and capturing it at 390x844 and
+1600x1000; the other four dashboards were not captured.
+
+### The alert rules
+
+**Only the InfluxDB 3 form of the rules has been loaded into Grafana and watched
+evaluate, on 2026-09-21 against the owner's store; the Prometheus and PostgreSQL
+forms never have.** The rules number <DashboardCount store="influxdb" of="rules" />
+for InfluxDB 3, <DashboardCount store="prometheus" of="rules" /> for Prometheus
+and <DashboardCount store="postgres" of="rules" /> for PostgreSQL. The load of
+2026-09-21, into Grafana 13.2.1, held the twelve InfluxDB rules of that date and
+found seven that could never fire; after the 1.1.0 fix all twelve returned a
+value.
+
+The two rules 1.2.0 added were not in that load. They were backtested in SQL on
+the InfluxDB 3 reference store instead: `mikroscope-bridge-port-dark` marks
+sfp-sfpplus1 in 204 ten-minute bins and ether2 in 376 between 2026-09-19 11:13
+and 2026-09-23 22:44 UTC, the two phases of that week's layer-2 loop, and no
+other port; `mikroscope-wakeup-storm` never exceeded 1.81 over 551 healthy
+ten-minute windows (2026-09-20..23) and opened at 35.7 on the wake-up storm of
+2026-09-23. The PromQL forms of both were checked for syntax only, since that
+store holds no history here. The wake-up rule's PostgreSQL form has no recorded
+run against data, and the dark-port rule has no PostgreSQL form at all: 1.2.1
+dropped it, because the SQL sink's interface-counter table does not hold the
+columns it reads.
+
+Since 1.2.2 the detections rule, `mikroscope-detections`, no longer fires on
+`microburst` or `ipc-collapse`, which describe how a healthy router carries
+traffic; [the alert rules page](/mikroscope/dashboards/alerts/#the-rules) has the
+day of data behind that change.
+
+### `forward --grafana`
+
+**`forward --grafana` has run against the owner's Grafana (2026-09-19, InfluxDB 3)
+and against the container suite's for all five stores (2026-09-20).** It
+reconciles a datasource and a dashboard per store the collector writes to, at
+start, before the first sample. In the container suite every panel of every
+dashboard was then asked through Grafana's own API **against the datasource the
+collector had built**. Three stores derive their own datasource and two are told
+the address; `--sql` can never describe one and says so. Nothing is published
+unless `--grafana` is passed, a failure is a warning rather than a refusal to
+start, and nothing is ever deleted by it.
+
+### `uninstall --targets`
+
+**`uninstall --targets` removed only what this project wrote in the container
+suite (2026-09-20), and has NOT been run against the owner's production store.**
+It takes away what this put anywhere: the router objects (the default, as
+before), the dashboard and datasource it published, and the tables, indices and
+files the sinks wrote. The stores are asked what they hold rather than told from
+a compiled list, nothing is removed without `--yes`, and the container suite
+asserts that a table this project did not write, in the same database and
+schema, is neither listed nor removed.
+
+### The test suites
+
+**Two suites need no router: one runs in CI on Linux, macOS and Windows against
+fakes, and one runs against nine real stores in docker compose, first in full on
+2026-09-16.** The end-to-end suite builds both binaries and drives them against a
+captured `/proc` tree of the reference device and against a fake agent, with one
+receiver per sink protocol asserting the bytes. It needs no router, no Grafana
+and no network, and runs in CI on macOS and Windows as well as Linux, which is
+where a difference in the executable's name, in the files the file and SQL sinks
+write, or in how a child process is stopped would surface.
+
+The second suite, against the stores themselves (`make test-e2e-docker`), starts
+nine of them with docker compose, runs the same collector against the same fake
+agent with every sink pointed at them, and then asks each store its own question
+with its own API: SQL against InfluxDB 3, `psql` against the script the SQL sink
+wrote, a search against Elasticsearch, `query_range` against Loki, `render`
+against Graphite, the decoded OTLP the collector received, the line protocol
+Telegraf parsed, and a scrape of the exporter stored in Prometheus. It then
+imports all five dashboards into Grafana and runs every panel's query through
+Grafana's own API. It needs Docker and no router: the samples are the same canned
+ones, so the run is reproducible anywhere. The first full run, on 2026-09-16,
+found a panel that named two columns the store only has when the API tier ran. It
+now also runs the SQL sink and the connecting PostgreSQL sink side by side into
+two databases and asks the server whether they hold the same thing — 34 tables
+matching byte for byte on 2026-09-20 — publishes all five datasources and checks
+their dashboards against them, and empties the stores again with
+`uninstall --targets data`.
 
 ## What the agent costs today
 
-At the install default — 10 Hz, default per-source floors, a 60 s ring — the
+At the install default — 10 Hz, default per-source floors, a 60 s ring — the
 agent costs **<Measured id="run.10hz.cpu" /> of one core and <Measured id="run.10hz.rss" /> RSS**,
 read from its own cgroup at steady state with the ring full:
 
@@ -151,7 +214,7 @@ read from its own cgroup at steady state with the ring full:
 <RunsTable only={["10hz"]} />
 
 That is above the budget of <Measured id="budget.cpu" /> of one core and inside
-the <Measured id="budget.rss" /> RSS one — it was over on both until the 60 s ring and the derived
+the <Measured id="budget.rss" /> RSS one — it was over on both until the 60 s ring and the derived
 memory limit of 1.0.6. The budget is guidance rather than a contract: cost scales with the device, the
 source set and the ring size. The image budget is <Measured id="budget.image" />; the published 1.2.1
 image for arm64 is <Measured id="image.size" />: 6 690 304 B, measured on the release asset on
@@ -166,7 +229,7 @@ quoting a steady-state figure — on the RB5009, at a 14 MiB soft memory limit, 
 reading taken in the first minute after install came back at 1.47 % of one core
 against a <Measured id="gc.tight.cpu" /> steady state — and read cost from the collector's
 `/metrics`, or from `cpu_us` and `rss` in `mikroscope_self` in whichever store
-you write to, rather than from a large `/snapshot`, whose ~1.9 MB response the
+you write to, rather than from a large `/snapshot`, whose ~1.9 MB response the
 agent must serialise.
 
 ### Cost at 10 Hz, by configuration
@@ -182,7 +245,7 @@ what each one costs — not what the number was at some earlier point.
 | Every source read every tick                          | 2.43 %                                                                | not recorded                   | 2026-09-12 | above the budget                                                                                         |
 | Ring full, `MEM_LIMIT_MB` 14                          | <Measured id="gc.tight.cpu" /> (<Measured id="gc.tight.us" />/sample) | not recorded                   | 2026-09-12 | a 300 s ring of lines of about 2.4 kB, the line of that date, holds ~7.3 MB; the Go GC runs without pause |
 | Ring full, `--mem-limit-mb 40`, `--memory-max 64M`    | <Measured id="gc.roomy.cpu" /> (<Measured id="gc.roomy.us" />/sample) | 25.13 MiB                      | 2026-09-12 | 0 slipped ticks                                                                                          |
-| PMU counters on, a live `forward` writing to InfluxDB | 1.72 %                                                                | not recorded                   | 2026-09-12 | 0 slipped ticks; 2 400 samples forwarded, 0 gaps, 0 drops                                                |
+| PMU counters on, a live `forward` writing to InfluxDB | 1.72 %                                                                | not recorded                   | 2026-09-12 | 0 slipped ticks; 2 400 samples forwarded, 0 gaps, 0 drops                                                |
 | The install default                                   | <Measured id="run.10hz.cpu" />                                        | <Measured id="run.10hz.rss" /> | 2026-09-18 | the figure above                                                                                         |
 
 </ScrollTable>
@@ -190,8 +253,10 @@ what each one costs — not what the number was at some earlier point.
 ## One device, two RouterOS versions
 
 Every on-device figure in this documentation comes from one RB5009UG+S+, the
-owner's production router. There is no lab device. The figures were measured on
-RouterOS 7.24.2 and each says so; the device has since moved to 7.24.4, and
+owner's production router. There is no lab device. Most figures were measured on
+RouterOS 7.24.2 and each says so; the port-errors campaign (2026-09-19), the
+`/stream` timings (2026-09-21) and the three charts from the reference store
+(2026-09-19 to 2026-09-24) are from 7.24.4. The device has moved to 7.24.4, and
 `doctor`, `plan`, `install`, `status` and `uninstall` were exercised there on
 2026-09-21, with the installed agent running on it continuously since
 2026-09-19. On 2026-09-23, also on 7.24.4, `doctor`'s registry warning was
@@ -200,13 +265,13 @@ exposed, upgraded without a token and removed, so `upgrade` has run there too.
 The same day `doctor` read 600 samples from the running agent's ring and found
 nothing; the four faults it names are covered by tests that replay the real
 record text and 2.0 s cadence of the reference device's loop, not by a live
-fault. The measurements have not been repeated on 7.24.4.
+fault. The 7.24.2 measurements have not been repeated on 7.24.4.
 
 <NotClaimed variant="untested">
 	A second board of any kind. The hEX S (2025) — 32-bit RouterOS on an ARM64 chip, which is what the
 	agent's `linux/arm/v5` build is for — has not arrived, so the 32-bit counter-wrap path and neither
 	32-bit ARM image have run on hardware. No x86_64 RouterOS host. No RouterOS before 7.24, and
-	none of the on-device figures re-measured on 7.24.4. Nothing that needs a reboot, which waits for
+	none of the 7.24.2 figures re-measured on 7.24.4. Nothing that needs a reboot, which waits for
 	a maintenance window.
 </NotClaimed>
 
@@ -240,8 +305,10 @@ and the hardware watchdog at `/sys/class/watchdog/watchdog0`.
 
 ## What the release publishes
 
-`VERSION` is **1.2.2**, compiled into both binaries and reported by
-`mikroscope version`. Not every number has a release of its own: 1.0.5, 1.0.8
+The repository's <Src path="VERSION" /> file holds **<Version />**, which the
+changelog, <Src path="CHANGELOG.md" />, dates <Version show="date" />. It is
+compiled into both binaries and reported by `mikroscope version`, and the
+changelog says what every release changed. Not every number has a release of its own: 1.0.5, 1.0.8
 and 1.0.10 were never tagged, and v1.0.6 was tagged but its release run failed.
 1.0.5's and 1.0.6's changes ship in v1.0.7, 1.0.8's in v1.0.9 and 1.0.10's in
 v1.1.0. The changelog keeps a section for 1.0.5, 1.0.6 and 1.0.8, which say
@@ -250,7 +317,7 @@ configuration, which publishes:
 
 - **CLI archives** for linux and freebsd on amd64, arm64 and arm (ARMv7), and
   for darwin and windows on amd64 and arm64: `.tar.gz`, and `.zip` on Windows,
-  each carrying `LICENSE` and `README.md`.
+  each carrying the MIT <Src path="LICENSE" /> and <Src path="README.md" />.
 - **Agent archives** for linux on amd64, arm64, armv5 and armv7, for a host that
   wants the bare binary rather than an image.
 - **Side-loadable agent image tars**, four of them —
@@ -258,17 +325,20 @@ configuration, which publishes:
   `mikroscope-agent-armv7.tar`, `mikroscope-agent-amd64.tar` (32-bit ARM is two:
   EN7562CT boards take only v5) — which `install --agent-tar` uploads to the
   router.
-- **The agent image in two registries**, `jmrplens/mikroscope-agent:1.2.0` on
-  Docker Hub and `ghcr.io/jmrplens/mikroscope-agent:1.2.0` on GHCR (each also
+- **The agent image in two registries**, `jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}` on
+  Docker Hub and `ghcr.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}` on GHCR (each also
   tagged `latest`), each one manifest over `linux/amd64`, `linux/arm64`,
   `linux/arm/v7` and `linux/arm/v5`, which
   `install --remote-image` makes the router pull. RouterOS takes the registry
-  host from the global `/container/config registry-url`, which ships as
-  `https://registry-1.docker.io`, so the Docker Hub reference needs nothing set
-  on the device and the GHCR one needs that setting changed first.
-- **The collector image**, `jmrplens/mikroscope:1.2.0` on Docker Hub and
-  `ghcr.io/jmrplens/mikroscope:1.2.0` on GHCR (each also tagged `latest`), over
-  `linux/amd64` and `linux/arm64`, for the compose stacks under `deploy/`.
+  host from the global `/container/config registry-url`, which mikroscope never
+  writes. It reads `https://registry-1.docker.io` on the reference RB5009, so
+  the Docker Hub reference needed nothing set there. RouterOS's own default
+  since 7.18 is `https://lscr.io`, which does not carry the image, so a router
+  at that default needs the setting changed for either reference:
+  [A registry pull](/mikroscope/install/routes/#a-registry-pull).
+- **The collector image**, `jmrplens/mikroscope:{{MIKROSCOPE_VERSION}}` on Docker Hub and
+  `ghcr.io/jmrplens/mikroscope:{{MIKROSCOPE_VERSION}}` on GHCR (each also tagged `latest`), over
+  `linux/amd64` and `linux/arm64`, for the compose stacks under <Src path="deploy/" />.
 - **`checksums.txt`**, covering every archive and every image tar, a keyless
   cosign signature over it, and an SPDX SBOM per archive, signed in its own
   right.
@@ -293,5 +363,7 @@ hardware — on the one RB5009 above.
 - [The file and the other sinks](/mikroscope/sinks/other/): the eleven sinks `forward` writes to.
 - [Lineage and licence](/mikroscope/about/lineage/): where the deployment code and the API client
   came from.
+- [Releases](/mikroscope/about/changelog/): the current release and its date, and where every
+  earlier one is recorded.
 
 </SeeAlso>

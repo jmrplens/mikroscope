@@ -15,7 +15,21 @@
  * renamed by `dashboards gen` renames its caption here — and a section with no
  * capture, or a capture with no section, is visible as a gap rather than
  * silently dropped.
+ *
+ * The files are 1600 px wide, twice the 50rem prose column, and a plain `<img>`
+ * sent all 1600 px to every reader, a phone included. `<Image>` writes a 640,
+ * a 1024 and a 1600 px variant and lets the browser pick one through `srcset`
+ * and `sizes`; the link around each still opens the committed file at full
+ * size, because a section is read by zooming into it. Capture.astro uses the
+ * same widths and sizes, so change the two together.
+ *
+ * The 21 captures on the built /dashboards/ page, 2026-09-24: before, every
+ * reader got the same 1 214 KiB, the sum of the files; after, as fetched by
+ * Chromium, 313 KiB on a 390 px screen at 1x, 607 KiB on a 1440 px one at 1x,
+ * and 1 207 KiB where the pixel density asks for the 1600 px variants anyway
+ * (1440 px at 2x, 390 px at 3x).
  */
+import { Image } from "astro:assets";
 import { countOf, sectionNames } from "../data/dashboards";
 import { langOf } from "../lib/lang";
 
@@ -23,6 +37,11 @@ const images = import.meta.glob<{ default: ImageMetadata }>(
 	"../assets/dashboards/*.webp",
 	{ eager: true },
 );
+
+/** The variants written for `srcset`; the largest is the committed file's own width. */
+const WIDTHS = [640, 1024, 1600];
+/** At most the prose column (`--sl-content-width`, 50rem in chrome.css), else the viewport. */
+const SIZES = "(min-width: 50rem) 50rem, 100vw";
 
 /** `Memory and load` → `memory-and-load`, the slug the generator writes. */
 const slug = (title: string) =>
@@ -66,8 +85,10 @@ const sections = sectionNames
 		sections.map(({ title, image, panels }) => (
 			<figure class="ms-capture">
 				<a href={image!.src}>
-					<img
-						src={image!.src}
+					<Image
+						src={image!}
+						widths={WIDTHS}
+						sizes={SIZES}
 						width={image!.width}
 						height={image!.height}
 						loading="lazy"

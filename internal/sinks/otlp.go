@@ -28,9 +28,12 @@ import (
 // JSON rather than protobuf is a dependency decision, not a performance one:
 // protobuf would add a code generator and a runtime to a module whose sink
 // layer is standard library only, and the agent's link set is a hard
-// boundary. Every OTLP receiver accepts `application/json` on the
-// same endpoint. The cost is size — attribute keys repeat in every data point
-// — see the byte budget note below.
+// boundary. The OTLP specification says a server SHOULD accept JSON-encoded
+// payloads on the same port as protobuf ones, a recommendation rather than a
+// requirement; the OpenTelemetry Collector in the docker suite takes JSON on
+// /v1/metrics, and no other receiver has been run against this sink. The cost
+// is size — attribute keys repeat in every data point — see the byte budget
+// note below.
 //
 // Mapping, which is the whole reason this sink is cheap to consume: the
 // agent ships raw tick deltas and never percentages, and OTLP has an exact

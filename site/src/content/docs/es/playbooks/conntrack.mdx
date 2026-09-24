@@ -1,9 +1,13 @@
 ---
 title: Conntrack sin la API
-description: El namespace del propio contenedor informa de cero conexiones rastreadas, pero el asignador slab global no — cómo leer desde ficheros la población real de conntrack del router y su techo, y por qué no se provocó ninguna tormenta para mostrarlo.
+description: "El recuento real de conntrack de un router MikroTik desde un contenedor de RouterOS: el slab nf_conntrack donde el namespace da 0, contrastado con la API."
+head:
+  - tag: title
+    content: "El conntrack de RouterOS desde un contenedor | mikroscope"
 ---
 
 import FaultSignature from "../../../../components/FaultSignature.astro";
+import Figure from "../../../../components/Figure.astro";
 import Measured from "../../../../components/Measured.astro";
 import NotClaimed from "../../../../components/NotClaimed.astro";
 import Provenance from "../../../../components/Provenance.astro";
@@ -13,6 +17,15 @@ Esta página responde a cuántas conexiones está rastreando el router, sin reco
 una tabla por una sesión de la API. El techo y los timeouts se leyeron los dos el 2026-09-14.
 
 <Provenance of="playbooks-2026-09-12" />
+
+**En resumen:** dentro del contenedor del agente, `nf_conntrack_count` marca 0 por
+muy ocupado que esté el router, porque pertenece al namespace de red del
+contenedor. El recuento real de conexiones del router son los objetos activos de
+la caché de slab `nf_conntrack` en `/proc/slabinfo`, legible con
+`privileged=yes`, y su techo, `nf_conntrack_max`, marca lo mismo desde el
+contenedor que desde RouterOS. En cinco días de medias horarias del almacén de
+referencia, ese recuento del slab siguió al `count-only` de la API y quedó
+siempre un pequeño porcentaje por encima.
 
 ## El namespace informa de cero
 
@@ -58,6 +71,13 @@ lecturas del slab. Esas, el 2026-09-12, fueron <Measured id="conntrack.slabDisco
 contenedor de descubrimiento privilegiado y <Measured id="conntrack.slab" /> desde el agente, y el
 fragmento de arriba recogió un tercer momento, sin fecha, 6 240. Con un día de diferencia, muestran el mismo orden de
 magnitud, no que los dos se sigan: en tu equipo, haz el recuento y lee el slab en el mismo minuto.
+
+El almacén de referencia lo ha hecho desde entonces durante cinco días. Con
+`forward --conntrack-every` activado, el colector pidió el recuento a la API
+mientras el agente leía el slab, y el gráfico muestra los dos como medias
+horarias, con el cociente entre ellos debajo:
+
+<Figure name="conntrack-2026-09-19" />
 
 Ni aun así coincidirán exactamente — se muestrean en instantes distintos, y el
 slab cuenta objetos que el asignador aún retiene. La diferencia de coste es lo que
@@ -119,8 +139,8 @@ Merece la pena vigilarlas por sí mismas:
 	Una tormenta de conntrack. Generar miles de conexiones contra un router de producción arriesga
 	disparar su propio cortafuegos o un bouncer al estilo de CrowdSec y dejarte fuera del mismo camino
 	por el que estás trabajando. La comprobación cruzada de arriba liga el contador al recuento de
-	la API sin ese riesgo, en el mismo orden de magnitud, pero no se observó qué aspecto tiene una
-	tormenta en estas cachés.
+	la API sin ese riesgo, hora a hora durante cinco días, pero no se observó qué aspecto tiene
+	una tormenta en estas cachés.
 </NotClaimed>
 
 <SeeAlso>

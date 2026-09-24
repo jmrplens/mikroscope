@@ -1,17 +1,20 @@
 ---
 title: Linaje y licencia
-description: Qué partes de mikroscope vienen de cs-routeros-bouncer y de go-routeros, qué cambió por el camino y la licencia MIT con la que llegan ambas.
+description: Qué partes de mikroscope vienen de cs-routeros-bouncer, ghchronicle y go-routeros, qué cambió por el camino y la licencia MIT con la que llegan.
 ---
 
 import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
+import Src from "../../../../components/Src.astro";
 
 Esta página responde de dónde viene el código de mikroscope: qué paquetes
 empezaron siendo de otro, qué se cambió al traerlos y bajo qué licencia. La
 atribución está también en el código, de modo que sobrevive a que se lea sin
-este sitio: en el comentario de documentación del paquete de `internal/router`,
-`internal/image`, `internal/chart` e `internal/dashboards`, en el `README.md` y
-el `LICENSE` de `internal/rosapi`, y en la cabecera de `.golangci.yml`.
+este sitio: en el comentario de documentación del paquete de <Src path="internal/router/" />,
+del constructor de imágenes <Src path="internal/image/" />, del gráfico <Src path="internal/chart/" />
+y del generador de dashboards <Src path="internal/dashboards/" />; en los propios
+ficheros del cliente de la API, <Src path="internal/rosapi/README.md" /> y <Src path="internal/rosapi/LICENSE" />;
+y en la cabecera de <Src path=".golangci.yml" />.
 
 ## De dónde vino el muestreador
 
@@ -48,13 +51,22 @@ bytes.
 
 ## Lo que se tomó como modelo, no como código
 
-`internal/dashboards` toma la forma de exportación de Grafana del
-`cmd/gen_dashboards` de ghchronicle, del propietario — "the shape, not the
-code", como dice su comentario de paquete — y `dashboards check` comprueba cada
-panel en un Grafana real igual que lo hace ghchronicle. Otras dos piezas están
-modeladas igual, a partir de un proyecto de referencia que esta documentación
-no nombra: las secciones con nombre de los paneles siguen el `sections.go` de
-ese proyecto, y la batería de extremo a extremo de `test/e2e/` sigue la suya.
+El modelo es [ghchronicle](https://github.com/jmrplens/ghchronicle), el otro
+proyecto de telemetría del mantenedor de mikroscope, José Manuel Requena Plens, que
+recoge lo que GitHub informa sobre una cuenta. `internal/dashboards` toma la
+forma de exportación de Grafana del
+[`cmd/gen_dashboards`](https://github.com/jmrplens/ghchronicle/tree/main/cmd/gen_dashboards)
+de ghchronicle — "the shape, not the code", como dice su comentario de paquete —
+y `dashboards check` comprueba cada panel en un Grafana real igual que lo hace
+ghchronicle. Otras dos piezas se modelaron igual sobre ghchronicle, la forma y
+no el código. Las secciones con nombre de los paneles, la primera abierta y todas
+las demás plegadas, siguen su
+[`internal/dashboards/sections.go`](https://github.com/jmrplens/ghchronicle/blob/main/internal/dashboards/sections.go);
+la lista de mikroscope es <Src path="internal/dashboards/sections.go" />. Y la
+batería de extremo a extremo de <Src path="test/e2e/" /> sigue
+[el `test/e2e/` de ghchronicle](https://github.com/jmrplens/ghchronicle/tree/main/test/e2e),
+que compila su binario y lo ejecuta contra un GitHub simulado, con un fichero de
+prueba por destino.
 
 ## El cliente de la API de RouterOS
 
@@ -117,11 +129,13 @@ Compara con la etiqueta `v3.0.1` de upstream, no con su rama master.
 
 ## Licencia
 
-mikroscope tiene licencia MIT, copyright 2026 jmrplens; el texto completo está
-en `LICENSE`, en la raíz del repositorio. El código tomado de
+mikroscope tiene licencia MIT, copyright 2026 José Manuel Requena Plens, a quien la
+licencia nombra por su alias, jmrplens; el texto completo está
+en <Src path="LICENSE" />, en la raíz del repositorio. El código tomado de
 cs-routeros-bouncer llega bajo la licencia MIT de ese repositorio, e
 `internal/rosapi` conserva el `LICENSE` MIT de go-routeros junto al código que
-cubre.
+cubre. Lo que cambió cada versión, correcciones de esta página incluidas, está
+en <Src path="CHANGELOG.md" />.
 
 <SeeAlso>
 
@@ -135,5 +149,7 @@ cubre.
   `internal/chart`.
 - [En qué punto está](/mikroscope/es/about/status/): qué funciona hoy, y qué publica la versión
   actual.
+- [Las versiones](/mikroscope/es/about/changelog/): la versión actual, y dónde se guarda la historia
+  de cada una, correcciones de esta página incluidas.
 
 </SeeAlso>

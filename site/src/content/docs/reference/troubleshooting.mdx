@@ -1,11 +1,12 @@
 ---
 title: When something does not work
-description: The symptoms this project produces, in the words you actually see — a RouterOS error, a container that exits, an empty panel, a sink that drops — with what each one means and the page that explains it.
+description: Symptoms in the words you see (a RouterOS error, a container that exits, an empty panel, a sink that drops), what each means and where it is explained.
 ---
 
 import { Aside } from "@astrojs/starlight/components";
 import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
+import Src from "../../../components/Src.astro";
 
 Every page here explains one thing properly. This one is the index you reach
 for when something is already broken: find the line you are looking at, and it
@@ -56,12 +57,15 @@ is installed **and** not disabled.
 ### unknown parameter privileged
 
 RouterOS 7.24 added `privileged=`, and the container step writes it, so an
-earlier 7.x fails there — after the tar has been uploaded, which is why the
-install then takes it back with it. Either upgrade RouterOS, or install with
-`--privileged=false` and read
-[what privileged buys](/mikroscope/limits/privileged/) first: without it the
-agent cannot read `/dev/kmsg`, and the kernel log is where several of this
-project's playbooks start.
+earlier 7.x is expected to fail there — after the tar has been uploaded, which
+is why the install then takes it back with it. That is read from the code: no
+install has been tried on a RouterOS before 7.24. Upgrade RouterOS to 7.24 or later:
+`--privileged=false` does not help, because the step then writes
+`privileged=no`, the same unknown parameter
+(<Src path="internal/router/steps.go" />). Once on 7.24,
+[what privileged buys](/mikroscope/limits/privileged/) says what the setting
+changes: without it the agent cannot read `/dev/kmsg`, and the kernel log is
+where several of this project's playbooks start.
 
 ### exec format error
 
@@ -69,8 +73,8 @@ The container starts and dies immediately, and the log says `exec format
 error`. The image is for another architecture than the board — and on 32-bit
 ARM, "arm" is not one architecture.
 
-MikroTik's container documentation says devices with the EN7562CT CPU, the hEX
-Refresh line, "support only arm32v5 container images"; its other 32-bit ARM
+MikroTik's container documentation says "for devices with EN7562CT CPU like the
+hEX Refresh, only arm32v5 container images are supported"; its other 32-bit ARM
 boards run an ARMv7 userland. An ARMv5 image runs on both, an ARMv7 image does
 not run on the first. So:
 
@@ -86,9 +90,11 @@ not run on the first. So:
 
 `/container/config registry-url` is one global RouterOS setting, shared with
 every other container on the device, and mikroscope reads it and never writes
-it. The Docker Hub reference works out of the box because that is what RouterOS
-ships pointing at; the GHCR one needs the setting changed first, which changes
-it for everyone else on that router too.
+it. RouterOS's default since 7.18 is `https://lscr.io`, which carries neither
+image, so read yours with `/container/config/print`. The Docker Hub reference
+works on a router already set to `https://registry-1.docker.io`, as the
+reference RB5009 is; the GHCR one needs `https://ghcr.io`. Changing the setting
+changes it for everyone else on that router too.
 
 ### One credential for every registry
 

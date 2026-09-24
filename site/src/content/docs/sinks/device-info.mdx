@@ -1,11 +1,12 @@
 ---
 title: The device-info stream
-description: What the agent establishes about the board with no RouterOS API — identity, ceilings, cadences — and how the collector hands it to every sink as facts rather than samples.
+description: What the agent learns about a MikroTik board without the RouterOS API (identity, ceilings, cadences) and how every sink receives it as facts, not samples.
 ---
 
 import CadenceReasons from "../../../components/CadenceReasons.astro";
 import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
+import Src from "../../../components/Src.astro";
 
 At start the agent works out what it can about the board it runs on, with no RouterOS API
 and no credential, and serves it on `/capabilities`. The collector hands that to every
@@ -65,7 +66,7 @@ are left out of it. A restarted agent whose only change is a ceiling or a cadenc
 `--memory-max`, or a `FLOOR_HZ` with the same source set — keeps its hash, so the change
 is not what triggers the send; it reaches the sinks at the next five-minute repeat, and
 the row that carries it is stamped then rather than when it happened. This is read from
-the code (`capsHash` in `internal/agent/source.go`), not observed.
+the code (`capsHash` in <Src path="internal/agent/source.go" />), not observed.
 
 These are facts, not samples. They have no clock of their own, so the sinks that
 timestamp records stamp them with the collector's clock when they were sent; the file and

@@ -1,6 +1,9 @@
 ---
 title: Lo que el instalador rechaza
 description: Los objetos sobre los que install no construye, los valores que no mete en una orden de RouterOS y cómo demuestra uninstall que no dejó nada atrás.
+head:
+  - tag: title
+    content: "Lo que el instalador rechaza en un router MikroTik | mikroscope"
 ---
 
 import NotClaimed from "../../../../components/NotClaimed.astro";
@@ -176,13 +179,16 @@ una tiene su propia comprobación antes de que se escriba nada.
   referencia de registro antes de llegar a la línea de órdenes, porque RouterOS la recibe dentro de
   una cadena entrecomillada en una línea unida por `;`. Después el router necesita alcanzar ese
   registro por su propia red, y toma el host del registro de `/container/config registry-url`, un
-  ajuste global del dispositivo, compartido con todos los demás contenedores que haya en él y que
-  viene puesto en `https://registry-1.docker.io`. **mikroscope nunca escribe ese ajuste.** `doctor`
+  ajuste global del dispositivo y compartido con todos los demás contenedores que haya en él.
+  RouterOS lo trae puesto en `https://lscr.io` desde la 7.18, y ahí no está la imagen; en el RB5009
+  de referencia vale `https://registry-1.docker.io`. **mikroscope nunca escribe ese ajuste.** `doctor`
   lo lee y, cuando la referencia nombra un host que no coincide con el ajuste, imprime la única
   orden que hay que ejecutar (`/container/config/set registry-url=https://ghcr.io`, para la copia
   de la imagen en GHCR) o dice que uses `--agent-tar` en su lugar. La referencia de Docker Hub,
-  `jmrplens/mikroscope-agent:<versión>` (por ejemplo `:1.2.0`), no lleva host y deja el ajuste como
-  lo tenga el router. Confiar en la imagen es confiar en ese registro: nada en la CLI verifica lo
+  `jmrplens/mikroscope-agent:<versión>` (por ejemplo `:{{MIKROSCOPE_VERSION}}`), no lleva host y deja el ajuste como
+  lo tenga el router, así que un router aún en el valor por defecto de RouterOS necesita antes
+  `https://registry-1.docker.io`, como dice
+  [Un pull del registro](/mikroscope/es/install/routes/#un-pull-del-registro). Confiar en la imagen es confiar en ese registro: nada en la CLI verifica lo
   que el router se descarga. El mismo ajuste guarda un único usuario y contraseña de registro para
   todo el equipo, y RouterOS los presenta a cualquier registro del que descargue, así que una cuenta
   de Docker Hub se envía a GHCR y la descarga termina en `auth error`. `doctor` avisa de ello

@@ -1,6 +1,9 @@
 ---
 title: Lo que aporta privileged
-description: Por qué el contenedor del agente se ejecuta con privileged=yes por defecto, las fuentes que ese ajuste hace legibles, y la red, los procesos y los sensores a los que sigue sin llegar.
+description: Por qué el contenedor RouterOS del agente usa privileged=yes por defecto, qué fuentes hace legibles y a qué red, procesos y sensores sigue sin llegar.
+head:
+  - tag: title
+    content: "privileged=yes en un contenedor RouterOS: lo que lee | mikroscope"
 ---
 
 import { Aside } from "@astrojs/starlight/components";
@@ -19,11 +22,12 @@ y a qué renuncias si lo desactivas.
 El contenedor se ejecuta con `privileged=yes` salvo que pases `--privileged=false` a `install` o a
 `upgrade`, que recrea el contenedor. Es una opción booleana, así que se escribe `=false`; un
 argumento `false` separado no se lee como su valor. El ajuste existe en RouterOS 7.24 y
-posteriores.
+posteriores: RouterOS añadió el modo privilegiado para contenedores en la 7.24, como recoge su
+[registro de cambios](https://download.mikrotik.com/routeros/7.24/CHANGELOG).
 
 Leer el estado interno del equipo es para lo que existe mikroscope, y privileged es lo que hace
 legibles los ficheros del kernel reservados a root. Un contenedor normal de RouterOS se coloca en
-un espacio de nombres de usuario en el que su root corresponde al uid 32768 del host, así que
+un [espacio de nombres de usuario](https://man7.org/linux/man-pages/man7/user_namespaces.7.html) en el que su root corresponde al uid 32768 del host, así que
 `/proc/slabinfo` y `/dev/kmsg` devuelven `EACCES`. `privileged=yes` elimina ese espacio de nombres
 de usuario.
 
@@ -48,8 +52,10 @@ agente salvo donde la tabla indica otra cosa:
 </ScrollTable>
 
 La PMU necesita privileged por una razón distinta a la de los ficheros: sus contadores se abren a
-nivel de sistema (`pid = -1`), lo que requiere `CAP_PERFMON` o `CAP_SYS_ADMIN` frente al host.
-`perf_event_paranoid` vale 2 en el equipo de referencia y no bloquea a un contenedor privilegiado.
+nivel de sistema (`pid = -1`), lo que según [`perf_event_open(2)`](https://man7.org/linux/man-pages/man2/perf_event_open.2.html) requiere
+`CAP_SYS_ADMIN` frente al host, `CAP_PERFMON` a partir de Linux 5.8 (el kernel de referencia es
+el 5.6.3) o un `perf_event_paranoid` menor que 1. `perf_event_paranoid` vale 2 en el equipo de
+referencia y no bloquea a un contenedor privilegiado.
 Lo que la PMU muestra y ningún contador de ticks puede mostrar está en
 [el suelo de resolución](/mikroscope/es/limits/).
 

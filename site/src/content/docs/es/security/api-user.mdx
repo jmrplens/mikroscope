@@ -1,11 +1,15 @@
 ---
 title: El usuario de la API
 description: El usuario dedicado de RouterOS con el que entra el colector, la política que necesita cada orden y lo que esa política le deja leer.
+head:
+  - tag: title
+    content: "Usuario de la API de RouterOS con mínimo privilegio | mikroscope"
 ---
 
 import { Aside } from "@astrojs/starlight/components";
 import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
+import Src from "../../../../components/Src.astro";
 import Verified from "../../../../components/Verified.astro";
 
 El agente no necesita cuenta en RouterOS. Tres cosas de tu máquina sí: la capa de la API del
@@ -57,8 +61,8 @@ ahí; aparece como un inicio de sesión fallido, `api <dirección>: …`.
 
 ## El grupo y el usuario
 
-Un grupo que concede `read`, `api` y `test` y niega por su nombre todas las demás políticas, y un
-usuario en él restringido a la dirección del colector:
+Un grupo que concede `read`, `api` y `test` y niega por su nombre todas las demás políticas
+[que define RouterOS](https://help.mikrotik.com/docs/spaces/ROS/pages/8978504/User), y un usuario en él restringido a la dirección del colector:
 
 ```text
 /user/group/add name=mikroscope policy=read,api,test,!write,!ftp,!local,!telnet,!ssh,!reboot,!policy,!winbox,!password,!web,!sniff,!sensitive,!romon,!rest-api
@@ -105,7 +109,7 @@ pudiendo pedir todas las propiedades de todos los contenedores.
 </ScrollTable>
 
 La contraseña no tiene opción a propósito: una opción se ve en `ps` y en el historial de la shell.
-`.env.example` da la dirección como `192.168.88.1:8728`.
+El <Src path=".env.example" /> del repositorio da la dirección como `192.168.88.1:8728`.
 
 <Aside type="caution" title="La conexión con la API no va cifrada">
 	`record`, `mark` y `forward` se conectan a la API binaria sin cifrar. El cliente incluido en el

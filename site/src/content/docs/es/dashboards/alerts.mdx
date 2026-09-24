@@ -1,6 +1,6 @@
 ---
 title: Reglas de alerta
-description: Las reglas de alerta de Grafana que se generan junto a los dashboards, con qué salta cada una, de dónde sale su umbral y qué no se ha probado de ellas.
+description: "Las reglas de alerta de Grafana que se generan junto a los dashboards: con qué salta cada una, de dónde sale su umbral y qué no se ha probado de ellas."
 ---
 
 import { Tabs, TabItem } from "@astrojs/starlight/components";
@@ -10,6 +10,7 @@ import Measured from "../../../../components/Measured.astro";
 import NotClaimed from "../../../../components/NotClaimed.astro";
 import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
+import Src from "../../../../components/Src.astro";
 
 `mikroscope dashboards gen` escribe, junto a cada dashboard, un fichero de aprovisionamiento de las
 alertas unificadas de Grafana con las reglas que se desprenden de los propios contadores de fallos de
@@ -25,9 +26,9 @@ silencio), una proporción de un techo que publicó el propio equipo o, en una r
 
 | Fichero                                        |                                           Reglas | Lenguaje de consulta |
 | ---------------------------------------------- | -----------------------------------------------: | -------------------- |
-| `dashboards/mikroscope-alerts-influxdb.yaml`   |   <DashboardCount store="influxdb" of="rules" /> | SQL de InfluxDB 3    |
-| `dashboards/mikroscope-alerts-prometheus.yaml` | <DashboardCount store="prometheus" of="rules" /> | PromQL               |
-| `dashboards/mikroscope-alerts-postgres.yaml`   |   <DashboardCount store="postgres" of="rules" /> | SQL de PostgreSQL    |
+| <Src path="dashboards/mikroscope-alerts-influxdb.yaml" />   |   <DashboardCount store="influxdb" of="rules" /> | SQL de InfluxDB 3    |
+| <Src path="dashboards/mikroscope-alerts-prometheus.yaml" /> | <DashboardCount store="prometheus" of="rules" /> | PromQL               |
+| <Src path="dashboards/mikroscope-alerts-postgres.yaml" />   |   <DashboardCount store="postgres" of="rules" /> | SQL de PostgreSQL    |
 
 </ScrollTable>
 
@@ -68,7 +69,10 @@ sed 's/DS_UID_PLACEHOLDER/<uid>/g' dashboards/mikroscope-alerts-influxdb.yaml \
 
 El directorio de aprovisionamiento es cosa de Grafana; `/etc/grafana/provisioning/alerting/` es la
 ruta que nombra la cabecera del propio fichero generado. Usa el fichero que corresponda a la fuente
-de datos a la que pertenece el UID.
+de datos a la que pertenece el UID. Grafana lee ese directorio al arrancar, o cuando se le pide a su
+API de administración que recargue los ficheros aprovisionados; el formato del fichero y la recarga
+están en la [guía de aprovisionamiento de alertas por fichero de
+Grafana](https://grafana.com/docs/grafana/latest/alerting/set-up/provision-alerting-resources/file-provisioning/).
 
 Todas las reglas tienen la misma forma, la que escribe el propio editor de reglas de Grafana:
 
@@ -83,7 +87,8 @@ Todas las reglas tienen la misma forma, la que escribe el propio editor de regla
 
 Cada regla lleva las etiquetas `severity` (`critical` o `warning`) y `source: mikroscope`, una
 anotación `summary` y `execErrState: Error`. Lo que hace Grafana después con una regla cuya consulta
-falla es comportamiento de Grafana, descrito en su propia documentación, y aquí no se ha probado.
+falla es comportamiento de Grafana, descrito en [su propia documentación de los estados Error y No
+Data](https://grafana.com/docs/grafana/latest/alerting/fundamentals/alert-rule-evaluation/nodata-and-error-states/), y aquí no se ha probado.
 
 ## Las reglas
 
@@ -292,7 +297,7 @@ bucle que existe para cazar*: el mismo SQL contra `/api/v3/query_sql` devolvía
 109 en ese momento. Ahora todos los `coalesce()` sobre un agregado llevan
 `::BIGINT`, y `TestCoalesceIsCastInAlertSQL` falla si una regla nueva se lo
 deja. Es el mismo fallo que el SQL de los paneles ya fija con un cast de
-`greatest()` a `BIGINT` (`internal/dashboards/panels.go`), y peor: un panel al
+`greatest()` a `BIGINT` (<Src path="internal/dashboards/panels.go" />), y peor: un panel al
 menos falla a gritos con un 500.
 
 **La regla de conntrack nombraba una columna que ningún almacén InfluxDB

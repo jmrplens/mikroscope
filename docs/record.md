@@ -293,7 +293,7 @@ fetch the full-rate window the agent kept around it.
 
 ## Triggered capture
 
-How the agent keeps the full-rate samples around a condition you configured, what fires, how to fetch a capture, and why the set of captures is a sample of events rather than a census.
+How the agent keeps full-rate samples around a condition you set, what fires, how to fetch a capture, and why it samples events rather than counts them.
 
 Source: <https://jmrp.io/docs/mikroscope/record/triggers/>
 

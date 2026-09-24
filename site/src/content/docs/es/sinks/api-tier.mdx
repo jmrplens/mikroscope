@@ -1,6 +1,9 @@
 ---
 title: La capa de la API de RouterOS
-description: Lo que el colector sigue preguntando a RouterOS por su API binaria, por qué casi todo es opcional, y las opciones y preajustes que deciden cuánto preguntar.
+description: En un RB5009, el cpu-load de RouterOS se ajustó a una media móvil de ~1 s de /proc/stat. Qué más pregunta el colector a la API y cómo preguntar menos.
+head:
+  - tag: title
+    content: La API de RouterOS y lo que promedia su cpu-load | mikroscope
 ---
 
 import { Aside } from "@astrojs/starlight/components";
@@ -11,10 +14,11 @@ import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
 
 Además de la capa del kernel que extrae del agente, `forward` puede mantener una sesión
-persistente con la API binaria de RouterOS para la capa de la API (una segunda cuando la
-propia capa del kernel llega por el relay) y leer lo que el contenedor no ve. Esta página
-responde a qué lee esa capa, qué parte ya cubre el agente, cómo elegir cuánto de ella
-ejecutar y qué significa un valor que falta.
+persistente con la [API binaria de
+RouterOS](https://help.mikrotik.com/docs/spaces/ROS/pages/47579160/API) para la capa de
+la API (una segunda cuando la propia capa del kernel llega por el relay) y leer lo que
+el contenedor no ve. Esta página responde a qué lee esa capa, qué parte ya cubre el
+agente, cómo elegir cuánto de ella ejecutar y qué significa un valor que falta.
 
 ## Lo que el agente ya lee, y lo que no puede
 
@@ -30,17 +34,28 @@ Lo que queda son **los bytes y paquetes por interfaz**. Viven en el espacio de n
 red del router y quedan fuera de alcance se le dé lo que se le dé al contenedor; consulta
 [la CPU del router, la red del contenedor](/mikroscope/es/limits/namespaces/).
 
-## Qué promedia de verdad `cpu-load`
+## ¿Cuántos segundos promedia el `cpu-load` de RouterOS?
 
-`/system/resource` publica `cpu-load` como un porcentaje entero, y esta página lo
-llama media de un segundo. Eso está medido, no supuesto: la serie de la API se
-correlacionó con la propia proporción de ocupación por núcleo del agente, que son
-los mismos jiffies de `/proc/stat` leídos a 10 Hz, en dos horas distintas.
+El `cpu-load` de RouterOS promedia más o menos un segundo: en un MikroTik RB5009 con
+RouterOS 7.24.2 siguió una media móvil de **<Measured id="cpuLoad.window1" /> que llegó
+a la API con <Measured id="cpuLoad.delay1" /> de retardo** en una hora y **una media de <Measured id="cpuLoad.window2" />,
+con <Measured id="cpuLoad.delay2" /> de retardo**, en otra, cada una el mejor ajuste
+frente a la propia proporción de ocupación de `/proc/stat` del kernel leída a 10 Hz el
+2026-09-15 (r = <Measured id="cpuLoad.r1" /> sobre las <Measured id="cpuLoad.samples1" />
+muestras de la API de esa hora, y r = <Measured id="cpuLoad.r2" /> sobre las <Measured id="cpuLoad.samples2" />
+de la otra).
 
-El mejor ajuste es una **media móvil de 1,0 s con 0,6 s de retardo, r = 0,9825**
-sobre 3.499 muestras de la API, y **1,1 s con 0,1 s de retardo, r = 0,9734** sobre
-3.594 en la segunda hora. Ensanchar la ventana solo empeora el ajuste: 1,5 s da
-0,955; 2 s da 0,919; 5 s da 0,822; y 8 s da 0,791.
+La [documentación de
+`/system/resource`](https://help.mikrotik.com/docs/spaces/ROS/pages/40992875/Resource)
+de MikroTik define `cpu-load` como el porcentaje de recursos de CPU usados, sumando
+todas las CPU, y no nombra ninguna ventana (leída el 2026-09-24). El resto de esta
+sección cuenta cómo se midió la ventana en lugar de suponerla.
+
+`/system/resource` publica `cpu-load` como un porcentaje entero. La serie de la API
+se correlacionó con la propia proporción de ocupación por núcleo del agente, que son
+los mismos jiffies de `/proc/stat`, para una serie de longitudes de ventana y
+retardos, y los ajustes de arriba son los mejores de cada hora. Ensanchar la ventana
+solo empeora el ajuste: 1,5 s da 0,955; 2 s da 0,919; 5 s da 0,822; y 8 s da 0,791.
 
 Una media de sesenta segundos queda descartada por partida doble. Su correlación es
 0,238, y la respuesta al escalón no tiene rampa: en el mayor salto de carga del día
@@ -283,9 +298,10 @@ API los tiene.
 
 ## Lo que le cuesta al router
 
-Medido en el RB5009 de referencia (RouterOS 7.24.2, 2026-09-16) con `/tool profile
-duration=60s cpu=total`, una vez con el colector parado y otra con él en marcha con
-`--interfaces bridge,ether1,PPPoE_DIGI --counters-every 10s --api-every 1s`. Las cinco
+Medido en el RB5009 de referencia (RouterOS 7.24.2, 2026-09-16) con el propio
+[profiler](https://help.mikrotik.com/docs/spaces/ROS/pages/8323153/Profiler) de RouterOS,
+`/tool profile duration=60s cpu=total`, una vez con el colector parado y otra con él en
+marcha con `--interfaces bridge,ether1,PPPoE_DIGI --counters-every 10s --api-every 1s`. Las cinco
 primeras instantáneas de un segundo de cada perfil se descartan: llevan la conexión SSH
 que lo pidió.
 
@@ -330,7 +346,8 @@ significa que el socket está acabado, así que la capa vuelve a marcar y
 reintenta ese comando sobre la conexión nueva. Un **`!trap`** no vuelve a
 marcar: el router está vivo y rechaza el comando, y repetirlo solo gastaría su
 CPU en la misma pregunta mala. Un **`!fatal`** sí, porque es la palabra que
-RouterOS envía al cerrar la sesión.
+RouterOS envía al cerrar la sesión, como dice la [documentación de la API de
+MikroTik](https://help.mikrotik.com/docs/spaces/ROS/pages/47579160/API).
 
 Los intentos van espaciados cinco segundos. Una ronda lanza cuatro o cinco
 comandos, así que a un router caído se le marcaría si no varias veces por
@@ -401,5 +418,7 @@ compararlas en tu propio equipo, pide la cuenta y lee el slab en el mismo minuto
   el `ether2` de la API con el `eth1` del kernel.
 - [Conntrack sin la API](/mikroscope/es/playbooks/conntrack/): leer el número de conexiones del slab
   en su lugar.
+- [Frente a las alternativas](/mikroscope/es/start/compared/): lo que leen SNMP, la API de RouterOS
+  y las demás herramientas en un router MikroTik, junto a lo que lee el agente.
 
 </SeeAlso>

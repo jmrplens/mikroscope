@@ -205,10 +205,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Docker Hub as well as GHCR: a RouterOS device's `/container/config
-      # registry-url` ships pointing at registry-1.docker.io, and that setting
-      # is global to the device, so `install --remote-image` works there
-      # without repointing someone's router. Skipped when the secrets are
+      # Docker Hub as well as GHCR: it is the registry MikroTik's container
+      # documentation points `/container/config registry-url` at in its
+      # examples, and the setting is global to the device, so a router already
+      # on Docker Hub needs nothing repointed. (RouterOS's own default has been
+      # https://lscr.io since 7.18, which carries neither.) Skipped when the secrets are
       # absent — a fork releasing from its own tag pushes to GHCR alone
       # instead of failing.
       - name: Log in to Docker Hub

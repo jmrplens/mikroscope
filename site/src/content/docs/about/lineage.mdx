@@ -1,17 +1,20 @@
 ---
 title: Lineage and licence
-description: Which parts of mikroscope came from cs-routeros-bouncer and from go-routeros, what changed on the way, and the MIT licence both arrive under.
+description: Which parts of mikroscope came from cs-routeros-bouncer, ghchronicle and go-routeros, what changed on the way, and the MIT licence they arrive under.
 ---
 
 import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
+import Src from "../../../components/Src.astro";
 
 This page answers where mikroscope's code came from: which packages started
 as someone else's, what was changed when they arrived, and under what licence.
 The attribution is also in the code, so it survives being read without this
-site: in the package doc comment of `internal/router`, `internal/image`,
-`internal/chart` and `internal/dashboards`, in `internal/rosapi`'s `README.md`
-and `LICENSE`, and in the header of `.golangci.yml`.
+site: in the package doc comment of <Src path="internal/router/" />, of the image
+builder <Src path="internal/image/" />, of the chart <Src path="internal/chart/" /> and
+of the dashboard generator <Src path="internal/dashboards/" />; in the API client's
+own <Src path="internal/rosapi/README.md" /> and <Src path="internal/rosapi/LICENSE" />;
+and in the header of <Src path=".golangci.yml" />.
 
 ## Where the sampler came from
 
@@ -47,13 +50,22 @@ bytes.
 
 ## What was modelled, not taken
 
-`internal/dashboards` takes its Grafana export shape from `cmd/gen_dashboards`
-in the owner's ghchronicle — "the shape, not the code", as its package comment
-says — and `dashboards check` checks every panel on a real Grafana the way
-ghchronicle does. Two more pieces are modelled the same way, after a reference
-project this documentation does not name: the dashboards' named sections follow
-that project's `sections.go`, and the end-to-end suite under `test/e2e/`
-follows its suite.
+The model is [ghchronicle](https://github.com/jmrplens/ghchronicle), the other
+telemetry project of mikroscope's maintainer, José Manuel Requena Plens, which
+collects what GitHub reports about an account. `internal/dashboards` takes its
+Grafana export shape from ghchronicle's
+[`cmd/gen_dashboards`](https://github.com/jmrplens/ghchronicle/tree/main/cmd/gen_dashboards)
+— "the shape, not the code", as its package comment says — and
+`dashboards check` checks every panel on a real Grafana the way ghchronicle
+does. Two more pieces are modelled on ghchronicle the same way, the shape and
+not the code. The dashboards' named sections, the first open and every other one
+collapsed, follow its
+[`internal/dashboards/sections.go`](https://github.com/jmrplens/ghchronicle/blob/main/internal/dashboards/sections.go);
+mikroscope's list is <Src path="internal/dashboards/sections.go" />. And the
+end-to-end suite under <Src path="test/e2e/" /> follows
+[ghchronicle's `test/e2e/`](https://github.com/jmrplens/ghchronicle/tree/main/test/e2e),
+which builds its binary and drives it against a fake GitHub with one test file
+per sink.
 
 ## The RouterOS API client
 
@@ -112,10 +124,12 @@ Compare against upstream's `v3.0.1` tag, not its master branch.
 
 ## Licence
 
-mikroscope is MIT-licensed, copyright 2026 jmrplens; the full text is
-`LICENSE` at the root of the repository. The code taken from cs-routeros-bouncer arrives under that
-repository's MIT licence, and `internal/rosapi` keeps go-routeros's MIT
-`LICENSE` beside the code it covers.
+mikroscope is MIT-licensed, copyright 2026 José Manuel Requena Plens, whom the
+licence names by his handle, jmrplens; the full text is <Src path="LICENSE" />
+at the root of the repository. The code taken from cs-routeros-bouncer arrives
+under that repository's MIT licence, and `internal/rosapi` keeps go-routeros's
+MIT `LICENSE` beside the code it covers. What each release changed,
+corrections to this page included, is in <Src path="CHANGELOG.md" />.
 
 <SeeAlso>
 
@@ -127,5 +141,7 @@ repository's MIT licence, and `internal/rosapi` keeps go-routeros's MIT
 - [Record, mark, plot](/mikroscope/record/): the deterministic chart `internal/chart` draws.
 - [Where the project stands](/mikroscope/about/status/): what works today, and what the release
   publishes.
+- [Releases](/mikroscope/about/changelog/): the current release, and where the history of every
+  release, this page's corrections among them, is kept.
 
 </SeeAlso>

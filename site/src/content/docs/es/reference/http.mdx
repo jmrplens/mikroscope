@@ -1,6 +1,6 @@
 ---
 title: Los endpoints HTTP del agente
-description: Cada ruta que sirve el agente en la veth, sus parámetros de consulta, lo que devuelve, cómo la protege el token y los formatos de línea de /snapshot y /stream.
+description: Cada ruta que sirve el agente en la veth, sus parámetros, lo que devuelve, cómo la protege el token y los formatos de línea de /snapshot y /stream.
 ---
 
 import { Aside } from "@astrojs/starlight/components";
@@ -8,12 +8,13 @@ import Measured from "../../../../components/Measured.astro";
 import PrivilegedOnly from "../../../../components/PrivilegedOnly.astro";
 import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
+import Src from "../../../../components/Src.astro";
 
 El agente es un servidor HTTP y nada más: no abre ninguna conexión saliente.
 Esta página responde qué devuelve cada ruta, qué parámetros de consulta admite,
 con qué códigos de estado responde y qué aspecto tiene una línea de su NDJSON.
-Está leída de `internal/agent/http.go`, `capture.go`, `source.go` e
-`internal/sample/sample.go`.
+Está leída de <Src path="internal/agent/http.go" />, <Src path="internal/agent/capture.go" />, <Src path="internal/agent/source.go" />
+y <Src path="internal/sample/sample.go" />.
 
 ## Dónde escucha
 
@@ -25,8 +26,8 @@ Cómo llega un equipo a esa dirección, directamente, por el relay o mediante
 `--expose`, está en [llegar al agente](/mikroscope/es/install/reaching-the-agent/).
 
 El servidor le da a un cliente 5 s para enviar las cabeceras de su petición y
-30 s para recibir una respuesta (`ReadHeaderTimeout` y `WriteTimeout` en
-`internal/agent/agent.go`).
+30 s para recibir una respuesta (`ReadHeaderTimeout` y `WriteTimeout` en el
+fichero <Src path="internal/agent/agent.go" />).
 
 ## Autenticación
 
@@ -48,7 +49,7 @@ token.
 
 El transporte por relay no puede presentar un token. `/tool fetch` se ejecuta en
 el router y no envía cabecera `Authorization`
-(`internal/transport/transport.go`), así que en un agente con token el relay
+(<Src path="internal/transport/transport.go" />), así que en un agente con token el relay
 llega a `/healthz` y a nada más. `--expose` hace obligatorio el token; [lo que
 abre --expose](/mikroscope/es/security/expose/) cuenta por qué.
 

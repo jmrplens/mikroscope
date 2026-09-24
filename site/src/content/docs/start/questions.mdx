@@ -1,0 +1,108 @@
+---
+title: Short answers
+description: Ten questions about mikroscope on MikroTik RouterOS, from MIPS and 7.24 to cost, safety and cpu-load, each answered from the page that has the measurement.
+head:
+  - tag: title
+    content: mikroscope on MikroTik RouterOS, questions answered
+---
+
+import Measured from "../../../components/Measured.astro";
+import Provenance from "../../../components/Provenance.astro";
+import SeeAlso from "../../../components/SeeAlso.astro";
+import Verified from "../../../components/Verified.astro";
+
+Each answer below is the short form of a page that has the evidence, and links to it. A figure
+here is the one that page gives, with the device, the RouterOS version and the date beside it.
+
+## Does mikroscope run on MIPS or TILE routers?
+
+No. The agent runs in a RouterOS container, and MikroTik ships the `container` package for arm,
+arm64, x86 and CHR only ([MikroTik's package
+list](https://help.mikrotik.com/docs/spaces/ROS/pages/40992872/Packages)). mikroscope builds its
+agent for arm64, arm and x86_64. On a MIPS or TILE board, SNMP or an API exporter is the tool:
+[when not to use mikroscope](/mikroscope/start/compared/#when-not-to-use-mikroscope).
+
+## Which routers has it actually run on?
+
+One: an arm64 RB5009UG+S+, on RouterOS 7.24.2 and later 7.24.4. The arm and x86_64 builds are
+cross-built and checked in CI and have never run on hardware, and the hEX S that will test 32-bit
+RouterOS has not arrived. Every figure on this site comes from that one router: [what it
+is](/mikroscope/start/).
+
+## Why does it need RouterOS 7.24 or later?
+
+The container step writes `privileged=`, an attribute RouterOS added in 7.24, whatever
+`--privileged` says, so on an earlier 7.x that step is expected to fail, and the install removes the
+tar it uploaded when that step fails. That is read from the code: no install has been tried on a RouterOS
+before 7.24. Installs have run on 7.24.2 and 7.24.4 and nothing else: [a container-capable
+device](/mikroscope/install/prerequisites/#a-container-capable-device).
+
+## Why does device-mode need a button press?
+
+MikroTik built it that way. Device-mode limits what a router allows, to protect it from an
+attacker who gained access, so changing it takes physical access: after `/system/device-mode/update
+container=yes`, someone presses the reset or mode button, or power-cycles the router, within five
+minutes ([MikroTik's device-mode
+page](https://help.mikrotik.com/docs/spaces/ROS/pages/93749258/Device-mode)). No tool can do it
+remotely: [device-mode container=yes](/mikroscope/install/prerequisites/#device-mode-containeryes).
+
+## What does it cost the router?
+
+At the install default of 10 Hz the agent costs <Measured id="run.10hz.cpu" /> of one core
+and <Measured id="run.10hz.rss" /> of memory, read from its own cgroup, and <Measured id="run.100hz.cpu" />
+at 100 Hz. That is over the project's own CPU budget of <Measured id="budget.cpu" /> and inside its
+memory budget of <Measured id="budget.rss" />: [the cost of the observer](/mikroscope/cost/).
+
+<Provenance of="rates-2026-09-18" />
+
+## Is it safe to run on a production router?
+
+It was built on one: the reference RB5009 is the owner's production router. The agent never
+connects out and presents no credential. Every write is listed before it is made, and tagged, and a
+scripted round trip left the router's `/export` byte-identical (<Verified of="export-identical" />).
+It runs `privileged=yes`, a real grant: [what runs where](/mikroscope/security/).
+
+## Does it see interface traffic?
+
+Not from inside the container. `/proc/net/dev` and the other network files are per network
+namespace, so there they count the container's own veth, and `privileged=yes` does not change
+that. Per-interface bytes and packets come from the RouterOS API, which the collector merges on the
+agent's clock: [the container's network](/mikroscope/limits/namespaces/#the-network-is-the-containers-own).
+
+<Provenance of="netns-2026-09-12" />
+
+## How many seconds does RouterOS `cpu-load` average over?
+
+About one. Fitted against the kernel's own `/proc/stat` busy ratio read at 10 Hz on an RB5009,
+`cpu-load` tracked a trailing mean of about a second that reached the API a fraction of a second
+late, in each of two separate hours, and a sixty-second average is ruled out. The fits are on [the
+RouterOS API tier](/mikroscope/sinks/api-tier/#how-many-seconds-does-routeros-cpu-load-average-over).
+
+<Provenance of="cpu-load-window-2026-09-15" />
+
+## Does it replace SNMP or mktxp?
+
+No. It does not replace the RouterOS API either, and takes per-interface traffic from it. What it
+adds is the kernel's own view, which none of the others is documented to read: per-core ticks at
+up to 100 Hz, softirqs, softnet drops and squeezes, and the kernel log. Where no container runs,
+SNMP or mktxp is the tool: [the comparison](/mikroscope/start/compared/).
+
+## Does the agent send anything off the router?
+
+No. It serves HTTP on its veth address and makes no outbound connection, and there is no update
+check. Your collector pulls from it, and every sink token and API credential stays on your host,
+because whatever sits in the container's envlist is treated as readable by every RouterOS user with
+`read`: [what runs where](/mikroscope/security/).
+
+<SeeAlso>
+
+## See also
+
+- [Compared with the alternatives](/mikroscope/start/compared/): SNMP, The Dude, Graphing, the
+  Profiler, mktxp and mikrotik-exporter, cell by cell.
+- [Glossary](/mikroscope/reference/glossary/): envlist, veth, PMU, PSI, softnet and the other terms
+  these answers use.
+- [Where the project stands](/mikroscope/about/status/): what has run on the reference router and
+  what has not.
+
+</SeeAlso>

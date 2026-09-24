@@ -1,12 +1,16 @@
 ---
 title: Qué se ejecuta dónde
-description: Qué pieza de mikroscope corre en el router y cuál en tu máquina, a qué llega cada una y dónde vive cada credencial.
+description: Qué pieza de mikroscope corre en el router MikroTik y cuál en tu máquina, a qué llega cada una, dónde vive cada credencial y cómo informar de un fallo.
+head:
+  - tag: title
+    content: "Seguridad: qué se ejecuta en el router MikroTik | mikroscope"
 ---
 
 import EnvlistKeys from "../../../../components/EnvlistKeys.astro";
 import NotClaimed from "../../../../components/NotClaimed.astro";
 import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
+import Src from "../../../../components/Src.astro";
 import Verified from "../../../../components/Verified.astro";
 
 Esta página responde a la pregunta que hay que hacerse antes de poner nada en un router de
@@ -121,7 +125,7 @@ El contenedor ejecuta una imagen, y la vía que la pone ahí decide en qué est�
 
 `install` crea un contenedor con estos ajustes, todos impresos por `plan` antes de escribir nada:
 
-- **`privileged=yes` por defecto**, `--privileged=false` para renunciar a ello. El ajuste necesita RouterOS 7.24 o posterior. Quita el espacio de nombres de usuario del contenedor (verificado en <Verified of="privileged-namespaces" />), que es lo que hace legibles el log del
+- **`privileged=yes` por defecto**, `--privileged=false` para renunciar a ello. El ajuste necesita RouterOS 7.24 o posterior, cuyo [registro de cambios](https://download.mikrotik.com/routeros/7.24/CHANGELOG) añadió el modo privilegiado para contenedores. Quita el espacio de nombres de usuario del contenedor (verificado en <Verified of="privileged-namespaces" />), que es lo que hace legibles el log del
   kernel, `/proc/slabinfo`, `/proc/pagetypeinfo` y los contadores ECC de la MTD. **No** quita el
   espacio de nombres de red ni el de PID: ni contadores de interfaz, ni la tabla conntrack del
   router, ni vista de los procesos de RouterOS. [Lo que aporta privileged](/mikroscope/es/limits/privileged/)
@@ -160,6 +164,26 @@ secretos incluidos. mikroscope no hace esto, y un contenedor que construyas tú 
 	en un RB5009 con RouterOS 7.24.2 y se volvieron a ejercitar sobre 7.24.4; no se probó ninguna otra
 	placa.
 </NotClaimed>
+
+## Informar de una vulnerabilidad
+
+Informa de una vulnerabilidad en privado, nunca con sus detalles en un issue público: abre la
+[pestaña Security](https://github.com/jmrplens/mikroscope/security) del repositorio y elige **Report
+a vulnerability**. GitHub abre entonces un aviso privado que solo ve el mantenedor. Si ese botón no
+aparece, abre un issue que pida un canal privado y no diga nada más del problema, y espera ahí una
+respuesta que te lo indique. Incluye la versión (`mikroscope version`, y
+`mikroscope-agent -version` si es distinta), la versión de RouterOS y la placa, lo que gana un
+atacante y la forma más corta de reproducirlo. Si una prueba de concepto necesita una credencial,
+una dirección de router o un export, no lo envíes: descríbelo.
+
+La política en sí es <Src path="SECURITY.md" />. Promete un acuse de recibo en una semana y, una vez
+confirmado el informe, una corrección publicada antes que el aviso; quien quiera que se le mencione
+aparece en el aviso, y quien no, no se nombra. Solo se da soporte a la última versión, porque una corrección sale como una
+etiqueta nueva y no como un parche sobre una anterior. También dice qué merece informarse: todo lo
+que rompa la separación que describe esta página, como que algo distinto del colector configurado
+llegue al agente o que una credencial aparezca donde no debe. Los requisitos que impone RouterOS, y
+que el token del agente sea legible para cualquier usuario `read`, son decisiones documentadas, no
+vulnerabilidades.
 
 <SeeAlso>
 

@@ -2,12 +2,13 @@
 
 ## Reporting a vulnerability
 
-Do not open a public issue.
+Do not put the details in a public issue.
 
 Use GitHub's private vulnerability reporting: the **Security** tab of this
 repository, then **Report a vulnerability**. It creates a private advisory that
-only the maintainer can see, and it is the only channel this project asks you
-to use.
+only the maintainer can see. If that button is not there, open an issue that
+asks for a private channel and says nothing else about the problem, and wait
+there for a reply that names one.
 
 Please include the version (`mikroscope version`, and `mikroscope-agent
 -version` if it differs), the RouterOS version and board, what an attacker

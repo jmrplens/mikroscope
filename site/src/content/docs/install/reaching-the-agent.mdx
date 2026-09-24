@@ -1,6 +1,6 @@
 ---
 title: Reaching the agent
-description: How the host running `record` or `forward` reaches an agent that listens only on its veth address, what the probe after `install` tells you when it cannot, and what direct, relay and `--expose` each cost.
+description: The agent listens only on its veth address — how your host reaches it directly, through the RouterOS API relay or with `--expose`, and what each one costs.
 ---
 
 import Measured from "../../../components/Measured.astro";
@@ -8,6 +8,7 @@ import NotClaimed from "../../../components/NotClaimed.astro";
 import RouterWrites from "../../../components/RouterWrites.astro";
 import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
+import Src from "../../../components/Src.astro";
 import Verified from "../../../components/Verified.astro";
 
 The agent listens on the veth address only — `http://172.30.10.2:9123` with the
@@ -23,8 +24,8 @@ after each failed attempt (each attempt times out after 2 s) for up to 30 s. Whe
 rate, sequence number, slipped ticks and the round trip, as in
 `direct transport ok: agent 1.0.0, 10 Hz, seq 29, 0 slipped, 7ms round trip`.
 The version is the CLI's own: `install` stamps the agent it builds with
-`internal/version.Version`, and both the Makefile and the release take that
-from the VERSION file, so an agent put there by 1.0.0 reports `1.0.0`. An agent
+`internal/version.Version`, and both the <Src path="Makefile" /> and the release take that
+from the <Src path="VERSION" /> file, so an agent put there by 1.0.0 reports `1.0.0`. An agent
 the router pulled reports the tag it was published under.
 On the RB5009 (RouterOS 7.24.2, 2026-09-12) the agent answered 3 s after install,
 with a 5–7 ms round trip.

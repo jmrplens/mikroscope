@@ -1,11 +1,12 @@
 ---
 title: Cuando algo no funciona
-description: Los síntomas que produce este proyecto, con las palabras que ves de verdad —un error de RouterOS, un contenedor que se cierra, un panel vacío, un destino que descarta—, con lo que significa cada uno y la página que lo explica.
+description: Síntomas con las palabras que ves (un error de RouterOS, un contenedor que se cierra, un panel vacío, un destino que descarta) y qué significa cada uno.
 ---
 
 import { Aside } from "@astrojs/starlight/components";
 import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
+import Src from "../../../../components/Src.astro";
 
 Cada página de aquí explica una cosa a fondo. Esta es el índice al que acudes
 cuando algo ya está roto: busca la línea que estás mirando y te dice qué
@@ -57,12 +58,15 @@ está instalado **y** no deshabilitado.
 ### unknown parameter privileged
 
 RouterOS 7.24 añadió `privileged=`, y el paso del contenedor lo escribe, así que
-una 7.x anterior falla ahí —después de haber subido el tar, que es la razón de
-que la instalación se lo lleve de vuelta—. O actualizas RouterOS, o instalas con
-`--privileged=false` y lees antes
-[qué te da privileged](/mikroscope/es/limits/privileged/): sin eso el agente no
-puede leer `/dev/kmsg`, y el registro del kernel es donde empiezan varios de los
-playbooks de este proyecto.
+una 7.x anterior debería fallar ahí —después de haber subido el tar, que es la
+razón de que la instalación se lo lleve de vuelta—. Eso sale del código: no se ha
+probado ninguna instalación en un RouterOS anterior a la 7.24. Actualiza RouterOS
+a la 7.24 o posterior: `--privileged=false` no ayuda, porque entonces el paso escribe
+`privileged=no`, el mismo parámetro desconocido
+(<Src path="internal/router/steps.go" />). Ya en la 7.24,
+[qué te da privileged](/mikroscope/es/limits/privileged/) explica qué cambia el
+ajuste: sin él el agente no puede leer `/dev/kmsg`, y el registro del kernel es
+donde empiezan varios de los playbooks de este proyecto.
 
 ### exec format error
 
@@ -70,8 +74,9 @@ El contenedor arranca y muere al momento, y el registro dice `exec format
 error`. La imagen es de otra arquitectura que la placa —y en ARM de 32 bits,
 «arm» no es una sola arquitectura—.
 
-La documentación de contenedores de MikroTik dice que los equipos con CPU
-EN7562CT, la serie hEX Refresh, «solo admiten imágenes de contenedor arm32v5»;
+La documentación de contenedores de MikroTik dice que en los equipos con CPU
+EN7562CT, como el hEX Refresh, «only arm32v5 container images are supported»
+—solo se admiten imágenes de contenedor arm32v5—;
 sus demás placas ARM de 32 bits ejecutan un espacio de usuario ARMv7. Una imagen
 ARMv5 funciona en las dos, una ARMv7 no arranca en las primeras. Así que:
 
@@ -87,9 +92,12 @@ ARMv5 funciona en las dos, una ARMv7 no arranca en las primeras. Así que:
 
 `/container/config registry-url` es un único ajuste global de RouterOS,
 compartido con todos los demás contenedores del equipo, y mikroscope lo lee y
-nunca lo escribe. La referencia de Docker Hub funciona tal cual porque es a
-donde apunta RouterOS de fábrica; la de GHCR necesita cambiar antes ese ajuste,
-lo que lo cambia también para todos los demás de ese router.
+nunca lo escribe. El valor por defecto de RouterOS desde la 7.18 es
+`https://lscr.io`, donde no está ninguna de las dos imágenes, así que lee el
+tuyo con `/container/config/print`. La referencia de Docker Hub funciona en un
+router que ya apunte a `https://registry-1.docker.io`, como el RB5009 de
+referencia; la de GHCR necesita `https://ghcr.io`. Cambiar el ajuste lo cambia
+también para todos los demás de ese router.
 
 ### Una credencial para todos los registros
 

@@ -1,6 +1,9 @@
 ---
 title: Cómo leer lo que muestra
-description: Ocho lecturas de datos del kernel y de los puertos de un RB5009 — dos fallos de producción encontrados sin buscarlos, tres sucesos provocados a propósito, dos que no hubo que provocar y la forma en reposo contra la que se leen.
+description: "Ocho lecturas de datos del kernel y de puertos de un MikroTik RB5009: dos fallos de producción, tres provocados, dos sin provocar y la base en reposo."
+head:
+  - tag: title
+    content: "Leer fallos de MikroTik RouterOS en datos del kernel | mikroscope"
 ---
 
 import { Aside } from "@astrojs/starlight/components";
@@ -14,6 +17,14 @@ _los números están llegando — ¿qué aspecto tiene un fallo en ellos?_ Cada 
 es una forma, leída en datos que el agente (o, para los errores de puerto, el
 tier de API) recogió en el router de referencia, con las órdenes que la
 produjeron para que puedas reproducirla en tu propio equipo.
+
+**En resumen:** cada página de abajo lee un fallo como un cambio frente a la
+forma en reposo, como un log del kernel que normalmente calla y trae un flujo
+constante, un núcleo al máximo mientras el total del equipo sigue moderado, o una
+línea de interrupción que se multiplica. Tres de ellas llevan un gráfico sacado
+del almacén InfluxDB de referencia, cuyo historial empieza el 2026-09-19: la
+vuelta del bucle, la comprobación cruzada de conntrack y el puerto que pierde
+tramas. Las lecturas del 2026-09-12 son anteriores a ese almacén y son tablas.
 
 Todos los números de estas páginas, salvo los de la página de errores de puerto,
 salen de una sola campaña en el router de referencia, un kernel aarch64 en una

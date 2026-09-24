@@ -1,6 +1,6 @@
 ---
 title: Alert rules
-description: The Grafana alert rules generated beside the dashboards, what each one fires on, where its threshold comes from, and what has not been tested about them.
+description: "The Grafana alert rules generated beside the dashboards: what each fires on, where its threshold comes from, and what has not been tested about them."
 ---
 
 import { Tabs, TabItem } from "@astrojs/starlight/components";
@@ -10,6 +10,7 @@ import Measured from "../../../components/Measured.astro";
 import NotClaimed from "../../../components/NotClaimed.astro";
 import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
+import Src from "../../../components/Src.astro";
 
 `mikroscope dashboards gen` writes, beside each dashboard, a Grafana unified-alerting provisioning
 file with the rules that follow from the dashboards' own fault counters, from the kernel log the
@@ -25,9 +26,9 @@ compiled in for one router.
 
 | File                                           |                                            Rules | Query language |
 | ---------------------------------------------- | -----------------------------------------------: | -------------- |
-| `dashboards/mikroscope-alerts-influxdb.yaml`   |   <DashboardCount store="influxdb" of="rules" /> | InfluxDB 3 SQL |
-| `dashboards/mikroscope-alerts-prometheus.yaml` | <DashboardCount store="prometheus" of="rules" /> | PromQL         |
-| `dashboards/mikroscope-alerts-postgres.yaml`   |   <DashboardCount store="postgres" of="rules" /> | PostgreSQL SQL |
+| <Src path="dashboards/mikroscope-alerts-influxdb.yaml" />   |   <DashboardCount store="influxdb" of="rules" /> | InfluxDB 3 SQL |
+| <Src path="dashboards/mikroscope-alerts-prometheus.yaml" /> | <DashboardCount store="prometheus" of="rules" /> | PromQL         |
+| <Src path="dashboards/mikroscope-alerts-postgres.yaml" />   |   <DashboardCount store="postgres" of="rules" /> | PostgreSQL SQL |
 
 </ScrollTable>
 
@@ -66,6 +67,9 @@ sed 's/DS_UID_PLACEHOLDER/<uid>/g' dashboards/mikroscope-alerts-influxdb.yaml \
 
 The provisioning directory is Grafana's; `/etc/grafana/provisioning/alerting/` is the path the
 generated file's own header names. Use the file that matches the datasource the UID belongs to.
+Grafana reads that directory when it starts, or when its Admin API is asked to reload the
+provisioned files; the file format and the reload are in [Grafana's alerting file-provisioning
+guide](https://grafana.com/docs/grafana/latest/alerting/set-up/provision-alerting-resources/file-provisioning/).
 
 Every rule has the same shape, the one Grafana's own rule editor writes:
 
@@ -79,7 +83,8 @@ Every rule has the same shape, the one Grafana's own rule editor writes:
 
 Each rule carries the labels `severity` (`critical` or `warning`) and `source: mikroscope`, a
 `summary` annotation, and `execErrState: Error`. What Grafana then does with a rule whose query
-fails is Grafana's behaviour, set out in its own documentation, and has not been tested here.
+fails is Grafana's behaviour, set out in [its own documentation of the Error and No Data
+states](https://grafana.com/docs/grafana/latest/alerting/fundamentals/alert-rule-evaluation/nodata-and-error-states/), and has not been tested here.
 
 ## The rules
 
@@ -274,7 +279,7 @@ over `/api/v3/query_sql` returned 109 at that moment. Every `coalesce()` over
 an aggregate now carries `::BIGINT`, and
 `TestCoalesceIsCastInAlertSQL` fails if a new rule omits it. This is the same
 fault the panels' SQL already pins by casting `greatest()` to `BIGINT`
-(`internal/dashboards/panels.go`), and worse: a panel at least fails loudly with a 500.
+(<Src path="internal/dashboards/panels.go" />), and worse: a panel at least fails loudly with a 500.
 
 **The conntrack rule named a column no InfluxDB store holds** — `limit_objs`,
 which is the SQL sink's name, while the InfluxDB sink writes the slab ceiling

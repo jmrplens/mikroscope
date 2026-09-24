@@ -60,5 +60,6 @@
   "ms.alerts.stores": "Almacenes",
   "ms.alerts.both": "los dos",
   "ms.breadcrumb.home": "Inicio",
-  "ms.alerts.all": "los tres"
+  "ms.alerts.all": "los tres",
+  "ms.footer.byline": "Escrito y mantenido por"
 }

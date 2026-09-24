@@ -1,0 +1,244 @@
+---
+title: Glosario
+description: Los términos que estas páginas usan sin definirlos, de envlist, veth y privileged a PMU, PSI, softnet, anillo y destino, una frase cada uno con su enlace.
+head:
+  - tag: title
+    content: Glosario de contenedores RouterOS y del kernel | mikroscope
+---
+
+import Measured from "../../../../components/Measured.astro";
+import Src from "../../../../components/Src.astro";
+
+Una frase por término, en el sentido en que lo usan estas páginas, cada una enlazada a la página
+que lo explica entero. Cuando una frase afirma algo del RB5009 de referencia, da la fecha en que se
+estableció; un término del kernel enlaza además la documentación del propio kernel.
+
+## anillo
+
+El búfer en memoria del agente con los últimos `--buffer` segundos de muestras, 60 s por defecto,
+más allá del cual no existe nada en el router: [hasta dónde recuerda el
+agente](/mikroscope/es/limits/#hasta-dónde-recuerda-el-agente).
+
+## capa de la API
+
+La parte del colector que mantiene una sesión con la API binaria de RouterOS y lee lo que el
+contenedor no ve, sobre todo los bytes y paquetes por interfaz, regulada con `--api-mode off`,
+`slow` o `full`: [la capa de la API de RouterOS](/mikroscope/es/sinks/api-tier/).
+
+## capa del kernel
+
+Las muestras del kernel del router que toma el agente, tal como las extrae el colector, en cuyo
+reloj se sella la capa de la API: [lo que hace una
+ejecución](/mikroscope/es/sinks/#lo-que-hace-una-ejecución).
+
+## captura
+
+Las muestras a frecuencia completa que el agente conserva alrededor del momento en que saltó una
+condición de disparo, de su conjunto por defecto o del que se pasó con `--triggers`, 5 s a cada lado
+por defecto, y que se recogen después por
+HTTP: [captura por disparo](/mikroscope/es/record/triggers/).
+
+## colector
+
+`mikroscope forward` en tu máquina, que extrae el anillo del agente, muestrea la capa de la API,
+ejecuta la etapa de derivación y escribe la línea temporal fusionada en cada destino que nombres:
+[el colector](/mikroscope/es/sinks/).
+
+## conntrack
+
+La tabla de seguimiento de conexiones de Linux, cuyo `nf_conntrack_count` dentro del contenedor
+cuenta solo las conexiones del propio contenedor, así que el agente toma la cuenta del router de la
+caché slab `nf_conntrack` con `privileged=yes`: [conntrack sin la
+API](/mikroscope/es/playbooks/conntrack/).
+
+## contenedor de RouterOS
+
+La implementación de MikroTik de los contenedores Linux, en el paquete `container` ([la página de
+contenedores de MikroTik](https://help.mikrotik.com/docs/spaces/ROS/pages/84901929/Container)), que
+comparte el kernel del router, así que el `/proc` de dentro es el del propio router salvo los
+ficheros de red, que van por espacio de nombres: [la CPU del router, la red del
+contenedor](/mikroscope/es/limits/namespaces/).
+
+## contenedor scratch
+
+Un contenedor cuya imagen parte de nada ([el `scratch` de
+Docker](https://docs.docker.com/build/building/base-images/)), que en el caso del agente es un
+binario estático y nada más, como dice <Src path="Dockerfile.agent" />: [qué se ejecuta
+dónde](/mikroscope/es/security/).
+
+## `cpu-load`
+
+La cifra de CPU que da `/system/resource` de RouterOS para todos los núcleos juntos, que este
+proyecto midió en un RB5009 el 2026-09-15 como una media móvil de más o menos un segundo: [cuántos
+segundos
+promedia](/mikroscope/es/sinks/api-tier/#cuántos-segundos-promedia-el-cpu-load-de-routeros).
+
+## destino
+
+Un sitio al que escribe el colector, uno de once que van de un fichero y la salida estándar a
+Prometheus, InfluxDB 3 y PostgreSQL: [los once destinos](/mikroscope/es/sinks/#los-once-destinos).
+
+## detección
+
+Un evento discreto que el colector pone en la línea temporal cuando salta una de sus once reglas,
+un «mira aquí» y no un veredicto: [detecciones](/mikroscope/es/sinks/detections/).
+
+## device-mode
+
+El ajuste de RouterOS que limita qué funciones permite un router, en el que `container=yes` activa
+los contenedores y, [por diseño de
+MikroTik](https://help.mikrotik.com/docs/spaces/ROS/pages/93749258/Device-mode), exige pulsar un
+botón o un arranque en frío para confirmarlo: [device-mode
+container=yes](/mikroscope/es/install/prerequisites/#device-mode-containeryes).
+
+## `dt_ns`
+
+La duración real del intervalo de una muestra en nanosegundos, enviada junto a los ticks crudos
+para que quien los lea divida por el tiempo que de verdad pasó: [una línea de
+muestra](/mikroscope/es/reference/http/#una-línea-de-muestra).
+
+## envlist
+
+Una lista con nombre de variables de entorno en `/container/envs` de RouterOS con la que arranca un
+contenedor ([la página de contenedores de
+MikroTik](https://help.mikrotik.com/docs/spaces/ROS/pages/84901929/Container)), donde `install`
+escribe la configuración del agente, su marca de propiedad y ninguna credencial salvo el token
+opcional: [lo que lleva la envlist](/mikroscope/es/install/layout/#lo-que-lleva-la-envlist).
+
+## etapa de derivación
+
+El paso del colector que calcula valores junto a cada muestra del kernel y cada sondeo de
+contadores, como `mem_pressure`, `packets_per_irq` y `burst`, y ejecuta las reglas de detección:
+[lo que deriva el colector](/mikroscope/es/sinks/derive/).
+
+## etiqueta
+
+El comentario `mikroscope:<name> (managed by mikroscope)` que `install` escribe en cada objeto que
+admite comentario, y como `MIKROSCOPE_TAG` en la envlist, por el que se selecciona al desinstalar y
+nunca por patrón: [cómo se decide la
+propiedad](/mikroscope/es/install/#cómo-se-decide-la-propiedad).
+
+## hueco
+
+Una serie de muestras que el agente ya no tiene cuando alguien las pide, que se informa con los
+números de secuencia perdidos y nunca se rellena: [hasta dónde recuerda el
+agente](/mikroscope/es/limits/#hasta-dónde-recuerda-el-agente).
+
+## IPC
+
+Instrucciones por ciclo, a partir de las cuentas `instructions` y `cycles` de la PMU, que el agente
+envía crudas sin dividir y que vigila la detección `ipc-collapse` del colector: [la única fuente
+por debajo del
+tick](/mikroscope/es/limits/#la-única-fuente-por-debajo-los-contadores-de-la-propia-cpu).
+
+## kmsg
+
+La fuente del agente para `/dev/kmsg`, el búfer de log del propio kernel ([documentación de la ABI
+del kernel](https://www.kernel.org/doc/Documentation/ABI/testing/dev-kmsg)), que se vacía en cada
+tick con `privileged=yes` y lleva líneas que el log de RouterOS no muestra: [un bucle que solo veía
+el kernel](/mikroscope/es/playbooks/loop/).
+
+## marcador
+
+Una nota con marca de tiempo en una grabación, escrita en `record`, añadida con `mark` o tomada del
+propio log del router, que `plot` dibuja en el gráfico: [los marcadores, y en qué reloj
+están](/mikroscope/es/record/#los-marcadores-y-en-qué-reloj-están).
+
+## PMU
+
+La unidad de monitorización del rendimiento de la CPU, leída mediante
+[`perf_event_open`](https://man7.org/linux/man-pages/man2/perf_event_open.2.html) como la fuente
+`perf` del agente, que cuenta ciclos, instrucciones y eventos de caché y de saltos por núcleo por
+debajo del tick y solo con `privileged=yes`: [la única fuente por
+debajo](/mikroscope/es/limits/#la-única-fuente-por-debajo-los-contadores-de-la-propia-cpu).
+
+## privileged
+
+El ajuste de contenedor `privileged=yes`, que RouterOS tiene desde la 7.24 y que quita el espacio
+de nombres de usuario del contenedor para que el log del kernel, `/proc/slabinfo`, los contadores
+ECC de la MTD y la PMU se puedan leer, sin ampliar su espacio de nombres de red ni de PID (RB5009,
+2026-09-12): [lo que aporta privileged](/mikroscope/es/limits/privileged/).
+
+## proporción de ocupación
+
+Los ticks ocupados de un núcleo divididos entre todos sus ticks en una muestra, con tope en 1 donde
+se deriva, mientras los ticks mismos se envían crudos: [ticks, no
+tiempo](/mikroscope/es/limits/#ticks-no-tiempo).
+
+## PSI
+
+La información de bloqueo por presión (pressure stall information), la parte del tiempo que las
+tareas pasan esperando CPU, memoria o E/S, en `/proc/pressure` ([documentación del
+kernel](https://docs.kernel.org/accounting/psi.html)), que el agente lee donde el kernel la tiene y
+que el Linux 5.6.3 del RB5009 no tiene (2026-09-11): [ningún reloj más fino desde el
+kernel](/mikroscope/es/limits/#ningún-reloj-más-fino-desde-el-kernel).
+
+## relay
+
+El transporte que extrae el anillo del agente a través del propio router, ejecutando `/tool fetch`
+por la API binaria de RouterOS, para una máquina que no tiene ruta hacia la veth: [relay, a través
+de la API de
+RouterOS](/mikroscope/es/install/reaching-the-agent/#relay-a-través-de-la-api-de-routeros).
+
+## schedstat
+
+`/proc/schedstat`, las cuentas por CPU del planificador del tiempo pasado ejecutando y esperando
+para ejecutar ([documentación del kernel](https://docs.kernel.org/scheduler/sched-stats.html)),
+ausente en el kernel del RB5009 (2026-09-11) y leído donde existe: [ningún reloj más fino desde el
+kernel](/mikroscope/es/limits/#ningún-reloj-más-fino-desde-el-kernel).
+
+## slabinfo
+
+`/proc/slabinfo`, las cachés del asignador del kernel y cuántos objetos tiene cada una
+([slabinfo(5)](https://man7.org/linux/man-pages/man5/slabinfo.5.html)), global y solo para root,
+así que el agente lo lee con `privileged=yes`: [lo que aporta
+privileged](/mikroscope/es/limits/privileged/#lo-que-añade).
+
+## softirq
+
+El trabajo de interrupción diferido del kernel, que incluye la recepción de red y los temporizadores,
+contado por CPU y por tipo en `/proc/softirqs` ([documentación del
+kernel](https://docs.kernel.org/filesystems/proc.html)) y enviado por núcleo por el agente: [ruta
+de recepción e
+interrupciones](/mikroscope/es/reference/metrics/#ruta-de-recepción-e-interrupciones).
+
+## softnet
+
+Las colas por CPU de paquetes entrantes del kernel, cuyo `/proc/net/softnet_stat` cuenta los
+paquetes procesados, descartados y los squeezes por CPU y sigue siendo el del router incluso dentro
+del contenedor (RB5009, 2026-09-11): [la CPU y la memoria son del
+router](/mikroscope/es/limits/namespaces/#la-cpu-y-la-memoria-son-del-router).
+
+## suelo
+
+La cadencia más lenta a la que se lee o se guarda una fuente de nivel, fijada por fuente por una
+razón que el agente nombra en `/capabilities`, nunca aplicada a un contador y desactivada en todas
+partes con `FLOOR_HZ`: [cada fuente a su propio suelo](/mikroscope/es/limits/source-floors/).
+
+## tick
+
+Dos cosas en este sitio: la unidad de tiempo de CPU del kernel en `/proc/stat`, un periodo de
+`USER_HZ` de <Measured id="tick.ms" />, y una vuelta del muestreador del agente a la frecuencia
+configurada: [ticks, no tiempo](/mikroscope/es/limits/#ticks-no-tiempo).
+
+## `time_squeeze`
+
+El contador de softnet de las veces que el softirq de recepción agotó su presupuesto con paquetes
+aún en cola, distinto de cero incluso con el RB5009 en reposo (2026-09-12) y digno de vigilar
+cuando sube con el caudal plano: [una inundación de
+paquetes](/mikroscope/es/playbooks/packet-flood/#qué-leer).
+
+## USER_HZ
+
+La unidad en la que `/proc/stat` cuenta el tiempo de CPU ([documentación del
+kernel](https://docs.kernel.org/filesystems/proc.html)), un tick de <Measured id="tick.ms" /> en el
+kernel del RB5009 (2026-09-11), que fija el paso de CPU más fino que puede ver cualquiera que lea
+ese fichero: [ticks, no tiempo](/mikroscope/es/limits/#ticks-no-tiempo).
+
+## veth
+
+Una interfaz Ethernet virtual ([veth(4)](https://man7.org/linux/man-pages/man4/veth.4.html)) que
+une el contenedor con el router, que `install` crea como `veth-mikroscope` en una /30 con el router
+en `.1` y el agente en `.2`, la única dirección en la que escucha el agente: [los objetos y sus
+valores por
+defecto](/mikroscope/es/install/layout/#los-objetos-y-sus-valores-por-defecto).

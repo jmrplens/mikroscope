@@ -8,5 +8,35 @@
       "title": "De dónde vienen los datos y a dónde van",
       "desc": "El router ejecuta el agente en un contenedor que lee el kernel compartido y lo sirve por un veth. El colector de tu máquina tira de ahí, le une la capa de la API de RouterOS, deriva y escribe en cada destino que hayas nombrado."
     }
+  },
+  "loop-2026-09-19": {
+    "en": {
+      "title": "The loop's return, hour by hour",
+      "desc": "Hourly, 2026-09-19 11:00 to 2026-09-24 11:00 UTC, from the reference InfluxDB store (RB5009UG+S+, RouterOS 7.24.4, Linux 5.6.3). Until 2026-09-20 21:00 the kernel logged at most 12 own-address records an hour, while the bridge sent sfp-sfpplus1 nothing in any hour and received 6.5 a second from it. From then until the last record, at 2026-09-23 12:06:46, it logged a median of 1 798 an hour, one every 2.0 s, and the bridge sent ether2 0.6 packets a second against 13 received. Afterwards ether2 received 183 and was sent 144. Rates are medians of the hourly means."
+    },
+    "es": {
+      "title": "La vuelta del bucle, hora a hora",
+      "desc": "Por horas, del 2026-09-19 11:00 al 2026-09-24 11:00 UTC, del almacén InfluxDB de referencia (RB5009UG+S+, RouterOS 7.24.4, Linux 5.6.3). Hasta el 2026-09-20 21:00 el kernel anotó como mucho 12 registros de dirección propia por hora, mientras el bridge no enviaba nada a sfp-sfpplus1 en ninguna hora y recibía 6,5 por segundo de él. Desde entonces y hasta el último registro, el 2026-09-23 12:06:46, registró una mediana de 1 798 por hora, uno cada 2,0 s, y el bridge envió a ether2 0,6 paquetes por segundo frente a 13 recibidos. Después, ether2 recibió 183 y se le enviaron 144. Las tasas son medianas de las medias horarias."
+    }
+  },
+  "conntrack-2026-09-19": {
+    "en": {
+      "title": "The slab count against the API's, five days",
+      "desc": "Hourly means, 2026-09-19 11:00 to 2026-09-24 11:00 UTC, from the reference InfluxDB store (RB5009UG+S+, RouterOS 7.24.4, Linux 5.6.3): the RouterOS API's /ip/firewall/connection/print count-only, a median of 338 readings an hour, against the active objects of the nf_conntrack slab cache the agent read. The API count ran from 3 444 to 9 761; in every hour the slab count was 1.02 to 1.08 times it, and the two hourly series correlate at r = 0.9995. nf_conntrack_max read 966 656 throughout."
+    },
+    "es": {
+      "title": "El recuento del slab frente al de la API, cinco días",
+      "desc": "Medias horarias, del 2026-09-19 11:00 al 2026-09-24 11:00 UTC, del almacén InfluxDB de referencia (RB5009UG+S+, RouterOS 7.24.4, Linux 5.6.3): el /ip/firewall/connection/print count-only de la API de RouterOS, una mediana de 338 lecturas por hora, frente a los objetos activos de la caché de slab nf_conntrack que leyó el agente. El recuento de la API fue de 3 444 a 9 761; en todas las horas el del slab fue entre 1,02 y 1,08 veces el de la API, y las dos series horarias correlacionan con r = 0,9995. nf_conntrack_max marcó 966 656 todo el tiempo."
+    }
+  },
+  "port-overflow-2026-09-19": {
+    "en": {
+      "title": "ether1's receive overflow, before and after it stopped",
+      "desc": "Per ten minutes, 2026-09-19 11:10 to 2026-09-20 00:00 UTC, from the reference InfluxDB store (RB5009UG+S+, RouterOS 7.24.4, Linux 5.6.3): the increments of ether1's rx-overflow and received-packet counters, read by the API tier a median of 56 times per ten minutes. Every ten minutes from 11:10 to 15:30 overflowed, 24 550 in the 4 h 20 min before 15:30; the two hours after it had none, and the whole 8 h 30 min after it 131. The port received a median of 313 packets a second before and 286 after."
+    },
+    "es": {
+      "title": "El desbordamiento de recepción de ether1, antes y después de pararse",
+      "desc": "Cada diez minutos, del 2026-09-19 11:10 al 2026-09-20 00:00 UTC, del almacén InfluxDB de referencia (RB5009UG+S+, RouterOS 7.24.4, Linux 5.6.3): los incrementos de los contadores rx-overflow y de paquetes recibidos de ether1, leídos por la capa de la API una mediana de 56 veces cada diez minutos. Todos los tramos de diez minutos desde las 11:10 hasta las 15:30 desbordaron, 24 550 en las 4 h 20 min anteriores a las 15:30; las dos horas siguientes no tuvieron ninguno, y las 8 h 30 min posteriores enteras, 131. El puerto recibió una mediana de 313 paquetes por segundo antes y 286 después."
+    }
   }
 }

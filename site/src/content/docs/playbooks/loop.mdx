@@ -1,13 +1,18 @@
 ---
 title: A loop only the kernel could see
-description: A layer-2 loop on the reference router’s production network that RouterOS’s log and port monitor never showed, found by the agent’s kernel-log source, diagnosed from a rate, and gone the same day after a firmware update, confirmed two independent ways. It came back a week later.
+description: "A layer-2 loop behind a MikroTik RB5009 bridge port that RouterOS's log never showed, found in the kernel log at the STP hello interval. It came back."
+head:
+  - tag: title
+    content: "MikroTik bridge loop the RouterOS log never showed | mikroscope"
 ---
 
 import FaultSignature from "../../../components/FaultSignature.astro";
+import Figure from "../../../components/Figure.astro";
 import Measured from "../../../components/Measured.astro";
 import NotClaimed from "../../../components/NotClaimed.astro";
 import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
+import Src from "../../../components/Src.astro";
 
 This fault was not provoked. It was found by accident on 2026-09-12, while
 measuring something else, on the owner's production RB5009UG+S+ (RouterOS
@@ -18,6 +23,16 @@ port monitor reported a healthy device.
 
 The page follows the diagnosis in the order it happened, because the order is
 the method.
+
+**In short:** a layer-2 loop behind a port of a MikroTik bridge shows in the
+Linux kernel's log even while RouterOS's own log and port monitor stay clean, as
+they did here: `received packet on <port> with own address as source address`,
+the reflected frames <Measured id="loop.helloGap" /> apart, which is the STP
+hello interval. The port in that line is where the reflected frame came in, not
+always the port the loop has cut off, so compare each bridge port's rx with its
+tx before you pull a cable. Here the stream fell
+from <Measured id="loop.eventsBefore" /> to <Measured id="loop.eventsAfter" /> after a
+firmware update on the mesh access points, and a week later the loop came back.
 
 ## The symptom
 
@@ -31,8 +46,9 @@ the method.
 
 The address in the second line is the router's own: the MAC of `sfp-sfpplus1`,
 coming back into the bridge. It is shown here as `00:00:5e:00:53:5d`, from the
-block RFC 7042 reserves for documentation — on your device it is your bridge's
-address, and that is how you recognise the line.
+block [RFC 9542](https://www.rfc-editor.org/rfc/rfc9542.html#section-2.1.4) reserves
+for documentation (it replaced RFC 7042 in 2024) — on your device it is your
+bridge's address, and that is how you recognise the line.
 
 ## Step 1 — establish that it is real, and get a number
 
@@ -59,7 +75,9 @@ each sample's own `dt_ns`, not from the number you asked for.
 ## Step 2 — read the timing, not just the text
 
 The gaps between the reflected frames were **<Measured id="loop.helloGap" />**, every time. That is
-not a coincidence to be noted and moved past: 2 s is the STP _hello interval_.
+not a coincidence to be noted and moved past: 2 s is the STP _hello interval_,
+which is RouterOS's [default
+HelloTime](https://help.mikrotik.com/docs/spaces/ROS/pages/21725254/Spanning+Tree+Protocol#SpanningTreeProtocol-Defaultvalues).
 The mechanism was therefore "the router emits a BPDU and receives its own BPDU
 back", which is a loop, not a misbehaving client.
 
@@ -78,12 +96,14 @@ print([round(ts[i+1]-ts[i],2) for i in range(len(ts)-1)][:12])'
 the monotonic clock — not the time the agent read it — so the gaps are the
 kernel's, not the sampler's.
 
-Since 1.2.0 standalone `mikroscope doctor` does this counting for you: it reads
+Since 1.2.0 standalone `mikroscope doctor` does this counting
+for you, in <Src path="internal/health/health.go" />: it reads
 the running agent's ring once and prints `WARN  layer2-loop` with the port named
 when three or more frames in the window came back carrying the bridge's own
 address. A port that STP moved to learning at least three more times than it let
 forward is reported as `stp-churn`, but only when that port does not already
-carry the own-address finding. Two alert rules watch the same fault over time:
+carry the own-address finding. Two alert rules,
+defined in <Src path="internal/dashboards/alerts.go" />, watch the same fault over time:
 `mikroscope-l2-loop` fires on the first own-address record, from the agent's
 kernel log, and `mikroscope-bridge-port-dark` fires on a bridge port that has
 received for ten minutes while the bridge sent it nothing, and needs the API
@@ -109,6 +129,28 @@ loop returned on 2026-09-19..23, the per-port rx/tx counters the API tier reads
 did show it, as a bridge port that receives while the bridge sends it nothing.
 That is the `mikroscope-bridge-port-dark` rule added in 1.2.0, backtested over
 those four days. It was not checked against the 2026-09-12 episode.
+
+The line the `interface` topic would have carried is the one people search for
+when they meet this fault. RouterOS has printed it in its own log, under the topics
+`interface,warning`, in this form:
+
+```text
+<port>: bridge port received packet with own address as source address (<MAC>), probably loop
+```
+
+That form is taken from a user's RouterOS log [posted on MikroTik's
+forum](https://forum.mikrotik.com/t/bridge-port-received-packet-with-own-address-as-source-probably-loop/106109/13)
+on 2017-12-10, with the port and the address replaced; which RouterOS versions
+still print it is not established here. On the reference router, on RouterOS
+7.24.2, no such line appeared, while the kernel's own
+`received packet on eth1 with own address` arrived every 2 s.
+
+Besides STP, RouterOS's guard against a loop is [Loop
+Protect](https://help.mikrotik.com/docs/spaces/ROS/pages/23396469/Loop+Protect),
+which sends its own packets out of an interface, disables the interface when one
+of them comes back, and logs that. MikroTik's page recommends (R/M)STP over it on
+bridge ports. It played no part in this diagnosis, and this page does not claim
+it would have caught this loop.
 
 ## Step 4 — find corroborating evidence outside the kernel log
 
@@ -219,6 +261,14 @@ reflected frame came in on, not the port the loop had cut off. And RouterOS's
 per-port counters did show it, read as receive without transmit; the backtest
 of `mikroscope-bridge-port-dark` over 2026-09-19 11:13 to 2026-09-23 22:44 UTC
 marks those two ports in those two stretches and no other port.
+
+The reference InfluxDB store kept both halves, and the chart below is drawn from
+it, hour by hour: the kernel's own-address records on top, then what each of the
+two ports received and was sent. While `sfp-sfpplus1` was the port cut off, the
+records came a few an hour; once `ether2` was, they came every 2 s, as on
+2026-09-12.
+
+<Figure name="loop-2026-09-19" />
 
 ## The signature
 

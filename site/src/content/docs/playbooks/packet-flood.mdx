@@ -1,6 +1,9 @@
 ---
 title: A packet flood
-description: Ten seconds of ICMP flood at the reference RB5009’s own address — the switch interrupt that stands in for an interface counter, the one core that paid, and the time_squeeze counter worth watching.
+description: "A 10 s ICMP flood at a MikroTik RB5009, read from inside its container: the switch interrupt standing in for a port counter, one core paying, time_squeeze."
+head:
+  - tag: title
+    content: "A packet flood seen from a RouterOS container | mikroscope"
 ---
 
 import FaultSignature from "../../../components/FaultSignature.astro";
@@ -14,6 +17,13 @@ inside a container that cannot see the router's interfaces. The flood was
 provoked on purpose.
 
 <Provenance of="playbooks-2026-09-12" />
+
+**In short:** from inside the container, a flood aimed at the router shows as
+one interrupt line rising several-fold, here `switch0` from 5.5 k to 34 k per
+5 s bucket, with its cost on the one core that interrupt is pinned to, and with
+softirq counts and `time_squeeze` rising together. The container cannot see the
+router's interface counters, so the interrupt stands in for them: it gives onset,
+offset and the core that paid, not bytes.
 
 ## How it was provoked
 
@@ -29,7 +39,9 @@ ping -f -w 10 192.168.0.1     # 67 793 packets, ~6.8 kpps, 0 % loss
 
 ## What the agent recorded
 
-In 5-second buckets, before and during:
+In 5-second buckets, before and during. There is no chart of this flood: it was
+provoked on 2026-09-12, before the history of the reference InfluxDB store
+begins on 2026-09-19.
 
 ```text
    t  busy%  per-core busy%           sirq  squeeze  top IRQ

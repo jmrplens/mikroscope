@@ -1,0 +1,62 @@
+---
+title: Versiones
+description: La versión actual de mikroscope y su fecha, leídas al compilar de VERSION y CHANGELOG.md, lo que publica cada versión y dónde está el historial completo.
+head:
+  - tag: title
+    content: Versiones de mikroscope para MikroTik RouterOS
+---
+
+import SeeAlso from "../../../../components/SeeAlso.astro";
+import Version from "../../../../components/Version.astro";
+
+La versión actual de mikroscope es la <Version link />, publicada el <Version show="date" />.
+Ninguna de las dos está escrita a mano en esta página: las dos se leen al compilar del fichero
+`VERSION` del repositorio y del encabezado con fecha que esa versión tiene en `CHANGELOG.md`, y el
+sitio no compila si falta ese encabezado. Las órdenes de instalación de todas las páginas llevan la
+misma versión, del mismo fichero.
+
+## Dónde está el historial
+
+- [`CHANGELOG.md`](https://github.com/jmrplens/mikroscope/blob/main/CHANGELOG.md) tiene una sección
+  por versión, la más reciente primero, en el formato de
+  [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), en inglés. Sus encabezados llevan
+  fecha desde la 1.1.0. No toda sección anterior llegó a ser una versión publicada: a 2026-09-24,
+  la 1.0.5 y la 1.0.8 no tenían etiqueta, y la 1.0.6 tenía etiqueta y no página de versión.
+- [Las versiones de GitHub](https://github.com/jmrplens/mikroscope/releases) tienen las notas, los
+  archivos, los tar de imagen, las sumas de comprobación, las firmas y los SBOM de cada etiqueta.
+- [El feed de versiones](https://github.com/jmrplens/mikroscope/releases.atom) es la misma lista en
+  Atom, para un lector de feeds.
+
+Los números de versión siguen [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html),
+como dice el changelog. Una frase de este sitio sobre una versión pasada, como «desde la 1.1.0»,
+conserva el número de esa versión, porque se comprobó contra ella y no contra una posterior.
+
+## Lo que publica cada versión
+
+- **La CLI**, como un archivo por plataforma: linux y FreeBSD en amd64, arm64 y arm; macOS y
+  Windows en amd64 y arm64.
+- **El agente**, como un tar de imagen para cargar a mano por arquitectura, y como imagen de
+  registro, `jmrplens/mikroscope-agent` en Docker Hub y `ghcr.io/jmrplens/mikroscope-agent` en
+  GHCR, cuyo índice lleva `linux/amd64`, `linux/arm64`, `linux/arm/v7` y `linux/arm/v5`.
+- **El colector**, desde la 1.1.0, como la imagen `jmrplens/mikroscope` y
+  `ghcr.io/jmrplens/mikroscope` para `linux/amd64` y `linux/arm64`.
+- **`checksums.txt`**, sobre cada archivo y cada tar de imagen del agente, firmado sin clave con
+  cosign, y un SBOM SPDX por archivo con su propia firma. [Verificar la
+  descarga](/mikroscope/es/install/routes/#verificar-la-descarga) tiene las órdenes.
+
+Esta es la forma corta. La lista completa, con los archivos del agente sin imagen, el nombre de
+cada tar de imagen y las versiones que nunca se etiquetaron, está en [Qué publica la
+versión](/mikroscope/es/about/status/#qué-publica-la-versión) en la página de estado.
+
+<SeeAlso>
+
+## Véase también
+
+- [Cuatro formas de instalar](/mikroscope/es/install/routes/): qué fichero de esos toma cada ruta de
+  instalación, y cómo verificarlo.
+- [Tener la CLI en tu máquina](/mikroscope/es/install/cli/): el archivo, `go install` o el script
+  de instalación, en la versión actual.
+- [En qué punto está](/mikroscope/es/about/status/): en qué ha corrido la versión actual, y en qué
+  no.
+
+</SeeAlso>

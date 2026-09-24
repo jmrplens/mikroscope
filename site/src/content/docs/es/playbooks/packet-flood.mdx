@@ -1,6 +1,9 @@
 ---
 title: Una inundación de paquetes
-description: Diez segundos de inundación ICMP contra la propia dirección del RB5009 de referencia — la interrupción del switch que hace las veces de contador de interfaz, el único núcleo que pagó y el contador time_squeeze que merece la pena vigilar.
+description: "Una inundación ICMP de 10 s contra un MikroTik RB5009, leída desde su contenedor: la interrupción del switch como contador de puerto, y time_squeeze."
+head:
+  - tag: title
+    content: "Una inundación de paquetes vista desde RouterOS | mikroscope"
 ---
 
 import FaultSignature from "../../../../components/FaultSignature.astro";
@@ -14,6 +17,13 @@ que atender, visto desde dentro de un contenedor que no puede ver las interfaces
 del router. La inundación se provocó a propósito.
 
 <Provenance of="playbooks-2026-09-12" />
+
+**En resumen:** desde dentro del contenedor, una inundación dirigida al router se
+ve como una línea de interrupción que se multiplica, aquí `switch0` de 5,5 k a
+34 k por tramo de 5 s, con su coste en el único núcleo al que está fijada esa
+interrupción, y con los softirq y `time_squeeze` subiendo a la vez. El contenedor
+no ve los contadores de las interfaces del router, así que la interrupción hace
+sus veces: da el inicio, el final y el núcleo que pagó, no los bytes.
 
 ## Cómo se provocó
 
@@ -30,7 +40,9 @@ ping -f -w 10 192.168.0.1     # 67 793 paquetes, ~6.8 kpps, 0 % de pérdida
 
 ## Lo que registró el agente
 
-En tramos de 5 segundos, antes y durante:
+En tramos de 5 segundos, antes y durante. No hay gráfico de esta inundación: se
+provocó el 2026-09-12, antes de que empiece el historial del almacén InfluxDB de
+referencia, el 2026-09-19.
 
 ```text
    t  busy%  per-core busy%           sirq  squeeze  top IRQ

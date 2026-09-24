@@ -1,6 +1,9 @@
 ---
 title: Qué es
-description: Un agente dentro del router leyendo el kernel compartido, una CLI fuera, y los cuatro límites que no se pueden diseñar para que desaparezcan.
+description: Un agente en un contenedor de RouterOS 7.24+ lee el kernel de un MikroTik a 1–100 Hz; una CLI instala, graba y reenvía. Cuatro límites, dichos primero.
+head:
+  - tag: title
+    content: "Qué es: un agente dentro de un router MikroTik | mikroscope"
 ---
 
 import { Steps } from "@astrojs/starlight/components";
@@ -8,47 +11,61 @@ import Measured from "../../../../components/Measured.astro";
 import Provenance from "../../../../components/Provenance.astro";
 import RouterWrites from "../../../../components/RouterWrites.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
+import Src from "../../../../components/Src.astro";
 
-mikroscope son dos programas y un contenedor.
+mikroscope es telemetría del kernel de código abierto, con licencia MIT, para
+routers MikroTik con RouterOS 7.24 o posterior: un agente Go estático que corre
+en un contenedor de RouterOS y muestrea los contadores del propio kernel del
+router de 1 a 100 Hz, y una CLI que lo instala, graba una ventana, la dibuja y
+reenvía las muestras a once destinos. Son dos programas y un contenedor.
 
-El **agente** es un binario Go estático en un contenedor scratch dentro del
+El **agente** es un binario Go estático en un [contenedor scratch](/mikroscope/es/reference/glossary/#contenedor-scratch) dentro del
 router. Un contenedor de RouterOS comparte el kernel del anfitrión, así que el
 `/proc` de dentro es el `/proc` del propio router: `/proc/stat` por núcleo,
-`/proc/interrupts`, `/proc/softirqs`, `/proc/net/softnet_stat`, `/proc/meminfo`,
-`/proc/vmstat`, `/proc/diskstats`, `/dev/kmsg`. Los muestrea con un temporizador de 1 a 100 Hz (10 Hz por defecto; medidos a 10, 20, 50 y 100 Hz), guarda los últimos 60 segundos en un anillo y los sirve. No tiene conexión saliente ni presenta ninguna credencial; el único secreto que guarda es el token opcional que exige a quien lo lea.
+`/proc/interrupts`, `/proc/softirqs`, [`/proc/net/softnet_stat`](/mikroscope/es/reference/glossary/#softnet), `/proc/meminfo`,
+`/proc/vmstat`, `/proc/diskstats`, `/dev/kmsg`. El contenedor es privilegiado por defecto, lo que
+además deja al agente abrir los contadores de la [PMU](/mikroscope/es/reference/glossary/#pmu) de la
+CPU para todo el sistema mediante `perf_event_open`. Los muestrea con un temporizador de 1 a 100 Hz (10 Hz por defecto; medidos a 10, 20, 50 y 100 Hz), guarda los últimos 60 segundos en un [anillo](/mikroscope/es/reference/glossary/#anillo) y los sirve por HTTP en la dirección de su
+[veth](/mikroscope/es/reference/glossary/#veth). No tiene conexión saliente ni presenta ninguna credencial; el único secreto que guarda es el token opcional que exige a quien lo lea, y que `install` escribe en la
+[envlist](/mikroscope/es/reference/glossary/#envlist) del contenedor.
 
 La **CLI** corre en tu máquina. Instala y desinstala el agente, graba una
 ventana con marcadores, dibuja un SVG determinista de ella, y funciona como
-colector que tira del agente, fusiona una capa de la API de RouterOS a 1 Hz y
-escribe a once destinos —fichero, Prometheus e InfluxDB 3 entre ellos. Se publica como un archivo por
+colector que tira del agente, fusiona una [capa de la API](/mikroscope/es/reference/glossary/#capa-de-la-api) de RouterOS a 1 Hz y
+escribe a once [destinos](/mikroscope/es/reference/glossary/#destino) —fichero, Prometheus e InfluxDB 3 entre ellos. Se publica como un archivo por
 plataforma —linux y FreeBSD en amd64, arm64 y arm; macOS y Windows en amd64 y arm64— y el
 agente a su lado como un tar de imagen por arquitectura y como imagen de registro, en
 Docker Hub como `jmrplens/mikroscope-agent` y en GHCR como
 `ghcr.io/jmrplens/mikroscope-agent`, así que instalar solo necesita una
 toolchain de Go cuando quieres el agente construido desde tu propio árbol. Desde
 la 1.1.0 el colector también es una imagen, `jmrplens/mikroscope` y
-`ghcr.io/jmrplens/mikroscope` (linux/amd64, linux/arm64), y `deploy/` trae dos
+`ghcr.io/jmrplens/mikroscope` (linux/amd64, linux/arm64), y <Src path="deploy/" /> trae dos
 stacks de compose que lo juntan con InfluxDB 3 o Prometheus y un Grafana. Esa
 imagen es para `forward`: los verbos de instalación llaman a ssh y scp, que se
-quedan fuera a propósito.
+quedan fuera a propósito. Los dos programas tienen licencia MIT, en <Src path="LICENSE" />.
 
 ## Cuatro límites, dichos antes que nada
 
 <Steps>
 
 1. **Los requisitos que la herramienta no puede quitar.** RouterOS 7.24 o
-   posterior con el paquete `container` y `device-mode container=yes` — que
+   posterior con el [paquete `container`](https://help.mikrotik.com/docs/spaces/ROS/pages/84901929/Container) y
+   [`device-mode container=yes`](https://help.mikrotik.com/docs/spaces/ROS/pages/93749258/Device-mode) — que
    MikroTik protege tras una pulsación física del botón de reset o un ciclo de
    alimentación. El suelo es 7.24 porque el paso del contenedor escribe
-   `privileged=`, un atributo que MikroTik añadió en esa versión;
+   `privileged=`, un atributo que MikroTik
+   [añadió en esa versión](https://download.mikrotik.com/routeros/7.24/CHANGELOG);
    `--privileged=false` cambia su valor, no si se escribe. arm64, arm y x86_64;
    ni MIPS ni TILE.
 
 2. **El suelo de resolución es el del kernel, no el de la herramienta.**
-   `/proc/stat` avanza a 100 Hz, así que una ventana de 100 ms resuelve un
+   `/proc/stat` cuenta el tiempo de CPU en
+   [ticks de `USER_HZ`](https://docs.kernel.org/filesystems/proc.html#miscellaneous-kernel-statistics-in-proc-stat),
+   100 por segundo, así que una ventana de 100 ms resuelve un
    núcleo en escalones del <Measured id="tick.stepOneCore" />. El agente envía ticks crudos para
-   que la ventana la elijas tú. No esperes PSI: el kernel del RB5009 no tiene ni
-   PSI ni schedstat.
+   que la ventana la elijas tú. No esperes
+   [PSI](/mikroscope/es/reference/glossary/#psi): el kernel del RB5009 no tiene ni PSI ni
+   [schedstat](/mikroscope/es/reference/glossary/#schedstat).
 
    <Provenance of="kernel-2026-09-11" />
 
@@ -83,7 +100,11 @@ calcula ninguno.
   medirlo en tu propio equipo.
 - [El techo de muestreo](/mikroscope/es/cost/rate-ceiling/): las seis ejecuciones detrás de las
   cifras del punto 4.
-- [Lo que los números no dicen](/mikroscope/es/cost/limits/): lo que un equipo en un día no te
-  puede decir.
+- [Lo que los números no dicen](/mikroscope/es/cost/limits/): lo que un solo equipo, con su propio
+  tráfico, no te puede decir.
+- [Respuestas cortas](/mikroscope/es/start/questions/): diez preguntas habituales, cada una
+  respondida desde una página que tiene la evidencia.
+- [Frente a las alternativas](/mikroscope/es/start/compared/): SNMP, mktxp, The Dude y los demás,
+  qué lee cada uno, y cuándo no usar mikroscope.
 
 </SeeAlso>

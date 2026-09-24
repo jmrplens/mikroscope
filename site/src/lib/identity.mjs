@@ -25,8 +25,8 @@ let pending;
  * The canonical Person node, ready to splice into a graph that already
  * declares `@context`.
  *
- * Fetched at most once per build: the promise is memoized, so the 98 pages
- * that each render the graph share one request. Lazy rather than fetched at
+ * Fetched at most once per build: the promise is memoized, so every page that
+ * renders the graph (108 on 2026-09-24) shares one request. Lazy rather than fetched at
  * module scope so a script can import the URL or the id from here without a
  * fetch running as a side effect of the import.
  *

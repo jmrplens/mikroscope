@@ -145,8 +145,9 @@ function components(text) {
 // one language passed this gate until 2026-09-15 (checked on a copy). `title`
 // is not, because it is translated.
 // `origin` and `date` (FaultSignature), `section` (DashboardPanels), `store`
-// and `show` (DashboardCount, AlertRules) choose what a component renders, so
-// they are structure too.
+// and `show` (DashboardCount, AlertRules, Version) choose what a component
+// renders, so they are structure too, and so is `path` (Src), which names the
+// file a twin links to.
 const STRUCTURAL_ATTRS = [
 	"id",
 	"of",
@@ -160,6 +161,7 @@ const STRUCTURAL_ATTRS = [
 	"section",
 	"store",
 	"show",
+	"path",
 ];
 
 /**
@@ -222,6 +224,8 @@ const INLINE_COMPONENTS = [
 	"Verified",
 	"PrivilegedOnly",
 	"DashboardCount",
+	"Version",
+	"Src",
 ];
 
 /** 1-based line numbers where an inline component opens the line. */

@@ -1,6 +1,9 @@
 ---
 title: The resolution floor is the kernel’s
-description: Why a CPU reading cannot be finer than the kernel’s 10 ms tick, the one source that reads beneath it, and how far back the agent can remember.
+description: Why a MikroTik router’s CPU reading is no finer than the kernel’s 10 ms tick, the one source that reads beneath it, and how far back the agent remembers.
+head:
+  - tag: title
+    content: "Why RouterOS CPU readings stop at the kernel tick | mikroscope"
 ---
 
 import Measured from "../../../components/Measured.astro";
@@ -16,8 +19,8 @@ before it is gone.
 
 ## Ticks, not time
 
-A tick lasts <Measured id="tick.ms" />. `/proc/stat` does not count time, it counts `USER_HZ`
-ticks, 100 per second. A 100 ms sample can therefore hold 10 ticks per core, so the busy ratio of
+A tick lasts <Measured id="tick.ms" />. [`/proc/stat`](https://man7.org/linux/man-pages/man5/proc_stat.5.html) does not count time, it counts
+`USER_HZ` ticks, 100 per second. A 100 ms sample can therefore hold 10 ticks per core, so the busy ratio of
 one core resolves to <Measured id="tick.stepOneCore" /> steps, and the average of four cores to <Measured id="tick.stepFourCores" />. Over 1 s the resolution of one core is <Measured id="tick.stepOneSecond" />.
 
 That is arithmetic from the tick, not a property of the agent, and no rate or setting
@@ -38,7 +41,7 @@ occupancy indicator rather than a percentage. What a higher rate does buy is on
 ## The one source beneath it: the CPU's own counters
 
 One source reads below the tick: the CPU's performance monitoring unit, through
-`perf_event_open`, which the agent collects as the `perf` source when the container is
+[`perf_event_open`](https://man7.org/linux/man-pages/man2/perf_event_open.2.html), which the agent collects as the `perf` source when the container is
 privileged. It is the only source in mikroscope that does not come from a file.
 
 Measured on the RB5009 and recorded on 2026-09-12: in a 100.4 ms sample where `/proc/stat`
@@ -77,7 +80,8 @@ half its trailing 60 s median while the cycle rate is above its own median. That
 
 ## No finer clock from the kernel
 
-Do not expect a finer clock from PSI or `schedstat`. The RB5009's RouterOS 7.24.2 kernel
+Do not expect a finer clock from [PSI](https://docs.kernel.org/accounting/psi.html), whose stall totals are in microseconds, or from
+[`schedstat`](https://docs.kernel.org/scheduler/sched-stats.html), whose run and wait times are in nanoseconds. The RB5009's RouterOS 7.24.2 kernel
 (Linux 5.6.3) has neither `/proc/pressure` nor `/proc/schedstat`, and its `/proc/stat`
 `irq` column is always 0, so hard-IRQ time is counted inside `system`:
 
@@ -102,7 +106,10 @@ Both parsers now read the kernel running the test suite rather than a fixture:
 against a second, independent reading of the same bytes, skipping where the
 files are absent — which is the RB5009's own case. On the amd64 development
 host (kernel 6.12.107) they pass, and that kernel's `/proc/pressure/cpu`
-carries a `full` line, which most kernels do not.
+carries a `full` line, all zeros when read again on 2026-09-24: the kernel's
+PSI documentation says CPU `full` is undefined system-wide and has been reported
+since 5.13 as zero, so an older kernel has no such line and the parser accepts
+either.
 
 The PMU counter set on that host was recorded on 2026-09-21: six counters —
 `cycles`, `instructions`, `cache-references`, `cache-misses`,

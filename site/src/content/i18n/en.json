@@ -60,5 +60,6 @@
   "ms.alerts.stores": "Stores",
   "ms.alerts.both": "both",
   "ms.breadcrumb.home": "Home",
-  "ms.alerts.all": "all three"
+  "ms.alerts.all": "all three",
+  "ms.footer.byline": "Written and maintained by"
 }

@@ -1,6 +1,9 @@
 ---
 title: Una carga limitada por CPU
-description: Un bucle de consola que satura un núcleo del RB5009 de referencia durante un minuto — por qué el total del equipo marca un 29 %, cómo se ve la migración del planificador a 10 Hz y qué hicieron la temperatura y la frecuencia.
+description: "Un núcleo saturado de un MikroTik RB5009 leído a 10 Hz: por qué el total del equipo lo esconde, la carga saltando entre núcleos y la temperatura."
+head:
+  - tag: title
+    content: "CPU por núcleo en un MikroTik RB5009 a 10 Hz | mikroscope"
 ---
 
 import FaultSignature from "../../../../components/FaultSignature.astro";
@@ -13,6 +16,13 @@ Esta página responde a qué aspecto tiene un cuello de botella de un solo hilo 
 los datos por núcleo, y por qué el total del equipo lo esconde. La carga se provocó a propósito.
 
 <Provenance of="playbooks-2026-09-12" />
+
+**En resumen:** un núcleo saturado en el RB5009 de cuatro núcleos se lee como
+cerca de un 29 % del equipo, así que es la fila por núcleo, y no el total, la que
+muestra un cuello de botella de un solo hilo: aquí un núcleo al 99,8 % mientras
+los otros tres estaban ociosos. A 10 Hz se ve al planificador mover la carga entre
+núcleos durante unos 20 s antes de asentarse; muestreado una vez por segundo, eso
+es una meseta difusa.
 
 ## Cómo se provocó
 
@@ -28,7 +38,9 @@ Duró 58,8 s.
 ## Lo que registró el agente
 
 En tramos de 5 segundos. El agente envía deltas de ticks en bruto; los
-porcentajes de abajo se calcularon a partir de ellos después.
+porcentajes de abajo se calcularon a partir de ellos después. No hay gráfico de
+esta ejecución: se leyó el 2026-09-12, antes de que empiece el historial del
+almacén InfluxDB de referencia, el 2026-09-19.
 
 ```text
    t  busy%   per-core busy%          ctxt/s  temp   MHz

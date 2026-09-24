@@ -1,12 +1,13 @@
 ---
 title: Lo que deriva el colector
-description: Los valores que el colector calcula junto a las muestras en bruto — presión de memoria, coste de PMU por paquete, paquetes por interrupción, la marca de ráfaga y la proporción del fast path — y cuándo se omite cada uno.
+description: "Qué calcula el colector junto a las muestras: presión de memoria, coste PMU por paquete, paquetes por interrupción, la marca de ráfaga y cuándo se omite."
 ---
 
 import Measured from "../../../../components/Measured.astro";
 import NotClaimed from "../../../../components/NotClaimed.astro";
 import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
+import Src from "../../../../components/Src.astro";
 
 El colector tiene una etapa de derivación. Esta página responde a qué calcula, a partir
 de qué entradas, cuándo un valor se omite en vez de escribirse y dónde lo pone cada
@@ -50,7 +51,7 @@ deltas de `/proc/vmstat` de la muestra:
 
 </ScrollTable>
 
-### Las razones por paquete del PMU
+### Las razones por paquete de la PMU
 
 `cycles_per_packet`, `instructions_per_packet` y `cache_misses_per_packet`: cuentas de PMU
 sumadas sobre los núcleos, divididas entre los paquetes que softnet procesó
@@ -151,7 +152,7 @@ siembra y no escribe nada.
 Un delta que no se pudo calcular — su contador ausente, que retrocedió, u omitido junto con la
 proporción de tx — se escribe como 0 junto a la proporción ausente: las filas de InfluxDB y SQL
 y el objeto `fastpath` de Elasticsearch llevan `rx_bytes`, `fp_rx_bytes`, `tx_bytes` y
-`fp_tx_bytes` siempre. Leído en el código (`internal/derive/derive.go`), no observado. En ese
+`fp_tx_bytes` siempre. Leído en el código (<Src path="internal/derive/derive.go" />), no observado. En ese
 caso, lee la proporción, no el delta.
 
 La proporción es por lectura, y en una interfaz que mueve pocos paquetes oscila: el repaso del

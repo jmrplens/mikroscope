@@ -14,7 +14,9 @@ import (
 type Pressure struct {
 	SomeTotal uint64
 	FullTotal uint64
-	HasFull   bool // the cpu file has no `full` line on most kernels
+	// HasFull: the cpu file has a `full` line from Linux 5.13 on, always zero
+	// system-wide (Documentation/accounting/psi.rst), and none before.
+	HasFull bool
 }
 
 // ParsePressure parses a PSI file.

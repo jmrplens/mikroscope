@@ -1,6 +1,9 @@
 ---
 title: The shape of an idle router
-description: Sixty seconds of the reference RB5009 doing nothing in particular — the busy floor, the squeeze that is never zero, and the silence of a healthy kernel log.
+description: "Sixty idle seconds on a MikroTik RB5009 read at 10 Hz: the busy floor, a softnet squeeze that is never zero, and a kernel log that stays silent."
+head:
+  - tag: title
+    content: "An idle MikroTik RB5009, per core, at 10 Hz | mikroscope"
 ---
 
 import Measured from "../../../components/Measured.astro";
@@ -13,6 +16,11 @@ something to be anomalous against. Know this shape before you go looking for
 anomalies, or you will find them everywhere.
 
 <Provenance of="playbooks-2026-09-12" />
+
+**In short:** on the reference RB5009 at idle, the four cores sit at 6–8 % busy,
+`time_squeeze` is never zero (about 200 per 20 s), and the kernel log is silent.
+Read every other page against that shape: a steady stream of kernel events at
+idle is the anomaly, and a nonzero squeeze on its own is not.
 
 ## Sixty seconds at idle
 
@@ -27,6 +35,9 @@ Three 20-second buckets:
 
 The percentages in that table were computed after the fact from the raw tick
 deltas the agent ships; the agent never turns them into percentages.
+
+There is no chart of these sixty seconds: they were read on 2026-09-12, before
+the history of the reference InfluxDB store begins on 2026-09-19.
 
 ## What to read
 

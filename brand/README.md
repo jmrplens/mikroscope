@@ -88,7 +88,7 @@ spike standing over the line, which is the part that carries the meaning.
 | `favicon-dark.svg`, `favicon-light.svg` | The five-bar variant |
 | `banner.svg` and `.png` | 1280x320, for the README |
 | `social.svg` and `.png` | 1280x640, the repository social preview |
-| `og.svg` and `.png` | 1200x630, the documentation `og:image` |
+| `og.svg` and `.png` | 1200x630, the documentation `og:image` (the site's copy is re-encoded: see [below](#the-sites-ogimage)) |
 | `background.png` | The generated field the three compositions crop from |
 | `bg-banner.png`, `bg-social.png`, `bg-og.png` | Those crops |
 
@@ -114,6 +114,48 @@ Type over the field's own darkest ground (#020608, sampled from the left edge):
 the heading `#f6f3ee` reads 18.38:1, the tagline `#cfc6b8` 12.04:1, and the
 mark's two tones 12.19:1 and 5.62:1 — higher than on the page, the field being
 darker than it.
+
+## The site's og:image
+
+`site/public/og.png` is not a copy of `brand/og.png`. Every page of the
+documentation names it, and at 605 194 B it was the heaviest file a link
+preview fetched, most of it the ±1-level noise along the background's vertical
+lines, which a lossless encoder cannot compress. On 2026-09-24 the site's copy
+was rebuilt from `og.svg` over a denoised background: a 1x11 vertical median of
+`bg-og.png`, applied only where it moves a pixel by 2 levels or less so the bar
+tips and highlights stay, then every channel rounded up to an even value. The
+mark and the type are still drawn as vectors by `rsvg-convert`, as `compose`
+draws them. The result is 158 857 B, 1200x630 RGB, at most 3/255 from the
+original in any channel (PSNR 48.8 dB, SSIM 0.9867), and no difference was
+visible side by side at full size or at 3x zoom.
+
+`compose` does not do this, so after it runs, rebuild the site's copy from the
+repository root with this (ImageMagick, `rsvg-convert`, and Python with Pillow
+and NumPy), which gives the same bytes again:
+
+```python
+import base64, subprocess, tempfile, os
+import numpy as np
+from PIL import Image
+
+with tempfile.TemporaryDirectory() as d:
+    med = os.path.join(d, "med.png")
+    subprocess.run(["magick", "brand/bg-og.png", "-statistic", "median", "1x11", med], check=True)
+    bg = np.asarray(Image.open("brand/bg-og.png").convert("RGB")).astype(int)
+    m = np.asarray(Image.open(med).convert("RGB")).astype(int)
+    keep = np.abs(bg - m).max(axis=2, keepdims=True) > 2
+    out = np.clip(((np.where(keep, bg, m) + 1) // 2) * 2, 0, 255).astype("uint8")
+    proc = os.path.join(d, "bg.png")
+    Image.fromarray(out).save(proc)
+    svg = open("brand/og.svg").read()
+    orig_b64 = base64.b64encode(open("brand/bg-og.png", "rb").read()).decode()
+    assert orig_b64 in svg, "brand/og.svg no longer embeds brand/bg-og.png verbatim"
+    svg = svg.replace(orig_b64, base64.b64encode(open(proc, "rb").read()).decode())
+    open(os.path.join(d, "og.svg"), "w").write(svg)
+    raw = os.path.join(d, "og.png")
+    subprocess.run(["rsvg-convert", os.path.join(d, "og.svg"), "-o", raw], check=True)
+    Image.open(raw).save("site/public/og.png", optimize=True)
+```
 
 ## Setting the social preview
 

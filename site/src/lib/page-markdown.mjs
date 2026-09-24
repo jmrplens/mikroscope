@@ -17,7 +17,7 @@
 // valid document.
 //
 // Two callers load this file, and they resolve modules differently. The Astro
-// build serves every page's markdown twin and the llms-full.txt files from
+// build serves every page's markdown twin and the llms bundles from
 // src/pages, through Vite, which reads `.ts`, extensionless relative imports
 // and `?raw` on its own. scripts/gen-docs.mjs runs under plain Node, which
 // strips types but resolves no extensionless specifier, and src/data/*.ts
@@ -47,13 +47,21 @@ import { doctorChecks, isDoctorCheckId } from "../data/doctor-checks.ts";
 import { cadenceReasons } from "../data/cadence-reasons.ts";
 import * as dashboards from "../data/dashboards.ts";
 import * as home from "../data/home.ts";
+import { release } from "../data/release.ts";
 import figureMeta from "../data/figures/figures.json" with { type: "json" };
+// The landing's own source, for the one thing its twin needs from the
+// frontmatter rather than the body: the hero tagline. See TAGLINES.
+import landingEn from "../content/docs/index.mdx?raw";
+import landingEs from "../content/docs/es/index.mdx?raw";
+import { parse as parseYaml } from "yaml";
 
 import stats from "../data/stats.json" with { type: "json" };
 import en from "../content/i18n/en.json" with { type: "json" };
 import es from "../content/i18n/es.json" with { type: "json" };
-import { formatNumber, formatQuantity } from "./format.ts";
-import { localeOf, pageUrl } from "./site.mjs";
+import { formatNumber, formatQuantity, numberWord } from "./format.ts";
+import { withVersion } from "./release.mjs";
+import { ORIGIN, localeOf, pageUrl } from "./site.mjs";
+import { srcUrl } from "./src-link.mjs";
 
 /** The site's own UI strings, by locale: what `Astro.locals.t` hands a component. */
 const STRINGS = { en, es };
@@ -305,8 +313,9 @@ function renderSelfClosing(name, attributes, expressions, context) {
 		// the list of what the captures show and where they live — which is
 		// what a reader of docs/ can act on.
 		case "DashboardCaptures": {
-			// A site-relative link: gen-docs.mjs absolutises every link in the
-			// page afterwards, the same way it does for the prose.
+			// A site-relative link: gen-docs.mjs, and absoluteTargets for the
+			// twins, make every link of the page absolute afterwards, the same
+			// way they do for the prose.
 			const dashboards_ =
 				lang === "es"
 					? "/mikroscope/es/dashboards/"
@@ -335,9 +344,8 @@ function renderSelfClosing(name, attributes, expressions, context) {
 			return `*${attributes.caption}*`;
 		}
 		// A count the Go source decides, written the way the page writes it:
-		// `as="word"` is prose ("ten"), anything else is digits. The table of
-		// words is Stat.astro's, kept here rather than imported because that
-		// component is an .astro file this plain-node caller cannot load.
+		// `as="word"` is prose ("ten"), anything else is digits, with the same
+		// table of words Stat.astro uses (numberWord in format.ts).
 		case "Stat": {
 			const value = stats[attributes.name];
 			if (typeof value !== "number") {
@@ -345,57 +353,8 @@ function renderSelfClosing(name, attributes, expressions, context) {
 					`${context.file}: <Stat name="${attributes.name}" /> is not a number in src/data/stats.json`,
 				);
 			}
-			const words = {
-				en: [
-					"zero",
-					"one",
-					"two",
-					"three",
-					"four",
-					"five",
-					"six",
-					"seven",
-					"eight",
-					"nine",
-					"ten",
-					"eleven",
-					"twelve",
-					"thirteen",
-					"fourteen",
-					"fifteen",
-					"sixteen",
-					"seventeen",
-					"eighteen",
-					"nineteen",
-					"twenty",
-				],
-				es: [
-					"cero",
-					"uno",
-					"dos",
-					"tres",
-					"cuatro",
-					"cinco",
-					"seis",
-					"siete",
-					"ocho",
-					"nueve",
-					"diez",
-					"once",
-					"doce",
-					"trece",
-					"catorce",
-					"quince",
-					"dieciséis",
-					"diecisiete",
-					"dieciocho",
-					"diecinueve",
-					"veinte",
-				],
-			}[lang === "es" ? "es" : "en"];
-			return attributes.as === "word" && words[value]
-				? words[value]
-				: String(value);
+			const word = numberWord(value, lang === "es" ? "es" : "en");
+			return attributes.as === "word" && word ? word : String(value);
 		}
 		// The sentence every figure needs beside it: device · CPU · RouterOS ·
 		// [Linux ·] date · conditions, exactly as Provenance.astro composes it.
@@ -434,6 +393,29 @@ function renderSelfClosing(name, attributes, expressions, context) {
 			const v = verifications[of];
 			return `${v.device}, RouterOS ${v.routeros}, ${v.date}`;
 		}
+		// The release this build documents, as Version.astro writes it: the
+		// number, the tag or the date, linked to the release page with `link`.
+		case "Version": {
+			const show = attributes.show ?? "version";
+			const values = {
+				version: release.version,
+				tag: release.tag,
+				date: release.date,
+			};
+			if (!Object.hasOwn(values, show)) {
+				throw new Error(
+					`${context.file}: <Version show="${show}" /> — show is "version", "tag" or "date"`,
+				);
+			}
+			return "link" in attributes || expressions.link === "true"
+				? `[${values[show]}](${release.notesUrl})`
+				: values[show];
+		}
+		// A file of this repository, as code linked to it on main, the way
+		// Src.astro renders it. scripts/check-src.mjs holds every path to a file
+		// that exists.
+		case "Src":
+			return `[${code(attributes.path)}](${srcUrl(attributes.path, context.file)})`;
 		case "RunsTable": {
 			const only =
 				expressions.only === undefined
@@ -523,8 +505,9 @@ function renderSelfClosing(name, attributes, expressions, context) {
 			return code(r.flags);
 		}
 		// An inline mark that links to the page explaining what privileged buys.
-		// The href is the locale's own and still site-rooted: gen-docs.mjs turns
-		// it into the published URL, as it does every other link on the page.
+		// The href is the locale's own and still site-rooted: gen-docs.mjs and
+		// absoluteTargets turn it into an absolute URL, as they do every other
+		// link on the page.
 		case "PrivilegedOnly": {
 			const href =
 				lang === "en"
@@ -838,6 +821,33 @@ function renderWrapper(name, attributes, expressions, children, context) {
 /* ----------------------------------------------------------- the landing */
 
 /**
+ * The hero tagline of each landing, read from the page's own frontmatter.
+ *
+ * Starlight renders `hero.tagline` above the body, so the reduction of the
+ * body never saw it, and the landing's twin — the first page of
+ * llms-full.txt — lost the pitch the HTML leads with, "Two MIT-licensed
+ * binaries" included (GEO audit, 2026-09-24). The frontmatter stays the one
+ * copy: the source file is imported as text, the way src/data/release.ts reads
+ * VERSION, which both the Astro build and scripts/data-hooks.mjs understand,
+ * and scripts/check-twins.mjs holds the twin to the tagline the built page
+ * shows.
+ */
+const TAGLINES = Object.fromEntries(
+	Object.entries({ en: landingEn, es: landingEs }).map(([lang, source]) => {
+		const file = `src/content/docs/${lang === "es" ? "es/" : ""}index.mdx`;
+		const front = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---/.exec(source)?.[1];
+		const tagline =
+			front === undefined ? undefined : parseYaml(front)?.hero?.tagline;
+		if (typeof tagline !== "string" || tagline.trim() === "") {
+			throw new Error(
+				`${file}: no hero.tagline in the frontmatter, which the landing's markdown twin opens with`,
+			);
+		}
+		return [lang, tagline.trim()];
+	}),
+);
+
+/**
  * The landing page's body from src/data/home.ts.
  *
  * The page itself is one component tag over a typed object: every heading,
@@ -846,6 +856,12 @@ function renderWrapper(name, attributes, expressions, children, context) {
  * publish an empty page, so the object is walked here. The `<code>` spans the
  * copy carries become Markdown code, which is the same thing said the other
  * way round.
+ *
+ * It says what the HTML says in the same order, with the hero's tagline first
+ * because the hero is the first thing the page shows. The campaign under the
+ * cost table is `home.LANDING_CAMPAIGN`, the constant `<Home>` renders too:
+ * this function named its own until 2026-09-24 and kept the 2026-09-15 one
+ * after the page had moved on.
  */
 function renderHome(content, context) {
 	const { t } = context;
@@ -855,6 +871,8 @@ function renderHome(content, context) {
 			`- [**${item.id === "run.gapsDrops" ? home.gapsDrops(content.lang) : formatQuantity(measurements[item.id], content.lang)}** — ${item.label}](${item.href})`,
 	);
 	const parts = [
+		TAGLINES[content.lang],
+		"",
 		`## ${content.readout.title}`,
 		"",
 		readout.join("\n"),
@@ -865,12 +883,15 @@ function renderHome(content, context) {
 		"",
 		content.hides.paragraphs.map(inline).join("\n\n"),
 		"",
+		`[${inline(content.hides.linkText)}](${content.hides.href})`,
+		"",
 		`## ${content.cost.title}`,
 		"",
 		content.cost.lead,
+		"",
 		renderSelfClosing(
 			"Provenance",
-			{ of: "rates-2026-09-15" },
+			{ of: home.LANDING_CAMPAIGN },
 			{},
 			context,
 		).trim(),
@@ -894,6 +915,8 @@ function renderHome(content, context) {
 		"",
 		`## ${content.install.title}`,
 		"",
+		`${content.release.label} [${release.version}](${release.notesUrl}), ${release.date} · [${content.release.changelog}](${release.changelogUrl})`,
+		"",
 		inline(content.install.prereq),
 		"",
 		content.install.steps
@@ -910,7 +933,10 @@ function renderHome(content, context) {
 		`## ${content.notClaimed.title}`,
 		"",
 		blockquote(
-			`**${t("ms.claim.notMeasured")}**\n\n${inline(content.notClaimed.body)}`,
+			[
+				`**${t("ms.claim.notMeasured")}**`,
+				...content.notClaimed.paragraphs.map(inline),
+			].join("\n\n"),
 		),
 		"",
 		`## ${content.next.title}`,
@@ -1049,8 +1075,14 @@ const EXPRESSION = /\{[^}\n]*\}/;
 const JSX_STRING = /\{(?:"([^"\n]*)"|'([^'\n]*)')\}/g;
 
 /**
- * The body of one page as Markdown: code protected, components resolved,
- * imports dropped, blank lines tidied.
+ * The body of one page as Markdown: the version placeholder replaced, code
+ * protected, components resolved, imports dropped, blank lines tidied.
+ *
+ * The placeholder is replaced first and everywhere, because this one function
+ * feeds the markdown twins, llms-full.txt and docs/, and a replacement done
+ * per caller is how ghchronicle's twins came to publish its token literally
+ * while its HTML was right (checked on its live site, 2026-09-24). Prose has
+ * no placeholder to replace: MDX would have failed the HTML build on it.
  *
  * @param {object} page
  * @param {string} page.body the MDX body, without frontmatter
@@ -1058,7 +1090,8 @@ const JSX_STRING = /\{(?:"([^"\n]*)"|'([^'\n]*)')\}/g;
  * @param {"en" | "es"} page.locale the locale the page is served in
  * @returns {string} Markdown
  */
-export function reduceBody({ body, file, locale }) {
+export function reduceBody({ body: page, file, locale }) {
+	const body = withVersion(page, release.version);
 	const context = {
 		file,
 		lang: locale,
@@ -1092,10 +1125,9 @@ export function reduceBody({ body, file, locale }) {
 /**
  * The markdown twin of one documentation page: the page's title, its
  * description, the absolute URL it doubles, then the same reduction docs/ is
- * generated from. The twin keeps the page's site-rooted links, because it is
- * served from the site; gen-docs.mjs retargets them for a file read in a
- * checkout, and otherwise the two say the same thing. The one other difference
- * is where an image points: see sourceAssets.
+ * generated from, with every link target made absolute (see absoluteTargets).
+ * gen-docs.mjs retargets the same reduction for a file read in a checkout, to
+ * the advertised jmrp.io address, and otherwise the two say the same thing.
  *
  * @param {object} page
  * @param {string} page.route the page route, "" for the English home
@@ -1106,9 +1138,9 @@ export function reduceBody({ body, file, locale }) {
  * @returns {string} the twin document
  */
 export function renderTwin({ route, title, description, body, file }) {
-	const markdown = sourceAssets(
+	const markdown = absoluteTargets(
 		reduceBody({ body, file, locale: localeOf(route) }),
-		file,
+		{ file, route },
 	);
 	return `${[
 		`# ${title}`,
@@ -1127,25 +1159,58 @@ export function renderTwin({ route, title, description, body, file }) {
 // /mikroscope/about/brand/index.md, the same target resolves to /assets/…,
 // which the site does not serve: the build hashes each asset under /_astro/.
 // So the twin names the source file in the repository instead, the same file
-// docs/ points at. Fenced code is left alone.
+// docs/ points at.
 const SOURCE_ROOT =
 	"https://raw.githubusercontent.com/jmrplens/mikroscope/main/site/";
 
+// A code span, which is text, or a link target with its optional title.
+const TARGET_OR_CODE = /(`+)[^`]*?\1|\]\(([^)\s]+)((?:\s+"[^"]*")?)\)/g;
+
+// A scheme, which is what separates a target somewhere else from one on this site.
+const SCHEME = /^[a-z][a-z0-9+.-]*:/i;
+
 /**
+ * Every link and image target of a reduced page, made absolute.
+ *
+ * The twins are what llms-full.txt and the other llms bundles concatenate,
+ * and what llms.txt sends a model to, and a model reads text: it does not
+ * resolve `/mikroscope/cost/` against a host it may not have kept, and a
+ * `#heading` in a file of fifty pages names whichever page that file puts
+ * first (llms-full.txt had 424 site-rooted links and 7 absolute ones, GEO
+ * audit, 2026-09-24). So a site-rooted target gets the site's origin, the one
+ * the canonical links and the sitemap use; a fragment gets the page it was
+ * written on; an asset gets its source file in the repository, see
+ * SOURCE_ROOT. Fenced code and code spans are text and are left alone. A
+ * target still relative afterwards fails here, because it resolves nowhere a
+ * reader of the text can follow.
+ *
  * @param {string} markdown a reduced page body
- * @param {string} file the page's path from the site directory, as the content
- *   collection reports it (`src/content/docs/about/brand.mdx`)
- * @returns {string} the body with every relative link target made absolute
+ * @param {{ file: string, route: string }} page the page's path from the site
+ *   directory, as the content collection reports it
+ *   (`src/content/docs/about/brand.mdx`), and its route
+ * @returns {string} the body with every target absolute
  */
-function sourceAssets(markdown, file) {
+function absoluteTargets(markdown, { file, route }) {
 	const dir = file.split("/").slice(0, -1);
-	const absolute = (target) => {
+	const source = (target) => {
 		const parts = [...dir];
 		for (const segment of target.split("/")) {
 			if (segment === "..") parts.pop();
 			else if (segment !== ".") parts.push(segment);
 		}
 		return `${SOURCE_ROOT}${parts.join("/")}`;
+	};
+	const absolute = (target) => {
+		if (SCHEME.test(target)) return target;
+		if (target.startsWith("./") || target.startsWith("../")) {
+			return source(target);
+		}
+		if (target.startsWith("/")) return `${ORIGIN}${target}`;
+		if (target.startsWith("#")) return `${pageUrl(route)}${target}`;
+		throw new Error(
+			`${file}: the link target "${target}" is relative to nothing a reader of the markdown twin has. ` +
+				"Write it site-rooted (/mikroscope/…), as a fragment, or relative with ./ or ../.",
+		);
 	};
 	let fence = null;
 	return markdown
@@ -1166,9 +1231,8 @@ function sourceAssets(markdown, file) {
 				fence = marker[1];
 				return line;
 			}
-			return line.replaceAll(
-				/\]\((\.{1,2}\/[^)\s]+)\)/g,
-				(_, target) => `](${absolute(target)})`,
+			return line.replaceAll(TARGET_OR_CODE, (whole, ticks, target, title) =>
+				ticks === undefined ? `](${absolute(target)}${title})` : whole,
 			);
 		})
 		.join("\n");

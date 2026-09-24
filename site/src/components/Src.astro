@@ -1,0 +1,35 @@
+---
+/**
+ * A file or directory of this repository, as inline code linked to it on
+ * GitHub's `main`.
+ *
+ *   <Src path="internal/expo/expo.go" />   a file, under blob/main/
+ *   <Src path="internal/expo/" />          a directory, under tree/main/
+ *
+ * The path is written from the repository root, exactly as `git ls-files`
+ * prints it, and is the link's text too, so a reader sees the same name the
+ * page used to write in backticks. It renders through <InlineCode>, so a long
+ * path breaks only after `/`, `.` or `_`, the way markdown code does.
+ *
+ * Why `main` and not the release tag, and why no line anchors: src/lib/src-link.mjs,
+ * which builds the URL for this component and for the markdown reduction in
+ * src/lib/page-markdown.mjs. A path that is not spelled as a repository path
+ * fails the build here; one that is spelled right and does not exist, or is a
+ * directory written without its trailing `/`, fails scripts/check-src.mjs
+ * (`pnpm run src:check`, part of `pnpm run lint`).
+ *
+ * Inline, so it never opens a line in the source (check-i18n-parity.mjs), and
+ * a twin cites the same `path` as its English page.
+ */
+import { srcUrl } from "../lib/src-link.mjs";
+import InlineCode from "./InlineCode.astro";
+
+interface Props {
+	path: string;
+}
+
+const { path } = Astro.props;
+const href = srcUrl(path, "Src");
+---
+
+<a class="ms-src" href={href}><InlineCode text={path} /></a>

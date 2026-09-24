@@ -1,6 +1,9 @@
 ---
 title: The router’s CPU, the container’s network
-description: Which kernel files a RouterOS container sees as the router’s and which as its own, why privileged does not change that, and the conntrack count that gets through anyway.
+description: Which files in a RouterOS container are the router’s and which its own, why privileged does not change that, and the conntrack count that gets through.
+head:
+  - tag: title
+    content: "What a RouterOS container can see of the kernel | mikroscope"
 ---
 
 import Measured from "../../../components/Measured.astro";
@@ -21,9 +24,9 @@ are the router's own, and they are read on every tick (a block device's row is s
 when it did something). Established on the RB5009 (RouterOS 7.24.2, kernel 5.6.3,
 2026-09-11):
 
-- `/proc/stat`, per core
+- [`/proc/stat`](https://man7.org/linux/man-pages/man5/proc_stat.5.html), per core
 - `/proc/interrupts` and `/proc/softirqs`
-- `/proc/net/softnet_stat`: drops and time squeezes in the kernel's receive path. It lives
+- [`/proc/net/softnet_stat`](https://docs.kernel.org/filesystems/proc.html#networking-info-in-proc-net): drops and time squeezes in the kernel's receive path. It lives
   under `/proc/net` but counts per CPU, not per namespace.
 - `/proc/meminfo`, `/proc/vmstat` and `/proc/loadavg`
 - `/proc/diskstats`
@@ -38,7 +41,7 @@ without the RouterOS API.
 ## The network is the container's own
 
 `/proc/net/dev`, `/proc/net/snmp`, `/proc/net/netstat` and `nf_conntrack_count` are per
-network namespace. Inside the container they describe the container's own veth: 4 packets
+[network namespace](https://man7.org/linux/man-pages/man7/network_namespaces.7.html). Inside the container they describe the container's own veth: 4 packets
 while the router forwarded millions. The agent does not read them as router data, and
 `/capabilities` lists them under `namespaced` so a consumer can see they were left out on
 purpose rather than missed.
@@ -78,7 +81,7 @@ is the namespace's doing, not the agent's.
 ## Conntrack: the count that gets through
 
 The connection count is the exception. Under `privileged=yes` the agent reads
-`/proc/slabinfo`, and the slab allocator is global: the `nf_conntrack` cache's active-object
+[`/proc/slabinfo`](https://man7.org/linux/man-pages/man5/slabinfo.5.html), and the slab allocator is global: the `nf_conntrack` cache's active-object
 count is the router's real conntrack population. On the RB5009 on 2026-09-12 it
 read <Measured id="conntrack.slabDiscovery" /> in the discovery container and <Measured id="conntrack.slab" /> from the agent the same day, while the
 container's own namespace reported 0; the RouterOS API had counted <Measured id="conntrack.api" /> the day before.

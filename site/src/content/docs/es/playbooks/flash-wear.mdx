@@ -1,6 +1,9 @@
 ---
 title: Desgaste de la flash
-description: El RB5009 de referencia escribe en su NAND en reposo sin que nadie se lo pida — cómo verlo en los contadores de YAFFS, rastrearlo hasta una regla de logging y leer los contadores ECC que avisan antes de que se pierda un bloque.
+description: "Un MikroTik RB5009 escribe en su NAND en reposo: verlo en los contadores YAFFS, llegar a la regla de log que lo causa y leer los ECC que avisan antes."
+head:
+  - tag: title
+    content: "Desgaste de la NAND de MikroTik: YAFFS y ECC | mikroscope"
 ---
 
 import FaultSignature from "../../../../components/FaultSignature.astro";
@@ -15,10 +18,19 @@ por su cuenta, y la fuente `yaffs` del agente lo muestra. Las cifras de MTD son 
 
 <Provenance of="playbooks-2026-09-12" />
 
+**En resumen:** el RB5009 de referencia escribía en su NAND en reposo porque una
+regla de log mandaba el tema `dns` a disco; los contadores YAFFS de escrituras de
+página y de borrados muestran escrituras así, y `/system/logging` encuentra su
+causa. Si la flash en sí se está desgastando es cosa de los contadores ECC,
+legibles con `privileged=yes`: un `corrected_bits` que sube avisa antes de que se
+pierda un bloque, y todos marcaban 0 el 2026-09-14.
+
 ## Lo que escribe el router en reposo
 
 En una ventana de 30 segundos en reposo, la partición Main recibió **2 escrituras
-de página y 14 lecturas de página**; en otra, cero.
+de página y 14 lecturas de página**; en otra, cero. No hay gráfico de esas
+ventanas: se leyeron en la campaña del 2026-09-12, antes de que empiece el
+historial del almacén InfluxDB de referencia, el 2026-09-19.
 
 La causa se puede encontrar:
 

@@ -1,0 +1,150 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 579" width="100%" role="img" aria-labelledby="loop-2026-09-19-es-wide-t loop-2026-09-19-es-wide-d">
+	<title id="loop-2026-09-19-es-wide-t">La vuelta del bucle, hora a hora</title>
+	<desc id="loop-2026-09-19-es-wide-d">Por horas, del 2026-09-19 11:00 al 2026-09-24 11:00 UTC, del almacén InfluxDB de referencia (RB5009UG+S+, RouterOS 7.24.4, Linux 5.6.3). Hasta el 2026-09-20 21:00 el kernel anotó como mucho 12 registros de dirección propia por hora, mientras el bridge no enviaba nada a sfp-sfpplus1 en ninguna hora y recibía 6,5 por segundo de él. Desde entonces y hasta el último registro, el 2026-09-23 12:06:46, registró una mediana de 1 798 por hora, uno cada 2,0 s, y el bridge envió a ether2 0,6 paquetes por segundo frente a 13 recibidos. Después, ether2 recibió 183 y se le enviaron 144. Las tasas son medianas de las medias horarias.</desc>
+	<rect x="517.7" y="40" width="108.3" height="515.5" fill="none"/>
+	<rect x="218.9" y="40" width="298.7" height="515.5" fill="var(--ms-status-bad-soft, #fbe7e6)"/>
+	<rect x="58" y="40" width="160.9" height="515.5" fill="var(--ms-status-bad-soft, #fbe7e6)"/>
+	<line x1="58" y1="222.5" x2="626" y2="222.5" stroke="var(--ms-border, #d4dade)" stroke-width="1"/>
+	<line x1="58" y1="164.5" x2="626" y2="164.5" stroke="var(--ms-border, #d4dade)" stroke-width="1"/>
+	<line x1="58" y1="106.5" x2="626" y2="106.5" stroke="var(--ms-border, #d4dade)" stroke-width="1"/>
+	<line x1="58" y1="389" x2="626" y2="389" stroke="var(--ms-border, #d4dade)" stroke-width="1"/>
+	<line x1="58" y1="360" x2="626" y2="360" stroke="var(--ms-border, #d4dade)" stroke-width="1"/>
+	<line x1="58" y1="331" x2="626" y2="331" stroke="var(--ms-border, #d4dade)" stroke-width="1"/>
+	<line x1="58" y1="302" x2="626" y2="302" stroke="var(--ms-border, #d4dade)" stroke-width="1"/>
+	<line x1="58" y1="273" x2="626" y2="273" stroke="var(--ms-border, #d4dade)" stroke-width="1"/>
+	<line x1="58" y1="555.5" x2="626" y2="555.5" stroke="var(--ms-border, #d4dade)" stroke-width="1"/>
+	<line x1="58" y1="526.5" x2="626" y2="526.5" stroke="var(--ms-border, #d4dade)" stroke-width="1"/>
+	<line x1="58" y1="497.5" x2="626" y2="497.5" stroke="var(--ms-border, #d4dade)" stroke-width="1"/>
+	<line x1="58" y1="468.5" x2="626" y2="468.5" stroke="var(--ms-border, #d4dade)" stroke-width="1"/>
+	<line x1="58" y1="439.5" x2="626" y2="439.5" stroke="var(--ms-border, #d4dade)" stroke-width="1"/>
+	<line x1="119.5" y1="40" x2="119.5" y2="555.5" stroke="var(--ms-border, #d4dade)" stroke-width="1" stroke-dasharray="2 3"/>
+	<line x1="233.1" y1="40" x2="233.1" y2="555.5" stroke="var(--ms-border, #d4dade)" stroke-width="1" stroke-dasharray="2 3"/>
+	<line x1="346.7" y1="40" x2="346.7" y2="555.5" stroke="var(--ms-border, #d4dade)" stroke-width="1" stroke-dasharray="2 3"/>
+	<line x1="460.3" y1="40" x2="460.3" y2="555.5" stroke="var(--ms-border, #d4dade)" stroke-width="1" stroke-dasharray="2 3"/>
+	<line x1="573.9" y1="40" x2="573.9" y2="555.5" stroke="var(--ms-border, #d4dade)" stroke-width="1" stroke-dasharray="2 3"/>
+	<text x="2" y="17" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="var(--ms-muted, #5a666d)">RB5009UG+S+ · RouterOS 7.24.4 · Linux 5.6.3 · del 2026-09-19 11:00 al 2026-09-24 11:00 UTC</text>
+	<text x="2" y="32" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="var(--ms-muted, #5a666d)">por horas, del almacén InfluxDB de referencia</text>
+	<text x="62" y="54" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" font-weight="600" fill="var(--ms-body, #2d383f)">sfp-sfpplus1 aislado</text>
+	<text x="222.9" y="54" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" font-weight="600" fill="var(--ms-body, #2d383f)">ether2 aislado</text>
+	<text x="521.7" y="54" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" font-weight="600" fill="var(--ms-body, #2d383f)">sin bucle</text>
+	<text x="2" y="83.5" font-family="ui-sans-serif,system-ui,sans-serif" font-size="12.5" font-weight="600" fill="var(--ms-heading, #10171b)">Registros de dirección propia en el log del kernel, por hora</text>
+	<text x="2" y="98.5" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="var(--ms-muted, #5a666d)">como mucho 12 por hora antes del 09-20 21:00, después una mediana de 1 798</text>
+	<text x="53" y="226.2" text-anchor="end" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="var(--ms-muted, #5a666d)">0</text>
+	<text x="53" y="168.2" text-anchor="end" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="var(--ms-muted, #5a666d)">1 000</text>
+	<text x="53" y="110.2" text-anchor="end" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="var(--ms-muted, #5a666d)">2 000</text>
+	<rect x="72.7" y="222.3" width="3.7" height="0.2" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="86.9" y="222.4" width="3.7" height="0.1" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="91.6" y="222.3" width="3.7" height="0.2" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="96.4" y="221.8" width="3.7" height="0.7" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="110.6" y="222.4" width="3.7" height="0.1" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="115.3" y="222.4" width="3.7" height="0.1" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="120" y="222.2" width="3.7" height="0.3" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="153.2" y="222.4" width="3.7" height="0.1" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="162.6" y="222.3" width="3.7" height="0.2" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="172.1" y="222.3" width="3.7" height="0.2" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="176.8" y="222.4" width="3.7" height="0.1" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="181.6" y="222.4" width="3.7" height="0.1" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="186.3" y="222.4" width="3.7" height="0.1" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="200.5" y="222.3" width="3.7" height="0.2" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="205.2" y="222.4" width="3.7" height="0.1" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="210" y="222.4" width="3.7" height="0.1" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="214.7" y="222.2" width="3.7" height="0.3" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="219.4" y="143.4" width="3.7" height="79.1" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="224.2" y="118.2" width="3.7" height="104.3" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="228.9" y="118.2" width="3.7" height="104.3" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="233.6" y="118.1" width="3.7" height="104.4" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="238.4" y="118.2" width="3.7" height="104.3" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="243.1" y="118.2" width="3.7" height="104.3" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="247.8" y="118.2" width="3.7" height="104.3" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="252.6" y="118.2" width="3.7" height="104.3" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="257.3" y="118.2" width="3.7" height="104.3" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="262" y="118.3" width="3.7" height="104.2" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="266.8" y="118.2" width="3.7" height="104.3" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="271.5" y="118.4" width="3.7" height="104.1" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="276.2" y="118.3" width="3.7" height="104.2" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="281" y="118.4" width="3.7" height="104.1" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="285.7" y="118.3" width="3.7" height="104.2" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="290.4" y="118.2" width="3.7" height="104.3" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="295.2" y="118.2" width="3.7" height="104.3" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="299.9" y="118.3" width="3.7" height="104.2" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="304.6" y="118.2" width="3.7" height="104.3" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="309.4" y="121.9" width="3.7" height="100.6" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="314.1" y="118.3" width="3.7" height="104.2" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="318.8" y="118.4" width="3.7" height="104.1" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="323.6" y="118.3" width="3.7" height="104.2" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="328.3" y="118.3" width="3.7" height="104.2" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="333" y="118.4" width="3.7" height="104.1" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="337.8" y="118.3" width="3.7" height="104.2" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="342.5" y="118.2" width="3.7" height="104.3" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="347.2" y="118.1" width="3.7" height="104.4" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="352" y="118.2" width="3.7" height="104.3" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="356.7" y="118.2" width="3.7" height="104.3" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="361.4" y="118.2" width="3.7" height="104.3" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="366.2" y="118.2" width="3.7" height="104.3" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="370.9" y="118.2" width="3.7" height="104.3" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="375.6" y="118.3" width="3.7" height="104.2" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="380.4" y="118.2" width="3.7" height="104.3" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="385.1" y="118.4" width="3.7" height="104.1" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="389.8" y="118.3" width="3.7" height="104.2" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="394.6" y="118.2" width="3.7" height="104.3" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="399.3" y="118.2" width="3.7" height="104.3" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="404" y="118.3" width="3.7" height="104.2" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="408.8" y="118.1" width="3.7" height="104.4" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="413.5" y="118.2" width="3.7" height="104.3" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="418.2" y="118.4" width="3.7" height="104.1" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="423" y="118.4" width="3.7" height="104.1" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="427.7" y="118.2" width="3.7" height="104.3" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="432.4" y="118.5" width="3.7" height="104" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="437.2" y="118.2" width="3.7" height="104.3" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="441.9" y="118.2" width="3.7" height="104.3" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="446.6" y="118.2" width="3.7" height="104.3" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="451.4" y="118.3" width="3.7" height="104.2" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="456.1" y="118.2" width="3.7" height="104.3" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="460.8" y="118.2" width="3.7" height="104.3" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="465.6" y="118.2" width="3.7" height="104.3" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="470.3" y="118.2" width="3.7" height="104.3" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="475" y="118.2" width="3.7" height="104.3" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="479.8" y="118.2" width="3.7" height="104.3" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="484.5" y="118.2" width="3.7" height="104.3" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="489.2" y="118.2" width="3.7" height="104.3" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="494" y="118.2" width="3.7" height="104.3" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="498.7" y="118.3" width="3.7" height="104.2" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="503.4" y="118.3" width="3.7" height="104.2" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="508.2" y="118.2" width="3.7" height="104.3" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="512.9" y="118.2" width="3.7" height="104.3" fill="var(--ms-status-bad, #b3352f)"/>
+	<rect x="517.6" y="210.7" width="3.7" height="11.8" fill="var(--ms-status-bad, #b3352f)"/>
+	<line x1="58" y1="222.5" x2="626" y2="222.5" stroke="var(--ms-border-strong, #aab4ba)" stroke-width="1"/>
+	<text x="2" y="248" font-family="ui-sans-serif,system-ui,sans-serif" font-size="12.5" font-weight="600" fill="var(--ms-heading, #10171b)">ether2: paquetes por segundo, media horaria, escala logarítmica</text>
+	<line x1="2" y1="260.5" x2="16" y2="260.5" stroke="var(--ms-info, #17558f)" stroke-width="2.2"/>
+	<text x="20" y="265" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="var(--ms-body, #2d383f)">recibidos</text>
+	<line x1="87.44" y1="260.5" x2="101.44" y2="260.5" stroke="var(--ms-mark-quiet, #b45309)" stroke-width="2.2" stroke-dasharray="5 3"/>
+	<text x="105.4" y="265" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="var(--ms-body, #2d383f)">enviados por el bridge</text>
+	<text x="53" y="392.7" text-anchor="end" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="var(--ms-muted, #5a666d)">≤0,1</text>
+	<text x="53" y="363.7" text-anchor="end" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="var(--ms-muted, #5a666d)">1</text>
+	<text x="53" y="334.7" text-anchor="end" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="var(--ms-muted, #5a666d)">10</text>
+	<text x="53" y="305.7" text-anchor="end" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="var(--ms-muted, #5a666d)">100</text>
+	<text x="53" y="276.7" text-anchor="end" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="var(--ms-muted, #5a666d)">1 000</text>
+	<path d="M60.4 288.5L65.1 288.6L69.8 288L74.6 287.9L79.3 287.7L84 287.9L88.8 287.1L93.5 285.9L98.2 286.2L103 287.4L107.7 287.8L112.4 285L117.2 287.8L121.9 288.2L126.6 288.3L131.4 287.9L136.1 287.7L140.8 285L145.6 288.2L150.3 287.7L155 286.2L159.8 286.3L164.5 284.9L169.2 281.8L174 285.7L178.7 282.5L183.4 286L188.2 285.9L192.9 286.1L197.6 285.8L202.4 285.3L207.1 284.1L211.8 284.3L216.6 284L221.3 301.3L226 329.4L230.8 331L235.5 328L240.2 326.5L245 328.8L249.7 327.9L254.4 324.7L259.2 329.8L263.9 329.9L268.6 328L273.4 327.4L278.1 325.5L282.8 324.7L287.6 322.7L292.3 329.6L297 332.5L301.8 328L306.5 327.3L311.2 329.2L316 325.9L320.7 326.9L325.4 322.4L330.2 327L334.9 325.5L339.6 329.6L344.4 325.9L349.1 331L353.8 327.8L358.6 326.2L363.3 333L368 330.6L372.8 329L377.5 327.3L382.2 324.7L387 327.2L391.7 330.5L396.4 327.8L401.2 329.1L405.9 327.6L410.6 328.6L415.4 325.7L420.1 326.3L424.8 325.5L429.6 327.3L434.3 331.7L439 330.5L443.8 327.4L448.5 330.5L453.2 328.2L458 325.4L462.7 328.3L467.4 330.6L472.2 327.5L476.9 328.5L481.6 326.6L486.4 329.8L491.1 328.8L495.8 329.9L500.6 323L505.3 330.2L510 329.9L514.8 326.1L519.5 292.4L524.2 293.2L529 294.4L533.7 294.7L538.4 294.7L543.2 294.7L547.9 294.6L552.6 293.1L557.4 294.5L562.1 294.6L566.8 294.3L571.6 294.4L576.3 294.6L581 294.4L585.8 294.4L590.5 294.4L595.2 294.4L600 294.4L604.7 293.7L609.4 281L614.2 276.5L618.9 287.8L623.6 293.9" fill="none" stroke="var(--ms-info, #17558f)" stroke-width="1.6" stroke-linejoin="round"/>
+	<path d="M60.4 293.2L65.1 293.3L69.8 288.9L74.6 290L79.3 292L84 291.7L88.8 291.4L93.5 289.8L98.2 290.6L103 291.1L107.7 292.2L112.4 288.7L117.2 292.4L121.9 293L126.6 293.1L131.4 292.6L136.1 292.5L140.8 292.5L145.6 292.9L150.3 287.8L155 288.6L159.8 290.5L164.5 284.1L169.2 286.2L174 287.4L178.7 273L183.4 287.6L188.2 289.8L192.9 289.9L197.6 287.4L202.4 289.6L207.1 287.4L211.8 279.5L216.6 273L221.3 310.1L226 372.9L230.8 371.2L235.5 374L240.2 365.2L245 370.3L249.7 365.2L254.4 364.1L259.2 365.8L263.9 366.2L268.6 369.8L273.4 367.3L278.1 358.7L282.8 354.6L287.6 360.4L292.3 365L297 376.5L301.8 365.6L306.5 371.5L311.2 364.5L316 361.6L320.7 362.5L325.4 356.1L330.2 360.9L334.9 359.4L339.6 362.8L344.4 360.4L349.1 370.9L353.8 361.5L358.6 361.3L363.3 385.7L368 376.5L372.8 368L377.5 365.8L382.2 362.3L387 367.5L391.7 370.3L396.4 370.9L401.2 374.8L405.9 369.5L410.6 373.6L415.4 358.3L420.1 358.9L424.8 358L429.6 363L434.3 379.7L439 369L443.8 364L448.5 370.3L453.2 359.5L458 365.6L462.7 365.4L467.4 370.1L472.2 363.8L476.9 367.1L481.6 366.6L486.4 375.6L491.1 369L495.8 372.9L500.6 356.6L505.3 371.5L510 374L514.8 364L519.5 294.2L524.2 287.2L529 297.2L533.7 297.7L538.4 297.7L543.2 297.7L547.9 297.7L552.6 297.2L557.4 297.6L562.1 297.6L566.8 297.3L571.6 297.5L576.3 297.6L581 297.3L585.8 297.4L590.5 297.5L595.2 297.4L600 297.4L604.7 295L609.4 288.5L614.2 291.6L618.9 294.9L623.6 290.2" fill="none" stroke="var(--ms-mark-quiet, #b45309)" stroke-width="1.6" stroke-linejoin="round" stroke-dasharray="5 3"/>
+	<line x1="58" y1="389" x2="626" y2="389" stroke="var(--ms-border-strong, #aab4ba)" stroke-width="1"/>
+	<text x="2" y="414.5" font-family="ui-sans-serif,system-ui,sans-serif" font-size="12.5" font-weight="600" fill="var(--ms-heading, #10171b)">sfp-sfpplus1: paquetes por segundo, media horaria, escala logarítmica</text>
+	<line x1="2" y1="427" x2="16" y2="427" stroke="var(--ms-info, #17558f)" stroke-width="2.2"/>
+	<text x="20" y="431.5" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="var(--ms-body, #2d383f)">recibidos</text>
+	<line x1="87.44" y1="427" x2="101.44" y2="427" stroke="var(--ms-mark-quiet, #b45309)" stroke-width="2.2" stroke-dasharray="5 3"/>
+	<text x="105.4" y="431.5" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="var(--ms-body, #2d383f)">enviados por el bridge</text>
+	<text x="53" y="559.2" text-anchor="end" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="var(--ms-muted, #5a666d)">≤0,1</text>
+	<text x="53" y="530.2" text-anchor="end" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="var(--ms-muted, #5a666d)">1</text>
+	<text x="53" y="501.2" text-anchor="end" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="var(--ms-muted, #5a666d)">10</text>
+	<text x="53" y="472.2" text-anchor="end" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="var(--ms-muted, #5a666d)">100</text>
+	<text x="53" y="443.2" text-anchor="end" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="var(--ms-muted, #5a666d)">1 000</text>
+	<path d="M60.4 502.5L65.1 502.6L69.8 503.4L74.6 502.2L79.3 501.7L84 501.8L88.8 502.1L93.5 501.8L98.2 501.7L103 501.7L107.7 502L112.4 502.9L117.2 503.2L121.9 503.2L126.6 503L131.4 502.3L136.1 502.2L140.8 503.1L145.6 503.1L150.3 503L155 503L159.8 503L164.5 503L169.2 502.8L174 503.1L178.7 503.9L183.4 503.2L188.2 501.6L192.9 503.2L197.6 503.2L202.4 503.1L207.1 503.1L211.8 503.6L216.6 503.7L221.3 454.5L226 455L230.8 455.4L235.5 455.4L240.2 455.4L245 455.5L249.7 455.4L254.4 451.9L259.2 455.2L263.9 455.3L268.6 453.7L273.4 453.6L278.1 453.8L282.8 453.4L287.6 453.1L292.3 453.4L297 453.5L301.8 450.1L306.5 454.4L311.2 455.4L316 449.2L320.7 452.1L325.4 454.8L330.2 445.6L334.9 446.3L339.6 455L344.4 455.3L349.1 455.2L353.8 455.3L358.6 455.4L363.3 455.2L368 455.3L372.8 451.2L377.5 455.8L382.2 456L387 456L391.7 455.9L396.4 455.8L401.2 455.7L405.9 455.3L410.6 455.7L415.4 455.4L420.1 449.7L424.8 447.1L429.6 448.3L434.3 449.7L439 455L443.8 449.1L448.5 448.5L453.2 452.5L458 455.2L462.7 455.4L467.4 455.4L472.2 455.4L476.9 455.4L481.6 455.4L486.4 451.5L491.1 455.3L495.8 455.6L500.6 455.6L505.3 455.6L510 456L514.8 455.7L519.5 472.7L524.2 484.6L529 484.5L533.7 484.6L538.4 484.3L543.2 468.7L547.9 463.3L552.6 476.9L557.4 480.2L562.1 484L566.8 484.3L571.6 484.1L576.3 484.4L581 484.1L585.8 484.2L590.5 484.3L595.2 484.4L600 484.7L604.7 484.4L609.4 484.9L614.2 485L618.9 484.5L623.6 485" fill="none" stroke="var(--ms-info, #17558f)" stroke-width="1.6" stroke-linejoin="round"/>
+	<path d="M60.4 555.5L65.1 555.5L69.8 555.5L74.6 555.5L79.3 555.5L84 555.5L88.8 555.5L93.5 555.5L98.2 555.5L103 555.5L107.7 555.5L112.4 555.5L117.2 555.5L121.9 555.5L126.6 555.5L131.4 555.5L136.1 555.5L140.8 555.5L145.6 555.5L150.3 555.5L155 555.5L159.8 555.5L164.5 555.5L169.2 555.5L174 555.5L178.7 555.5L183.4 555.5L188.2 555.5L192.9 555.5L197.6 555.5L202.4 555.5L207.1 555.5L211.8 555.5L216.6 555.5L221.3 460.2L226 456.2L230.8 460.2L235.5 459.8L240.2 460.2L245 460.3L249.7 460.2L254.4 459.4L259.2 459L263.9 458.7L268.6 457.6L273.4 458.2L278.1 458.4L282.8 457.9L287.6 455.3L292.3 458L297 449.8L301.8 455.5L306.5 456.3L311.2 459.8L316 456L320.7 453.5L325.4 459.3L330.2 440.1L334.9 441.9L339.6 457.2L344.4 460L349.1 460L353.8 460.1L358.6 460.2L363.3 459.7L368 460.1L372.8 459.2L377.5 460.4L382.2 460.6L387 460.6L391.7 460.6L396.4 460.5L401.2 460.4L405.9 458.7L410.6 460.4L415.4 459.1L420.1 451.2L424.8 449.6L429.6 450.7L434.3 453.8L439 459.5L443.8 446.6L448.5 444.2L453.2 458.4L458 458.1L462.7 460L467.4 460.2L472.2 460.2L476.9 460.2L481.6 460.2L486.4 459.2L491.1 452L495.8 460.2L500.6 459.8L505.3 460.3L510 460.6L514.8 460.2L519.5 475.5L524.2 484.3L529 484.4L533.7 484.6L538.4 484.3L543.2 466.6L547.9 463L552.6 467.1L557.4 478.5L562.1 483.5L566.8 483.9L571.6 484.2L576.3 484.5L581 484.2L585.8 484.1L590.5 484.4L595.2 484.4L600 484.7L604.7 484.3L609.4 484.9L614.2 485.1L618.9 484.6L623.6 485.2" fill="none" stroke="var(--ms-mark-quiet, #b45309)" stroke-width="1.6" stroke-linejoin="round" stroke-dasharray="5 3"/>
+	<line x1="58" y1="555.5" x2="626" y2="555.5" stroke="var(--ms-border-strong, #aab4ba)" stroke-width="1"/>
+	<line x1="218.9" y1="40" x2="218.9" y2="555.5" stroke="var(--ms-border-strong, #aab4ba)" stroke-width="1" stroke-dasharray="4 3"/>
+	<line x1="517.7" y1="40" x2="517.7" y2="555.5" stroke="var(--ms-border-strong, #aab4ba)" stroke-width="1" stroke-dasharray="4 3"/>
+	<text x="119.5" y="572.5" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="var(--ms-muted, #5a666d)">09-20</text>
+	<text x="233.1" y="572.5" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="var(--ms-muted, #5a666d)">09-21</text>
+	<text x="346.7" y="572.5" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="var(--ms-muted, #5a666d)">09-22</text>
+	<text x="460.3" y="572.5" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="var(--ms-muted, #5a666d)">09-23</text>
+	<text x="573.9" y="572.5" text-anchor="middle" font-family="ui-sans-serif,system-ui,sans-serif" font-size="11" fill="var(--ms-muted, #5a666d)">09-24</text>
+</svg>

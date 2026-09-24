@@ -1,6 +1,9 @@
 ---
 title: Instalar el agente
-description: Qué hace `mikroscope install` en un equipo RouterOS y en qué orden, y cómo `upgrade` y `uninstall` lo cambian o lo quitan sin tocar nada que no hayan creado.
+description: Un ciclo con guion dejó el /export del RB5009 idéntico salvo la cabecera — qué escribe `mikroscope install` en RouterOS, en qué orden, y cómo se quita.
+head:
+  - tag: title
+    content: Instalar el agente en un router MikroTik | mikroscope
 ---
 
 import { Aside, Steps } from "@astrojs/starlight/components";
@@ -9,6 +12,7 @@ import NotClaimed from "../../../../components/NotClaimed.astro";
 import Provenance from "../../../../components/Provenance.astro";
 import RouterWrites from "../../../../components/RouterWrites.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
+import Src from "../../../../components/Src.astro";
 import Verified from "../../../../components/Verified.astro";
 
 Esta página responde a dos preguntas: qué le hace `mikroscope install` a tu
@@ -18,7 +22,7 @@ imagen publicada de 1.2.1 para arm64 mide <Measured id="image.size" />, casi tod
 completo con guion doctor → install → status → upgrade → uninstall
 (`make roundtrip`, que pasa `--ephemeral` a doctor, install y upgrade) dejó el `/export` del router idéntico byte a byte, salvo sus líneas
 de cabecera `#`. Esa ejecución es anterior a 1.1.0, desde la que `uninstall`
-solo quita con `--yes`. `scripts/roundtrip.sh` pasa ahora `--yes` a su paso de
+solo quita con `--yes`, y <Src path="scripts/roundtrip.sh" /> pasa ahora `--yes` a su paso de
 desinstalación (hasta 1.2.0 no lo hacía, así que ahí solo enumeraba y su
 comprobación del export fallaba); el guion en esa forma aún no se ha ejecutado
 contra el router. Cada objeto que crea install lleva el comentario
@@ -33,8 +37,8 @@ verifica con recuentos de propiedad.
 En el router tienen que cumplirse tres cosas, y la herramienta no puede
 conseguir ninguna por ti: una arquitectura capaz de ejecutar contenedores con
 RouterOS 7.24 o posterior, el paquete `container` y
-`device-mode container=yes` — esto último exige pulsar un botón físico o un
-ciclo de alimentación.
+[`device-mode container=yes`](https://help.mikrotik.com/docs/spaces/ROS/pages/93749258/Device-mode)
+— esto último exige pulsar un botón físico o un ciclo de alimentación.
 [Lo que necesita el router](/mikroscope/es/install/prerequisites/) cubre las
 tres. `mikroscope doctor` las comprueba en solo lectura, en una conexión ssh, e
 imprime la orden exacta o el paso físico para lo que falte; después, por HTTP,
@@ -88,7 +92,8 @@ publica la release, `--remote-image` hace que el router se la baje, y
    subida ni tar al que esperar o que borrar: el contenedor se añade con
    `remote-image=` y se arranca. En cualquier caso el contenedor se añade con
    `privileged=`, que RouterOS conoce desde 7.24: en una 7.x anterior este es el
-   paso que falla, y `--privileged=false` es la forma de pasar.
+   paso que debería fallar, diga lo que diga `--privileged` (sale del código, no
+   se ha probado en un router), y la salida es actualizar RouterOS.
 
 7. **Sondea el agente** desde tu máquina y dice qué transporte funciona:
    [Llegar al agente](/mikroscope/es/install/reaching-the-agent/).
@@ -238,8 +243,8 @@ Para estas órdenes, las opciones que toman su valor por defecto de una variable
 son `--router`, `--ssh-port`, `--ssh-key`, `--name`, `--veth`, `--subnet`,
 `--iface-list`, `--addr-list`, `--disk`, `--arch`, `--token`, `--lan-address`,
 `--agent-tar` y `--remote-image`
-(`MIKROSCOPE_ROUTER`, `MIKROSCOPE_SSH_PORT` y así sucesivamente);
-`.env.example` las documenta. La CLI no lee `.env` por sí misma:
+(`MIKROSCOPE_ROUTER`, `MIKROSCOPE_SSH_PORT` y así sucesivamente); el fichero <Src path=".env.example" />
+las documenta. La CLI no lee `.env` por sí misma:
 
 ```sh
 set -a; . ./.env; set +a

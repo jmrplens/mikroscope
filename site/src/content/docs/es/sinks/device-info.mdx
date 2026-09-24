@@ -1,11 +1,12 @@
 ---
 title: El flujo de datos del equipo
-description: Lo que el agente establece sobre la placa sin la API de RouterOS — identidad, techos, cadencias — y cómo el colector lo entrega a cada destino como hechos y no como muestras.
+description: Lo que el agente sabe de una placa MikroTik sin la API de RouterOS (identidad, techos, cadencias) y cómo lo recibe cada destino, como hechos y no muestras.
 ---
 
 import CadenceReasons from "../../../../components/CadenceReasons.astro";
 import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
+import Src from "../../../../components/Src.astro";
 
 Al arrancar, el agente averigua lo que puede sobre la placa en la que corre, sin la API de
 RouterOS y sin ninguna credencial, y lo sirve en `/capabilities`. El colector lo entrega a
@@ -68,7 +69,7 @@ cada techo y cada cadencia. Un agente reiniciado cuyo único cambio es un techo 
 — un `--memory-max` nuevo, o un `FLOOR_HZ` con el mismo conjunto de fuentes — conserva su
 hash, así que el cambio no es lo que dispara el envío; llega a los destinos en la siguiente
 repetición de cinco minutos, y la fila que lo lleva queda marcada entonces y no cuando
-ocurrió. Esto está leído en el código (`capsHash` en `internal/agent/source.go`), no
+ocurrió. Esto está leído en el código (`capsHash` en <Src path="internal/agent/source.go" />), no
 observado.
 
 Son hechos, no muestras. No tienen reloj propio, así que los destinos que ponen marca de

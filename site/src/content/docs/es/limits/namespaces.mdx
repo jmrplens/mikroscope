@@ -1,6 +1,9 @@
 ---
 title: La CPU del router, la red del contenedor
-description: Qué ficheros del kernel ve un contenedor de RouterOS como los del router y cuáles como propios, por qué privileged no cambia eso, y la cuenta de conntrack que aun así se cuela.
+description: Qué ficheros del kernel son del router en un contenedor RouterOS y cuáles suyos, por qué privileged no lo cambia y la cuenta de conntrack que se cuela.
+head:
+  - tag: title
+    content: "Lo que un contenedor de RouterOS ve del kernel | mikroscope"
 ---
 
 import Measured from "../../../../components/Measured.astro";
@@ -21,9 +24,9 @@ contenedor son los del propio router, y se leen en cada tick (la fila de un disp
 solo se guarda cuando hizo algo). Establecido en el RB5009 (RouterOS 7.24.2, kernel 5.6.3,
 2026-09-11):
 
-- `/proc/stat`, por núcleo
+- [`/proc/stat`](https://man7.org/linux/man-pages/man5/proc_stat.5.html), por núcleo
 - `/proc/interrupts` y `/proc/softirqs`
-- `/proc/net/softnet_stat`: descartes y _time squeezes_ en la ruta de recepción del kernel. Vive
+- [`/proc/net/softnet_stat`](https://docs.kernel.org/filesystems/proc.html#networking-info-in-proc-net): descartes y _time squeezes_ en la ruta de recepción del kernel. Vive
   bajo `/proc/net` pero cuenta por CPU, no por espacio de nombres.
 - `/proc/meminfo`, `/proc/vmstat` y `/proc/loadavg`
 - `/proc/diskstats`
@@ -37,8 +40,8 @@ identifica la placa sin la API de RouterOS.
 
 ## La red es la del contenedor
 
-`/proc/net/dev`, `/proc/net/snmp`, `/proc/net/netstat` y `nf_conntrack_count` son por espacio de
-nombres de red. Dentro del contenedor describen la veth del propio contenedor: 4 paquetes mientras
+`/proc/net/dev`, `/proc/net/snmp`, `/proc/net/netstat` y `nf_conntrack_count` son por
+[espacio de nombres de red](https://man7.org/linux/man-pages/man7/network_namespaces.7.html). Dentro del contenedor describen la veth del propio contenedor: 4 paquetes mientras
 el router reenviaba millones. El agente no los lee como datos del router, y `/capabilities` los
 lista bajo `namespaced` para que un consumidor vea que se dejaron fuera a propósito y no por
 descuido.
@@ -77,7 +80,7 @@ denominador de presupuesto: es cosa del espacio de nombres, no del agente.
 
 ## Conntrack: la cuenta que se cuela
 
-El número de conexiones es la excepción. Con `privileged=yes` el agente lee `/proc/slabinfo`, y el
+El número de conexiones es la excepción. Con `privileged=yes` el agente lee [`/proc/slabinfo`](https://man7.org/linux/man-pages/man5/slabinfo.5.html), y el
 asignador slab es global: la cuenta de objetos activos de la caché `nf_conntrack` es la población
 real de conntrack del router. En el RB5009, el 2026-09-12, marcaba <Measured id="conntrack.slabDiscovery" /> en el contenedor de
 descubrimiento y <Measured id="conntrack.slab" /> desde el agente ese mismo día, mientras el espacio de nombres propio del

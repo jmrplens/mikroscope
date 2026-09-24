@@ -1,6 +1,6 @@
 ---
 title: Import and check
-description: How to bind the dashboards to a datasource, what import and check ask the store first, and what check proves against a live Grafana and what it cannot see.
+description: Binding the dashboards to a Grafana datasource, what import and check ask the store first, and what check proves against a live Grafana and what it cannot.
 ---
 
 import { Aside, Tabs, TabItem } from "@astrojs/starlight/components";
@@ -8,6 +8,7 @@ import DashboardCount from "../../../components/DashboardCount.astro";
 import NotClaimed from "../../../components/NotClaimed.astro";
 import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
+import Src from "../../../components/Src.astro";
 
 This page answers how to get the five dashboards into a Grafana, what the datasource needs before
 they can return anything, and what `mikroscope dashboards check` tells you once they are there. The
@@ -20,8 +21,9 @@ The database comes first: `influxdb3 create database mikroscope` on the InfluxDB
 token that can read and write it — the same database and token the sink writes to, on
 [InfluxDB 3](/mikroscope/sinks/influxdb/).
 
-The datasource is type `influxdb`, `version: SQL`, `dbName: mikroscope`, with **both** secure fields
-set:
+The datasource is type `influxdb`, `version: SQL`, `dbName: mikroscope` — the fields of [Grafana's
+own provisioning example for InfluxDB 3 with SQL](https://grafana.com/docs/grafana/latest/datasources/influxdb/configure/) — with
+**both** secure fields set:
 
 - `httpHeaderValue1` = `Bearer <token>` (the HTTP path)
 - `token` = `<token>` (the FlightSQL path)
@@ -95,9 +97,11 @@ absent rather than wrong.
 
 ## Importing by hand
 
-Grafana → Dashboards → New → Import, upload the `dashboards/mikroscope-<store>.json` that matches
-your datasource (influxdb, prometheus, postgres, graphite or elasticsearch), and pick the datasource
-when Grafana asks for `DS_MIKROSCOPE`.
+Grafana → Dashboards → New → Import, as [Grafana's own import
+guide](https://grafana.com/docs/grafana/latest/visualizations/dashboards/build-dashboards/import-dashboards/) describes it: upload the
+`mikroscope-<store>.json` from <Src path="dashboards/" /> that matches your datasource (influxdb,
+prometheus, postgres, graphite or elasticsearch), and pick the datasource when Grafana asks for
+`DS_MIKROSCOPE`.
 
 A file uploaded this way carries the **compiled defaults**: the five panels the reference device
 cannot produce sit in the not-available row, and every other panel ships with its query, whether
@@ -309,10 +313,10 @@ measurements it holds`, with the reason, and carry on with the compiled defaults
 `--no-probe` skips the question and uses the compiled defaults, which is also what plain `gen` does,
 since it has no datasource to ask.
 
-**Only InfluxDB and Prometheus can be probed.** The query above is written per datasource type, and
-`internal/dashboards/grafana.go` has one for those two and `cannot probe a "…" datasource` for the
-rest. With `--store postgres`, `--store graphite` or `--store elasticsearch` the probe therefore
-always fails, always warns, and always ships the compiled defaults — the same result as passing
+**Only InfluxDB and Prometheus can be probed.** The query above is written per datasource type,
+and the file <Src path="internal/dashboards/grafana.go" /> has one for those two and
+`cannot probe a "…" datasource` for the rest. With `--store postgres`, `--store graphite` or
+`--store elasticsearch` the probe therefore always fails, always warns, and always ships the compiled defaults — the same result as passing
 `--no-probe`. That is a gap, not a design: those three stores get the dashboard the panel list
 declares rather than the one their data supports.
 

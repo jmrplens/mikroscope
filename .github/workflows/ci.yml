@@ -565,10 +565,17 @@ jobs:
       # Same reasoning as docs-audit: this is the other job that installs the
       # documentation site's dependencies, so it is the other one that runs
       # code this repository did not write.
+      #
+      # The whole history, as docs.yml checks out: the build dates each page
+      # from git (the "Last updated" line, the sitemap's <lastmod> and the
+      # JSON-LD dateModified and datePublished), and schema:check, inside
+      # `pnpm run lint`, fails on a shallow clone because datePublished is the
+      # commit that first added the page's file.
       - name: Check out the repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
 
       # Same arrangement as docs-audit. Reading packageManager is what makes
       # the two jobs, the Pages build and a developer's machine install the
@@ -606,8 +613,9 @@ jobs:
         working-directory: site
 
       # `pnpm run lint` includes the gates that read the built output —
-      # html-validate, htmlhint, a11y:check, schema:check, directives:check and
-      # both twins checks all walk dist/ — so the site has to be built first.
+      # html-validate, htmlhint, a11y:check, schema:check, directives:check,
+      # both twins checks and version:check all walk dist/ — so the site has to
+      # be built first.
       # Without this the job fails on the first of them with "Run pnpm build
       # first", which is what it did until 2026-09-16: the job only runs on a
       # pull request, and the repository's first pull request was its first run.

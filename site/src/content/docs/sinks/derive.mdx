@@ -1,12 +1,13 @@
 ---
 title: What the collector derives
-description: The values the collector computes beside the raw samples — memory pressure, per-packet PMU cost, packets per interrupt, the burst flag and the fast-path share — and when each one is withheld.
+description: "What the collector computes beside the raw samples: memory pressure, per-packet PMU cost, packets per interrupt, the burst flag, and when each is withheld."
 ---
 
 import Measured from "../../../components/Measured.astro";
 import NotClaimed from "../../../components/NotClaimed.astro";
 import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
+import Src from "../../../components/Src.astro";
 
 The collector has a derive stage. This page answers what it computes, from which inputs,
 when a value is withheld rather than written, and where each sink puts it. The discrete
@@ -147,7 +148,7 @@ seeds and writes nothing.
 A delta that could not be computed — its counter absent, gone backwards, or withheld with
 the tx share — is written as 0 beside the absent share: the InfluxDB and SQL rows and the
 Elasticsearch `fastpath` object carry `rx_bytes`, `fp_rx_bytes`, `tx_bytes` and
-`fp_tx_bytes` unconditionally. Read from the code (`internal/derive/derive.go`), not
+`fp_tx_bytes` unconditionally. Read from the code (<Src path="internal/derive/derive.go" />), not
 observed. In that case read the share, not the delta.
 
 The share is per poll, and on an interface moving a few packets it swings: the dashboard

@@ -9,14 +9,15 @@ import Measured from "../../../../components/Measured.astro";
 import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
 import Verified from "../../../../components/Verified.astro";
+import Src from "../../../../components/Src.astro";
 
 Dos programas leen variables de entorno, y leen variables distintas. La
 **CLI** en tu máquina lee variables `MIKROSCOPE_*` como valores por defecto de
 las opciones, además de un puñado de credenciales que no tienen opción, además
 de `GRAFANA_URL` y `GRAFANA_TOKEN`. El **agente** en el router lee variables
 sin prefijo (`RATE_HZ`, `TOKEN` …) de la envlist de su contenedor, que escribe
-`install`. Esta página enumera ambas, a partir de `cmd/mikroscope/*.go` y
-`internal/agent/config.go`.
+`install`. Esta página enumera ambas, a partir de los ficheros Go
+de <Src path="cmd/mikroscope/" /> y de <Src path="internal/agent/config.go" />.
 
 ## Cómo las lee la CLI
 
@@ -30,7 +31,7 @@ sin prefijo (`RATE_HZ`, `TOKEN` …) de la envlist de su contenedor, que escribe
   ```
 
 - Entrecomilla una URL que contenga `&` cuando vive en un fichero que cargas
-  con `source`: sin comillas, `&` es un operador de la shell. `.env.example`
+  con `source`: sin comillas, `&` es un operador de la shell. <Src path=".env.example" />
   entrecomilla `MIKROSCOPE_INFLUX_URL` por eso.
 
 La mayoría de las opciones de despliegue **no** tienen variable. `--rate`,
@@ -43,7 +44,7 @@ opciones](/mikroscope/es/reference/cli/) tiene todas las opciones.
 
 <ScrollTable label="Variables MIKROSCOPE_* del router y del despliegue">
 
-| Variable                  | Opción           | La leen                                               | Por defecto en el código        | Valor en `.env.example` |
+| Variable                  | Opción           | La leen                                               | Por defecto en el código        | Valor en <Src path=".env.example" /> |
 | ------------------------- | ---------------- | ----------------------------------------------------- | ------------------------------- | ----------------------- |
 | `MIKROSCOPE_ROUTER`       | `--router`       | `doctor`, `install`, `upgrade`, `uninstall`, `status` | ninguno (obligatoria)           | definida                |
 | `MIKROSCOPE_SSH_PORT`     | `--ssh-port`     | los mismos                                            | configuración de ssh            | `22`                    |
@@ -77,10 +78,10 @@ en <Verified of="read-user-envlist" />), y por eso el token es la única credenc
 
 | Variable                  | Opción         | La leen                     | Significado                                                                                           |
 | ------------------------- | -------------- | --------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `MIKROSCOPE_API_ADDR`     | `--api`        | `record`, `mark`, `forward` | `host:port` de la API binaria de RouterOS; `.env.example` tiene `192.168.88.1:8728`                   |
+| `MIKROSCOPE_API_ADDR`     | `--api`        | `record`, `mark`, `forward` | `host:port` de la API binaria de RouterOS; <Src path=".env.example" /> tiene `192.168.88.1:8728`                   |
 | `MIKROSCOPE_API_USER`     | `--api-user`   | `record`, `mark`, `forward` | el usuario dedicado de la API                                                                         |
 | `MIKROSCOPE_API_PASSWORD` | ninguna        | `record`, `mark`, `forward` | la contraseña de ese usuario; a propósito no hay opción                                               |
-| `MIKROSCOPE_INTERFACES`   | `--interfaces` | `forward`                   | interfaces separadas por comas para `monitor-traffic`; `.env.example` tiene `bridge,ether1` comentada |
+| `MIKROSCOPE_INTERFACES`   | `--interfaces` | `forward`                   | interfaces separadas por comas para `monitor-traffic`; <Src path=".env.example" /> tiene `bridge,ether1` comentada |
 
 </ScrollTable>
 
@@ -105,7 +106,7 @@ usuario.
 | `MIKROSCOPE_GRAPHITE_ADDR` | `--graphite`    | vacío                    | `host:port` de texto plano de carbon                                                    |
 | `MIKROSCOPE_ELASTIC_URL`   | `--elastic`     | vacío                    | URL base de Elasticsearch u OpenSearch                                                  |
 | `MIKROSCOPE_TELEGRAF_URL`  | `--telegraf`    | vacío                    | URL del receptor de Telegraf (`http://`, `tcp://` o `udp://`)                           |
-| `MIKROSCOPE_HOST_TAG`      | `--host-tag`    | `router`                 | etiqueta de host en cada punto de cada destino; `.env.example` tiene `rb5009` comentada |
+| `MIKROSCOPE_HOST_TAG`      | `--host-tag`    | `router`                 | etiqueta de host en cada punto de cada destino; <Src path=".env.example" /> tiene `rb5009` comentada |
 
 </ScrollTable>
 
@@ -137,7 +138,7 @@ secretos que usa la CLI se leen solo del entorno.
 
 `dashboards import` y `dashboards check` leen `GRAFANA_URL` (el valor por
 defecto de `--grafana`) y `GRAFANA_TOKEN`. Ninguna de las dos lleva el prefijo
-`MIKROSCOPE_`. `.env.example` lleva las dos, comentadas, en su bloque de Grafana.
+`MIKROSCOPE_`. <Src path=".env.example" /> lleva las dos, comentadas, en su bloque de Grafana.
 
 `forward` tiene su propio `--grafana`, que publica al arrancar, y sus variables
 **sí** llevan el prefijo, porque son ajustes del colector y no del verbo
@@ -248,8 +249,8 @@ una:
 | 21 MiB        | 2,1×                | 23,5 MiB  | 3 250 µs        | +22 %, y subiendo         |
 | 18 MiB        | 1,8×                | 20,4 MiB  | 14 800 µs       | +457 %, peor tick 52 ms   |
 
-Las filas son las que registra el comentario de `memLimitRingFactor` en
-`internal/router/options.go`. El factor 2,5× que deriva `install` daría 25 MiB a 300 s; la ventana
+Las filas son las que registra el comentario de `memLimitRingFactor` en el
+fichero <Src path="internal/router/options.go" />. El factor 2,5× que deriva `install` daría 25 MiB a 300 s; la ventana
 medida más cercana fue la de 24 MiB, y ninguna de las cuatro ventanas se anotó con su dispersión.
 
 El mismo acantilado se midió desde el otro lado el 2026-09-12: <Measured id="gc.tight.cpu" /> de un núcleo con 14 MiB frente a <Measured id="gc.roomy.cpu" /> con margen, ambos con el anillo lleno. `IRQ_TOP_K`,
