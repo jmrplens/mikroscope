@@ -124,6 +124,18 @@ type Elasticsearch struct {
 // the pattern, defaulting to "mikroscope-%Y.%m.%d". queueSeconds <= 0
 // means 60.
 func NewElasticsearch(endpoint, index, auth, host string, queueSeconds int, log func(string)) *Elasticsearch {
+	s := newElasticsearch(endpoint, index, auth, host, queueSeconds, log)
+	go s.loop()
+	return s
+}
+
+// newElasticsearch builds the sink without starting its flusher, so a test
+// can drive rotate and the queue policy by hand. With the flusher running,
+// its once-a-second rotate lands between a test's writes whenever it likes:
+// a round split in two became 41 batches instead of 40 and one drop too many,
+// which is how TestElasticsearchSinkDropsOldestWhenQueueIsFull failed under
+// -race, where everything is slow enough for the tick to land mid-round.
+func newElasticsearch(endpoint, index, auth, host string, queueSeconds int, log func(string)) *Elasticsearch {
 	if queueSeconds <= 0 {
 		queueSeconds = 60
 	}
@@ -139,7 +151,6 @@ func NewElasticsearch(endpoint, index, auth, host string, queueSeconds int, log 
 	if s.Log == nil {
 		s.Log = func(string) {}
 	}
-	go s.loop()
 	return s
 }
 

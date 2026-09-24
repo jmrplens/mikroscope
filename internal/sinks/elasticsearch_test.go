@@ -245,7 +245,9 @@ func TestElasticsearchSinkDropsOldestWhenQueueIsFull(t *testing.T) {
 		http.Error(w, "down", http.StatusServiceUnavailable)
 	}))
 	defer ts.Close()
-	s := NewElasticsearch(ts.URL, "", "", "h", 1, nil) // 1 s of queue = 64 KiB
+	// No flusher: its own rotate would split a round into two batches
+	// whenever the tick landed mid-round, and the counts below are exact.
+	s := newElasticsearch(ts.URL, "", "", "h", 1, nil) // 1 s of queue = 64 KiB
 	s.maxQ = 2048                                      // shrink for the test
 	for round := range uint64(40) {
 		for i := uint64(1); i <= 10; i++ {
@@ -262,6 +264,7 @@ func TestElasticsearchSinkDropsOldestWhenQueueIsFull(t *testing.T) {
 	if !strings.Contains(string(s.queue[0]), `"_id":"k.h.1788000040000000000.400"`) {
 		t.Fatalf("the newest batch must be the one kept")
 	}
+	go s.loop() // Close stops the flusher and waits for it
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -275,8 +278,8 @@ func TestElasticsearchSinkBatchesBySize(t *testing.T) {
 		http.Error(w, "down", http.StatusServiceUnavailable)
 	}))
 	defer ts.Close()
-	s := NewElasticsearch(ts.URL, "", "", "h", 60, nil)
-	s.maxBatch = 4096 // the fixture sample is 1057 B, so this is a few of them
+	s := newElasticsearch(ts.URL, "", "", "h", 60, nil) // no flusher reading the queue under the test
+	s.maxBatch = 4096                                   // the fixture sample is 1057 B, so this is a few of them
 	for i := uint64(1); i <= 40; i++ {
 		s.Write(kernel(i))
 	}
@@ -288,6 +291,7 @@ func TestElasticsearchSinkBatchesBySize(t *testing.T) {
 			t.Fatalf("a size-closed batch is %d bytes, want at least the 4096 bound", len(b))
 		}
 	}
+	go s.loop() // Close stops the flusher and waits for it
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}
