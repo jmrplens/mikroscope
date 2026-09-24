@@ -23,9 +23,9 @@ alert rules generated beside them are on [Alert rules](https://jmrp.io/docs/mikr
   - mikroscope-postgres.json 161 panels, PostgreSQL / TimescaleDB
   - mikroscope-graphite.json 41 panels, Graphite
   - mikroscope-elasticsearch.json 30 panels, Elasticsearch
-  - mikroscope-alerts-influxdb.yaml 13 rules
-  - mikroscope-alerts-prometheus.yaml 14 rules
-  - mikroscope-alerts-postgres.yaml 10 rules
+  - mikroscope-alerts-influxdb.yaml 14 rules
+  - mikroscope-alerts-prometheus.yaml 15 rules
+  - mikroscope-alerts-postgres.yaml 11 rules
 
 ```sh
 mikroscope dashboards gen                    # writes the eight files into ./dashboards
@@ -1100,16 +1100,17 @@ Source: <https://jmrp.io/docs/mikroscope/dashboards/alerts/>
 file with the rules that follow from the dashboards' own fault counters, from the kernel log the
 agent reads, and from the collector's detections. This page answers what those rules are, what each one fires on and what silence means
 for it, how to install the file, and where every threshold comes from. Every threshold is zero (a
-counter that should not move), one sample (the silent-agent rule), or a share of a ceiling the
-device itself published. None is a number compiled in for one router.
+counter that should not move), one sample (the silent-agent rule), a share of a ceiling the
+device itself published, or, for one rule, a multiple of the device's own last day. None is a number
+compiled in for one router.
 
 ### The files
 
 | File                                           |                                            Rules | Query language |
 | ---------------------------------------------- | -----------------------------------------------: | -------------- |
-| `dashboards/mikroscope-alerts-influxdb.yaml`   |   13 | InfluxDB 3 SQL |
-| `dashboards/mikroscope-alerts-prometheus.yaml` | 14 | PromQL         |
-| `dashboards/mikroscope-alerts-postgres.yaml`   |   10 | PostgreSQL SQL |
+| `dashboards/mikroscope-alerts-influxdb.yaml`   |   14 | InfluxDB 3 SQL |
+| `dashboards/mikroscope-alerts-prometheus.yaml` | 15 | PromQL         |
+| `dashboards/mikroscope-alerts-postgres.yaml`   |   11 | PostgreSQL SQL |
 
 The InfluxDB file has one rule fewer because "The sampler is slipping ticks" has no SQL form yet.
 The counter itself does reach InfluxDB since 1.0.5 — the collector reads it from the agent's
@@ -1162,6 +1163,7 @@ The alert rules:
 | `mikroscope-port-link-down` | a link-down record on any port in the last 5 minutes | > 0 | warning | 0s | OK | both |
 | `mikroscope-port-errors` | any port's MAC counted a typed error — overflow, FCS, collision — for 5 minutes running | > 0 | warning | 5m | OK | both |
 | `mikroscope-bridge-port-dark` | a bridge port received packets while the bridge sent it neither a unicast nor a broadcast frame, for 10 minutes | > 0 | warning | 10m | OK | InfluxDB only |
+| `mikroscope-wakeup-storm` | the context-switch rate over the last 10 minutes is more than 4 times its mean over the 24 hours before, for 10 minutes | > 4 | warning | 10m | OK | InfluxDB only |
 | `mikroscope-egress-queue-drops` | any port's own egress queue dropped a packet in every one of the last 10 minutes — sustained congestion, never a single burst | > 0 | warning | 10m | OK | InfluxDB only |
 | `mikroscope-ecc-failure` | the NAND reported an uncorrectable ECC failure in the last hour | > 0 | critical | 0s | OK | InfluxDB only |
 | `mikroscope-ticks-slipped` | the sampler slipped a tick in the last 5 minutes | > 0 | warning | 5m | OK | Prometheus only |
@@ -1220,6 +1222,13 @@ Each rule's title, and under it its `summary` annotation verbatim, as generated:
   four days marks those two ports in those two stretches and nothing else. It is expected to fire on
   a redundant design, where an RSTP alternate port discards on purpose, and on a port with
   `broadcast-flood=no` or `horizon` set. Needs the API tier.
+- **The kernel is switching context four times as often as over its last day.** "Something started
+  waking up very often: a busy-polling process or driver, a monitoring client, a container in a
+  tight loop." On the reference RB5009 it was a Home Assistant integration polling the router over
+  the API (2026-09-23): timer interrupts went from about 2 500 to about 35 000 a second, in bursts
+  of 20–90 s on one core at a time, and RouterOS's own profile barely showed it. Disabling the
+  integration brought the rate back within 30 s. A deliberate change, such as a new container or a
+  heavier ruleset, fires it too.
 - **A port's egress queue has been dropping every minute for ten minutes.** "A port's own egress
   queue has dropped packets in every one of the last ten minutes. Unlike the other counter rules,
   this one's counter is supposed to move: dropping is how a full queue tells a sender to slow down.
@@ -1257,6 +1266,8 @@ Each rule's title, and under it its `summary` annotation verbatim, as generated:
   sum(increase(mikroscope_api_interface_counter_total{counter=~"rx-overflow|rx-fcs-error|rx-fragment|rx-too-short|rx-too-long|rx-jabber|tx-fcs-error|tx-late-collision|tx-excessive-collision"}[5m]))
   # mikroscope-bridge-port-dark        (> 0)
   count((sum by (interface) (increase(mikroscope_api_interface_counter_total{counter="rx-packet"}[10m])) > 0) and on (interface) (sum by (interface) (increase(mikroscope_api_interface_counter_total{counter="tx-unicast"}[10m])) == 0) and on (interface) (sum by (interface) (increase(mikroscope_api_interface_counter_total{counter="tx-broadcast"}[10m])) == 0) and on (interface) (mikroscope_api_interface_info{bridge!=""}))
+  # mikroscope-wakeup-storm            (> 4)
+  sum(rate(mikroscope_context_switches_total[10m])) / sum(rate(mikroscope_context_switches_total[24h] offset 10m))
   # mikroscope-egress-queue-drops      (> 0)
   max(max_over_time(mikroscope_api_interface{kind="tx_queue_drops"}[1m]))
   # mikroscope-ecc-failure             (> 0)
@@ -1296,6 +1307,8 @@ Each rule's title, and under it its `summary` annotation verbatim, as generated:
   SELECT coalesce(sum(v), 0)::BIGINT AS value FROM (SELECT interface, greatest(max(rx_overflow) - min(rx_overflow), 0)::BIGINT + greatest(max(rx_fcs_error) - min(rx_fcs_error), 0)::BIGINT + greatest(max(rx_fragment) - min(rx_fragment), 0)::BIGINT + greatest(max(rx_too_short) - min(rx_too_short), 0)::BIGINT + greatest(max(rx_too_long) - min(rx_too_long), 0)::BIGINT + greatest(max(rx_jabber) - min(rx_jabber), 0)::BIGINT + greatest(max(tx_fcs_error) - min(tx_fcs_error), 0)::BIGINT + greatest(max(tx_late_collision) - min(tx_late_collision), 0)::BIGINT + greatest(max(tx_excessive_collision) - min(tx_excessive_collision), 0)::BIGINT AS v FROM mikroscope_api_ifcounters WHERE time >= now() - interval '5 minutes' GROUP BY interface)
   -- mikroscope-bridge-port-dark        (> 0)
   SELECT count(*)::BIGINT AS value FROM (SELECT interface, max(rx_packet) - min(rx_packet) AS drx, max(tx_unicast) - min(tx_unicast) AS dtu, max(tx_broadcast) - min(tx_broadcast) AS dtb FROM mikroscope_api_ifcounters WHERE time >= now() - interval '10 minutes' AND bridge IS NOT NULL AND bridge <> '' GROUP BY interface) AS ports WHERE drx > 0 AND dtu = 0 AND dtb = 0
+  -- mikroscope-wakeup-storm            (> 4)
+  SELECT CASE WHEN base_min >= 720 THEN (now_sum / nullif(now_min * 60.0, 0)) / nullif(base_sum / (base_min * 60.0), 0) ELSE 0.0 END AS value FROM (SELECT sum(CASE WHEN time >= now() - interval '10 minutes' THEN CAST(ctxt AS BIGINT) ELSE 0 END) AS now_sum, count(DISTINCT CASE WHEN time >= now() - interval '10 minutes' THEN date_bin(interval '1 minute', time) END) AS now_min, sum(CASE WHEN time < now() - interval '10 minutes' THEN CAST(ctxt AS BIGINT) ELSE 0 END) AS base_sum, count(DISTINCT CASE WHEN time < now() - interval '10 minutes' THEN date_bin(interval '1 minute', time) END) AS base_min FROM mikroscope_stat WHERE time >= now() - interval '1450 minutes') AS w
   -- mikroscope-egress-queue-drops      (> 0)
   SELECT coalesce(max(tx_queue_drops), 0)::BIGINT AS value FROM mikroscope_api_iface WHERE time >= now() - interval '1 minute'
   -- mikroscope-ecc-failure             (> 0)
@@ -1325,6 +1338,14 @@ Each rule's title, and under it its `summary` annotation verbatim, as generated:
   port lost 3 337 packets in six one-second bursts over 6.5 h, peaking at 436 packets/s — real,
   visible on the egress queue panel, and correctly not an alert. This is the shape to copy for any
   future rule whose healthy reading is not zero.
+- **A multiple of the device's own last day.** A context-switch rate has no healthy value that holds
+  across boards, so `mikroscope-wakeup-storm` compares the router with itself: the mean rate over
+  the last ten minutes against the mean over the 24 hours before, firing above 4. Each side is
+  divided by the minutes it actually covers, and the rule waits for 12 hours of baseline, so a store
+  younger than a day does not read as a storm. On the reference RB5009, over 551 ten-minute windows
+  with a full day behind them (2026-09-20..23), the healthy ratio never exceeded 1.81; the storm of
+  2026-09-23 opened at 35.7. The rule announces a change of regime and clears as the new rate
+  becomes the baseline, after about four hours there.
 
 The rules do not alert on softnet squeezes. Measured on the reference RB5009 on 2026-09-15 over
 3 738 704 per-CPU samples in 24 h, about 11.2 % of samples carry one squeeze, and alerting on "squeeze > 0" would page

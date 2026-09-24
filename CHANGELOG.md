@@ -45,6 +45,19 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   RSTP alternate port and on `broadcast-flood=no` or `horizon`; the Prometheus
   form was checked for syntax only, since that store holds no API-tier history.
 
+- **An alert for a wake-up storm.** `mikroscope-wakeup-storm` fires when the
+  kernel's context-switch rate over ten minutes is more than four times its
+  mean over the day before. It compares the router with itself, so it carries
+  the one threshold here that is neither zero nor a published ceiling, marked
+  `OwnBaseline` and allowed by the tests only there. On the reference RB5009,
+  551 healthy ten-minute windows (2026-09-20..23) never exceeded 1.81, and the
+  storm a Home Assistant integration caused on 2026-09-23 opened at 35.7:
+  timer interrupts from about 2 500 to 35 000 a second, in bursts on one core at
+  a time, barely visible in RouterOS's profile. Disabling the integration
+  brought the rate back within 30 s. The SQL divides each side by the minutes
+  it covers and waits for 12 hours of baseline; the PromQL was checked for
+  syntax only.
+
 ### Changed
 
 - **Stat tiles draw their numbers at a fixed 32 px, not Grafana's automatic

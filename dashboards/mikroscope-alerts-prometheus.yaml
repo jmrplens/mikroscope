@@ -1,7 +1,8 @@
 # mikroscope alert rules for prometheus — Grafana unified alerting provisioning (apiVersion 1).
 # Replace DS_UID_PLACEHOLDER with your datasource UID and drop the file into
-# /etc/grafana/provisioning/alerting/. Every threshold is zero or the device's own
-# published ceiling; nothing here is a number the device did not publish.
+# /etc/grafana/provisioning/alerting/. Every threshold is zero, the device's own
+# published ceiling, or a multiple of its own trailing rate; nothing here is a
+# number compiled in for one router.
 apiVersion: 1
 groups:
   - orgId: 1
@@ -321,6 +322,32 @@ groups:
           - refId: C
             datasourceUid: __expr__
             model: {refId: C, type: threshold, expression: B, conditions: [{evaluator: {type: gt, params: [0]}}]}
+      - uid: mikroscope-wakeup-storm
+        title: "The kernel is switching context four times as often as over its last day"
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          source: mikroscope
+        annotations:
+          summary: "The kernel's context-switch rate over the last ten minutes is more than four times its mean over the 24 hours before. Something started waking up very often: a busy-polling process or driver, a monitoring client, a container in a tight loop. On the reference RB5009 it was a Home Assistant integration polling the router over the API (2026-09-23): timer interrupts went from ~2 500 to ~35 000 a second in bursts of 20–90 s on one core at a time, and RouterOS's own profile barely showed it. Look at what started at the moment the rule fired (/user/active, new containers, a new integration) and at the Interrupts and softirqs section. Fires once per change of regime and clears as the new rate becomes the day's baseline; a deliberate change (a new container, a heavier ruleset) fires it too."
+        data:
+          - refId: A
+            relativeTimeRange: {from: 600, to: 0}
+            datasourceUid: DS_UID_PLACEHOLDER
+            model:
+              refId: A
+              expr: "sum(rate(mikroscope_context_switches_total[10m])) / sum(rate(mikroscope_context_switches_total[24h] offset 10m))"
+              instant: true
+              range: false
+          - refId: B
+            datasourceUid: __expr__
+            model: {refId: B, type: reduce, expression: A, reducer: last, settings: {mode: dropNN}}
+          - refId: C
+            datasourceUid: __expr__
+            model: {refId: C, type: threshold, expression: B, conditions: [{evaluator: {type: gt, params: [4]}}]}
       - uid: mikroscope-egress-queue-drops
         title: "A port's egress queue has been dropping every minute for ten minutes"
         condition: C

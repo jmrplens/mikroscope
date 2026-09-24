@@ -15,8 +15,9 @@ import SeeAlso from "../../../components/SeeAlso.astro";
 file with the rules that follow from the dashboards' own fault counters, from the kernel log the
 agent reads, and from the collector's detections. This page answers what those rules are, what each one fires on and what silence means
 for it, how to install the file, and where every threshold comes from. Every threshold is zero (a
-counter that should not move), one sample (the silent-agent rule), or a share of a ceiling the
-device itself published. None is a number compiled in for one router.
+counter that should not move), one sample (the silent-agent rule), a share of a ceiling the
+device itself published, or, for one rule, a multiple of the device's own last day. None is a number
+compiled in for one router.
 
 ## The files
 
@@ -122,6 +123,13 @@ Each rule's title, and under it its `summary` annotation verbatim, as generated:
   four days marks those two ports in those two stretches and nothing else. It is expected to fire on
   a redundant design, where an RSTP alternate port discards on purpose, and on a port with
   `broadcast-flood=no` or `horizon` set. Needs the API tier.
+- **The kernel is switching context four times as often as over its last day.** "Something started
+  waking up very often: a busy-polling process or driver, a monitoring client, a container in a
+  tight loop." On the reference RB5009 it was a Home Assistant integration polling the router over
+  the API (2026-09-23): timer interrupts went from about 2 500 to about 35 000 a second, in bursts
+  of 20–90 s on one core at a time, and RouterOS's own profile barely showed it. Disabling the
+  integration brought the rate back within 30 s. A deliberate change, such as a new container or a
+  heavier ruleset, fires it too.
 - **A port's egress queue has been dropping every minute for ten minutes.** "A port's own egress
   queue has dropped packets in every one of the last ten minutes. Unlike the other counter rules,
   this one's counter is supposed to move: dropping is how a full queue tells a sender to slow down.
@@ -176,6 +184,14 @@ healthy device is the same alert.
   port lost 3 337 packets in six one-second bursts over 6.5 h, peaking at 436 packets/s — real,
   visible on the egress queue panel, and correctly not an alert. This is the shape to copy for any
   future rule whose healthy reading is not zero.
+- **A multiple of the device's own last day.** A context-switch rate has no healthy value that holds
+  across boards, so `mikroscope-wakeup-storm` compares the router with itself: the mean rate over
+  the last ten minutes against the mean over the 24 hours before, firing above 4. Each side is
+  divided by the minutes it actually covers, and the rule waits for 12 hours of baseline, so a store
+  younger than a day does not read as a storm. On the reference RB5009, over 551 ten-minute windows
+  with a full day behind them (2026-09-20..23), the healthy ratio never exceeded 1.81; the storm of
+  2026-09-23 opened at 35.7. The rule announces a change of regime and clears as the new rate
+  becomes the baseline, after about four hours there.
 
 The rules do not alert on softnet squeezes. Measured on the reference RB5009 on 2026-09-15 over
 3 738 704 per-CPU samples in 24 h, about <Measured id="squeeze.backgroundOne" /> of samples carry one squeeze, and alerting on "squeeze > 0" would page

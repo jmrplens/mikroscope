@@ -644,10 +644,20 @@ func TestAlertRulesProvisionForBothStores(t *testing.T) {
 		if strings.Count(out, "datasourceUid: DS_UID_PLACEHOLDER") != rules {
 			t.Fatalf("%s: every rule must name the datasource placeholder once", st)
 		}
-		for _, r := range AlertRules {
-			if r.Threshold != 0 && r.Threshold != 0.8 && r.Threshold != 1 {
-				t.Fatalf("rule %s carries a threshold the device did not publish: %v", r.UID, r.Threshold)
-			}
+	}
+}
+
+// TestAlertThresholdsAreTheDevicesOwn: every threshold is zero, one sample,
+// a share of a ceiling the device published, or — marked OwnBaseline — a
+// multiple of the device's own trailing rate. Nothing else may be a number.
+func TestAlertThresholdsAreTheDevicesOwn(t *testing.T) {
+	t.Parallel()
+	for _, r := range AlertRules {
+		if r.OwnBaseline && r.Threshold > 1 {
+			continue // a multiple of the device's own trailing rate
+		}
+		if r.Threshold != 0 && r.Threshold != 0.8 && r.Threshold != 1 {
+			t.Errorf("rule %s carries a threshold the device did not publish: %v", r.UID, r.Threshold)
 		}
 	}
 }

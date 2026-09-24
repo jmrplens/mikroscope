@@ -14,6 +14,8 @@ import (
 // Every threshold here is either zero — a counter that should not move — or
 // the device's own published ceiling (a thermal zone's critical trip, the
 // conntrack maximum), never a number the device did not publish. One rule,
+// mikroscope-wakeup-storm, compares the device with its own last day
+// instead, and is marked OwnBaseline. One rule,
 // mikroscope-egress-queue-drops, is about a counter that SHOULD move: a queue
 // drops packets to tell a sender to slow down, so "any drop" is not a fault
 // on any device. It keeps the zero threshold and puts the judgement in the
@@ -36,6 +38,11 @@ type AlertRule struct {
 	Op                  string // gt, lt
 	Threshold           float64
 	NoData              string // OK or Alerting: what silence means for this rule
+	// OwnBaseline marks a Threshold that is a multiple of the device's own
+	// trailing rate rather than zero or a ceiling it published: the
+	// comparison is the router against itself, so no number in it belongs to
+	// one board. It is the only way a threshold above 1 passes the tests.
+	OwnBaseline bool
 }
 
 // EVERY coalesce OVER AN AGGREGATE CARRIES ::BIGINT, and the reason is that
@@ -141,6 +148,34 @@ var AlertRules = []AlertRule{
 		SQL:     `SELECT count(*)::BIGINT AS value FROM (SELECT interface, max(rx_packet) - min(rx_packet) AS drx, max(tx_unicast) - min(tx_unicast) AS dtu, max(tx_broadcast) - min(tx_broadcast) AS dtb FROM mikroscope_api_ifcounters WHERE time >= now() - interval '10 minutes' AND bridge IS NOT NULL AND bridge <> '' GROUP BY interface) AS ports WHERE drx > 0 AND dtu = 0 AND dtb = 0`,
 	},
 	{
+		UID: "mikroscope-wakeup-storm", Title: "The kernel is switching context four times as often as over its last day", Severity: "warning", For: "10m", Op: "gt", Threshold: 4, NoData: "OK", OwnBaseline: true,
+		// A RATIO TO THE DEVICE'S OWN DAY, the one threshold here that is
+		// neither zero nor a published ceiling. A context-switch rate has no
+		// healthy value that holds across boards, so the rule compares the
+		// router with itself: the last ten minutes against the 24 hours
+		// before them. Context switches and not the timer interrupt, because
+		// the timer is arch_timer on ARM and LOC on x86 and a rule must not
+		// name one; on the reference RB5009 the two moved together (r = 1.0).
+		//
+		// Measured there, 2026-09-20 to 2026-09-23 (551 ten-minute windows
+		// with a full day behind them): the healthy ratio never exceeded
+		// 1.81. Then a Home Assistant integration's API session opened at
+		// 12:08:53 UTC on 09-23 and the ratio went to 35.7 in the next
+		// window. The rate had gone from ~2 600 to ~100 000 a second in
+		// bursts of 20–90 s, one core at a time, while traffic and user time
+		// stayed flat. Disabling the integration on 09-24 brought the timer
+		// back to ~2 500/s within 30 s. At 4 the rule fires from 12:10 and
+		// clears after about four hours, as the storm enters its own baseline:
+		// it announces a change of regime, not a level.
+		//
+		// The SQL divides each side by the minutes it actually covers and
+		// waits for 12 hours of baseline, so a store younger than a day does
+		// not read as a storm.
+		Summary: "The kernel's context-switch rate over the last ten minutes is more than four times its mean over the 24 hours before. Something started waking up very often: a busy-polling process or driver, a monitoring client, a container in a tight loop. On the reference RB5009 it was a Home Assistant integration polling the router over the API (2026-09-23): timer interrupts went from ~2 500 to ~35 000 a second in bursts of 20–90 s on one core at a time, and RouterOS's own profile barely showed it. Look at what started at the moment the rule fired (/user/active, new containers, a new integration) and at the Interrupts and softirqs section. Fires once per change of regime and clears as the new rate becomes the day's baseline; a deliberate change (a new container, a heavier ruleset) fires it too.",
+		PromQL:  `sum(rate(mikroscope_context_switches_total[10m])) / sum(rate(mikroscope_context_switches_total[24h] offset 10m))`,
+		SQL:     `SELECT CASE WHEN base_min >= 720 THEN (now_sum / nullif(now_min * 60.0, 0)) / nullif(base_sum / (base_min * 60.0), 0) ELSE 0.0 END AS value FROM (SELECT sum(CASE WHEN time >= now() - interval '10 minutes' THEN CAST(ctxt AS BIGINT) ELSE 0 END) AS now_sum, count(DISTINCT CASE WHEN time >= now() - interval '10 minutes' THEN date_bin(interval '1 minute', time) END) AS now_min, sum(CASE WHEN time < now() - interval '10 minutes' THEN CAST(ctxt AS BIGINT) ELSE 0 END) AS base_sum, count(DISTINCT CASE WHEN time < now() - interval '10 minutes' THEN date_bin(interval '1 minute', time) END) AS base_min FROM mikroscope_stat WHERE time >= now() - interval '1450 minutes') AS w`,
+	},
+	{
 		UID: "mikroscope-egress-queue-drops", Title: "A port's egress queue has been dropping every minute for ten minutes", Severity: "warning", For: "10m", Op: "gt", Threshold: 0, NoData: "OK",
 		// THE ONE RULE HERE WHOSE COUNTER IS SUPPOSED TO MOVE, which is why
 		// the window is one minute and the pending period is ten rather than
@@ -187,7 +222,7 @@ func GenerateAlerts(store Store) ([]byte, error) {
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "# mikroscope alert rules for %s — Grafana unified alerting provisioning (apiVersion 1).\n", store)
-	fmt.Fprintf(&b, "# Replace DS_UID_PLACEHOLDER with your datasource UID and drop the file into\n# /etc/grafana/provisioning/alerting/. Every threshold is zero or the device's own\n# published ceiling; nothing here is a number the device did not publish.\n")
+	fmt.Fprintf(&b, "# Replace DS_UID_PLACEHOLDER with your datasource UID and drop the file into\n# /etc/grafana/provisioning/alerting/. Every threshold is zero, the device's own\n# published ceiling, or a multiple of its own trailing rate; nothing here is a\n# number compiled in for one router.\n")
 	fmt.Fprintf(&b, "apiVersion: 1\ngroups:\n  - orgId: 1\n    name: mikroscope\n    folder: mikroscope\n    interval: 1m\n    rules:\n")
 	n := 0
 	for _, r := range AlertRules {
