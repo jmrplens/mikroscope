@@ -126,6 +126,12 @@ El otro límite duro es la profundidad, no la resolución. El agente guarda sus 
 anillo de `--buffer` segundos, 60 s por defecto y entre 10 y 3600 s permitidos, que contiene
 cadencia × búfer muestras. Nada más antiguo existe en ningún sitio del router.
 
+Esa profundidad es también toda la ventana de la sección `health` de `doctor`, que lee el anillo
+una vez (como mucho 10 000 muestras, así que lo más corto entre `--buffer` y 10 000 / cadencia
+segundos) e imprime cuántos segundos cubrió. Un `doctor` limpio dice que no hubo bucle, churn de
+STP, flap de enlace ni descartes de softnet en el último minuto con los valores por defecto, no
+en todo el día; un fallo que ocurre una vez al día es cosa de los paneles y de las reglas de alerta.
+
 Un corte del colector o del grabador más corto que el anillo se rellena al reconectar: pide
 `since=<seq>` y recibe todas las muestras que se perdió. Un corte más largo que el anillo se
 informa como un hueco de longitud conocida, nunca se tapa. El agente responde con una línea

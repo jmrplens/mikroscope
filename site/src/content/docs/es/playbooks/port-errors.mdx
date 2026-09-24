@@ -74,6 +74,11 @@ encontrar los dos es lo que convierte una correlación en un mecanismo: un
 origen de 2,5 Gbit/s soltando ráfagas a velocidad de línea contra un destino de
 1 Gbit/s.
 
+En el dashboard es _Egress queue drops — the router's own transmit queue_, en
+**Interface traffic**. `mikroscope-egress-queue-drops` solo salta tras diez
+minutos seguidos descartando, así que ráfagas como estas se ven en el panel y, a
+propósito, no te avisan.
+
 ## Lo que no funcionó
 
 En el equipo de referencia se probaron dos cosas antes de la que funcionó, y

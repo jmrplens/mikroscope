@@ -86,7 +86,8 @@ What the token is, and is not:
 - It is stored in the envlist as `TOKEN`. `/container/print` returned the `envlist` property to a
   `read,api` user (<Verified of="read-user-envlist" />); reading the entries' values was not checked
   separately, and the design assumes a `read` user can. Treat it as guarding the agent's HTTP paths
-  from the LAN, not from the router's own `read` users.
+  from the LAN, not from the router's own `read` users. `doctor` counts the `TOKEN` entries and
+  never reads their value.
 - A token set without `--expose` is still written and still required.
 - The agent compares it as a plain string, over plain HTTP: the dst-nat carries no TLS, so the
   header crosses the LAN unencrypted.
@@ -98,19 +99,32 @@ The rules serve a client that addresses `<router LAN IP>:<port>` — a Prometheu
 
 - `record` and `forward` build the agent's URL from `--subnet` and `--port`, so they always
   dial the container's address. There is no flag that points them at the LAN address.
-- `install`, `upgrade` and `status` probe `/healthz` at the container's address too.
+- `install`, `upgrade` and `status` probe `/healthz` at the container's address too, and `doctor`
+  reads `/healthz` and then the agent's ring there, presenting the token if one is given.
 - The relay transport cannot carry the token: `/tool fetch` on the router sends no
   `Authorization` header. Against an agent with a token, the relay's `/healthz` answers and every
   sample request is refused. A token needs the direct transport, or a deployment without a token.
 
 ## Removing them
 
-`uninstall` removes both rules, selecting each by the tag together with the chain, destination
-address, port and protocol, then asks the router whether anything tagged is still there and fails
-naming the step if it is. Those `find` selectors quote the address and the port: unquoted, RouterOS
-parses them as typed values and matches nothing — an unquoted `dst-port=9123` found no rule
-on <Verified of="find-quoting" />, and an uninstall built that way would have reported success with the
-rule still in place.
+Only an `uninstall` given `--expose --lan-address … --token …`, as the install was, removes the
+rules: the rule steps exist only in a plan built with `--expose`, and `--expose` without a token is
+refused for every verb. That `uninstall` selects each rule by the tag together with the chain,
+destination address, port and protocol, then counts, for each step of its own plan, the tagged
+objects still there, and fails naming the step if one remains. A plain `uninstall` has no rule
+steps, so it neither removes the rules nor looks for them. On the reference RB5009 (RouterOS
+7.24.4, 2026-09-21) one removed everything else, printed `verified: nothing mikroscope created
+remains on the router`, and left the dst-nat pointing at an address that no longer existed; [pass
+the same shape](/mikroscope/reference/cli/#pass-the-same-shape-to-status-upgrade-and-uninstall) has
+the run.
+
+Those `find` selectors quote every non-numeric value except the `chain` and `action` enums.
+Unquoted, an address or a port is parsed as a typed value and matches nothing — an unquoted
+`dst-port=9123` found no rule on <Verified of="find-quoting" /> — and a bare word such as `tcp` is
+read as a variable name, whose unset value is empty: over the same 15 dstnat rules on the reference
+RB5009 (7.24.4, 2026-09-21), `protocol=tcp` found 0 and `protocol="tcp"` found 10. Before 1.1.0 the
+protocol was the one value left unquoted, so `uninstall --expose` removed neither rule and then
+reported the router clean with both still in place.
 
 `upgrade` does not touch either rule. It removes the container step — the container, the envlist
 `<name>-env` and the image — and creates it again, writing the envlist from the flags given to
@@ -122,7 +136,12 @@ from its own flags exists, and a plan built without `--expose` has no rule steps
 	same tuning flags (`--rate`, `--mem-limit-mb`, `--privileged` and the rest), as the install. An
 	upgrade without the token passes its check, leaves both rules in place and writes an envlist with
 	no `TOKEN`: the agent is then reachable from the LAN with no token. A tuning flag left out comes
-	back at its default.
+	back at its default. Measured on the reference RB5009 (RouterOS 7.24.4, 2026-09-21): after such
+	an upgrade, `/snapshot` through the router's LAN address went from `401` to `200`. Since 1.2.0,
+	`doctor` catches this state: when an install of the same `--name` has a tagged dst-nat and no
+	`TOKEN` entry, it prints `WARN the installed agent published on the LAN asks for a token`. It
+	counts the entries and never reads their value. Run `doctor` after every `upgrade` of an exposed
+	install.
 </Aside>
 
 <SeeAlso>

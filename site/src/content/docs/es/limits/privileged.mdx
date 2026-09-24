@@ -39,7 +39,7 @@ agente salvo donde la tabla indica otra cosa:
 
 | Fuente                             | Lo que da                                                                                                                               | Dónde aparece                                                                  |
 | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| `/dev/kmsg`                        | el búfer circular del kernel como eventos con marca de tiempo, con los nombres reales de las interfaces del router                      | `mikroscope_kmsg_records_total{level}`, y Loki                                 |
+| `/dev/kmsg`                        | el búfer circular del kernel como eventos con marca de tiempo, con los nombres reales de las interfaces del router                      | `mikroscope_kmsg_records_total{level}`, `mikroscope_kmsg_port_records_total{port,kind,level}`, y Loki |
 | `/proc/slabinfo`                   | las cachés slab globales: `nf_conntrack` (el número real de conexiones del router), `skbuff_*`, sockets `TCP`/`UDP`, `kmalloc-1k`/`-2k` | `mikroscope_slab_active_objects{cache}`                                        |
 | contadores ECC de `/sys/class/mtd` | `corrected_bits` y `ecc_failures` por partición NAND                                                                                    | `mikroscope_mtd_ecc_corrected_bits_total`, `mikroscope_mtd_ecc_failures_total` |
 | la PMU, vía `perf_event_open`      | ciclos, instrucciones, referencias y fallos de caché, fallos de predicción de saltos, ciclos de bus, por núcleo, a nivel de sistema     | `mikroscope_perf_events_total{counter,cpu}`                                    |
@@ -110,6 +110,14 @@ ficheros globales de `/proc` en las muestras, las zonas térmicas, `scaling_cur_
   `--conntrack-every`.
 - Los contadores ECC de la NAND. Los contadores de desgaste de YAFFS se mantienen.
 - La PMU, y con ella todo lo que queda por debajo del tick de <Measured id="tick.ms" />.
+
+Lo que se queda callado con ellos: la sección `health` de `doctor` solo puede informar de
+`softnet-drops`. Su línea `ok` no significa que no haya bucle, porque las comprobaciones de bucle,
+churn de STP y flap de enlace leen el log del kernel. Las reglas de alerta `mikroscope-l2-loop` y
+`mikroscope-port-link-down` (log del kernel), `mikroscope-conntrack-near-limit` (caché slab;
+`--conntrack-every` alimenta otra serie que esta regla no lee) y `mikroscope-ecc-failure` (MTD) se
+quedan sin datos y en OK. Comprueba `mikroscope_device_info{privileged}` antes de fiarte de su
+silencio.
 
 <Aside type="caution" title="Privileged no es un montaje">
 	Un contenedor privilegiado con el `/` del host montado lee la configuración entera de RouterOS,

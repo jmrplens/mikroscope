@@ -29,7 +29,6 @@ lleva el colector.
 | todo lo recalculado desde las muestras: CPU, ventanas, rachas, ruta de recepción, memoria, PMU, sensores, flash, disco, registro del kernel, contadores del observador | las muestras que tiró, plegadas por el mismo código `Totals`      |
 | los histogramas de tiempos del muestreador (`mikroscope_tick_*`)                                                                                                | `dt_ns`, `wake_ns` y `read_ns`, que viajan en cada muestra        |
 | `mikroscope_slipped_total`, `mikroscope_sampler_ticks_total`                                                                                                    | el `/sampler` del agente, leído al arrancar y cada minuto         |
-| `mikroscope_sampler_ticks_total`                                                                                                                                | ticks que el agente ha dado desde que arrancó, según los cuenta él|
 | las familias de disparos y capturas                                                                                                                             | lo mismo, mientras `CAPTURE_MB` sea mayor que 0                   |
 | los datos del equipo (`mikroscope_device_info`, techos, cadencias)                                                                                              | `/capabilities`, releído cada cinco minutos                       |
 | `mikroscope_collector_*`, `mikroscope_derived_*`                                                                                                                | lo suyo propio: la etapa de derivación y sus contadores           |
@@ -170,9 +169,10 @@ ocupados no puede distinguirlos.
 
 ## Los tiempos del propio muestreador
 
-Los representa el colector a partir del bloque `self` de cada muestra. Una
-muestra se lee a lo largo de un tramo de tiempo, no en un instante, y estas
-familias miden ese tramo.
+Los tres histogramas los representa el colector a partir del `dt_ns` y del
+bloque `self` de cada muestra; los dos contadores salen del `/sampler` del
+agente. Una muestra se lee a lo largo de un tramo de tiempo, no en un instante,
+y estas familias miden ese tramo.
 
 <ScrollTable label="Familias de tiempos del muestreador">
 
@@ -182,6 +182,7 @@ familias miden ese tramo.
 | `mikroscope_tick_wake_latency_seconds` | histogram | `le`    | cuánto tarde se ejecutó el bucle después de que saltara su temporizador; buckets 0,1 ms, 0,25, 0,5, 1, 2, 5, 10, 20, 50, 100 ms |
 | `mikroscope_tick_read_seconds`         | histogram | `le`    | cuánto tardó la lectura de todas las fuentes que tocaban; los mismos buckets                                                    |
 | `mikroscope_slipped_total`             | counter   | ninguna | ticks cuya lectura terminó después de que tocara el siguiente tick                                                              |
+| `mikroscope_sampler_ticks_total` | counter | ninguna | ticks que el agente ha dado desde que arrancó, según los cuenta él |
 
 </ScrollTable>
 
@@ -307,9 +308,10 @@ Un cambio en `nf_conntrack_max` se ve después de reiniciar el agente.
 </ScrollTable>
 
 Un dispositivo de bloques que no hizo nada no está en la muestra, y por tanto
-tampoco aquí; un comentario de `internal/agent/metrics.go`, sin fecha ni
-versión de RouterOS, dice que el RB5009 lista dieciséis dispositivos `nbd`
-inactivos. A diferencia de las fuentes con suelo de las convenciones de arriba,
+tampoco aquí; en el RB5009 de referencia (RouterOS 7.24.2, kernel 5.6.3) el
+2026-09-12, `nbd0`–`nbd15` estaban presentes e inactivos y `mtdblock0`–`2`
+daban todo ceros (`internal/dashboards/panels.go`, el panel de E/S en curso de
+disco). A diferencia de las fuentes con suelo de las convenciones de arriba,
 los niveles de flash y `mikroscope_disk_inflight` no se arrastran, así que
 faltan en la mayoría de los scrapes de una placa tranquila.
 
@@ -334,15 +336,14 @@ desde el principio, a 0, en la exposición cuando las capacidades listan
 ilegible. Sin eso, aparecen con el primer registro. La familia por puerto
 aparece con el primer registro que nombra un puerto.
 
-En el agente, `port` es el nombre por defecto de RouterOS en una placa de la
-tabla de puertos, y si no el nombre del kernel. En la copia del colector, el
-inventario de interfaces de la capa de la API pone ahí el nombre actual del
-puerto en RouterOS, así que un puerto renombrado de `ether5` a `WAN` se cuenta
-bajo `WAN`; sin capa de la API, el registro conserva el nombre por defecto de la
-placa. El colector también clasifica todo registro que le llega sin `kind`
-propio, así que su exposición lleva la label aunque la del agente no la lleve
-—que es como está el RB5009 de referencia a 2026-09-16, con un agente cuyo
-`/metrics` no tiene `kind`—.
+El agente nombra el puerto en sus registros con el nombre por defecto de
+RouterOS en una placa de la tabla de puertos, y si no con el nombre del kernel.
+El inventario de interfaces de la capa de la API del colector pone en `port` el
+nombre actual del puerto en RouterOS, así que un puerto renombrado de `ether5` a
+`WAN` se cuenta bajo `WAN`; sin capa de la API, el registro conserva el nombre
+por defecto de la placa. El colector clasifica todo registro de puerto que le
+llega sin `kind` propio, así que los registros de un agente que no lo envía
+también llevan la label.
 
 Un puerto que se levanta escribe cuatro registros en un bridge, no cuatro
 fallos: `link-up` y después `stp-blocking`, `stp-learning` y `stp-forwarding` en
@@ -519,8 +520,8 @@ del puerto.
 - [Prometheus](/mikroscope/es/sinks/prometheus/): poner en marcha la exposición del colector y
   hacerle scrape.
 - [Medidas de InfluxDB y SQL](/mikroscope/es/reference/measurements/): los mismos datos como filas.
-- [Los endpoints HTTP del agente](/mikroscope/es/reference/http/): `/metrics` y las rutas que lo
-  acompañan.
+- [Los endpoints HTTP del agente](/mikroscope/es/reference/http/): `/healthz`, `/capabilities`,
+  `/snapshot`, `/stream`, `/sampler` y las rutas de capturas.
 - [Lo que los números no dicen](/mikroscope/es/cost/limits/): lo que estas familias pueden y no
   pueden recuperar.
 

@@ -3,6 +3,7 @@ title: Where the project stands
 description: What works end to end, what it costs on the one device it has run on, what was found and not fixed, and what the release publishes.
 ---
 
+import DashboardCount from "../../../components/DashboardCount.astro";
 import Measured from "../../../components/Measured.astro";
 import NotClaimed from "../../../components/NotClaimed.astro";
 import Provenance from "../../../components/Provenance.astro";
@@ -13,12 +14,13 @@ import SeeAlso from "../../../components/SeeAlso.astro";
 This page answers what a reader deciding whether to try mikroscope needs first:
 which parts work end to end, on what hardware that was shown, what the
 observer costs today, which defects are known and still open, and whether
-there is anything to download. It is checked against the code as of 2026-09-19.
+there is anything to download. It is checked against the code as of 2026-09-24 (1.2.0).
 
 ## What works end to end
 
-Everything below except the test suites and the seven sinks marked as such has
-run against the reference RB5009 (RouterOS 7.24.2), not only against fakes:
+Everything below except the test suites, the eight sinks and the alert-rule forms
+marked as such has run against the reference RB5009 (RouterOS 7.24.2, and 7.24.4
+where it says so), not only against fakes:
 
 - **The agent** reads the shared kernel's `/proc`, `/sys`, `/dev/kmsg` and
   `perf_event_open` counters on a fixed ticker at 1 to 100 Hz (10 Hz by
@@ -37,7 +39,17 @@ run against the reference RB5009 (RouterOS 7.24.2), not only against fakes:
   published agent tar, the router's own pull from Docker Hub, and the
   `plan --rsc` script imported on the router with no CLI in the install itself.
   The agent answered in every one, and the `/export` after the four was
-  byte-identical to the one before them.
+  byte-identical to the one before them. Since 1.2.0 standalone `doctor` also
+  pulls the running agent's ring once and names four faults RouterOS's own
+  tools do not show — a layer-2 loop, STP churn, a link flap and softnet drops —
+  and reports an agent that does not answer within 3 s and skips it; its
+  findings never change the exit status. It also carries two `WARN` checks, which change
+  neither its exit status nor whether `install` proceeds: with
+  `--remote-image`, a `/container/config` username set while the pull goes
+  anywhere but Docker Hub, and an install of the same `--name` published on the
+  LAN with no `TOKEN` in its environment. It reads whether a username is set
+  and how many `TOKEN` entries exist, never a value. Where each ran is under
+  [One device, two RouterOS versions](#one-device-two-routeros-versions).
 - **`record`, `mark` and `plot`** work end to end. A 60 s recording at 10 Hz on
   2026-09-12 yielded exactly 600 samples, 0 gaps and −7 ms of clock skew.
 - **`forward`**, the collector, merges the kernel tier with the RouterOS API
@@ -69,7 +81,26 @@ run against the reference RB5009 (RouterOS 7.24.2), not only against fakes:
   "No data" — is from 2026-09-15 and covers 168 and 130 panels; it has not been
   repeated for the two port-event panels and the interface-inventory table it
   does not cover. A walk on 2026-09-14, against a 10.5 h capture from the same
-  device, rendered 140 InfluxDB panels with the same result.
+  device, rendered 140 InfluxDB panels with the same result. The 1.2.0 layout
+  changes — stat numbers at a fixed 32 px, memory in use as a time series —
+  were checked on 2026-09-24 by importing the InfluxDB dashboard into the
+  owner's Grafana and capturing it at 390x844 and 1600x1000; the other four
+  dashboards were not captured.
+- **The alert rules** number <DashboardCount store="influxdb" of="rules" /> for
+  InfluxDB 3, <DashboardCount store="prometheus" of="rules" /> for Prometheus
+  and <DashboardCount store="postgres" of="rules" /> for PostgreSQL. On
+  2026-09-21 the twelve InfluxDB rules of that date were loaded into Grafana
+  13.2.1 against the owner's store and watched evaluate, which found seven that
+  could never fire; after the 1.1.0 fix all twelve returned a value. The two
+  rules 1.2.0 added were backtested in SQL on the InfluxDB 3 reference store:
+  `mikroscope-bridge-port-dark` marks sfp-sfpplus1 in 204 ten-minute bins and
+  ether2 in 376 between 2026-09-19 11:13 and 2026-09-23 22:44 UTC, the two
+  phases of that week's layer-2 loop, and no other port;
+  `mikroscope-wakeup-storm` never exceeded 1.81 over 551 healthy ten-minute
+  windows (2026-09-20..23) and opened at 35.7 on the wake-up storm of
+  2026-09-23. The PromQL forms of both were checked for syntax only, since that
+  store holds no history here, and their PostgreSQL forms have no recorded run
+  against data.
 - **`forward --grafana`** reconciles a datasource and a dashboard per store the
   collector writes to, at start, before the first sample. It has run against
   the owner's Grafana (2026-09-19, InfluxDB 3) and against the container suite's
@@ -99,7 +130,7 @@ run against the reference RB5009 (RouterOS 7.24.2), not only against fakes:
   script the SQL sink wrote, a search against Elasticsearch, `query_range`
   against Loki, `render` against Graphite, the decoded OTLP the collector
   received, the line protocol Telegraf parsed, and a scrape of the exporter
-  stored in Prometheus. It then imports both dashboards into Grafana and runs
+  stored in Prometheus. It then imports all five dashboards into Grafana and runs
   every panel's query through Grafana's own API. It needs Docker and no router:
   the samples are the same canned ones, so the run is reproducible anywhere.
   The first full run, on 2026-09-16, found a panel that named two columns the
@@ -115,7 +146,7 @@ At the install default — 10 Hz, default per-source floors, a 60 s ring — th
 agent costs **<Measured id="run.10hz.cpu" /> of one core and <Measured id="run.10hz.rss" /> RSS**,
 read from its own cgroup at steady state with the ring full:
 
-<Provenance of="rates-2026-09-15" />
+<Provenance of="rates-2026-09-18" />
 
 <RunsTable only={["10hz"]} />
 
@@ -123,7 +154,9 @@ That is above the budget of <Measured id="budget.cpu" /> of one core and inside
 the <Measured id="budget.rss" /> RSS one — it was over on both until the 60 s ring and the derived
 memory limit of 1.0.6. The budget is guidance rather than a contract: cost scales with the device, the
 source set and the ring size. The image budget is <Measured id="budget.image" />; the one image size on
-record is <Measured id="image.size" />, and it carries no date.
+record is <Measured id="image.size" />, the figure the 1.0.0 release notes give for that release's
+image (v1.0.0, tagged 2026-09-16). No later image has been measured; CI's `agent-size` job holds
+the agent binary, which is all the image carries, under 8 MiB on arm64, armv7 and amd64.
 
 Two rules keep the cost figure honest: wait out the ring (`BUFFER_S`) before
 quoting a steady-state figure — on the RB5009, at a 14 MiB soft memory limit, a
@@ -147,7 +180,7 @@ what each one costs — not what the number was at some earlier point.
 | Ring full, `MEM_LIMIT_MB` 14                          | <Measured id="gc.tight.cpu" /> (<Measured id="gc.tight.us" />/sample) | not recorded                   | 2026-09-12 | a 300 s ring of lines of about 2.4 kB, the line of that date, holds ~7.3 MB; the Go GC runs without pause |
 | Ring full, `--mem-limit-mb 40`, `--memory-max 64M`    | <Measured id="gc.roomy.cpu" /> (<Measured id="gc.roomy.us" />/sample) | 25.13 MiB                      | 2026-09-12 | 0 slipped ticks                                                                                          |
 | PMU counters on, a live `forward` writing to InfluxDB | 1.72 %                                                                | not recorded                   | 2026-09-12 | 0 slipped ticks; 2 400 samples forwarded, 0 gaps, 0 drops                                                |
-| The install default                                   | <Measured id="run.10hz.cpu" />                                        | <Measured id="run.10hz.rss" /> | 2026-09-15 | the figure above                                                                                         |
+| The install default                                   | <Measured id="run.10hz.cpu" />                                        | <Measured id="run.10hz.rss" /> | 2026-09-18 | the figure above                                                                                         |
 
 </ScrollTable>
 
@@ -158,12 +191,18 @@ owner's production router. There is no lab device. The figures were measured on
 RouterOS 7.24.2 and each says so; the device has since moved to 7.24.4, and
 `doctor`, `plan`, `install`, `status` and `uninstall` were exercised there on
 2026-09-21, with the installed agent running on it continuously since
-2026-09-19. The measurements have not been repeated on 7.24.4.
+2026-09-19. On 2026-09-23, also on 7.24.4, `doctor`'s registry warning was
+reproduced read-only and its token warning with a throwaway install that was
+exposed, upgraded without a token and removed, so `upgrade` has run there too.
+The same day `doctor` read 600 samples from the running agent's ring and found
+nothing; the four faults it names are covered by tests that replay the real
+record text and 2.0 s cadence of the reference device's loop, not by a live
+fault. The measurements have not been repeated on 7.24.4.
 
 <NotClaimed variant="untested">
 	A second board of any kind. The hEX S (2025) — 32-bit RouterOS on an ARM64 chip, which is what the
-	agent's `linux/arm` build is for — has not arrived, so the 32-bit counter-wrap path and the
-	`linux/arm` image have not run on hardware. No x86_64 RouterOS host. No RouterOS before 7.24, and
+	agent's `linux/arm/v5` build is for — has not arrived, so the 32-bit counter-wrap path and neither
+	32-bit ARM image have run on hardware. No x86_64 RouterOS host. No RouterOS before 7.24, and
 	none of the on-device figures re-measured on 7.24.4. Nothing that needs a reboot, which waits for
 	a maintenance window.
 </NotClaimed>
@@ -199,27 +238,34 @@ and the hardware watchdog at `/sys/class/watchdog/watchdog0`.
 ## What the release publishes
 
 `VERSION` is **1.2.0**, compiled into both binaries and reported by
-`mikroscope version`. Two numbers between it and the last one have no release of
-their own: 1.0.8 and 1.0.10 were prepared and never tagged, so v1.0.9 carries
-1.0.8's changes and v1.1.0 carries 1.0.10's. A number this project skipped is
-one nobody can install, which is why the changelog has no section for either. A
-`v*` tag runs the GoReleaser configuration, which publishes:
+`mikroscope version`. Not every number has a release of its own: 1.0.5, 1.0.8
+and 1.0.10 were never tagged, and v1.0.6 was tagged but its release run failed.
+1.0.5's and 1.0.6's changes ship in v1.0.7, 1.0.8's in v1.0.9 and 1.0.10's in
+v1.1.0. The changelog keeps a section for 1.0.5, 1.0.6 and 1.0.8, which say
+what changed, and has none for 1.0.10. A `v*` tag runs the GoReleaser
+configuration, which publishes:
 
-- **CLI archives** for linux, darwin, windows and freebsd on amd64, arm64 and
-  arm: `.tar.gz`, and `.zip` on Windows, each carrying `LICENSE` and `README.md`.
-- **Agent archives** for linux on the same three architectures, for a host that
+- **CLI archives** for linux and freebsd on amd64, arm64 and arm (ARMv7), and
+  for darwin and windows on amd64 and arm64: `.tar.gz`, and `.zip` on Windows,
+  each carrying `LICENSE` and `README.md`.
+- **Agent archives** for linux on amd64, arm64, armv5 and armv7, for a host that
   wants the bare binary rather than an image.
-- **Side-loadable agent image tars**, one per architecture —
-  `mikroscope-agent-arm64.tar`, `mikroscope-agent-arm.tar`,
-  `mikroscope-agent-amd64.tar` — which `install --agent-tar` uploads to the
+- **Side-loadable agent image tars**, four of them —
+  `mikroscope-agent-arm64.tar`, `mikroscope-agent-armv5.tar`,
+  `mikroscope-agent-armv7.tar`, `mikroscope-agent-amd64.tar` (32-bit ARM is two:
+  EN7562CT boards take only v5) — which `install --agent-tar` uploads to the
   router.
-- **The agent image in two registries**, `jmrplens/mikroscope-agent:1.0.9` on
-  Docker Hub and `ghcr.io/jmrplens/mikroscope-agent:1.0.9` on GHCR, each one
-  manifest over `linux/amd64`, `linux/arm64` and `linux/arm/v7`, which
+- **The agent image in two registries**, `jmrplens/mikroscope-agent:1.2.0` on
+  Docker Hub and `ghcr.io/jmrplens/mikroscope-agent:1.2.0` on GHCR (each also
+  tagged `latest`), each one manifest over `linux/amd64`, `linux/arm64`,
+  `linux/arm/v7` and `linux/arm/v5`, which
   `install --remote-image` makes the router pull. RouterOS takes the registry
   host from the global `/container/config registry-url`, which ships as
   `https://registry-1.docker.io`, so the Docker Hub reference needs nothing set
   on the device and the GHCR one needs that setting changed first.
+- **The collector image**, `jmrplens/mikroscope:1.2.0` on Docker Hub and
+  `ghcr.io/jmrplens/mikroscope:1.2.0` on GHCR (each also tagged `latest`), over
+  `linux/amd64` and `linux/arm64`, for the compose stacks under `deploy/`.
 - **`checksums.txt`**, covering every archive and every image tar, a keyless
   cosign signature over it, and an SPDX SBOM per archive, signed in its own
   right.
@@ -230,9 +276,9 @@ CLI, `make build-agent` for the agent, which `install` and `image` also compile
 themselves. The four ways to get the agent onto a router, and what each one
 needs, are on [Installing the agent](/mikroscope/install/).
 
-What the release publishes for `linux/arm` and `linux/amd64` is cross-built and
-checked in CI. Of the three architectures, only `arm64` has run on hardware — on
-the one RB5009 above.
+What the release publishes for `linux/arm/v5`, `linux/arm/v7` and `linux/amd64`
+is cross-built and checked in CI. Of the four platforms, only `arm64` has run on
+hardware — on the one RB5009 above.
 
 <SeeAlso>
 

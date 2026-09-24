@@ -50,15 +50,16 @@ cambia, más un latido cada 60 s.
 Compruébalo contra la API una vez, para fiarte de él a partir de entonces:
 
 ```text
-/ip/firewall/connection/print count-only     # 6 212 el día anterior; slab decía 6 287
+/ip/firewall/connection/print count-only     # 6 212, más o menos un día antes de las lecturas del slab (la fecha no consta)
 ```
 
-Ese día se registraron dos lecturas del slab frente a él, 6 582 y <Measured id="conntrack.slab" />; el
-fragmento de arriba es un tercer momento (6 240).
+Las lecturas del slab del 2026-09-12 fueron 6 582 y <Measured id="conntrack.slab" />, y el fragmento
+de arriba recogió un tercer momento, 6 240. Con un día de diferencia, muestran el mismo orden de
+magnitud, no que los dos se sigan: en tu equipo, haz el recuento y lee el slab en el mismo minuto.
 
-Los dos no coincidirán exactamente — se muestrean en instantes distintos, y el
-slab cuenta objetos que el asignador aún retiene —, pero se siguen. La diferencia
-de coste es lo que importa: la lectura de un fichero varias veces por segundo
+Ni aun así coincidirán exactamente — se muestrean en instantes distintos, y el
+slab cuenta objetos que el asignador aún retiene. La diferencia de coste es lo que
+importa: la lectura de un fichero varias veces por segundo
 frente a recorrer una tabla por una sesión de la API.
 
 ## El techo también se puede leer
@@ -79,7 +80,8 @@ El colector ejecuta dos detecciones sobre la población y su techo:
 `conntrack-cliff`, cuando `nf_conntrack` cae por debajo de la mitad de su valor
 guardado anterior, y `conntrack-high`, cuando la ocupación supera el 80 % de
 `nf_conntrack_max` **y** sube en los últimos 60 s, sin estimación de tiempo hasta
-llenarse.
+llenarse. La regla de alerta `mikroscope-conntrack-near-limit` vigila la misma
+proporción en el almacén y salta tras cinco minutos por encima del 80 %.
 
 El mismo subárbol tiene una trampa. Los _timeouts_ de conntrack que hay ahí
 marcan los valores por defecto de Linux (`tcp_timeout_established` 432 000 s,
@@ -114,8 +116,9 @@ Merece la pena vigilarlas por sí mismas:
 <NotClaimed variant="not-provoked">
 	Una tormenta de conntrack. Generar miles de conexiones contra un router de producción arriesga
 	disparar su propio cortafuegos o un bouncer al estilo de CrowdSec y dejarte fuera del mismo camino
-	por el que estás trabajando. La comprobación cruzada de arriba da la misma confianza en el
-	contador sin ese riesgo, pero no se observó qué aspecto tiene una tormenta en estas cachés.
+	por el que estás trabajando. La comprobación cruzada de arriba liga el contador al recuento de
+	la API sin ese riesgo, en el mismo orden de magnitud, pero no se observó qué aspecto tiene una
+	tormenta en estas cachés.
 </NotClaimed>
 
 <SeeAlso>
@@ -127,5 +130,7 @@ Merece la pena vigilarlas por sí mismas:
 - [Lo que aporta privileged](/mikroscope/es/limits/privileged/): los ficheros que solo lee root,
   `/proc/slabinfo` entre ellos.
 - [Detecciones](/mikroscope/es/sinks/detections/): `conntrack-cliff` y `conntrack-high` completas.
+- [Reglas de alerta](/mikroscope/es/dashboards/alerts/): `mikroscope-conntrack-near-limit`, la regla
+  que avisa sobre la misma proporción.
 
 </SeeAlso>

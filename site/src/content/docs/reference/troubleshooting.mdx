@@ -27,8 +27,13 @@ says what it means and where the explanation lives.
 | `doctor`: `registry-url is https://ghcr.io … registry-url=…`          | [The registry host is global](#the-registry-host)                      |
 | `doctor`: `free flash ≥ …` fails                                      | `--disk tmpfs` or `--ephemeral`, or free space on the flash            |
 | `doctor`: `WARN no registry credential meant for another registry`    | [One credential for every registry](#one-credential-for-every-registry) |
-| `doctor`: `WARN the installed agent published on the LAN asks for a token` | `upgrade` with `--token`, or `uninstall --expose`                  |
+| `doctor`: `WARN the installed agent published on the LAN asks for a token` | `upgrade` with the same `--name`, the original install flags and `--token`; or `uninstall --expose --lan-address … --token …`, which removes the agent entirely |
 | `doctor`: `WARN layer2-loop` in the `health` section                  | [A loop RouterOS does not show](#a-loop-routeros-does-not-show)        |
+| `doctor`: `WARN stp-churn` in the `health` section                    | A second path to the router, or a topology that keeps changing behind that port: [What the running agent shows](/mikroscope/install/prerequisites/#what-the-running-agent-shows) |
+| `doctor`: `WARN link-flap` in the `health` section                    | The cable, the connector, the device at the other end rebooting, or auto-negotiation failing |
+| `doctor`: `WARN softnet-drops` in the `health` section                | Packets lost inside the router, faster than the receive path could take them: [A packet flood](/mikroscope/playbooks/packet-flood/) |
+| `doctor`: `health … skipped: no agent answered`                       | The agent is not running, or this host cannot reach its /30: pass the `--subnet` and `--port` it was installed with, see [Reaching the agent](/mikroscope/install/reaching-the-agent/) |
+| `doctor`: `skipped: the agent answered /healthz but its ring could not be read` | Most often the agent has a `TOKEN`: pass `--token` |
 
 </ScrollTable>
 
@@ -102,10 +107,20 @@ reaches the router by a second path. A mesh node with both a cable and a
 wireless backhaul is the usual cause, and so is a switch cabled twice. STP does
 its job and blocks the port, so nothing melts down, and RouterOS reports the
 port running and error-free — but whatever is behind it reaches the router
-some other way or not at all. On the reference RB5009 the port received 12 to
-13 packets a second and sent 1 on two days of the loop (2026-09-21 and 22), and
-192 and 178 on the day after the second path went (2026-09-23). Find the second path and break it; the finding goes away
-within one ring.
+some other way or not at all. On the reference RB5009 (RouterOS 7.24.4) the
+port received 12 to 13 packets a second and sent 1 on 2026-09-21 and 22, during
+the loop; on 2026-09-23, after the second path was removed, it received 192 and
+sent 178. Find the second path and break it; the finding goes away within one
+ring.
+
+`doctor` reads only the ring, about the last minute, so a loop that has already
+cleared or comes and goes can be gone by the time it runs. The alert
+[`mikroscope-bridge-port-dark`](/mikroscope/dashboards/alerts/#the-rules) reads
+the same fault from history: a bridge port that received packets for ten
+minutes while the bridge sent it neither a unicast nor a broadcast frame.
+Backtested over the reference store from 2026-09-19 to 2026-09-23, it marked
+the two ports of that week's loop, sfp-sfpplus1 in 204 ten-minute bins and
+ether2 in 376, and no other port.
 
 ## The agent is installed and nothing answers
 
@@ -249,14 +264,13 @@ API and is the fastest way to tell a broken query from a quiet one.
 
 ### `the <name> sink does not know the address Grafana would query`
 
-`forward --grafana` builds a datasource only for the sinks whose **write
-address is the address Grafana queries**: `--influx` and `--elastic`. The other
-three cannot, and each for its own reason — `--prom` serves `/metrics` and is
-scraped, so the Prometheus Grafana asks is one the collector has never heard
-of; `--sql` writes statements to a file and never connects; `--graphite`
-speaks the carbon ingest port, which is not the API Grafana queries. Create
-those in Grafana and name them in `--grafana-datasource-uid`, which also tells
-`forward` to leave that datasource alone.
+`forward --grafana` derives a datasource from the sink's own address for
+`--influx`, `--elastic` and `--postgres`. `--prom` is scraped and `--graphite`
+writes to the carbon ingest port, so neither knows where Grafana would query:
+pass that address in `--grafana-datasource-url`, or create the datasource in
+Grafana and name it in `--grafana-datasource-uid`, which also tells `forward` to
+leave it alone. `--sql` never connects and fails with its own message, which
+points at `--postgres`.
 
 ### `--influx is a write URL this cannot take apart`
 
@@ -325,7 +339,8 @@ Once the data is arriving, the question changes from "why is this broken" to
 router first, then seven faults read against it.
 
 <Aside type="tip" title="Ask the tools before reading further">
-	`mikroscope doctor` names the fix for anything missing on the router, `mikroscope status` says
+	`mikroscope doctor` names the fix for anything missing on the router and reads the running agent's
+	ring for a loop, STP churn, link flaps and softnet drops, `mikroscope status` says
 	what is installed and whether it answers, and `mikroscope dashboards check` runs every panel's
 	query and prints which ones came back with nothing. Between them they answer most of this page
 	for your own device rather than in general.

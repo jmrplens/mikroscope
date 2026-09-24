@@ -30,9 +30,9 @@ ese repositorio, bajo su licencia MIT.
 | ---------------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `internal/router`            | cs-routeros-bouncer `cmd/perfmon`, los pasos de despliegue tras el PR #123 | Ampliado con puertos entrecomillados en cada `find`, el par opcional de reglas de cortafuegos de `--expose`, los ajustes de contenedor propios de mikroscope y un listado de cada escritura antes de hacerla |
 | Pruebas de `internal/router` | cs-routeros-bouncer `cmd/perfmon`, las pruebas de contención               | Adaptadas a los nombres de opción de mikroscope y a dos reglas propias: puertos entrecomillados, y el par de `--expose` como parte del plan                                                                  |
-| `internal/image`             | cs-routeros-bouncer `cmd/perfmon/image.go`                                 | Rehecho para el nombre del agente, la variante ARM (las imágenes arm declaran `v7`) y una compilación que goreleaser pueda reutilizar                                                                        |
+| `internal/image`             | cs-routeros-bouncer `cmd/perfmon/image.go`                                 | Rehecho para el nombre del agente, la variante ARM (una imagen arm declara su nivel GOARM: `v5` por defecto, `v7` con `--goarm 7`) y una compilación que goreleaser pueda reutilizar                                                                        |
 | `internal/chart`             | cs-routeros-bouncer `cmd/perfmon/chart.go`                                 | El original tomaba su paleta de un tema de documentación; este lleva la suya propia, validada para la superficie clara (ΔE CVD entre pares adyacentes 9,1, visión normal 22,9)                               |
-| `internal/rosapi`            | cs-routeros-bouncer `internal/rosapi`, tomado el 2026-09-11                | La ruta de importación; y un skip de test solo de Windows añadido en 1.0.1, nada del código que se envía                                                                                                                                                                                  |
+| `internal/rosapi`            | cs-routeros-bouncer `internal/rosapi`, tomado el 2026-09-11                | La ruta de importación; desde entonces, solo pruebas y el README del paquete (1.0.1, 1.1.0), nada del código que se envía                                                                                                                                                                                  |
 | `.golangci.yml`              | ghchronicle y gitlab-mcp-server, basados a su vez en `maratori/golangci-lint-config`  | La ruta del módulo                                                                                                                                                                                           |
 
 </ScrollTable>
@@ -59,8 +59,11 @@ ese proyecto, y la batería de extremo a extremo de `test/e2e/` sigue la suya.
 ## El cliente de la API de RouterOS
 
 `internal/rosapi` tiene dos generaciones de linaje. La copia de mikroscope es
-la de cs-routeros-bouncer, sin nada modificado en el código que se envía —1.0.1 añadió
-un único skip de Windows a `client_test.go`, y eso es todo. mikroscope la
+la de cs-routeros-bouncer, sin nada modificado en el código que se envía. Lo que ha
+cambiado desde entonces son pruebas y el propio `README.md` del paquete: 1.0.1 añadió un
+único skip de Windows a `client_test.go`; 1.1.0 añadió dos pruebas de cobertura
+(`dial_cover_test.go`, `unknownreply_cover_test.go`), amplió `proto_test.go` y anotó ese
+skip de 1.0.1 en la nota de linaje del `README.md`. mikroscope la
 usa para las lecturas de la capa de la API, para `mark --log-markers` y para el
 relevo de `/tool fetch`.
 La copia del bouncer es a su vez una incorporación recortada de

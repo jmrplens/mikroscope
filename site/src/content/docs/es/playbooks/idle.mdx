@@ -44,10 +44,12 @@ ticks en bruto que envía el agente; el agente nunca los convierte en porcentaje
 
 ## El squeeze de fondo y la marca de ráfaga
 
-El suelo del squeeze se volvió a medir el 2026-09-15, en el mismo equipo, sobre
-3 738 704 muestras por CPU en 24 h: alrededor del <Measured id="squeeze.backgroundOne" /> de las muestras llevan un squeeze de fondo, y
-un 2 % llevan dos o más. Medido en este router ese día: una regla que marque
-cualquier squeeze salta 92 veces en veinte minutos, y no significa nada.
+El suelo del squeeze se volvió a medir en las 24 h hasta el 2026-09-16 a las
+07:00 UTC, en el mismo equipo, sobre 3 738 704 muestras por CPU: alrededor
+del <Measured id="squeeze.backgroundOne" /> de las muestras llevan un squeeze de fondo,
+el <Measured id="squeeze.backgroundTwo" /> exactamente dos y el <Measured id="squeeze.atLeastThree" />
+exactamente tres. Medido en este router el 2026-09-15: una regla que marque cualquier squeeze salta
+92 veces en veinte minutos, y no significa nada.
 
 Así que la marca `burst` del colector es una desviación respecto a la norma del
 propio equipo: un paquete descartado, o más squeezes de los que esa CPU suele

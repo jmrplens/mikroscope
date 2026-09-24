@@ -149,7 +149,8 @@ no se han descargado.
 ### Lo que pesa una captura
 
 El tamaño de una captura es el número de muestras de su ventana por el tamaño de
-línea. La línea media medida en el RB5009 (RouterOS 7.24.2, 10 Hz, todas las fuentes de esa fecha, 2026-09-12) fue de <Measured id="ring.lineBytes" />;
+línea. La línea media medida en el RB5009 (RouterOS 7.24.2, 10 Hz, privileged, todas las fuentes incluido el
+PMU, 2026-09-17) fue de <Measured id="ring.lineBytes" />;
 las líneas con los suelos por defecto no se han medido. Eso da, por aritmética y
 no midiendo capturas:
 
@@ -157,9 +158,9 @@ no midiendo capturas:
 
 | Cadencia | Ventana por defecto (5 s + 5 s) | Capturas en los 4 MiB por defecto |
 | -------- | ------------------------------- | --------------------------------- |
-| 10 Hz    | 101 muestras, unos 250 kB       | 17                                |
-| 50 Hz    | 501 muestras, unos 1,2 MB       | 3                                 |
-| 100 Hz   | 1 001 muestras, unos 2,4 MB     | 1                                 |
+| 10 Hz    | 101 muestras, unos 330 kB       | 12                                |
+| 50 Hz    | 501 muestras, unos 1,6 MB       | 2                                 |
+| 100 Hz   | 1 001 muestras, unos 3,2 MB     | 1                                 |
 
 </ScrollTable>
 
@@ -169,11 +170,14 @@ largas. El campo `bytes` de cada captura es la cifra real.
 El presupuesto es memoria que el agente retiene además de su anillo: una línea
 fijada sigue viva cuando el anillo ya la ha dejado atrás. Por eso el agente la
 cuenta al arrancar en la misma comprobación que el anillo. Cuando el agente
-puede leer el `memory.max` del contenedor y unos `rate × buffer × 2.56 kB` más
-`CAPTURE_MB` lo superan, se niega a arrancar, nombrando los tres ajustes que
-bajar o `--memory-max` para subir. Cuando `MEM_LIMIT_MB` es mayor que 0, avisa
-si el doble de eso supera su límite blando de memoria de Go; el valor por
-defecto del propio agente para `MEM_LIMIT_MB` es 14, e `install` escribe 40.
+puede leer el `memory.max` del contenedor y unos `rate × buffer ×` <Measured id="ring.lineChargedBytes" />
+más `CAPTURE_MB` lo superan, se niega a arrancar, nombrando los tres ajustes que bajar o
+`--memory-max` para subir. También avisa si el doble de eso supera su límite blando de memoria de
+Go, `MEM_LIMIT_MB` (de 8 a 1 024 MiB). El valor por defecto del propio agente para `MEM_LIMIT_MB`
+es 14; `install` lo deriva en cambio del anillo (cadencia × buffer × línea, × 2,5, como mínimo 16
+y como mucho tres cuartos de `--memory-max`), lo que escribe 16 con los valores por defecto, y
+`--mem-limit-mb` lo fija a mano. Esa derivación no cuenta `CAPTURE_MB`, así que un presupuesto de
+capturas grande puede seguir provocando el aviso.
 [El coste del observador](/mikroscope/es/cost/) explica por qué importa esa
 segunda proporción.
 
@@ -214,7 +218,7 @@ CLI no tiene verbo para las capturas: usa cualquier cliente HTTP.
 
 <Aside type="note" title="Las capturas necesitan el camino directo">
 
-El transporte relay tira a través de `/tool fetch`, que devuelve como mucho <Measured id="relay.replyMaxBytes" /> y no envía token. Una captura con los valores por defecto ocupa unos 250 kB. Trae las capturas
+El transporte relay tira a través de `/tool fetch`, que devuelve como mucho <Measured id="relay.replyMaxBytes" /> y no envía token. Una captura con los valores por defecto ocupa unos 330 kB, cinco veces el tope de la petición. Trae las capturas
 desde un equipo que llegue al agente directamente, o a través de `--expose`: [llegar al
 agente](/mikroscope/es/install/reaching-the-agent/) cubre ambos.
 
@@ -240,11 +244,16 @@ disparo para ella; lee `/captures` en su lugar.
 `forward` reconoce la línea, nunca la confunde con una muestra, la cuenta y se
 la entrega a cada destino como anotación: la medida `mikroscope_trigger` en
 InfluxDB y la tabla en SQL, `mikroscope_collector_triggers_total{cause}` en la
-exposición Prometheus del colector, y la propia línea en el destino de fichero.
-Los cinco paneles de Grafana llevan una anotación `triggers`, desactivada por
-defecto en la barra de conmutadores: en los almacenes SQL lee las filas de
-`mikroscope_trigger`, en Prometheus el `mikroscope_trigger_fired_total` del
-colector. La captura en sí se queda en el agente, en `/captures/<id>`.
+exposición Prometheus del colector, un documento `trigger` en Elasticsearch,
+`trigger.<cause>` en Graphite, una línea `source="trigger"` en Loki, la suma
+`mikroscope.trigger.fired{cause}` en OTLP y la propia línea en el destino de fichero.
+Los cinco dashboards de Grafana llevan una anotación `triggers`, desactivada por
+defecto en la barra de conmutadores, y funciona en tres de ellos: en InfluxDB y
+PostgreSQL lee las filas de `mikroscope_trigger`, en Prometheus el
+`mikroscope_trigger_fired_total` del colector. Los dashboards de Elasticsearch y
+Graphite llevan esa misma expresión PromQL contra su propio datasource, así que su
+anotación `triggers`, igual que la de `detections`, no devuelve nada. La captura en
+sí se queda en el agente, en `/captures/<id>`.
 
 `record` aún no reconoce la línea — [Grabar, marcar,
 dibujar](/mikroscope/es/record/#disparadores-durante-una-grabación) dice qué hace
@@ -253,7 +262,8 @@ con ella.
 ## Contar lo que no se capturó
 
 El `/metrics` del colector lleva las familias que dicen cuánto no vieron las
-capturas, construidas a partir de los contadores de `GET /sampler` del agente. Cada par de condición y motivo se expone desde el principio, a 0 hasta
+capturas, construidas a partir de los contadores de `GET /sampler` del agente, que el colector lee al
+arrancar y cada minuto. Cada par de condición y motivo se expone desde el principio, a 0 hasta
 que ocurre, así que un panel puede mostrar «0 hasta ahora».
 
 <ScrollTable label="Familias de métricas de disparo y captura">
@@ -312,7 +322,7 @@ Dicho porque cada una de estas cosas va a ocurrir:
 - [Los endpoints HTTP del agente](/mikroscope/es/reference/http/): `/captures`,
   `/stream` y `/snapshot` junto al resto.
 - [Familias de métricas de Prometheus](/mikroscope/es/reference/metrics/): las
-  familias de disparo y captura con todas las demás que expone el agente.
+  familias de disparo y captura con todas las demás familias de la exposición del colector.
 - [El suelo de resolución es del kernel](/mikroscope/es/limits/): lo que la
   cadencia completa puede y no puede resolver.
 

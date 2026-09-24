@@ -26,12 +26,12 @@ the derive stage's values, its detection and gap counters, and the device-info
 families from the agent's `/capabilities`.
 
 <Aside type="caution" title="Sized for 10 Hz, whatever the agent runs at">
-	The collector sizes its `mikroscope_cpu_busy_ticks` histogram and its sample ring from a constant
-	10 Hz, not from the connected agent, so the bucket layout does not change when it reconnects to an
-	agent configured differently. Read from the code, not measured, the same constant sets more than
-	that. The ring behind the trailing windows does follow the agent: the collector reads the rate
-	from its health check and sizes the ring to 60 s of it, so `window="60s"` spans a minute at any
-	rate. The softnet trailing mean behind `mikroscope_softnet_burst_samples_total` does not — its
+	The collector sizes its `mikroscope_cpu_busy_ticks` histogram from a constant 10 Hz, not from the
+	connected agent, so the bucket layout does not change when it reconnects to an agent configured
+	differently. Read from the code, not measured, the same constant sets more than that, and against
+	an agent above 10 Hz each is off by the ratio of the rates. The ring behind the trailing windows
+	does follow the agent: the collector reads the rate from its health check and sizes the ring to
+	60 s of it, so `window="60s"` spans a minute at any rate. The softnet trailing mean behind `mikroscope_softnet_burst_samples_total` does not — its
 	weight is 1/600, a 60 s memory at 10 Hz and shorter above it, so the collector's burst baseline
 	tightens as the agent samples faster; the agent sizes its own from its real rate. An interrupt
 	line is pruned from the top-K families after 36 000 samples out of every top-K: an hour at 10 Hz,
@@ -65,7 +65,7 @@ There is nothing left to double-count, and no keep list to maintain.
 | `mikroscope_tick_interval_seconds`, `_wake_latency_`, `_read_` | folded from `dt_ns`, `wake_ns` and `read_ns` in each sample      |
 | `mikroscope_slipped_total`, `mikroscope_sampler_ticks_total`   | the agent's `/sampler`, read every minute                        |
 | `mikroscope_trigger_fired_total`, `_suppressed_total`          | the same, one series per configured condition, present at 0      |
-| `mikroscope_captures_held`, `_capture_bytes`, `_budget_bytes`  | the same: what the agent is holding right now                    |
+| `mikroscope_captures_held`, `mikroscope_capture_bytes`, `mikroscope_capture_budget_bytes`, `mikroscope_capture_bytes_served_total`, `mikroscope_capture_refused_total{reason}` | the same: what the agent holds, has served and has refused |
 | `mikroscope_api_*`, `mikroscope_derived_*`, `_collector_*`     | the collector's own: the API tier, the derive stage, its counters |
 
 The one thing that changed meaning: these figures are now as fresh as the collector's
@@ -165,8 +165,10 @@ reference RB5009 (RouterOS 7.24.2, 2026-09-16) ether1 received 255.8 GB on the w
 and handed 29.7 GB to the CPU — so do not sum a port and its bridge.
 
 `mikroscope_api_interface_counter_total` has one series per port and counter the
-router reports: 9 ports × about 60 counters on the reference RB5009. A counter a port
-does not report has no series, and a loss rate the router did not return has no
+router reports: 9 ports × 45 counters on the reference RB5009, and 15 on each bridge, VLAN,
+PPPoE, WireGuard, veth or loopback interface, counted from the collector's own
+`mikroscope_api_ifcounters` rows on 2026-09-24; the RouterOS version was not read with
+them. A counter a port does not report has no series, and a loss rate the router did not return has no
 `kind`. Keys that parse as integers but count nothing — `mtu`, `actual-mtu`,
 `l2mtu`, `max-l2mtu`, `sfp-shutdown-temperature` — are sizes and configuration and
 get no counter series; the MTU is part of the inventory. On the RB5009 with RouterOS

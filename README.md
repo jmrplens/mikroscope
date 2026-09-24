@@ -51,6 +51,12 @@ mikroscope install --router admin@192.168.88.1   # lists every command, asks, th
 mikroscope status  --router admin@192.168.88.1   # what is installed, and whether it answers
 ```
 
+On a router that already runs the agent, `doctor` also reads the samples its
+ring still holds and reports a layer-2 loop, STP churn or a flapping link by
+port, and softnet drops by CPU. Those findings and its other WARN lines (a
+registry credential meant for another registry, an agent published on the LAN
+without a token) never change its exit status.
+
 `install` builds the agent from this repository if you have Go. Without it, add
 `--remote-image jmrplens/mikroscope-agent:latest` and the **router** pulls the
 image itself — nothing is uploaded and there is no architecture to choose. Pin
@@ -64,7 +70,8 @@ Two things the tool cannot do for you: RouterOS **7.24 or later**, and
 `device-mode container=yes`, which MikroTik gates behind a physical
 reset-button press or a power cycle.
 [Prerequisites](https://jmrp.io/docs/mikroscope/install/prerequisites/) is that
-list, and `mikroscope doctor` checks every line of it against your own device.
+list, and `mikroscope doctor` checks the rest of it against your own device. It
+prints the RouterOS version but does not refuse one below 7.24.
 
 ## Use it
 
@@ -84,8 +91,10 @@ mikroscope forward \
 ```
 
 Or take a stack whole: [`deploy/`](deploy/) has two compose files, each a
-collector and somewhere for it to write, with the dashboard already in the
-Grafana beside it.
+collector and somewhere for it to write, plus a Grafana. The InfluxDB one
+publishes its dashboard on start once `GRAFANA_TOKEN` is in `.env`; the
+Prometheus one needs the dashboard imported, and
+[its README](deploy/README.md#prometheus-and-the-dashboard) gives both ways.
 
 ```sh
 docker compose -f deploy/compose.influxdb-grafana.yaml up -d
@@ -104,6 +113,12 @@ Five Grafana dashboards, one per store Grafana can query, generated from a
 single panel list and shipped in the repository. `forward --grafana` creates
 the datasource and publishes the one for the store it writes to, at start,
 before the first sample.
+
+Beside them, `dashboards/` ships Grafana alert rules for InfluxDB, PostgreSQL
+and Prometheus (14, 11 and 15 rules): counters that should not move, a bridge
+port the bridge has stopped delivering to, and a wake-up storm judged against
+the device's own previous day rather than a fixed number.
+[Alert rules](https://jmrp.io/docs/mikroscope/dashboards/alerts/) lists them.
 
 The overview, which every dashboard opens with — is this router healthy right
 now, and can these numbers be believed:
@@ -125,7 +140,9 @@ median](site/src/assets/dashboards/06-network-receive-path.webp)
 > into a container store and photographed by the site's own script. The host is
 > called `rb5009` because the fake imitates that board's captured `/proc`, and
 > the figures are whatever the fake publishes: read them as the shape of the
-> page, never as a measurement.
+> page, never as a measurement. They were captured on 2026-09-17, before 1.2.0
+> turned the overview's memory gauge into a time series and fixed the size of
+> the stat numbers, and have not been recaptured since.
 
 [The five dashboards](https://jmrp.io/docs/mikroscope/dashboards/), section by
 section, with a capture of each.
@@ -139,7 +156,7 @@ section, with a capture of each.
 
 | Device | Versioned profile | Tested on real hardware |
 |---|---|---|
-| MikroTik RB5009UG+S+ (arm64, RouterOS 7.24.2) | <img src=".github/assets/yes.svg" width="18" height="18" alt="yes"> | <img src=".github/assets/yes.svg" width="18" height="18" alt="yes"> |
+| MikroTik RB5009UG+S+ (arm64, RouterOS 7.24.2 measured; 7.24.4 install round trip, 2026-09-21) | <img src=".github/assets/yes.svg" width="18" height="18" alt="yes"> | <img src=".github/assets/yes.svg" width="18" height="18" alt="yes"> |
 
 Everything else the project builds for — 32-bit ARM and x86 RouterOS — is
 cross-compiled and CI-checked and has never run on hardware.

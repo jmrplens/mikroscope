@@ -17,18 +17,34 @@ make e2e-docker-down
 
 ## What each store is asked
 
-| Test                          | Store                  | The question                                                             |
-| ----------------------------- | ---------------------- | ------------------------------------------------------------------------ |
-| `TestInfluxDB`                | InfluxDB 3 Core        | SQL over HTTP: the tables, a row count per table, every `ctxt` value      |
-| `TestSQLSinkAppliesToPostgres`| PostgreSQL 18          | the sink's script through `psql`, then counts and the `ctxt` range        |
-| `TestElasticsearch`           | Elasticsearch 9        | `_search` with a `kind` aggregation, and one whole document              |
-| `TestLoki`                    | Loki 3                 | `query_range` for this run's labels, and the message text of each record  |
-| `TestGraphite`                | graphite-statsd        | `metrics/find` for the tree, `render` for the points and their order      |
-| `TestOTLP`                    | OpenTelemetry Collector| what it decoded, written back out as OTLP/JSON                           |
-| `TestTelegraf`                | Telegraf 1.39          | the line protocol it parsed: measurements, tags, field types, timestamps  |
-| `TestPrometheus`              | Prometheus 3           | a scrape of the collector's exporter, against the exposition it served    |
-| `TestGrafanaDashboards`       | Grafana 13             | both dashboards imported, then every panel's query through Grafana's API  |
-| `TestFileSinkIsUsableAsTheOracle` | —                  | the file sink, which is what every other test compares a store against    |
+| Test                                                   | Store                          | The question                                                                                                                             |
+| ------------------------------------------------------ | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `TestStackReady`                                       | —                              | every store's published port accepts a connection; it names each one that does not                                                      |
+| `TestInfluxDB`                                         | InfluxDB 3 Core                | SQL over HTTP: the tables, a row count per table, every `ctxt` value                                                                     |
+| `TestSQLSinkAppliesToPostgres`                         | PostgreSQL 18                  | the sink's script through `psql`, then counts and the `ctxt` range                                                                       |
+| `TestPostgresSinkWritesWhatTheSQLSinkWouldHaveWritten` | PostgreSQL 18                  | `--postgres` and the `--sql` script into two databases: same tables, columns and row counts                                              |
+| `TestPostgresSinkWroteTheSameBytes`                    | PostgreSQL 18                  | a digest over every column of every row of both databases                                                                                |
+| `TestPostgresSinkDeclaresTheSameSchema`                | PostgreSQL 18                  | every column type and primary key the same in both                                                                                       |
+| `TestPostgresSinkIsIdempotent`                         | PostgreSQL 18                  | the same batch applied twice adds no row                                                                                                 |
+| `TestPostgresDashboardQueriesPlan`                     | PostgreSQL 18                  | every PostgreSQL dashboard query, macros expanded, through `EXPLAIN` against the sink's schema                                           |
+| `TestElasticsearch`                                    | Elasticsearch 9                | `_search` with a `kind` aggregation, and one whole document                                                                              |
+| `TestLoki`                                             | Loki 3                         | `query_range` for this run's labels, and the message text of each record                                                                 |
+| `TestGraphite`                                         | graphite-statsd                | `metrics/find` for the tree, `render` for the points and their order                                                                     |
+| `TestOTLP`                                             | OpenTelemetry Collector        | what it decoded, written back out as OTLP/JSON                                                                                           |
+| `TestTelegraf`                                         | Telegraf 1.39                  | the line protocol it parsed: measurements, tags, field types, timestamps                                                                 |
+| `TestPrometheus`                                       | Prometheus 3                   | a scrape of the collector's exporter, against the exposition it served                                                                   |
+| `TestPrometheusDashboardMetricsExist`                  | Prometheus 3                   | every metric name a panel asks for is one the exporter served                                                                            |
+| `TestPrometheusDashboardQueriesParse`                  | Prometheus 3                   | every panel expression handed to Prometheus to parse                                                                                     |
+| `TestGrafanaDashboards`                                | Grafana 13                     | all five dashboards (InfluxDB, Prometheus, PostgreSQL, Graphite, Elasticsearch) imported, then every panel's query through Grafana's API |
+| `TestForwardPublishesFiveWorkingDatasources`           | Grafana 13, five stores        | `forward --grafana` creates each datasource, then `dashboards check` runs every panel against it                                         |
+| `TestFileSinkIsUsableAsTheOracle`                      | —                              | the file sink, which is what every other test compares a store against                                                                   |
+| `TestZZUninstallEmptiesTheStoresItWroteAndNothingElse` | PostgreSQL 18, InfluxDB 3 Core | `uninstall --targets data` removes the collector's tables in both stores and leaves a bystander PostgreSQL table; its file sorts last, so it runs last |
+
+`TestFillStoreForCaptures` is not a test of anything: it is skipped unless
+`MIKROSCOPE_CAPTURES=<duration>` is set, and then fills InfluxDB with that long a
+run of the same fake agent, points Grafana at it and imports the dashboard, so
+that `site/scripts/gen-dashboard-captures.mjs` has something to photograph. Run
+it with `MIKROSCOPE_E2E_KEEP=1` so the stack stays up for the photographs.
 
 ## Why each of those is not a fake
 

@@ -46,11 +46,11 @@ mikroscope dashboards gen --out /tmp/dash    # o en otro directorio
 ```
 
 Los cinco dashboards están en el formato de exportación compartible de Grafana: la fuente de datos es
-un marcador `${DS_MIKROSCOPE}` declarado en `__inputs`, no hay `id` y el `uid` es fijo —
-`mikroscope-influxdb` y `mikroscope-prometheus` —, así que una reimportación actualiza el mismo
-dashboard en su sitio en vez de crear un segundo. Un test comprueba que dos generaciones del
-dashboard de InfluxDB son idénticas, y regenerar el 2026-09-15 reprodujo byte a byte los cuatro
-ficheros del repositorio.
+un marcador `${DS_MIKROSCOPE}` declarado en `__inputs`, no hay `id` y el `uid` es fijo,
+`mikroscope-<almacén>`, uno por dashboard, así que una reimportación actualiza el mismo dashboard en
+su sitio en vez de crear un segundo. Un test comprueba que dos generaciones del dashboard de
+InfluxDB son idénticas; regenerar el 2026-09-15 reprodujo byte a byte los ficheros que había ese día
+en el repositorio, y los añadidos después no se han vuelto a comprobar así.
 
 El dashboard de InfluxDB consulta InfluxDB 3 en SQL, y toda consulta está acotada por
 `$__timeFilter`, porque InfluxDB 3 Core rechaza los recorridos sin límite; donde una columna se llama
@@ -91,13 +91,12 @@ data" para siempre. Una sección a la que se le quitan todos los paneles no emit
 
 Por eso difieren los recuentos, y difieren en los dos sentidos. Casi toda la familia térmica y de
 reloj, la sección de desgaste de la flash, el censo de slab y varios paneles de memoria tienen SQL y
-no PromQL, así que solo existen en InfluxDB. Las supresiones de disparadores viven solo en el
-`/metrics` del colector; los histogramas de temporización del muestreador y el presupuesto de
-capturas tienen además forma en InfluxDB. La
-racha de ocupación aún en curso y la antigüedad de cada lectura retenida son familias de la
-exposición de Prometheus, también en el `/metrics` del colector, sin campo en InfluxDB. Ninguno de
-los dos grupos se escribe en InfluxDB, así que los paneles que los leen solo existen en Prometheus. Cada panel de abajo que está en un solo
-almacén dice en cuál.
+no PromQL, así que solo existen en InfluxDB. Tres cosas existen solo en Prometheus, porque ninguna
+se escribe en InfluxDB: las supresiones de disparadores, la racha de ocupación aún en curso y la
+antigüedad de cada lectura retenida, todas ellas familias de la exposición del `/metrics` del
+colector. Los histogramas de temporización del muestreador y el presupuesto de capturas también
+están en el `/metrics` del colector, pero tienen además forma en InfluxDB. Cada panel de abajo que
+está en un solo almacén dice en cuál.
 
 <DashboardCounts />
 
@@ -118,7 +117,7 @@ está midiendo.
 
 Todas las secciones salvo el Overview se publican **plegadas**. Grafana guarda los paneles de una fila
 plegada dentro del objeto de la fila y no ejecuta ninguna de sus consultas hasta que alguien la
-despliega, así que el primer renderizado pide al almacén los doce paneles del Overview y no los <DashboardCount store="influxdb" of="panels" />.
+despliega, así que el primer renderizado pide al almacén los trece paneles del Overview (doce en PostgreSQL) y no los <DashboardCount store="influxdb" of="panels" />.
 
 Los valores por defecto son un rango de 3 horas (`now-3h`) y un refresco de 5 minutos. El refresco de
 5 minutos se mantiene para cuando alguien despliega una sección: el censo de slab y los mapas de calor
@@ -135,9 +134,9 @@ medidas, y todos devuelven un agregado; tres paneles ("Reboots in the window", "
 "Ticks never delivered, this window") lo calculan con una función de ventana sobre las muestras en
 bruto de la ventana. La mayoría son copias de paneles que también viven en una sección posterior,
 porque un panel de Grafana pertenece exactamente a una fila. "Connections tracked right now", "Load
-average (1 min) against the core count", "Reboots in the window" y "Detections in the window" viven
-solo aquí, igual que "OOM kills in the window" en Prometheus, donde la copia de la sección de
-recuperación de memoria no tiene PromQL y se quita. Las copias comparten su SQL; en Prometheus, el
+average (1 min) against the core count", "Reboots in the window", "Detections in the window" y
+"Port errors in the window" viven solo aquí, igual que "OOM kills in the window" en Prometheus,
+donde la copia de la sección de recuperación de memoria no tiene PromQL y se quita. Las copias comparten su SQL; en Prometheus, el
 "OOM kills in the window" del Overview y el "Ticks never delivered, this window" del observador
 difieren de sus homólogos (el del observador lleva una tercera consulta, los ticks perdidos por
 retraso del muestreador).
@@ -158,16 +157,23 @@ retraso del muestreador).
 4. **Packets dropped in the kernel RX path (window total)**, **OOM kills in the window**, **Reboots
    in the window** y **Detections in the window** — cada uno a cero en un equipo sano y coloreado
    según sus propios umbrales.
-5. **Ticks never delivered, this window**, junto al recuento de reinicios del agente.
+5. **Port errors in the window** (todos los errores MAC tipificados de todos los puertos, sumados;
+   capa de la API, en blanco con `--api-mode off`) y **Ticks never delivered, this window**, que
+   cuenta además los reinicios del agente.
 
 <NotClaimed variant="not-measured" title="Una pantalla, medida una vez">
 	El 2026-09-14 un Overview de once paneles midió 1 052 px de alto en una ventana de navegador de
-	1 080 px — una pantalla de escritorio sin nada cortado. El Overview tiene doce paneles y la
-	cuadrícula pasa "Ticks never delivered" a su propia línea a todo lo ancho; esa altura no se ha
-	medido en un navegador, aunque el JSON de los cinco dashboards que hay en el repositorio le da 31 unidades de
-	cuadrícula, cabecera de fila incluida. En un móvil no es una pantalla: Grafana apila una fila de
-	24 columnas en una sola columna por debajo de unos 768 px, y un Overview de ocho paneles se
-	renderizó con 2 188 px de alto en una ventana de 844 px el 2026-09-12.
+	1 080 px — una pantalla de escritorio sin nada cortado. Ahora el Overview tiene trece paneles en
+	InfluxDB y Prometheus, donde "Port errors in the window" y "Ticks never delivered" comparten la
+	última línea, y doce en PostgreSQL, donde "Ticks never delivered" ocupa esa línea él solo; esa
+	altura no se ha medido en un navegador, aunque el JSON de esos tres dashboards que hay en el
+	repositorio le da 31 unidades de cuadrícula, cabecera de fila incluida (21 en Graphite, 14 en
+	Elasticsearch). En un móvil no es una pantalla: Grafana apila una fila de 24 columnas en una sola
+	columna por debajo de unos 768 px, y un Overview de ocho paneles se renderizó con 2 188 px de
+	alto en una ventana de 844 px el 2026-09-12. El 2026-09-24 el dashboard de InfluxDB se importó en
+	el Grafana de producción y se capturó a 390x844 y a 1600x1000 para comprobar el tamaño fijo de los
+	paneles stat, y los números se leían a un tamaño normal en ambos; ese día no se midió la altura del
+	Overview.
 </NotClaimed>
 
 ## Las cuatro preguntas de todos los días
@@ -488,6 +494,11 @@ su explicación y no una insignia roja de error. Cómo decide el sondeo está en
   rango de 2 días el intervalo de un panel de 12 columnas es de unos 4 minutos —, así que un hueco de
   menos de 5 minutos se sigue dibujando como una línea interpolada. Lee los huecos en Sample
   continuity, no en la forma de una línea.
+- **Sus números stat tienen un tamaño fijo.** Un panel stat dibuja su valor a 32 px y su título a
+  16 px en vez de con el tamaño automático de Grafana. El tamaño automático llena el panel, y en un
+  móvil cada panel ocupa todo el ancho a su propia altura: en el dashboard de producción a 390x844,
+  el 2026-09-24, un simple "0" se dibujaba de unos 60 px de alto y cada panel stat ocupaba cerca de
+  un tercio de la pantalla.
 - **Sus cifras son las de un router.** Las descripciones que citan una cifra la atribuyen al RB5009 de
   referencia con la fecha en que se midió y dicen que las tuyas serán distintas. Ningún título,
   consulta ni umbral nombra un equipo, su número de núcleos, sus interfaces o su tamaño de memoria;
@@ -501,10 +512,14 @@ su explicación y no una insignia roja de error. Cómo decide el sondeo está en
 	después `check` sobre una ventana de 15 min —167 paneles devolvieron filas, los 9 que se sabe que
 	salen vacíos salieron vacíos, y el marcador de detecciones del Overview salió vacío porque el
 	almacén no tenía ninguna detección en esa ventana, que es el único caso que `check` señala y que
-	un navegador lee como el «none» sano—). Las opciones de los paneles están escritas según el
-	esquema que espera Grafana 13.2.1 — la marca del xychart, por ejemplo, cambió de sitio entre
-	Grafana 11 y 13 — y `__requires` declara Grafana 11.0.0. No se ha probado ninguna versión aparte
-	de esas tres, y la 12.3.0 se comprobó solo por consulta, sin renderizar nunca en un navegador.
+	un navegador lee como el «none» sano—). El 2026-09-24 el dashboard de InfluxDB se importó en el
+	Grafana de producción, cuyo endpoint de salud informaba de la 13.2.2 al leerlo más tarde ese mismo
+	día, y se renderizó a 390x844 y a 1600x1000 para comprobar el texto de 32 px de los paneles stat y
+	la serie temporal de memoria; no se hizo un recuento de insignias fila a fila. Las opciones de los
+	paneles están escritas según el esquema que espera Grafana 13.2.1 — la marca del xychart, por
+	ejemplo, cambió de sitio entre Grafana 11 y 13 — y `__requires` declara Grafana 11.0.0. No se ha
+	probado ninguna versión aparte de esas cuatro, y la 12.3.0 se comprobó solo por consulta, sin
+	renderizar nunca en un navegador.
 </NotClaimed>
 
 <SeeAlso>

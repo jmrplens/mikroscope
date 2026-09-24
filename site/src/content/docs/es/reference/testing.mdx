@@ -48,7 +48,8 @@ espacio de nombres de red que no tiene más que `lo`.
 
 ## Capa 2 — los almacenes
 
-`make test-e2e-docker` levanta nueve almacenes con docker compose, ejecuta el
+`make test-e2e-docker` levanta ocho almacenes y un Grafana con docker compose,
+nueve contenedores en total, ejecuta el
 mismo colector contra el mismo agente simulado con todos los destinos apuntando
 a ellos y luego le pregunta a cada almacén por su propia API. El JSONL del
 destino de fichero es el oráculo contra el que se compara cada almacén, valor a
@@ -59,7 +60,7 @@ valor y no solo por recuento.
 | Almacén                 | La pregunta que se le hace                                                  |
 | ----------------------- | --------------------------------------------------------------------------- |
 | InfluxDB 3 Core         | SQL por HTTP: las tablas, un recuento de filas por tabla, cada valor `ctxt`  |
-| PostgreSQL 18           | el guion del destino SQL por `psql`, luego recuentos y el rango de `ctxt`    |
+| PostgreSQL 18           | el guion del destino SQL por `psql`, y el destino PostgreSQL con conexión en una segunda base de datos; recuentos, el rango de `ctxt` y si las dos bases de datos guardan las mismas filas (34 tablas idénticas byte a byte, 2026-09-20) |
 | Elasticsearch 9         | `_search` con una agregación por tipo, y un documento entero                |
 | Loki 3                  | `query_range` para las etiquetas de esta ejecución, y el texto de cada registro |
 | Graphite                | `metrics/find` para el árbol, `render` para los puntos y su orden            |
@@ -68,6 +69,9 @@ valor y no solo por recuento.
 | Prometheus 3            | un scrape del exportador, contra la exposición que sirvió                    |
 
 </ScrollTable>
+
+La batería además publica las cinco fuentes de datos con `forward --grafana` y
+vuelve a vaciar todos los almacenes con `uninstall --targets data`.
 
 Cada uno está ahí porque ese producto rechaza algo que un servidor de captura
 acepta:
@@ -147,7 +151,8 @@ desde cero.
 	de un agente simulado o de un árbol `/proc` capturado, nunca de un equipo
 	vivo, y la pila de contenedores se ejecuta en la máquina de desarrollo y no a
 	través del veth del router. Fichero, Prometheus e InfluxDB 3 han llevado
-	muestras reales del RB5009 de extremo a extremo; los otros siete no.
+	muestras reales del RB5009 de extremo a extremo; los otros ocho —Loki, OTLP,
+	Graphite, Elasticsearch, SQL, PostgreSQL, Telegraf y stdout— no.
 </NotClaimed>
 
 <SeeAlso>

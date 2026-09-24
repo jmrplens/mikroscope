@@ -39,7 +39,7 @@ se reinicia empieza desde cero cada ventana móvil, cada intervalo y cada valor 
 | Destino                         | Forma                                                                                |
 | ------------------------------- | ------------------------------------------------------------------------------------ |
 | InfluxDB, Telegraf, stdout `lp` | `mikroscope_detection{rule,key}` con `value`, `threshold`, `seq`, `message`          |
-| SQL                             | una fila de `mikroscope_detection`                                                   |
+| SQL (`--sql`, `--postgres`)     | una fila de `mikroscope_detection`                                                   |
 | file, stdout `json`             | una línea `{"detection":…}`                                                          |
 | Prometheus                      | `mikroscope_collector_detections_total{rule}`, cada regla a 0 desde el primer scrape |
 | Loki                            | una línea en el stream `source="detection"`, `level="warn"`                          |
@@ -102,9 +102,13 @@ reinicio desde fuera.
 	antigua del anillo nuevo en la siguiente lectura de salud, como mucho un minuto, y registra `agent
 	restarted: its newest sample is N and the cursor was M; resuming from 1`. La secuencia baja del
 	agente nuevo frente a la anterior de la etapa es justo lo que casa esta regla, así que salta.
-	`TestResyncAfterAgentRestart` cubre el lado del colector, y el RB5009 de referencia lo ejercitó de
-	verdad el 2026-09-19: el router se reinició a las 00:43:30 y la capa del kernel se reanudó a las
-	00:45:03.
+	`TestResyncAfterAgentRestart` cubre el lado del colector. El RB5009 de referencia ejercitó la
+	resincronización de verdad el 2026-09-19, cuando una actualización de RouterOS reinició el router a
+	las 00:43:30 CEST (22:43:30 UTC del día anterior) y la capa del kernel se reanudó a las 00:45:03. No
+	se comprobó si entonces se escribió una fila de `mikroscope_detection` para `agent-restart`, y el
+	almacén que la habría guardado se sustituyó más tarde ese mismo día: el actual empieza a las 11:13
+	UTC. Ese almacén guarda una fila de `agent-restart`, a las 08:08:54 UTC del 2026-09-24, con `value`
+	1 frente a `threshold` 4 338 037, cuando se actualizó el agente a 1.2.0.
 </Aside>
 
 **No puede afirmar** por qué se reinició el agente. Un colector reiniciado a la vez no tiene
@@ -186,7 +190,11 @@ de puertos del agente, y el nombre actual necesita además la capa de la API; co
 **No puede afirmar** una avería. Un cable desenchufado y vuelto a enchufar en menos de un
 minuto son un registro de down y uno de up, y salta. No se ha capturado ningún flap
 provocado con esta regla en marcha; los flaps medidos para la tabla de puertos el
-2026-09-15 no lo fueron.
+2026-09-15 no lo fueron. Sí se han capturado flaps no provocados: entre el 2026-09-19 a
+las 11:13 UTC y el 2026-09-24 a las 08:26 UTC, el almacén del despliegue de referencia
+guarda 11 filas de `link-flap`, en `ether1`, `ether2`, `ether4`, `ether6` y `ether7`, cada
+una con entre 2 y 6 registros de enlace en 60 s. No se comprobó cuál se debió a un cable,
+a un equipo del otro lado o a otra cosa.
 
 ### `conntrack-cliff`
 
@@ -259,14 +267,32 @@ historia móvil guarda hasta sesenta.
 que separa un régimen de bloqueo por memoria de un núcleo que se queda quieto, y la regla es
 por núcleo, nunca entre núcleos.
 
+## Las comprobaciones de doctor no son estas reglas
+
+Desde 1.2.0, `doctor` a secas lee el anillo del agente en marcha y hace cuatro comprobaciones
+propias: `layer2-loop`, `stp-churn`, `link-flap` y `softnet-drops`, descritas en [lo que
+muestra el agente en marcha](/mikroscope/es/install/prerequisites/#lo-que-muestra-el-agente-en-marcha).
+No son detecciones: se ejecutan una vez, cuando `doctor` las pide, sobre lo que guarde el
+anillo, 60 s por defecto, y no escriben nada en ningún destino.
+
+Un nombre se comparte y la regla no. El `link-flap` de `doctor` cuenta solo las caídas de
+enlace, dos o más en un puerto en cualquier punto del anillo; la detección cuenta subidas y
+caídas juntas, dos o más en 60 s, así que un cable desenchufado y vuelto a enchufar una vez
+hace saltar la detección y no la comprobación. Un bucle de capa 2 no es ninguna de las once
+reglas: el `layer2-loop` de `doctor` lo señala en el anillo, y sobre el histórico lo vigila
+en el almacén la [regla de alerta](/mikroscope/es/dashboards/alerts/) `mikroscope-l2-loop`.
+
 <NotClaimed variant="not-provoked">
-	De las once reglas, solo `microburst` tiene un comportamiento registrado en el equipo de
-	referencia. Las demás las ejercitan las pruebas unitarias de la etapa de derivación contra
-	muestras construidas. No se ha provocado en el RB5009, con estas reglas en marcha, ningún OOM kill
-	dentro del contenedor, reinicio, flap de enlace, vaciado o tormenta de conntrack, excursión
-	térmica ni colapso de IPC: es el router de producción del propietario, los reinicios esperan a una
-	ventana de mantenimiento, y una tormenta de conntrack provocada puede dejar sin acceso el camino
-	por el que se está trabajando.
+	De las once reglas, cuatro han saltado en el equipo de referencia, contadas en su almacén entre
+	el 2026-09-19 a las 11:13 UTC y el 2026-09-24 a las 08:26 UTC: `microburst` 116 veces,
+	`ipc-collapse` 41 (en los cuatro núcleos), `link-flap` 11 y `agent-restart` una. Solo de
+	`microburst` se ha medido el comportamiento contra las muestras; las filas de las otras tres se
+	contaron, sin cotejarlas con lo que hacía el router. Las siete restantes solo las ejercitan las
+	pruebas unitarias de la etapa de derivación contra muestras construidas. No se ha provocado en
+	el RB5009, con estas reglas en marcha, ningún OOM kill dentro del contenedor, reinicio, flap de
+	enlace, vaciado o tormenta de conntrack, excursión térmica ni colapso de IPC: es el router de
+	producción del propietario, los reinicios esperan a una ventana de mantenimiento, y una tormenta
+	de conntrack provocada puede dejar sin acceso el camino por el que se está trabajando.
 </NotClaimed>
 
 <SeeAlso>

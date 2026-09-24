@@ -40,16 +40,19 @@ las dos cifras decía nada sobre el ritmo. Nada del muestreo cambió: la CPU pas
 
 El presupuesto dice lo que se le permite costar al agente. La otra comparación,
 la que suele querer quien lee, es contra hacerlo de la forma obvia: un bucle de
-shell de busybox leyendo el mismo conjunto de ficheros a la misma cadencia. En el
-mismo router eso cuesta **<Measured id="busybox.cpu" /> de un núcleo**, mientras
-que las lecturas en sí rondan los <Measured id="procread.ms" /> por muestra.
+shell de busybox. El 2026-09-11, en el mismo router, un bucle que leía a 10 Hz el conjunto de
+ficheros que leía entonces el agente costó **<Measured id="busybox.cpu" /> de un núcleo**,
+mientras que las lecturas en sí rondaban los <Measured id="procread.ms" /> por muestra.
 
 <Provenance of="busybox-2026-09-11" />
 
-Así que la mayor parte del coste del bucle de shell no está en leer. Paga un fork
+Así que la mayor parte del coste del bucle de shell no estaba en leer. Paga un fork
 por iteración y el agente no paga ninguno: un proceso arranca, abre sus ficheros
-una vez y los deja abiertos. Esa es toda la diferencia, y es la razón de que el
-agente sea un binario y no un script.
+una vez y los deja abiertos, y por eso el agente es un binario y no un script. Aun
+así, las dos cifras no se pueden poner una al lado de la otra. Hoy el agente lee
+mucho más — perf, buddyinfo, los contadores ECC de la MTD, slabinfo, el log del
+kernel — y el bucle no se ha vuelto a medir con ese conjunto, así que no se puede
+comparar con <Measured id="run.10hz.cpu" />.
 
 <Aside type="note" title="De dónde sale el número">
 	No de `top`, y no de una instantánea. El agente cuenta sus propios microsegundos de CPU y su RSS
@@ -58,6 +61,11 @@ agente sea un binario y no un script.
 	`/metrics` DEL COLECTOR separadas 60 s, en régimen estacionario y con el anillo ya lleno, son la
 	medida — el agente no sirve exposición propia desde 1.0.5. El `/tool profile` de RouterOS muestra el mismo proceso como `mikroscope-agent`.
 </Aside>
+
+Quien tira del agente se suma a eso. Además del colector y de `record`, un `doctor` independiente
+lee el anillo entero una vez, en una sola petición, unos 1,9 MB con los 10 Hz por defecto, y esa
+petición se sirve en el núcleo del muestreador; el coste de esa lectura en el RB5009 no se ha
+medido.
 
 ## Dimensiona el límite de memoria según los datos
 
@@ -99,7 +107,9 @@ recién arrancado todavía lo está llenando y marcará de menos.
 La dirección es la del colector, no la del agente: desde 1.0.5 el agente no
 sirve ningún `/metrics`, y esos dos contadores llegan al colector en cada
 muestra. Sin destino de Prometheus configurado, esos mismos dos números son
-`cpu_us` y `rss` en `mikroscope_self`, en el almacén que estés usando.
+`cpu_us` y `rss` en `mikroscope_self` en InfluxDB, Telegraf, stdout y los almacenes SQL, `self.cpu_us` y
+`self.rss` en los documentos de muestra de Elasticsearch, `self.cpu_us` y `self.rss_bytes` en
+Graphite, y `mikroscope.self.cpu.time` / `mikroscope.self.memory{kind="rss"}` en OTLP.
 
 <SeeAlso>
 

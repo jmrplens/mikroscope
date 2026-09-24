@@ -40,16 +40,19 @@ about the rate. Nothing about the sampling changed: the CPU moved from 2.85 % t
 
 The budget says what the agent is allowed to cost. The other comparison, the
 one a reader usually wants, is against doing it the obvious way: a busybox shell
-loop reading the same file set at the same rate. On the same router that costs
-**2.4 % of one core**, while the reads themselves are
+loop. On 2026-09-11, on the same router, a loop reading the agent's file set of that date at
+10 Hz cost **2.4 % of one core**, while the reads themselves took
 about 0.77 ms per sample.
 
 Measured on RB5009UG+S+ · 4 × 1.4 GHz Cortex-A72 · RouterOS 7.24.2 · 2026-09-11 · a busybox shell loop reading the full file set at 10 Hz, one fork per iteration, in a container on the router
 
-So most of the shell loop's cost is not the reading. It pays a fork per
+So most of the shell loop's cost was not the reading. It pays a fork per
 iteration and the agent pays none: one process starts, opens its files once and
-keeps them open. That is the whole of the difference, and it is why the agent is
-a binary rather than a script.
+keeps them open, which is why the agent is a binary rather than a script. The two
+figures cannot be set side by side, though. The agent reads far more today — perf,
+buddyinfo, the MTD ECC counters, slabinfo, the kernel log — and the loop has not
+been re-measured against that set, so it cannot be set
+against 2.69 %.
 
 > **Where the number comes from**
 >
@@ -58,6 +61,10 @@ a binary rather than a script.
 > as `mikroscope_self_cpu_usec_total` and `mikroscope_self_rss_bytes`. Two reads of the COLLECTOR's
 > `/metrics` 60 s apart, at steady state with the ring already full, is the measurement — the agent
 > has served no exposition of its own since 1.0.5. RouterOS `/tool profile` shows the same process as `mikroscope-agent`.
+
+Pullers add to it. Besides the collector and `record`, a standalone `doctor` reads the whole ring
+once, in one request, about 1.9 MB at the 10 Hz default, and that request is served on the
+sampler's core; the cost of that read on the RB5009 has not been measured.
 
 ### Size the memory limit to the data
 
@@ -97,7 +104,9 @@ is still filling it and will read low.
 The address is the collector's, not the agent's: since 1.0.5 the agent serves
 no `/metrics`, and these two counters reach the collector in every sample. With
 no Prometheus sink configured, the same two numbers are `cpu_us` and `rss` in
-`mikroscope_self`, in whichever store you are writing to.
+`mikroscope_self` on InfluxDB, Telegraf, stdout and the SQL stores, `self.cpu_us` and `self.rss` in the sample
+documents on Elasticsearch, `self.cpu_us` and `self.rss_bytes` on Graphite, and
+`mikroscope.self.cpu.time` / `mikroscope.self.memory{kind="rss"}` on OTLP.
 
 ### See also
 
@@ -155,8 +164,8 @@ whatever the rate, so ten times the rate is ten times the ring.
 > **Nothing was lost at any rate, in any configuration**
 >
 > Sampled seconds covered wall clock to 1.0000 in all six runs, and the delivered rate was the
-> configured rate to three figures — 99.98 Hz in the worst of them, 100 Hz with every source on
-> every tick. The collector reported 0 gaps and its InfluxDB 3 sink 0 drops in every window.
+> configured rate to three figures — 99.98 Hz in the worst of them, the 100 Hz run with every
+> source on every tick. The collector reported 0 gaps and its InfluxDB 3 sink 0 drops in every window.
 
 ### Two things in that table worth reading twice
 
@@ -166,7 +175,9 @@ A sample costs 2 685 µs at 10 Hz against 1 684 µs at 100 Hz. That is n
 paradox, it is the floors working: the expensive sources are amortised over more samples.
 `/proc/slabinfo`, one of the expensive sources (13.8 kB), is read every 2nd tick at 10 Hz and every
 17th at 100 Hz, so an average sample costs less while the _rate_ of slabinfo reads
-stays near its 6 Hz floor either way (5 Hz at 10 Hz, about 5.9 Hz at 100 Hz).
+stays near its 6 Hz floor either way (5 Hz at 10 Hz, about 5.9 Hz at 100 Hz). So ten times the
+data costs about 6.3 times the CPU, not ten: 16.83 % at 100 Hz
+against 2.69 % at 10.
 
 With `FLOOR_HZ` there is no amortisation to be had and the per-sample cost is
 flat — 4 511 µs at 50 Hz and 4 270 µs at
@@ -189,7 +200,9 @@ of reads past 5 ms — and not one read of 29 996 came in under 2 ms — and 
 are the ticks that slip: 0.593 % of them at 100 Hz with every
 source on every tick, against 0.017 % at the default floors. The CPU headroom is
 larger than the timing headroom, which is why the ceiling is a statement about
-I/O rather than about the A72.
+I/O rather than about the A72. Even at the default floors at 100 Hz the mean read was 1.2 ms but the
+worst 17.9 ms, and a tick whose read outlasts its period is late by definition. That, and not a
+CPU wall at 16.83 % of one core, is where the few slips there come from.
 
 ### The memory a rate costs, and where to buy it
 
@@ -199,15 +212,6 @@ holds, because the soft memory limit is derived from exactly that. So the
 question "can this board sample at 100 Hz" is mostly "can it hold 100 × your
 buffer seconds of samples", and the answer for the whole table above is yes
 inside the default 64M cap.
-
-Two things in it are not obvious. **The per-sample cost falls as the rate
-rises** — 1 684 µs at 100 Hz against 2 685 at 10 — because the level sources are
-read at their own floors rather than every tick, so the expensive ones are
-spread over ten times as many ticks: ten times the data costs 6.3 times the
-CPU, not ten. And **the slips are the read's fault, not the CPU's**: at 100 Hz
-the mean read is 1.2 ms against a 10 ms period, but the worst is 17.9 ms. A tick
-whose read outlasts its period is late by definition, which is why the same
-row shows 16.8 % of one core and five slipped ticks rather than a CPU wall.
 
 **Buy the room in buffer seconds, not in cleverness.** At 100 Hz a 20 s buffer
 holds 6.59 MiB and derives a 17 MiB limit — the same relief that compressing
@@ -231,8 +235,10 @@ and a tighter bound on how long a burst can hide between two samples.
 > Any rate on a board that is not this one, and what happens under a traffic load heavier than this
 > router's ordinary traffic — about 19 Mbit/s on the WAN while these ran,
 > with peaks to 933 Mbit/s. Before quoting a number for your device, re-measure it there: two reads
-> of the collector's `/metrics` 60 s apart at steady state, or `cpu_us` and `rss` in
-> `mikroscope_self` in whichever store you write to.
+> of the collector's `/metrics` 60 s apart at steady state, or the agent's own `cpu_us` and `rss`
+> in the store you write to — `mikroscope_self` on InfluxDB and the SQL stores, under other names
+> on the rest, which [measuring it on your own
+> device](https://jmrp.io/docs/mikroscope/cost/#measuring-it-on-your-own-device) lists.
 
 ### See also
 
@@ -264,8 +270,8 @@ observed when the run ends, with the run still in progress in
 `…_run_open_seconds`.
 
 The trailing-window gauges (`window="1s"|"10s"|"60s"`, `stat="max"|"min"|"p95"`)
-show the peak whatever your scrape interval is, because the agent computes them
-over its own clock rather than over yours. To see the _shape_ of a transient
+show the peak whatever your scrape interval is, because the collector computes them
+over the agent's own sample timestamps rather than over your scrape times. To see the _shape_ of a transient
 rather than its envelope, `record` it, or let a trigger capture it.
 
 ### The sampler's own smear is published, not hidden
@@ -419,6 +425,12 @@ not the interval.
 The other hard bound is depth, not resolution. The agent keeps its samples in a ring of
 `--buffer` seconds, 60 s by default and 10–3600 s allowed, which holds rate × buffer
 samples. Nothing older exists anywhere on the router.
+
+That depth is also the whole window of `doctor`'s `health` section, which reads the ring once
+(at most 10 000 samples, so the shorter of `--buffer` and 10 000 / rate seconds) and prints how
+many seconds it covered. A clean `doctor` says there was no loop, STP churn, link flap or softnet
+drop in the last minute at the defaults, not today; a fault that happens once a day belongs to the
+dashboards and the alert rules.
 
 A collector or recorder outage shorter than the ring is backfilled on reconnect: it asks
 for `since=<seq>` and receives every sample it missed. An outage longer than the ring is
@@ -603,7 +615,7 @@ agent except where the table says otherwise:
 
 | Source                         | What it gives                                                                                                                    | Where it shows                                                                 |
 | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| `/dev/kmsg`                    | the kernel ring buffer as timestamped events, naming the router's real interfaces                                                | `mikroscope_kmsg_records_total{level}`, and Loki                               |
+| `/dev/kmsg`                    | the kernel ring buffer as timestamped events, naming the router's real interfaces                                                | `mikroscope_kmsg_records_total{level}`, `mikroscope_kmsg_port_records_total{port,kind,level}`, and Loki |
 | `/proc/slabinfo`               | the global slab caches: `nf_conntrack` (the router's real connection count), `skbuff_*`, `TCP`/`UDP` sockets, `kmalloc-1k`/`-2k` | `mikroscope_slab_active_objects{cache}`                                        |
 | `/sys/class/mtd` ECC counters  | `corrected_bits` and `ecc_failures` per NAND partition                                                                           | `mikroscope_mtd_ecc_corrected_bits_total`, `mikroscope_mtd_ecc_failures_total` |
 | the PMU, via `perf_event_open` | cycles, instructions, cache references and misses, branch misses, bus cycles, per core, system-wide                              | `mikroscope_perf_events_total{counter,cpu}`                                    |
@@ -671,6 +683,13 @@ global `/proc` file in the samples, the thermal zones, `scaling_cur_freq`, `/pro
   set.
 - The NAND ECC counters. The YAFFS wear counters remain.
 - The PMU, and with it everything beneath the 10 ms tick.
+
+What goes silent with them: `doctor`'s `health` section can then report only `softnet-drops`. Its
+`ok` line does not mean there is no loop, because the loop, STP-churn and link-flap checks read the
+kernel log. The alert rules `mikroscope-l2-loop` and `mikroscope-port-link-down` (kernel log),
+`mikroscope-conntrack-near-limit` (slab cache; `--conntrack-every` feeds a different series that
+this rule does not read) and `mikroscope-ecc-failure` (MTD) have no data and stay at OK. Check
+`mikroscope_device_info{privileged}` before trusting their silence.
 
 > **Privileged is not a mount**
 >

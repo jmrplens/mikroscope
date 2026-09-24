@@ -4,6 +4,7 @@ description: How to bind the dashboards to a datasource, what import and check a
 ---
 
 import { Aside, Tabs, TabItem } from "@astrojs/starlight/components";
+import DashboardCount from "../../../components/DashboardCount.astro";
 import NotClaimed from "../../../components/NotClaimed.astro";
 import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
@@ -55,12 +56,14 @@ script was loaded as. `sslmode` is yours to choose; `postgresVersion` only decid
 plugin may emit, and every query in this dashboard is plain SQL.
 
 The panels are the InfluxDB ones, rewritten: the bucket macro, the percentiles, the casts and the
-column names the SQL sink had to change because `user`, `from` and `to` are reserved words. Fifteen
+column names the SQL sink had to change because `user`, `from` and `to` are reserved words. Some
 panels are not rewritten and are **dropped silently** rather than moved into the "not available"
 row: the kernel-log panels, because the SQL schema has no count table for it, and the panels over
 `mikroscope_buddy` and the RouterOS interface counters, which are wide in InfluxDB and long in SQL,
-where a pivot is a different question. The PostgreSQL dashboard therefore carries 160 panels against
-InfluxDB's 175.
+where a pivot is a different question, and "Headroom under the container memory cap", because the
+cap rides on InfluxDB's `mikroscope_self` row and is a device fact in the SQL schema. The committed
+PostgreSQL dashboard therefore
+carries <DashboardCount store="postgres" of="panels" /> panels against InfluxDB's <DashboardCount store="influxdb" of="panels" />.
 
 ## The Graphite datasource
 
@@ -92,8 +95,9 @@ absent rather than wrong.
 
 ## Importing by hand
 
-Grafana → Dashboards → New → Import, upload `dashboards/mikroscope-influxdb.json` or
-`mikroscope-prometheus.json`, and pick the datasource when Grafana asks for `DS_MIKROSCOPE`.
+Grafana → Dashboards → New → Import, upload the `dashboards/mikroscope-<store>.json` that matches
+your datasource (influxdb, prometheus, postgres, graphite or elasticsearch), and pick the datasource
+when Grafana asks for `DS_MIKROSCOPE`.
 
 A file uploaded this way carries the **compiled defaults**: the five panels the reference device
 cannot produce sit in the not-available row, and every other panel ships with its query, whether
@@ -119,6 +123,7 @@ mikroscope dashboards check  --store influxdb --datasource-uid <uid> --window 15
 | `--no-probe`       | off            | import, check | skip asking the datasource what it holds; use the compiled defaults       |
 | `--window`         | `15m`          | check         | length of the query window                                                |
 | `--end`            | now            | check         | the window's right edge, RFC 3339                                         |
+| `--var`            | none           | check         | set a dashboard variable, `name=value`, repeatable; Graphite needs `prefix` and `host`, Elasticsearch `host` |
 | `--out`            | `dashboards`   | gen           | the directory `gen` writes the eight files into                            |
 
 </ScrollTable>

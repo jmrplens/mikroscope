@@ -86,7 +86,7 @@ mismo apagado. No se interrumpió ningún tráfico y los dos puertos estaban de
 vuelta en menos de cuatro segundos.
 
 Eso hace tres pares medidos, todos con el mismo desplazamiento de uno, que es en
-lo que se apoyan las seis filas deducidas.
+lo que se apoyan los seis puertos deducidos y el switch.
 
 Los pares deducidos se apoyan en dos observaciones de un
 `/interface/ethernet/print` de solo lectura (2026-09-13, la fecha de la cadena de
@@ -120,10 +120,11 @@ que está en su tabla, nombra los puertos sin preguntar a RouterOS:
   nombres y lo que le ha pasado a ese puerto: `iface`, `ros_iface` y `kind` en el
   suceso, etiquetas `port` y `kind` en las filas de InfluxDB e
   `iface=eth1 ros_iface=ether2 port_event=own-address` en una línea de Loki;
-- `/metrics` añade `mikroscope_kmsg_port_records_total{port,kind,level}`, con el
-  nombre de RouterOS como `port` en una placa que está en la tabla, el nombre del
-  kernel en una placa que no lo está, y ninguna serie de puerto en un equipo cuyo
-  device tree no declara modelo. Es un subconjunto de
+- el `/metrics` del colector lleva la familia
+  `mikroscope_kmsg_port_records_total{port,kind,level}`, construida a partir de
+  esos registros, con el nombre de RouterOS como `port` en una placa que está en
+  la tabla, el nombre del kernel en una placa que no lo está, y ninguna serie de
+  puerto en un equipo cuyo device tree no declara modelo. Es un subconjunto de
   `mikroscope_kmsg_records_total`, no una partición: los registros que no nombran
   ningún puerto no aparecen en él;
 - la detección `link-flap` del colector usa el nombre de puerto como clave y lee
@@ -134,6 +135,18 @@ que está en su tabla, nombra los puertos sin preguntar a RouterOS:
   `/capabilities` y `mikroscope_device_info` llevan la cadena de evidencia de la
   tabla como `ports_from`, para que nadie tenga que fiarse de la correspondencia a
   ciegas.
+
+`mikroscope doctor`, que es la CLI y no el agente, lee esos mismos registros del
+anillo entero del agente en marcha, 60 s por defecto (el `BUFFER_S` del agente).
+Vuelve a clasificar cada registro del log del kernel a partir de su texto, con la
+placa que el agente declara en `/healthz`, en lugar de fiarse del `kind` del
+agente: de lo contrario, un agente que envía registros sin él haría pasar todas
+las comprobaciones de puerto sin decir nada. En un equipo cuyo device tree no
+declara modelo también clasifica, y nombra el puerto del kernel. Por cada puerto
+de RouterOS informa de `layer2-loop` con tres o más registros `own-address` en
+la ventana, de `stp-churn` cuando el puerto entró en learning al menos tres veces
+más de las que llegó a forwarding, y de `link-flap` con dos o más registros
+`link-down`; `softnet-drops` se informa por CPU, no por puerto.
 
 **Una placa desconocida no recibe nombres de puerto, ni siquiera adivinados.** El
 desplazamiento de uno no se aplica a una placa que nadie ha medido, porque un
@@ -215,8 +228,10 @@ clasificado por clase, así que las dos consultas se validaron primero el
 almacén en producción todavía no tenía esa columna. La tiene desde el
 2026-09-19, con las ocho clases.
 
-Junto a ellos se publican dos reglas de alerta, en los dos ficheros de
-aprovisionamiento. Las dos leen `/dev/kmsg` a través del agente y no preguntan
+Junto a ellos se publican dos reglas de alerta, en los ficheros de
+aprovisionamiento de InfluxDB y Prometheus; el de PostgreSQL no tiene ninguna,
+porque ese almacén guarda cada registro del log del kernel como una fila y no
+como un recuento. Las dos leen `/dev/kmsg` a través del agente y no preguntan
 nada a RouterOS:
 
 - `mikroscope-l2-loop`, crítica: cualquier registro `own-address` en cinco

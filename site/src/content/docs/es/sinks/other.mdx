@@ -1,6 +1,6 @@
 ---
 title: El fichero y los demás destinos
-description: El fichero JSONL, la salida estándar, SQL, Loki, OTLP, Graphite, Elasticsearch y Telegraf — qué lleva cada uno, cómo entrega y lo que su protocolo no puede prometer.
+description: El fichero JSONL, la salida estándar, SQL y PostgreSQL, Loki, OTLP, Graphite, Elasticsearch y Telegraf — qué lleva cada uno, cómo entrega y lo que su protocolo no puede prometer.
 ---
 
 import { Aside } from "@astrojs/starlight/components";
@@ -10,21 +10,21 @@ import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
 
 Además de [Prometheus](/mikroscope/es/sinks/prometheus/) e [InfluxDB
-3](/mikroscope/es/sinks/influxdb/), `forward` escribe en ocho destinos más. Esta página
+3](/mikroscope/es/sinks/influxdb/), `forward` escribe en nueve destinos más. Esta página
 responde, para cada uno, qué partes de la línea temporal recibe, cómo se le entregan y qué
 no te puede decir por culpa del protocolo del destino. La cola, la espera entre reintentos
 y los contadores que comparten están en [el colector](/mikroscope/es/sinks/).
 
 ## Lo que recibe cada destino
 
-<ScrollTable label="Lo que recibe cada uno de los ocho destinos">
+<ScrollTable label="Lo que recibe cada uno de los nueve destinos">
 
 | Destino       | Muestras del kernel        | Texto del log del kernel                   | Capa de la API                        | Derivados y detecciones                                | Disparos, huecos, equipo  |
 | ------------- | -------------------------- | ------------------------------------------ | ------------------------------------- | ------------------------------------------------------ | ------------------------- |
 | file          | líneas del agente tal cual | dentro de las líneas de muestra            | líneas `{"api":…}`                    | `{"derived":…}`, `{"detection":…}`                     | los tres, como líneas     |
 | stdout `json` | líneas del agente tal cual | dentro de las líneas de muestra            | líneas `{"api":…}`                    | como el fichero                                        | los tres, como líneas     |
 | stdout `lp`   | las medidas de InfluxDB    | cuentas por nivel, puerto y tipo de evento | las medidas de InfluxDB               | las medidas de InfluxDB                                | los tres                  |
-| SQL           | una tabla por fuente       | filas `mikroscope_event`                   | tablas, más `mikroscope_api_error`    | `mikroscope_derived`, `mikroscope_detection`           | los tres                  |
+| SQL (`--sql`, `--postgres`) | una tabla por fuente | filas `mikroscope_event`                   | tablas, más `mikroscope_api_error`    | `mikroscope_derived`, `mikroscope_detection`           | los tres                  |
 | Loki          | no                         | una línea por registro                     | solo errores por orden                | solo detecciones                                       | los tres, como líneas     |
 | OTLP          | sums y gauges              | no                                         | gauges, y una cuenta de errores       | gauges, un sum de detecciones                          | los tres                  |
 | Graphite      | una ruta por valor         | no                                         | rutas                                 | rutas                                                  | solo las partes numéricas |
@@ -143,9 +143,16 @@ Lo que puede la conexión y no puede un fichero:
 - **Sabe describir su propia fuente de datos de Grafana**, cosa que el destino de fichero
   no podrá nunca: ver [importar y comprobar](/mikroscope/es/dashboards/import-and-check/).
 
+A diferencia de `--sql`, `--postgres` va en cola como los destinos remotos: un lote por
+segundo, 64 KiB × `--queue-seconds` de presupuesto descartando primero el lote más antiguo,
+cada lote una transacción con un tiempo de espera de 30 s, y los contadores en lotes. Así,
+un servidor lento nunca bloquea el bucle de extracción, cosa que la tubería hacia `psql` sí
+puede hacer.
+
 Lo que cede: nada del esquema, y una dependencia. `--postgres` enlaza pgx en el binario
 del colector. El **agente** no lo enlaza — el agente enlaza `procfs`, `sample`, `agent` y
-la biblioteca estándar, y su presupuesto de imagen sigue en 6,5 MiB para arm64.
+la biblioteca estándar, así que su imagen no lleva nada nuevo, y el trabajo `agent-size` de
+la CI la sigue manteniendo por debajo del presupuesto de <Measured id="budget.image" />.
 
 El DSN es una opción y no un secreto solo de entorno porque las convenciones de libpq son
 justamente el punto: pgx lee `PGPASSWORD`, `~/.pgpass` y el fichero de servicio igual que
@@ -171,13 +178,20 @@ sumado — más un `information_schema.columns` idéntico para todo el esquema.
 | `mikroscope_cpu`                                                                                           | `cpu`                      | `user_ticks` … `steal_ticks`, `busy_ratio`, `dt_ns`                                            |
 | `mikroscope_softnet`                                                                                       | `cpu`                      | `processed`, `dropped`, `time_squeeze`                                                         |
 | `mikroscope_irq`                                                                                           | `irq`                      | `name`, `count` sumado sobre las CPU                                                           |
-| `mikroscope_mem`                                                                                           | —                          | niveles: `free_kb`, `available_kb`, `cached_kb`, `slab_kb`, `sunreclaim_kb`                    |
+| `mikroscope_mem`                                                                                           | —                          | niveles: cada campo de `/proc/meminfo` que lee el agente, en `_kb`                             |
 | `mikroscope_load`                                                                                          | —                          | niveles: medias de carga, `running`, `threads`, `procs_blocked`                                |
 | `mikroscope_stat`                                                                                          | —                          | deltas: `ctxt`, `intr`, `forks`, `irq_total`, `irq_err`, `pgfault`, `pgmajfault`               |
-| `mikroscope_self`                                                                                          | —                          | delta `cpu_us`; niveles `rss`, `cgroup_mem`; eventos de cgroup, NULL sin cgroup2; `seq`        |
+| `mikroscope_self`                                                                                          | —                          | delta `cpu_us`; niveles `rss`, `cgroup_mem`; eventos de cgroup `throttled`, `throttled_us`, `oom_kill`, NULL sin cgroup2; `resets`, `kmsg_dropped`, `seq`, `wake_ns`, `read_ns` |
 | `mikroscope_buddy`                                                                                         | `node, zone, block_order`  | `free_blocks`, una fila por zona y orden                                                       |
 | `mikroscope_mtd`                                                                                           | `device`                   | `partition`, contadores ECC tal como se leen, umbrales NULL donde no se publican               |
 | `mikroscope_psi`                                                                                           | —                          | microsegundos de bloqueo; ninguna fila donde el kernel no tiene PSI                            |
+| `mikroscope_sample`                                                                                        | —                          | `seq`, `dt_ns`, `mono_ns`: una fila por tick                                                   |
+| `mikroscope_softirq`                                                                                       | `kind, cpu`                | `count`, por vector y núcleo                                                                   |
+| `mikroscope_perf`                                                                                          | `counter, cpu`             | `count` de la PMU, `enabled_ns`, `running_ns`; ninguna fila sin `privileged=yes` y una PMU     |
+| `mikroscope_vm`                                                                                            | —                          | deltas de `/proc/vmstat`: fallos, reservas y liberaciones, escaneos y robos de reclaim, bloqueos, `oom_kill`, swap |
+| `mikroscope_vm_level`                                                                                      | —                          | niveles de `/proc/vmstat`: `nr_free_pages`, `nr_dirty`, `nr_writeback`, páginas de slab        |
+| `mikroscope_cpufreq`                                                                                       | `cpu`                      | `khz`, y `max_khz` donde la placa publica uno                                                  |
+| `mikroscope_irq_cpu`                                                                                       | `irq, cpu`                 | `name`, `count` por núcleo                                                                     |
 | `mikroscope_thermal`                                                                                       | `zone`                     | `celsius`, `critical_celsius`                                                                  |
 | `mikroscope_slab`                                                                                          | `cache`                    | `active_objs`, `limit_objs` (NULL para toda caché salvo `nf_conntrack`)                        |
 | `mikroscope_disk`                                                                                          | `device`                   | deltas de lectura y escritura, `io_s`; `inflight` es un nivel                                  |
@@ -196,15 +210,20 @@ sumado — más un `information_schema.columns` idéntico para todo el esquema.
 | `mikroscope_derived`                                                                                       | —                          | `seq`, `mem_pressure`, `burst`, `suspect`, valores por paquete NULL donde no se calcularon     |
 | `mikroscope_derived_iface`                                                                                 | `interface`                | los cuatro deltas de bytes y las dos proporciones del fast path                                |
 | `mikroscope_detection`                                                                                     | `rule, key`                | `seq`, `value`, `threshold`, `message`                                                         |
+| `mikroscope_sampler`                                                                                       | —                          | `ticks`, `slipped`, `captures_held`, `capture_bytes`, `capture_budget_bytes`, `capture_served_bytes` |
+| `mikroscope_trigger_count`                                                                                 | `condition`                | `fired`                                                                                        |
+| `mikroscope_trigger_suppressed`                                                                            | `condition, reason`        | `count`                                                                                        |
+| `mikroscope_capture_refused`                                                                               | `reason`                   | `count`                                                                                        |
 | `mikroscope_device`, `mikroscope_device_thermal`, `mikroscope_device_cpufreq`, `mikroscope_device_cadence` | —, `zone`, `cpu`, `source` | [el flujo de datos del equipo](/mikroscope/es/sinks/device-info/)                              |
 
 </ScrollTable>
 
 Las columnas nunca necesitan comillas: las columnas de ticks son `user_ticks` y compañía
 porque `user` es una palabra reservada, y `block_order` porque `order` lo es. `dt_ns` va
-solo en `mikroscope_cpu`, así que una tasa sobre cualquier otra tabla de deltas se une a
-`mikroscope_cpu` por `(time, host)` para tener el intervalo real en vez de suponer el
-periodo nominal.
+solo en `mikroscope_cpu` y `mikroscope_sample`, así que una tasa sobre cualquier otra tabla
+de deltas se une a `mikroscope_sample` por `(time, host)` para tener el intervalo real en
+vez de suponer el periodo nominal. Las cuatro últimas tablas se leen del `GET /sampler` del
+agente a la cadencia de salud del colector, no las produce un tick.
 
 `mikroscope_api_ifinfo` guarda una fila por interfaz, escrita al arrancar el colector y en
 cada relectura de `--labels-every` (5 minutos por defecto), así que una consulta la une por
@@ -410,7 +429,7 @@ valor vacío pasa a `none`, así que la profundidad de una ruta nunca cambia.
 | `sample.{seq,dt_ns}`, `stat.{ctxt,intr,forks,procs_blocked,irq_total,irq_err}`                                                                       | la muestra                                 |
 | `cpu.<n>.{user,nice,system,idle,iowait,irq,softirq,steal,busy_ratio,freq_khz}`                                                                       | `/proc/stat`, cpufreq                      |
 | `softnet.<n>.{processed,dropped,time_squeeze}`, `irq.<id>.<name>.count`, `softirq.<kind>.count`                                                      | softnet, interrupts, softirqs              |
-| `mem.{total,free,available,cached,slab,sunreclaim,dirty,writeback}_kb`, `load.{load1,load5,load15,running,threads}`                                  | meminfo, loadavg                           |
+| `mem.<campo>_kb` para cada nivel de `/proc/meminfo` que lee el agente (`total`, `free`, `available`, `cached`, `slab`, `sunreclaim`, `sreclaimable`, `dirty`, `writeback`, `anon`, `buffers`, `active`, `inactive`, `shmem`, `mapped`, `kernel_stack`, `page_tables`, `committed`, `commit_limit`), `load.{load1,load5,load15,running,threads}` | meminfo, loadavg |
 | `vm.{pgfault,pgmajfault,pgscan_kswapd,pgscan_direct,pgsteal_kswapd,pgsteal_direct,allocstall,oom_kill}`, `vmg.{nr_free_pages,nr_dirty,nr_writeback}` | vmstat                                     |
 | `self.{cpu_us,rss_bytes,cgroup_mem,throttled,throttled_us,oom_kill}`                                                                                 | el coste propio del agente                 |
 | `psi.*_us`, `sched.<n>.{run_ns,wait_ns}`                                                                                                             | solo donde el kernel los tiene             |
@@ -421,7 +440,7 @@ valor vacío pasa a `none`, así que la profundidad de una ruta nunca cambia.
 | `derived.{mem_pressure,cycles_per_packet,instructions_per_packet,cache_misses_per_packet,packets_per_irq}`                                           | la etapa de derivación                     |
 | `trigger.<cause>`, `detection.<rule>` — el valor 1 en cada evento                                                                                    | disparos y detecciones                     |
 | `device.{cores,conntrack_max,cgroup_mem_max}`, `device.thermal.<zone>.*`, `device.cpufreq.<n>.*`, `device.cadence.<source>.hz`                       | el flujo de datos del equipo               |
-| `sampler.{ticks,slipped,captures_held,capture_bytes,capture_budget_bytes,capture_served_bytes}`                                                      | los contadores del propio agente, en la cadencia de salud|
+| `sampler.{ticks,slipped,captures_held,capture_bytes,capture_budget_bytes,capture_served_bytes}`, `sampler.trigger_fired.<condition>`, `sampler.trigger_suppressed.<condition>.<reason>`, `sampler.capture_refused.<reason>` | los contadores del propio agente, en la cadencia de salud|
 | `collector.gap.{samples,from,to}`                                                                                                                    | huecos, con el reloj del colector          |
 
 </ScrollTable>
@@ -542,13 +561,21 @@ un map de Go, así que los registros dentro de un lote no tienen un orden establ
 renderizados de un map de 8 nombres dieron 7 órdenes (2026-09-12). Cada registro lleva su
 propia marca de tiempo, así que no se pierde ni se desfasa nada.
 
+Cada destino de esta página se prueba contra un receptor local que comprueba los bytes que
+acepta su protocolo (máquina de desarrollo, amd64, desde el 2026-09-12). Desde el 2026-09-17
+la suite de extremo a extremo con docker además ejecuta el colector, contra un agente
+enlatado y con la capa de la API apagada, hacia los almacenes reales, y lee los datos de
+vuelta por la API de cada almacén: Loki 3, el OpenTelemetry Collector, graphite-statsd,
+Elasticsearch 9, Telegraf 1.39 por HTTP y PostgreSQL 18, tanto con `--sql` como con
+`--postgres`, con el destino de fichero como el oráculo contra el que se comparan los demás.
+
 <NotClaimed>
 	Salvo el destino de fichero, que fue uno de los tres destinos de las ejecuciones de cadencia del
 	2026-09-15, ninguno de estos destinos formó parte de las ejecuciones de cadencia medidas, y
 	ninguno se ha alimentado desde el RB5009 hacia un Loki, receptor OTLP, carbon, Elasticsearch,
-	OpenSearch, Telegraf o TimescaleDB en marcha en una ejecución registrada. Cada uno de estos se ha
-	probado contra un receptor local que comprueba los bytes que acepta su protocolo (máquina de
-	desarrollo, amd64, 2026-09-12).
+	OpenSearch, Telegraf, PostgreSQL o TimescaleDB en marcha en una ejecución registrada. OpenSearch,
+	las hypertables de TimescaleDB y la salida estándar nunca se han probado contra un almacén real:
+	solo los cubren las pruebas de contrato de bytes.
 </NotClaimed>
 
 <SeeAlso>

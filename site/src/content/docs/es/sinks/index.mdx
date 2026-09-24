@@ -27,8 +27,8 @@ mikroscope forward --prom :9124 --influx "$MIKROSCOPE_INFLUX_URL" --interfaces b
 
 `forward` sin ningún destino es un error, no algo que no hace nada en silencio: leería
 el router y tiraría los datos. Hace falta al menos uno de `--file`, `--prom`,
-`--influx`, `--loki`, `--otlp`, `--graphite`, `--elastic`, `--sql`, `--telegraf` o
-`--stdout`, y lo normal es usar más de uno a la vez.
+`--influx`, `--loki`, `--otlp`, `--graphite`, `--elastic`, `--sql`, `--postgres`,
+`--telegraf` o `--stdout`, y lo normal es usar más de uno a la vez.
 
 ## Lo que hace una ejecución
 
@@ -40,14 +40,18 @@ el router y tiraría los datos. Hace falta al menos uno de `--file`, `--prom`,
    dimensiona el lote de extracción y las referencias móviles de la etapa de derivación.
 
 2. **Entrega a cada destino el flujo de datos del equipo.** Las `/capabilities` del
-   agente — placa, kernel, techos, cadencias — salen una vez como registro propio.
-   Consulta [el flujo de datos del equipo](/mikroscope/es/sinks/device-info/).
+   agente — placa, kernel, techos, cadencias — salen al arrancar como registro
+   propio, de nuevo cuando cambia el hash de capacidades y, si no, cada cinco
+   minutos, para que los paneles del equipo tengan una fila dentro de cualquier
+   ventana. Consulta [el flujo de datos del equipo](/mikroscope/es/sinks/device-info/).
 
 3. **Tira del anillo cada `--poll`.** La primera extracción empieza después de la
    muestra más reciente del agente, así que `forward` no reproduce lo que el anillo
-   tenía antes de arrancar. Cada extracción pide las muestras posteriores al último
-   número de secuencia visto. Un marcador de disparo viaja entre las muestras en orden
-   de secuencia y se reenvía como anotación, nunca se decodifica como muestra.
+   tenía antes de arrancar. `forward --help` muestra `--from-start`, pero `forward`
+   lo acepta y lo ignora: solo `record` recupera el anillo. Cada extracción pide las
+   muestras posteriores al último número de secuencia visto. Un marcador de disparo
+   viaja entre las muestras en orden de secuencia y se reenvía como anotación, nunca
+   se decodifica como muestra.
 
 4. **Deriva y luego reparte.** Cada muestra del kernel pasa por [la etapa de
    derivación](/mikroscope/es/sinks/derive/), y la muestra, sus valores derivados y
@@ -132,7 +136,8 @@ tienes, en vez de pedirte que montes algo nuevo.
 | ya tienes Prometheus                                          | `--prom`       | todas las familias, recalculadas de las muestras    | **sí**, generado |
 | quieres capturar una ventana y mirarla después                | `--file`       | la línea temporal unida como JSONL, sin instalar nada | no      |
 | guardas datos a largo plazo en PostgreSQL o TimescaleDB       | `--sql`        | DDL e INSERTs para `psql`, sin driver               | **sí**, generado |
-| quieres el registro del kernel y las detecciones con tus logs | `--loki`       | **solo eventos**: kmsg, detecciones, huecos         | no        |
+| quieres escribir directamente en un PostgreSQL en marcha      | `--postgres`   | las sentencias de `--sql`, por una conexión         | **sí**, generado |
+| quieres el registro del kernel y las detecciones con tus logs | `--loki`       | **solo eventos**: kmsg, detecciones, huecos, disparos, errores de la API, registros del equipo | no |
 | ya tienes una tubería de OpenTelemetry                        | `--otlp`       | métricas como OTLP/HTTP                             | no        |
 | ya tienes Graphite o Elasticsearch                            | `--graphite`, `--elastic` | todas las medidas, con la forma de ese producto | **sí**, uno más pequeño |
 | ya tienes Telegraf                                            | `--telegraf`   | todas las medidas, como protocolo de línea          | no        |
@@ -146,8 +151,9 @@ junto a un almacén te deja una captura a la que volver, y `--loki` junto a
 logs mientras los números van al almacén que leen los dashboards.
 
 Dos de ellos no llevan lo mismo que el resto. **Loki recibe eventos, no
-métricas** —los registros del kernel, las detecciones y los huecos—, así que
-una ejecución solo con Loki no tiene ni un número de CPU o memoria. Y **`--prom`
+métricas** —los registros del kernel, las detecciones, los huecos, los disparos,
+los errores de la capa de la API y los registros del equipo—, así que una ejecución
+solo con Loki no tiene ni un número de CPU o memoria. Y **`--prom`
 se consulta, no se envía**: `forward` sirve `/metrics` y Prometheus viene a por
 él, lo que significa que el colector tiene que ser alcanzable desde la máquina
 de Prometheus.
@@ -190,14 +196,16 @@ habla con un remoto renderiza en memoria y entrega los bytes a una cola acotada 
 vacía una goroutine propia una vez por segundo:
 
 - La cola guarda `--queue-seconds` (60 por defecto) segundos de un presupuesto de bytes:
-  64 KiB por segundo para InfluxDB, Loki, OTLP, Elasticsearch, Telegraf y stdout, y
-  256 KiB por segundo para Graphite, cuyo formato de una línea por valor ocupa más.
+  64 KiB por segundo para InfluxDB, PostgreSQL (`--postgres`), Loki, OTLP,
+  Elasticsearch, Telegraf y stdout, y 256 KiB por segundo para Graphite, cuyo formato
+  de una línea por valor ocupa más.
 - Pasado el presupuesto se expulsa el lote **más antiguo** y se cuenta; el más nuevo se
   conserva siempre, porque la telemetría fresca vale más que la rancia.
 - Una entrega fallida espera 2 s, doblando hasta 60 s, y registra como mucho una línea
   por minuto. Todo lo demás está en los contadores.
 - Cada POST HTTP lleva un tiempo de espera de 10 s, y una conexión reutilizada muerta es
-  un error que se reintenta y se cuenta, no un reenvío silencioso.
+  un error que se reintenta y se cuenta, no un reenvío silencioso. `--postgres` envía
+  cada lote como una sola transacción con un tiempo de espera de 30 s.
 
 Tres destinos no van en cola. Los destinos de fichero y SQL escriben de forma síncrona a
 través de un búfer de 64 KiB, porque un fichero local no se atasca como un remoto; un

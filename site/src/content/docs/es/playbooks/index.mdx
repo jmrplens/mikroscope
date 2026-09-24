@@ -1,6 +1,6 @@
 ---
 title: Cómo leer lo que muestra
-description: Siete lecturas de datos del kernel de un RB5009 — un fallo de producción encontrado por casualidad, tres sucesos provocados a propósito, dos que no hubo que provocar y la forma en reposo contra la que se leen.
+description: Ocho lecturas de datos del kernel y de los puertos de un RB5009 — dos fallos de producción encontrados sin buscarlos, tres sucesos provocados a propósito, dos que no hubo que provocar y la forma en reposo contra la que se leen.
 ---
 
 import { Aside } from "@astrojs/starlight/components";
@@ -11,17 +11,20 @@ import SeeAlso from "../../../../components/SeeAlso.astro";
 
 Esta sección responde a la pregunta que viene después de instalar el agente:
 _los números están llegando — ¿qué aspecto tiene un fallo en ellos?_ Cada página
-es una forma, leída en datos que el agente recogió en el router de referencia,
-con las órdenes que la produjeron para que puedas reproducirla en tu propio
-equipo.
+es una forma, leída en datos que el agente (o, para los errores de puerto, el
+tier de API) recogió en el router de referencia, con las órdenes que la
+produjeron para que puedas reproducirla en tu propio equipo.
 
-Todos los números de estas páginas salen de una sola campaña en el router de
-referencia, un kernel aarch64 en una placa con 1 GB de RAM:
+Todos los números de estas páginas, salvo los de la página de errores de puerto,
+salen de una sola campaña en el router de referencia, un kernel aarch64 en una
+placa con 1 GB de RAM:
 
 <Provenance of="playbooks-2026-09-12" />
 
-Cuando
-una página añade una cifra de otra fecha, lo dice junto a la cifra. Cuando un
+[Un puerto perdiendo tramas](/mikroscope/es/playbooks/port-errors/) es una campaña
+aparte, una semana después, leída en los contadores de puerto del tier de API y
+no en el agente, y su procedencia está en esa página. Cuando otra página añade una
+cifra de otra fecha, lo dice junto a la cifra. Cuando un
 fallo se provocó a propósito, la página dice exactamente cómo.
 
 ## Antes de provocar nada
@@ -37,17 +40,17 @@ conectado,
 
 y deja en paz ese puerto, el puerto WAN y cualquiera que lleve un servicio.
 
-## Las siete lecturas
+## Las ocho lecturas
 
 Lee primero la forma en reposo. Sin ella, cualquier otra página parece una
 anomalía.
 
-<ScrollTable label="Las siete lecturas y sus firmas">
+<ScrollTable label="Las ocho lecturas y sus firmas">
 
 | Página                                                                           | Cómo surgió                                                | Dónde se ve                                           | Firma                                                                                                                         |
 | -------------------------------------------------------------------------------- | ---------------------------------------------------------- | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | [La forma de un router en reposo](/mikroscope/es/playbooks/idle/)                | 60 s en reposo                                             | ocupación por núcleo, `time_squeeze`, `events`        | 6–8 % de ocupación en los cuatro núcleos, el squeeze nunca a cero, cero sucesos del kernel                                    |
-| [Un bucle que solo veía el kernel](/mikroscope/es/playbooks/loop/)               | real, encontrado por casualidad en el router de producción | `events` (la fuente `kmsg`)                           | `events` a <Measured id="loop.eventsBefore" />, separados <Measured id="loop.helloGap" />; la API informaba de un equipo sano |
+| [Un bucle que solo veía el kernel](/mikroscope/es/playbooks/loop/)               | real, encontrado por casualidad en el router de producción | `events` (la fuente `kmsg`)                           | `events` a <Measured id="loop.eventsBefore" />, separados <Measured id="loop.helloGap" />; el log de RouterOS y su monitor de puertos informaban de un equipo sano |
 | [Puertos de RouterOS y nombres del kernel](/mikroscope/es/reference/port-names/) | un puerto muerto apagado y vuelto a encender               | `events`                                              | el kernel escribe `eth5` donde RouterOS dice `ether6`                                                                         |
 | [Una carga limitada por CPU](/mikroscope/es/playbooks/cpu/)                      | un bucle de consola que termina solo                       | ocupación por núcleo, temperatura, frecuencia         | ~29 % en total, un núcleo al 99,8 %, ~20 s de migración antes de asentarse                                                    |
 | [Una inundación de paquetes](/mikroscope/es/playbooks/packet-flood/)             | `ping -f` a la propia dirección LAN del router, 10 s       | interrupciones de `switch0`, softirqs, `time_squeeze` | `switch0` de 5,5 k a 34 k por tramo de 5 s, todo en el único núcleo al que está fijada la IRQ                                 |
@@ -56,6 +59,11 @@ anomalía.
 | [Un puerto perdiendo tramas](/mikroscope/es/playbooks/port-errors/)              | real, encontrado en el router de producción el 2026-09-19  | los contadores MAC por puerto de la capa de la API    | un puerto al 0,5 % de paquetes perdidos por microrráfagas, y luego ninguno                                                    |
 
 </ScrollTable>
+
+La tormenta de despertares del 2026-09-23, un tercer fallo real en el router de
+referencia, aún no tiene lectura propia: su firma medida, y la regla que la
+vigila, están en `mikroscope-wakeup-storm`, en [Reglas de
+alerta](/mikroscope/es/dashboards/alerts/).
 
 ## Dos comprobaciones antes de fiarte de una lectura
 

@@ -8,7 +8,7 @@ import NotClaimed from "../../../components/NotClaimed.astro";
 import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
 
-`--influx URL` writes the merged timeline as InfluxDB line protocol to InfluxDB 3's
+`--influx` writes the merged timeline as InfluxDB line protocol to InfluxDB 3's
 `/api/v3/write_lp`. It is the sink that keeps every sample at the agent's rate, and the
 one the InfluxDB dashboard reads. This page answers how to point it at a database,
 what it does when the database is slow or refusing, and which measurements land there.
@@ -16,18 +16,28 @@ what it does when the database is slow or refusing, and which measurements land 
 ## The write URL and the token
 
 ```sh
-export MIKROSCOPE_INFLUX_URL="http://host:8181/api/v3/write_lp?db=mikroscope&precision=nanosecond"
+export MIKROSCOPE_INFLUX_URL=http://host:8181
+export MIKROSCOPE_INFLUX_DB=mikroscope
 export MIKROSCOPE_INFLUX_TOKEN=…
-mikroscope forward --influx "$MIKROSCOPE_INFLUX_URL" --host-tag rb5009
+mikroscope forward --influx "$MIKROSCOPE_INFLUX_URL" --influx-db "$MIKROSCOPE_INFLUX_DB" --host-tag rb5009
 ```
 
-The flag reads its default from `MIKROSCOPE_INFLUX_URL`. The token is read from
+`--influx` names the server and `--influx-db` the database; the sink assembles the write
+URL from them, `http://host:8181/api/v3/write_lp?db=mikroscope&precision=nanosecond`. The
+flags read their defaults from `MIKROSCOPE_INFLUX_URL` and `MIKROSCOPE_INFLUX_DB`. A server
+with no database is refused at start: `--influx names a server but no database: pass
+--influx-db (MIKROSCOPE_INFLUX_DB)`.
+
+A `--influx` that carries a path is taken verbatim as the write URL, which is the form every
+1.0.x deployment has in its environment and the one to use for InfluxDB 2's
+`/api/v2/write`. `--influx-db` is then ignored, and the database `forward --grafana`
+describes is read back from the URL's `db=`. The token is read from
 `MIKROSCOPE_INFLUX_TOKEN` only, never from a flag, and sent as
 `Authorization: Bearer <token>`.
 
 <Aside type="caution" title="Quote the URL">
-	When the URL lives in a file you `source`, quote it: `&` is a shell operator, and an unquoted
-	`…?db=mikroscope&precision=nanosecond` is cut at the `&`.
+	When a full write URL lives in a file you `source`, quote it: `&` is a shell operator, and an
+	unquoted `…?db=mikroscope&precision=nanosecond` is cut at the `&`.
 </Aside>
 
 ## Delivery
@@ -184,8 +194,18 @@ Learned the hard way, against InfluxDB 3 Core:
 - **A column's type is immutable once written.**
 - **A column exists only once a row has carried it.** `mikroscope_kmsg` has no `kind`
   column until the first kernel-log record naming a port is written, and a query that
-  filters on it before then fails at planning time — which is why the layer-2 loop alert
-  rule's SQL form needs a store that has already held one classified port record.
+  filters on it before then fails at planning time — which is why the SQL forms of the
+  layer-2 loop and link-down alert rules need a store that has already held one classified
+  port record. `mikroscope_api_ifcounters` has only the counters the router has returned:
+  `bridge`, `rx_packet`, `tx_unicast` and `tx_broadcast`, which the bridge-port-dark rule
+  reads, exist only once the API tier has written port counters, and a typed-error column
+  that the port-errors rule sums, such as `rx_jabber` or `tx_late_collision`, only if the
+  router has ever reported that counter.
+- **A negated tag inside an OR can return nothing, silently.** On 2026-09-23,
+  `NOT (port='ether2' AND kind IN (…))` over `mikroscope_kmsg` returned 0 rows where 14
+  matched, and so did its De Morgan form and the explicit OR. It returned 14 once
+  `port='ether2'` was also filtered outside the OR. Filter positively, and check any empty
+  answer with a plain `count(*)`. The shipped panels and rules do not use the pattern.
 
 The Grafana datasource for InfluxDB 3 needs two secure fields, not one; see [import and
 check](/mikroscope/dashboards/import-and-check/).

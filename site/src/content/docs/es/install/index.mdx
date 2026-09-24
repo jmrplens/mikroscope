@@ -16,7 +16,10 @@ de <Measured id="image.size" /> en un contenedor del router; `uninstall` la
 vuelve a quitar. En <Verified of="export-identical" />, un ciclo
 completo con guion doctor → install → status → upgrade → uninstall
 (`make roundtrip`, que pasa `--ephemeral` a doctor, install y upgrade) dejó el `/export` del router idéntico byte a byte, salvo sus líneas
-de cabecera `#`. Cada objeto que crea install lleva el comentario
+de cabecera `#`. Esa ejecución es anterior a 1.1.0, desde la que `uninstall`
+solo quita con `--yes`; `scripts/roundtrip.sh` aún no lo pasa, así que el guion
+tal como se publica solo enumera en su paso de desinstalación y su comprobación
+del export falla después. Cada objeto que crea install lleva el comentario
 `mikroscope:<name> (managed by mikroscope)`, salvo la envlist y el fichero de la
 imagen, que no lo admiten; la envlist lleva la etiqueta en su entrada
 `MIKROSCOPE_TAG`. No se escribe nada antes de listarlo; la eliminación
@@ -32,7 +35,8 @@ RouterOS 7.24 o posterior, el paquete `container` y
 ciclo de alimentación.
 [Lo que necesita el router](/mikroscope/es/install/prerequisites/) cubre las
 tres. `mikroscope doctor` las comprueba en solo lectura, en una conexión ssh, e
-imprime la orden exacta o el paso físico para lo que falte.
+imprime la orden exacta o el paso físico para lo que falte; después, por HTTP,
+lee el anillo de un agente que ya esté en marcha.
 
 Hay una decisión que va antes de la primera instalación y no después: de dónde
 sale la imagen del agente. Un checkout la compila, `--agent-tar` toma la que
@@ -61,8 +65,9 @@ publica la release, `--remote-image` hace que el router se la baje, y
    `install --dry-run` se detienen aquí, antes de cualquier conexión ssh.
 
 3. **Ejecuta `doctor`.** Cualquier requisito que falte detiene la instalación
-   con `N prerequisite(s) missing; nothing was written`. `--no-doctor` se salta
-   este paso.
+   con `N prerequisite(s) missing; nothing was written`. Una línea `WARN` se
+   imprime y no la detiene. La sección de salud del agente del `doctor` por sí
+   solo no se ejecuta aquí. `--no-doctor` se salta este paso.
 
 4. **Pregunta** `write the objects above to the router? [y/N]`. `--yes` se salta
    la pregunta.
@@ -153,13 +158,20 @@ omisiones no son inocuas. Un upgrade sin `--ephemeral` vuelve a crear el
 contenedor con la imagen y la raíz en la flash interna y `start-on-boot=yes`. Un
 upgrade de una instalación con `--expose` hecho sin `--expose` y sin token
 (`--token` o `MIKROSCOPE_TOKEN`) vuelve a crear el agente sin token, mientras
-las dos reglas del cortafuegos hacia la LAN se quedan.
+las dos reglas del cortafuegos hacia la LAN se quedan. `doctor` detecta ese
+estado después: su línea `WARN`
+`the installed agent published on the LAN asks for a token` muestra
+`dst-nat=<n> token=unset`
+([Lo que comprueba doctor](/mikroscope/es/install/prerequisites/#lo-que-comprueba-doctor)).
 
 ## Desinstalar
 
 <RouterWrites command="uninstall" />
 
-`mikroscope uninstall` ejecuta las eliminaciones de la más reciente a la más
+`mikroscope uninstall` a secas solo enumera: imprime
+`router objects (add --yes to remove them):` y los objetos que describen sus
+opciones, del más reciente al más antiguo, sin conectarse al router, y no quita
+nada. Con `--yes` ejecuta las eliminaciones de la más reciente a la más
 antigua. Una eliminación que falla o imprime algo se informa como `skip` con lo
 que dijo el router, y el resto continúa. Un paso cuyo selector no encuentra nada
 imprime `gone` igualmente, y por eso decide el recuento, no la salida de la
@@ -167,6 +179,8 @@ eliminación. Después pregunta el recuento de propiedad de cada paso en una
 conexión, imprime una línea por paso y o bien termina con
 `verified: nothing mikroscope created remains on the router` o bien falla con
 `uninstall left objects behind`, nombrando los pasos que siguen presentes.
+`--targets` elige qué se quita: `router` (por defecto), `dashboard`, `data` o
+`all`; lo detalla [Órdenes y opciones](/mikroscope/es/reference/cli/).
 
 La eliminación del contenedor espera, porque RouterOS no lo hace:
 `/container/remove` vuelve antes de que el contenedor haya desaparecido, y un
@@ -203,12 +217,12 @@ ninguna línea de placa; `status` sale igualmente con código 0.
 ## El día a día
 
 ```sh
-mikroscope doctor                      # solo lectura
+mikroscope doctor                      # solo lectura: requisitos y después el anillo del agente en marcha
 mikroscope plan                        # todas las órdenes, nada escrito
 mikroscope install [--ephemeral]       # doctor, confirmación, escrituras, sondeo
 mikroscope status                      # recuentos de propiedad + salud del agente
 mikroscope upgrade                     # imagen nueva, solo el contenedor
-mikroscope uninstall                   # quita y verifica
+mikroscope uninstall --yes             # quita y verifica (sin --yes: solo enumera)
 mikroscope image --arch arm64          # el tar, para cargarlo a mano
 mikroscope plan --rsc --out install.rsc # las mismas escrituras, como script de RouterOS
 ```

@@ -303,7 +303,16 @@ El total se mueve 0,11 puntos, que está dentro del ruido del tráfico de un min
 dos filas que responden a las preguntas de la capa se mueven juntas medio punto. En
 ninguno de los dos perfiles aparece una fila de proceso `api`: el proceso de la API hace
 de intermediario y el trabajo cae en el subsistema que responde. Así que una capa que
-hace una ronda por segundo le cuesta al router en torno al 0,5 % de su CPU total.
+hace una ronda por segundo le cuesta al router en torno al 0,5 % de su CPU total. Esa
+tabla es un único perfil de 60 s por condición, sin dispersión.
+
+Una configuración mayor se midió como A/B en el mismo router el 2026-09-19, el día de una
+actualización de RouterOS que lo ha dejado en 7.24.4 (no quedó registrado sobre qué
+versión corrió el A/B en sí): todas las interfaces salvo `lo` en `--interfaces` (16) y
+`--conntrack-every 10s`, 8 min sin ella frente a 14 min con ella. El `cpu-load` medio
+pasó de 7,12 % a 7,91 % y la ocupación media del kernel de 7,70 % a 8,46 %, unos +0,8
+puntos; es una cota inferior, porque el tráfico del bridge bajó de 48,0 a 38,9 Mbit/s
+entre las ventanas. El p50 de `cpu-load` se quedó en 6 y el p95 pasó de 16 a 18.
 
 Es poco, y aun así el proyecto sigue tratando la API como el camino caro. Los datos por
 puerto salen del contenedor siempre que el contenedor pueda verlos, y la configuración se
@@ -330,12 +339,13 @@ se vuelve a leer tras una reconexión: una actualización es justo cuando una
 interfaz puede cambiar de nombre, tipo o puente, y etiquetas viejas sobre tasas
 nuevas serían peor que un hueco de un momento.
 
-Medido contra el RB5009 de referencia el 2026-09-19, sin tocar el router: a un
-colector que sondeaba las 16 interfaces a 1 Hz se le destruyó el socket de la
-API desde el host con `ss -K`, que es como se ve desde él el lado del router en
-un reinicio. La capa reabrió la conexión y reintentó dentro de la misma ronda:
-0 comandos fallidos, 0 rondas perdidas, 16 interfaces en cada uno de los 108
-segundos a ambos lados de la muerte del socket.
+Medido contra el RB5009 de referencia el 2026-09-19, tras la actualización de
+RouterOS de ese día, sin tocar el router: a un colector que ejecutaba
+`monitor-traffic` sobre 16 interfaces (todas salvo `lo`) a 1 Hz se le destruyó
+el socket de la API desde el host con `ss -K`, que es como se ve desde él el
+lado del router en un reinicio. La capa reabrió la conexión y reintentó dentro
+de la misma ronda: 0 comandos fallidos, 0 rondas perdidas, 16 interfaces en cada
+uno de los 108 segundos a ambos lados de la muerte del socket.
 
 Un colector que arranca con el router caído es el mismo caso visto desde el otro
 lado. Que la primera marcación falle es un aviso, no una capa deshabilitada:
@@ -358,7 +368,7 @@ equipo de referencia está en
 ## El número de conexiones
 
 `--conntrack-every 10s` pregunta `/ip/firewall/connection/print count-only` con esa
-cadencia: <Measured id="api.conntrackMs" /> con <Measured id="conntrack.api" /> entradas en el RB5009 (fecha no registrada). Está apagado por
+cadencia: <Measured id="api.conntrackMs" /> con <Measured id="conntrack.api" /> entradas en el RB5009 (hacia el 2026-09-11, un día antes de la lectura del slab; sin más precisión), una sola lectura sin dispersión. Está apagado por
 defecto porque es un recorrido de tabla sobre una sesión de API, y con `privileged=yes` la
 cuenta slab `nf_conntrack` del agente es la misma población leída de un fichero a la
 cadencia del muestreador. Las dos no coinciden exactamente — se muestrean en instantes
@@ -366,10 +376,15 @@ distintos, y el slab cuenta objetos que el asignador todavía retiene — pero s
 API dijo <Measured id="conntrack.api" /> el día antes de que el slab dijera <Measured id="conntrack.slab" />.
 
 <NotClaimed>
-	La capa de la API ha funcionado contra una sola versión de RouterOS, la 7.24.2, en una sola placa.
-	Qué claves de pérdidas y qué contadores devuelve otra versión u otra placa lo tiene que decir ese
-	router; los destinos llevan lo que vuelva y nada más. Tampoco dice la correlación de arriba si
-	RouterOS calcula la ventana de un segundo de `cpu-load` sobre un reloj de pared o sobre jiffies.
+	La capa de la API ha funcionado en una sola placa, el RB5009 de referencia. Las cifras de
+	inventario y de claves de pérdidas y el perfil de coste de 60 s de arriba se midieron sobre
+	RouterOS 7.24.2 (2026-09-15 y 16). La prueba de reconexión y el A/B con 16 interfaces se
+	hicieron el 2026-09-19, el día de una actualización de RouterOS; desde entonces la capa ha
+	funcionado sin parar sobre el router actualizado, hoy en 7.24.4, y ninguna de las cifras de
+	7.24.2 se ha vuelto a medir allí. Qué claves de pérdidas y qué contadores devuelve otra versión
+	u otra placa lo tiene que decir ese router; los destinos llevan lo que vuelva y nada más.
+	Tampoco dice la correlación de arriba si RouterOS calcula la ventana de un segundo de `cpu-load`
+	sobre un reloj de pared o sobre jiffies.
 </NotClaimed>
 
 <SeeAlso>

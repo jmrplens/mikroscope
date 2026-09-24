@@ -72,6 +72,10 @@ In 5-second buckets, before and during:
   `mikroscope_softirq_total{cpu,kind}`.
 - The squeeze has no budget to be divided by: `/proc/sys/net/core/*`
   (`netdev_budget`, `netdev_max_backlog`) is absent in the container's namespace.
+- A drop, unlike a squeeze, is an event a healthy router does not produce:
+  `mikroscope doctor` reports it as `softnet-drops` when the running agent's ring
+  holds one, and the `mikroscope-softnet-drops` alert fires on the first one.
+  Neither counts squeezes.
 
 The collector flags a sample as `burst` when a softnet queue dropped a packet or
 squeezed more than that CPU usually does (above its trailing 90th percentile and

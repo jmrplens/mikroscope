@@ -22,8 +22,8 @@ mikroscope forward --prom :9124 --influx "$MIKROSCOPE_INFLUX_URL" --interfaces b
 
 `forward` with no sink is an error, not a silent no-op: it would read the router and
 throw the data away. At least one of `--file`, `--prom`, `--influx`, `--loki`,
-`--otlp`, `--graphite`, `--elastic`, `--sql`, `--telegraf` or `--stdout` is
-required, and more than one at a time is the normal arrangement.
+`--otlp`, `--graphite`, `--elastic`, `--sql`, `--postgres`, `--telegraf` or
+`--stdout` is required, and more than one at a time is the normal arrangement.
 
 ### What one run does
 
@@ -33,13 +33,17 @@ required, and more than one at a time is the normal arrangement.
    pull batch and the derive stage's trailing baselines.
 
 2. **Hand every sink the device-info stream.** The agent's `/capabilities` — board,
-   kernel, ceilings, cadences — goes out once as its own record. See [the
-   device-info stream](https://jmrp.io/docs/mikroscope/sinks/device-info/).
+   kernel, ceilings, cadences — goes out at start as its own record, again whenever
+   the capability hash changes, and otherwise every five minutes, so the device
+   panels have a row inside any window. See [the device-info
+   stream](https://jmrp.io/docs/mikroscope/sinks/device-info/).
 
 3. **Pull the ring every `--poll`.** The first pull starts after the agent's newest
-   sample, so `forward` does not replay what the ring held before it started. Each
-   pull asks for samples after the last sequence number seen. A trigger marker rides among the samples in sequence
-   order and is forwarded as an annotation, never decoded as a sample.
+   sample, so `forward` does not replay what the ring held before it started.
+   `forward --help` lists `--from-start`, but `forward` accepts it and ignores it:
+   only `record` backfills the ring. Each pull asks for samples after the last
+   sequence number seen. A trigger marker rides among the samples in sequence order
+   and is forwarded as an annotation, never decoded as a sample.
 
 4. **Derive, then fan out.** Every kernel sample goes through [the derive
    stage](https://jmrp.io/docs/mikroscope/sinks/derive/), and the sample, its derived values and any
@@ -112,7 +116,8 @@ than asking you to run something new.
 | already run Prometheus                                      | `--prom`       | every family, recomputed from the samples        | **yes**, generated |
 | want to capture a window and look at it later               | `--file`       | the merged timeline as JSONL, nothing to install | no        |
 | keep long-term data in PostgreSQL or TimescaleDB            | `--sql`        | DDL and INSERTs for `psql`, no driver            | **yes**, generated |
-| want the kernel log and the detections where your logs are  | `--loki`       | **events only** — kmsg, detections, gaps         | no        |
+| write straight into a running PostgreSQL                    | `--postgres`   | the `--sql` statements, down a connection        | **yes**, generated |
+| want the kernel log and the detections where your logs are  | `--loki`       | **events only** — kmsg, detections, gaps, triggers, API errors, device records | no |
 | already run an OpenTelemetry pipeline                       | `--otlp`       | metrics as OTLP/HTTP                             | no        |
 | already run Graphite or Elasticsearch                       | `--graphite`, `--elastic` | every measurement, in that product's shape | **yes**, a smaller one |
 | already run Telegraf                                        | `--telegraf`   | every measurement, as line protocol              | no        |
@@ -124,8 +129,9 @@ Nothing stops you naming several at once, and that is the normal arrangement:
 go to the store the dashboards read.
 
 Two of these do not carry the same thing as the rest. **Loki takes events, not
-metrics** — the kernel-log records, the detections and the gaps — so a Loki-only
-run has no CPU or memory numbers in it at all. **`--prom` is scraped, not
+metrics** — the kernel-log records, the detections, the gaps, the triggers, the
+API tier's errors and the device records — so a Loki-only run has no CPU or memory
+numbers in it at all. **`--prom` is scraped, not
 pushed**: `forward` serves `/metrics` and Prometheus comes to it, which means
 the collector has to be reachable from the Prometheus host.
 
@@ -163,14 +169,16 @@ a remote renders into memory and hands the bytes to a bounded queue that a
 goroutine of its own drains once a second:
 
 - The queue holds `--queue-seconds` (default 60) seconds' worth of a byte budget:
-  64 KiB per second for InfluxDB, Loki, OTLP, Elasticsearch, Telegraf and stdout,
-  256 KiB per second for Graphite, whose one-line-per-value format is bulkier.
+  64 KiB per second for InfluxDB, PostgreSQL (`--postgres`), Loki, OTLP,
+  Elasticsearch, Telegraf and stdout, 256 KiB per second for Graphite, whose
+  one-line-per-value format is bulkier.
 - Past the budget the **oldest** batch is evicted and counted; the newest is always
   kept, because fresh telemetry beats stale.
 - A failed delivery backs off 2 s, doubling to 60 s, and logs at most one line per
   minute. Everything else is in the counters.
 - Each HTTP post carries a 10 s timeout, and a dead pooled connection is an error
-  that is retried and counted, not a silent resend.
+  that is retried and counted, not a silent resend. `--postgres` sends each batch
+  as one transaction with a 30 s timeout.
 
 Three sinks are not queued. The file and SQL sinks write synchronously through a
 64 KiB buffer, because a local file does not stall the way a remote does; a write
@@ -286,12 +294,12 @@ families from the agent's `/capabilities`.
 
 > **Sized for 10 Hz, whatever the agent runs at**
 >
-> The collector sizes its `mikroscope_cpu_busy_ticks` histogram and its sample ring from a constant
-> 10 Hz, not from the connected agent, so the bucket layout does not change when it reconnects to an
-> agent configured differently. Read from the code, not measured, the same constant sets more than
-> that. The ring behind the trailing windows does follow the agent: the collector reads the rate
-> from its health check and sizes the ring to 60 s of it, so `window="60s"` spans a minute at any
-> rate. The softnet trailing mean behind `mikroscope_softnet_burst_samples_total` does not — its
+> The collector sizes its `mikroscope_cpu_busy_ticks` histogram from a constant 10 Hz, not from the
+> connected agent, so the bucket layout does not change when it reconnects to an agent configured
+> differently. Read from the code, not measured, the same constant sets more than that, and against
+> an agent above 10 Hz each is off by the ratio of the rates. The ring behind the trailing windows
+> does follow the agent: the collector reads the rate from its health check and sizes the ring to
+> 60 s of it, so `window="60s"` spans a minute at any rate. The softnet trailing mean behind `mikroscope_softnet_burst_samples_total` does not — its
 > weight is 1/600, a 60 s memory at 10 Hz and shorter above it, so the collector's burst baseline
 > tightens as the agent samples faster; the agent sizes its own from its real rate. An interrupt
 > line is pruned from the top-K families after 36 000 samples out of every top-K: an hour at 10 Hz,
@@ -324,7 +332,7 @@ There is nothing left to double-count, and no keep list to maintain.
 | `mikroscope_tick_interval_seconds`, `_wake_latency_`, `_read_` | folded from `dt_ns`, `wake_ns` and `read_ns` in each sample      |
 | `mikroscope_slipped_total`, `mikroscope_sampler_ticks_total`   | the agent's `/sampler`, read every minute                        |
 | `mikroscope_trigger_fired_total`, `_suppressed_total`          | the same, one series per configured condition, present at 0      |
-| `mikroscope_captures_held`, `_capture_bytes`, `_budget_bytes`  | the same: what the agent is holding right now                    |
+| `mikroscope_captures_held`, `mikroscope_capture_bytes`, `mikroscope_capture_budget_bytes`, `mikroscope_capture_bytes_served_total`, `mikroscope_capture_refused_total{reason}` | the same: what the agent holds, has served and has refused |
 | `mikroscope_api_*`, `mikroscope_derived_*`, `_collector_*`     | the collector's own: the API tier, the derive stage, its counters |
 
 The one thing that changed meaning: these figures are now as fresh as the collector's
@@ -412,8 +420,10 @@ reference RB5009 (RouterOS 7.24.2, 2026-09-16) ether1 received 255.8 GB on the w
 and handed 29.7 GB to the CPU — so do not sum a port and its bridge.
 
 `mikroscope_api_interface_counter_total` has one series per port and counter the
-router reports: 9 ports × about 60 counters on the reference RB5009. A counter a port
-does not report has no series, and a loss rate the router did not return has no
+router reports: 9 ports × 45 counters on the reference RB5009, and 15 on each bridge, VLAN,
+PPPoE, WireGuard, veth or loopback interface, counted from the collector's own
+`mikroscope_api_ifcounters` rows on 2026-09-24; the RouterOS version was not read with
+them. A counter a port does not report has no series, and a loss rate the router did not return has no
 `kind`. Keys that parse as integers but count nothing — `mtu`, `actual-mtu`,
 `l2mtu`, `max-l2mtu`, `sfp-shutdown-temperature` — are sizes and configuration and
 get no counter series; the MTU is part of the inventory. On the RB5009 with RouterOS
@@ -454,7 +464,7 @@ The InfluxDB 3 line-protocol sink — the write URL and token, how batches are d
 
 Source: <https://jmrp.io/docs/mikroscope/sinks/influxdb/>
 
-`--influx URL` writes the merged timeline as InfluxDB line protocol to InfluxDB 3's
+`--influx` writes the merged timeline as InfluxDB line protocol to InfluxDB 3's
 `/api/v3/write_lp`. It is the sink that keeps every sample at the agent's rate, and the
 one the InfluxDB dashboard reads. This page answers how to point it at a database,
 what it does when the database is slow or refusing, and which measurements land there.
@@ -462,19 +472,29 @@ what it does when the database is slow or refusing, and which measurements land 
 ### The write URL and the token
 
 ```sh
-export MIKROSCOPE_INFLUX_URL="http://host:8181/api/v3/write_lp?db=mikroscope&precision=nanosecond"
+export MIKROSCOPE_INFLUX_URL=http://host:8181
+export MIKROSCOPE_INFLUX_DB=mikroscope
 export MIKROSCOPE_INFLUX_TOKEN=…
-mikroscope forward --influx "$MIKROSCOPE_INFLUX_URL" --host-tag rb5009
+mikroscope forward --influx "$MIKROSCOPE_INFLUX_URL" --influx-db "$MIKROSCOPE_INFLUX_DB" --host-tag rb5009
 ```
 
-The flag reads its default from `MIKROSCOPE_INFLUX_URL`. The token is read from
+`--influx` names the server and `--influx-db` the database; the sink assembles the write
+URL from them, `http://host:8181/api/v3/write_lp?db=mikroscope&precision=nanosecond`. The
+flags read their defaults from `MIKROSCOPE_INFLUX_URL` and `MIKROSCOPE_INFLUX_DB`. A server
+with no database is refused at start: `--influx names a server but no database: pass
+--influx-db (MIKROSCOPE_INFLUX_DB)`.
+
+A `--influx` that carries a path is taken verbatim as the write URL, which is the form every
+1.0.x deployment has in its environment and the one to use for InfluxDB 2's
+`/api/v2/write`. `--influx-db` is then ignored, and the database `forward --grafana`
+describes is read back from the URL's `db=`. The token is read from
 `MIKROSCOPE_INFLUX_TOKEN` only, never from a flag, and sent as
 `Authorization: Bearer <token>`.
 
 > **Quote the URL**
 >
-> When the URL lives in a file you `source`, quote it: `&` is a shell operator, and an unquoted
-> `…?db=mikroscope&precision=nanosecond` is cut at the `&`.
+> When a full write URL lives in a file you `source`, quote it: `&` is a shell operator, and an
+> unquoted `…?db=mikroscope&precision=nanosecond` is cut at the `&`.
 
 ### Delivery
 
@@ -622,8 +642,18 @@ Learned the hard way, against InfluxDB 3 Core:
 - **A column's type is immutable once written.**
 - **A column exists only once a row has carried it.** `mikroscope_kmsg` has no `kind`
   column until the first kernel-log record naming a port is written, and a query that
-  filters on it before then fails at planning time — which is why the layer-2 loop alert
-  rule's SQL form needs a store that has already held one classified port record.
+  filters on it before then fails at planning time — which is why the SQL forms of the
+  layer-2 loop and link-down alert rules need a store that has already held one classified
+  port record. `mikroscope_api_ifcounters` has only the counters the router has returned:
+  `bridge`, `rx_packet`, `tx_unicast` and `tx_broadcast`, which the bridge-port-dark rule
+  reads, exist only once the API tier has written port counters, and a typed-error column
+  that the port-errors rule sums, such as `rx_jabber` or `tx_late_collision`, only if the
+  router has ever reported that counter.
+- **A negated tag inside an OR can return nothing, silently.** On 2026-09-23,
+  `NOT (port='ether2' AND kind IN (…))` over `mikroscope_kmsg` returned 0 rows where 14
+  matched, and so did its De Morgan form and the explicit OR. It returned 14 once
+  `port='ether2'` was also filtered outside the OR. Filter positively, and check any empty
+  answer with a plain `count(*)`. The shipped panels and rules do not use the pattern.
 
 The Grafana datasource for InfluxDB 3 needs two secure fields, not one; see [import and
 check](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/).
@@ -650,12 +680,12 @@ check](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/).
 
 ## The file and the other sinks
 
-The JSONL file, standard output, SQL, Loki, OTLP, Graphite, Elasticsearch and Telegraf — what each one carries, how it delivers, and what its protocol cannot promise.
+The JSONL file, standard output, SQL and PostgreSQL, Loki, OTLP, Graphite, Elasticsearch and Telegraf — what each one carries, how it delivers, and what its protocol cannot promise.
 
 Source: <https://jmrp.io/docs/mikroscope/sinks/other/>
 
 Besides [Prometheus](https://jmrp.io/docs/mikroscope/sinks/prometheus/) and [InfluxDB
-3](https://jmrp.io/docs/mikroscope/sinks/influxdb/), `forward` writes to eight more destinations. This page
+3](https://jmrp.io/docs/mikroscope/sinks/influxdb/), `forward` writes to nine more destinations. This page
 answers, for each one, which parts of the timeline it receives, how it is delivered,
 and what the destination's protocol means it cannot tell you. The queue, backoff and
 counters they share are on [the collector](https://jmrp.io/docs/mikroscope/sinks/).
@@ -667,7 +697,7 @@ counters they share are on [the collector](https://jmrp.io/docs/mikroscope/sinks
 | file          | verbatim agent lines      | inside the sample lines         | `{"api":…}` lines                   | `{"derived":…}`, `{"detection":…}`               | all three, as lines    |
 | stdout `json` | verbatim agent lines      | inside the sample lines         | `{"api":…}` lines                   | as the file                                      | all three, as lines    |
 | stdout `lp`   | the InfluxDB measurements | counts per level, port and kind | the InfluxDB measurements           | the InfluxDB measurements                        | all three              |
-| SQL           | one table per source      | `mikroscope_event` rows         | tables, plus `mikroscope_api_error` | `mikroscope_derived`, `mikroscope_detection`     | all three              |
+| SQL (`--sql`, `--postgres`) | one table per source | `mikroscope_event` rows         | tables, plus `mikroscope_api_error` | `mikroscope_derived`, `mikroscope_detection`     | all three              |
 | Loki          | no                        | one line per record             | per-command errors only             | detections only                                  | all three, as lines    |
 | OTLP          | sums and gauges           | no                              | gauges, and an error count          | gauges, a detection sum                          | all three              |
 | Graphite      | one path per value        | no                              | paths                               | paths                                            | numeric parts only     |
@@ -779,10 +809,15 @@ What the connection can do that a file cannot:
 - **It can describe its own Grafana datasource**, which the file sink can never do: see
   [import and check](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/).
 
+Unlike `--sql`, `--postgres` is queued like the remote sinks: one batch a second,
+64 KiB × `--queue-seconds` of budget with the oldest batch dropped first, each batch one
+transaction with a 30 s timeout, and the counters in batches. A slow server therefore never
+blocks the pull loop, which the pipe into `psql` can.
+
 What it gives up: nothing about the schema, and one dependency. `--postgres` links pgx
 into the collector binary. The **agent** does not link it — the agent links `procfs`,
-`sample`, `agent` and the standard library, and its image budget is unchanged at 6.5 MiB
-for arm64.
+`sample`, `agent` and the standard library, so its image carries nothing new, and CI's
+`agent-size` job still holds it under the 8 MiB budget.
 
 The DSN is a flag rather than an environment-only secret because libpq's own conventions
 are the point: pgx reads `PGPASSWORD`, `~/.pgpass` and the service file the way `psql`
@@ -806,13 +841,20 @@ identical `information_schema.columns` for the whole schema.
 | `mikroscope_cpu`                                                                                           | `cpu`                      | `user_ticks` … `steal_ticks`, `busy_ratio`, `dt_ns`                                    |
 | `mikroscope_softnet`                                                                                       | `cpu`                      | `processed`, `dropped`, `time_squeeze`                                                 |
 | `mikroscope_irq`                                                                                           | `irq`                      | `name`, `count` summed over CPUs                                                       |
-| `mikroscope_mem`                                                                                           | —                          | levels: `free_kb`, `available_kb`, `cached_kb`, `slab_kb`, `sunreclaim_kb`             |
+| `mikroscope_mem`                                                                                           | —                          | levels: every `/proc/meminfo` field the agent reads, in `_kb`                          |
 | `mikroscope_load`                                                                                          | —                          | levels: load averages, `running`, `threads`, `procs_blocked`                           |
 | `mikroscope_stat`                                                                                          | —                          | deltas: `ctxt`, `intr`, `forks`, `irq_total`, `irq_err`, `pgfault`, `pgmajfault`       |
-| `mikroscope_self`                                                                                          | —                          | `cpu_us` delta; `rss`, `cgroup_mem` levels; cgroup events, NULL without cgroup2; `seq` |
+| `mikroscope_self`                                                                                          | —                          | `cpu_us` delta; `rss`, `cgroup_mem` levels; cgroup events `throttled`, `throttled_us`, `oom_kill`, NULL without cgroup2; `resets`, `kmsg_dropped`, `seq`, `wake_ns`, `read_ns` |
 | `mikroscope_buddy`                                                                                         | `node, zone, block_order`  | `free_blocks`, one row per zone and order                                              |
 | `mikroscope_mtd`                                                                                           | `device`                   | `partition`, ECC counters as read, thresholds NULL where unpublished                   |
 | `mikroscope_psi`                                                                                           | —                          | stall microseconds; no row where the kernel has no PSI                                 |
+| `mikroscope_sample`                                                                                        | —                          | `seq`, `dt_ns`, `mono_ns`: one row per tick                                            |
+| `mikroscope_softirq`                                                                                       | `kind, cpu`                | `count`, per vector and core                                                           |
+| `mikroscope_perf`                                                                                          | `counter, cpu`             | PMU `count`, `enabled_ns`, `running_ns`; no row without `privileged=yes` and a PMU     |
+| `mikroscope_vm`                                                                                            | —                          | `/proc/vmstat` deltas: faults, allocs and frees, reclaim scans and steals, stalls, `oom_kill`, swap |
+| `mikroscope_vm_level`                                                                                      | —                          | `/proc/vmstat` levels: `nr_free_pages`, `nr_dirty`, `nr_writeback`, slab pages         |
+| `mikroscope_cpufreq`                                                                                       | `cpu`                      | `khz`, and `max_khz` where the board publishes one                                     |
+| `mikroscope_irq_cpu`                                                                                       | `irq, cpu`                 | `name`, `count` per core                                                               |
 | `mikroscope_thermal`                                                                                       | `zone`                     | `celsius`, `critical_celsius`                                                          |
 | `mikroscope_slab`                                                                                          | `cache`                    | `active_objs`, `limit_objs` (NULL for every cache but `nf_conntrack`)                  |
 | `mikroscope_disk`                                                                                          | `device`                   | read and write deltas, `io_s`; `inflight` is a level                                   |
@@ -831,12 +873,18 @@ identical `information_schema.columns` for the whole schema.
 | `mikroscope_derived`                                                                                       | —                          | `seq`, `mem_pressure`, `burst`, `suspect`, per-packet values NULL where not computed   |
 | `mikroscope_derived_iface`                                                                                 | `interface`                | the four byte deltas and the two fast-path shares                                      |
 | `mikroscope_detection`                                                                                     | `rule, key`                | `seq`, `value`, `threshold`, `message`                                                 |
+| `mikroscope_sampler`                                                                                       | —                          | `ticks`, `slipped`, `captures_held`, `capture_bytes`, `capture_budget_bytes`, `capture_served_bytes` |
+| `mikroscope_trigger_count`                                                                                 | `condition`                | `fired`                                                                                |
+| `mikroscope_trigger_suppressed`                                                                            | `condition, reason`        | `count`                                                                                |
+| `mikroscope_capture_refused`                                                                               | `reason`                   | `count`                                                                                |
 | `mikroscope_device`, `mikroscope_device_thermal`, `mikroscope_device_cpufreq`, `mikroscope_device_cadence` | —, `zone`, `cpu`, `source` | [the device-info stream](https://jmrp.io/docs/mikroscope/sinks/device-info/)                               |
 
 Columns never need quoting: the tick columns are `user_ticks` and friends because
 `user` is reserved, and `block_order` because `order` is. `dt_ns` rides on
-`mikroscope_cpu` only, so a rate over any other delta table joins `mikroscope_cpu` on
-`(time, host)` for the real interval rather than assuming the nominal period.
+`mikroscope_cpu` and `mikroscope_sample` only, so a rate over any other delta table joins
+`mikroscope_sample` on `(time, host)` for the real interval rather than assuming the
+nominal period. The last four tables are read from the agent's `GET /sampler` on the
+collector's health cadence, not produced by a tick.
 
 `mikroscope_api_ifinfo` holds one row per interface, written at collector start and on
 every `--labels-every` re-read (5 minutes by default), so a query joins it on `interface`
@@ -1026,7 +1074,7 @@ value becomes `none`, so a path's depth never changes.
 | `sample.{seq,dt_ns}`, `stat.{ctxt,intr,forks,procs_blocked,irq_total,irq_err}`                                                                       | the sample                        |
 | `cpu.<n>.{user,nice,system,idle,iowait,irq,softirq,steal,busy_ratio,freq_khz}`                                                                       | `/proc/stat`, cpufreq             |
 | `softnet.<n>.{processed,dropped,time_squeeze}`, `irq.<id>.<name>.count`, `softirq.<kind>.count`                                                      | softnet, interrupts, softirqs     |
-| `mem.{total,free,available,cached,slab,sunreclaim,dirty,writeback}_kb`, `load.{load1,load5,load15,running,threads}`                                  | meminfo, loadavg                  |
+| `mem.<field>_kb` for every `/proc/meminfo` level the agent reads (`total`, `free`, `available`, `cached`, `slab`, `sunreclaim`, `sreclaimable`, `dirty`, `writeback`, `anon`, `buffers`, `active`, `inactive`, `shmem`, `mapped`, `kernel_stack`, `page_tables`, `committed`, `commit_limit`), `load.{load1,load5,load15,running,threads}` | meminfo, loadavg |
 | `vm.{pgfault,pgmajfault,pgscan_kswapd,pgscan_direct,pgsteal_kswapd,pgsteal_direct,allocstall,oom_kill}`, `vmg.{nr_free_pages,nr_dirty,nr_writeback}` | vmstat                            |
 | `self.{cpu_us,rss_bytes,cgroup_mem,throttled,throttled_us,oom_kill}`                                                                                 | the agent's own cost              |
 | `psi.*_us`, `sched.<n>.{run_ns,wait_ns}`                                                                                                             | only where the kernel has them    |
@@ -1037,7 +1085,7 @@ value becomes `none`, so a path's depth never changes.
 | `derived.{mem_pressure,cycles_per_packet,instructions_per_packet,cache_misses_per_packet,packets_per_irq}`                                           | the derive stage                  |
 | `trigger.<cause>`, `detection.<rule>` — the value 1 at each event                                                                                    | triggers and detections           |
 | `device.{cores,conntrack_max,cgroup_mem_max}`, `device.thermal.<zone>.*`, `device.cpufreq.<n>.*`, `device.cadence.<source>.hz`                       | the device-info stream            |
-| `sampler.{ticks,slipped,captures_held,capture_bytes,capture_budget_bytes,capture_served_bytes}`                                                      | the agent's own counters, on the health cadence|
+| `sampler.{ticks,slipped,captures_held,capture_bytes,capture_budget_bytes,capture_served_bytes}`, `sampler.trigger_fired.<condition>`, `sampler.trigger_suppressed.<condition>.<reason>`, `sampler.capture_refused.<reason>` | the agent's own counters, on the health cadence|
 | `collector.gap.{samples,from,to}`                                                                                                                    | gaps, at the collector's clock    |
 
 What the protocol cannot promise, stated because each one changes what a Graphite panel
@@ -1151,13 +1199,21 @@ encoder writes the `/system/health` readings in Go map order, so records within 
 are not ordered stably — 12 renders of an 8-name map gave 7 orders (2026-09-12). Every
 record carries its own timestamp, so nothing is lost or mis-timed.
 
+Every sink on this page is tested against a local receiver that asserts the bytes its
+protocol accepts (development host, amd64, since 2026-09-12). Since 2026-09-17 the docker
+end-to-end suite also runs the collector, against a canned agent and with the API tier off,
+into the real stores and reads the data back through each store's own API: Loki 3, the
+OpenTelemetry Collector, graphite-statsd, Elasticsearch 9, Telegraf 1.39 over HTTP and
+PostgreSQL 18, through both `--sql` and `--postgres`, with the file sink as the oracle the
+others are compared against.
+
 > **Not measured, so not claimed**
 >
 > Apart from the file sink, which was one of the three sinks in the 2026-09-15 rate runs, none of
 > these sinks was part of the measured rate runs, and none has been fed from the RB5009 into a
-> running Loki, OTLP receiver, carbon, Elasticsearch, OpenSearch, Telegraf or TimescaleDB in a
-> recorded run. Each of those has been tested against a local receiver that asserts the bytes its
-> protocol accepts (development host, amd64, 2026-09-12).
+> running Loki, OTLP receiver, carbon, Elasticsearch, OpenSearch, Telegraf, PostgreSQL or
+> TimescaleDB in a recorded run. OpenSearch, TimescaleDB's hypertables and standard output have
+> never been run against a real store: they are covered by the byte-contract tests only.
 
 ### See also
 
@@ -1437,7 +1493,16 @@ The total moves by 0.11 points, which is inside the traffic noise of a minute; t
 rows that answer the tier's questions move by about half a point between them. No `api`
 process row appears in either profile: the API process relays, and the work lands on
 the subsystem that answers. So a tier running a round every second costs the router
-about 0.5 % of its total CPU.
+about 0.5 % of its total CPU. That table is one 60 s profile per condition, with no
+spread.
+
+A larger configuration was measured as an A/B on the same router on 2026-09-19, the day
+of a RouterOS upgrade that has left it on 7.24.4 (which version the A/B itself ran on was
+not recorded): every interface but `lo` in `--interfaces` (16) and `--conntrack-every
+10s`, 8 min without against 14 min with. Mean `cpu-load` went from 7.12 % to 7.91 % and
+mean kernel busy from 7.70 % to 8.46 %, about +0.8 points; that is a lower bound, since
+bridge traffic fell from 48.0 to 38.9 Mbit/s between the windows. The p50 of `cpu-load`
+stayed at 6 and the p95 went from 16 to 18.
 
 That is small, and the project still treats the API as the costly path. Per-port data
 comes from the container wherever the container can see it, and configuration is read
@@ -1463,8 +1528,9 @@ every dial carries a login. The inventory is dropped and re-read after a
 reconnection: an upgrade is exactly when an interface can change its name, type
 or bridge, and stale labels on fresh rates would be worse than a moment's gap.
 
-Measured against the reference RB5009 on 2026-09-19, without touching the
-router: a collector polling all 16 interfaces at 1 Hz had its API socket
+Measured against the reference RB5009 on 2026-09-19, after that day's RouterOS
+upgrade, without touching the router: a collector running `monitor-traffic` on
+16 interfaces (all but `lo`) at 1 Hz had its API socket
 destroyed from the host with `ss -K`, which is what the router's side of a
 reboot looks like to it. The tier reopened the connection and retried inside
 the same round — 0 failed commands, 0 dropped rounds, 16 interfaces in every
@@ -1490,7 +1556,7 @@ in [Troubleshooting](https://jmrp.io/docs/mikroscope/reference/troubleshooting/#
 ### The conntrack count
 
 `--conntrack-every 10s` asks `/ip/firewall/connection/print count-only` at that
-cadence: 1.3 ms at 6 212 entries on the RB5009 (date not recorded). It is off by default because it
+cadence: 1.3 ms at 6 212 entries on the RB5009 (about 2026-09-11, a day before the slab reading; not recorded more precisely), a single reading with no spread. It is off by default because it
 is a table scan over an API session, and under `privileged=yes` the agent's
 `nf_conntrack` slab count is the same population read from a file at the sampler's rate.
 The two do not match exactly — they are sampled at different instants, and the slab
@@ -1498,10 +1564,14 @@ counts objects the allocator still holds — but they track: the API said 6 21
 
 > **Not measured, so not claimed**
 >
-> The API tier has run against one RouterOS version, 7.24.2, on one board. Which loss keys and which
-> counters another version or another board returns is that router's statement to make; the sinks
-> carry whatever comes back and nothing else. Nor does the correlation above say whether RouterOS
-> computes `cpu-load`'s one-second window on a wall clock or on jiffies.
+> The API tier has run on one board, the reference RB5009. The inventory and loss-key figures and
+> the 60 s cost profile above were measured on RouterOS 7.24.2 (2026-09-15 and 16). The
+> reconnection test and the 16-interface A/B ran on 2026-09-19, the day of a RouterOS upgrade;
+> since then the tier has run continuously on the upgraded router, now on 7.24.4, and none of the
+> 7.24.2 figures has been re-measured there. Which loss keys and which counters another version or
+> another board returns is that router's statement to make; the sinks carry whatever comes back
+> and nothing else. Nor does the correlation above say whether RouterOS computes `cpu-load`'s
+> one-second window on a wall clock or on jiffies.
 
 ### See also
 
@@ -1665,13 +1735,26 @@ noise.
 | Sink                            | Beside kernel samples                                                                           | Beside counter polls                                      |
 | ------------------------------- | ----------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
 | InfluxDB, Telegraf, stdout `lp` | `mikroscope_derived`: `mem_pressure`, `burst`, `suspect`, and the ratios that could be computed | `mikroscope_derived_iface{interface}`                     |
-| SQL                             | `mikroscope_derived`, ratios NULL where not computed                                            | `mikroscope_derived_iface`                                |
+| SQL (`--sql`, `--postgres`)     | `mikroscope_derived`, ratios NULL where not computed                                            | `mikroscope_derived_iface`                                |
 | file, stdout `json`             | a `{"derived":…}` line after its sample                                                         | not written; the raw counters are in the `{"api":…}` line |
 | Prometheus                      | `mikroscope_derived_*` gauges for the newest sample; `mikroscope_collector_bursts_total`        | `mikroscope_derived_fastpath_share{interface,direction}`  |
 | OTLP                            | `mikroscope.derived.*` gauges                                                                   | `mikroscope.derived.fastpath_share{interface,direction}`  |
 | Graphite                        | `derived.*` paths                                                                               | `api.iface.<if>.fp_rx_share`, `fp_tx_share`               |
 | Elasticsearch                   | `derived` on the kernel document                                                                | `fastpath` on the API document                            |
 | Loki                            | —                                                                                               | —                                                         |
+
+Three sinks spell the kernel-side names their own way, and carry less. Prometheus writes
+`mikroscope_derived_memory_pressure`, `mikroscope_derived_cycles_per_packet`,
+`mikroscope_derived_instructions_per_packet`, `mikroscope_derived_cache_misses_per_packet`
+and `mikroscope_derived_packets_per_interrupt` for the newest sample; `burst` reaches it
+only as the counter `mikroscope_collector_bursts_total`, and `suspect` not at all. OTLP
+writes `mikroscope.derived.memory_pressure`, `mikroscope.derived.cycles_per_packet`,
+`mikroscope.derived.instructions_per_packet`, `mikroscope.derived.cache_misses_per_packet`
+and `mikroscope.derived.packets_per_irq`. Graphite writes `derived.mem_pressure`,
+`derived.cycles_per_packet`, `derived.instructions_per_packet`,
+`derived.cache_misses_per_packet` and `derived.packets_per_irq`. Neither OTLP nor Graphite
+carries `burst` or `suspect`. In all three, a ratio that could not be computed is left out
+rather than written as 0.
 
 > **Not measured, so not claimed**
 >
@@ -1725,7 +1808,7 @@ restarts starts every trailing window, bin and previous value from nothing.
 | Sink                            | Form                                                                                 |
 | ------------------------------- | ------------------------------------------------------------------------------------ |
 | InfluxDB, Telegraf, stdout `lp` | `mikroscope_detection{rule,key}` with `value`, `threshold`, `seq`, `message`         |
-| SQL                             | a `mikroscope_detection` row                                                         |
+| SQL (`--sql`, `--postgres`)     | a `mikroscope_detection` row                                                         |
 | file, stdout `json`             | a `{"detection":…}` line                                                             |
 | Prometheus                      | `mikroscope_collector_detections_total{rule}`, every rule at 0 from the first scrape |
 | Loki                            | a line in the `source="detection"`, `level="warn"` stream                            |
@@ -1781,9 +1864,13 @@ outside.
 > day. Since 1.0.4 `resync` rewinds the cursor to the new ring's oldest sample on the next health
 > read, one minute at most, and logs `agent restarted: its newest sample is N and the cursor was M;
 > resuming from 1`. The new agent's low sequence against the stage's previous one is exactly what
-> this rule matches, so it fires. `TestResyncAfterAgentRestart` covers the collector side, and the
-> reference RB5009 exercised it for real on 2026-09-19: the router rebooted at 00:43:30 and the
-> kernel tier resumed at 00:45:03.
+> this rule matches, so it fires. `TestResyncAfterAgentRestart` covers the collector side. The
+> reference RB5009 exercised the resync for real on 2026-09-19, when a RouterOS upgrade rebooted the
+> router at 00:43:30 CEST (22:43:30 UTC the day before) and the kernel tier resumed at 00:45:03.
+> Whether a `mikroscope_detection` row for `agent-restart` was written then was not checked, and the
+> store that would hold it was replaced later that day: the current one starts at 11:13 UTC. That
+> store holds one `agent-restart` row, at 08:08:54 UTC on 2026-09-24, `value` 1 against `threshold`
+> 4 338 037, when the agent was upgraded to 1.2.0.
 
 **May not claim** why the agent restarted. A collector restarted at the same time has no
 previous sequence number and sees nothing.
@@ -1861,7 +1948,11 @@ names](https://jmrp.io/docs/mikroscope/reference/port-names/).
 
 **May not claim** a fault. A cable pulled and reseated within a minute is a down and an up
 record, and fires. No provoked flap has been captured with this rule running; the flaps
-measured for the port table on 2026-09-15 were not.
+measured for the port table on 2026-09-15 were not. Unprovoked ones were: between
+2026-09-19 11:13 UTC and 2026-09-24 08:26 UTC the reference deployment's store holds 11
+`link-flap` rows, on `ether1`, `ether2`, `ether4`, `ether6` and `ether7`, each at 2 to 6
+link records in 60 s. Which of them was a cable, a device at the other end or something
+else was not checked.
 
 #### `conntrack-cliff`
 
@@ -1928,14 +2019,32 @@ history holds up to sixty.
 separates a memory-stall regime from a core going quiet, and the rule is per core, never
 across cores.
 
+### Doctor's checks are not these rules
+
+Since 1.2.0 standalone `doctor` reads the running agent's ring and runs four checks of its
+own: `layer2-loop`, `stp-churn`, `link-flap` and `softnet-drops`, described in [what the
+running agent shows](https://jmrp.io/docs/mikroscope/install/prerequisites/#what-the-running-agent-shows). They
+are not detections: they run once, when `doctor` asks, over whatever the ring holds, 60 s
+by default, and write nothing to a sink.
+
+One name is shared and the rule is not. `doctor`'s `link-flap` counts link-downs only, two
+or more on one port anywhere in the ring; the detection counts link-ups and link-downs
+together, two or more within 60 s, so a cable pulled and reseated once fires the detection
+and not the check. A layer-2 loop is none of the eleven rules: `doctor`'s `layer2-loop`
+names it in the ring, and over history the `mikroscope-l2-loop` [alert
+rule](https://jmrp.io/docs/mikroscope/dashboards/alerts/) watches the store for it.
+
 > **Deliberately not provoked**
 >
-> Of the eleven rules, only `microburst` has a recorded behaviour on the reference device. The
-> others are exercised by the derive stage's unit tests against constructed samples. None of an OOM
-> kill inside the container, a reboot, a link flap, a conntrack flush or storm, a thermal excursion
-> or an IPC collapse has been provoked on the RB5009 with these rules running: it is the owner's
-> production router, reboots wait for a maintenance window, and a provoked conntrack storm risks
-> locking out the path being worked through.
+> Of the eleven rules, four have fired on the reference device, counted in its store between
+> 2026-09-19 11:13 UTC and 2026-09-24 08:26 UTC: `microburst` 116 times, `ipc-collapse` 41 (on all
+> four cores), `link-flap` 11 and `agent-restart` once. Only `microburst` has had its behaviour
+> measured against the samples; the other three rows were counted, not checked against what the
+> router was doing. The remaining seven are exercised only by the derive stage's unit tests
+> against constructed samples. None of an OOM kill inside the container, a reboot, a link flap, a
+> conntrack flush or storm, a thermal excursion or an IPC collapse has been provoked on the RB5009
+> with these rules running: it is the owner's production router, reboots wait for a maintenance
+> window, and a provoked conntrack storm risks locking out the path being worked through.
 
 ### See also
 

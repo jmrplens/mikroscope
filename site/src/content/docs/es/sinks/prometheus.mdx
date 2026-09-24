@@ -26,11 +26,10 @@ API de RouterOS, los valores de la etapa de derivación, sus contadores de detec
 de huecos, y las familias de datos del equipo que salen de las `/capabilities` del agente.
 
 <Aside type="caution" title="Dimensionado para 10 Hz, vaya el agente a lo que vaya">
-	El colector dimensiona su histograma `mikroscope_cpu_busy_ticks` y su anillo de muestras a partir
-	de 10 Hz fijos, no del agente conectado, para que la disposición de los buckets no cambie cuando
-	se reconecta a un agente configurado de otra forma. Leído del código, no medido, la misma
-	constante fija más cosas, y frente a un agente por encima de 10 Hz cada una se desvía en la razón
-	de cadencias. El anillo que hay detrás de las ventanas móviles sí sigue al agente: el colector lee
+	El colector dimensiona su histograma `mikroscope_cpu_busy_ticks` a partir de 10 Hz fijos, no del
+	agente conectado, para que la disposición de los buckets no cambie cuando se reconecta a un agente
+	configurado de otra forma. Leído del código, no medido, la misma constante fija más cosas, y
+	frente a un agente por encima de 10 Hz cada una se desvía en la razón de cadencias. El anillo que hay detrás de las ventanas móviles sí sigue al agente: el colector lee
 	la cadencia de su comprobación de salud y dimensiona el anillo a 60 s de ella, así que
 	`window="60s"` abarca un minuto a cualquier cadencia. La media móvil de softnet que hay detrás de
 	`mikroscope_softnet_burst_samples_total` no: su peso es 1/600, una memoria de 60 s a 10 Hz y menos
@@ -68,7 +67,7 @@ No queda nada que contar dos veces, ni lista de `keep` que mantener.
 | `mikroscope_tick_interval_seconds`, `_wake_latency_`, `_read_`     | plegadas desde `dt_ns`, `wake_ns` y `read_ns` de cada muestra             |
 | `mikroscope_slipped_total`, `mikroscope_sampler_ticks_total`       | el `/sampler` del agente, leído cada minuto                               |
 | `mikroscope_trigger_fired_total`, `_suppressed_total`              | lo mismo, una serie por condición configurada, presente a 0               |
-| `mikroscope_captures_held`, `_capture_bytes`, `_budget_bytes`      | lo mismo: lo que el agente retiene ahora mismo                            |
+| `mikroscope_captures_held`, `mikroscope_capture_bytes`, `mikroscope_capture_budget_bytes`, `mikroscope_capture_bytes_served_total`, `mikroscope_capture_refused_total{reason}` | lo mismo: lo que el agente retiene, ha servido y ha rechazado |
 | `mikroscope_api_*`, `mikroscope_derived_*`, `_collector_*`         | lo propio del colector: el tier de API, la derivación, sus contadores     |
 
 Lo único que cambió de significado: estas cifras son ahora tan frescas como la cadencia
@@ -170,8 +169,10 @@ otro — en el RB5009 de referencia (RouterOS 7.24.2, 2026-09-16) ether1 recibi�
 en el cable y entregó 29,7 GB a la CPU — así que no sumes un puerto y su bridge.
 
 `mikroscope_api_interface_counter_total` tiene una serie por puerto y contador que el
-router informa: 9 puertos × unos 60 contadores en el RB5009 de referencia. Un contador que
-un puerto no informa no tiene serie, y una tasa de pérdidas que el router no devolvió no
+router informa: 9 puertos × 45 contadores en el RB5009 de referencia, y 15 en cada interfaz
+bridge, VLAN, PPPoE, WireGuard, veth o loopback, contados en las propias filas
+`mikroscope_api_ifcounters` del colector el 2026-09-24; la versión de RouterOS no se leyó
+con ellas. Un contador que un puerto no informa no tiene serie, y una tasa de pérdidas que el router no devolvió no
 tiene `kind`. Las claves que se leen como enteros pero no cuentan nada — `mtu`,
 `actual-mtu`, `l2mtu`, `max-l2mtu`, `sfp-shutdown-temperature` — son tamaños y
 configuración y no tienen serie de contador; el MTU forma parte del inventario. En el

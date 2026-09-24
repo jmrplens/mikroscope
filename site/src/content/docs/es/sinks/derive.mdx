@@ -168,7 +168,7 @@ lectura del colector y conserva ese ruido.
 | Destino                         | Junto a las muestras del kernel                                                                    | Junto a las lecturas de contadores                                   |
 | ------------------------------- | -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
 | InfluxDB, Telegraf, stdout `lp` | `mikroscope_derived`: `mem_pressure`, `burst`, `suspect`, y los cocientes que se pudieron calcular | `mikroscope_derived_iface{interface}`                                |
-| SQL                             | `mikroscope_derived`, cocientes NULL donde no se calcularon                                        | `mikroscope_derived_iface`                                           |
+| SQL (`--sql`, `--postgres`)     | `mikroscope_derived`, cocientes NULL donde no se calcularon                                        | `mikroscope_derived_iface`                                           |
 | file, stdout `json`             | una línea `{"derived":…}` tras su muestra                                                          | no se escribe; los contadores en bruto están en la línea `{"api":…}` |
 | Prometheus                      | gauges `mikroscope_derived_*` de la muestra más reciente; `mikroscope_collector_bursts_total`      | `mikroscope_derived_fastpath_share{interface,direction}`             |
 | OTLP                            | gauges `mikroscope.derived.*`                                                                      | `mikroscope.derived.fastpath_share{interface,direction}`             |
@@ -177,6 +177,19 @@ lectura del colector y conserva ese ruido.
 | Loki                            | —                                                                                                  | —                                                                    |
 
 </ScrollTable>
+
+Tres destinos escriben los nombres del lado del kernel a su manera, y llevan menos.
+Prometheus escribe `mikroscope_derived_memory_pressure`, `mikroscope_derived_cycles_per_packet`,
+`mikroscope_derived_instructions_per_packet`, `mikroscope_derived_cache_misses_per_packet`
+y `mikroscope_derived_packets_per_interrupt` de la muestra más reciente; `burst` solo le
+llega como el contador `mikroscope_collector_bursts_total`, y `suspect` no le llega. OTLP
+escribe `mikroscope.derived.memory_pressure`, `mikroscope.derived.cycles_per_packet`,
+`mikroscope.derived.instructions_per_packet`, `mikroscope.derived.cache_misses_per_packet`
+y `mikroscope.derived.packets_per_irq`. Graphite escribe `derived.mem_pressure`,
+`derived.cycles_per_packet`, `derived.instructions_per_packet`,
+`derived.cache_misses_per_packet` y `derived.packets_per_irq`. Ni OTLP ni Graphite llevan
+`burst` ni `suspect`. En los tres, un cociente que no se pudo calcular se omite en vez de
+escribirse como 0.
 
 <NotClaimed>
 	No consta ninguna comparación del coste de PMU por paquete entre dos configuraciones del router en

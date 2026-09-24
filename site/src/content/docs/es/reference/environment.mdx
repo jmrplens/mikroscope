@@ -64,7 +64,9 @@ opciones](/mikroscope/es/reference/cli/) tiene todas las opciones.
 
 `MIKROSCOPE_TOKEN` es dos cosas a la vez. Para `install` es el token que se
 escribe en la envlist del agente, y que el agente pasa entonces a exigir. Para
-`record` y `forward` es el token que envía el transporte directo. La envlist no
+`record`, `forward` y la sección de salud de `doctor` es el token que se envía
+al agente por el transporte directo; sin él, `doctor` se salta el anillo de un
+agente que lo tenga. La envlist no
 es un almacén de secretos: cualquier usuario de RouterOS con la política `read`
 puede listar la envlist de todos los contenedores por la API (verificado
 en <Verified of="read-user-envlist" />), y por eso el token es la única credencial que va ahí.
@@ -199,9 +201,13 @@ Antes de escuchar, el agente compara el anillo con el propio `memory.max` del
 contenedor: `RATE_HZ × BUFFER_S × 3 456 B` más `CAPTURE_MB` tiene que caber, o
 se niega a arrancar y nombra las tres variables y `--memory-max`. Si esa cifra
 supera la mitad de `MEM_LIMIT_MB`, arranca y registra un aviso con el límite al
-que subir. 2 560 B no es una medida en sí: es la línea media medida en el
-RB5009 con todas las fuentes de esa fecha (<Measured id="ring.lineBytes" />, 4 núcleos, `IRQ_TOP_K` 8,
-RouterOS 7.24.2, 2026-09-12) redondeada hacia arriba. Una placa con más núcleos
+que subir. 3 456 B no es una medida en sí: es la clase de tamaño del asignador
+de Go que sirve la línea medida en el RB5009 con todas las fuentes activas
+(<Measured id="ring.lineBytes" />, 4 núcleos, `IRQ_TOP_K` 8, RouterOS 7.24.2, 2026-09-17), porque es
+esa clase lo que se le carga al heap. Los 2 560 B usados antes de la 1.0.5
+salían de una línea de 2 439 B medida el 2026-09-12, antes de que llevara la PMU
+y los tiempos del propio muestreador, y se quedaban un 35 % cortos con el
+anillo. Una placa con más núcleos
 o más líneas de interrupción escribe líneas más largas, así que la comprobación
 peca de permisiva. Cuando el agente no puede leer su `memory.max`, la
 comprobación que lo niega no se ejecuta.
@@ -238,9 +244,13 @@ una:
 | límite        | múltiplo del anillo | RSS       | CPU por muestra | |
 | ------------- | ------------------- | --------- | --------------- | ------------------------- |
 | 40 MiB        | 4,0×                | 32,9 MiB  | 2 657 µs        | el límite nunca aprieta   |
-| 25 MiB (hoy)  | 2,5×                | ~26 MiB   | ~2 780 µs       | sin coste medible         |
+| 25 MiB (el factor 2,5× a 300 s) | 2,5×                | ~26 MiB   | ~2 780 µs       | sin coste medible         |
 | 21 MiB        | 2,1×                | 23,5 MiB  | 3 250 µs        | +22 %, y subiendo         |
 | 18 MiB        | 1,8×                | 20,4 MiB  | 14 800 µs       | +457 %, peor tick 52 ms   |
+
+La fila de 25 MiB es aproximada. El comentario de `memLimitRingFactor` en
+`internal/router/options.go` registra esa ventana como 24 MiB (2,4×), con 26,3 MiB de RSS y
+2 780 µs por muestra, y ninguna de las cuatro ventanas se anotó con su dispersión.
 
 El mismo acantilado se midió desde el otro lado el 2026-09-12: <Measured id="gc.tight.cpu" /> de un núcleo con 14 MiB frente a <Measured id="gc.roomy.cpu" /> con margen, ambos con el anillo lleno. `IRQ_TOP_K`,
 `CAPTURE_PRE_S`, `CAPTURE_POST_S`, `CAPTURE_POLICY`, `TRIGGER_REFRACTORY_S`, `SOURCES`, `PROC_ROOT`

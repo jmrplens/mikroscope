@@ -64,8 +64,12 @@ order of interest:
   the numbers they exist to serve to whoever can reach them. Bind them to an
   address only your collector or Prometheus reaches, or set a token.
 - What `--expose` opens, as documented: a tagged dst-nat rule and a tagged
-  forward accept that make the agent reachable on the router's LAN address,
-  with a token required.
+  forward accept that make the agent reachable on the router's LAN address.
+  `install --expose` requires a token, but an `upgrade` of that install without
+  `--token` keeps the dst-nat and drops the token. `mikroscope doctor` warns
+  about that state (`WARN … token=unset`), and it is a configuration, not a
+  vulnerability. A way to reach it without an explicit upgrade is worth
+  reporting.
 - The cost of observing: the agent uses CPU and memory on the router, measured
   and published in [docs/limits.md](docs/limits.md), and a rate or buffer set
   higher than a board can afford is a configuration, not an attack.

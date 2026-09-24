@@ -36,7 +36,7 @@ them; the notes say which verb acts on it.
 | `--for`         | `0`                                        | `record`: stop after this long. `0` records until Ctrl-C.                                                                                               |
 | `--from-start`  | off                                        | `record`: backfill everything the agent's ring holds before going live.                                                                                 |
 | `--poll`        | `500ms`                                    | How often to pull the agent's ring.                                                                                                                     |
-| `--batch`       | `0`                                        | Samples per pull. `0` is twice what one `--poll` interval produces at the agent's rate, at least 20; the relay caps a pull at 18.                       |
+| `--batch`       | `0`                                        | Samples per pull. `0` is twice what one `--poll` interval produces at the agent's rate, at least 20; the relay caps a pull at <Measured id="relay.maxBatch" />. |
 | `--transport`   | `auto`                                     | `auto`, `direct` (HTTP to the veth) or `relay` (`/tool fetch` over the RouterOS API).                                                                   |
 | `--log-markers` | off                                        | `record`: adds the router log lines of the window once the recording stops. `mark`: adds the log lines of the recording's window.                       |
 | `--topics`      | `system,interface,container`               | Log topics kept as markers; add `firewall` or `script` when their lines are the story.                                                                  |
@@ -99,9 +99,11 @@ and fail rather than fall back.
 	at <Measured id="ring.lineBytes" /> on the RB5009 (RouterOS 7.24.2, 2026-09-17) and the budget charges
 	the allocator size class above it. A full pull of such lines is about 45 kB. A full pull whose
 	lines average more than 134 % of that would still reach the limit and be refused, and how long
-	lines run at today's default per-source floors was not measured. At <Measured id="relay.maxBatch" />
-	samples a pull and the default 500 ms `--poll` the relay carries 26 samples a second; above that,
-	use the direct path.
+	lines run at today's default per-source floors was not measured. A pull carries at
+	most <Measured id="relay.maxBatch" /> samples, and a full one is asked again at once, so the relay's
+	throughput is set by the fetch round trip rather than by `--poll`. By arithmetic, not measured: at
+	about 1 s for half the calls and about 3 ms for the rest, that is on the order of 26 samples a
+	second, less when the slow calls cluster. Above that, use the direct path.
 </Aside>
 
 [Reaching the agent](/mikroscope/install/reaching-the-agent/) covers which path a
@@ -254,7 +256,9 @@ time axis, in seconds since the recording started:
 Every marker is a dashed vertical line across all three panels, grey for notes and
 log lines and red for gaps, with a label chip above the first panel. Chips are
 laid out in up to six rows to keep them apart; a label longer than 40
-characters is shortened. Consecutive log markers, in time order, that fall in the same second
+characters is shortened. When no row has room, the label is shortened further until one does, and
+a chip that would fall under 12 characters is dropped: its dashed line still marks the instant, but
+its text is not drawn. Consecutive log markers, in time order, that fall in the same second
 are folded into one chip, `<count>× <topics>: <first message>`, so a chatty
 scheduler does not bury the chart; a note or gap between them breaks the fold,
 and notes and gaps are never folded. Markers outside the recording's time span

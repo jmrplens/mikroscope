@@ -243,7 +243,7 @@ export const en: HomeContent = {
 		steps: [
 			{
 				cmd: CMD.doctor,
-				note: "Read-only preflight; names the fix for anything missing.",
+				note: "Read-only preflight that names the fix for anything missing, then what the running agent's ring shows: a layer-2 loop, STP churn, a link flap or softnet drops.",
 			},
 			{ cmd: CMD.plan, note: "Every RouterOS command, nothing written." },
 			{
@@ -256,7 +256,7 @@ export const en: HomeContent = {
 	},
 	notClaimed: {
 		title: "What is not claimed",
-		body: `Any rate on a board that is not this RB5009, and any traffic load heavier than this router's ordinary traffic, about ${q("load.ordinary", "en")} on the WAN. Cost scales with core speed, source set and ring size: measure it on your own device before you budget for it. The project has run on one device, an RB5009UG+S+ on RouterOS ${RB5009.routeros}, arm64; the arm and x86_64 builds are cross-built and checked in CI and have never run on hardware, and seven of the ten sinks are exercised only against fakes.`,
+		body: `Any rate on a board that is not this RB5009, and any traffic load heavier than this router's ordinary traffic, about ${q("load.ordinary", "en")} on the WAN. Cost scales with core speed, source set and ring size: measure it on your own device before you budget for it. The project has run on one device, an RB5009UG+S+ on RouterOS ${RB5009.routeros} and later ${campaigns["stream-2026-09-21"].routeros}, arm64; the arm and x86_64 builds are cross-built and checked in CI and have never run on hardware, and eight of the eleven sinks have not yet had router samples through them: the suite writes into each one's real product in containers, the SQL script loaded into PostgreSQL and stdout read locally, and reads it back, off the device.`,
 	},
 	next: {
 		title: "Where to go next",
@@ -279,7 +279,7 @@ export const en: HomeContent = {
 			{
 				text: "The collector",
 				href: "/mikroscope/sinks/",
-				note: "Pull, merge, derive, fan out to ten sinks, and why a slow one never stops the loop",
+				note: "Pull, merge, derive, fan out to eleven sinks, and why a slow one never stops the loop",
 			},
 			{
 				text: "How to read what it shows",
@@ -357,7 +357,7 @@ export const es: HomeContent = {
 		steps: [
 			{
 				cmd: CMD.doctor,
-				note: "Comprobación de solo lectura; nombra el arreglo de lo que falte.",
+				note: "Comprobación de solo lectura que nombra el arreglo de lo que falte, y luego lo que muestra el anillo del agente en marcha: un bucle de capa 2, churn de STP, un link flap o descartes de softnet.",
 			},
 			{ cmd: CMD.plan, note: "Cada orden de RouterOS, sin escribir nada." },
 			{
@@ -370,7 +370,7 @@ export const es: HomeContent = {
 	},
 	notClaimed: {
 		title: "Lo que no se afirma",
-		body: `Cualquier cadencia en una placa que no sea este RB5009, y cualquier carga de tráfico mayor que el tráfico corriente de este router, unos ${q("load.ordinary", "es")} en la WAN. El coste depende de la velocidad del núcleo, del conjunto de fuentes y del tamaño del anillo: mídelo en tu propio equipo antes de presupuestarlo. El proyecto ha corrido en un equipo, un RB5009UG+S+ con RouterOS ${RB5009.routeros}, arm64; las compilaciones para arm y x86_64 son cruzadas y pasan por CI, pero no han corrido nunca en hardware, y siete de los diez destinos solo se ejercitan contra dobles.`,
+		body: `Cualquier cadencia en una placa que no sea este RB5009, y cualquier carga de tráfico mayor que el tráfico corriente de este router, unos ${q("load.ordinary", "es")} en la WAN. El coste depende de la velocidad del núcleo, del conjunto de fuentes y del tamaño del anillo: mídelo en tu propio equipo antes de presupuestarlo. El proyecto ha corrido en un equipo, un RB5009UG+S+ con RouterOS ${RB5009.routeros} y después ${campaigns["stream-2026-09-21"].routeros}, arm64; las compilaciones para arm y x86_64 son cruzadas y pasan por CI, pero no han corrido nunca en hardware, y ocho de los once destinos aún no han recibido muestras del router: la batería escribe en el producto real de cada uno en contenedores, con el script SQL cargado en PostgreSQL y stdout leído en local, y lo relee, fuera del equipo.`,
 	},
 	next: {
 		title: "Por dónde seguir",
@@ -393,7 +393,7 @@ export const es: HomeContent = {
 			{
 				text: "El colector",
 				href: "/mikroscope/es/sinks/",
-				note: "Extraer, fusionar, derivar, repartir a diez destinos, y por qué uno lento nunca para el bucle",
+				note: "Extraer, fusionar, derivar, repartir a once destinos, y por qué uno lento nunca para el bucle",
 			},
 			{
 				text: "Cómo leer lo que muestra",

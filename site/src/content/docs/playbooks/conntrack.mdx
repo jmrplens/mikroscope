@@ -49,15 +49,16 @@ measured changing at. It is stored on change, plus a heartbeat once every 60 s.
 Cross-check it against the API once, so you trust it thereafter:
 
 ```text
-/ip/firewall/connection/print count-only     # 6 212 the day before; slab said 6 287
+/ip/firewall/connection/print count-only     # 6 212, about a day before the slab readings (date not recorded)
 ```
 
-Two slab readings that day were recorded against it, 6 582 and <Measured id="conntrack.slab" />; the
-snippet above is a third moment (6 240).
+The slab readings on 2026-09-12 were 6 582 and <Measured id="conntrack.slab" />, and the snippet
+above caught a third moment, 6 240. A day apart, these show the same order of magnitude, not that
+the two track: on your own device, run the count and read the slab in the same minute.
 
-The two will not match exactly — they are sampled at different instants, and the
-slab counts objects the allocator still holds — but they track. The difference in
-cost is the point: a file read several times a second versus a table scan over
+The two will not match exactly even then — they are sampled at different instants,
+and the slab counts objects the allocator still holds. The difference in cost is
+the point: a file read several times a second versus a table scan over
 an API session.
 
 ## The ceiling is readable too
@@ -75,7 +76,9 @@ not a counter, and ships it beside the population it bounds:
 The collector runs two detections on the population and its ceiling:
 `conntrack-cliff`, when `nf_conntrack` falls below half its previous stored value,
 and `conntrack-high`, when occupancy is above 80 % of `nf_conntrack_max` **and**
-rising over the last 60 s, with no time-to-full attached.
+rising over the last 60 s, with no time-to-full attached. The
+`mikroscope-conntrack-near-limit` alert rule watches the same ratio in the store
+and fires after five minutes above 80 %.
 
 The same subtree has a trap. The conntrack _timeouts_ there read Linux defaults
 (`tcp_timeout_established` 432 000 s, against RouterOS's `1d`; read 2026-09-14),
@@ -107,8 +110,8 @@ They are worth watching for their own sake:
 <NotClaimed variant="not-provoked">
 	A conntrack storm. Generating thousands of connections against a production router risks tripping
 	its own firewall or a CrowdSec-style bouncer and locking out the very path you are working
-	through. The cross-check above gives the same confidence in the counter without that risk, but
-	what a storm looks like in these caches was not observed.
+	through. The cross-check above ties the counter to the API's count without that risk, to the
+	same order of magnitude, but what a storm looks like in these caches was not observed.
 </NotClaimed>
 
 <SeeAlso>
@@ -120,5 +123,7 @@ They are worth watching for their own sake:
 - [What privileged buys](/mikroscope/limits/privileged/): the root-only files, `/proc/slabinfo` among
   them.
 - [Detections](/mikroscope/sinks/detections/): `conntrack-cliff` and `conntrack-high` in full.
+- [Alert rules](/mikroscope/dashboards/alerts/): `mikroscope-conntrack-near-limit`, the rule that
+  pages on the same ratio.
 
 </SeeAlso>

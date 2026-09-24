@@ -43,10 +43,11 @@ deltas the agent ships; the agent never turns them into percentages.
 
 ## The background squeeze and the burst flag
 
-The squeeze floor was measured again on 2026-09-15, on the same device, over
-3 738 704 per-CPU samples in 24 h: about <Measured id="squeeze.backgroundOne" /> of samples carry one squeeze as background, and 2 %
-carry two or more. Measured on this router that day: a rule that flags any
-squeeze fires 92 times in twenty minutes, and means nothing.
+The squeeze floor was measured again in the 24 h to 2026-09-16 07:00 UTC, on
+the same device, over 3 738 704 per-CPU samples: about <Measured id="squeeze.backgroundOne" /> of
+samples carry one squeeze as background, <Measured id="squeeze.backgroundTwo" /> exactly two,
+and <Measured id="squeeze.atLeastThree" /> exactly three. Measured on this router on 2026-09-15: a rule
+that flags any squeeze fires 92 times in twenty minutes, and means nothing.
 
 So the collector's `burst` flag is a deviation from the device's own norm: a
 dropped packet, or more squeezes than that CPU usually has (above its trailing

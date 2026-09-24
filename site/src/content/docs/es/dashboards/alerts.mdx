@@ -36,6 +36,18 @@ forma en SQL. El contador sí llega a InfluxDB desde 1.0.5 —el colector lo lee
 agente y escribe `mikroscope_sampler.slipped`—, así que la regla se podría escribir; no se ha
 escrito.
 
+El fichero de PostgreSQL se traduce del de InfluxDB, y además deja fuera las reglas que el esquema
+SQL no puede responder con la misma forma. `mikroscope-l2-loop` y `mikroscope-port-link-down` suman
+un recuento por muestra de registros de puerto del kernel, y el destino SQL escribe en su lugar una
+fila por registro del kernel, en `mikroscope_event`. `mikroscope-port-errors` nombra una
+columna por contador del MAC, y el destino SQL escribe `mikroscope_api_ifcounter` con una fila por
+contador. La traducción las descarta en vez de escribir una consulta que parece correcta y responde
+a otra cosa. No descarta `mikroscope-bridge-port-dark`, que tiene el mismo problema: su forma de
+PostgreSQL está en el fichero pero lee `rx_packet`, `tx_unicast`, `tx_broadcast` y `bridge` como
+columnas de `mikroscope_api_ifcounter`, que no tiene ninguna de ellas, así que la consulta no puede
+ejecutarse sobre ese esquema y se aplica el `execErrState: Error` de la regla. Es un defecto del
+generador, todavía sin corregir; tampoco se ha ejecutado contra un PostgreSQL real.
+
 Cada fichero es `apiVersion: 1` con un grupo de reglas, `mikroscope`, en una carpeta llamada
 `mikroscope`, organización 1, evaluado cada minuto. Las reglas se aprovisionan en vez de ir dentro de
 los dashboards, así que un operador que no quiera ninguna no copia nada.
@@ -59,8 +71,10 @@ Todas las reglas tienen la misma forma, la que escribe el propio editor de regla
 
 1. **A** — la consulta, contra tu fuente de datos, con un rango de tiempo relativo de los últimos
    600 s. Toda consulta SQL y toda consulta de Prometheus sobre un contador acota además su propia
-   ventana (2 minutos, 5 minutos o 1 hora, más abajo); las dos reglas de Prometheus sobre gauges, la
-   térmica y la de conntrack, leen el último valor.
+   ventana (1, 2, 5 o 10 minutos, o 1 hora, más abajo; la regla de despertares lee además las 24
+   horas anteriores a sus 10 minutos, diga lo que diga el rango de 600 s de A); las dos reglas de
+   Prometheus sobre gauges, la térmica y la de conntrack, leen el último valor, y la de la cola de
+   salida toma el máximo de su gauge en el último minuto.
 2. **B** — reduce A a un número por serie con `last`, descartando los valores no numéricos.
 3. **C** — compara B con el umbral. C es la condición de la regla.
 
@@ -72,13 +86,12 @@ falla es comportamiento de Grafana, descrito en su propia documentación, y aqu�
 
 <AlertRules show="table" />
 
-La forma de InfluxDB de `mikroscope-conntrack-near-limit` está rota; la nota de lo no probado, al
-final de esta página, explica por qué. "Sin datos significa" es el `noDataState` de la regla. La regla del agente en silencio es la única en
+"Sin datos significa" es el `noDataState` de la regla. La regla del agente en silencio es la única en
 la que el silencio es el fallo, así que la ausencia de datos la hace saltar; para todas las demás, no
 tener datos es la lectura sana.
 
-El título de cada regla, en inglés como aparece en Grafana, y debajo una traducción de su anotación
-`summary` (el texto generado está en inglés):
+El título de cada regla, en inglés como aparece en Grafana, y debajo una traducción abreviada de su
+anotación `summary` (el texto generado está en inglés):
 
 - **mikroscope agent stopped delivering samples.** No llegaron muestras nuevas al almacén en los
   últimos dos minutos: se paró el agente, se paró el colector o se cortó el camino entre ellos. Todas
@@ -123,7 +136,9 @@ El título de cada regla, en inglés como aparece en Grafana, y debajo una tradu
   tramas que no pudo aceptar. El más común en una LAN conmutada es rx-overflow, la FIFO de recepción
   llenándose más rápido de lo que el chip la drena, y es una firma de microrráfaga y no de carga. Los
   errores de FCS y las colisiones significan otra cosa: cableado, dúplex, un puerto muriéndose.
-  Necesita la capa de API: un contador del MAC no se ve desde dentro del contenedor.
+  Necesita la capa de API: un contador del MAC no se ve desde dentro del contenedor. No distingue un
+  error real de un reinicio del contador, así que un router que se reinicia dentro de la ventana la
+  dispara una vez.
 - **A bridge port is receiving but the bridge sends it nothing.** Un puerto miembro de un bridge ha
   recibido paquetes durante diez minutos mientras el bridge no le entregó ni una trama unicast ni una
   broadcast. Lo que hay detrás transmite y no recibe nada de vuelta: STP mantiene el puerto
@@ -135,12 +150,13 @@ El título de cada regla, en inglés como aparece en Grafana, y debajo una tradu
   `broadcast-flood=no` u `horizon`. Necesita la capa de API.
 - **The kernel is switching context four times as often as over its last day.** Algo empezó a
   despertarse muy a menudo: un proceso o un driver en espera activa, un cliente de monitorización,
-  un contenedor en un bucle cerrado. En el RB5009 de referencia fue una integración de Home
-  Assistant que consultaba el router por la API (2026-09-23): las interrupciones del temporizador
-  pasaron de unas 2 500 a unas 35 000 por segundo, en ráfagas de 20–90 s en un núcleo cada vez, y el
-  perfil del propio RouterOS apenas lo mostraba. Al desactivar la integración la tasa volvió en
-  30 s. Un cambio deliberado, como un contenedor nuevo o un conjunto de reglas más pesado, también
-  la dispara.
+  un contenedor en un bucle cerrado. Mira qué empezó cuando saltó (`/user/active`, contenedores
+  nuevos, una integración nueva) y la sección de interrupciones y softirqs. En el RB5009 de
+  referencia fue una integración de Home Assistant que consultaba el router por la API
+  (2026-09-23): las interrupciones del temporizador pasaron de unas 2 500 a unas 35 000 por segundo,
+  en ráfagas de 20–90 s en un núcleo cada vez, y el perfil del propio RouterOS apenas lo mostraba.
+  Al desactivar la integración la tasa volvió en 30 s. Un cambio deliberado, como un contenedor
+  nuevo o un conjunto de reglas más pesado, también la dispara.
 - **A port's egress queue has been dropping every minute for ten minutes.** La cola de salida de un
   puerto ha descartado paquetes en cada uno de los últimos diez minutos. A diferencia de las demás
   reglas de contador, el contador de esta **sí** debe moverse: descartar es como una cola llena le
@@ -156,7 +172,8 @@ El título de cada regla, en inglés como aparece en Grafana, y debajo una tradu
 
 <AlertRules show="queries" store="prometheus" />
 
-Las once leen el `/metrics` del colector, que desde 1.0.5 es la única exposición que hay —
+Las <DashboardCount store="prometheus" of="rules" /> leen el `/metrics` del colector, que desde
+1.0.5 es la única exposición que hay —
 [Importar y comprobar](/mikroscope/es/dashboards/import-and-check/#prometheus-un-trabajo-de-scrape)
 tiene el único trabajo de scrape. `mikroscope_slipped_total` está entre ellas y antes venía de un
 segundo trabajo contra el agente: el agente sigue siendo el dueño del ticker y lo único que puede
@@ -170,14 +187,23 @@ contador que vale 0 en un equipo sano es la misma alerta.
 <AlertRules show="queries" store="influxdb" />
 
 </TabItem>
+<TabItem label="PostgreSQL">
+
+<AlertRules show="queries" store="postgres" />
+
+</TabItem>
 </Tabs>
 
 ## De dónde salen los umbrales
 
 - **Cero, para un contador que no debería moverse.** Descartes de RX del kernel, OOM kills del
   kernel, detecciones, ticks perdidos por retraso, OOM kills del propio agente, fallos ECC no
-  corregibles y los registros de puerto del kernel cuyo `kind` es `own-address` o `link-down`. Un
-  equipo sano lee cero en cada uno.
+  corregibles, errores MAC tipificados en cualquier puerto y los registros de puerto del kernel cuyo
+  `kind` es `own-address` o `link-down`. Un equipo sano lee cero en cada uno.
+- **Cero puertos de bridge a oscuras, durante diez minutos.** `mikroscope-bridge-port-dark` cuenta
+  los puertos de bridge que recibieron paquetes mientras el bridge no les envió ni unicast ni
+  broadcast; en un bridge sano el recuento es 0, y el periodo de espera de 10 minutos es lo que
+  impide que un momento de calma la dispare.
 - **Una muestra, para el agente en silencio.** Menos de una muestra en dos minutos es ninguna, a
   cualquier cadencia configurada.
 - **Una proporción del propio disparo térmico de la placa.** El 85 % del punto de disparo crítico más
@@ -220,14 +246,22 @@ o por debajo. Consulta
 
 - **Qué proceso.** La regla de OOM dice que el kernel mató algo. Desde dentro del contenedor no hay
   espacio de nombres de PID que diga qué.
-- **Qué puerto.** Las dos consultas de sucesos de puerto suman sobre los puertos, así que una regla
-  que salta dice que hubo una firma de bucle o un link-down, no en qué cable. El puerto, su
-  comentario y sus listas de interfaces están en los dos paneles de sucesos de puerto de la sección
-  del registro del kernel.
+- **Qué puerto.** Toda regla de puerto se reduce a un número: las dos del registro del kernel y la
+  de errores MAC suman sobre los puertos, la de la cola de salida toma el máximo y la de puerto de
+  bridge a oscuras cuenta puertos. Así que una regla que salta dice que hubo una firma de bucle, un
+  link-down o un puerto a oscuras, no en qué cable. El puerto está en los dos paneles de sucesos de
+  puerto de la sección del registro del kernel, con su comentario y sus listas de interfaces, o en
+  la sección de tráfico por interfaz.
 - **Los puntos ciegos de un agente sin privilegios.** Las reglas de la tabla de conexiones y de ECC
   leen fuentes que necesitan un contenedor privilegiado. Sin él esas medidas nunca llegan al almacén,
   y en Prometheus una consulta sobre una métrica inexistente no devuelve datos — lo que estas reglas
   leen como OK.
+- **Un colector sin la capa de API.** Las reglas de errores de puerto, de puerto de bridge a
+  oscuras y de cola de salida leen contadores de RouterOS que solo consulta la capa de API. Con
+  `--api-mode off` nada de eso llega al almacén: en Prometheus las tres reglas no leen datos y en
+  PostgreSQL la de la cola de salida lee 0, y las dos cosas son OK (la de puerto a oscuras de
+  PostgreSQL falla de todos modos; véase [Los ficheros](#los-ficheros)). En un almacén InfluxDB que
+  nunca ha tenido esas tablas las consultas fallan y se aplica `execErrState: Error`.
 - **Nada mientras salta la regla del agente en silencio.** Todas las reglas leen el mismo flujo —
   incluida la de ticks perdidos por retraso, cuya única consulta va contra el colector, no contra el
   agente—, así que sin muestras llegando leen cero o ningún dato, y las dos cosas son OK.
@@ -236,9 +270,9 @@ o por debajo. Consulta
 
 El 2026-09-21 el fichero de aprovisionamiento de InfluxDB se cargó en Grafana
 13.2.1 contra el almacén InfluxDB 3 en producción y se observaron las doce
-reglas pasando por su propia evaluación. **Destapó dos defectos, los dos
-corregidos en esta versión**, y uno de ellos habría impedido que la mayoría de
-estas reglas saltaran nunca.
+reglas que tenía entonces pasando por su propia evaluación. **Destapó dos
+defectos, los dos corregidos en 1.1.0**, y uno de ellos habría impedido que la
+mayoría de estas reglas saltaran nunca.
 
 **`coalesce()` sobre un agregado sin signo no devuelve nada, y sin avisar.** El
 destino de InfluxDB escribe sus contadores sin signo, así que
@@ -251,9 +285,9 @@ estaban así, `mikroscope-l2-loop` entre ellas, *mientras corría la firma de
 bucle que existe para cazar*: el mismo SQL contra `/api/v3/query_sql` devolvía
 109 en ese momento. Ahora todos los `coalesce()` sobre un agregado llevan
 `::BIGINT`, y `TestCoalesceIsCastInAlertSQL` falla si una regla nueva se lo
-deja. Es el mismo fallo
-[que los paneles ya fijaban para `greatest()`](/mikroscope/es/dashboards/import-and-check/),
-y peor: un panel al menos falla a gritos con un 500.
+deja. Es el mismo fallo que el SQL de los paneles ya fija con un cast de
+`greatest()` a `BIGINT` (`internal/dashboards/panels.go`), y peor: un panel al
+menos falla a gritos con un 500.
 
 **La regla de conntrack nombraba una columna que ningún almacén InfluxDB
 tiene** —`limit_objs`, que es el nombre del destino SQL, mientras que el destino
@@ -261,15 +295,25 @@ de InfluxDB escribe el techo del slab como `limit`—. Esta misma página predij
 ese defecto antes de confirmarse; la regla lee ya `"limit"`, y la traducción a
 PostgreSQL lo vuelve a convertir en `limit_objs`.
 
-Después de eso las doce reglas devolvieron un valor, y `mikroscope-l2-loop` pasó
+Después de eso las doce reglas de entonces devolvieron un valor, y `mikroscope-l2-loop` pasó
 a **Alerting** a las 16:58:50Z con la firma `own-address` en vivo. La propia
 lista de instancias de Grafana para esa regla seguía llevando `Normal (NoData)`
 de las 16:56:50Z, de la ejecución anterior a la corrección: el defecto y su
 arreglo con dos minutos de diferencia en el mismo registro.
 
 <NotClaimed variant="untested" title="Lo que no se ha probado">
-	**Que una regla se resuelva.** La firma de bucle del equipo de referencia no ha parado, así que
-	no se ha visto a la regla que salta volver a Normal. **Las formas de Prometheus y de PostgreSQL**,
+	**Que una regla se resuelva.** El bucle del equipo de referencia terminó el 2026-09-23, pero no
+	se ha comprobado en el historial de estados de Grafana la vuelta de `mikroscope-l2-loop` a
+	Normal, así que el camino de resolución sigue sin observarse. **Las dos reglas añadidas en 1.2.0
+	dentro de Grafana.** `mikroscope-bridge-port-dark` y `mikroscope-wakeup-storm` no estaban en la
+	carga del 2026-09-21, y ningún Grafana ha evaluado ninguna de las dos desde entonces. Su SQL de
+	InfluxDB se ejecutó a mano contra el almacén de referencia: el de la regla de puerto a oscuras
+	devolvió 1 en tres ventanas dentro del bucle y 0 después, en un backtest del 2026-09-19 11:13 al
+	2026-09-23 22:44 UTC que solo marcó sfp-sfpplus1 y ether2; el de la regla de despertares devolvió
+	0,94–0,95 en dos ventanas sanas y 35,7 en la tormenta del 2026-09-23, junto a un cociente que
+	nunca pasó de 1,81 en 551 ventanas sanas (2026-09-20..23). Su PromQL solo se comprobó en
+	sintaxis, y su SQL de PostgreSQL no se ha ejecutado nunca (el de puerto a oscuras no puede
+	ejecutarse; véase [Los ficheros](#los-ficheros)). **Las formas de Prometheus y de PostgreSQL**,
 	que no se cargaron en ningún Grafana: solo se cargó el fichero de InfluxDB. **La entrega de
 	avisos:** la ejecución no configuró ningún punto de contacto, así que lo que se observó es el
 	estado de la regla, nunca un mensaje saliendo de Grafana. **Los fallos que dependen de la forma
