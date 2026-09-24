@@ -159,30 +159,120 @@ func (o *Options) Finish() error {
 // nor uninstall has a file to account for.
 func (o *Options) UsesRemoteImage() bool { return o.RemoteImage != "" }
 
-// RegistryHost and RemoteRef split `ghcr.io/jmrplens/mikroscope-agent:1.0.0`
-// the way RouterOS wants it: the host belongs in `/container/config
-// registry-url`, which is GLOBAL to the device, and only the rest goes into
-// `remote-image=`. mikroscope never writes that global setting — it is shared
-// with every other container on the router — so install checks it and names
-// the one command to run when it does not match (docs: install/routes).
+// RemoteRef is what goes into `remote-image=`: the whole reference, registry
+// host included, so the pull does not depend on `/container/config
+// registry-url`. That setting is one value for the whole device, shared with
+// every other container on it, and mikroscope neither reads it to decide the
+// pull nor writes it.
 //
-// A reference with no host (`jmrplens/mikroscope-agent:1.0.0`) leaves the
-// registry to whatever the router is already configured for.
-func (o *Options) RegistryHost() string {
-	host, _, ok := strings.Cut(o.RemoteImage, "/")
-	if !ok || !strings.ContainsAny(host, ".:") {
+// RouterOS takes the host there since 7.18, whose changelog lists
+// "container - allow specifying registry using remote-image property".
+// Measured on the reference RB5009 (RB5009UG+S+, RouterOS 7.24.4,
+// 2026-09-24), with registry-url=https://registry-1.docker.io:
+//
+//   - remote-image=registry-1.docker.io/jmrplens/mikroscope-agent:1.2.2 was
+//     logged as `registry=registry-1.docker.io` and ended in
+//     `download/extract done`, once with a Docker Hub username set and once
+//     with the username and password cleared: Docker Hub served the agent
+//     to RouterOS anonymously.
+//   - docker.io/jmrplens/mikroscope-agent:1.2.2 was logged as
+//     `registry=registry-1.docker.io`, so 7.24.4 translates that spelling
+//     itself; mikroscope writes the translated one and does not rely on it.
+//   - registry.invalid/jmrplens/mikroscope-agent:1.2.2 was logged as
+//     `registry=registry.invalid` and failed with `resolving error`: the host
+//     inside remote-image= overrides registry-url.
+//   - /container/config was the same after each run as before it; the
+//     anonymous run cleared the username and password for its duration and
+//     restored them.
+//
+// Not measured: RouterOS versions other than 7.24.4, a router whose
+// registry-url is at its factory default, and a pull from GHCR by RouterOS
+// with no credential set.
+//
+// A reference with no host, or with a Docker Hub alias, becomes
+// `registry-1.docker.io/<rest>`; any other host — ghcr.io, a private
+// registry, host:port — is kept as given.
+func (o *Options) RemoteRef() string {
+	if !o.UsesRemoteImage() {
 		return ""
 	}
+	host, rest := splitImageRef(o.RemoteImage)
+	return host + "/" + rest
+}
+
+// RegistryHost is the registry RouterOS pulls RemoteRef from: the host the
+// reference names, or registry-1.docker.io for Docker Hub, spelled the way
+// RemoteRef writes it. Doctor compares it with registry-url's host to warn
+// about the one registry username on the device (addRegistryCredential).
+// Empty when the image is a tar.
+func (o *Options) RegistryHost() string {
+	if !o.UsesRemoteImage() {
+		return ""
+	}
+	host, _ := splitImageRef(o.RemoteImage)
 	return host
 }
 
-// RemoteRef is what goes into `remote-image=`: the reference without the
-// registry host.
-func (o *Options) RemoteRef() string {
-	if host := o.RegistryHost(); host != "" {
-		return strings.TrimPrefix(o.RemoteImage, host+"/")
+// dockerHubHost is Docker Hub's registry API host. Docker's own reference
+// library says so (github.com/distribution/reference, normalize.go: "Note
+// that actual domain of Docker Hub's registry is registry-1.docker.io."), and
+// it is the spelling measured pulling the agent on the reference RB5009
+// (RouterOS 7.24.4, 2026-09-24).
+const dockerHubHost = "registry-1.docker.io"
+
+// dockerHubAliases are the names Docker Hub goes by in an image reference or
+// a registry-url. Only registry-1.docker.io and docker.io were given to
+// RouterOS (7.24.4, 2026-09-24, both logged as registry-1.docker.io); the
+// other two are Docker's own names for the same registry, and mikroscope
+// rewrites all of them to registry-1.docker.io before RouterOS sees them.
+var dockerHubAliases = map[string]bool{
+	dockerHubHost: true, "docker.io": true, "index.docker.io": true, "registry.hub.docker.com": true,
+}
+
+// splitImageRef splits a reference into its registry host and the rest, by
+// Docker's rule: the first path component is a host only when it holds a dot
+// or a colon or is `localhost`, and a reference without one is Docker Hub's.
+// Every Docker Hub alias becomes registry-1.docker.io, and a Docker Hub name
+// with no namespace gets `library/`, which is where Docker Hub keeps its
+// official images and what Docker's own normalisation adds (MikroTik's own
+// MQTT-broker container guide writes its image with that prefix by hand).
+// The prefix was not measured on RouterOS, and jmrplens/mikroscope-agent,
+// which has a namespace, never needs it.
+func splitImageRef(ref string) (host, rest string) {
+	first, after, found := strings.Cut(ref, "/")
+	if found && (strings.ContainsAny(first, ".:") || first == "localhost") {
+		host, rest = first, after
+	} else {
+		host, rest = dockerHubHost, ref
 	}
-	return o.RemoteImage
+	if !dockerHubAliases[host] {
+		return host, rest
+	}
+	if !strings.Contains(rest, "/") {
+		rest = "library/" + rest
+	}
+	return dockerHubHost, rest
+}
+
+// registryURLHost reads the host out of a `/container/config registry-url`
+// value, so it compares with RegistryHost: the scheme, any userinfo, the path
+// and the trailing slash dropped, lowercased, and every Docker Hub alias read
+// as registry-1.docker.io. An empty value stays empty: it names no registry,
+// and whatever RouterOS reads it as is not taken for Docker Hub (see
+// addRegistryCredential).
+func registryURLHost(registryURL string) string {
+	h := strings.ToLower(strings.TrimSpace(registryURL))
+	if _, afterScheme, found := strings.Cut(h, "://"); found {
+		h = afterScheme
+	}
+	h, _, _ = strings.Cut(h, "/")
+	if at := strings.LastIndex(h, "@"); at >= 0 {
+		h = h[at+1:]
+	}
+	if dockerHubAliases[h] {
+		return dockerHubHost
+	}
+	return h
 }
 
 // validImageRef is what may go into `remote-image=`: a registry reference,

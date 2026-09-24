@@ -62,6 +62,15 @@ const (
 	foundPrefix = "found="
 )
 
+// The two /container/config reads the credential check takes, for doctor and
+// for upgrade (UpgradePreflight). The second asks only whether a registry
+// username is set, as a boolean: the name is the operator's, and the password
+// cannot be read back at all.
+const (
+	registryURLQuery  = `:put [/container/config/get registry-url]`
+	registryUserQuery = `:put ([:len [/container/config/get username]] > 0)`
+)
+
 // Doctor runs every preflight read in one connect and writes nothing. Each
 // failing item names the RouterOS command or the physical step that fixes
 // it — including the one no tool can do for the operator: MikroTik gates
@@ -70,7 +79,7 @@ const (
 func Doctor(r Runner, o Options, imageBytes int) (Report, error) {
 	// Every answer is looked up by name, never by position from the end: the
 	// optional queries used to share `lines[len(lines)-1]`, so with --disk
-	// and a registry host together the disk check read the registry-url line
+	// and --remote-image together the disk check read the registry-url line
 	// and passed whatever it said.
 	var q doctorQueries
 	q.add(qVersion, `:put [/system/resource/get version]`)
@@ -92,10 +101,14 @@ func Doctor(r Runner, o Options, imageBytes int) (Report, error) {
 		q.add(qDisk, `:put [:len [/disk/find slot="`+o.Disk+`"]]`)
 	}
 	if o.UsesRemoteImage() {
-		q.add(qRegistryURL, `:put [/container/config/get registry-url]`)
-		// Whether a registry username is set, as a boolean: the name is the
-		// operator's and the password cannot be read back at all.
-		q.add(qRegistryUser, `:put ([:len [/container/config/get username]] > 0)`)
+		// Read for the credential warning alone. The reference carries its
+		// registry host into `remote-image=` (RemoteRef), so registry-url
+		// does not decide where the pull goes and is no prerequisite; what
+		// it still tells is which registry the device's one username was
+		// most likely set for. /container/config is global to the device and
+		// mikroscope never writes it.
+		q.add(qRegistryURL, registryURLQuery)
+		q.add(qRegistryUser, registryUserQuery)
 	}
 	lines, err := batch(r, q.queries)
 	if err != nil {
@@ -109,17 +122,6 @@ func Doctor(r Runner, o Options, imageBytes int) (Report, error) {
 			fix = ""
 		}
 		rep.Items = append(rep.Items, Item{Name: name, OK: ok, Got: got, Fix: fix})
-	}
-	if host := o.RegistryHost(); host != "" {
-		// /container/config is GLOBAL to the device and shared with every
-		// other container on it, so mikroscope reads it and never writes it:
-		// pointing the router's registry somewhere else to install a probe
-		// would be a change to someone else's containers. RouterOS takes the
-		// host from here and only the rest from `remote-image=`.
-		got := at(qRegistryURL)
-		want := "https://" + host
-		add("registry-url is "+want, got == want, "registry-url="+quoteEmpty(got),
-			"the registry host is a global RouterOS setting this tool does not write. Run `/container/config/set registry-url="+want+"` on the router (it applies to every container on the device), or install from a tar with --agent-tar instead")
 	}
 	if o.UsesRemoteImage() {
 		addRegistryCredential(&rep, o, at(qRegistryURL), isYes(at(qRegistryUser)))
@@ -189,32 +191,69 @@ func setOrUnset(set bool) string {
 	return "unset"
 }
 
-// dockerHub is every spelling of Docker Hub a registry-url or an image
-// reference can carry; the empty string is RouterOS's default, which is Docker
-// Hub too.
-var dockerHub = map[string]bool{
-	"": true, "docker.io": true, "registry-1.docker.io": true, "index.docker.io": true, "registry.hub.docker.com": true,
+// addRegistryCredential warns about a registry username that may be sent to
+// a registry it was not set for. /container/config holds ONE username and
+// password for the whole device. Measured on the reference RB5009 (RouterOS
+// 7.24.4, 2026-09-21): with registry-url=https://ghcr.io, a Docker Hub login
+// in that field and a reference with no host, RouterOS presented the login to
+// GHCR and the pull of a public image ended in `auth error`.
+//
+// Which credential RouterOS presents when the host inside `remote-image=`
+// differs from registry-url's was not measured: the one such case, on
+// 2026-09-24 (7.24.4), named registry.invalid, which never resolved, so no
+// connection was opened. The warning therefore fires whenever a username is
+// set and the reference's host is not registry-url's, both normalised the
+// same way (registryURLHost): scheme, path and trailing slash dropped, and
+// every Docker Hub alias read as registry-1.docker.io.
+//
+// An empty registry-url names no registry, so doctor cannot tell what a
+// username beside it was set for, and it warns; whatever RouterOS reads an
+// empty value as is not taken for Docker Hub. Whether an empty value is what a
+// router ships with was not measured: no router at its factory state was
+// read. MikroTik gives the default as a value — https://lscr.io in the 7.18
+// changelog ("container - add default registry-url=https://lscr.io"),
+// docker.io in 7.21.2's ("container - changed default container registry to
+// docker.io"), with no changelog from 7.21.3 to 7.24.4 mentioning the
+// registry (all read on 2026-09-24), and https://lscr.io/ still on its
+// Container documentation pages.
+func addRegistryCredential(rep *Report, o Options, registryURL string, userSet bool) {
+	pull := o.RegistryHost()
+	configured := registryURLHost(registryURL)
+	setFor := ", most likely set for " + configured + ", the registry registry-url names"
+	if configured == "" {
+		setFor = "; registry-url is empty, so doctor cannot tell which registry it was set for"
+	}
+	rep.Items = append(rep.Items, Item{
+		Name: "no registry credential meant for another registry", OK: !userSet || pull == configured, Warn: true,
+		Got: "pull from " + pull + ", registry-url host " + quoteEmpty(configured) + ", username " + setOrUnset(userSet),
+		Fix: "/container/config carries one username for the whole device" + setFor + ". The pull goes to " + pull +
+			", and whether RouterOS presents that username there was not measured; a credential from another registry makes the pull " +
+			"fail with `auth error` even for a public image. Install from a tar with --agent-tar (nothing is pulled), " +
+			"pass a --remote-image on the registry the username belongs to, or clear the username if nothing else on the router needs it",
+	})
 }
 
-// addRegistryCredential warns about a registry username that will be sent to
-// the wrong registry. /container/config holds ONE username and password for
-// the whole device and RouterOS presents them to whichever registry it pulls
-// from. They are nearly always a Docker Hub account, set to lift Docker Hub's
-// pull limit, and a Docker Hub credential presented to another registry makes
-// the pull end in `auth error`, even for an image anyone can pull anonymously.
-func addRegistryCredential(rep *Report, o Options, registryURL string, userSet bool) {
-	host := o.RegistryHost()
-	if host == "" {
-		host = strings.TrimPrefix(strings.TrimPrefix(registryURL, "https://"), "http://")
+// registryURLNote is the line upgrade prints when registry-url names a host
+// other than the one the pull now goes to. mikroscope 1.2.2 and earlier sent
+// the reference without its host, so the router pulled from whatever
+// registry-url named — a Docker Hub mirror, a pull-through cache, a private
+// registry — and doctor refused a reference whose host differed from it. The
+// host now travels inside remote-image= and overrides registry-url (measured
+// on the reference RB5009, RouterOS 7.24.4, 2026-09-24), so the same
+// `upgrade --remote-image jmrplens/…` that used to reach a mirror now goes to
+// registry-1.docker.io, and upgrade removes the old container before that pull
+// starts. The note names the registry-url host and the reference that keeps it;
+// a host kept that way is sent as given (splitImageRef). Empty when
+// registry-url is empty or names the host the pull goes to.
+func registryURLNote(o Options, registryURL string) string {
+	configured, pull := registryURLHost(registryURL), o.RegistryHost()
+	if configured == "" || configured == pull {
+		return ""
 	}
-	host = strings.TrimSuffix(host, "/")
-	rep.Items = append(rep.Items, Item{
-		Name: "no registry credential meant for another registry", OK: !userSet || dockerHub[host], Warn: true,
-		Got: "pull from " + quoteEmpty(host) + ", username " + setOrUnset(userSet),
-		Fix: "/container/config carries one username for the whole device, and RouterOS will present it to " + host +
-			": the pull fails with `auth error` if it belongs to another registry. Install from a tar with --agent-tar " +
-			"(nothing is pulled), or clear the username if nothing else on the router needs it",
-	})
+	_, rest := splitImageRef(o.RemoteImage)
+	return "registry-url names " + configured + ", and this pull goes to " + pull +
+		", the host of the reference; mikroscope 1.2.2 and earlier pulled from the registry-url host instead. To pull from " +
+		configured + ", pass --remote-image " + configured + "/" + rest
 }
 
 // quoteEmpty renders an empty reading as something a reader can see.
@@ -257,17 +296,23 @@ func humanBytes(n int64) string {
 func (r Report) Print(w io.Writer) {
 	fmt.Fprintf(w, "device: %s\n", r.Device)
 	for _, it := range r.Items {
-		mark := "ok  "
-		switch {
-		case !it.OK && it.Warn:
-			mark = "WARN"
-		case !it.OK:
-			mark = "MISSING"
-		}
-		fmt.Fprintf(w, "  %-7s %s (%s)\n", mark, it.Name, it.Got)
-		if !it.OK {
-			fmt.Fprintf(w, "          fix: %s\n", it.Fix)
-		}
+		it.print(w)
+	}
+}
+
+// print writes one item the way doctor lists it: the mark, the name, what
+// was read, and the fix when the item is not OK.
+func (it Item) print(w io.Writer) {
+	mark := "ok  "
+	switch {
+	case !it.OK && it.Warn:
+		mark = "WARN"
+	case !it.OK:
+		mark = "MISSING"
+	}
+	fmt.Fprintf(w, "  %-7s %s (%s)\n", mark, it.Name, it.Got)
+	if !it.OK {
+		fmt.Fprintf(w, "          fix: %s\n", it.Fix)
 	}
 }
 

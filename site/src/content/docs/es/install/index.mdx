@@ -90,7 +90,8 @@ publica la release, `--remote-image` hace que el router se la baje, y
    el contenedor aparezca y luego 3 s más (RouterOS extrae la imagen al
    añadirlo), borra el tar y arranca el contenedor. Con `--remote-image` no hay
    subida ni tar al que esperar o que borrar: el contenedor se añade con
-   `remote-image=` y se arranca. En cualquier caso el contenedor se añade con
+   `remote-image=` y la referencia entera, con el host del registro incluido, y
+   se arranca; `/container/config` no se toca. En cualquier caso el contenedor se añade con
    `privileged=`, que RouterOS conoce desde 7.24: en una 7.x anterior este es el
    paso que debería fallar, diga lo que diga `--privileged` (sale del código, no
    se ha probado en un router), y la salida es actualizar RouterOS.
@@ -149,7 +150,11 @@ Antes imprime su propio plan —solo el paso del contenedor, con la línea
 porque esos cuatro objetos son justo los que una actualización NO escribe— y
 `--dry-run` se detiene ahí, antes incluso de abrir una conexión con el router.
 A diferencia de `install` sigue sin ejecutar `doctor`; ejecútalo tú si quieres
-las comprobaciones de espacio libre y device-mode antes de actualizar.
+las comprobaciones de espacio libre y device-mode antes de actualizar. Con
+`--remote-image` sí imprime la comprobación de la credencial de registro de
+doctor, y una `note` cuando `registry-url` nombra un host distinto del de la
+descarga, desde la misma conexión en la que comprueba que la instalación está
+([Nada que ajustar en el router](/mikroscope/es/install/routes/#nada-que-ajustar-en-el-router)).
 
 Hasta 1.1.0 `upgrade` ignoraba `--dry-run` por completo: no imprimía nada e iba
 directo a la confirmación, así que `upgrade --dry-run --yes` reemplazaba el

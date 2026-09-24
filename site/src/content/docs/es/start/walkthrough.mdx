@@ -134,21 +134,22 @@ otras—, y [variables de entorno](/mikroscope/es/reference/environment/) lista 
      nombra el fichero que hay que descargar;
    - **el registro**, `--remote-image jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}`: el router se descarga la
      imagen él mismo, no se sube nada y `uninstall` no tiene ningún fichero del que responder.
-     RouterOS toma el host del registro del ajuste global `/container/config registry-url`, que
-     mikroscope nunca escribe porque lo comparten todos los contenedores del equipo. En el RB5009
-     vale `https://registry-1.docker.io`, y la referencia de Docker Hub de arriba se descargó de ahí
-     tal cual. RouterOS, en cambio, lo trae puesto en `https://lscr.io` desde la
-     [7.18](https://download.mikrotik.com/routeros/7.18/CHANGELOG), que no es ninguno de los dos
-     registros en los que se publica la imagen, y `doctor` no lo comprueba para una referencia sin
-     host: en un router que nadie haya apuntado a Docker Hub, ponlo antes en
-     `https://registry-1.docker.io`, o usa el tar. La referencia de GHCR,
-     `ghcr.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}`, nombra un host propio: `doctor` compara el ajuste
-     con él e imprime `/container/config/set registry-url=https://ghcr.io` cuando no coincide, o
-     remite a `--agent-tar`. Desde la 1.2.0 imprime además `WARN` cuando `/container/config` tiene
-     un usuario de registro y la descarga va a otro sitio que no es Docker Hub: RouterOS presenta
-     esa única credencial a todos los registros, y una cuenta de Docker Hub enviada a GHCR termina
-     en `auth error`. Un `WARN` no detiene `install`. La descarga necesita que el router llegue al
-     registro y que haya RAM libre para las capas.
+     mikroscope le da a RouterOS la referencia entera,
+     `registry-1.docker.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}`, así que el ajuste global
+     `/container/config registry-url`, que comparten todos los contenedores del equipo, no decide
+     la descarga: no hay que poner nada ahí antes y mikroscope nunca lo escribe. Tampoco hace falta ningún
+     login de registro. En el router de referencia el host dentro de `remote-image=` mandó sobre
+     `registry-url` (verificado en <Verified of="remote-image-host" />), y Docker Hub sirvió el
+     agente con el usuario y la contraseña de registro del equipo borrados (verificado
+     en <Verified of="docker-hub-anonymous" />); no se ha probado un router con `registry-url` en el
+     valor de fábrica. La referencia de GHCR,
+     `ghcr.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}`, sale igual con su propio host. Desde
+     la 1.2.0 `doctor` imprime `WARN` cuando `/container/config` tiene un usuario de registro que
+     puede no pertenecer al registro de la descarga; después de la 1.2.2 lo decide comparando el
+     host que nombra `registry-url` con el del que viene la imagen. Esa credencial es una para todo
+     el equipo, y una cuenta de Docker Hub enviada a GHCR terminó una descarga en `auth error`. Un
+     `WARN` no detiene `install`. La descarga necesita que el router llegue al registro y que haya
+     RAM libre para las capas.
 
    `--arch` vale por defecto `arm64`, la del RB5009; no se detecta a partir del router, pero
    `doctor` la compara con la arquitectura que informa el router y nombra el valor de `--arch` con

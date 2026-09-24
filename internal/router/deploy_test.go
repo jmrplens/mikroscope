@@ -17,7 +17,7 @@ func TestUpgradeListingNamesOnlyTheContainer(t *testing.T) {
 	for _, want := range []string{
 		"mikroscope upgrade plan for mikroscope",
 		"remove container mikroscope",
-		"the router pulls jmrplens/mikroscope-agent:1.0.9",
+		"the router pulls registry-1.docker.io/jmrplens/mikroscope-agent:1.0.9",
 		"nothing above has been written yet",
 	} {
 		if !strings.Contains(got, want) {

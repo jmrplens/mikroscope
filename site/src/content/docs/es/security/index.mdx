@@ -112,11 +112,13 @@ El contenedor ejecuta una imagen, y la vía que la pone ahí decide en qué est�
   `--arch` antes de enviarlo; comprobar que es el fichero que publicó la release te toca a ti,
   contra `checksums.txt`.
 - `install --remote-image <referencia>` no sube nada: es el propio router quien descarga la imagen
-  del registro que nombra su ajuste global `/container/config registry-url`. Confías en ese registro
-  y en el camino del router hasta él, y mikroscope no verifica nada de lo que llega. El mismo ajuste
-  guarda un único usuario y contraseña de registro para todo el equipo, que RouterOS presenta a
-  cualquier registro del que descargue; [lo que el instalador rechaza](/mikroscope/es/security/installer/)
-  explica qué supone y qué comprueba `doctor`.
+  del registro que nombra la referencia, que mikroscope escribe en `remote-image=` con su host,
+  `registry-1.docker.io` para Docker Hub; el ajuste global `/container/config registry-url` ni hace
+  falta ni se escribe. Confías en ese registro y en el camino del router hasta él, y mikroscope no
+  verifica nada de lo que llega. `/container/config` guarda además un único usuario y contraseña de
+  registro para todo el equipo, y un login de Docker Hub enviado a GHCR terminó una descarga en
+  `auth error`; [lo que el instalador rechaza](/mikroscope/es/security/installer/) explica qué
+  supone y qué comprueba `doctor`.
 - `plan --rsc` escribe esas mismas órdenes como un script de RouterOS para pegarlo o hacerle
   `/import`; la imagen sigue teniendo que llegar por una de las dos vías anteriores que no necesitan
   una subida desde la CLI.

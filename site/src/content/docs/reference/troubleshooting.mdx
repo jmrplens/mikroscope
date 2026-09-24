@@ -7,6 +7,7 @@ import { Aside } from "@astrojs/starlight/components";
 import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
 import Src from "../../../components/Src.astro";
+import Verified from "../../../components/Verified.astro";
 
 Every page here explains one thing properly. This one is the index you reach
 for when something is already broken: find the line you are looking at, and it
@@ -25,7 +26,7 @@ says what it means and where the explanation lives.
 | Container log: `exec format error`                                    | [The wrong image for the board](#exec-format-error)                    |
 | `no Go toolchain on PATH`                                             | Install with `--remote-image` or `--agent-tar` instead                 |
 | `--agent-tar …: this is not a mikroscope agent image`                 | The wrong asset — see [which tar](/mikroscope/install/routes/#which-tar) |
-| `doctor`: `registry-url is https://ghcr.io … registry-url=…`          | [The registry host is global](#the-registry-host)                      |
+| `doctor` (1.2.2 and earlier): `registry-url is https://… registry-url=…` | [The registry host](#the-registry-host)                                |
 | `doctor`: `free flash ≥ …` fails                                      | `--disk tmpfs` or `--ephemeral`, or free space on the flash            |
 | `doctor`: `WARN no registry credential meant for another registry`    | [One credential for every registry](#one-credential-for-every-registry) |
 | `doctor`: `WARN the installed agent published on the LAN asks for a token` | `upgrade` with the same `--name`, the original install flags and `--token`; or `uninstall --expose --lan-address … --token …`, which removes the agent entirely |
@@ -88,23 +89,36 @@ not run on the first. So:
 
 ### The registry host
 
-`/container/config registry-url` is one global RouterOS setting, shared with
-every other container on the device, and mikroscope reads it and never writes
-it. RouterOS's default since 7.18 is `https://lscr.io`, which carries neither
-image, so read yours with `/container/config/print`. The Docker Hub reference
-works on a router already set to `https://registry-1.docker.io`, as the
-reference RB5009 is; the GHCR one needs `https://ghcr.io`. Changing the setting
-changes it for everyone else on that router too.
+mikroscope 1.2.2 and earlier put the reference into `remote-image=` without its
+registry host, so RouterOS took the host from `/container/config registry-url`,
+one setting for the whole device, and `doctor` checked that setting against a
+reference that named a host. mikroscope after 1.2.2 sends the whole reference,
+registry host included, and neither checks the setting nor needs it: on the
+reference router the host inside `remote-image=` overrode `registry-url`
+(verified on <Verified of="remote-image-host" />), and Docker Hub served the
+agent with no registry login (verified on <Verified of="docker-hub-anonymous" />;
+[Nothing to set on the router](/mikroscope/install/routes/#nothing-to-set-on-the-router)
+has the rest, and what was not measured). With 1.2.2 or earlier, either set the
+setting as the fix line says, which changes it for every other container on the
+router too, or install from the tar with `--agent-tar`.
 
 ### One credential for every registry
 
-`/container/config` holds one username and password for the device, and
-RouterOS presents them to whichever registry it pulls from. A Docker Hub account
-presented to GHCR fails, and the container stays in `error` with `auth error` in
-its log, for an image anyone can pull anonymously. Install from a tar with
-`--agent-tar`, which pulls nothing, or pull the Docker Hub reference, or clear
-the username if nothing else on the router needs it. The password cannot be read
-back once cleared, so do that only knowing where it lives.
+`/container/config` holds one username and password for the device. A Docker
+Hub account presented to GHCR fails, and the container stays in `error` with
+`auth error` in its log, for an image anyone can pull anonymously: measured on
+2026-09-21 with GHCR named in `registry-url`. Whether RouterOS still presents the
+username to a host named only in `remote-image=` was not measured, so `doctor`
+warns whenever a username is set and the host `registry-url` names is not the
+host the image comes from, and `upgrade` prints the same check before it
+removes anything. Install from a tar with `--agent-tar`, which pulls
+nothing, or pull from the registry the username belongs to — the Docker Hub
+reference for a Docker Hub login — or clear the username if nothing else on the
+router needs it. The password cannot be read back once cleared, so do that only
+knowing where it lives. An empty `registry-url` with a username set warns too,
+because doctor cannot tell which registry the username is for; if you know it is
+a Docker Hub login and you pull the Docker Hub reference, the warning is advice
+you can ignore.
 
 ### A loop RouterOS does not show
 

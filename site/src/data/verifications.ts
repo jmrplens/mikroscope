@@ -11,7 +11,7 @@
  * `fact` and `source` are for the reviewer and never rendered: the sentence
  * around the component says what was verified, in the page's language.
  */
-import { RB5009 } from "./measurements";
+import { RB5009, RB5009_NOW } from "./measurements";
 
 export interface Verification {
 	device: string;
@@ -23,6 +23,11 @@ export interface Verification {
 }
 
 const onRB5009 = { device: RB5009.device, routeros: RB5009.routeros } as const;
+/** The same device on the RouterOS it runs now, for a fact checked after the upgrade to it. */
+const onRB5009Now = {
+	device: RB5009.device,
+	routeros: RB5009_NOW.routeros,
+} as const;
 
 export const verifications = {
 	"read-user-envlist": {
@@ -93,6 +98,20 @@ export const verifications = {
 		fact: "privileged=yes drops the container's user namespace but not its network or PID namespace",
 		source:
 			"site/src/content/docs/limits/privileged.mdx (user, network and PID); internal/router/steps.go, containerStep",
+	},
+	"remote-image-host": {
+		...onRB5009Now,
+		date: "2026-09-24",
+		fact: "a registry host inside remote-image= overrides /container/config registry-url, and docker.io is pulled as registry-1.docker.io: with registry-url=https://registry-1.docker.io, remote-image=registry.invalid/jmrplens/mikroscope-agent:1.2.2 was logged as registry=registry.invalid and failed with resolving error, docker.io/… and registry-1.docker.io/… were both logged as registry=registry-1.docker.io and ended in download/extract done; /container/config was unchanged afterwards",
+		source:
+			"internal/router/options.go, RemoteRef (the three references and what the log said); site/src/content/docs/install/routes.mdx; containers created in a temporary veth, never started, then removed",
+	},
+	"docker-hub-anonymous": {
+		...onRB5009Now,
+		date: "2026-09-24",
+		fact: "with the /container/config username and password cleared, RouterOS pulled jmrplens/mikroscope-agent:1.2.2 from Docker Hub anonymously, both as remote-image=registry-1.docker.io/… and host-less through registry-url=https://registry-1.docker.io, each download/extract done 5 s after the add; the configuration was restored and verified identical",
+		source:
+			"internal/router/options.go, RemoteRef (the anonymous run); site/src/content/docs/install/routes.mdx",
 	},
 } as const satisfies Record<string, Verification>;
 

@@ -110,11 +110,13 @@ The container runs an image, and which route puts it there decides what you are 
   sends it; checking that it is the file the release published is yours to do, against
   `checksums.txt`.
 - `install --remote-image <reference>` uploads nothing: the router itself fetches the image from the
-  registry its global `/container/config registry-url` names. You trust that registry and the
-  router's path to it, and mikroscope verifies nothing about what arrives. The same setting holds
-  one registry username and password for the whole device, which RouterOS presents to whatever
-  registry it pulls from; [what the installer refuses](/mikroscope/security/installer/) has what
-  that means and what `doctor` checks.
+  registry the reference names, which mikroscope writes into `remote-image=` with its host,
+  `registry-1.docker.io` for Docker Hub; the global `/container/config registry-url` is neither
+  needed nor written. You trust that registry and the router's path to it, and mikroscope verifies
+  nothing about what arrives. `/container/config` also holds one registry username and password for
+  the whole device, and a Docker Hub login sent to GHCR ended a pull in `auth error`;
+  [what the installer refuses](/mikroscope/security/installer/) has what that means and what
+  `doctor` checks.
 - `plan --rsc` writes the same commands as a RouterOS script for you to paste or `/import`; the
   image still has to come from one of the two routes above that need no upload from the CLI.
 

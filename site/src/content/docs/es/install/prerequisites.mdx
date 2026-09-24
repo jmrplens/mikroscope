@@ -136,30 +136,33 @@ umbral de memoria sigue a
 64 MiB, de modo que `--memory-max 128M` en un router con 70 MiB libres se
 detecta aquí y no en un contenedor que no arranca.
 
-La comprobación de `registry-url` solo se ejecuta con `--remote-image`, y solo
-cuando la referencia lleva un host de registro. `/container/config` es global al
-equipo y compartido con cualquier otro contenedor que tenga, así que mikroscope
-lee ese ajuste y nunca lo escribe. RouterOS lo trae puesto en `https://lscr.io`
-desde la [7.18](https://download.mikrotik.com/routeros/7.18/CHANGELOG), el mismo
-valor por defecto que da la
-[documentación de contenedores](https://help.mikrotik.com/docs/spaces/ROS/pages/84901929/Container)
-de MikroTik, y ese host no es ni Docker Hub ni GHCR. Así que la referencia de Docker Hub,
-`--remote-image jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}`, necesita el ajuste en
-`https://registry-1.docker.io`, que es lo que vale en el RB5009 de referencia, y la de GHCR lo
-necesita en `https://ghcr.io`. La referencia de Docker Hub no nombra ningún host, así que para
-ella esta comprobación no se ejecuta: lee tú el ajuste con `/container/config/print` antes de
-contar con él.
-[Cuatro formas de instalar](/mikroscope/es/install/routes/#un-pull-del-registro)
-tiene la orden para ponerlo a mano.
+No hay comprobación de `registry-url`. `--remote-image` le da a RouterOS la
+referencia entera, con el host del registro incluido —`registry-1.docker.io/…`
+para la de Docker Hub—, así que `/container/config registry-url`, que es global
+al equipo y compartido con cualquier otro contenedor que tenga, no decide adónde
+va la descarga, y mikroscope ni necesita que esté puesto ni lo escribe.
+[Nada que ajustar en el router](/mikroscope/es/install/routes/#nada-que-ajustar-en-el-router)
+tiene lo que se midió, y lo que no.
 
-El mismo ajuste guarda un único usuario y contraseña para todo el equipo, y
-RouterOS los presenta a cualquier registro del que descargue. Casi siempre son
-una cuenta de Docker Hub, puesta para levantar su límite de descargas, y esa
-cuenta presentada a GHCR termina la descarga en `auth error`, aunque la imagen
-se pueda descargar de forma anónima. Así que con cualquier `--remote-image`,
-doctor pregunta si hay un usuario puesto —un sí o un no, nunca el nombre, y la
-contraseña no se puede leer en absoluto— y avisa cuando lo hay y la descarga va
-a cualquier sitio que no sea Docker Hub.
+El mismo ajuste guarda un único usuario y contraseña para todo el equipo, y una
+credencial pensada para un registro y presentada a otro puede terminar la
+descarga en `auth error`, aunque la imagen se pueda descargar de forma anónima: le pasó a un
+login de Docker Hub enviado a GHCR el 2026-09-21. No se ha medido si RouterOS
+presenta ese login a un host que solo nombra `remote-image=`. Así que con
+cualquier `--remote-image`, doctor lee `registry-url` y si hay un usuario puesto
+—un sí o un no, nunca el nombre, y la contraseña no se puede leer en absoluto— y
+avisa cuando lo hay y el host que nombra `registry-url` no es el host del que se
+descarga la imagen. Compara solo hosts, sin tener en cuenta el esquema, una ruta,
+una barra final ni mayúsculas, y cuenta todas las grafías de Docker Hub como una.
+Un `registry-url` vacío con usuario puesto también avisa: un valor vacío no
+nombra ningún registro, así que doctor no puede saber para qué se puso el
+usuario. No se ha medido si un valor vacío es lo que trae un router de fábrica,
+porque no se ha leído ningún router en ese estado, y MikroTik da como valor por
+defecto uno concreto: `https://lscr.io` en el changelog de la 7.18, `docker.io`
+en el de la 7.21.2, y `https://lscr.io/` en sus páginas de Container. `upgrade`,
+que no ejecuta `doctor`, lee esas dos mismas respuestas en la conexión en la que
+comprueba que la instalación está, e imprime esta comprobación antes de pedir
+confirmación.
 
 Cuando ya hay en el router una instalación con el mismo `--name` publicada en la
 LAN (un dst-nat con su etiqueta), doctor cuenta además las entradas `TOKEN` de
@@ -248,9 +251,12 @@ la sección leyó 600 muestras del agente en marcha y no encontró nada. Ninguno
 los cuatro hallazgos ha saltado contra un agente real; los ejercitan tests que
 reproducen el texto real del log del kernel del bucle de referencia a su cadencia
 de 2,0 s. Los dos `WARN` de requisitos se reprodujeron en el mismo equipo y la
-misma fecha: el de la credencial con un `doctor --remote-image ghcr.io/…` de solo
-lectura y un usuario de Docker Hub puesto, y el del token con una instalación de
-usar y tirar, expuesta, actualizada después sin token y luego quitada.
+misma fecha: el de la credencial, en su forma 1.2.x, con un
+`doctor --remote-image ghcr.io/…` de solo lectura y un usuario de Docker Hub
+puesto, y el del token con una instalación de usar y tirar, expuesta,
+actualizada después sin token y luego quitada. La comparación de hosts que
+sustituyó a la forma 1.2.x de la comprobación de la credencial solo se ha
+ejecutado contra respuestas de router falsas en los tests.
 
 ## Lo que necesita tu máquina
 

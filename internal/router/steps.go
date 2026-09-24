@@ -184,7 +184,9 @@ func containerStep(o *Options, tag, byTag string) Step {
 	// Where the image comes from: a tar this CLI uploaded, or a registry the
 	// router pulls from itself. `remote-image=` is the whole difference —
 	// with it there is no file to wait for, none to remove, and none for
-	// uninstall to account for.
+	// uninstall to account for. It carries the full reference, registry host
+	// included (RemoteRef), so the pull does not depend on the device-wide
+	// /container/config registry-url, which nothing here reads or writes.
 	source := `file=` + imageFile
 	if o.UsesRemoteImage() {
 		source = `remote-image="` + o.RemoteRef() + `"`

@@ -205,13 +205,12 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Docker Hub as well as GHCR: it is the registry MikroTik's container
-      # documentation points `/container/config registry-url` at in its
-      # examples, and the setting is global to the device, so a router already
-      # on Docker Hub needs nothing repointed. (RouterOS's own default has been
-      # https://lscr.io since 7.18, which carries neither.) Skipped when the secrets are
-      # absent — a fork releasing from its own tag pushes to GHCR alone
-      # instead of failing.
+      # Docker Hub as well as GHCR: a --remote-image reference without a
+      # registry host is sent to the router as registry-1.docker.io/…, and
+      # Docker Hub is the registry measured serving the agent to RouterOS with
+      # no registry credential set (reference RB5009, RouterOS 7.24.4,
+      # 2026-09-24). Skipped when the secrets are absent — a fork releasing
+      # from its own tag pushes to GHCR alone instead of failing.
       - name: Log in to Docker Hub
         if: env.DOCKERHUB_USERNAME != ''
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f  # v4.6.0

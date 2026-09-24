@@ -7,6 +7,7 @@ import { Aside } from "@astrojs/starlight/components";
 import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
 import Src from "../../../../components/Src.astro";
+import Verified from "../../../../components/Verified.astro";
 
 Cada página de aquí explica una cosa a fondo. Esta es el índice al que acudes
 cuando algo ya está roto: busca la línea que estás mirando y te dice qué
@@ -25,7 +26,7 @@ significa y dónde está la explicación.
 | Registro del contenedor: `exec format error`                          | [La imagen equivocada para la placa](#exec-format-error)               |
 | `no Go toolchain on PATH`                                             | Instala con `--remote-image` o `--agent-tar` en su lugar               |
 | `--agent-tar …: this is not a mikroscope agent image`                 | El artefacto equivocado — mira [qué tar](/mikroscope/es/install/routes/#qué-tar) |
-| `doctor`: `registry-url is https://ghcr.io … registry-url=…`          | [El host del registro es global](#el-host-del-registro)                |
+| `doctor` (1.2.2 y anteriores): `registry-url is https://… registry-url=…` | [El host del registro](#el-host-del-registro)                          |
 | `doctor`: falla `free flash ≥ …`                                      | `--disk tmpfs` o `--ephemeral`, o libera espacio en la flash           |
 | `doctor`: `WARN no registry credential meant for another registry`    | [Una credencial para todos los registros](#una-credencial-para-todos-los-registros) |
 | `doctor`: `WARN the installed agent published on the LAN asks for a token` | `upgrade` con el mismo `--name`, las opciones de la instalación original y `--token`; o `uninstall --expose --lan-address … --token …`, que quita el agente entero |
@@ -90,25 +91,38 @@ ARMv5 funciona en las dos, una ARMv7 no arranca en las primeras. Así que:
 
 ### El host del registro
 
-`/container/config registry-url` es un único ajuste global de RouterOS,
-compartido con todos los demás contenedores del equipo, y mikroscope lo lee y
-nunca lo escribe. El valor por defecto de RouterOS desde la 7.18 es
-`https://lscr.io`, donde no está ninguna de las dos imágenes, así que lee el
-tuyo con `/container/config/print`. La referencia de Docker Hub funciona en un
-router que ya apunte a `https://registry-1.docker.io`, como el RB5009 de
-referencia; la de GHCR necesita `https://ghcr.io`. Cambiar el ajuste lo cambia
-también para todos los demás de ese router.
+mikroscope 1.2.2 y anteriores ponían la referencia en `remote-image=` sin su
+host de registro, así que RouterOS tomaba el host de `/container/config
+registry-url`, un único ajuste para todo el equipo, y `doctor` comparaba ese
+ajuste con las referencias que nombraban un host. mikroscope después de la 1.2.2
+envía la referencia entera, con el host del registro incluido, y ni comprueba el
+ajuste ni lo necesita: en el router de referencia el host dentro de
+`remote-image=` mandó sobre `registry-url` (verificado
+en <Verified of="remote-image-host" />), y Docker Hub sirvió el agente sin login
+de registro (verificado en <Verified of="docker-hub-anonymous" />;
+[Nada que ajustar en el router](/mikroscope/es/install/routes/#nada-que-ajustar-en-el-router)
+tiene el resto, y lo que no se ha medido). Con la 1.2.2 o anteriores, o pones el
+ajuste como dice la línea `fix:`, lo que lo cambia también para todos los demás
+contenedores del router, o instalas desde el tar con `--agent-tar`.
 
 ### Una credencial para todos los registros
 
-`/container/config` guarda un único usuario y contraseña para el equipo, y
-RouterOS los presenta a cualquier registro del que descargue. Una cuenta de
-Docker Hub presentada a GHCR falla, y el contenedor se queda en `error` con
-`auth error` en su registro, para una imagen que cualquiera puede descargar de
-forma anónima. Instala desde un tar con `--agent-tar`, que no descarga nada, o
-descarga la referencia de Docker Hub, o borra el usuario si nada más del router
-lo necesita. La contraseña no se puede volver a leer una vez borrada, así que
-hazlo solo sabiendo dónde está guardada.
+`/container/config` guarda un único usuario y contraseña para el equipo. Una
+cuenta de Docker Hub presentada a GHCR falla, y el contenedor se queda en
+`error` con `auth error` en su registro, para una imagen que cualquiera puede
+descargar de forma anónima: medido el 2026-09-21 con GHCR en `registry-url`. No
+se ha medido si RouterOS sigue presentando el usuario a un host que solo nombra
+`remote-image=`, así que `doctor` avisa siempre que hay un usuario puesto y el
+host que nombra `registry-url` no es del que viene la imagen, y `upgrade`
+imprime la misma comprobación antes de retirar nada. Instala desde un
+tar con `--agent-tar`, que no descarga nada, o descarga del registro al que
+pertenece el usuario —la referencia de Docker Hub para un login de Docker Hub—,
+o borra el usuario si nada más del router lo necesita. La contraseña no se puede
+volver a leer una vez borrada, así que hazlo solo sabiendo dónde está guardada.
+Un `registry-url` vacío con usuario puesto también avisa, porque doctor no puede
+saber de qué registro es el usuario; si sabes que es un login de Docker Hub y
+descargas la referencia de Docker Hub, el aviso es un consejo que puedes pasar
+por alto.
 
 ### Un bucle que RouterOS no muestra
 

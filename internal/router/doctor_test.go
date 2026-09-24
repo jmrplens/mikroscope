@@ -191,14 +191,15 @@ func item(rep Report, prefix string) *Item {
 	return nil
 }
 
-// Regression: with --disk and a registry host together, the disk check read
+// Regression: with --disk and --remote-image together, the disk check read
 // the LAST answer — registry-url's — and passed on a router with no such disk.
+// The registry answers must land in the credential check and nowhere else.
 func TestDoctorDiskAndRegistryAnswersDoNotShareALine(t *testing.T) {
 	o := defaults(t, func(o *Options) {
 		o.Disk = "tmpfs"
 		o.RemoteImage = "ghcr.io/jmrplens/mikroscope-agent:1.1.0"
 	})
-	r := healthyAnswers([2]string{"/disk/find", "0"}, [2]string{"registry-url", "https://ghcr.io"})
+	r := healthyAnswers([2]string{"/disk/find", "0"}, [2]string{"registry-url", "https://ghcr.io"}, [2]string{"get username", "true"})
 	rep, err := Doctor(r, o, 6<<20)
 	if err != nil {
 		t.Fatal(err)
@@ -207,9 +208,47 @@ func TestDoctorDiskAndRegistryAnswersDoNotShareALine(t *testing.T) {
 	if disk == nil || disk.OK || disk.Got != "found=0" {
 		t.Fatalf("disk check read the wrong answer: %+v", disk)
 	}
-	reg := item(rep, "registry-url is https://ghcr.io")
-	if reg == nil || !reg.OK {
-		t.Fatalf("registry-url check: %+v", reg)
+	cred := item(rep, "no registry credential")
+	if cred == nil || !cred.OK || !strings.Contains(cred.Got, "registry-url host ghcr.io") || !strings.Contains(cred.Got, "username set") {
+		t.Fatalf("credential check read the wrong answers: %+v", cred)
+	}
+}
+
+// TestDoctorNoLongerRequiresRegistryURL: the reference carries its registry
+// host into remote-image=, so /container/config registry-url is no
+// prerequisite. Doctor used to fail `MISSING registry-url is https://<host>`
+// whenever the two differed — it refused docker.io/… on the reference
+// RB5009, whose registry-url is https://registry-1.docker.io, and it asked for
+// a change to a setting every other container on the device shares.
+func TestDoctorNoLongerRequiresRegistryURL(t *testing.T) {
+	for _, image := range []string{
+		"ghcr.io/jmrplens/mikroscope-agent:1.2.2",
+		"docker.io/jmrplens/mikroscope-agent:1.2.2",
+		"jmrplens/mikroscope-agent:1.2.2",
+		"registry.example.com:5000/team/agent:1.2.2",
+	} {
+		for _, url := range []string{"", "https://registry-1.docker.io", "https://lscr.io", "https://ghcr.io/", "https://docker.1ms.run"} {
+			o := defaults(t, func(o *Options) { o.RemoteImage = image })
+			r := healthyAnswers([2]string{"registry-url", url}, [2]string{"get username", "false"})
+			rep, err := Doctor(r, o, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if f := rep.Failed(); len(f) != 0 {
+				t.Errorf("%s with registry-url %q: doctor failed %+v", image, url, f)
+			}
+			for _, it := range rep.Items {
+				if strings.Contains(it.Name, "registry-url") || strings.Contains(it.Fix, "/container/config/set") {
+					t.Errorf("%s with registry-url %q: doctor still checks or proposes registry-url: %+v", image, url, it)
+				}
+				if !it.OK {
+					t.Errorf("%s with registry-url %q and no username: %+v", image, url, it)
+				}
+			}
+			if strings.Contains(r.ran[0], "/container/config/set") {
+				t.Fatal("doctor wrote /container/config")
+			}
+		}
 	}
 }
 
@@ -220,30 +259,28 @@ func TestDoctorWarnsOfACredentialForAnotherRegistry(t *testing.T) {
 	}{
 		{"docker hub user, ghcr image", "ghcr.io/jmrplens/mikroscope-agent:1.1.0", "https://registry-1.docker.io", "true", true},
 		{"no user, ghcr image", "ghcr.io/jmrplens/mikroscope-agent:1.1.0", "https://ghcr.io", "false", false},
+		{"no user, ghcr image, hub registry-url", "ghcr.io/jmrplens/mikroscope-agent:1.1.0", "https://registry-1.docker.io", "false", false},
+		{"ghcr user, ghcr image", "ghcr.io/jmrplens/mikroscope-agent:1.1.0", "https://ghcr.io", "true", false},
+		{"ghcr user, ghcr image, trailing slash and case", "ghcr.io/jmrplens/mikroscope-agent:1.1.0", "HTTPS://GHCR.IO/", "true", false},
 		{"docker hub user, hub image", "jmrplens/mikroscope-agent:1.1.0", "https://registry-1.docker.io", "true", false},
-		{"docker hub user, default registry", "jmrplens/mikroscope-agent:1.1.0", "", "true", false},
+		{"docker hub user, docker.io image", "docker.io/jmrplens/mikroscope-agent:1.1.0", "https://registry-1.docker.io/", "true", false},
+		{"docker hub user, hub image, docker.io registry-url", "jmrplens/mikroscope-agent:1.1.0", "https://docker.io", "true", false},
+		{"docker hub user, index.docker.io image", "index.docker.io/jmrplens/mikroscope-agent:1.1.0", "https://registry.hub.docker.com", "true", false},
+		{"private user, private image", "registry.example.com:5000/team/agent:1.1.0", "https://registry.example.com:5000/", "true", false},
+		{"private user, hub image", "jmrplens/mikroscope-agent:1.1.0", "https://registry.example.com:5000", "true", true},
+		// An empty registry-url names no registry, so a username beside it
+		// is one doctor cannot place. Whatever RouterOS reads an empty value
+		// as is not taken for Docker Hub: MikroTik gives its default as
+		// lscr.io (7.18) and docker.io (7.21.2), and no router at its factory
+		// state was read.
+		{"user beside an unset registry-url, hub image", "jmrplens/mikroscope-agent:1.1.0", "", "true", true},
+		{"no user beside an unset registry-url", "jmrplens/mikroscope-agent:1.1.0", "", "false", false},
+		{"user, hub image on an lscr registry-url", "jmrplens/mikroscope-agent:1.1.0", "https://lscr.io", "true", true},
 		{"user, hostless ref on a ghcr registry-url", "jmrplens/mikroscope-agent:1.1.0", "https://ghcr.io/", "true", true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			o := defaults(t, func(o *Options) { o.RemoteImage = tc.image })
-			r := healthyAnswers([2]string{"registry-url", tc.url}, [2]string{"get username", tc.user})
-			rep, err := Doctor(r, o, 6<<20)
-			if err != nil {
-				t.Fatal(err)
-			}
-			it := item(rep, "no registry credential")
-			if it == nil || !it.Warn || it.OK == tc.warn {
-				t.Fatalf("credential item = %+v, want warn=%v", it, tc.warn)
-			}
-			if strings.Contains(r.ran[0], "get password") {
-				t.Fatal("doctor asked for the registry password")
-			}
-			for _, f := range rep.Failed() {
-				if f.Name == it.Name {
-					t.Fatal("a warning was counted as a missing prerequisite")
-				}
-			}
+			assertCredentialWarning(t, tc.image, tc.url, tc.user, tc.warn)
 		})
 	}
 	// A tar install pulls nothing and is not asked about.
@@ -253,6 +290,38 @@ func TestDoctorWarnsOfACredentialForAnotherRegistry(t *testing.T) {
 	}
 	if item(rep, "no registry credential") != nil {
 		t.Fatal("tar install was checked for a registry credential")
+	}
+}
+
+// assertCredentialWarning runs doctor for one image against one registry-url
+// and username state, and checks the credential item warns exactly when want
+// says, names the registry the pull goes to and a way out, never asks for the
+// password, and never counts as a missing prerequisite.
+func assertCredentialWarning(t *testing.T, image, url, user string, want bool) {
+	t.Helper()
+	o := defaults(t, func(o *Options) { o.RemoteImage = image })
+	r := healthyAnswers([2]string{"registry-url", url}, [2]string{"get username", user})
+	rep, err := Doctor(r, o, 6<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	it := item(rep, "no registry credential")
+	if it == nil || !it.Warn || it.OK == want {
+		t.Fatalf("credential item = %+v, want warn=%v", it, want)
+	}
+	if !strings.Contains(it.Got, "pull from "+o.RegistryHost()) {
+		t.Errorf("the item does not name the registry the pull goes to: %q", it.Got)
+	}
+	if want && (!strings.Contains(it.Fix, "--agent-tar") || !strings.Contains(it.Fix, "--remote-image")) {
+		t.Errorf("the warning names no way out: %q", it.Fix)
+	}
+	if strings.Contains(r.ran[0], "get password") {
+		t.Fatal("doctor asked for the registry password")
+	}
+	for _, f := range rep.Failed() {
+		if f.Name == it.Name {
+			t.Fatal("a warning was counted as a missing prerequisite")
+		}
 	}
 }
 
