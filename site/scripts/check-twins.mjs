@@ -98,9 +98,16 @@ const plain = (text) =>
  * @returns {string}
  */
 function plainHtml(html) {
+	let text = html;
+	let previous;
+	// Until nothing changes: one pass can join two halves of a tag into a new
+	// one (`<scr<b>ipt>`).
+	do {
+		previous = text;
+		text = text.replaceAll(/<[^>]*>/g, "");
+	} while (text !== previous);
 	return plain(
-		html
-			.replaceAll(/<[^>]*>/g, "")
+		text
 			.replaceAll(/&#x([0-9a-f]+);/gi, (_, hex) =>
 				String.fromCodePoint(Number.parseInt(hex, 16)),
 			)

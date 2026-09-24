@@ -214,11 +214,16 @@ if (!existsSync(path.join(DIST, "index.html"))) {
 			const html = built.endsWith(".html");
 			let text = readFileSync(file, "utf8");
 			if (html) {
-				text = text
-					.replaceAll(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "")
-					.replaceAll(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "");
+				text = stripRepeatedly(
+					text,
+					/<script\b[^>]*>[\s\S]*?<\/script\b[^>]*>/gi,
+				);
+				text = stripRepeatedly(
+					text,
+					/<style\b[^>]*>[\s\S]*?<\/style\b[^>]*>/gi,
+				);
 			}
-			text = text.replaceAll(/<[^>]*>/g, "");
+			text = stripRepeatedly(text, /<[^>]*>/g);
 			if (!text.includes(version)) {
 				fail(
 					`dist/${built}: never says ${version} outside its scripts and styles, though src/content/docs/${relative} writes ${VERSION_PLACEHOLDER}`,
@@ -247,3 +252,22 @@ if (problems.length > 0) {
 console.log(
 	`[version] ${version}: no page pins another in an install command, ${placeholderPages.size} pages write it through ${VERSION_PLACEHOLDER}, and neither docs/ nor dist/ carries the placeholder.`,
 );
+
+/**
+ * Removes every match of pattern, again and again until nothing changes. One
+ * pass can leave a tag behind when removing a match joins two halves into a
+ * new one (`<scr<script>ipt>`); the input here is this build's own dist, not
+ * someone else's HTML, but a check should not depend on that.
+ *
+ * @param {string} text
+ * @param {RegExp} pattern a global regular expression
+ * @returns {string}
+ */
+function stripRepeatedly(text, pattern) {
+	let previous;
+	do {
+		previous = text;
+		text = text.replaceAll(pattern, "");
+	} while (text !== previous);
+	return text;
+}
