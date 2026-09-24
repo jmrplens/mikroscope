@@ -50,7 +50,9 @@ se reinicia empieza desde cero cada ventana móvil, cada intervalo y cada valor 
 </ScrollTable>
 
 Los paneles dibujan cada detección como una anotación, y una de las [reglas de
-alerta](/mikroscope/es/dashboards/alerts/) salta con cualquier detección.
+alerta](/mikroscope/es/dashboards/alerts/) salta con cualquier detección salvo `microburst` e
+`ipc-collapse`: esas dos describen cómo lleva el tráfico un router sano, y se dibujan y se guardan
+pero no avisan.
 
 ## Las reglas
 

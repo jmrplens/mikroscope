@@ -4,6 +4,19 @@ Notable changes per release. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the versions
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **The detections alert no longer pages on `microburst` or `ipc-collapse`.**
+  Both are drawn on the dashboards and stored like every detection, but they
+  describe how a healthy router carries traffic, not a fault. On the reference
+  RB5009, from 2026-09-23 10:30 to 2026-09-24 10:30 UTC, they were 64 of 71
+  detections, and they fired `mikroscope-detections` in 43 of 288 five-minute
+  windows; without them it fired in 6 (that day's link flaps and one agent
+  upgrade). The list is `derive.Informational`, and the alert's PromQL and SQL
+  are built from it.
+
 ## [1.2.1] - 2026-09-24
 
 ### Fixed

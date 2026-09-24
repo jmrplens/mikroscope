@@ -111,6 +111,17 @@ type Detection struct {
 // render a counter per rule at 0 before the first event.
 var Rules = []string{"counter-reset", "agent-restart", "agent-oom", "microburst", "reboot", "link-flap", "conntrack-cliff", "conntrack-high", "thermal-high", "thermal-rising", "ipc-collapse"}
 
+// Informational names the rules whose events describe how a healthy router
+// behaves rather than a fault: they are drawn on the dashboards and stored
+// like every other detection, but the shipped alert rule does not page on
+// them. On the reference RB5009 from 2026-09-23 10:30 to 2026-09-24 10:30 UTC
+// they were 64 of 71 detections (microburst 54, ipc-collapse 10), and the
+// detections alert fired in 43 of the 288 five-minute windows; without them,
+// in 6: that day's link flaps and one agent upgrade. The two rules are not
+// faults. A microburst is a burst the queues absorbed and an IPC collapse a
+// memory-stall regime; both are how normal traffic looks at 10 Hz.
+var Informational = []string{"microburst", "ipc-collapse"}
+
 // Options tune the rules; zero values take the defaults below.
 type Options struct {
 	RefractoryNS int64 // per rule and key; default 10 s

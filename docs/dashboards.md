@@ -1204,7 +1204,7 @@ The alert rules:
 | `mikroscope-agent-silent` | fewer than 1 new sample reached the store in the last 2 minutes | < 1 | critical | 2m | Alerting | InfluxDB only |
 | `mikroscope-softnet-drops` | `softnet_stat` dropped a packet in the last 5 minutes | > 0 | critical | 0s | OK | InfluxDB only |
 | `mikroscope-oom-kill` | `/proc/vmstat` `oom_kill` moved in the last 5 minutes | > 0 | critical | 0s | OK | InfluxDB only |
-| `mikroscope-detections` | any detection in the last 5 minutes | > 0 | warning | 0s | OK | InfluxDB only |
+| `mikroscope-detections` | any detection in the last 5 minutes except `microburst` and `ipc-collapse`, which are drawn and stored but do not page | > 0 | warning | 0s | OK | InfluxDB only |
 | `mikroscope-thermal-near-critical` | a zone at or above 85 % of its own critical trip | > 0 | critical | 1m | OK | InfluxDB only |
 | `mikroscope-conntrack-near-limit` | `nf_conntrack` active objects above 0.8 of the kernel's limit | > 0.8 | warning | 5m | OK | InfluxDB only |
 | `mikroscope-agent-oom` | the agent's own cgroup recorded an OOM kill in the last 5 minutes | > 0 | critical | 0s | OK | InfluxDB only |
@@ -1231,9 +1231,13 @@ Each rule's title, and under it its `summary` annotation, shortened:
 - **The kernel OOM-killed a process.** "/proc/vmstat oom_kill moved: the kernel killed a process to
   get memory back. Which process is not knowable from the container (no PID namespace)."
 - **The collector's derive stage flagged an event.** "A detection rule fired (counter-reset,
-  agent-restart, agent-oom, microburst, reboot, link-flap, conntrack-cliff, conntrack-high,
-  thermal-high, thermal-rising, ipc-collapse). The rule, key, value and threshold are in the
-  Detections section and on the dashboard as an annotation."
+  agent-restart, agent-oom, reboot, link-flap, conntrack-cliff, conntrack-high, thermal-high,
+  thermal-rising). The rule, key, value and threshold are in the Detections section and on the
+  dashboard as an annotation." `microburst` and `ipc-collapse` are drawn and stored like every
+  detection but do not fire it: they describe how a healthy router carries traffic. On the
+  reference RB5009, from 2026-09-23 10:30 to 2026-09-24 10:30 UTC, they were 64 of 71 detections,
+  and left in they fired this rule in 43 of 288 five-minute windows; without them it fired in 6.
+  Through 1.2.1 they paged.
 - **A thermal zone is within 15 % of its own critical trip.** "The reading is at or above 85 % of
   the zone's declared critical trip point (105 C on the reference RB5009). The ceiling is the
   board's own, read from /sys, not a number compiled in."
@@ -1299,7 +1303,7 @@ Each rule's title, and under it its `summary` annotation, shortened:
   # mikroscope-oom-kill                (> 0)
   sum(increase(mikroscope_vm_events_total{event="oom_kill"}[5m]))
   # mikroscope-detections              (> 0)
-  sum(increase(mikroscope_collector_detections_total[5m]))
+  sum(increase(mikroscope_collector_detections_total{rule!~"microburst|ipc-collapse"}[5m]))
   # mikroscope-thermal-near-critical   (> 0)
   count(mikroscope_thermal_celsius >= on(zone) 0.85 * mikroscope_thermal_critical_celsius)
   # mikroscope-conntrack-near-limit    (> 0.8)
@@ -1343,7 +1347,7 @@ Each rule's title, and under it its `summary` annotation, shortened:
   -- mikroscope-oom-kill                (> 0)
   SELECT coalesce(sum(oom_kill), 0)::BIGINT AS value FROM mikroscope_vm WHERE time >= now() - interval '5 minutes'
   -- mikroscope-detections              (> 0)
-  SELECT count(1) AS value FROM mikroscope_detection WHERE time >= now() - interval '5 minutes'
+  SELECT count(1) AS value FROM mikroscope_detection WHERE time >= now() - interval '5 minutes' AND rule NOT IN ('microburst', 'ipc-collapse')
   -- mikroscope-thermal-near-critical   (> 0)
   SELECT count(1) AS value FROM (SELECT zone, max(celsius) AS c, max(critical_celsius) AS crit FROM mikroscope_thermal WHERE time >= now() - interval '2 minutes' AND critical_celsius IS NOT NULL GROUP BY zone) AS zones WHERE c >= 0.85 * crit
   -- mikroscope-conntrack-near-limit    (> 0.8)
@@ -1376,7 +1380,7 @@ Each rule's title, and under it its `summary` annotation, shortened:
   -- mikroscope-oom-kill                (> 0)
   SELECT coalesce(sum(oom_kill), 0)::BIGINT AS value FROM mikroscope_vm WHERE time >= now() - interval '5 minutes'
   -- mikroscope-detections              (> 0)
-  SELECT count(1) AS value FROM mikroscope_detection WHERE time >= now() - interval '5 minutes'
+  SELECT count(1) AS value FROM mikroscope_detection WHERE time >= now() - interval '5 minutes' AND rule NOT IN ('microburst', 'ipc-collapse')
   -- mikroscope-thermal-near-critical   (> 0)
   SELECT count(1) AS value FROM (SELECT zone, max(celsius) AS c, max(critical_celsius) AS crit FROM mikroscope_thermal WHERE time >= now() - interval '2 minutes' AND critical_celsius IS NOT NULL GROUP BY zone) AS zones WHERE c >= 0.85 * crit
   -- mikroscope-conntrack-near-limit    (> 0.8)

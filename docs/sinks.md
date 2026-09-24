@@ -1826,7 +1826,9 @@ restarts starts every trailing window, bin and previous value from nothing.
 | Elasticsearch                   | a document with `kind: detection`                                                    |
 
 The dashboards draw every detection as an annotation, and one of the [alert
-rules](https://jmrp.io/docs/mikroscope/dashboards/alerts/) fires on any detection.
+rules](https://jmrp.io/docs/mikroscope/dashboards/alerts/) fires on any detection except `microburst` and
+`ipc-collapse`: those two describe how a healthy router carries traffic, and they are drawn and
+stored but do not page.
 
 ### The rules
 
