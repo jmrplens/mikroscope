@@ -142,8 +142,8 @@ recuperación de memoria no tiene PromQL y se quita. Las copias comparten su SQL
 difieren de sus homólogos (el del observador lleva una tercera consulta, los ticks perdidos por
 retraso del muestreador).
 
-1. **CPU busy per core**, **Memory in use, against the kernel's own total** (un indicador de
-   `(MemTotal − MemAvailable) / MemTotal`, naranja al 75 %, rojo al 90 %) y **Connections tracked
+1. **CPU busy per core**, **Memory in use, against the kernel's own total** (
+   `(MemTotal − MemAvailable) / MemTotal` en el tiempo, con líneas discontinuas al 75 % y al 90 %) y **Connections tracked
    right now** (los objetos activos del slab `nf_conntrack`; en blanco en un contenedor sin
    privilegios, y el panel lo dice).
 2. **Interface throughput — rx above, tx below** (capa de la API; en blanco con `--api-mode off`, y

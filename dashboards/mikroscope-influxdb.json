@@ -154,11 +154,31 @@
         "type": "influxdb",
         "uid": "${DS_MIKROSCOPE}"
       },
-      "description": "(MemTotal − MemAvailable) / MemTotal, from /proc/meminfo, read globally from inside the container. The denominator is the kernel's own MemTotal as emitted — mikroscope_mem.total_kb on InfluxDB, mikroscope_meminfo_kbytes{field=\"MemTotal\"} on Prometheus — so the gauge scales itself to whatever board it runs on and no memory size appears anywhere in the panel. MemAvailable is the kernel's estimate of what a new allocation could actually get, which is the honest numerator: MemFree alone reads alarmingly low on any router with a warm page cache. ON THE REFERENCE DEVICE (RB5009, RouterOS 7.24.2, kernel 5.6.3 arm64, 1 GiB) measured through the live datasource proxy on 2026-09-12: 31.12 % in use from InfluxDB and 31.03 % from Prometheus over the same six hours — the 0.1 pp gap is the two stores' different sampling of the same fields, not a disagreement about the total. MemTotal there is 999 956 kB, i.e. the board has 1 GiB and the kernel keeps the rest; your device's total is whatever its own kernel reports and this panel never assumes it. WHAT IT CANNOT TELL YOU: what the memory is for — the LRU, slab and apportionment panels in the memory sections answer that — and it cannot tell you whether the allocator is coping with the memory it has.",
+      "description": "(MemTotal − MemAvailable) / MemTotal, from /proc/meminfo, read globally from inside the container. The denominator is the kernel's own MemTotal as emitted — mikroscope_mem.total_kb on InfluxDB, mikroscope_meminfo_kbytes{field=\"MemTotal\"} on Prometheus — so the panel scales itself to whatever board it runs on and no memory size appears anywhere in the panel. MemAvailable is the kernel's estimate of what a new allocation could actually get, which is the honest numerator: MemFree alone reads alarmingly low on any router with a warm page cache. ON THE REFERENCE DEVICE (RB5009, RouterOS 7.24.2, kernel 5.6.3 arm64, 1 GiB) measured through the live datasource proxy on 2026-09-12: 31.12 % in use from InfluxDB and 31.03 % from Prometheus over the same six hours — the 0.1 pp gap is the two stores' different sampling of the same fields, not a disagreement about the total. MemTotal there is 999 956 kB, i.e. the board has 1 GiB and the kernel keeps the rest; your device's total is whatever its own kernel reports and this panel never assumes it. WHAT IT CANNOT TELL YOU: what the memory is for — the LRU, slab and apportionment panels in the memory sections answer that — and it cannot tell you whether the allocator is coping with the memory it has.",
       "fieldConfig": {
         "defaults": {
           "color": {
             "mode": "thresholds"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": 300000,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "dashed"
+            }
           },
           "displayName": "${__field.labels.metric}",
           "mappings": [],
@@ -193,18 +213,16 @@
       },
       "id": 3,
       "options": {
-        "minVizHeight": 75,
-        "minVizWidth": 75,
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
         },
-        "showThresholdLabels": false,
-        "showThresholdMarkers": true,
-        "sizing": "auto"
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
       },
       "targets": [
         {
@@ -221,7 +239,7 @@
         }
       ],
       "title": "Memory in use, against the kernel's own total",
-      "type": "gauge"
+      "type": "timeseries"
     },
     {
       "datasource": {
@@ -272,6 +290,10 @@
           "values": false
         },
         "showPercentChange": false,
+        "text": {
+          "titleSize": 16,
+          "valueSize": 32
+        },
         "textMode": "value",
         "wideLayout": true
       },
@@ -495,6 +517,10 @@
           "values": false
         },
         "showPercentChange": false,
+        "text": {
+          "titleSize": 16,
+          "valueSize": 32
+        },
         "textMode": "value_and_name",
         "wideLayout": true
       },
@@ -691,6 +717,10 @@
           "values": false
         },
         "showPercentChange": false,
+        "text": {
+          "titleSize": 16,
+          "valueSize": 32
+        },
         "textMode": "value",
         "wideLayout": true
       },
@@ -764,6 +794,10 @@
           "values": false
         },
         "showPercentChange": false,
+        "text": {
+          "titleSize": 16,
+          "valueSize": 32
+        },
         "textMode": "value",
         "wideLayout": true
       },
@@ -835,6 +869,10 @@
           "values": false
         },
         "showPercentChange": false,
+        "text": {
+          "titleSize": 16,
+          "valueSize": 32
+        },
         "textMode": "value",
         "wideLayout": true
       },
@@ -909,6 +947,10 @@
           "values": false
         },
         "showPercentChange": false,
+        "text": {
+          "titleSize": 16,
+          "valueSize": 32
+        },
         "textMode": "value",
         "wideLayout": true
       },
@@ -984,6 +1026,10 @@
           "values": false
         },
         "showPercentChange": false,
+        "text": {
+          "titleSize": 16,
+          "valueSize": 32
+        },
         "textMode": "value",
         "wideLayout": true
       },
@@ -1058,6 +1104,10 @@
           "values": false
         },
         "showPercentChange": false,
+        "text": {
+          "titleSize": 16,
+          "valueSize": 32
+        },
         "textMode": "value_and_name",
         "wideLayout": true
       },
@@ -1313,6 +1363,10 @@
               "values": false
             },
             "showPercentChange": false,
+            "text": {
+              "titleSize": 16,
+              "valueSize": 32
+            },
             "textMode": "value",
             "wideLayout": true
           },
@@ -1921,6 +1975,10 @@
               "values": false
             },
             "showPercentChange": false,
+            "text": {
+              "titleSize": 16,
+              "valueSize": 32
+            },
             "textMode": "value_and_name",
             "wideLayout": true
           },
@@ -2021,6 +2079,10 @@
               "values": false
             },
             "showPercentChange": false,
+            "text": {
+              "titleSize": 16,
+              "valueSize": 32
+            },
             "textMode": "value",
             "wideLayout": true
           },
@@ -2060,11 +2122,31 @@
             "type": "influxdb",
             "uid": "${DS_MIKROSCOPE}"
           },
-          "description": "(MemTotal − MemAvailable) ÷ MemTotal, both from /proc/meminfo, read globally from inside the container. MemAvailable is the kernel's own estimate of what a new allocation could actually get, which is the honest numerator — MemFree alone reads alarmingly low on any router with a warm page cache. Both terms are emitted, so there is no dashboard constant in this gauge: the denominator moves with whatever board it runs on. On the reference device (RB5009, RouterOS 7.24.2, kernel 5.6.3 aarch64, 4x Cortex-A72, 1 GiB) measured 2026-09-12 over 19 one-minute bins: 29.3–31.2 % in use, with MemTotal 999 956 kB; your device will differ in both the share and the total. WHAT IT CANNOT TELL YOU: what the memory is for — the apportionment, LRU and slab panels answer that — nor whether the allocator is coping with it, since free bytes and a fragmented zone look identical here. The `total_kb IS NOT NULL` guard drops bins whose rows carry no total rather than charting a divide-by-NULL (verified: 10 356 of 18 956 rows in one measured window carry a total). THRESHOLDS: green / 75 orange / 90 red are shares of an emitted total under a percent unit, so they mean the same thing on a 512 MB hEX S and a 2 GiB CCR. No absolute byte step anywhere in the panel.",
+          "description": "(MemTotal − MemAvailable) ÷ MemTotal, both from /proc/meminfo, read globally from inside the container. MemAvailable is the kernel's own estimate of what a new allocation could actually get, which is the honest numerator — MemFree alone reads alarmingly low on any router with a warm page cache. Both terms are emitted, so there is no dashboard constant in this panel: the denominator moves with whatever board it runs on. On the reference device (RB5009, RouterOS 7.24.2, kernel 5.6.3 aarch64, 4x Cortex-A72, 1 GiB) measured 2026-09-12 over 19 one-minute bins: 29.3–31.2 % in use, with MemTotal 999 956 kB; your device will differ in both the share and the total. WHAT IT CANNOT TELL YOU: what the memory is for — the apportionment, LRU and slab panels answer that — nor whether the allocator is coping with it, since free bytes and a fragmented zone look identical here. The `total_kb IS NOT NULL` guard drops bins whose rows carry no total rather than charting a divide-by-NULL (verified: 10 356 of 18 956 rows in one measured window carry a total). THRESHOLDS: green / 75 orange / 90 red are shares of an emitted total under a percent unit, so they mean the same thing on a 512 MB hEX S and a 2 GiB CCR. No absolute byte step anywhere in the panel.",
           "fieldConfig": {
             "defaults": {
               "color": {
                 "mode": "thresholds"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 8,
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": 300000,
+                "lineWidth": 1,
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "dashed"
+                }
               },
               "displayName": "${__field.labels.metric}",
               "mappings": [],
@@ -2099,18 +2181,16 @@
           },
           "id": 28,
           "options": {
-            "minVizHeight": 75,
-            "minVizWidth": 75,
-            "reduceOptions": {
-              "calcs": [
-                "lastNotNull"
-              ],
-              "fields": "",
-              "values": false
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
             },
-            "showThresholdLabels": false,
-            "showThresholdMarkers": true,
-            "sizing": "auto"
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
           },
           "targets": [
             {
@@ -2127,7 +2207,7 @@
             }
           ],
           "title": "Memory in use, against the kernel's own total",
-          "type": "gauge"
+          "type": "timeseries"
         },
         {
           "datasource": {
@@ -2531,6 +2611,10 @@
               "values": false
             },
             "showPercentChange": false,
+            "text": {
+              "titleSize": 16,
+              "valueSize": 32
+            },
             "textMode": "value",
             "wideLayout": true
           },
@@ -2590,6 +2674,10 @@
               "values": false
             },
             "showPercentChange": false,
+            "text": {
+              "titleSize": 16,
+              "valueSize": 32
+            },
             "textMode": "value",
             "wideLayout": true
           },
@@ -3263,6 +3351,10 @@
               "values": false
             },
             "showPercentChange": false,
+            "text": {
+              "titleSize": 16,
+              "valueSize": 32
+            },
             "textMode": "value",
             "wideLayout": true
           },
@@ -3336,6 +3428,10 @@
               "values": false
             },
             "showPercentChange": false,
+            "text": {
+              "titleSize": 16,
+              "valueSize": 32
+            },
             "textMode": "value",
             "wideLayout": true
           },
@@ -5054,6 +5150,10 @@
               "values": false
             },
             "showPercentChange": false,
+            "text": {
+              "titleSize": 16,
+              "valueSize": 32
+            },
             "textMode": "value_and_name",
             "wideLayout": true
           },
@@ -5544,6 +5644,10 @@
               "values": false
             },
             "showPercentChange": false,
+            "text": {
+              "titleSize": 16,
+              "valueSize": 32
+            },
             "textMode": "value",
             "wideLayout": true
           },
@@ -6616,6 +6720,10 @@
               "values": false
             },
             "showPercentChange": false,
+            "text": {
+              "titleSize": 16,
+              "valueSize": 32
+            },
             "textMode": "value",
             "wideLayout": true
           },
@@ -7852,6 +7960,10 @@
               "values": false
             },
             "showPercentChange": false,
+            "text": {
+              "titleSize": 16,
+              "valueSize": 32
+            },
             "textMode": "value_and_name",
             "wideLayout": true
           },
@@ -8219,6 +8331,10 @@
               "values": false
             },
             "showPercentChange": false,
+            "text": {
+              "titleSize": 16,
+              "valueSize": 32
+            },
             "textMode": "value_and_name",
             "wideLayout": true
           },
@@ -8974,6 +9090,10 @@
               "values": false
             },
             "showPercentChange": false,
+            "text": {
+              "titleSize": 16,
+              "valueSize": 32
+            },
             "textMode": "value",
             "wideLayout": true
           },
@@ -9049,6 +9169,10 @@
               "values": false
             },
             "showPercentChange": false,
+            "text": {
+              "titleSize": 16,
+              "valueSize": 32
+            },
             "textMode": "value_and_name",
             "wideLayout": true
           },
@@ -9337,6 +9461,10 @@
               "values": false
             },
             "showPercentChange": false,
+            "text": {
+              "titleSize": 16,
+              "valueSize": 32
+            },
             "textMode": "value",
             "wideLayout": true
           },
@@ -10021,6 +10149,10 @@
               "values": false
             },
             "showPercentChange": false,
+            "text": {
+              "titleSize": 16,
+              "valueSize": 32
+            },
             "textMode": "value",
             "wideLayout": true
           },
@@ -10318,6 +10450,10 @@
               "values": false
             },
             "showPercentChange": false,
+            "text": {
+              "titleSize": 16,
+              "valueSize": 32
+            },
             "textMode": "value_and_name",
             "wideLayout": true
           },
@@ -10388,6 +10524,10 @@
               "values": false
             },
             "showPercentChange": false,
+            "text": {
+              "titleSize": 16,
+              "valueSize": 32
+            },
             "textMode": "value",
             "wideLayout": true
           },
@@ -11348,6 +11488,10 @@
               "values": false
             },
             "showPercentChange": false,
+            "text": {
+              "titleSize": 16,
+              "valueSize": 32
+            },
             "textMode": "value_and_name",
             "wideLayout": true
           },
@@ -11407,6 +11551,10 @@
               "values": false
             },
             "showPercentChange": false,
+            "text": {
+              "titleSize": 16,
+              "valueSize": 32
+            },
             "textMode": "value_and_name",
             "wideLayout": true
           },
@@ -12073,6 +12221,10 @@
               "values": false
             },
             "showPercentChange": false,
+            "text": {
+              "titleSize": 16,
+              "valueSize": 32
+            },
             "textMode": "value",
             "wideLayout": true
           },
@@ -12299,6 +12451,10 @@
               "values": false
             },
             "showPercentChange": false,
+            "text": {
+              "titleSize": 16,
+              "valueSize": 32
+            },
             "textMode": "value",
             "wideLayout": true
           },
@@ -13185,6 +13341,10 @@
               "values": false
             },
             "showPercentChange": false,
+            "text": {
+              "titleSize": 16,
+              "valueSize": 32
+            },
             "textMode": "value_and_name",
             "wideLayout": true
           },
@@ -13623,6 +13783,10 @@
               "values": false
             },
             "showPercentChange": false,
+            "text": {
+              "titleSize": 16,
+              "valueSize": 32
+            },
             "textMode": "value",
             "wideLayout": true
           },
@@ -13697,6 +13861,10 @@
               "values": false
             },
             "showPercentChange": false,
+            "text": {
+              "titleSize": 16,
+              "valueSize": 32
+            },
             "textMode": "value_and_name",
             "wideLayout": true
           },
