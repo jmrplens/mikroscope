@@ -286,8 +286,8 @@ export const alertFiresWhen: Record<string, Record<Lang, string>> = {
 		es: "`oom_kill` de `/proc/vmstat` se movió en los últimos 5 minutos",
 	},
 	"mikroscope-detections": {
-		en: "any detection in the last 5 minutes",
-		es: "cualquier detección en los últimos 5 minutos",
+		en: "any detection in the last 5 minutes except `microburst` and `ipc-collapse`, which are drawn and stored but do not page",
+		es: "cualquier detección en los últimos 5 minutos salvo `microburst` e `ipc-collapse`, que se dibujan y se guardan pero no avisan",
 	},
 	"mikroscope-thermal-near-critical": {
 		en: "a zone at or above 85 % of its own critical trip",

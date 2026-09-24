@@ -109,7 +109,25 @@ type Detection struct {
 
 // Rules names every detection rule the stage can produce, so a sink can
 // render a counter per rule at 0 before the first event.
-var Rules = []string{"counter-reset", "agent-restart", "agent-oom", "microburst", "reboot", "link-flap", "conntrack-cliff", "conntrack-high", "thermal-high", "thermal-rising", "ipc-collapse"}
+var Rules = []string{"counter-reset", "agent-restart", "agent-oom", ruleMicroburst, "reboot", "link-flap", "conntrack-cliff", "conntrack-high", "thermal-high", "thermal-rising", ruleIPCCollapse}
+
+// The two informational rules, named once: Rules, Informational and the code
+// that fires them must agree on the spelling.
+const (
+	ruleMicroburst  = "microburst"
+	ruleIPCCollapse = "ipc-collapse"
+)
+
+// Informational names the rules whose events describe how a healthy router
+// behaves rather than a fault: they are drawn on the dashboards and stored
+// like every other detection, but the shipped alert rule does not page on
+// them. On the reference RB5009 from 2026-09-23 10:30 to 2026-09-24 10:30 UTC
+// they were 64 of 71 detections (microburst 54, ipc-collapse 10), and the
+// detections alert fired in 43 of the 288 five-minute windows; without them,
+// in 6: that day's link flaps and one agent upgrade. The two rules are not
+// faults. A microburst is a burst the queues absorbed and an IPC collapse a
+// memory-stall regime; both are how normal traffic looks at 10 Hz.
+var Informational = []string{ruleMicroburst, ruleIPCCollapse}
 
 // Options tune the rules; zero values take the defaults below.
 type Options struct {
@@ -386,7 +404,7 @@ func (st *Stage) burst(s *sample.Sample, fire func(rule, key string, value, thre
 			st.burstAt[i] = at[cut:]
 			if len(st.burstAt[i]) >= burstEpisode {
 				med, _ := w.median()
-				fire("microburst", fmt.Sprintf("cpu%d", i), float64(len(st.burstAt[i])), burstEpisode,
+				fire(ruleMicroburst, fmt.Sprintf("cpu%d", i), float64(len(st.burstAt[i])), burstEpisode,
 					fmt.Sprintf("cpu%d: %d burst samples in 60 s — the latest %d squeeze(s) and %d drop(s) in a sample of %d packets against a trailing median of %.0f: bursts shorter than the sample interval", i, len(st.burstAt[i]), n.TimeSqueeze, n.Dropped, n.Processed, med))
 			}
 		}
@@ -572,7 +590,7 @@ func (st *Stage) closeIPCBin(c *ipcState, core int, s *sample.Sample, fire func(
 	if len(c.ipcHist) >= 20 {
 		medIPC, medRate := median(c.ipcHist), median(c.rateHist)
 		if ipc < 0.5*medIPC && rate > medRate {
-			fire("ipc-collapse", fmt.Sprintf("core%d", core), ipc, 0.5*medIPC, fmt.Sprintf("core%d: IPC %.2f against a trailing median of %.2f while the cycle rate is above its median (%.2g/s): a memory-stall regime, not idleness", core, ipc, medIPC, rate))
+			fire(ruleIPCCollapse, fmt.Sprintf("core%d", core), ipc, 0.5*medIPC, fmt.Sprintf("core%d: IPC %.2f against a trailing median of %.2f while the cycle rate is above its median (%.2g/s): a memory-stall regime, not idleness", core, ipc, medIPC, rate))
 		}
 	}
 	c.ipcHist = append(c.ipcHist, ipc)

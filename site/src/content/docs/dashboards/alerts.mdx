@@ -99,9 +99,13 @@ Each rule's title, and under it its `summary` annotation, shortened:
 - **The kernel OOM-killed a process.** "/proc/vmstat oom_kill moved: the kernel killed a process to
   get memory back. Which process is not knowable from the container (no PID namespace)."
 - **The collector's derive stage flagged an event.** "A detection rule fired (counter-reset,
-  agent-restart, agent-oom, microburst, reboot, link-flap, conntrack-cliff, conntrack-high,
-  thermal-high, thermal-rising, ipc-collapse). The rule, key, value and threshold are in the
-  Detections section and on the dashboard as an annotation."
+  agent-restart, agent-oom, reboot, link-flap, conntrack-cliff, conntrack-high, thermal-high,
+  thermal-rising). The rule, key, value and threshold are in the Detections section and on the
+  dashboard as an annotation." `microburst` and `ipc-collapse` are drawn and stored like every
+  detection but do not fire it: they describe how a healthy router carries traffic. On the
+  reference RB5009, from 2026-09-23 10:30 to 2026-09-24 10:30 UTC, they were 64 of 71 detections,
+  and left in they fired this rule in 43 of 288 five-minute windows; without them it fired in 6.
+  Through 1.2.1 they paged.
 - **A thermal zone is within 15 % of its own critical trip.** "The reading is at or above 85 % of
   the zone's declared critical trip point (105 C on the reference RB5009). The ceiling is the
   board's own, read from /sys, not a number compiled in."

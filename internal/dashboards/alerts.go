@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+
+	"github.com/jmrplens/mikroscope/internal/derive"
 )
 
 // Alert rules. The dashboards carry no alert rules of their own; these are
@@ -85,9 +87,9 @@ var AlertRules = []AlertRule{
 	},
 	{
 		UID: "mikroscope-detections", Title: "The collector's derive stage flagged an event", Severity: "warning", For: "0s", Op: "gt", Threshold: 0, NoData: "OK",
-		Summary: "A detection rule fired (counter-reset, agent-restart, agent-oom, microburst, reboot, link-flap, conntrack-cliff, conntrack-high, thermal-high, thermal-rising, ipc-collapse). The rule, key, value and threshold are in the Detections section and on the dashboard as an annotation.",
-		PromQL:  `sum(increase(mikroscope_collector_detections_total[5m]))`,
-		SQL:     `SELECT count(1) AS value FROM mikroscope_detection WHERE time >= now() - interval '5 minutes'`,
+		Summary: "A detection rule fired (" + strings.Join(pagingDetections(), ", ") + "). The rule, key, value and threshold are in the Detections section and on the dashboard as an annotation. " + strings.Join(derive.Informational, " and ") + " are drawn and stored like every detection but do not fire this rule: they describe how a healthy router carries traffic. On the reference RB5009 they were 64 of 71 detections from 2026-09-23 10:30 to 2026-09-24 10:30 UTC, and left in they fired this rule in 43 of 288 five-minute windows; without them it fired in 6.",
+		PromQL:  `sum(increase(mikroscope_collector_detections_total{rule!~"` + strings.Join(derive.Informational, "|") + `"}[5m]))`,
+		SQL:     `SELECT count(1) AS value FROM mikroscope_detection WHERE time >= now() - interval '5 minutes' AND rule NOT IN (` + sqlList(derive.Informational) + `)`,
 	},
 	{
 		UID: "mikroscope-thermal-near-critical", Title: "A thermal zone is within 15 % of its own critical trip", Severity: "critical", For: "1m", Op: "gt", Threshold: 0, NoData: "OK",
@@ -275,4 +277,25 @@ func yamlQuote(s string) string {
 	s = strings.ReplaceAll(s, `\`, `\\`)
 	s = strings.ReplaceAll(s, `"`, `\"`)
 	return `"` + s + `"`
+}
+
+// pagingDetections is every detection rule the detections alert fires on:
+// all of derive.Rules but the informational ones.
+func pagingDetections() []string {
+	out := make([]string, 0, len(derive.Rules))
+	for _, r := range derive.Rules {
+		if !slices.Contains(derive.Informational, r) {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// sqlList renders names as a SQL IN list of string literals.
+func sqlList(names []string) string {
+	quoted := make([]string, len(names))
+	for i, n := range names {
+		quoted[i] = "'" + strings.ReplaceAll(n, "'", "''") + "'"
+	}
+	return strings.Join(quoted, ", ")
 }
