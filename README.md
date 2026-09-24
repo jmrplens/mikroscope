@@ -82,9 +82,11 @@ without a token) never change its exit status.
 
 `install` builds the agent from this repository if you have Go. Without it, add
 `--remote-image jmrplens/mikroscope-agent:latest` and the **router** pulls the
-image itself — nothing is uploaded and there is no architecture to choose. Pin
-the version instead of `latest` for a deployment you want to be able to
-reproduce.
+image itself from Docker Hub — nothing is uploaded and there is no architecture
+to choose. The registry host travels inside the reference
+(`registry-1.docker.io/…`), so the router's global `/container/config` needs no
+change and no registry login. Pin the version instead of `latest` for a
+deployment you want to be able to reproduce.
 [The four install routes](https://jmrp.io/docs/mikroscope/install/routes/)
 covers the other two, including a RouterOS script for a device you reach only
 through WinBox.

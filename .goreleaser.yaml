@@ -149,13 +149,17 @@ dockers_v2:
   - id: agent
     ids: [mikroscope-agent]
     # Two registries, one build. GHCR is where a GitHub user looks first;
-    # Docker Hub is the registry MikroTik's container documentation points
-    # `/container/config registry-url` at in its examples
-    # (https://registry-1.docker.io), and the one the reference RB5009 is set
-    # to. RouterOS's own default has been https://lscr.io since 7.18
-    # (download.mikrotik.com/routeros/7.18/CHANGELOG), where this image is not
-    # published, so a router at that default needs the setting changed either
-    # way; the site's install/routes page says so.
+    # Docker Hub is where a --remote-image reference without a registry host
+    # goes: mikroscope sends it to the router as registry-1.docker.io/…, and
+    # the host inside remote-image= is what RouterOS pulls from, so the
+    # device-wide `/container/config registry-url` does not decide the pull.
+    # Measured on the reference RB5009, RouterOS 7.24.4, 2026-09-24: the host
+    # overrode registry-url, and Docker Hub served this image with no
+    # registry credential set. Not tried: a whole install or upgrade in this
+    # form (the references were given to RouterOS by hand), a router at its
+    # factory registry-url, other RouterOS versions, an anonymous GHCR pull by
+    # RouterOS, and which credential RouterOS presents to a host named only in
+    # remote-image=. The site's install/routes page has the detail.
     images:
       - "ghcr.io/jmrplens/mikroscope-agent"
       - "docker.io/jmrplens/mikroscope-agent"
@@ -305,11 +309,21 @@ release:
 
     **Agent image:** `jmrplens/mikroscope-agent:{{ .Version }}` on Docker Hub
     and `ghcr.io/jmrplens/mikroscope-agent:{{ .Version }}`
-    (linux/amd64, linux/arm64, linux/arm/v7, linux/arm/v5). RouterOS pulls from
-    the host in `/container/config registry-url`, whose default since 7.18 is
-    `https://lscr.io`, where the image is not published: read yours with
-    `/container/config/print`, and point it at `https://registry-1.docker.io`
-    (or `https://ghcr.io`) before `--remote-image`.
+    (linux/amd64, linux/arm64, linux/arm/v7, linux/arm/v5). `--remote-image`
+    sends RouterOS the whole reference, registry host included
+    (`registry-1.docker.io/jmrplens/mikroscope-agent:{{ .Version }}` for Docker
+    Hub), so the device-wide `/container/config registry-url` does not decide
+    the pull, needs no setting and is never changed (`doctor`, and `upgrade`
+    before it removes anything, read it only to warn about a registry
+    username), and no registry login is needed. On the reference RB5009
+    (RouterOS 7.24.4, 2026-09-24) the host inside `remote-image=` overrode
+    `registry-url`, and Docker Hub served the image with no registry username
+    set. Not tried: a whole `install` or `upgrade` in this form (the references
+    were given to RouterOS by hand), a router at its factory `registry-url`,
+    other RouterOS versions, an anonymous GHCR pull by RouterOS, and which
+    credential RouterOS presents to a host named only in `remote-image=`.
+    `doctor` warns when `/container/config` holds a username meant for another
+    registry than the one the image comes from.
 
     **Verify the checksums** (keyless, no key to fetch); `checksums.txt` also
     covers the agent image tars:

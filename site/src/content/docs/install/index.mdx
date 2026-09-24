@@ -88,7 +88,8 @@ script that installs without this CLI at all.
    the container to appear, then 3 s more (RouterOS extracts the image at add
    time), deletes the tar and starts the container. With `--remote-image` there
    is no upload and no tar to wait for or delete: the container is added with
-   `remote-image=` and started. Either way the container is added with
+   `remote-image=` and the whole reference, registry host included, and
+   started; `/container/config` is not touched. Either way the container is added with
    `privileged=`, which RouterOS knows from 7.24: on an earlier 7.x this is the
    step expected to fail, whatever `--privileged` says (read from the code, not
    tried on a router), and upgrading RouterOS is the way through.
@@ -145,7 +146,11 @@ It prints its own plan first — the container step only, with the line
 because those four objects are exactly what an upgrade does NOT write — and
 `--dry-run` stops there, before a connection to the router is even opened.
 Unlike `install` it still runs no `doctor`; run that yourself if you want the
-free-space and device-mode checks before an upgrade.
+free-space and device-mode checks before an upgrade. With `--remote-image` it
+does print doctor's registry-credential check, and a `note` when `registry-url`
+names a host other than the one the pull goes to, from the same connect that
+checks the install is there
+([Nothing to set on the router](/mikroscope/install/routes/#nothing-to-set-on-the-router)).
 
 Until 1.1.0 `upgrade` ignored `--dry-run` outright: it printed nothing and went
 straight to the confirmation, so `upgrade --dry-run --yes` replaced the

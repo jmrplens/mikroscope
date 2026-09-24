@@ -116,7 +116,7 @@ func parseWith(verb string, args []string, fs *flag.FlagSet) (cli, error) {
 	// been measured on ARM hardware: this project has none.
 	fs.StringVar(&c.goarm, "goarm", "5", "GOARM level for --arch arm: 5 runs on every 32-bit ARM MikroTik ships, 7 does not run on EN7562CT boards (hEX Refresh)")
 	fs.StringVar(&c.agentTar, "agent-tar", env("AGENT_TAR", ""), "install/upgrade/image: use this agent image tar instead of building one (the release asset; needs no Go toolchain) (MIKROSCOPE_AGENT_TAR)")
-	fs.StringVar(&c.opts.RemoteImage, "remote-image", env("REMOTE_IMAGE", ""), "install/upgrade: let the router pull the agent image itself, e.g. ghcr.io/jmrplens/mikroscope-agent:"+version.Version+" (nothing is uploaded and no Go toolchain is needed)")
+	fs.StringVar(&c.opts.RemoteImage, "remote-image", env("REMOTE_IMAGE", ""), "install/upgrade: let the router pull the agent image itself, e.g. jmrplens/mikroscope-agent:"+version.Version+" from Docker Hub (nothing is uploaded and no Go toolchain is needed). The registry host goes into remote-image= — registry-1.docker.io for a reference without one — so /container/config registry-url is neither needed nor written")
 	fs.IntVar(&c.opts.Port, "port", c.opts.Port, "agent HTTP port on the veth")
 	fs.IntVar(&c.opts.RateHz, "rate", c.opts.RateHz, "sampler rate, 1-100 Hz")
 	fs.IntVar(&c.opts.BufferS, "buffer", c.opts.BufferS, "ring buffer, seconds")
@@ -261,7 +261,7 @@ func buildImage(c cli) ([]byte, error) {
 		return loadAgentTar(c.agentTar, c.opts.Arch)
 	}
 	if _, err := exec.LookPath("go"); err != nil {
-		return nil, fmt.Errorf("no Go toolchain on PATH, so the agent cannot be built here. Either pass --agent-tar with the mikroscope-agent-%s.tar from the release, or --remote-image ghcr.io/jmrplens/mikroscope-agent:%s to let the router pull it, or install Go %s and run this from a checkout of the repository",
+		return nil, fmt.Errorf("no Go toolchain on PATH, so the agent cannot be built here. Either pass --agent-tar with the mikroscope-agent-%s.tar from the release, or --remote-image jmrplens/mikroscope-agent:%s to let the router pull it from Docker Hub, or install Go %s and run this from a checkout of the repository",
 			c.opts.Arch, version.Version, goVersionWanted)
 	}
 	fmt.Fprintf(os.Stderr, "building %s for linux/%s\n", image.BinaryName, c.opts.Arch)
@@ -487,7 +487,12 @@ func upgrade(c cli) error {
 	if err != nil {
 		return err
 	}
-	installed, err := router.Installed(r, c.opts)
+	// One connect asks whether the install is there and, with
+	// --remote-image, what doctor's credential check reads; upgrade runs no
+	// doctor and removes the old container before the router pulls, so the
+	// check and any note about registry-url are printed here, before the
+	// confirmation and before anything is removed.
+	installed, err := router.UpgradePreflight(r, c.opts, os.Stdout)
 	if err != nil {
 		return err
 	}

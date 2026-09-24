@@ -79,7 +79,8 @@ script that installs without this CLI at all.
    the container to appear, then 3 s more (RouterOS extracts the image at add
    time), deletes the tar and starts the container. With `--remote-image` there
    is no upload and no tar to wait for or delete: the container is added with
-   `remote-image=` and started. Either way the container is added with
+   `remote-image=` and the whole reference, registry host included, and
+   started; `/container/config` is not touched. Either way the container is added with
    `privileged=`, which RouterOS knows from 7.24: on an earlier 7.x this is the
    step expected to fail, whatever `--privileged` says (read from the code, not
    tried on a router), and upgrading RouterOS is the way through.
@@ -156,7 +157,11 @@ It prints its own plan first — the container step only, with the line
 because those four objects are exactly what an upgrade does NOT write — and
 `--dry-run` stops there, before a connection to the router is even opened.
 Unlike `install` it still runs no `doctor`; run that yourself if you want the
-free-space and device-mode checks before an upgrade.
+free-space and device-mode checks before an upgrade. With `--remote-image` it
+does print doctor's registry-credential check, and a `note` when `registry-url`
+names a host other than the one the pull goes to, from the same connect that
+checks the install is there
+([Nothing to set on the router](https://jmrp.io/docs/mikroscope/install/routes/#nothing-to-set-on-the-router)).
 
 Until 1.1.0 `upgrade` ignored `--dry-run` outright: it printed nothing and went
 straight to the confirmation, so `upgrade --dry-run --yes` replaced the
@@ -645,8 +650,7 @@ The checks doctor runs:
 
 | Check, as printed | Passes when | The fix it names |
 | --- | --- | --- |
-| registry-url is https://<host> | with `--remote-image`, `/container/config registry-url` names the reference's registry host. Without `--remote-image` doctor does not ask: the setting is global to the device and mikroscope never writes it | `/container/config/set registry-url=https://<host>` on the router, which applies to every container on it, or install from a tar with `--agent-tar` |
-| no registry credential meant for another registry | a warning, with `--remote-image` only: no `/container/config` username is set, or the pull goes to Docker Hub. Doctor reads whether a username is set, never the name, and cannot read the password | RouterOS presents the one device-wide credential to whichever registry it pulls from, and a Docker Hub account sent to GHCR ends the pull in `auth error`. Install from a tar with `--agent-tar`, or clear the username if nothing else needs it |
+| no registry credential meant for another registry | a warning, with `--remote-image` only: no `/container/config` username is set, or the host of `registry-url` is the host the image is pulled from, every spelling of Docker Hub counted as one. An empty `registry-url` with a username set warns. Doctor reads whether a username is set, never the name, and cannot read the password | `/container/config` holds one username for the whole device. A credential from another registry makes a pull end in `auth error` even for a public image (measured on the reference RB5009 with a Docker Hub login sent to GHCR, 2026-09-21); whether RouterOS presents it to a host named only in `remote-image=` was not measured. Install from a tar with `--agent-tar`, pass a `--remote-image` on the registry the username belongs to, or clear the username if nothing else needs it |
 | container package installed and enabled | a `container` package exists with `disabled=no` | download, upload, reboot; then `/system/package/enable container` |
 | device-mode container=yes | `/system/device-mode` reports `container=yes` | `/system/device-mode/update container=yes`, then the reset or mode button, or a power cycle, within 5 minutes |
 | architecture matches --arch <arch> | the router's `architecture-name` is the one `--arch` maps to (`arm64`, `arm`, `x86_64`) | re-run with the `--arch` it names |
@@ -667,28 +671,32 @@ for at least what that flag asks for, which is 64 MiB by default, so
 `--memory-max 128M` on a router with 70 MiB free is caught here rather than by
 a container that will not start.
 
-The `registry-url` check runs only with `--remote-image`, and only when the
-reference carries a registry host. `/container/config` is global to the device
-and shared with every other container on it, so mikroscope reads that setting
-and never writes it. RouterOS has shipped it as `https://lscr.io` since
-[7.18](https://download.mikrotik.com/routeros/7.18/CHANGELOG), which is also the
-default that MikroTik's [container documentation](https://help.mikrotik.com/docs/spaces/ROS/pages/84901929/Container)
-gives, and neither Docker Hub nor GHCR is that host. So the Docker Hub reference, `--remote-image jmrplens/mikroscope-agent:1.2.2`,
-needs the setting at `https://registry-1.docker.io`, which is what it reads on the reference
-RB5009, and the GHCR reference needs it at `https://ghcr.io`. The Docker Hub reference names no
-host, so this check does not run for it: read the setting yourself with `/container/config/print`
-before you rely on it.
-[Four ways to install](https://jmrp.io/docs/mikroscope/install/routes/#a-registry-pull) has the
-command to set it by hand.
+There is no `registry-url` check. `--remote-image` hands RouterOS the whole
+reference, registry host included — `registry-1.docker.io/…` for the Docker Hub
+one — so `/container/config registry-url`, which is global to the device and
+shared with every other container on it, does not decide where the pull goes,
+and mikroscope neither needs it set nor writes it.
+[Nothing to set on the router](https://jmrp.io/docs/mikroscope/install/routes/#nothing-to-set-on-the-router)
+has what was measured, and what was not.
 
-The same setting holds one username and password for the whole device, and
-RouterOS presents them to whichever registry it pulls from. They are nearly
-always a Docker Hub account, set to lift Docker Hub's pull limit, and that
-account presented to GHCR ends the pull in `auth error`, even though the image
-can be pulled anonymously. So with any `--remote-image`, doctor asks whether a
-username is set — a yes or a no, never the name, and the password cannot be read
-back at all — and warns when one is set and the pull goes anywhere but Docker
-Hub.
+The same setting holds one username and password for the whole device, and a
+credential meant for one registry and presented to another can end the pull in
+`auth error`, even for an image anyone can pull anonymously: a Docker Hub login
+sent to GHCR did on 2026-09-21. Whether RouterOS presents that login to a host
+named only in `remote-image=` was not measured. So with any `--remote-image`,
+doctor reads `registry-url` and whether a username is set — a yes or a no, never
+the name, and the password cannot be read back at all — and warns when one is
+set and the host `registry-url` names is not the host the image is pulled from.
+It compares hosts only, ignoring the scheme, a path, a trailing slash and case,
+and counts every spelling of Docker Hub as one. An empty `registry-url` with a
+username set warns too: an empty value names no registry, so doctor cannot tell
+what the username was set for. Whether an empty value is what a router ships
+with was not measured, since no router at its factory state was read, and
+MikroTik gives the default as a value: `https://lscr.io` in the 7.18 changelog,
+`docker.io` in the 7.21.2 one, and `https://lscr.io/` on its Container pages.
+`upgrade`, which runs no `doctor`, reads the same two answers in the connect
+that checks the install is there, and prints this check before it asks to
+confirm.
 
 When an install of the same `--name` is already on the router and published on
 the LAN (a dst-nat carrying its tag), doctor also counts the `TOKEN` entries in
@@ -774,10 +782,11 @@ What has run: on the reference RB5009 (RouterOS 7.24.4, 2026-09-23) the section
 read 600 samples from the live agent and found nothing. None of the four findings
 has fired against a live agent; they are exercised by tests that replay the
 reference loop's real kernel-log text at its 2.0 s cadence. Both prerequisite
-`WARN`s were reproduced on the same device and date: the credential one from a
-read-only `doctor --remote-image ghcr.io/…` with a Docker Hub username set, the
-token one from a throwaway install, exposed, then upgraded without a token, then
-removed.
+`WARN`s were reproduced on the same device and date: the credential one, in its
+1.2.x form, from a read-only `doctor --remote-image ghcr.io/…` with a Docker Hub
+username set, the token one from a throwaway install, exposed, then upgraded
+without a token, then removed. The host comparison that replaced the 1.2.x form
+of the credential check has run only against fake router answers in the tests.
 
 ### What your host needs
 
@@ -836,16 +845,16 @@ route works around it.
 
 ### Which one
 
-| Route                                                | Needs                                                              | Prefer it when                                                                                                    |
-| ---------------------------------------------------- | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
-| **[A registry pull](https://jmrp.io/docs/mikroscope/install/routes/#a-registry-pull)** — start here | the router can reach Docker Hub, and `registry-url` names it       | `registry-url` already names Docker Hub, or every container on the router is yours: one command, nothing uploaded |
-| [A RouterOS script](https://jmrp.io/docs/mikroscope/install/routes/#a-routeros-script)              | a terminal on the router; `--remote-image`                         | you reach the router through WinBox or WebFig and not over ssh                                                    |
-| [A checkout, with Go](https://jmrp.io/docs/mikroscope/install/routes/#a-checkout-with-go)           | Go 1.27 and the repository; ssh to the router                      | you are working on mikroscope and want the agent from your tree                                                   |
-| [The published tar](https://jmrp.io/docs/mikroscope/install/routes/#the-published-tar)              | the release assets, the right one for the board; ssh to the router | the router cannot reach a registry                                                                                |
+| Route                                                | Needs                                                              | Prefer it when                                                                             |
+| ---------------------------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
+| **[A registry pull](https://jmrp.io/docs/mikroscope/install/routes/#a-registry-pull)** — start here | the router can reach Docker Hub                                    | the router can reach the internet: one command, nothing uploaded, nothing set on the router |
+| [A RouterOS script](https://jmrp.io/docs/mikroscope/install/routes/#a-routeros-script)              | a terminal on the router; `--remote-image`                         | you reach the router through WinBox or WebFig and not over ssh                             |
+| [A checkout, with Go](https://jmrp.io/docs/mikroscope/install/routes/#a-checkout-with-go)           | Go 1.27 and the repository; ssh to the router                      | you are working on mikroscope and want the agent from your tree                            |
+| [The published tar](https://jmrp.io/docs/mikroscope/install/routes/#the-published-tar)              | the release assets, the right one for the board; ssh to the router | the router cannot reach a registry                                                         |
 
-**Take the first one unless something stops you**, such as a `registry-url` still at RouterOS's
-default on a router whose other containers are not yours. A registry pull is a single
-command with nothing to pick: the published image index carries every platform
+**Take the first one unless something stops you**, such as a router with no way out to the
+internet. A registry pull is a single command with nothing to pick and nothing to set on the
+router first: the published image index carries every platform
 a MikroTik container can be, so the router matches its own and no one has to
 know whether the board is 64-bit ARM or one of the two 32-bit kinds. Nothing
 lands on the flash, and `uninstall` has no file to account for.
@@ -868,51 +877,119 @@ mikroscope install --router user@192.168.88.1 \
 
 Nothing is uploaded, no tar lands on the device, and `uninstall` has no file to
 account for: the container step becomes
-`/container/add remote-image="jmrplens/mikroscope-agent:1.2.2" …` and the plan
-prints `the router pulls … (nothing is uploaded)` where the upload line would
-be. The release publishes the image twice, as
+`/container/add remote-image="registry-1.docker.io/jmrplens/mikroscope-agent:1.2.2" …`
+and the plan prints
+`the router pulls registry-1.docker.io/jmrplens/mikroscope-agent:1.2.2 (nothing is uploaded)`
+where the upload line would be. The release publishes the image twice, as
 `jmrplens/mikroscope-agent:1.2.2` on Docker Hub and as
 `ghcr.io/jmrplens/mikroscope-agent:1.2.2` on GHCR. Both carry `linux/amd64`,
 `linux/arm64`, `linux/arm/v7` and `linux/arm/v5`, and RouterOS picks the one its
 architecture needs — which is why this route asks nothing about the board: the
 two kinds of 32-bit ARM MikroTik ships are both in the index.
 
-The reference above is the Docker Hub one, and it carries no registry host: the
-router pulls it from whatever `/container/config registry-url` already names. On
-the RB5009 this project is measured on, that setting reads
-`https://registry-1.docker.io`, and the command above needed nothing set first.
-RouterOS does not ship it that way: since
-[7.18](https://download.mikrotik.com/routeros/7.18/CHANGELOG) its default is
-`https://lscr.io`, the value MikroTik's [container documentation](https://help.mikrotik.com/docs/spaces/ROS/pages/84901929/Container)
-gives too, and the image is published on Docker Hub and GHCR only. Read yours
-with `/container/config/print` first. On a router still at that default, the
-command above needs `/container/config/set registry-url=https://registry-1.docker.io`
-before it, and the GHCR reference, the alternative, needs
-`/container/config/set registry-url=https://ghcr.io`; either is a change to
-every container on the device.
-
 It needs two things the other routes do not: the router has to reach the
 registry, and it has to have room in RAM for the layers while it extracts them.
 
-> **The registry host is a global router setting**
+#### Nothing to set on the router
+
+mikroscope hands RouterOS the whole reference, registry host included. A
+reference with no host, as above, or one that starts with `docker.io/`,
+`index.docker.io/` or `registry.hub.docker.com/`, goes out as
+`registry-1.docker.io/jmrplens/mikroscope-agent:1.2.2`, the host Docker Hub's
+registry answers on; any other host is kept as given, so the GHCR reference goes
+out as `ghcr.io/jmrplens/mikroscope-agent:1.2.2`. RouterOS takes a registry host
+there since [7.18](https://download.mikrotik.com/routeros/7.18/CHANGELOG), whose
+changelog lists "container - allow specifying registry using remote-image
+property", and mikroscope needs 7.24. So `/container/config registry-url`, one
+value for the whole device and shared with every container on it, decides
+nothing about this pull: `install`, `upgrade` and the `.rsc` script never write
+it, and you set nothing there. The `doctor` that `install` runs first, and the
+check `upgrade` runs before it removes anything, only read it, for the
+registry-username warning below; the script does not read it at all. No
+registry login is needed either: Docker Hub serves the image to anyone.
+
+What was measured, on the reference router with `registry-url` set to
+`https://registry-1.docker.io` (RB5009UG+S+, RouterOS 7.24.4, 2026-09-24):
+
+- `registry.invalid/jmrplens/mikroscope-agent:1.2.2` was logged as
+  `registry=registry.invalid` and failed with `resolving error`: the host inside
+  `remote-image=` overrides `registry-url`.
+- `docker.io/jmrplens/mikroscope-agent:1.2.2` was logged as
+  `registry=registry-1.docker.io` and pulled, so RouterOS translates that
+  spelling itself; mikroscope writes the translated one and does not rely on it.
+- `registry-1.docker.io/jmrplens/mikroscope-agent:1.2.2`, the form mikroscope
+  sends, pulled its arm64 layer of 2 799 648 bytes and ended in
+  `download/extract done`.
+- `/container/config` read the same afterwards as before.
+
+With the device's registry username and password cleared for a second run and
+restored after it, the same full reference ended in `download/extract done`
+5 s after the add, and so did the reference with no host, pulled through
+`registry-url`: Docker Hub served the agent to RouterOS anonymously
+(RB5009UG+S+, RouterOS 7.24.4, 2026-09-24).
+
+Not measured: a whole `install` or `upgrade` that sends the full reference —
+the references above went to RouterOS in a `/container/add` written by hand, in
+containers created in a temporary veth, never started and removed again — a
+router whose `registry-url` is still at its factory default, any RouterOS but
+7.24.4 with the full reference, an anonymous pull from GHCR by RouterOS, and
+which credential RouterOS presents to a host named only in `remote-image=`.
+MikroTik's own sources do not settle that default: the 7.18 changelog adds
+`registry-url=https://lscr.io`, which does not carry the image, the
+[7.21.2](https://download.mikrotik.com/routeros/7.21.2/CHANGELOG) one says
+"changed default container registry to docker.io", no changelog from 7.21.3 to
+7.24.4 mentions the registry (all read on 2026-09-24), and MikroTik's
+[container documentation](https://help.mikrotik.com/docs/spaces/ROS/pages/84901929/Container)
+still gives `https://lscr.io/`. With the host in the reference, mikroscope no
+longer depends on it.
+
+mikroscope 1.2.2 and earlier sent the reference without its host and left the
+registry to `registry-url`. With one of those, a router whose `registry-url`
+does not name the registry needs it set first, which changes it for every
+container on the device, or the tar route instead.
+
+The other side of that change: a reference with no host no longer follows
+`registry-url`. A router that reached Docker Hub through a mirror or a
+pull-through cache named there now pulls from `registry-1.docker.io` directly,
+on `install` as on `upgrade`. To keep using it, name that host in the
+reference, `--remote-image <mirror-host>/jmrplens/mikroscope-agent:1.2.2`,
+which mikroscope sends as given; `upgrade` prints a `note` naming the
+`registry-url` host and that reference when the two hosts differ. A pull
+through a mirror named in the reference has not been tried on RouterOS.
+
+Docker Hub allows an anonymous client 100 pulls per 6 hours per IPv4 address or
+IPv6 `/64` ([Docker Hub pull limits](https://docs.docker.com/docker-hub/usage/pulls/),
+read on 2026-09-24), and the anonymous token it hands out carries the same
+6 h (`pull_limit_interval` 21600). The registry's own `ratelimit-limit` header,
+read the same day on a `HEAD` of the agent's manifest, which Docker says does
+not count, was `100;w=3600`: a one-hour window. Which of the two Docker enforces was
+not measured, so plan for the stricter one. Docker counts a multi-architecture
+image as one pull per architecture pulled, so an install or an upgrade, which
+pulls only the router's own, should cost about one. That figure comes from
+Docker's counting rule and from a pull made with `curl` from the operator host,
+not from a pull by RouterOS. The limit is per public address, so routers behind
+one NAT or CGNAT address share it, which matters for a fleet installing at once.
+
+> **One registry username for the whole device**
 >
-> mikroscope puts only the rest of the reference into `remote-image=` and leaves the registry host
-> to `/container/config registry-url`, which is global to the device and shared with every other
-> container on it. mikroscope never writes that setting — pointing your router's registry somewhere
-> else to install a probe would be a change to somebody else's containers. `doctor` reads it
-> instead, and when the reference names a host the setting does not match it names the one command
-> to run — `/container/config/set registry-url=https://ghcr.io` for the GHCR reference. Install
-> with `--agent-tar` if you would rather not change it. It also warns when a registry username is set
-> and the pull goes anywhere but Docker Hub: see
+> `/container/config` also holds one registry username and password for every container on the
+> router. A Docker Hub login there does not stop this route: one was set during the first run
+> above. A login for one registry sent to another does: on 2026-09-21 a Docker Hub login sent to
+> GHCR ended the pull in `auth error` ([below](https://jmrp.io/docs/mikroscope/install/routes/#--remote-image-against-ghcr)), and whether RouterOS
+> still presents it when the host is named only in `remote-image=` was not measured. `doctor` warns,
+> as `WARN no registry credential meant for another registry`, whenever a username is set and the
+> host `registry-url` names is not the one the image comes from, and `upgrade` prints the same check
+> before it removes anything: see
 > [What doctor checks](https://jmrp.io/docs/mikroscope/install/prerequisites/#what-doctor-checks).
 
-A reference with no host — `jmrplens/mikroscope-agent:1.2.2` — leaves the
-registry to whatever the router is already configured for, and `doctor` then
-runs no `registry-url` check. It still reads the setting and whether a username
-is set, and prints `WARN no registry credential meant for another registry` when
-a username is set and the configured registry is not Docker Hub.
 `--remote-image` reads its default from `MIKROSCOPE_REMOTE_IMAGE`, and `upgrade`
-takes it too; `image` refuses it, because there is no tar to write.
+takes it too; `image` refuses it, because there is no tar to write. `upgrade`
+runs no `doctor` and removes the old container before the router pulls the new
+image. With `--remote-image` it reads `registry-url` and whether a username is
+set in the same connect that checks the install is there, and prints the
+credential check, plus the `note` above when `registry-url` names another host,
+before it asks to confirm; nothing else of `doctor` runs, so run `doctor` with
+the same `--remote-image` first when you change registries.
 
 ### A RouterOS script
 
@@ -957,7 +1034,8 @@ touched, and each removed again before the next. In every one the agent
 answered `/healthz` from the collector host: the checkout build and the
 published `mikroscope-agent-arm64.tar` at a 2 ms round trip, the router's own
 pull of `jmrplens/mikroscope-agent:1.0.1` from Docker Hub at 2 ms — the tag of that date, which
-this sentence keeps rather than following the release — and the
+this sentence keeps rather than following the release, sent then without its host and pulled
+through the router's `registry-url` — and the
 `plan --rsc` script — uploaded and `/import`ed, with no CLI involved in the
 install itself — at 15 ms on its first samples. `uninstall` then verified by
 ownership count in each case, and the router's `/export` after all four was
@@ -970,12 +1048,14 @@ RouterOS 7.24.4, as a second install beside the running one under its own
 `--name`, `--veth`, `--subnet` and `--port`. **It did not work, and the reason
 is worth knowing before you choose a registry.**
 
-`/container/config registry-url` is a single global RouterOS setting, so
-pointing it at `https://ghcr.io` changes the registry for every container on
-the device; it was set for the run and put back afterwards. `doctor` read it
-first and refused with the exact mismatch — `MISSING registry-url is
-https://ghcr.io` — which is the check doing its job. With the registry pointed
-at GHCR the router created the container and then failed the pull:
+The CLI of that date put only the rest of the reference into `remote-image=`,
+so the registry came from `/container/config registry-url`, a single global
+RouterOS setting; it was pointed at `https://ghcr.io` for the run and put back
+afterwards, which changed the registry for every container on the device in
+between. `doctor` read it first and refused with the exact mismatch,
+`MISSING registry-url is https://ghcr.io`, a check that is gone now that the
+host travels inside the reference. With the registry pointed at GHCR the router
+created the container and then failed the pull:
 
 ```text
 download/extract error: fetch manifest failed:
@@ -986,20 +1066,33 @@ download/extract error: fetch manifest failed:
 and the reference router's is a Docker Hub login. Measured from the operator
 host the same day, against the same public package: no credential at all
 returns `200` once the anonymous token is fetched, and a foreign credential
-returns `403` at the token endpoint. So the credential is sent to GHCR, GHCR
-rejects it, and RouterOS reports `auth error` — the image being public does not
-help, because the router never asks anonymously.
+returns `403` at the token endpoint. So the credential was sent to GHCR, GHCR
+rejected it, and RouterOS reported `auth error` — the image being public did
+not help, because with a username set the router presented it instead of asking
+anonymously.
 
 What follows for you: **a router whose `/container/config` holds a Docker Hub
-login cannot pull from GHCR**, and the fix is either a GHCR token in that same
-field or Docker Hub as the registry. Since 1.2.0 `doctor` says so before the
-install, as `WARN no registry credential meant for another registry`, and names
-two ways out: install from a tar with `--agent-tar`, where nothing is pulled, or
-clear the username if nothing else on the router needs it
+login and names GHCR in `registry-url` cannot pull from GHCR**, and the fix is
+either a GHCR token in that same field or Docker Hub as the registry. With the
+host now inside `remote-image=` and `registry-url` left on Docker Hub, whether
+RouterOS still presents that login to GHCR was not measured: the one run with a
+host that differed from `registry-url`'s, on 2026-09-24, named
+`registry.invalid`, which never resolved, so no connection was opened.
+
+Since 1.2.0 `doctor` warns before the install, as
+`WARN no registry credential meant for another registry`, when a registry
+username is set and the pull is not Docker Hub, and names two ways out: install
+from a tar with `--agent-tar`, where nothing is pulled, or clear the username if
+nothing else on the router needs it. After 1.2.2 it compares the host
+`registry-url` names with the host of the pull instead, also warns beside an
+empty `registry-url`, and adds a third way out, a `--remote-image` on the
+registry the username belongs to
 ([What doctor checks](https://jmrp.io/docs/mikroscope/install/prerequisites/#what-doctor-checks)).
-That warning was reproduced read-only on the same RB5009, RouterOS 7.24.4, on
-2026-09-23. A router with no credential set was not tried, because the
-reference router's password cannot be read back and so cannot be restored.
+The 1.2.x form of that warning was reproduced read-only on the same RB5009,
+RouterOS 7.24.4, on 2026-09-23; the host comparison has run only against fake
+router answers in the tests, not against the router. A pull with no credential
+set was measured against Docker Hub on 2026-09-24,
+[above](https://jmrp.io/docs/mikroscope/install/routes/#nothing-to-set-on-the-router), and not against GHCR.
 
 The run also found a real bug, now fixed: a `--remote-image` install identified
 its container by the registry reference, which is the same string for every
@@ -1009,7 +1102,9 @@ veth now.
 
 > **Untested**
 >
-> A GHCR pull from a router whose `/container/config` has no credential, for the reason above. No
+> A pull from GHCR by a router with no registry credential set, and any GHCR pull with the host
+> inside `remote-image=`: the one GHCR run took the host from `registry-url`. A router whose
+> `registry-url` is at its factory default, and the full reference on any RouterOS but 7.24.4. No
 > route has been run on arm or on x86_64 hardware.
 
 ### A checkout, with Go
@@ -1333,8 +1428,9 @@ where; the agent reads more variables than `install` writes, and
 
 The container is added with:
 
-- `file=` the uploaded tar, or `remote-image=` the reference without its
-  registry host when the router pulls it;
+- `file=` the uploaded tar, or `remote-image=` the whole reference, registry
+  host included (`registry-1.docker.io/…` for Docker Hub), when the router pulls
+  it;
 - `interface=` the veth, `root-dir=` the root, `envlist=` the envlist, and the tag
   as its comment;
 - `logging=yes`, so what the agent prints reaches the router log;

@@ -132,21 +132,21 @@ them. Most flags have no variable at all —
      and its architecture has to match `--arch`, or the verb stops and names the asset to download
      instead;
    - **the registry**, `--remote-image jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}`: the router pulls the image
-     itself, nothing is uploaded, and `uninstall` has no file to account for. RouterOS takes the
-     registry host from the global `/container/config registry-url`, which mikroscope never writes
-     because every container on the device shares it. On the RB5009 it reads
-     `https://registry-1.docker.io`, and the Docker Hub reference above pulled from there as it
-     stood. RouterOS itself has shipped it as `https://lscr.io` since
-     [7.18](https://download.mikrotik.com/routeros/7.18/CHANGELOG), which is neither of the two
-     registries the image is published on, and `doctor` does not check it for a reference with no
-     host: on a router nobody has pointed at Docker Hub, set it to `https://registry-1.docker.io`
-     first, or take the tar. The GHCR reference, `ghcr.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}`, names a host of its
-     own: `doctor` checks the setting against it and prints
-     `/container/config/set registry-url=https://ghcr.io` when it does not match, or points at
-     `--agent-tar`. Since 1.2.0 it also prints `WARN` when `/container/config` holds a registry
-     username and the pull goes anywhere but Docker Hub: RouterOS presents that one credential to
-     every registry, and a Docker Hub account sent to GHCR ends the pull in `auth error`. A `WARN`
-     does not stop `install`. The pull needs the router to reach the registry and the free RAM
+     itself, nothing is uploaded, and `uninstall` has no file to account for. mikroscope hands
+     RouterOS the whole reference, `registry-1.docker.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}`,
+     so the global `/container/config registry-url`, which every container on the device shares,
+     does not decide the pull: nothing is set there first and mikroscope never writes it. No
+     registry login is needed either. On the reference router the host inside `remote-image=` overrode
+     `registry-url` (verified on <Verified of="remote-image-host" />), and Docker Hub served the
+     agent with the device's registry username and password cleared (verified
+     on <Verified of="docker-hub-anonymous" />); a router with `registry-url` at its factory
+     default has not been tried. The GHCR reference,
+     `ghcr.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}`, goes out with its own host the same way.
+     Since 1.2.0 `doctor` prints `WARN` when `/container/config` holds a registry username that may
+     not belong to the registry of the pull; after 1.2.2 it decides that by comparing the host
+     `registry-url` names with the one the image comes from. That one credential is for the whole
+     device, and a Docker Hub account sent to GHCR ended a pull in `auth error`. A `WARN` does not
+     stop `install`. The pull needs the router to reach the registry and the free RAM
      for the layers.
 
    `--arch` defaults to `arm64`, the RB5009's; it is not detected from the router, but `doctor`

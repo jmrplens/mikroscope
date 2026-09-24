@@ -14,6 +14,7 @@ import RunsTable from "../../../../components/RunsTable.astro";
 import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
 import Src from "../../../../components/Src.astro";
+import Verified from "../../../../components/Verified.astro";
 import Version from "../../../../components/Version.astro";
 
 Esta página responde a lo que necesita saber primero quien está decidiendo si
@@ -68,8 +69,10 @@ bucle de capa 2, cambios continuos de STP, un enlace que cae y vuelve y descarte
 de softnet—; si ningún agente responde en 3 s lo dice y lo omite, y lo que
 encuentra nunca cambia el código de salida. Trae también dos comprobaciones
 `WARN`, que no cambian ni el código de salida ni que `install` siga adelante: con
-`--remote-image`, un usuario puesto en `/container/config` cuando la descarga va
-a cualquier sitio que no sea Docker Hub, y una instalación con el mismo `--name`
+`--remote-image`, un usuario puesto en `/container/config` cuando `registry-url`
+está vacío o nombra un host distinto del que se descarga la imagen, y una
+instalación con el
+mismo `--name`
 publicada en la LAN sin `TOKEN` en su entorno. Lee si hay un usuario puesto y
 cuántas entradas `TOKEN` existen, nunca un valor. Dónde se ejecutó cada cosa está
 en [Un equipo, dos versiones de RouterOS](#un-equipo-dos-versiones-de-routeros).
@@ -274,13 +277,22 @@ una lo indica; la campaña de errores de puerto (2026-09-19), los tiempos de
 2026-09-19 al 2026-09-24) son de 7.24.4. El equipo ha pasado a 7.24.4, y allí se ejercitaron `doctor`,
 `plan`, `install`, `status` y `uninstall` el 2026-09-21, con el agente instalado
 funcionando de forma continua desde el 2026-09-19. El 2026-09-23, también sobre
-7.24.4, se reprodujo el aviso de registro de `doctor` en solo lectura y su aviso
-de token con una instalación desechable que se expuso, se actualizó sin token y
-se retiró, así que `upgrade` también se ha ejecutado allí. Ese mismo día
+7.24.4, se reprodujo en solo lectura la forma 1.2.x del aviso de registro de
+`doctor` (la comparación de hosts que la sustituyó solo se ha ejecutado contra
+respuestas de router falsas en los tests) y su aviso de token con una
+instalación desechable que se expuso, se actualizó sin token y se retiró, así
+que `upgrade` también se ha ejecutado allí. Ese mismo día
 `doctor` leyó 600 muestras del anillo del agente en marcha y no encontró nada;
 los cuatro fallos que nombra los cubren pruebas que reproducen el texto real de
 los registros y la cadencia de 2,0 s del bucle del equipo de referencia, no un
-fallo en vivo. Las mediciones de 7.24.2 no se han repetido sobre 7.24.4.
+fallo en vivo. El 2026-09-24, también sobre 7.24.4, se le dio a RouterOS la
+referencia del agente con su host de registro dentro de `remote-image=`, en
+contenedores creados en una veth temporal, nunca arrancados y retirados después:
+el host mandó sobre `registry-url` (verificado en <Verified of="remote-image-host" />),
+y Docker Hub sirvió el agente con el usuario y la contraseña de registro del
+equipo borrados y luego restaurados (verificado en <Verified of="docker-hub-anonymous" />). Esa es la forma que envía ahora
+`--remote-image`; un `install` completo con ella aún no se ha ejecutado en el
+router. Las mediciones de 7.24.2 no se han repetido sobre 7.24.4.
 
 <NotClaimed variant="untested">
 	Una segunda placa de cualquier tipo. El hEX S (2025) — RouterOS de 32 bits sobre un chip ARM64,
@@ -348,14 +360,13 @@ configuración de GoReleaser, que publica:
   en Docker Hub y `ghcr.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}` en GHCR (también con
   la etiqueta `latest`), cada una un único manifiesto sobre `linux/amd64`,
   `linux/arm64`, `linux/arm/v7` y `linux/arm/v5`, que
-  `install --remote-image` hace descargar al router. RouterOS toma el host del
-  registro del ajuste global `/container/config registry-url`, que mikroscope
-  nunca escribe. En el RB5009 de referencia vale `https://registry-1.docker.io`,
-  así que la referencia de Docker Hub no necesitó fijar nada allí. El valor por
-  defecto de RouterOS desde la 7.18 es `https://lscr.io`, donde no está la
-  imagen, así que un router en ese valor necesita cambiar el ajuste para
-  cualquiera de las dos referencias:
-  [Un pull del registro](/mikroscope/es/install/routes/#un-pull-del-registro).
+  `install --remote-image` hace descargar al router. mikroscope envía la
+  referencia entera, con el host del registro incluido —`registry-1.docker.io/…`
+  para Docker Hub—, así que el ajuste global `/container/config registry-url` ni
+  hace falta ni se escribe, y Docker Hub sirve la imagen sin login de registro:
+  [Nada que ajustar en el router](/mikroscope/es/install/routes/#nada-que-ajustar-en-el-router)
+  tiene lo que se midió. Hasta la 1.2.2 el host se dejaba a `registry-url`, cuyo
+  valor por defecto en RouterOS no siempre ha sido Docker Hub.
 - **La imagen del colector**, `jmrplens/mikroscope:{{MIKROSCOPE_VERSION}}` en Docker Hub y
   `ghcr.io/jmrplens/mikroscope:{{MIKROSCOPE_VERSION}}` en GHCR (también con la etiqueta
   `latest`), sobre `linux/amd64` y `linux/arm64`, para los stacks de compose de

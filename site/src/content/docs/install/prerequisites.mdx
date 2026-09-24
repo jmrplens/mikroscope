@@ -129,28 +129,32 @@ for at least what that flag asks for, which is 64 MiB by default, so
 `--memory-max 128M` on a router with 70 MiB free is caught here rather than by
 a container that will not start.
 
-The `registry-url` check runs only with `--remote-image`, and only when the
-reference carries a registry host. `/container/config` is global to the device
-and shared with every other container on it, so mikroscope reads that setting
-and never writes it. RouterOS has shipped it as `https://lscr.io` since
-[7.18](https://download.mikrotik.com/routeros/7.18/CHANGELOG), which is also the
-default that MikroTik's [container documentation](https://help.mikrotik.com/docs/spaces/ROS/pages/84901929/Container)
-gives, and neither Docker Hub nor GHCR is that host. So the Docker Hub reference, `--remote-image jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}`,
-needs the setting at `https://registry-1.docker.io`, which is what it reads on the reference
-RB5009, and the GHCR reference needs it at `https://ghcr.io`. The Docker Hub reference names no
-host, so this check does not run for it: read the setting yourself with `/container/config/print`
-before you rely on it.
-[Four ways to install](/mikroscope/install/routes/#a-registry-pull) has the
-command to set it by hand.
+There is no `registry-url` check. `--remote-image` hands RouterOS the whole
+reference, registry host included — `registry-1.docker.io/…` for the Docker Hub
+one — so `/container/config registry-url`, which is global to the device and
+shared with every other container on it, does not decide where the pull goes,
+and mikroscope neither needs it set nor writes it.
+[Nothing to set on the router](/mikroscope/install/routes/#nothing-to-set-on-the-router)
+has what was measured, and what was not.
 
-The same setting holds one username and password for the whole device, and
-RouterOS presents them to whichever registry it pulls from. They are nearly
-always a Docker Hub account, set to lift Docker Hub's pull limit, and that
-account presented to GHCR ends the pull in `auth error`, even though the image
-can be pulled anonymously. So with any `--remote-image`, doctor asks whether a
-username is set — a yes or a no, never the name, and the password cannot be read
-back at all — and warns when one is set and the pull goes anywhere but Docker
-Hub.
+The same setting holds one username and password for the whole device, and a
+credential meant for one registry and presented to another can end the pull in
+`auth error`, even for an image anyone can pull anonymously: a Docker Hub login
+sent to GHCR did on 2026-09-21. Whether RouterOS presents that login to a host
+named only in `remote-image=` was not measured. So with any `--remote-image`,
+doctor reads `registry-url` and whether a username is set — a yes or a no, never
+the name, and the password cannot be read back at all — and warns when one is
+set and the host `registry-url` names is not the host the image is pulled from.
+It compares hosts only, ignoring the scheme, a path, a trailing slash and case,
+and counts every spelling of Docker Hub as one. An empty `registry-url` with a
+username set warns too: an empty value names no registry, so doctor cannot tell
+what the username was set for. Whether an empty value is what a router ships
+with was not measured, since no router at its factory state was read, and
+MikroTik gives the default as a value: `https://lscr.io` in the 7.18 changelog,
+`docker.io` in the 7.21.2 one, and `https://lscr.io/` on its Container pages.
+`upgrade`, which runs no `doctor`, reads the same two answers in the connect
+that checks the install is there, and prints this check before it asks to
+confirm.
 
 When an install of the same `--name` is already on the router and published on
 the LAN (a dst-nat carrying its tag), doctor also counts the `TOKEN` entries in
@@ -236,10 +240,11 @@ What has run: on the reference RB5009 (RouterOS 7.24.4, 2026-09-23) the section
 read 600 samples from the live agent and found nothing. None of the four findings
 has fired against a live agent; they are exercised by tests that replay the
 reference loop's real kernel-log text at its 2.0 s cadence. Both prerequisite
-`WARN`s were reproduced on the same device and date: the credential one from a
-read-only `doctor --remote-image ghcr.io/…` with a Docker Hub username set, the
-token one from a throwaway install, exposed, then upgraded without a token, then
-removed.
+`WARN`s were reproduced on the same device and date: the credential one, in its
+1.2.x form, from a read-only `doctor --remote-image ghcr.io/…` with a Docker Hub
+username set, the token one from a throwaway install, exposed, then upgraded
+without a token, then removed. The host comparison that replaced the 1.2.x form
+of the credential check has run only against fake router answers in the tests.
 
 ## What your host needs
 

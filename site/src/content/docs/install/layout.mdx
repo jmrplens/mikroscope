@@ -105,8 +105,9 @@ where; the agent reads more variables than `install` writes, and
 
 The container is added with:
 
-- `file=` the uploaded tar, or `remote-image=` the reference without its
-  registry host when the router pulls it;
+- `file=` the uploaded tar, or `remote-image=` the whole reference, registry
+  host included (`registry-1.docker.io/…` for Docker Hub), when the router pulls
+  it;
 - `interface=` the veth, `root-dir=` the root, `envlist=` the envlist, and the tag
   as its comment;
 - `logging=yes`, so what the agent prints reaches the router log;

@@ -112,8 +112,9 @@ el agente lee más variables de las que escribe `install`, y
 
 El contenedor se añade con:
 
-- `file=` el tar subido, o `remote-image=` la referencia sin su host de
-  registro cuando el router se baja la imagen;
+- `file=` el tar subido, o `remote-image=` la referencia entera, con el host
+  del registro incluido (`registry-1.docker.io/…` para Docker Hub), cuando el
+  router se baja la imagen;
 - `interface=` la veth, `root-dir=` la raíz, `envlist=` la envlist, y la
   etiqueta como comentario;
 - `logging=yes`, para que lo que imprime el agente llegue al log del router;

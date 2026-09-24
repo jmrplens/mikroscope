@@ -20,7 +20,7 @@ func Listing(o Options, imageSize int, w io.Writer) {
 		if strings.HasPrefix(s.Name, "container ") {
 			switch {
 			case o.UsesRemoteImage():
-				fmt.Fprintf(w, "  %2d. the router pulls %s (nothing is uploaded)\n", i+1, o.RemoteImage)
+				fmt.Fprintf(w, "  %2d. the router pulls %s (nothing is uploaded)\n", i+1, o.RemoteRef())
 			default:
 				fmt.Fprintf(w, "  %2d. upload %s (%d KiB) with scp\n", i+1, o.ImageFile(), imageSize/1024)
 			}
@@ -48,7 +48,7 @@ func UpgradeListing(o Options, imageSize int, w io.Writer) {
 	fmt.Fprintf(w, "  keeps:   the veth, the router address and the list memberships are not touched\n")
 	fmt.Fprintf(w, "   1. remove %s\n      %s\n", c.Name, c.Remove)
 	if o.UsesRemoteImage() {
-		fmt.Fprintf(w, "   2. the router pulls %s (nothing is uploaded)\n", o.RemoteImage)
+		fmt.Fprintf(w, "   2. the router pulls %s (nothing is uploaded)\n", o.RemoteRef())
 	} else {
 		fmt.Fprintf(w, "   2. upload %s (%d KiB) with scp\n", o.ImageFile(), imageSize/1024)
 	}
@@ -66,7 +66,9 @@ func UpgradeListing(o Options, imageSize int, w io.Writer) {
 //
 //   - The image. A script on the router cannot upload a tar, so it needs
 //     either --remote-image (the router pulls it) or a tar already on the
-//     device under the name the container step expects.
+//     device under the name the container step expects. A pull names its
+//     registry inside `remote-image=` (RemoteRef), so the script neither
+//     reads nor writes /container/config.
 //   - The token. The envlist line carries it in clear, because the router
 //     needs it; anyone who can read the script can read the token.
 func Script(o Options, w io.Writer) {
@@ -76,13 +78,11 @@ func Script(o Options, w io.Writer) {
 	fmt.Fprintln(w, "#")
 	switch {
 	case o.UsesRemoteImage():
-		if host := o.RegistryHost(); host != "" {
-			fmt.Fprintf(w, "# The router pulls %s itself. That needs the GLOBAL registry setting,\n", o.RemoteImage)
-			fmt.Fprintf(w, "# which applies to every container on this device — check it before running:\n")
-			fmt.Fprintf(w, "#   /container/config/set registry-url=https://%s\n", host)
-		} else {
-			fmt.Fprintf(w, "# The router pulls %s from whatever /container/config registry-url names.\n", o.RemoteImage)
-		}
+		fmt.Fprintf(w, "# The router pulls %s itself.\n", o.RemoteRef())
+		fmt.Fprintln(w, "# The registry host is part of remote-image= (RouterOS 7.18 and later take it")
+		fmt.Fprintln(w, "# there), so this script neither reads nor changes the device-wide registry-url.")
+		fmt.Fprintf(w, "# A registry username set on the device for a registry other than %s\n", o.RegistryHost())
+		fmt.Fprintln(w, "# can make the pull end in `auth error`; `mikroscope doctor` warns about it.")
 	default:
 		fmt.Fprintf(w, "# BEFORE RUNNING: put the agent image tar on the device as %s\n", o.ImageFile())
 		fmt.Fprintln(w, "# (upload it over WinBox/WebFig Files, or /tool/fetch it), or regenerate this")
@@ -159,7 +159,7 @@ func createStep(r Runner, o Options, s Step, image []byte, w io.Writer) error {
 		}
 	}
 	if isContainer && o.UsesRemoteImage() {
-		fmt.Fprintf(w, "  pull  the router pulls %s itself\n", o.RemoteImage)
+		fmt.Fprintf(w, "  pull  the router pulls %s itself\n", o.RemoteRef())
 	}
 	out, err := r.Run(s.Create)
 	if msg := strings.TrimSpace(out); err == nil && msg != "" {
@@ -244,6 +244,48 @@ func Installed(r Runner, o Options) (bool, error) {
 		return false, err
 	}
 	return !slices.Contains(got, "0"), nil
+}
+
+// UpgradePreflight is what upgrade asks the router before it writes anything,
+// in one connect: whether every step of this install is owned — the question
+// Installed answers — and, with --remote-image, the two /container/config
+// answers doctor's credential check reads. upgrade runs no doctor, and it
+// removes the old container before the router pulls the new image, so a pull
+// that fails leaves the router without an agent. When the install is there,
+// this prints that credential check and, when registry-url names a host
+// other than the one the pull goes to, a note with the reference that keeps
+// that host (registryURLNote), so the operator reads both before the
+// confirmation. It prints nothing for a tar upgrade or when the install is
+// not there, and writes nothing.
+func UpgradePreflight(r Runner, o Options, w io.Writer) (bool, error) {
+	plan := Plan(o)
+	queries := make([]string, 0, len(plan)+2)
+	for _, s := range plan {
+		queries = append(queries, s.Owned)
+	}
+	if o.UsesRemoteImage() {
+		queries = append(queries, registryURLQuery, registryUserQuery)
+	}
+	lines, err := batch(r, queries)
+	if err != nil {
+		return false, err
+	}
+	if slices.Contains(lines[:len(plan)], "0") {
+		return false, nil
+	}
+	if !o.UsesRemoteImage() {
+		return true, nil
+	}
+	registryURL, userSet := lines[len(plan)], isYes(lines[len(plan)+1])
+	var rep Report
+	addRegistryCredential(&rep, o, registryURL, userSet)
+	for _, it := range rep.Items {
+		it.print(w)
+	}
+	if note := registryURLNote(o, registryURL); note != "" {
+		fmt.Fprintf(w, "  %-7s %s\n", "note", note)
+	}
+	return true, nil
 }
 
 func firstLine(err error) string {

@@ -80,8 +80,7 @@ The checks doctor runs:
 
 | Check, as printed | Passes when | The fix it names |
 | --- | --- | --- |
-| registry-url is https://<host> | with `--remote-image`, `/container/config registry-url` names the reference's registry host. Without `--remote-image` doctor does not ask: the setting is global to the device and mikroscope never writes it | `/container/config/set registry-url=https://<host>` on the router, which applies to every container on it, or install from a tar with `--agent-tar` |
-| no registry credential meant for another registry | a warning, with `--remote-image` only: no `/container/config` username is set, or the pull goes to Docker Hub. Doctor reads whether a username is set, never the name, and cannot read the password | RouterOS presents the one device-wide credential to whichever registry it pulls from, and a Docker Hub account sent to GHCR ends the pull in `auth error`. Install from a tar with `--agent-tar`, or clear the username if nothing else needs it |
+| no registry credential meant for another registry | a warning, with `--remote-image` only: no `/container/config` username is set, or the host of `registry-url` is the host the image is pulled from, every spelling of Docker Hub counted as one. An empty `registry-url` with a username set warns. Doctor reads whether a username is set, never the name, and cannot read the password | `/container/config` holds one username for the whole device. A credential from another registry makes a pull end in `auth error` even for a public image (measured on the reference RB5009 with a Docker Hub login sent to GHCR, 2026-09-21); whether RouterOS presents it to a host named only in `remote-image=` was not measured. Install from a tar with `--agent-tar`, pass a `--remote-image` on the registry the username belongs to, or clear the username if nothing else needs it |
 | container package installed and enabled | a `container` package exists with `disabled=no` | download, upload, reboot; then `/system/package/enable container` |
 | device-mode container=yes | `/system/device-mode` reports `container=yes` | `/system/device-mode/update container=yes`, then the reset or mode button, or a power cycle, within 5 minutes |
 | architecture matches --arch <arch> | the router's `architecture-name` is the one `--arch` maps to (`arm64`, `arm`, `x86_64`) | re-run with the `--arch` it names |
@@ -133,7 +132,7 @@ status.
 | `--arch`         | `arm64`                         | `MIKROSCOPE_ARCH`         | `^[a-z0-9]{1,16}$`; `doctor` knows `arm64`, `arm`, `amd64` | device architecture, used as `GOARCH` and in the image manifest                                                                                                                                                                                                                                                 |
 | `--goarm`        | `5`                             | none                      |                                                            | `GOARM` level, used only with `--arch arm`: 5 runs on every 32-bit ARM MikroTik ships, 7 does not run on EN7562CT boards (hEX Refresh)                                                                                                                                                                                                                                                                      |
 | `--agent-tar`    | empty (build the agent here)    | `MIKROSCOPE_AGENT_TAR`    | a path to an agent image tar                               | `plan`, `install`, `upgrade`, `image`: upload this tar instead of building one, so neither a Go toolchain nor a checkout is needed. The tar is checked first: one that is not a mikroscope agent image, or is built for an architecture other than `--arch`, fails the verb naming the asset to download        |
-| `--remote-image` | empty (upload a tar)            | `MIKROSCOPE_REMOTE_IMAGE` | a registry reference, `owner/name:tag` or `host/owner/name:tag`             | `plan`, `install`, `upgrade`: the router pulls the image itself, so nothing is built and nothing is uploaded, and no tar lands on the device. RouterOS takes the registry host from the global `/container/config registry-url`, which mikroscope never writes; its RouterOS default since 7.18 is `https://lscr.io`, which does not carry the image, and on the reference RB5009 it reads `https://registry-1.docker.io`; `doctor` checks that setting against a reference that names a host of its own, such as the GHCR one, and names the command to run |
+| `--remote-image` | empty (upload a tar)            | `MIKROSCOPE_REMOTE_IMAGE` | a registry reference, `owner/name:tag` or `host/owner/name:tag`             | `plan`, `install`, `upgrade`: the router pulls the image itself, so nothing is built and nothing is uploaded, and no tar lands on the device. The whole reference goes into `remote-image=`, registry host included: none, `docker.io`, `index.docker.io` or `registry.hub.docker.com` becomes `registry-1.docker.io`, any other host is kept. The global `/container/config registry-url` is neither needed nor written, and no registry login is needed for the published image |
 | `--rsc`          | `false`                         | none                      |                                                            | `plan`: write a RouterOS script that installs from the router itself, instead of the listing                                                                                                                                                                                                                    |
 | `--port`         | `9123`                          | none                      | 1–65535                                                    | agent HTTP port on the veth                                                                                                                                                                                                                                                                                     |
 | `--rate`         | `10`                            | none                      | 1–100                                                      | sampler rate in Hz (envlist `RATE_HZ`); 10, 50 and 100 Hz measured lossless on the RB5009 ([rate ceiling](https://jmrp.io/docs/mikroscope/cost/rate-ceiling/))                                                                                                                                                                      |
@@ -2350,7 +2349,7 @@ says what it means and where the explanation lives.
 | Container log: `exec format error`                                    | [The wrong image for the board](https://jmrp.io/docs/mikroscope/reference/troubleshooting/#exec-format-error)                    |
 | `no Go toolchain on PATH`                                             | Install with `--remote-image` or `--agent-tar` instead                 |
 | `--agent-tar …: this is not a mikroscope agent image`                 | The wrong asset — see [which tar](https://jmrp.io/docs/mikroscope/install/routes/#which-tar) |
-| `doctor`: `registry-url is https://ghcr.io … registry-url=…`          | [The registry host is global](https://jmrp.io/docs/mikroscope/reference/troubleshooting/#the-registry-host)                      |
+| `doctor` (1.2.2 and earlier): `registry-url is https://… registry-url=…` | [The registry host](https://jmrp.io/docs/mikroscope/reference/troubleshooting/#the-registry-host)                                |
 | `doctor`: `free flash ≥ …` fails                                      | `--disk tmpfs` or `--ephemeral`, or free space on the flash            |
 | `doctor`: `WARN no registry credential meant for another registry`    | [One credential for every registry](https://jmrp.io/docs/mikroscope/reference/troubleshooting/#one-credential-for-every-registry) |
 | `doctor`: `WARN the installed agent published on the LAN asks for a token` | `upgrade` with the same `--name`, the original install flags and `--token`; or `uninstall --expose --lan-address … --token …`, which removes the agent entirely |
@@ -2411,23 +2410,36 @@ not run on the first. So:
 
 #### The registry host
 
-`/container/config registry-url` is one global RouterOS setting, shared with
-every other container on the device, and mikroscope reads it and never writes
-it. RouterOS's default since 7.18 is `https://lscr.io`, which carries neither
-image, so read yours with `/container/config/print`. The Docker Hub reference
-works on a router already set to `https://registry-1.docker.io`, as the
-reference RB5009 is; the GHCR one needs `https://ghcr.io`. Changing the setting
-changes it for everyone else on that router too.
+mikroscope 1.2.2 and earlier put the reference into `remote-image=` without its
+registry host, so RouterOS took the host from `/container/config registry-url`,
+one setting for the whole device, and `doctor` checked that setting against a
+reference that named a host. mikroscope after 1.2.2 sends the whole reference,
+registry host included, and neither checks the setting nor needs it: on the
+reference router the host inside `remote-image=` overrode `registry-url`
+(verified on RB5009UG+S+, RouterOS 7.24.4, 2026-09-24), and Docker Hub served the
+agent with no registry login (verified on RB5009UG+S+, RouterOS 7.24.4, 2026-09-24;
+[Nothing to set on the router](https://jmrp.io/docs/mikroscope/install/routes/#nothing-to-set-on-the-router)
+has the rest, and what was not measured). With 1.2.2 or earlier, either set the
+setting as the fix line says, which changes it for every other container on the
+router too, or install from the tar with `--agent-tar`.
 
 #### One credential for every registry
 
-`/container/config` holds one username and password for the device, and
-RouterOS presents them to whichever registry it pulls from. A Docker Hub account
-presented to GHCR fails, and the container stays in `error` with `auth error` in
-its log, for an image anyone can pull anonymously. Install from a tar with
-`--agent-tar`, which pulls nothing, or pull the Docker Hub reference, or clear
-the username if nothing else on the router needs it. The password cannot be read
-back once cleared, so do that only knowing where it lives.
+`/container/config` holds one username and password for the device. A Docker
+Hub account presented to GHCR fails, and the container stays in `error` with
+`auth error` in its log, for an image anyone can pull anonymously: measured on
+2026-09-21 with GHCR named in `registry-url`. Whether RouterOS still presents the
+username to a host named only in `remote-image=` was not measured, so `doctor`
+warns whenever a username is set and the host `registry-url` names is not the
+host the image comes from, and `upgrade` prints the same check before it
+removes anything. Install from a tar with `--agent-tar`, which pulls
+nothing, or pull from the registry the username belongs to — the Docker Hub
+reference for a Docker Hub login — or clear the username if nothing else on the
+router needs it. The password cannot be read back once cleared, so do that only
+knowing where it lives. An empty `registry-url` with a username set warns too,
+because doctor cannot tell which registry the username is for; if you know it is
+a Docker Hub login and you pull the Docker Hub reference, the warning is advice
+you can ignore.
 
 #### A loop RouterOS does not show
 

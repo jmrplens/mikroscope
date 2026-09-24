@@ -6,9 +6,10 @@
  * terminal prints; `<name>` stands for the value doctor fills in. The fix is
  * a summary of the code's fix string, not the string itself, which is longer
  * than a table cell. The free-flash and disk checks are exclusive: doctor runs
- * the first without `--disk` or `--ephemeral`, the second with one. The
- * registry-url check runs only with a `--remote-image` that names a host.
- * The registry-credential check runs with any `--remote-image`, and the
+ * the first without `--disk` or `--ephemeral`, the second with one. There is
+ * no registry-url check: `--remote-image` sends RouterOS the whole reference,
+ * registry host included, so that device-wide setting decides nothing about
+ * the pull. The registry-credential check runs with any `--remote-image`, and the
  * exposed-token check only when an install of that `--name` is published on
  * the LAN. Those two are warnings: doctor prints them as `WARN`, and they
  * change neither its exit status nor whether `install` goes ahead.
@@ -26,27 +27,15 @@ export interface DoctorCheck {
 
 export const doctorChecks: readonly DoctorCheck[] = [
 	{
-		id: "registry-url",
-		printed: "registry-url is https://<host>",
-		passes: {
-			en: "with `--remote-image`, `/container/config registry-url` names the reference's registry host. Without `--remote-image` doctor does not ask: the setting is global to the device and mikroscope never writes it",
-			es: "con `--remote-image`, `/container/config registry-url` nombra el host de registro de la referencia. Sin `--remote-image` doctor no lo pregunta: el ajuste es global del equipo y mikroscope nunca lo escribe",
-		},
-		fix: {
-			en: "`/container/config/set registry-url=https://<host>` on the router, which applies to every container on it, or install from a tar with `--agent-tar`",
-			es: "`/container/config/set registry-url=https://<host>` en el router, que afecta a todos sus contenedores, o instalar desde un tar con `--agent-tar`",
-		},
-	},
-	{
 		id: "registry-credential",
 		printed: "no registry credential meant for another registry",
 		passes: {
-			en: "a warning, with `--remote-image` only: no `/container/config` username is set, or the pull goes to Docker Hub. Doctor reads whether a username is set, never the name, and cannot read the password",
-			es: "un aviso, solo con `--remote-image`: no hay usuario en `/container/config`, o la descarga va a Docker Hub. Doctor lee si hay usuario, nunca el nombre, y no puede leer la contraseña",
+			en: "a warning, with `--remote-image` only: no `/container/config` username is set, or the host of `registry-url` is the host the image is pulled from, every spelling of Docker Hub counted as one. An empty `registry-url` with a username set warns. Doctor reads whether a username is set, never the name, and cannot read the password",
+			es: "un aviso, solo con `--remote-image`: no hay usuario en `/container/config`, o el host de `registry-url` es el host del que se descarga la imagen, contando todas las grafías de Docker Hub como una. Un `registry-url` vacío con usuario puesto avisa. Doctor lee si hay usuario, nunca el nombre, y no puede leer la contraseña",
 		},
 		fix: {
-			en: "RouterOS presents the one device-wide credential to whichever registry it pulls from, and a Docker Hub account sent to GHCR ends the pull in `auth error`. Install from a tar with `--agent-tar`, or clear the username if nothing else needs it",
-			es: "RouterOS presenta la única credencial del equipo a cualquier registro del que descargue, y una cuenta de Docker Hub enviada a GHCR termina la descarga en `auth error`. Instalar desde un tar con `--agent-tar`, o borrar el usuario si nada más lo necesita",
+			en: "`/container/config` holds one username for the whole device. A credential from another registry makes a pull end in `auth error` even for a public image (measured on the reference RB5009 with a Docker Hub login sent to GHCR, 2026-09-21); whether RouterOS presents it to a host named only in `remote-image=` was not measured. Install from a tar with `--agent-tar`, pass a `--remote-image` on the registry the username belongs to, or clear the username if nothing else needs it",
+			es: "`/container/config` guarda un solo usuario para todo el equipo. Una credencial de otro registro hace que la descarga acabe en `auth error` aunque la imagen sea pública (medido en el RB5009 de referencia con un login de Docker Hub enviado a GHCR, 2026-09-21); no se ha medido si RouterOS la presenta a un host que solo nombra `remote-image=`. Instalar desde un tar con `--agent-tar`, pasar un `--remote-image` del registro al que pertenece el usuario, o borrar el usuario si nada más lo necesita",
 		},
 	},
 	{

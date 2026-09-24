@@ -529,8 +529,8 @@ func TestRemoteImageInstallTouchesNoFile(t *testing.T) {
 	if err := o.Finish(); err != nil {
 		t.Fatal(err)
 	}
-	if o.RegistryHost() != "ghcr.io" || o.RemoteRef() != "jmrplens/mikroscope-agent:1.0.0" {
-		t.Fatalf("split: host %q ref %q", o.RegistryHost(), o.RemoteRef())
+	if o.RegistryHost() != "ghcr.io" || o.RemoteRef() != "ghcr.io/jmrplens/mikroscope-agent:1.0.0" {
+		t.Fatalf("reference: host %q ref %q", o.RegistryHost(), o.RemoteRef())
 	}
 	var container Step
 	for _, s := range Plan(o) {
@@ -538,7 +538,7 @@ func TestRemoteImageInstallTouchesNoFile(t *testing.T) {
 			container = s
 		}
 	}
-	if !strings.Contains(container.Create, `remote-image="jmrplens/mikroscope-agent:1.0.0"`) {
+	if !strings.Contains(container.Create, `remote-image="ghcr.io/jmrplens/mikroscope-agent:1.0.0"`) {
 		t.Errorf("create does not pull the image: %s", container.Create)
 	}
 	for what, cmd := range map[string]string{"create": container.Create, "check": container.Check, "owned": container.Owned, "remove": container.Remove} {
@@ -610,7 +610,7 @@ func TestScriptIsTheSameInstall(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
-		"/container/config/set registry-url=https://ghcr.io",
+		`remote-image="ghcr.io/jmrplens/mikroscope-agent:1.0.0"`,
 		"treat this file as a credential",
 		o.Tag(),
 	} {
