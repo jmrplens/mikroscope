@@ -13,9 +13,10 @@ import (
 	"github.com/jmrplens/mikroscope/internal/dashboards"
 )
 
-// runDashboards: `dashboards gen --out dir` writes the two JSON files;
-// `dashboards import|check --store influxdb|prometheus|postgres --grafana URL
-// --datasource-uid X` use the Grafana API (token in GRAFANA_TOKEN).
+// runDashboards: `dashboards gen --out dir` writes one JSON file per store in
+// dashboards.Stores, and the alert rules of the stores that have them;
+// `dashboards import|check --store influxdb|prometheus|postgres|graphite|elasticsearch
+// --grafana URL --datasource-uid X` use the Grafana API (token in GRAFANA_TOKEN).
 func runDashboards(args []string) error {
 	if len(args) == 0 {
 		return errors.New("dashboards needs gen, import or check")

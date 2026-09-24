@@ -47,7 +47,13 @@ func parseRecordFlags(verb string, args []string, c *cli, fs *flag.FlagSet) (rec
 	}
 	fs.StringVar(&ro.prefix, "out", "", "output prefix: <out>.jsonl, .csv, .markers.csv, .meta.json (default capture-<UTC time>)")
 	fs.DurationVar(&ro.forDur, "for", 0, "record for this long, then stop (0 = until Ctrl-C)")
-	fs.BoolVar(&ro.fromStart, "from-start", false, "backfill everything the agent's ring holds before going live")
+	// Only record reads it. forward, mark and plot were offered it too, and
+	// forward's --help listed it while internal/forward always starts at the
+	// agent's newest sample: a flag accepted and ignored. Unregistered, it is
+	// refused as an unknown flag instead.
+	if verb == "record" {
+		fs.BoolVar(&ro.fromStart, "from-start", false, "backfill everything the agent's ring holds before going live")
+	}
 	fs.DurationVar(&ro.poll, "poll", 500*time.Millisecond, "how often to pull the agent's ring")
 	fs.IntVar(&ro.batch, "batch", 0, fmt.Sprintf("samples per pull (0 = twice what one --poll interval produces at the agent's rate, at least 20; the relay caps a pull at %d). The ring is drained until a pull comes back short", transport.RelayMaxBatch()))
 	fs.StringVar(&ro.transport, "transport", "auto", "auto, direct (HTTP to the veth) or relay (/tool fetch over the RouterOS API)")

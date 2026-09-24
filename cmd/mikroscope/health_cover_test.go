@@ -114,3 +114,66 @@ func TestDoctorRunsTheHealthHalfWhateverThePrerequisitesSay(t *testing.T) {
 		t.Errorf("doctor printed:\n%s", out)
 	}
 }
+
+// A ring longer than one snapshot request (BUFFER_S=3600 at 10 Hz holds
+// 36 000 samples) must be read from its newest end: doctor reports what is
+// happening now, and the oldest ringMax samples are an hour old.
+func TestDoctorHealthReadsTheNewestEndOfALongRing(t *testing.T) {
+	const seq, oldest = 36000, 1
+	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprintf(w, `{"ok":true,"seq":%d,"oldest_seq":%d,"rate_hz":10,"board":"RB5009"}`, seq, oldest)
+	})
+	var gotSince string
+	mux.HandleFunc("/snapshot", func(w http.ResponseWriter, r *http.Request) {
+		gotSince = r.URL.Query().Get("since")
+		since, _ := strconv.ParseUint(gotSince, 10, 64)
+		// Two samples right after since, so the answer is well-formed.
+		for i := range uint64(2) {
+			fmt.Fprintf(w, `{"seq":%d,"wall_ns":%d}`+"\n", since+1+i, int64(1788000000000000000)+int64(i)*1e8)
+		}
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	h, p, _ := net.SplitHostPort(strings.TrimPrefix(srv.URL, "http://"))
+	n, _ := strconv.Atoi(p)
+	var buf bytes.Buffer
+	doctorHealth(context.Background(), &buf, h, n, "")
+	if want := strconv.Itoa(seq - ringMax); gotSince != want {
+		t.Fatalf("doctor asked since=%s, want %s (the newest %d of %d samples)\n%s", gotSince, want, ringMax, seq-oldest+1, buf.String())
+	}
+
+	for _, c := range []struct{ seq, oldest, want uint64 }{
+		{160, 101, 100},       // short ring: from just before the oldest
+		{10000, 1, 0},         // exactly ringMax: the whole ring
+		{36000, 1, 26000},     // long ring: the newest ringMax
+		{36000, 30000, 29999}, // oldest already inside the last ringMax
+		{0, 0, 0},             // an empty ring
+	} {
+		if got := healthSince(c.seq, c.oldest); got != c.want {
+			t.Errorf("healthSince(%d, %d) = %d, want %d", c.seq, c.oldest, got, c.want)
+		}
+	}
+}
+
+// Standalone doctor asks for the flash the install would need: with
+// --remote-image no tar is uploaded, so the 4 MiB of headroom alone, as
+// install asks; from a tar, twice the assumed 7 MiB image plus that headroom.
+func TestDoctorSizesTheFlashCheckLikeInstall(t *testing.T) {
+	stubRouter(t, "0")
+	for _, c := range []struct {
+		remote string
+		want   string
+	}{
+		{"jmrplens/mikroscope-agent:1.0.10", "free flash ≥ 4.0 MiB"},
+		{"", "free flash ≥ 18.0 MiB"},
+	} {
+		cl := deployCLI(t)
+		cl.opts.RemoteImage = c.remote
+		cl.opts.ContainerIP, cl.opts.Port = "127.0.0.1", 1
+		out := capture(t, func() { _ = doctor(cl) })
+		if !strings.Contains(out, c.want) {
+			t.Errorf("doctor with remote-image %q printed:\n%s\nwant %q", c.remote, out, c.want)
+		}
+	}
+}

@@ -13,7 +13,8 @@ import (
 
 // Pruned relative to upstream v3.0.1: TestAsyncTwice, TestRunWithListen,
 // TestProtoRunAsync, TestRunEOFAsync and TestListen exercised the async/listen
-// mode, which this vendored copy removes outright — see PRUNED.md.
+// mode, which this vendored copy removes outright — see "Local changes relative
+// to upstream v3.0.1" in internal/rosapi/README.md, items 1 and 4.
 
 // TestRandomData: a kilobyte of noise where a reply should be must not crash
 // the client, hang it, or be read as the pre-6.43 challenge.

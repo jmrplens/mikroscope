@@ -275,6 +275,11 @@ func TestDoctorWarnsOfAnExposedAgentWithoutAToken(t *testing.T) {
 			t.Fatalf("nat=%s token=%s: item %+v", tc.nat, tc.token, it)
 		case tc.want == "warn" && (it.OK || !it.Warn || !strings.Contains(it.Fix, "--token")):
 			t.Fatalf("exposed without token not warned: %+v", it)
+		case tc.want == "warn" && !strings.Contains(it.Fix, "uninstall --name mikroscope --expose --lan-address <router LAN IPv4> --token <any> --yes"):
+			// The fix has to be a command that runs: uninstall --expose
+			// without --lan-address and --token is refused by validateExpose,
+			// and without --yes it only lists.
+			t.Fatalf("fix is not a complete uninstall command: %q", it.Fix)
 		case tc.want == "ok" && !it.OK:
 			t.Fatalf("exposed with token warned: %+v", it)
 		}

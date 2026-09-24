@@ -33,12 +33,10 @@
         "iconColor": "red",
         "name": "detections",
         "target": {
-          "expr": "increase(mikroscope_collector_detections_total[1m]) \u003e 0",
+          "fromAnnotations": true,
           "refId": "Anno",
-          "step": "1m",
-          "tagKeys": "rule",
-          "textFormat": "detection: {{rule}}",
-          "titleFormat": "{{rule}}"
+          "target": "aliasByNode($prefix.$host.detection.*, 3)",
+          "textEditor": true
         }
       },
       {
@@ -50,12 +48,10 @@
         "iconColor": "orange",
         "name": "triggers",
         "target": {
-          "expr": "increase(mikroscope_trigger_fired_total[1m]) \u003e 0",
+          "fromAnnotations": true,
           "refId": "Anno",
-          "step": "1m",
-          "tagKeys": "condition",
-          "textFormat": "capture armed: {{condition}}",
-          "titleFormat": "{{condition}}"
+          "target": "aliasByNode($prefix.$host.trigger.*, 3)",
+          "textEditor": true
         }
       }
     ]

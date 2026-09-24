@@ -329,8 +329,9 @@ type chipLayout struct {
 }
 
 // layoutChips places one chip per marker on the first row where it does
-// not overlap the previous chip, up to maxRows; a chip that fits nowhere is
-// clipped to its own row's edge rather than dropped (its line still shows).
+// not overlap the previous chip, up to maxRows. A chip that fits nowhere has
+// its label shortened until it does; once the label would fall under
+// minChipLabel the chip is dropped, and the marker keeps only its dashed rule.
 func layoutChips(markers []Marker, t0 int64, tMax float64, x func(float64) float64) chipLayout {
 	var out chipLayout
 	rowEnd := make([]float64, maxRows)
