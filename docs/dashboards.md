@@ -1005,7 +1005,10 @@ Grafana's `/api/ds/query` against your datasource over the window, and counts th
 back. The request carries the step Grafana would compute for that panel: the window divided by 900
 data points, raised to the panel's own minimum interval where it has one. Without that step, an
 `increase(x[$__interval])` target returns an empty frame, because a step below the scrape interval
-leaves fewer than two points in the range.
+leaves fewer than two points in the range. Every InfluxDB panel that bins with `$__dateBin` has a
+minimum interval of at least 1 s: Grafana writes that macro's bin in whole seconds, so a step under
+1 s draws a bin 0 seconds wide and the panel comes back empty, in `check` and in a browser zoomed in
+to a few minutes (measured on 2026-09-25, Grafana 13.2.1 and 13.2.2).
 
 It prints one line per panel and a verdict:
 

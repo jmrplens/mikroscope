@@ -8,6 +8,22 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **InfluxDB panels read "No data" when zoomed in.** Grafana's `$__dateBin`
+  writes its bin as the whole seconds of the query's interval, and Grafana
+  derives that interval from the range and the panel's width, so under about
+  15 minutes on a 900-pixel panel the bin was 0 seconds wide. Measured on
+  2026-09-25 on the reference deployment (Grafana 13.2.2, InfluxDB 3
+  Enterprise): "CPU busy per core" over the last 5 minutes returned no frame
+  at 200 and 500 ms, and 899 rows over 15 minutes at 1000 ms. In the docker
+  e2e stack (Grafana 13.2.1, InfluxDB 3.11.2 Core) 666 and 999 ms returned no
+  frame and no error over points that were there, and on GitHub's runners on
+  2026-09-24 the same images answered 82 of the 143 panels with
+  `DATE_BIN stride must be non-zero`, which is how it was found. The 96
+  InfluxDB panels that bin with `$__dateBin` and set no wider Min interval now
+  carry `1s`, so a short range draws 1-second bins; the 45 with `1m` keep it,
+  and `dashboards check` sends the same floor. The interval a browser sends on
+  a short range was computed from the range and the width, not captured. A
+  dashboard imported earlier keeps the old panels until it is imported again.
 - **What `/container/config registry-url` defaults to.** The documentation,
   the release notes and the [1.0.1] entry below said RouterOS ships it as
   `https://registry-1.docker.io`, so the Docker Hub image would pull with

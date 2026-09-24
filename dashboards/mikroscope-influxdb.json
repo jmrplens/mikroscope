@@ -120,6 +120,7 @@
         "y": 1
       },
       "id": 2,
+      "interval": "1s",
       "options": {
         "legend": {
           "calcs": [],
@@ -141,6 +142,7 @@
           },
           "editorMode": "code",
           "format": "time_series",
+          "interval": "1s",
           "rawQuery": true,
           "rawSql": "SELECT $__dateBin(time) AS time, concat('core ', lpad(cpu, 2, '0')) AS metric, avg(busy_ratio) * 100 AS value FROM mikroscope_cpu WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
           "refId": "A"
@@ -212,6 +214,7 @@
         "y": 1
       },
       "id": 3,
+      "interval": "1s",
       "options": {
         "legend": {
           "calcs": [],
@@ -233,6 +236,7 @@
           },
           "editorMode": "code",
           "format": "time_series",
+          "interval": "1s",
           "rawQuery": true,
           "rawSql": "SELECT $__dateBin(time) AS time, 'in use' AS metric, (avg(total_kb) - avg(available_kb)) * 100.0 / NULLIF(avg(total_kb), 0) AS value FROM mikroscope_mem WHERE $__timeFilter(time) AND total_kb IS NOT NULL GROUP BY 1, 2 ORDER BY 1",
           "refId": "A"
@@ -276,6 +280,7 @@
         "y": 1
       },
       "id": 4,
+      "interval": "1s",
       "options": {
         "colorMode": "value",
         "graphMode": "area",
@@ -306,6 +311,7 @@
           },
           "editorMode": "code",
           "format": "time_series",
+          "interval": "1s",
           "rawQuery": true,
           "rawSql": "SELECT $__dateBin(time) AS time, 'connections (slab nf_conntrack)' AS metric, max(active) AS value FROM mikroscope_slab WHERE $__timeFilter(time) AND cache = 'nf_conntrack' GROUP BY 1, 2 ORDER BY 1",
           "refId": "A"
@@ -357,6 +363,7 @@
         "y": 9
       },
       "id": 5,
+      "interval": "1s",
       "options": {
         "legend": {
           "calcs": [],
@@ -378,6 +385,7 @@
           },
           "editorMode": "code",
           "format": "time_series",
+          "interval": "1s",
           "rawQuery": true,
           "rawSql": "SELECT $__dateBin(time) AS time, concat(interface, ' rx') AS metric, avg(rx_bps) AS value FROM mikroscope_api_iface WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
           "refId": "A"
@@ -390,6 +398,7 @@
           },
           "editorMode": "code",
           "format": "time_series",
+          "interval": "1s",
           "rawQuery": true,
           "rawSql": "SELECT $__dateBin(time) AS time, concat(interface, ' tx') AS metric, -1 * avg(tx_bps) AS value FROM mikroscope_api_iface WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
           "refId": "B"
@@ -440,6 +449,7 @@
         "y": 9
       },
       "id": 6,
+      "interval": "1s",
       "options": {
         "legend": {
           "calcs": [],
@@ -461,6 +471,7 @@
           },
           "editorMode": "code",
           "format": "time_series",
+          "interval": "1s",
           "rawQuery": true,
           "rawSql": "SELECT $__dateBin(time) AS time, zone AS metric, avg(celsius) AS value FROM mikroscope_thermal WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
           "refId": "A"
@@ -503,6 +514,7 @@
         "y": 9
       },
       "id": 7,
+      "interval": "1s",
       "options": {
         "colorMode": "value",
         "graphMode": "none",
@@ -533,6 +545,7 @@
           },
           "editorMode": "code",
           "format": "time_series",
+          "interval": "1s",
           "rawQuery": true,
           "rawSql": "SELECT $__dateBin(time) AS time, 'load1' AS metric, avg(load1) AS value FROM mikroscope_load WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
           "refId": "A"
@@ -545,6 +558,7 @@
           },
           "editorMode": "code",
           "format": "time_series",
+          "interval": "1s",
           "rawQuery": true,
           "rawSql": "SELECT $__dateBin(time) AS time, 'cores' AS metric, count(DISTINCT cpu) * 1.0 AS value FROM mikroscope_cpu WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
           "refId": "B"
@@ -780,6 +794,7 @@
         "y": 21
       },
       "id": 10,
+      "interval": "1s",
       "options": {
         "colorMode": "value",
         "graphMode": "none",
@@ -810,6 +825,7 @@
           },
           "editorMode": "code",
           "format": "time_series",
+          "interval": "1s",
           "rawQuery": true,
           "rawSql": "SELECT $__dateBin(time) AS time, 'oom_kill' AS metric, sum(oom_kill) AS value FROM mikroscope_vm WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
           "refId": "A"
@@ -1195,6 +1211,7 @@
             "y": 32
           },
           "id": 16,
+          "interval": "1s",
           "options": {
             "legend": {
               "calcs": [],
@@ -1216,6 +1233,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, concat('core ', lpad(cpu, 2, '0')) AS metric, avg(busy_ratio) * 100 AS value FROM mikroscope_cpu WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -1349,6 +1367,7 @@
             "y": 32
           },
           "id": 18,
+          "interval": "1s",
           "options": {
             "colorMode": "value",
             "graphMode": "area",
@@ -1379,6 +1398,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(c.time) AS time, 'worst sample interval / window median' AS metric, max(c.dt_ns) * 1.0 / NULLIF(m.med, 0) AS value FROM mikroscope_cpu c CROSS JOIN (SELECT approx_percentile_cont(dt_ns, 0.5) AS med FROM mikroscope_cpu WHERE $__timeFilter(time)) m WHERE $__timeFilter(c.time) GROUP BY 1, 2, m.med ORDER BY 1",
               "refId": "A"
@@ -1445,6 +1465,7 @@
             "y": 40
           },
           "id": 19,
+          "interval": "1s",
           "options": {
             "alignValue": "left",
             "legend": {
@@ -1470,6 +1491,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, concat('core ', lpad(cpu, 2, '0')) AS metric, avg(busy_ratio) * 100 AS value FROM mikroscope_cpu WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -1520,6 +1542,7 @@
             "y": 47
           },
           "id": 20,
+          "interval": "1s",
           "options": {
             "legend": {
               "calcs": [],
@@ -1541,6 +1564,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'user' AS metric, sum(user) * 100.0 / NULLIF(sum(user + nice + system + idle + iowait + irq + softirq + coalesce(steal, 0)), 0) AS value FROM mikroscope_cpu WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -1553,6 +1577,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'system' AS metric, sum(system) * 100.0 / NULLIF(sum(user + nice + system + idle + iowait + irq + softirq + coalesce(steal, 0)), 0) AS value FROM mikroscope_cpu WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "B"
@@ -1565,6 +1590,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'softirq' AS metric, sum(softirq) * 100.0 / NULLIF(sum(user + nice + system + idle + iowait + irq + softirq + coalesce(steal, 0)), 0) AS value FROM mikroscope_cpu WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "C"
@@ -1577,6 +1603,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'irq' AS metric, sum(irq) * 100.0 / NULLIF(sum(user + nice + system + idle + iowait + irq + softirq + coalesce(steal, 0)), 0) AS value FROM mikroscope_cpu WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "D"
@@ -1589,6 +1616,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'nice' AS metric, sum(nice) * 100.0 / NULLIF(sum(user + nice + system + idle + iowait + irq + softirq + coalesce(steal, 0)), 0) AS value FROM mikroscope_cpu WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "E"
@@ -1601,6 +1629,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'iowait' AS metric, sum(iowait) * 100.0 / NULLIF(sum(user + nice + system + idle + iowait + irq + softirq + coalesce(steal, 0)), 0) AS value FROM mikroscope_cpu WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "F"
@@ -1613,6 +1642,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'steal' AS metric, sum(coalesce(steal, 0)) * 100.0 / NULLIF(sum(user + nice + system + idle + iowait + irq + softirq + coalesce(steal, 0)), 0) AS value FROM mikroscope_cpu WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "G"
@@ -1894,6 +1924,7 @@
             "y": 63
           },
           "id": 24,
+          "interval": "1s",
           "options": {
             "legend": {
               "calcs": [],
@@ -1915,6 +1946,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(c.time) AS time, concat('core ', lpad(c.cpu, 2, '0')) AS metric, avg(p.count) AS value FROM mikroscope_cpu c JOIN mikroscope_perf p ON p.time = c.time AND p.cpu = c.cpu AND p.host = c.host WHERE $__timeFilter(c.time) AND p.counter = 'cycles' AND c.user + c.nice + c.system + c.irq + c.softirq = 0 GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -2065,6 +2097,7 @@
             "y": 71
           },
           "id": 26,
+          "interval": "1s",
           "options": {
             "colorMode": "value",
             "graphMode": "area",
@@ -2095,6 +2128,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'accounted ticks / capacity' AS metric, sum(user + nice + system + idle + iowait + irq + softirq + coalesce(steal, 0)) * 100.0 / (sum(dt_ns) / 1e9 * 100) AS value FROM mikroscope_cpu WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -2180,6 +2214,7 @@
             "y": 78
           },
           "id": 28,
+          "interval": "1s",
           "options": {
             "legend": {
               "calcs": [],
@@ -2201,6 +2236,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'in use' AS metric, (avg(total_kb) - avg(available_kb)) * 100.0 / NULLIF(avg(total_kb), 0) AS value FROM mikroscope_mem WHERE $__timeFilter(time) AND total_kb IS NOT NULL GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -2250,6 +2286,7 @@
             "y": 78
           },
           "id": 29,
+          "interval": "1s",
           "options": {
             "legend": {
               "calcs": [],
@@ -2271,6 +2308,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT time, metric, value FROM (SELECT $__dateBin(time) AS time, '1 min' AS metric, avg(load1) AS value FROM mikroscope_load WHERE $__timeFilter(time) GROUP BY 1 UNION ALL SELECT $__dateBin(time) AS time, '5 min' AS metric, avg(load5) AS value FROM mikroscope_load WHERE $__timeFilter(time) AND load5 IS NOT NULL GROUP BY 1 UNION ALL SELECT $__dateBin(time) AS time, '15 min' AS metric, avg(load15) AS value FROM mikroscope_load WHERE $__timeFilter(time) AND load15 IS NOT NULL GROUP BY 1) ORDER BY 1",
               "refId": "A"
@@ -2320,6 +2358,7 @@
             "y": 78
           },
           "id": 30,
+          "interval": "1s",
           "options": {
             "legend": {
               "calcs": [],
@@ -2341,6 +2380,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT time, metric, value FROM (SELECT $__dateBin(time) AS time, 'runnable' AS metric, max(running) * 1.0 AS value FROM mikroscope_load WHERE $__timeFilter(time) AND running IS NOT NULL GROUP BY 1 UNION ALL SELECT $__dateBin(time) AS time, 'threads total' AS metric, avg(threads) * 1.0 AS value FROM mikroscope_load WHERE $__timeFilter(time) AND threads IS NOT NULL GROUP BY 1) ORDER BY 1",
               "refId": "A"
@@ -2391,6 +2431,7 @@
             "y": 86
           },
           "id": 31,
+          "interval": "1s",
           "options": {
             "legend": {
               "calcs": [],
@@ -2412,6 +2453,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT time, metric, value FROM (SELECT $__dateBin(time) AS time, 'free' AS metric, avg(free_kb) * 100.0 / NULLIF(avg(total_kb), 0) AS value FROM mikroscope_mem WHERE $__timeFilter(time) AND total_kb IS NOT NULL GROUP BY 1 UNION ALL SELECT $__dateBin(time) AS time, 'page cache' AS metric, avg(cached_kb) * 100.0 / NULLIF(avg(total_kb), 0) AS value FROM mikroscope_mem WHERE $__timeFilter(time) AND total_kb IS NOT NULL GROUP BY 1 UNION ALL SELECT $__dateBin(time) AS time, 'buffers' AS metric, avg(buffers_kb) * 100.0 / NULLIF(avg(total_kb), 0) AS value FROM mikroscope_mem WHERE $__timeFilter(time) AND total_kb IS NOT NULL GROUP BY 1 UNION ALL SELECT $__dateBin(time) AS time, 'anon' AS metric, avg(anon_kb) * 100.0 / NULLIF(avg(total_kb), 0) AS value FROM mikroscope_mem WHERE $__timeFilter(time) AND total_kb IS NOT NULL GROUP BY 1 UNION ALL SELECT $__dateBin(time) AS time, 'slab reclaimable' AS metric, avg(sreclaimable_kb) * 100.0 / NULLIF(avg(total_kb), 0) AS value FROM mikroscope_mem WHERE $__timeFilter(time) AND total_kb IS NOT NULL GROUP BY 1 UNION ALL SELECT $__dateBin(time) AS time, 'slab unreclaimable' AS metric, avg(sunreclaim_kb) * 100.0 / NULLIF(avg(total_kb), 0) AS value FROM mikroscope_mem WHERE $__timeFilter(time) AND total_kb IS NOT NULL GROUP BY 1 UNION ALL SELECT $__dateBin(time) AS time, 'kernel stacks' AS metric, avg(kernel_stack_kb) * 100.0 / NULLIF(avg(total_kb), 0) AS value FROM mikroscope_mem WHERE $__timeFilter(time) AND total_kb IS NOT NULL GROUP BY 1 UNION ALL SELECT $__dateBin(time) AS time, 'page tables' AS metric, avg(page_tables_kb) * 100.0 / NULLIF(avg(total_kb), 0) AS value FROM mikroscope_mem WHERE $__timeFilter(time) AND total_kb IS NOT NULL GROUP BY 1) ORDER BY 1",
               "refId": "A"
@@ -2445,6 +2487,7 @@
             "y": 95
           },
           "id": 32,
+          "interval": "1s",
           "options": {
             "displayMode": "basic",
             "legend": {
@@ -2477,6 +2520,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT time, metric, value FROM (SELECT $__dateBin(time) AS time, 'MemTotal (the ceiling)' AS metric, avg(total_kb) * 1024 AS value FROM mikroscope_mem WHERE $__timeFilter(time) AND total_kb IS NOT NULL GROUP BY 1 UNION ALL SELECT $__dateBin(time) AS time, 'MemAvailable' AS metric, avg(available_kb) * 1024 AS value FROM mikroscope_mem WHERE $__timeFilter(time) GROUP BY 1 UNION ALL SELECT $__dateBin(time) AS time, 'MemFree' AS metric, avg(free_kb) * 1024 AS value FROM mikroscope_mem WHERE $__timeFilter(time) GROUP BY 1 UNION ALL SELECT $__dateBin(time) AS time, 'MemFree + Cached' AS metric, avg(free_kb + cached_kb) * 1024 AS value FROM mikroscope_mem WHERE $__timeFilter(time) GROUP BY 1) ORDER BY 1",
               "refId": "A"
@@ -2528,6 +2572,7 @@
             "y": 95
           },
           "id": 33,
+          "interval": "1s",
           "options": {
             "minVizHeight": 75,
             "minVizWidth": 75,
@@ -2551,6 +2596,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'Committed_AS ÷ CommitLimit' AS metric, avg(committed_kb) * 100.0 / NULLIF(avg(commit_limit_kb), 0) AS value FROM mikroscope_mem WHERE $__timeFilter(time) AND commit_limit_kb IS NOT NULL GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -2597,6 +2643,7 @@
             "y": 95
           },
           "id": 34,
+          "interval": "1s",
           "options": {
             "colorMode": "value",
             "graphMode": "area",
@@ -2627,6 +2674,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(m.time) AS time, 'load1 per core' AS metric, avg(m.load1) / NULLIF(max(c.n), 0) AS value FROM mikroscope_load m CROSS JOIN (SELECT count(DISTINCT cpu) AS n FROM mikroscope_cpu WHERE $__timeFilter(time)) c WHERE $__timeFilter(m.time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -2660,6 +2708,7 @@
             "y": 95
           },
           "id": 35,
+          "interval": "1s",
           "options": {
             "colorMode": "none",
             "graphMode": "area",
@@ -2690,6 +2739,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'threads (router-wide)' AS metric, max(threads) AS value FROM mikroscope_load WHERE $__timeFilter(time) AND threads IS NOT NULL GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -2740,6 +2790,7 @@
             "y": 101
           },
           "id": 36,
+          "interval": "1s",
           "options": {
             "legend": {
               "calcs": [],
@@ -2761,6 +2812,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT time, metric, value FROM (SELECT $__dateBin(time) AS time, 'SUnreclaim (conntrack, routes, skbuff)' AS metric, avg(sunreclaim_kb) * 1024 AS value FROM mikroscope_mem WHERE $__timeFilter(time) AND sunreclaim_kb IS NOT NULL GROUP BY 1 UNION ALL SELECT $__dateBin(time) AS time, 'SReclaimable (dentry, inode cache)' AS metric, avg(sreclaimable_kb) * 1024 AS value FROM mikroscope_mem WHERE $__timeFilter(time) AND sreclaimable_kb IS NOT NULL GROUP BY 1 UNION ALL SELECT $__dateBin(time) AS time, 'Slab total (= the two above)' AS metric, avg(slab_kb) * 1024 AS value FROM mikroscope_mem WHERE $__timeFilter(time) AND slab_kb IS NOT NULL GROUP BY 1) ORDER BY 1",
               "refId": "A"
@@ -2825,6 +2877,7 @@
             "y": 110
           },
           "id": 38,
+          "interval": "1s",
           "options": {
             "legend": {
               "calcs": [],
@@ -2846,6 +2899,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'nf_conntrack slab objects (mean)' AS metric, avg(active) AS value FROM mikroscope_slab WHERE $__timeFilter(time) AND cache = 'nf_conntrack' GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -2858,6 +2912,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'nf_conntrack slab objects (peak sample)' AS metric, max(active) AS value FROM mikroscope_slab WHERE $__timeFilter(time) AND cache = 'nf_conntrack' GROUP BY 1, 2 ORDER BY 1",
               "refId": "B"
@@ -2870,6 +2925,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'RouterOS API connection entries' AS metric, avg(entries) AS value FROM mikroscope_api_conntrack WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "C"
@@ -2922,6 +2978,7 @@
             "y": 110
           },
           "id": 39,
+          "interval": "1s",
           "options": {
             "legend": {
               "calcs": [],
@@ -2943,6 +3000,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'nf_conntrack peak-to-trough within bin' AS metric, max(active) - min(active) AS value FROM mikroscope_slab WHERE $__timeFilter(time) AND cache = 'nf_conntrack' GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -2993,6 +3051,7 @@
             "y": 118
           },
           "id": 40,
+          "interval": "1s",
           "options": {
             "legend": {
               "calcs": [],
@@ -3014,6 +3073,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, cache AS metric, avg(active) AS value FROM mikroscope_slab WHERE $__timeFilter(time) AND (cache LIKE 'skbuff%' OR cache LIKE 'kmalloc-1%' OR cache LIKE 'kmalloc-2%') GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -3064,6 +3124,7 @@
             "y": 118
           },
           "id": 41,
+          "interval": "1s",
           "options": {
             "legend": {
               "calcs": [],
@@ -3085,6 +3146,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT b.time AS time, b.cache AS metric, (b.v / NULLIF(m.mn, 0) - 1) * 100 AS value FROM (SELECT $__dateBin(time) AS time, cache, avg(active) AS v FROM mikroscope_slab WHERE $__timeFilter(time) GROUP BY 1, 2) b JOIN (SELECT cache, min(active) AS mn FROM mikroscope_slab WHERE $__timeFilter(time) GROUP BY 1) m ON b.cache = m.cache ORDER BY 1, 2",
               "refId": "A"
@@ -3279,6 +3341,7 @@
             "y": 142
           },
           "id": 44,
+          "interval": "1s",
           "options": {
             "minVizHeight": 75,
             "minVizWidth": 75,
@@ -3302,6 +3365,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'connection table in use' AS metric, max(active) * 100.0 / NULLIF(max(\"limit\"), 0) AS value FROM mikroscope_slab WHERE $__timeFilter(time) AND cache = 'nf_conntrack' GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -3336,6 +3400,7 @@
             "y": 142
           },
           "id": 45,
+          "interval": "1s",
           "knownEmpty": true,
           "options": {
             "colorMode": "none",
@@ -3367,6 +3432,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'RouterOS conntrack entries (API poll)' AS metric, avg(entries) AS value FROM mikroscope_api_conntrack WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -3414,6 +3480,7 @@
             "y": 142
           },
           "id": 46,
+          "interval": "1s",
           "options": {
             "colorMode": "value",
             "graphMode": "area",
@@ -3444,6 +3511,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'slab caches reporting' AS metric, count(DISTINCT cache) AS value FROM mikroscope_slab WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -3508,6 +3576,7 @@
             "y": 149
           },
           "id": 48,
+          "interval": "1s",
           "options": {
             "legend": {
               "calcs": [],
@@ -3529,6 +3598,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, concat(interface, ' rx') AS metric, avg(rx_bps) AS value FROM mikroscope_api_iface WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -3541,6 +3611,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, concat(interface, ' tx') AS metric, -1 * avg(tx_bps) AS value FROM mikroscope_api_iface WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "B"
@@ -3591,6 +3662,7 @@
             "y": 149
           },
           "id": 49,
+          "interval": "1s",
           "options": {
             "legend": {
               "calcs": [],
@@ -3612,6 +3684,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, concat(interface, ' rx') AS metric, avg(rx_pps) AS value FROM mikroscope_api_iface WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -3624,6 +3697,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, concat(interface, ' tx') AS metric, -1 * avg(tx_pps) AS value FROM mikroscope_api_iface WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "B"
@@ -4530,6 +4604,7 @@
             "y": 215
           },
           "id": 60,
+          "interval": "1s",
           "options": {
             "legend": {
               "calcs": [],
@@ -4551,6 +4626,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, name AS metric, avg(value) AS value FROM mikroscope_api_health WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -5136,6 +5212,7 @@
             "y": 248
           },
           "id": 67,
+          "interval": "1s",
           "options": {
             "colorMode": "value",
             "graphMode": "none",
@@ -5166,6 +5243,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT time, captures_held AS value FROM mikroscope_sampler WHERE $__timeFilter(time) ORDER BY time",
               "refId": "A"
@@ -5178,6 +5256,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT time, capture_bytes AS value FROM mikroscope_sampler WHERE $__timeFilter(time) ORDER BY time",
               "refId": "B"
@@ -5190,6 +5269,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT time, capture_budget_bytes AS value FROM mikroscope_sampler WHERE $__timeFilter(time) ORDER BY time",
               "refId": "C"
@@ -5202,6 +5282,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, max(count) - min(count) AS value FROM mikroscope_capture_refused WHERE $__timeFilter(time) GROUP BY 1 ORDER BY 1",
               "refId": "D"
@@ -5354,6 +5435,7 @@
             "y": 265
           },
           "id": 70,
+          "interval": "1s",
           "options": {
             "legend": {
               "calcs": [],
@@ -5375,6 +5457,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, concat('cpu ', cpu) AS metric, sum(processed) / ($__interval_ms / 1000.0) AS value FROM mikroscope_softnet WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -5425,6 +5508,7 @@
             "y": 265
           },
           "id": 71,
+          "interval": "1s",
           "options": {
             "legend": {
               "calcs": [],
@@ -5446,6 +5530,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, concat('cpu ', cpu) AS metric, sum(time_squeeze) / ($__interval_ms / 1000.0) AS value FROM mikroscope_softnet WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -5496,6 +5581,7 @@
             "y": 273
           },
           "id": 72,
+          "interval": "1s",
           "options": {
             "legend": {
               "calcs": [],
@@ -5517,6 +5603,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, concat('cpu ', cpu) AS metric, sum(time_squeeze) * 1000.0 / nullif(sum(processed), 0) AS value FROM mikroscope_softnet WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -5551,6 +5638,7 @@
             "y": 273
           },
           "id": 73,
+          "interval": "1s",
           "options": {
             "displayMode": "basic",
             "legend": {
@@ -5583,6 +5671,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "WITH b AS (SELECT $__dateBin(time) AS t, cpu, sum(processed) * 1.0 AS p FROM mikroscope_softnet WHERE $__timeFilter(time) GROUP BY 1, 2) SELECT t AS time, concat('cpu ', cpu) AS metric, p / sum(p) OVER (PARTITION BY t) AS value FROM b ORDER BY 1",
               "refId": "A"
@@ -5727,6 +5816,7 @@
             "y": 281
           },
           "id": 75,
+          "interval": "1s",
           "options": {
             "alignValue": "left",
             "legend": {
@@ -5752,6 +5842,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "WITH b AS (SELECT $__dateBin(time) AS t, cpu, sum(time_squeeze) / ($__interval_ms / 1000.0) AS r FROM mikroscope_softnet WHERE $__timeFilter(time) GROUP BY 1, 2), m AS (SELECT approx_percentile_cont(r, 0.5) AS med FROM b) SELECT b.t AS time, concat('cpu ', b.cpu) AS metric, b.r / nullif(m.med, 0) AS value FROM b CROSS JOIN m ORDER BY 1",
               "refId": "A"
@@ -5982,6 +6073,7 @@
             "y": 295
           },
           "id": 78,
+          "interval": "1s",
           "options": {
             "legend": {
               "calcs": [],
@@ -6003,6 +6095,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "WITH s AS (SELECT $__dateBin(time) AS t, cpu, sum(processed) * 1.0 AS p FROM mikroscope_softnet WHERE $__timeFilter(time) GROUP BY 1, 2), r AS (SELECT $__dateBin(time) AS t, cpu, sum(count) * 1.0 AS c FROM mikroscope_softirq WHERE $__timeFilter(time) AND kind = 'NET_RX' GROUP BY 1, 2) SELECT s.t AS time, concat('cpu ', s.cpu) AS metric, s.p / nullif(r.c, 0) AS value FROM s JOIN r ON s.t = r.t AND s.cpu = r.cpu ORDER BY 1",
               "refId": "A"
@@ -6492,6 +6585,7 @@
             "y": 336
           },
           "id": 86,
+          "interval": "1s",
           "options": {
             "legend": {
               "calcs": [],
@@ -6513,6 +6607,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "WITH per AS (SELECT regexp_replace(name, '^.*\\s{2,}', '') AS dev, irq, sum(\"count\") AS c FROM mikroscope_irq WHERE $__timeFilter(time) GROUP BY 1, 2), ranked AS (SELECT dev, count(DISTINCT irq) AS lines, sum(c) AS tot FROM per GROUP BY dev), pick AS (SELECT dev FROM ranked WHERE lines \u003e 1 ORDER BY lines DESC, tot DESC LIMIT 1) SELECT $__dateBin(i.time) AS time, concat(regexp_replace(i.name, '^.*\\s{2,}', ''), ' irq ', i.irq) AS metric, sum(i.\"count\") / ($__interval_ms / 1000.0) AS value FROM mikroscope_irq i WHERE $__timeFilter(i.time) AND regexp_replace(i.name, '^.*\\s{2,}', '') IN (SELECT dev FROM pick) GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -6564,6 +6659,7 @@
             "y": 336
           },
           "id": 87,
+          "interval": "1s",
           "options": {
             "legend": {
               "calcs": [],
@@ -6585,6 +6681,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "WITH per AS (SELECT $__dateBin(time) AS time, regexp_replace(name, '^.*\\s{2,}', '') AS dev, irq, sum(\"count\") * 1.0 AS s FROM mikroscope_irq WHERE $__timeFilter(time) GROUP BY 1, 2, 3), n AS (SELECT dev, count(DISTINCT irq) AS lines FROM per GROUP BY 1 HAVING count(DISTINCT irq) \u003e 1) SELECT p.time AS time, concat(p.dev, ' max/mean across its ', cast(n.lines AS VARCHAR), ' lines') AS metric, max(p.s) / NULLIF(avg(p.s), 0) AS value FROM per p JOIN n ON p.dev = n.dev GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -6706,6 +6803,7 @@
             "y": 352
           },
           "id": 89,
+          "interval": "1s",
           "options": {
             "colorMode": "value",
             "graphMode": "area",
@@ -6736,6 +6834,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT k.time AS time, 'top-K share of all interrupts' AS metric, k.topk * 100.0 / NULLIF(v.intr, 0) AS value FROM (SELECT $__dateBin(time) AS time, sum(\"count\") AS topk FROM mikroscope_irq WHERE $__timeFilter(time) GROUP BY 1) k JOIN (SELECT $__dateBin(time) AS time, sum(intr) AS intr FROM mikroscope_stat WHERE $__timeFilter(time) GROUP BY 1) v ON k.time = v.time ORDER BY 1",
               "refId": "A"
@@ -6770,6 +6869,7 @@
             "y": 352
           },
           "id": 90,
+          "interval": "1s",
           "options": {
             "displayMode": "basic",
             "legend": {
@@ -6802,6 +6902,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT time, metric, s * 100.0 / NULLIF(sum(s) OVER (PARTITION BY time), 0) AS value FROM (SELECT $__dateBin(time) AS time, concat(irq, ' ', regexp_replace(name, '^.*\\s{2,}', '')) AS metric, sum(\"count\") * 1.0 AS s FROM mikroscope_irq WHERE $__timeFilter(time) GROUP BY 1, 2) ORDER BY 1",
               "refId": "A"
@@ -6885,6 +6986,7 @@
             "y": 352
           },
           "id": 91,
+          "interval": "1s",
           "options": {
             "alignValue": "left",
             "legend": {
@@ -6910,6 +7012,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, concat(irq, ' ', regexp_replace(name, '^.*\\s{2,}', '')) AS metric, 1.0 AS value FROM mikroscope_irq WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -6961,6 +7064,7 @@
             "y": 362
           },
           "id": 92,
+          "interval": "1s",
           "options": {
             "legend": {
               "calcs": [],
@@ -6982,6 +7086,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, concat('cpu ', cpu) AS metric, sum(CASE WHEN kind = 'NET_RX' THEN \"count\" ELSE 0 END) / ($__interval_ms / 1000.0) AS value FROM mikroscope_softirq WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -7032,6 +7137,7 @@
             "y": 362
           },
           "id": 93,
+          "interval": "1s",
           "options": {
             "legend": {
               "calcs": [],
@@ -7053,6 +7159,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, kind AS metric, sum(\"count\") / ($__interval_ms / 1000.0) AS value FROM mikroscope_softirq WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -7186,6 +7293,7 @@
             "y": 370
           },
           "id": 95,
+          "interval": "1s",
           "options": {
             "legend": {
               "calcs": [],
@@ -7207,6 +7315,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT c.time AS time, 'µs of softirq CPU per invocation' AS metric, c.ticks * 10000.0 / NULLIF(s.inv, 0) AS value FROM (SELECT $__dateBin(time) AS time, sum(softirq) AS ticks FROM mikroscope_cpu WHERE $__timeFilter(time) GROUP BY 1) c JOIN (SELECT $__dateBin(time) AS time, sum(\"count\") AS inv FROM mikroscope_softirq WHERE $__timeFilter(time) GROUP BY 1) s ON c.time = s.time ORDER BY 1",
               "refId": "A"
@@ -7276,6 +7385,7 @@
             "y": 378
           },
           "id": 96,
+          "interval": "1s",
           "options": {
             "alignValue": "left",
             "legend": {
@@ -7301,6 +7411,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'NET_TX' AS metric, sum(CASE WHEN kind = 'NET_TX' THEN \"count\" ELSE 0 END) / ($__interval_ms / 1000.0) AS value FROM mikroscope_softirq WHERE $__timeFilter(time) GROUP BY 1 ORDER BY 1",
               "refId": "A"
@@ -7313,6 +7424,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'TASKLET' AS metric, sum(CASE WHEN kind = 'TASKLET' THEN \"count\" ELSE 0 END) / ($__interval_ms / 1000.0) AS value FROM mikroscope_softirq WHERE $__timeFilter(time) GROUP BY 1 ORDER BY 1",
               "refId": "B"
@@ -7376,6 +7488,7 @@
             "y": 384
           },
           "id": 98,
+          "interval": "1s",
           "options": {
             "legend": {
               "calcs": [],
@@ -7397,6 +7510,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, zone AS metric, avg(celsius) AS value FROM mikroscope_thermal WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -7446,6 +7560,7 @@
             "y": 384
           },
           "id": 99,
+          "interval": "1s",
           "options": {
             "legend": {
               "calcs": [],
@@ -7467,6 +7582,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, concat(zone, ' (kernel /sys zone)') AS metric, avg(celsius) AS value FROM mikroscope_thermal WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -7479,6 +7595,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, concat(name, ' (RouterOS /system/health)') AS metric, avg(value) AS value FROM mikroscope_api_health WHERE $__timeFilter(time) AND name LIKE '%temp%' GROUP BY 1, 2 ORDER BY 1",
               "refId": "B"
@@ -7529,6 +7646,7 @@
             "y": 392
           },
           "id": 100,
+          "interval": "1s",
           "options": {
             "legend": {
               "calcs": [],
@@ -7550,6 +7668,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "WITH b AS (SELECT $__dateBin(time) AS t, zone, avg(celsius) AS c FROM mikroscope_thermal WHERE $__timeFilter(time) GROUP BY 1, 2) SELECT t AS time, zone AS metric, (c - lag(c) OVER (PARTITION BY zone ORDER BY t)) / ($__interval_ms / 1000.0) * 60 AS value FROM b ORDER BY 1",
               "refId": "A"
@@ -7650,6 +7769,7 @@
             "y": 400
           },
           "id": 102,
+          "interval": "1s",
           "options": {
             "minVizHeight": 75,
             "minVizWidth": 75,
@@ -7673,6 +7793,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, zone AS metric, avg(celsius) AS value FROM mikroscope_thermal WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -7740,6 +7861,7 @@
             "y": 400
           },
           "id": 103,
+          "interval": "1s",
           "options": {
             "legend": {
               "calcs": [],
@@ -7761,6 +7883,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, zone AS metric, (avg(critical_celsius) - avg(celsius)) AS value FROM mikroscope_thermal WHERE $__timeFilter(time) AND critical_celsius \u003e 0 GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -7811,6 +7934,7 @@
             "y": 408
           },
           "id": 104,
+          "interval": "1s",
           "options": {
             "legend": {
               "calcs": [],
@@ -7832,6 +7956,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "WITH b AS (SELECT $__dateBin(time) AS t, zone, avg(celsius) AS c FROM mikroscope_thermal WHERE $__timeFilter(time) GROUP BY 1, 2), r AS (SELECT t, c, first_value(zone) OVER (PARTITION BY t ORDER BY c DESC) AS hot, first_value(zone) OVER (PARTITION BY t ORDER BY c ASC) AS cool FROM b) SELECT t AS time, concat(hot, ' - ', cool) AS metric, max(c) - min(c) AS value FROM r GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -7876,6 +8001,7 @@
             "y": 416
           },
           "id": 105,
+          "interval": "1s",
           "options": {
             "alignValue": "left",
             "legend": {
@@ -7901,6 +8027,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, concat('core ', lpad(cpu, 2, '0')) AS metric, max(khz) * 1000.0 AS value FROM mikroscope_cpufreq WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -8026,6 +8153,7 @@
             "y": 423
           },
           "id": 107,
+          "interval": "1s",
           "options": {
             "legend": {
               "calcs": [],
@@ -8047,6 +8175,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(c.time) AS time, concat('core ', lpad(c.cpu, 2, '0')) AS metric, avg(c.busy_ratio * f.khz) * 1000.0 AS value FROM mikroscope_cpu c JOIN mikroscope_cpufreq f ON c.time = f.time AND c.cpu = f.cpu AND c.host = f.host WHERE $__timeFilter(c.time) AND $__timeFilter(f.time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -8183,6 +8312,7 @@
             "y": 432
           },
           "id": 109,
+          "interval": "1s",
           "knownEmpty": true,
           "options": {
             "alignValue": "left",
@@ -8209,6 +8339,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'worst severity' AS metric, min(CASE level WHEN 'emerg' THEN 0 WHEN 'alert' THEN 1 WHEN 'crit' THEN 2 WHEN 'err' THEN 3 WHEN 'warn' THEN 4 WHEN 'notice' THEN 5 WHEN 'info' THEN 6 WHEN 'debug' THEN 7 ELSE 9 END) AS value FROM mikroscope_kmsg WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -8262,6 +8393,7 @@
             "y": 438
           },
           "id": 110,
+          "interval": "1s",
           "options": {
             "legend": {
               "calcs": [],
@@ -8283,6 +8415,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT s.time AS time, k.metric AS metric, k.n / s.secs AS value FROM (SELECT $__dateBin(time) AS time, sum(dt_ns) / 1e9 / NULLIF(count(DISTINCT host), 0) AS secs FROM mikroscope_sample WHERE $__timeFilter(time) GROUP BY 1) s JOIN (SELECT $__dateBin(time) AS time, concat(CASE level WHEN 'emerg' THEN '0' WHEN 'alert' THEN '1' WHEN 'crit' THEN '2' WHEN 'err' THEN '3' WHEN 'warn' THEN '4' WHEN 'notice' THEN '5' WHEN 'info' THEN '6' WHEN 'debug' THEN '7' ELSE '9' END, ' ', level) AS metric, sum(count) AS n FROM mikroscope_kmsg WHERE $__timeFilter(time) GROUP BY 1, 2) k ON k.time = s.time ORDER BY 1",
               "refId": "A"
@@ -8317,6 +8450,7 @@
             "y": 438
           },
           "id": 111,
+          "interval": "1s",
           "options": {
             "colorMode": "none",
             "graphMode": "area",
@@ -8347,6 +8481,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT s.time AS time, 'warn or worse' AS metric, coalesce(k.n, 0) / s.secs AS value FROM (SELECT $__dateBin(time) AS time, sum(dt_ns) / 1e9 / NULLIF(count(DISTINCT host), 0) AS secs FROM mikroscope_sample WHERE $__timeFilter(time) GROUP BY 1) s LEFT JOIN (SELECT $__dateBin(time) AS time, sum(count) AS n FROM mikroscope_kmsg WHERE $__timeFilter(time) AND level IN ('emerg','alert','crit','err','warn') GROUP BY 1) k ON k.time = s.time ORDER BY 1",
               "refId": "A"
@@ -8359,6 +8494,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT s.time AS time, 'all levels' AS metric, coalesce(k.n, 0) / s.secs AS value FROM (SELECT $__dateBin(time) AS time, sum(dt_ns) / 1e9 / NULLIF(count(DISTINCT host), 0) AS secs FROM mikroscope_sample WHERE $__timeFilter(time) GROUP BY 1) s LEFT JOIN (SELECT $__dateBin(time) AS time, sum(count) AS n FROM mikroscope_kmsg WHERE $__timeFilter(time) GROUP BY 1) k ON k.time = s.time ORDER BY 1",
               "refId": "B"
@@ -8393,6 +8529,7 @@
             "y": 446
           },
           "id": 112,
+          "interval": "1s",
           "options": {
             "displayMode": "basic",
             "legend": {
@@ -8425,6 +8562,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, concat(CASE level WHEN 'emerg' THEN '0' WHEN 'alert' THEN '1' WHEN 'crit' THEN '2' WHEN 'err' THEN '3' WHEN 'warn' THEN '4' WHEN 'notice' THEN '5' WHEN 'info' THEN '6' WHEN 'debug' THEN '7' ELSE '9' END, ' ', level) AS metric, sum(count) AS value FROM mikroscope_kmsg WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -9076,6 +9214,7 @@
             "y": 485
           },
           "id": 123,
+          "interval": "1s",
           "options": {
             "colorMode": "value",
             "graphMode": "area",
@@ -9106,6 +9245,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'largest free order' AS metric, max(CASE WHEN order_10 \u003e 0 THEN 10 WHEN order_9 \u003e 0 THEN 9 WHEN order_8 \u003e 0 THEN 8 WHEN order_7 \u003e 0 THEN 7 WHEN order_6 \u003e 0 THEN 6 WHEN order_5 \u003e 0 THEN 5 WHEN order_4 \u003e 0 THEN 4 WHEN order_3 \u003e 0 THEN 3 WHEN order_2 \u003e 0 THEN 2 WHEN order_1 \u003e 0 THEN 1 ELSE 0 END) AS value FROM mikroscope_buddy WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -9155,6 +9295,7 @@
             "y": 492
           },
           "id": 125,
+          "interval": "1s",
           "options": {
             "colorMode": "none",
             "graphMode": "area",
@@ -9185,6 +9326,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'kswapd (background)' AS metric, sum(pgsteal_kswapd) * 100.0 / nullif(sum(pgscan_kswapd), 0) AS value FROM mikroscope_vm WHERE $__timeFilter(time) GROUP BY 1 UNION ALL SELECT $__dateBin(time) AS time, 'direct (a thread reclaimed inline)' AS metric, sum(pgsteal_direct) * 100.0 / nullif(sum(pgscan_direct), 0) AS value FROM mikroscope_vm WHERE $__timeFilter(time) GROUP BY 1 ORDER BY 1",
               "refId": "A"
@@ -9268,6 +9410,7 @@
             "y": 492
           },
           "id": 126,
+          "interval": "1s",
           "options": {
             "alignValue": "left",
             "legend": {
@@ -9293,6 +9436,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'pgscan_kswapd' AS metric, sum(pgscan_kswapd) AS value FROM mikroscope_vm WHERE $__timeFilter(time) GROUP BY 1 UNION ALL SELECT $__dateBin(time) AS time, 'pgscan_direct' AS metric, sum(pgscan_direct) AS value FROM mikroscope_vm WHERE $__timeFilter(time) GROUP BY 1 UNION ALL SELECT $__dateBin(time) AS time, 'pgsteal_kswapd' AS metric, sum(pgsteal_kswapd) AS value FROM mikroscope_vm WHERE $__timeFilter(time) GROUP BY 1 UNION ALL SELECT $__dateBin(time) AS time, 'pgsteal_direct' AS metric, sum(pgsteal_direct) AS value FROM mikroscope_vm WHERE $__timeFilter(time) GROUP BY 1 ORDER BY 1",
               "refId": "A"
@@ -9376,6 +9520,7 @@
             "y": 498
           },
           "id": 127,
+          "interval": "1s",
           "options": {
             "alignValue": "left",
             "legend": {
@@ -9401,6 +9546,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'allocstall' AS metric, sum(allocstall) AS value FROM mikroscope_vm WHERE $__timeFilter(time) GROUP BY 1 UNION ALL SELECT $__dateBin(time) AS time, 'compact_stall' AS metric, sum(compact_stall) AS value FROM mikroscope_vm WHERE $__timeFilter(time) GROUP BY 1 UNION ALL SELECT $__dateBin(time) AS time, 'pswpin' AS metric, sum(pswpin) AS value FROM mikroscope_vm WHERE $__timeFilter(time) GROUP BY 1 UNION ALL SELECT $__dateBin(time) AS time, 'pswpout' AS metric, sum(pswpout) AS value FROM mikroscope_vm WHERE $__timeFilter(time) GROUP BY 1 ORDER BY 1",
               "refId": "A"
@@ -9447,6 +9593,7 @@
             "y": 498
           },
           "id": 128,
+          "interval": "1s",
           "options": {
             "colorMode": "value",
             "graphMode": "none",
@@ -9477,6 +9624,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'oom_kill' AS metric, sum(oom_kill) AS value FROM mikroscope_vm WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -9527,6 +9675,7 @@
             "y": 506
           },
           "id": 129,
+          "interval": "1s",
           "options": {
             "legend": {
               "calcs": [],
@@ -9548,6 +9697,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'pgalloc' AS metric, sum(pgalloc) / ($__interval_ms / 1000.0) AS value FROM mikroscope_vm WHERE $__timeFilter(time) GROUP BY 1 UNION ALL SELECT $__dateBin(time) AS time, 'pgfree' AS metric, sum(pgfree) / ($__interval_ms / 1000.0) AS value FROM mikroscope_vm WHERE $__timeFilter(time) GROUP BY 1 UNION ALL SELECT $__dateBin(time) AS time, 'net (pgalloc - pgfree)' AS metric, (CAST(sum(pgalloc) AS DOUBLE) - CAST(sum(pgfree) AS DOUBLE)) / ($__interval_ms / 1000.0) AS value FROM mikroscope_vm WHERE $__timeFilter(time) GROUP BY 1 ORDER BY 1",
               "refId": "A"
@@ -9598,6 +9748,7 @@
             "y": 506
           },
           "id": 130,
+          "interval": "1s",
           "options": {
             "legend": {
               "calcs": [],
@@ -9619,6 +9770,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'pgfault (minor)' AS metric, sum(pgfault) / ($__interval_ms / 1000.0) AS value FROM mikroscope_vm WHERE $__timeFilter(time) GROUP BY 1 UNION ALL SELECT $__dateBin(time) AS time, 'pgmajfault (major, needed I/O)' AS metric, sum(pgmajfault) / ($__interval_ms / 1000.0) AS value FROM mikroscope_vm WHERE $__timeFilter(time) GROUP BY 1 ORDER BY 1",
               "refId": "A"
@@ -9752,6 +9904,7 @@
             "y": 514
           },
           "id": 132,
+          "interval": "1s",
           "options": {
             "legend": {
               "calcs": [],
@@ -9773,6 +9926,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'context switches' AS metric, sum(ctxt) / ($__interval_ms / 1000.0) AS value FROM mikroscope_stat WHERE $__timeFilter(time) GROUP BY 1 ORDER BY 1",
               "refId": "A"
@@ -9785,6 +9939,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'interrupts (all vectors)' AS metric, sum(intr) / ($__interval_ms / 1000.0) AS value FROM mikroscope_stat WHERE $__timeFilter(time) GROUP BY 1 ORDER BY 1",
               "refId": "B"
@@ -9882,6 +10037,7 @@
             "y": 523
           },
           "id": 134,
+          "interval": "1s",
           "options": {
             "alignValue": "left",
             "legend": {
@@ -9907,6 +10063,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'Dirty' AS metric, CAST(max(dirty_kb) AS DOUBLE) * 1024 AS value FROM mikroscope_mem WHERE $__timeFilter(time) AND dirty_kb IS NOT NULL GROUP BY 1 UNION ALL SELECT $__dateBin(time) AS time, 'Writeback (in flight)' AS metric, CAST(max(writeback_kb) AS DOUBLE) * 1024 AS value FROM mikroscope_mem WHERE $__timeFilter(time) AND writeback_kb IS NOT NULL GROUP BY 1 ORDER BY 1",
               "refId": "A"
@@ -9957,6 +10114,7 @@
             "y": 528
           },
           "id": 135,
+          "interval": "1s",
           "options": {
             "legend": {
               "calcs": [],
@@ -9978,6 +10136,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'Active' AS metric, avg(active_kb) * 1024 AS value FROM mikroscope_mem WHERE $__timeFilter(time) AND active_kb IS NOT NULL GROUP BY 1 UNION ALL SELECT $__dateBin(time) AS time, 'Inactive (the reclaim candidates)' AS metric, avg(inactive_kb) * 1024 AS value FROM mikroscope_mem WHERE $__timeFilter(time) AND inactive_kb IS NOT NULL GROUP BY 1 ORDER BY 1",
               "refId": "A"
@@ -10028,6 +10187,7 @@
             "y": 528
           },
           "id": 136,
+          "interval": "1s",
           "options": {
             "legend": {
               "calcs": [],
@@ -10049,6 +10209,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'Mapped (page cache in an address space)' AS metric, avg(mapped_kb) * 1024 AS value FROM mikroscope_mem WHERE $__timeFilter(time) AND mapped_kb IS NOT NULL GROUP BY 1 UNION ALL SELECT $__dateBin(time) AS time, 'KernelStack' AS metric, avg(kernel_stack_kb) * 1024 AS value FROM mikroscope_mem WHERE $__timeFilter(time) AND kernel_stack_kb IS NOT NULL GROUP BY 1 UNION ALL SELECT $__dateBin(time) AS time, 'PageTables' AS metric, avg(page_tables_kb) * 1024 AS value FROM mikroscope_mem WHERE $__timeFilter(time) AND page_tables_kb IS NOT NULL GROUP BY 1 ORDER BY 1",
               "refId": "A"
@@ -10135,6 +10296,7 @@
             "y": 535
           },
           "id": 138,
+          "interval": "1s",
           "options": {
             "colorMode": "none",
             "graphMode": "area",
@@ -10165,6 +10327,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(m.time) AS time, 'KernelStack per thread' AS metric, avg(CAST(m.kernel_stack_kb AS DOUBLE) * 1024.0 / CAST(l.threads AS DOUBLE)) AS value FROM mikroscope_mem m JOIN mikroscope_load l ON m.time = l.time AND m.host = l.host WHERE $__timeFilter(m.time) AND m.kernel_stack_kb IS NOT NULL AND l.threads \u003e 0 GROUP BY 1 ORDER BY 1",
               "refId": "A"
@@ -10229,6 +10392,7 @@
             "y": 542
           },
           "id": 140,
+          "interval": "1s",
           "options": {
             "legend": {
               "calcs": [],
@@ -10250,6 +10414,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, concat('core ', lpad(cpu, 2, '0')) AS metric, sum(CASE WHEN counter = 'instructions' THEN count ELSE 0 END) * 1.0 / NULLIF(sum(CASE WHEN counter = 'cycles' THEN count ELSE 0 END), 0) AS value FROM mikroscope_perf WHERE $__timeFilter(time) AND counter IN ('instructions', 'cycles') GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -10300,6 +10465,7 @@
             "y": 542
           },
           "id": 141,
+          "interval": "1s",
           "options": {
             "legend": {
               "calcs": [],
@@ -10321,6 +10487,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(p.time) AS time, 'PMU: unhalted cycles / clock reported by cpufreq' AS metric, sum(p.count) * 1e6 / NULLIF(sum(c.dt_ns * 1.0 * fq.khz), 0) * 100 AS value FROM mikroscope_perf p JOIN mikroscope_cpu c ON p.time = c.time AND p.cpu = c.cpu AND p.host = c.host JOIN mikroscope_cpufreq fq ON p.time = fq.time AND p.cpu = fq.cpu AND p.host = fq.host WHERE $__timeFilter(p.time) AND $__timeFilter(c.time) AND $__timeFilter(fq.time) AND p.counter = 'cycles' GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -10333,6 +10500,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'kernel: busy ticks / jiffie' AS metric, avg(busy_ratio) * 100 AS value FROM mikroscope_cpu WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "B"
@@ -10383,6 +10551,7 @@
             "y": 550
           },
           "id": 142,
+          "interval": "1s",
           "options": {
             "legend": {
               "calcs": [],
@@ -10404,6 +10573,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(p.time) AS time, concat('core ', lpad(p.cpu, 2, '0')) AS metric, sum(p.count) * 1e9 / NULLIF(sum(c.dt_ns * 1.0), 0) AS value FROM mikroscope_perf p JOIN mikroscope_cpu c ON p.time = c.time AND p.cpu = c.cpu AND p.host = c.host WHERE $__timeFilter(p.time) AND $__timeFilter(c.time) AND p.counter = 'instructions' AND c.busy_ratio = 0 GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -11042,6 +11212,7 @@
             "y": 591
           },
           "id": 152,
+          "interval": "1s",
           "options": {
             "legend": {
               "calcs": [],
@@ -11063,6 +11234,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, regexp_replace(regexp_replace(device, '^[0-9]+\\s+', ''), '\"', '', 'g') || ' page writes' AS metric, sum(page_writes) / ($__interval_ms / 1000.0) AS value FROM mikroscope_flash WHERE $__timeFilter(time) GROUP BY 1, device ORDER BY 1",
               "refId": "A"
@@ -11075,6 +11247,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, regexp_replace(regexp_replace(device, '^[0-9]+\\s+', ''), '\"', '', 'g') || ' page reads' AS metric, sum(page_reads) / ($__interval_ms / 1000.0) AS value FROM mikroscope_flash WHERE $__timeFilter(time) GROUP BY 1, device ORDER BY 1",
               "refId": "B"
@@ -11138,6 +11311,7 @@
             "y": 591
           },
           "id": 153,
+          "interval": "1s",
           "options": {
             "legend": {
               "calcs": [],
@@ -11159,6 +11333,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, regexp_replace(regexp_replace(device, '^[0-9]+\\s+', ''), '\"', '', 'g') AS metric, CAST(sum(gc_copies) AS DOUBLE) / NULLIF(CAST(sum(page_writes) AS DOUBLE), 0) AS value FROM mikroscope_flash WHERE $__timeFilter(time) GROUP BY 1, device ORDER BY 1",
               "refId": "A"
@@ -11242,6 +11417,7 @@
             "y": 599
           },
           "id": 154,
+          "interval": "1s",
           "options": {
             "alignValue": "left",
             "legend": {
@@ -11267,6 +11443,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, regexp_replace(regexp_replace(device, '^[0-9]+\\s+', ''), '\"', '', 'g') || ' erasures' AS metric, sum(erasures) AS value FROM mikroscope_flash WHERE $__timeFilter(time) GROUP BY 1, device ORDER BY 1",
               "refId": "A"
@@ -11279,6 +11456,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, regexp_replace(regexp_replace(device, '^[0-9]+\\s+', ''), '\"', '', 'g') || ' GCs' AS metric, sum(gcs) AS value FROM mikroscope_flash WHERE $__timeFilter(time) GROUP BY 1, device ORDER BY 1",
               "refId": "B"
@@ -11291,6 +11469,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, regexp_replace(regexp_replace(device, '^[0-9]+\\s+', ''), '\"', '', 'g') || ' GC copies' AS metric, sum(gc_copies) AS value FROM mikroscope_flash WHERE $__timeFilter(time) GROUP BY 1, device ORDER BY 1",
               "refId": "C"
@@ -11341,6 +11520,7 @@
             "y": 607
           },
           "id": 155,
+          "interval": "1s",
           "options": {
             "legend": {
               "calcs": [],
@@ -11362,6 +11542,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, regexp_replace(regexp_replace(device, '^[0-9]+\\s+', ''), '\"', '', 'g') || ' free chunks' AS metric, CAST(last_value(free_chunks ORDER BY time) AS DOUBLE) - first_value(CAST(last_value(free_chunks ORDER BY time) AS DOUBLE)) OVER (PARTITION BY device ORDER BY $__dateBin(time)) AS value FROM mikroscope_flash WHERE $__timeFilter(time) GROUP BY 1, device ORDER BY 1",
               "refId": "A"
@@ -11643,6 +11824,7 @@
             "y": 630
           },
           "id": 160,
+          "interval": "1s",
           "options": {
             "legend": {
               "calcs": [],
@@ -11664,6 +11846,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, concat(partition, ' corrected bits') AS metric, max(corrected_bits) AS value FROM mikroscope_mtd WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -11676,6 +11859,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, concat(partition, ' bitflip threshold') AS metric, max(bitflip_threshold) AS value FROM mikroscope_mtd WHERE $__timeFilter(time) AND bitflip_threshold IS NOT NULL GROUP BY 1, 2 ORDER BY 1",
               "refId": "B"
@@ -11735,6 +11919,7 @@
             "y": 630
           },
           "id": 161,
+          "interval": "1s",
           "options": {
             "legend": {
               "calcs": [],
@@ -11756,6 +11941,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, concat(partition, ' ecc failures') AS metric, max(ecc_failures) AS value FROM mikroscope_mtd WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -11768,6 +11954,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, concat(partition, ' bad blocks') AS metric, max(bad_blocks) AS value FROM mikroscope_mtd WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "B"
@@ -11832,6 +12019,7 @@
             "y": 639
           },
           "id": 163,
+          "interval": "1s",
           "options": {
             "legend": {
               "calcs": [],
@@ -11853,6 +12041,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'RouterOS cpu-load (API, 1 s)' AS metric, avg(cpu_load) AS value FROM mikroscope_api_system WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -11865,6 +12054,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'kernel busy (mean across cores)' AS metric, avg(busy_ratio) * 100 AS value FROM mikroscope_cpu WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "B"
@@ -11979,6 +12169,7 @@
             "y": 647
           },
           "id": 165,
+          "interval": "1s",
           "options": {
             "legend": {
               "calcs": [],
@@ -12000,6 +12191,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, concat('core ', lpad(cpu, 2, '0')) AS metric, avg(load) AS value FROM mikroscope_api_core WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -12128,6 +12320,7 @@
             "y": 657
           },
           "id": 167,
+          "interval": "1s",
           "options": {
             "legend": {
               "calcs": [],
@@ -12149,6 +12342,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, concat('core ', lpad(cpu, 2, '0'), ' irq') AS metric, avg(irq) AS value FROM mikroscope_api_core WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -12161,6 +12355,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, concat('core ', lpad(cpu, 2, '0'), ' softirq+system (kernel)') AS metric, sum(softirq + system) * 100.0 / NULLIF(sum(user + nice + system + irq + softirq + steal + idle + iowait), 0) AS value FROM mikroscope_cpu WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "B"
@@ -12360,6 +12555,7 @@
             "y": 665
           },
           "id": 170,
+          "interval": "1s",
           "options": {
             "legend": {
               "calcs": [],
@@ -12381,6 +12577,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'RouterOS free-memory (API)' AS metric, avg(free_memory) AS value FROM mikroscope_api_system WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -12393,6 +12590,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'kernel MemFree + Cached' AS metric, avg((free_kb + cached_kb)::DOUBLE) * 1024 AS value FROM mikroscope_mem WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "B"
@@ -12405,6 +12603,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'kernel MemAvailable' AS metric, avg(available_kb::DOUBLE) * 1024 AS value FROM mikroscope_mem WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "C"
@@ -12531,6 +12730,7 @@
             "y": 674
           },
           "id": 173,
+          "interval": "1s",
           "options": {
             "legend": {
               "calcs": [],
@@ -12552,6 +12752,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'agent CPU (% of one core)' AS metric, sum(cpu_us) / (($__interval_ms / 1000.0) * 1e6) * 100 AS value FROM mikroscope_self WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -12564,6 +12765,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'CPU budget (2 % of one cpu)' AS metric, 2 AS value FROM mikroscope_self WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "B"
@@ -12614,6 +12816,7 @@
             "y": 674
           },
           "id": 174,
+          "interval": "1s",
           "options": {
             "legend": {
               "calcs": [],
@@ -12635,6 +12838,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT time, 'agent share of all busy CPU' AS metric, sum(agent) / nullif(sum(busy), 0) * 100 AS value FROM (SELECT $__dateBin(time) AS time, CAST(cpu_us AS DOUBLE) AS agent, 0.0 AS busy FROM mikroscope_self WHERE $__timeFilter(time) UNION ALL SELECT $__dateBin(time) AS time, 0.0 AS agent, CAST(user + nice + system + irq + softirq AS DOUBLE) * 10000 AS busy FROM mikroscope_cpu WHERE $__timeFilter(time)) GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -12685,6 +12889,7 @@
             "y": 682
           },
           "id": 175,
+          "interval": "1s",
           "options": {
             "legend": {
               "calcs": [],
@@ -12706,6 +12911,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'mean µs per sample' AS metric, avg(cpu_us) AS value FROM mikroscope_self WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -12718,6 +12924,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'worst µs per sample' AS metric, max(cpu_us) AS value FROM mikroscope_self WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "B"
@@ -12857,6 +13064,7 @@
             "y": 690
           },
           "id": 177,
+          "interval": "1s",
           "options": {
             "legend": {
               "calcs": [],
@@ -12878,6 +13086,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'agent RSS (/proc/self/stat)' AS metric, max(rss) AS value FROM mikroscope_self WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -12890,6 +13099,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'cgroup memory.current' AS metric, max(cgroup_mem) AS value FROM mikroscope_self WHERE $__timeFilter(time) AND cgroup_mem IS NOT NULL GROUP BY 1, 2 ORDER BY 1",
               "refId": "B"
@@ -12902,6 +13112,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'container memory-max (measured)' AS metric, (SELECT max(cgroup_mem_max) FROM mikroscope_self WHERE $__timeFilter(time) AND cgroup_mem_max IS NOT NULL) AS value FROM mikroscope_self WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "C"
@@ -12914,6 +13125,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'memory budget' AS metric, 16777216.0 AS value FROM mikroscope_self WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "D"
@@ -12965,6 +13177,7 @@
             "y": 690
           },
           "id": 178,
+          "interval": "1s",
           "options": {
             "displayMode": "basic",
             "legend": {
@@ -12997,6 +13210,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'agent RSS' AS metric, ((SELECT max(cgroup_mem_max) FROM mikroscope_self WHERE $__timeFilter(time) AND cgroup_mem_max IS NOT NULL) - max(rss)) * 100.0 / (SELECT max(cgroup_mem_max) FROM mikroscope_self WHERE $__timeFilter(time) AND cgroup_mem_max IS NOT NULL) AS value FROM mikroscope_self WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -13009,6 +13223,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'cgroup memory.current' AS metric, ((SELECT max(cgroup_mem_max) FROM mikroscope_self WHERE $__timeFilter(time) AND cgroup_mem_max IS NOT NULL) - max(cgroup_mem)) * 100.0 / (SELECT max(cgroup_mem_max) FROM mikroscope_self WHERE $__timeFilter(time) AND cgroup_mem_max IS NOT NULL) AS value FROM mikroscope_self WHERE $__timeFilter(time) AND cgroup_mem IS NOT NULL GROUP BY 1, 2 ORDER BY 1",
               "refId": "B"
@@ -13060,6 +13275,7 @@
             "y": 690
           },
           "id": 179,
+          "interval": "1s",
           "options": {
             "minVizHeight": 75,
             "minVizWidth": 75,
@@ -13083,6 +13299,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'agent CPU as a share of its budget' AS metric, (sum(cpu_us) / (($__interval_ms / 1000.0) * 1e6) * 100) / 2 * 100 AS value FROM mikroscope_self WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -14562,6 +14779,7 @@
             "y": 758
           },
           "id": 196,
+          "interval": "1s",
           "knownEmpty": true,
           "options": {
             "legend": {
@@ -14584,6 +14802,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'cpu some' AS metric, sum(cpu_some_us) * 0.0001 / ($__interval_ms / 1000.0) AS value FROM mikroscope_psi WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -14596,6 +14815,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'memory some' AS metric, sum(mem_some_us) * 0.0001 / ($__interval_ms / 1000.0) AS value FROM mikroscope_psi WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "B"
@@ -14608,6 +14828,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'memory full (a 0 and a kernel with no full line read alike)' AS metric, sum(mem_full_us) * 0.0001 / ($__interval_ms / 1000.0) AS value FROM mikroscope_psi WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "C"
@@ -14620,6 +14841,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'io some' AS metric, sum(io_some_us) * 0.0001 / ($__interval_ms / 1000.0) AS value FROM mikroscope_psi WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "D"
@@ -14632,6 +14854,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'io full' AS metric, sum(io_full_us) * 0.0001 / ($__interval_ms / 1000.0) AS value FROM mikroscope_psi WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "E"
@@ -14690,6 +14913,7 @@
             "y": 758
           },
           "id": 197,
+          "interval": "1s",
           "knownEmpty": true,
           "options": {
             "alignValue": "left",
@@ -14716,6 +14940,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, device AS metric, max(inflight) AS value FROM mikroscope_disk WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -14767,6 +14992,7 @@
             "y": 766
           },
           "id": 198,
+          "interval": "1s",
           "knownEmpty": true,
           "options": {
             "legend": {
@@ -14789,6 +15015,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, device || ' reads' AS metric, sum(reads) / ($__interval_ms / 1000.0) AS value FROM mikroscope_disk WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -14801,6 +15028,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, device || ' writes' AS metric, sum(writes) / ($__interval_ms / 1000.0) AS value FROM mikroscope_disk WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "B"
@@ -14852,6 +15080,7 @@
             "y": 766
           },
           "id": 199,
+          "interval": "1s",
           "knownEmpty": true,
           "options": {
             "legend": {
@@ -14874,6 +15103,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, device AS metric, sum(io_s) * 1000.0 / $__interval_ms * 100.0 AS value FROM mikroscope_disk WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -14925,6 +15155,7 @@
             "y": 774
           },
           "id": 200,
+          "interval": "1s",
           "knownEmpty": true,
           "options": {
             "legend": {
@@ -14947,6 +15178,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, device || ' read' AS metric, CAST(sum(read_sectors) AS DOUBLE) * 512.0 / ($__interval_ms / 1000.0) AS value FROM mikroscope_disk WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "A"
@@ -14959,6 +15191,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, device || ' write' AS metric, CAST(sum(write_sectors) AS DOUBLE) * 512.0 / ($__interval_ms / 1000.0) AS value FROM mikroscope_disk WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
               "refId": "B"
