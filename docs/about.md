@@ -154,10 +154,12 @@ The measured runs:
 That is above the budget of 2 % of one core and inside
 the 16 MiB RSS one — it was over on both until the 60 s ring and the derived
 memory limit of 1.0.6. The budget is guidance rather than a contract: cost scales with the device, the
-source set and the ring size. The image budget is 8 MiB; the one image size on
-record is 6.1 MiB, the figure the 1.0.0 release notes give for that release's
-image (v1.0.0, tagged 2026-09-16). No later image has been measured; the current image's size is to be measured on the published
-1.2.1 image. CI's `agent-size` job holds
+source set and the ring size. The image budget is 8 MiB; the published 1.2.1
+image for arm64 is 6.38 MiB: 6 690 304 B, measured on the release asset on
+2026-09-24, of which the agent binary is 6 684 832 B. The armv5 and armv7 images are 7 214 592 B and
+the amd64 one 7 222 784 B. The 1.0.0 release notes gave 6.1 MiB for that
+release's image (v1.0.0, tagged 2026-09-16), and the images between have no measurement of their
+own. CI's `agent-size` job holds
 the agent binary, which is all the image carries, under 8 MiB on arm64, armv7 and amd64.
 
 Two rules keep the cost figure honest: wait out the ring (`BUFFER_S`) before

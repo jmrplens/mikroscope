@@ -330,21 +330,37 @@ export const campaigns = {
 	},
 	// The image tar's size is a property of the build, not of the router: the
 	// device fields are here only because every campaign has them, and
-	// Provenance refuses this campaign so no page can print "Measured on
-	// RB5009UG+S+" beside it. 6.1 MiB is the figure the 1.0.0 release notes
-	// give; v1.0.0 was tagged 2026-09-16, which is a release date, not a
-	// measurement date, so the date stays null. It is cited only as the 1.0.0
-	// image's size; the current image's size is to be measured on the published
-	// 1.2.1 image, and the pages say so rather than quote a figure for it.
+	// Provenance refuses both image campaigns so no page can print "Measured
+	// on RB5009UG+S+" beside them.
+	//
+	// `image` is the published v1.2.1 release's arm64 image tar, the file the
+	// router loads: 6 690 304 B, measured with `ls -l` on the release asset
+	// (checksum verified against the signed checksums.txt) on 2026-09-24. The
+	// agent binary inside it is 6 684 832 B; the image is the binary and ~5 KB
+	// of manifest and tar headers. The other architectures' tars are
+	// 7 214 592 B (armv5, armv7) and 7 222 784 B (amd64).
 	image: {
+		...RB5009,
+		date: "2026-09-24",
+		conditions: {
+			en: "arm64 image tar of the published v1.2.1 release, the file the router loads",
+			es: "tar de la imagen arm64 de la versión v1.2.1 publicada, el fichero que carga el router",
+		},
+		source:
+			"release asset mikroscope-agent-arm64.tar of v1.2.1, 6 690 304 B, checked against the release's signed checksums.txt",
+	},
+	// `image-v100` is history: 6.1 MiB is the figure the 1.0.0 release notes
+	// give; v1.0.0 was tagged 2026-09-16, which is a release date, not a
+	// measurement date, so the date stays null.
+	"image-v100": {
 		...RB5009,
 		date: null,
 		conditions: {
-			en: "agent image size",
-			es: "tamaño de la imagen del agente",
+			en: "agent image size of the 1.0.0 release",
+			es: "tamaño de la imagen del agente de la versión 1.0.0",
 		},
 		source:
-			'CHANGELOG.md [1.0.0], "Measured on the reference device" (v1.0.0 tagged 2026-09-16, a release date); site/src/content/docs/about/status.mdx quotes it as such; the current image is to be measured on the published 1.2.1 image',
+			'CHANGELOG.md [1.0.0], "Measured on the reference device" (v1.0.0 tagged 2026-09-16, a release date)',
 	},
 } satisfies Record<string, Campaign>;
 
@@ -550,10 +566,17 @@ const fixed = {
 	},
 	"image.size": {
 		kind: "reading",
+		value: 6.38,
+		unit: "MiB",
+		digits: 2,
+		campaign: "image",
+	},
+	"image.size.v100": {
+		kind: "reading",
 		value: 6.1,
 		unit: "MiB",
 		digits: 1,
-		campaign: "image",
+		campaign: "image-v100",
 	},
 	// site/src/content/docs/cost/index.mdx. The shell loop's own cost, and the cost of the reads it
 	// makes: the difference between the two is the fork, the pipes and the

@@ -15,8 +15,9 @@ a footnote: it is reported by the agent on every sample, and the image-size budg
 ### The budget, and what it actually costs
 
 The budget is **≤ 2 % of one core, ≤ 16 MiB RSS,
-≤ 8 MiB image**. The 1.0.0 image was 6.1 MiB, the figure that release's notes give; the size of
-the current image is to be measured on the published 1.2.1 image. The other two
+≤ 8 MiB image**. The published 1.2.1 arm64 image is 6.38 MiB (6 690 304 B, measured on
+the release asset on 2026-09-24); the 1.0.0 image was 6.1 MiB, the figure
+that release's notes give. The other two
 depend on the rate and on how much you ask it to read, and the honest answer is a table rather than
 a number.
 

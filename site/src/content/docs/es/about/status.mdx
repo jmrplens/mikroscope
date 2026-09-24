@@ -168,10 +168,11 @@ Eso está por encima del presupuesto de <Measured id="budget.cpu" /> de un núcl
 de <Measured id="budget.rss" /> de RSS —estuvo por encima de los dos hasta el anillo de 60 s y el
 límite de memoria derivado de 1.0.6. El presupuesto es orientativo, no un contrato: el coste depende del equipo, del
 conjunto de fuentes y del tamaño del anillo. El presupuesto de imagen es <Measured id="budget.image" />;
-el único tamaño de imagen registrado es <Measured id="image.size" />, la cifra que dan las notas de
-la versión 1.0.0 para la imagen de esa versión (v1.0.0, etiquetada el 2026-09-16). No se ha medido
-ninguna imagen posterior; el tamaño de la imagen actual está por medir sobre la imagen publicada de
-1.2.1. El trabajo `agent-size` de la CI mantiene el binario del agente, que es
+la imagen publicada de 1.2.1 para arm64 mide <Measured id="image.size" />: 6 690 304 B, medidos sobre el
+artefacto de la versión el 2026-09-24, de los que el binario del agente ocupa 6 684 832 B. Las
+imágenes armv5 y armv7 miden 7 214 592 B y la amd64 7 222 784 B. Las notas de la versión 1.0.0
+daban <Measured id="image.size.v100" /> para la imagen de esa versión (v1.0.0, etiquetada el 2026-09-16),
+y las imágenes intermedias no tienen medición propia. El trabajo `agent-size` de la CI mantiene el binario del agente, que es
 todo lo que lleva la imagen, por debajo de 8 MiB en arm64, armv7 y amd64.
 
 Dos reglas mantienen honesta la cifra de coste: esperar a que se llene el

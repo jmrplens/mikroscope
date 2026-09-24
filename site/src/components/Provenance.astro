@@ -26,7 +26,7 @@ if (!isCampaignId(of)) {
 	throw new Error(`Provenance: unknown campaign "${of}"; campaigns live in src/data/measurements.ts`);
 }
 // See the `image` campaign in measurements.ts: a build artefact has no device.
-if (of === "image") {
+if (of === "image" || of === "image-v100") {
 	throw new Error("Provenance: the image size was not measured on a device; say where it comes from in prose");
 }
 const c = campaigns[of];

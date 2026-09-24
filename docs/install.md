@@ -9,9 +9,8 @@ What `mikroscope install` does to a RouterOS device and in which order, and how 
 Source: <https://jmrp.io/docs/mikroscope/install/>
 
 This page answers two questions: what `mikroscope install` does to your router,
-and how you get the router back. `install` puts the agent image in a container on the router (the 1.0.0 image
-was 6.1 MiB; the current image's size is to be measured on the published 1.2.1
-image); `uninstall` removes it again.
+and how you get the router back. `install` puts the agent image in a container on the router (the
+published 1.2.1 image for arm64 is 6.38 MiB, almost all of it the agent binary); `uninstall` removes it again.
 On RB5009UG+S+, RouterOS 7.24.2, 2026-09-12, a scripted
 doctor → install → status → upgrade → uninstall round trip
 (`make roundtrip`, which passes `--ephemeral` to doctor, install and upgrade) left

@@ -406,9 +406,9 @@ function renderSelfClosing(name, attributes, expressions, context) {
 					`${context.file}: <Provenance of="${of}" /> is not a campaign; campaigns live in src/data/measurements.ts`,
 				);
 			}
-			if (of === "image") {
+			if (of === "image" || of === "image-v100") {
 				throw new Error(
-					`${context.file}: <Provenance of="image" /> — the image size was not measured on a device`,
+					`${context.file}: <Provenance of="${of}" /> — the image size was not measured on a device`,
 				);
 			}
 			const c = campaigns[of];
