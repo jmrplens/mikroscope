@@ -4,6 +4,22 @@ Notable changes per release. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the versions
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **The documentation site has a web app manifest and a theme-color.** The
+  192, 512 and maskable 512 icons were published but no page linked them.
+  `site.webmanifest`, written by `cmd/gen_brand` with the icons (all 0644),
+  now lists them, and every page links it. `theme-color` follows the theme on
+  screen, `#151c20` dark and `#fafbfb` light: measured on 2026-09-25 in
+  Chromium 153 and WebKit 26.6 over 44 cases (picker, stored choice and
+  reload, system scheme, no JavaScript), a pair keyed to the system scheme
+  showed the other theme's colour in 24, and the tag the page's own script
+  sets in none. The unlinked `favicon-32x32.png` is gone; `favicon.ico`
+  carries 16, 32 and 48 px. Not tested: a real phone, an actual install, how
+  a launcher crops the maskable icon, Firefox.
+
 ## [1.3.0] - 2026-09-25
 
 ### Fixed
