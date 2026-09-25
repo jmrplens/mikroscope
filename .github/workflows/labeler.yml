@@ -1,0 +1,119 @@
+# Labels a pull request by the paths it changes and by the kind its title names,
+# and assigns one opened from outside to the maintainer.
+#
+# pull_request_target rather than pull_request, so that pull requests from
+# forks are labelled too: under pull_request, a fork's run gets a read-only
+# token and every write below would be refused. That is the likely cause of
+# gitlab-mcp-server's auto-assign.yml failing on a fork's pull request (run
+# 34662165166, 2026-09-12; its log had expired when it was read, so the error
+# itself was not seen).
+#
+# What makes the elevated token safe here is what the job does not do. It
+# checks nothing out and runs nothing from the pull request:
+#
+#   - actions/labeler reads the changed-file list through the API, and reads
+#     its map, .github/labeler.yml, through the API at github.context.sha,
+#     which under pull_request_target is the base branch's head
+#     (src/api/get-content.ts at the pinned commit). A pull request therefore
+#     cannot change the rules it is labelled by; a new rule applies from the
+#     first pull request opened after it merges.
+#   - The title step reads the title from the event payload into an
+#     environment variable and matches it with `case`. It is never expanded
+#     into the script text, so a title cannot become a command, and the label
+#     it adds comes from a fixed list, never from the title.
+#
+# The token can write pull requests and nothing else. Without issues: write
+# the action cannot create a label, so a key in the map that the repository
+# does not have fails the run loudly instead of inventing a grey label with
+# no description. CONTRIBUTING.md lists the labels.
+#
+# This gates nothing. It is outside ci.yml's graph and is not a required check.
+
+name: Labeler
+
+on:
+  # Unfiltered by base branch, for the reason ci.yml gives: a stacked pull
+  # request is based on the branch below it.
+  pull_request_target:
+    # edited as well: the title step reads the title, and a title is the one
+    # thing about a pull request that is routinely fixed after opening.
+    types: [opened, synchronize, reopened, edited]
+
+# No concurrency group, on purpose. gitlab-mcp-server found that one which
+# cancels in progress makes every pull request renamed seconds after opening
+# show a cancelled run in its checks. The title and assign steps only add. The
+# labeler removes nothing either (sync-labels is false), but it writes the
+# whole set in one PUT: it re-reads the labels just before, to keep any added
+# since it started, and a label another run or a person adds between that
+# read and the PUT is lost (src/labeler.ts at the pinned commit). The window
+# is one API round trip wide. A path or title label lost in it comes back on
+# the next push or edit; one added by hand does not.
+
+permissions:
+  contents: read
+
+jobs:
+  label:
+    name: Label and assign
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Label by the paths it changes
+        uses: actions/labeler@bf12e9b00b37c5c0ca2b87b79b2daf7891dbda13  # v7.0.0
+        with:
+          # Keep labels added by hand: only ever add, never remove.
+          sync-labels: false
+          # Stated rather than inherited. The docs-only pattern's **/*.md has
+          # to reach .github/pull_request_template.md and .github/RELEASING.md,
+          # and without dot a ** does not descend into .github/ (checked with
+          # minimatch 10.2.6; the action's lock file has 10.2.5). A default is
+          # a property of the action, not of this repository.
+          dot: true
+
+      # The kind of change, from the title's conventional prefix. The
+      # repository merges by squash only, so the title is the commit subject
+      # and CONTRIBUTING.md already asks for the prefix. fix and feat only:
+      # 21 of the 61 titles up to #61 carry one of them, which is the right
+      # share for a label to say something. docs would collide with the
+      # docs-only meaning of the documentation label, and ci and chore are
+      # decided by the paths.
+      - name: Label the kind from the title
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # GH_REPO rather than --repo: nothing is checked out, so gh has no
+          # repository to infer from the working directory.
+          GH_REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.pull_request.number }}
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          set -euo pipefail
+          case "$TITLE" in
+            fix\(*\):*|fix:*|fix!:*|fix\(*\)!:*) label=bug ;;
+            feat\(*\):*|feat:*|feat!:*|feat\(*\)!:*) label=enhancement ;;
+            *) echo "the title carries no fix or feat prefix, nothing to add"; exit 0 ;;
+          esac
+          echo "the title says ${label}"
+          gh pr edit "$NUMBER" --add-label "$label"
+
+      # One maintainer, several repositories: an assignee puts an outside pull
+      # request in the same "assigned to me" list as those of the other
+      # repositories. Only on opened, and not for the maintainer's own pull
+      # requests or a bot's (Dependabot's are read from the dependencies
+      # label). Issues are assigned by their forms, with no workflow.
+      - name: Assign a pull request from outside to the maintainer
+        if: >-
+          github.event.action == 'opened' &&
+          github.event.pull_request.user.login != 'jmrplens' &&
+          github.event.pull_request.user.type != 'Bot'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.pull_request.number }}
+        # The REST call phonometry's auto-assign.yml makes, which assigned an
+        # outside issue there on 2026-09-18. On a pull request it has not run
+        # yet: the first outside pull request is its test, and a refusal would
+        # show here as a failed last step with the labels already applied.
+        run: gh api --method POST "repos/${GH_REPO}/issues/${NUMBER}/assignees" -f 'assignees[]=jmrplens'

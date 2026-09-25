@@ -102,7 +102,9 @@ curl -s http://<collector host>:9124/metrics | grep -E 'self_cpu_usec_total|self
 
 The difference in `self_cpu_usec_total` divided by 60 000 000 is the share of
 one core. Take it at steady state, with the ring full: a freshly started agent
-is still filling it and will read low.
+is still filling it and will read low. Measured on a board other than the
+RB5009, with the rate, the date and what the router was doing, it belongs in a
+[board report](https://github.com/jmrplens/mikroscope/issues/new?template=2-board-report.yml).
 
 The address is the collector's, not the agent's: since 1.0.5 the agent serves
 no `/metrics`, and these two counters reach the collector in every sample. With

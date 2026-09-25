@@ -1,0 +1,170 @@
+name: Bug report
+description: The agent or the collector measured the wrong thing, wrote the wrong thing, or nothing at all.
+labels: [bug]
+assignees: [jmrplens]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Three pages answer most of what lands here:
+        [When something does not work](https://jmrp.io/docs/mikroscope/reference/troubleshooting/)
+        lists the symptoms in the words you actually see,
+        [Found and not fixed](https://jmrp.io/docs/mikroscope/about/status/#found-and-not-fixed)
+        lists what is already known, and
+        [What it cannot see](https://jmrp.io/docs/mikroscope/limits/) says what
+        the kernel and RouterOS will not give a container.
+
+        Not every report starts here:
+
+        - **A reading you cannot explain**, which may be the router telling the
+          truth, goes to
+          [Reading the data](https://github.com/jmrplens/mikroscope/discussions/categories/reading-the-data)
+          first. On the reference router the kernel log reported a layer-2
+          loop while RouterOS's own log and port monitor reported a healthy
+          device, and the kernel was right.
+        - **A board other than the RB5009** that it ran, or failed to run, on is a
+          [board report](https://github.com/jmrplens/mikroscope/issues/new?template=2-board-report.yml).
+        - **When the code and the documentation disagree** and you cannot tell
+          which is wrong, it goes here. When the page is clearly the wrong one,
+          use the documentation form.
+        - **A security vulnerability** does not go in an issue:
+          [report it privately](https://github.com/jmrplens/mikroscope/security/advisories/new).
+
+        **Never paste a credential.** Not the API user's password, a sink token,
+        a DSN that carries a password, a Grafana token, the agent's bearer token,
+        or a line of `.env`. Not the output of `/container/print detail` or
+        `/export`, which can carry other containers' secrets in their `cmd=`
+        lines, and not `/container/envs/print` or `mikroscope plan --rsc`, which
+        print the agent's token in clear. `mikroscope doctor`, `status` and
+        `plan` without `--rsc` print it masked or not at all. Replace with
+        placeholders the router's public address, its DDNS name
+        (`*.sn.mynetname.net`), an ssh target reachable from the internet, and
+        any other address or name you consider private; the report is just as
+        useful.
+  - type: input
+    id: version
+    attributes:
+      label: mikroscope version
+      description: The output of `mikroscope version`, and the agent's version from the `agent:` line of `mikroscope status` (or its start-up line in the router log) if it differs.
+      placeholder: mikroscope 1.3.0 (commit abc1234, built 2026-09-25T10:00:00Z)
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Board and RouterOS version
+      description: >
+        The `device:` line of `mikroscope doctor`, or `board-name` and
+        `version` from `/system/resource/print`. Write "no router involved"
+        for a problem that is only in a store or a dashboard.
+      placeholder: RB5009UG+S+IN, RouterOS 7.24.4, arm64
+    validations:
+      required: true
+  - type: dropdown
+    id: arch
+    attributes:
+      label: Agent image
+      description: >
+        Which image the container runs. A registry pull lets the router choose
+        from the multi-platform index; say "Not sure" then.
+      options:
+        - arm64
+        - arm/v5 (32-bit ARM, the --goarm default)
+        - arm/v7 (32-bit ARM, built with --goarm 7)
+        - amd64 (x86 or CHR)
+        - Not sure
+        - Not installed yet
+        - No router involved
+    validations:
+      required: true
+  - type: dropdown
+    id: part
+    attributes:
+      label: Which part
+      description: >
+        Every part the problem showed up in. The answer adds the matching area
+        label, the same one a pull request that fixes it gets.
+      multiple: true
+      # These strings are matched exactly by .github/workflows/issue-area.yml,
+      # and the same list is in 3-feature-request.yml: change all three
+      # together. No option may contain a comma, because GitHub joins a
+      # multiple answer with ", ".
+      options:
+        - "On the router: doctor / plan / install / status / upgrade / uninstall"
+        - "The agent: sampling / captures / its HTTP endpoints"
+        - "Recording: record / mark / plot"
+        - "The collector: forward / derive / the RouterOS API tier"
+        - "A sink or the store behind it"
+        - "The Grafana dashboards or alert rules"
+        - "Getting it: install.sh / install.ps1 / a release archive / an image"
+        - "The documentation site: a page that breaks / search / layout"
+        - "Not sure"
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected instead
+      description: >
+        The command you ran with its flags (the router target and any token
+        replaced), what it printed, and what you expected. A number that is
+        wrong wants the number you expected and where that one comes from.
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: The output of `mikroscope doctor`
+      description: >
+        Read-only: it writes nothing to the router, and it counts the agent's
+        token without printing it. Paste it whole, with the router's public
+        address or DDNS name and anything else you consider private replaced.
+        Write "no router involved" if there is none.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: status
+    attributes:
+      label: The output of `mikroscope status`
+      description: >
+        The `agent:` line (version, rate, sequence, slipped ticks) and the
+        `board:` line, if the agent was installed.
+      render: text
+  - type: textarea
+    id: sinks
+    attributes:
+      label: Sinks and stores
+      description: >
+        Which of `--file`, `--prom`, `--influx`, `--loki`, `--otlp`,
+        `--graphite`, `--elastic`, `--sql`, `--postgres`, `--telegraf` and
+        `--stdout` were in use, the store and its version behind each, and the
+        Grafana version for a dashboard problem. URLs without their tokens.
+  - type: textarea
+    id: logs
+    attributes:
+      label: The log
+      description: >
+        The lines around the problem: the collector's stderr, or the agent's
+        lines from `/log/print where topics~"container"`. The agent's start-up
+        line names its rate, buffer and enabled sources, which is often the
+        whole answer.
+      render: text
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: >
+        Whether the container is privileged, `--rate`, `--buffer`,
+        `--mem-limit-mb` and `--memory-max` if you set them, how the agent was
+        installed (a registry pull, a RouterOS script, a checkout or the tar),
+        and the panel or series that looks wrong.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: Nothing above carries a credential, a token, `/container/print detail`, `/container/envs/print`, `/export` or `plan --rsc` output, or the router's public address or DDNS name.
+          required: true
+        - label: This happens on the latest release, or I checked that it is still there.
+          required: false

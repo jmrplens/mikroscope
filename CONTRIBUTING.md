@@ -248,6 +248,14 @@ user's healthy router, not only against the reference device's faults.
 its row in `site/src/data/doctor-checks.ts` in both languages, and the
 troubleshooting entry for its failure, with its Spanish twin.
 
+**A new package** means its entry in `.github/labeler.yml`, under the area it
+belongs to, so its pull requests are labelled with it.
+
+**A board report** becomes a row in the README's table of verified devices,
+with what was measured and on what date; an entry in `internal/procfs/ports.go`
+when it carries port pairs, with its `Evidence` and the pairs it `Measured`;
+and the status page, in both languages.
+
 **A behaviour change** means a test that fails before it and passes after it,
 and a `CHANGELOG.md` entry.
 
@@ -262,15 +270,55 @@ and a `CHANGELOG.md` entry.
   under `site/src/content/docs/es/`.
 - Commit messages use conventional prefixes: `feat`, `fix`, `docs`, `test`, `ci`
   and `chore` (a release is `chore(release): X.Y.Z`; Dependabot also uses
-  `chore`).
+  `chore`). Pull requests are merged by squash, so a pull request's title is
+  the commit subject and takes the prefix too; `fix` in it adds the `bug`
+  label and `feat` the `enhancement` label.
 - No attribution or co-author lines in commits or pull requests.
 
 ## Reporting something
 
-A bug or an idea goes in an issue; the templates ask for the version, the
-RouterOS version and board, the output of `mikroscope doctor` and the sinks in
-use, and never for a credential. A security vulnerability does not go in an
-issue: [SECURITY.md](SECURITY.md) says where it goes instead. How people are
-expected to talk to each other in any of those places is
+What is already known to be wrong goes in an issue, through one of four forms.
+What is not known yet, a question, a reading nobody can place, an idea whose
+source is open, starts in
+[Discussions](https://github.com/jmrplens/mikroscope/discussions) and becomes
+an issue once it is established.
+
+| You have | Where it goes |
+| --- | --- |
+| A reproducible failure: it measured, wrote or installed the wrong thing | [Bug report](https://github.com/jmrplens/mikroscope/issues/new?template=1-bug-report.yml) |
+| A run, or an attempt, on a board other than the RB5009 | [Board report](https://github.com/jmrplens/mikroscope/issues/new?template=2-board-report.yml) |
+| A change whose source is known: a kernel file, an API path, a store's write API | [Feature request](https://github.com/jmrplens/mikroscope/issues/new?template=3-feature-request.yml) |
+| A page that is wrong, has a broken link, or disagrees with its Spanish twin | [Documentation](https://github.com/jmrplens/mikroscope/issues/new?template=4-documentation.yml) |
+| A question about installing or using it | [Q&A](https://github.com/jmrplens/mikroscope/discussions/categories/q-a) |
+| A reading you cannot explain | [Reading the data](https://github.com/jmrplens/mikroscope/discussions/categories/reading-the-data) |
+| A question the data cannot answer, with no known source | [Ideas](https://github.com/jmrplens/mikroscope/discussions/categories/ideas) |
+| A fault you found, a dashboard you built | [Show and tell](https://github.com/jmrplens/mikroscope/discussions/categories/show-and-tell) |
+
+The bug and board reports ask for the mikroscope version, the board and its
+RouterOS version, and the output of `mikroscope doctor`; only the bug report
+asks for the sinks in use. A feature request asks where the data would come
+from and what you have seen of it on a device, and a documentation report asks
+for the page, its language and what it should say. No form asks for a
+credential, and each one names the outputs that carry one. A security vulnerability does not go in an
+issue or a discussion: [SECURITY.md](SECURITY.md) says where it goes instead.
+How people are expected to talk to each other in any of those places is
 [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md), and reporting a breach of it is
 described there.
+
+## Labels
+
+Labels are created by hand, and none is created by automation: a label that a
+form names and the repository lacks is skipped silently, and one that
+`.github/labeler.yml` names fails the labeler's run. Create the label first,
+then the rule that applies it.
+
+| Label | Applied by |
+| --- | --- |
+| `bug` | the bug report form, and a pull request titled `fix…` |
+| `enhancement` | the feature request form, and a pull request titled `feat…` |
+| `documentation` | the documentation form, and a pull request that changes only prose, page data or captures |
+| `board-report` | the board report form |
+| `agent`, `router`, `collector`, `sinks`, `dashboards`, `site`, `distribution` | `.github/labeler.yml` from a pull request's paths, and `.github/workflows/issue-area.yml` from a form's "Which part" answer |
+| `ci`, `security`, `dependencies` | `.github/labeler.yml` from a pull request's paths |
+| `go`, `javascript`, `github-actions` | Dependabot, with `dependencies` |
+| `needs-info`, `duplicate`, `help wanted`, `good first issue`, `accessibility` | the maintainer |

@@ -1,0 +1,107 @@
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For a reading you cannot place: a panel that looks wrong, a kernel-log
+        record, a detection or an alert that fired, or a number that disagrees
+        with what WinBox or the RouterOS API says.
+
+        Such a reading can be the router telling the truth about something
+        nobody expected. On the reference RB5009 the kernel log reported a
+        layer-2 loop while RouterOS's log and port monitor looked healthy, and
+        a Home Assistant MikroTik integration took the timer interrupts from
+        about 2 500 to about 35 000 a second while user time stayed flat and
+        RouterOS's own profile barely showed it. Both are written up in
+        [How to read what it shows](https://jmrp.io/docs/mikroscope/playbooks/),
+        which starts from an idle router; reading yours against it is the
+        fastest first step. [What it cannot see](https://jmrp.io/docs/mikroscope/limits/)
+        covers the other kind of answer, a value at the edge of what a container
+        can read.
+
+        If it turns out mikroscope measured wrong, it becomes a bug report that
+        links back here.
+
+        Crop addresses, host names and tokens out of screenshots. **Never paste
+        a credential** or the output of `/container/print detail`,
+        `/container/envs/print`, `/export` or `plan --rsc`, and replace the
+        router's public address or DDNS name. English or Spanish, whichever you
+        prefer.
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What kind of reading
+      options:
+        - A panel or a series that looks wrong
+        - A kernel-log record I cannot place
+        - A number that disagrees with WinBox or the RouterOS API
+        - A detection or an alert that fired or did not
+        - Something I expected to see and cannot find
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Board, RouterOS version and agent rate
+      description: The `device:` line of `mikroscope doctor`, and the rate from the `agent:` line of `mikroscope status`.
+      placeholder: RB5009UG+S+IN, RouterOS 7.24.4, arm64, 10 Hz
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: mikroscope version
+      placeholder: mikroscope 1.3.0 (commit abc1234, built 2026-09-25T10:00:00Z)
+    validations:
+      required: true
+  - type: textarea
+    id: seen
+    attributes:
+      label: What you see, and over which window
+      description: >
+        The dashboard and panel or the series, the window in UTC, and the
+        values. A screenshot helps. A kernel-log record is best pasted as text;
+        a MAC address in it can be replaced with one from the block RFC 7042
+        reserves for documentation, such as `00:00:5e:00:53:01`, if you would
+        rather not publish it.
+    validations:
+      required: true
+  - type: textarea
+    id: router
+    attributes:
+      label: What the router was doing then
+      description: >
+        Traffic, a configuration change, a reboot, other containers (by name
+        and image, not `/container/print` output), anything that polls the
+        RouterOS API (a monitoring system, a home-automation integration).
+        "Nothing that I know of" is an answer.
+    validations:
+      required: true
+  - type: textarea
+    id: independent
+    attributes:
+      label: What else measured the same thing
+      description: >
+        The same quantity read another way: WinBox, `/interface/print stats`,
+        `/system/resource/print`, SNMP, or the store queried directly. An
+        independent reading is the most useful thing here.
+  - type: dropdown
+    id: privileged
+    attributes:
+      label: Is the container privileged?
+      description: Without it there is no `/dev/kmsg`, so no kernel-log records at all.
+      options:
+        - "Yes, the default"
+        - "No, installed with --privileged=false"
+        - "Not sure"
+  - type: dropdown
+    id: store
+    attributes:
+      label: Where you are reading it
+      options:
+        - The InfluxDB dashboard
+        - The Prometheus dashboard
+        - The PostgreSQL dashboard
+        - The Elasticsearch dashboard
+        - The Graphite dashboard
+        - A recording or a plot
+        - The store queried directly

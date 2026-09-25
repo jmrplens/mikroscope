@@ -1,0 +1,40 @@
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A fault you found with mikroscope, a dashboard or an alert you built on
+        it, a recording worth keeping, a board it runs on. Work in progress is
+        welcome.
+
+        A board nobody has reported yet also deserves a
+        [board report](https://github.com/jmrplens/mikroscope/issues/new?template=2-board-report.yml),
+        which is how it gets its row in the README.
+
+        Crop addresses, host names and tokens out of screenshots, and never
+        paste a credential or the output of `/container/print detail`,
+        `/container/envs/print`, `/export` or `plan --rsc`. English or Spanish,
+        whichever you prefer.
+  - type: textarea
+    id: what
+    attributes:
+      label: What you found or built
+      description: Screenshots, plots and links are welcome. Say what was measured, and when.
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Board and RouterOS version
+      placeholder: RB5009UG+S+IN, RouterOS 7.24.4
+  - type: textarea
+    id: how
+    attributes:
+      label: Which parts you used
+      description: >
+        The sinks and stores, the dashboards, record and plot, triggers. It
+        shows which parts see real use and where the rough edges are.
+  - type: input
+    id: link
+    attributes:
+      label: Link
+      description: A repository, a write-up or a dashboard export, if any is public.

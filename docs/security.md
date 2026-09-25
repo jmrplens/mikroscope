@@ -169,14 +169,17 @@ either.
 
 ### Reporting a vulnerability
 
-Report a vulnerability privately, never with its details in a public issue: open the repository's
-[Security tab](https://github.com/jmrplens/mikroscope/security) and choose **Report a
+Report a vulnerability privately, never with its details in a public issue or discussion: open the
+repository's [Security tab](https://github.com/jmrplens/mikroscope/security) and choose **Report a
 vulnerability**. GitHub then opens a private advisory that only the maintainer can see. If that
-button is not there, open an issue that asks for a private channel and says nothing else about the
-problem, and wait there for a reply that names one. Include the version (`mikroscope version`, and
-`mikroscope-agent -version` if it differs), the RouterOS version and board, what an attacker gains,
-and the smallest way to reproduce it. If a proof of concept needs a credential, a router address or
-an export, do not send it: describe it.
+button is not there, start a discussion in
+[General](https://github.com/jmrplens/mikroscope/discussions/categories/general) that asks for a
+private channel and says nothing else about the problem, and wait there for a reply that names one;
+issues go through forms that ask for the details, so an issue cannot stay that empty. Include the
+version (`mikroscope version`, and the agent's from the `agent:` line of `mikroscope status` if it
+differs), the RouterOS version and board, what an attacker gains, and the smallest way to reproduce
+it. If a proof of concept needs a credential, a router address or an export, do not send it:
+describe it.
 
 The policy itself is [`SECURITY.md`](https://github.com/jmrplens/mikroscope/blob/main/SECURITY.md). It promises an acknowledgement within a week and,
 once a report is confirmed, a fix released before the advisory is published; a reporter who wants

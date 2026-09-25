@@ -1,0 +1,163 @@
+name: Board report
+description: You ran mikroscope, or tried to, on a board other than the RB5009. What it said and what you measured is what adds a row.
+labels: [board-report]
+assignees: [jmrplens]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        [Where it has been verified](https://github.com/jmrplens/mikroscope#where-it-has-been-verified)
+        lists the boards mikroscope has run on. Everything else it builds for
+        is cross-compiled and checked in CI, and nothing more
+        ([Where it stands](https://jmrp.io/docs/mikroscope/about/status/)).
+        A report from your board is what changes that, and a partial one
+        counts: an `exec format error` on a named board is a result.
+
+        Say for each thing whether you **measured** it or **inferred** it. The
+        port table keeps the two apart on purpose: a port name that was guessed
+        with confidence sends someone to the wrong cable.
+
+        Everything below is read-only except the optional port pairs, which
+        disable and re-enable a port. Do that only on a port that carries
+        nothing, and skip it on a router whose traffic you cannot interrupt.
+
+        **Never paste a credential**: not the agent's token, a sink token, the
+        API user's password, or the output of `/container/print detail`,
+        `/container/envs/print`, `/export` or `plan --rsc`. `doctor` and
+        `status` print the token masked or not at all. Replace the router's
+        public address, its DDNS name (`*.sn.mynetname.net`), an ssh target
+        reachable from the internet, and any other address or name you
+        consider private.
+  - type: input
+    id: device
+    attributes:
+      label: Board, RouterOS version and architecture
+      description: The `device:` line of `mikroscope doctor`, or `board-name`, `version` and `architecture-name` from `/system/resource/print`.
+      placeholder: "<board-name>, RouterOS <version>, <architecture-name>"
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: mikroscope version
+      description: The output of `mikroscope version`, and the agent's version from the `agent:` line of `mikroscope status` (or its start-up line in the router log) if it differs.
+      placeholder: mikroscope 1.3.0 (commit abc1234, built 2026-09-25T10:00:00Z)
+    validations:
+      required: true
+  - type: dropdown
+    id: arch
+    attributes:
+      label: Agent image
+      description: >
+        Which image the container ran. A registry pull lets the router choose
+        from the multi-platform index; say "Not sure" then.
+      options:
+        - arm64
+        - arm/v5 (32-bit ARM, the --goarm default)
+        - arm/v7 (32-bit ARM, built with --goarm 7)
+        - amd64 (x86 or CHR)
+        - Not sure
+        - None started
+    validations:
+      required: true
+  - type: dropdown
+    id: route
+    attributes:
+      label: How the image reached the router
+      options:
+        - A registry pull (install --remote-image)
+        - A RouterOS script (plan --rsc)
+        - A checkout built with Go
+        - The published tar (install --agent-tar)
+        - Nothing installed yet (doctor only)
+    validations:
+      required: true
+  - type: dropdown
+    id: outcome
+    attributes:
+      label: How far it got
+      options:
+        - The collector received samples
+        - The agent answered but some sources were missing
+        - The container started and exited
+        - The container never started (exec format error or similar)
+        - install stopped before the container
+        - Only doctor was run
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: The output of `mikroscope doctor`
+      description: >
+        Read-only. Paste it whole. It needs ssh to the router: if you installed
+        with `plan --rsc` and have none, say so, and paste
+        `/system/resource/print` instead.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: status
+    attributes:
+      label: The output of `mikroscope status`
+      description: >
+        Its `board:` line is the device tree's model string, which is the key
+        a port map is filed under, and its `agent:` line gives the rate and
+        the slipped ticks. It needs ssh as well; without it, the `board` field
+        of `/capabilities` below is the same model string. Leave it empty if
+        the agent never answered.
+      render: text
+  - type: textarea
+    id: capabilities
+    attributes:
+      label: What the agent found on the board
+      description: >
+        The JSON body of the agent's `/capabilities`
+        ([how to fetch it](https://jmrp.io/docs/mikroscope/reference/http/#get-capabilities)):
+        kernel, board, core count, which sources opened, whether it is
+        privileged, the device's own ceilings. It carries no credential, but
+        the request does: paste the body only, not a command line that holds
+        `--token` or an Authorization header. Or, failing that, the agent's
+        start-up line from `/log/print where topics~"container"`.
+      render: text
+  - type: textarea
+    id: cost
+    attributes:
+      label: What it costs on this board
+      description: >
+        Optional, and the number most worth having. Two reads of
+        `self_cpu_usec_total` 60 s apart at steady state with the ring full;
+        the difference divided by 60 000 000 is the share of one core
+        ([the procedure](https://jmrp.io/docs/mikroscope/cost/#measuring-it-on-your-own-device)).
+        Give the rate, `self_rss_bytes`, the date, and what else the router
+        was doing.
+      placeholder: "<rate> Hz, <share> of one core over 60 s, RSS <MiB>, <date>, <what the router was doing>"
+  - type: textarea
+    id: ports
+    attributes:
+      label: Port pairs you measured
+      description: >
+        Optional. RouterOS default name and the kernel's `ethN`, one pair per
+        line, each marked measured or inferred, with the date. A pair is read
+        from the kernel log, which the agent sees only in a privileged
+        container (the default). How to measure one on a dead port:
+        [port names](https://jmrp.io/docs/mikroscope/reference/port-names/#measure-it-on-a-dead-port).
+      placeholder: |
+        ether6 = eth5, measured <date> (flapped a dead port)
+        ether3 = eth2, inferred from the MAC order
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else
+      description: >
+        What did not work, what you had to change, whether the container is
+        privileged, and `--rate`, `--buffer` and `--memory-max` if you set them.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: Nothing above carries a credential, a token, `/container/print detail`, `/container/envs/print`, `/export` or `plan --rsc` output, or the router's public address or DDNS name.
+          required: true
+        - label: I could run a build from a branch on this board to check a fix.
+          required: false

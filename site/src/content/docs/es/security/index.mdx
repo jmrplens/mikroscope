@@ -169,14 +169,17 @@ secretos incluidos. mikroscope no hace esto, y un contenedor que construyas tú 
 
 ## Informar de una vulnerabilidad
 
-Informa de una vulnerabilidad en privado, nunca con sus detalles en un issue público: abre la
-[pestaña Security](https://github.com/jmrplens/mikroscope/security) del repositorio y elige **Report
-a vulnerability**. GitHub abre entonces un aviso privado que solo ve el mantenedor. Si ese botón no
-aparece, abre un issue que pida un canal privado y no diga nada más del problema, y espera ahí una
-respuesta que te lo indique. Incluye la versión (`mikroscope version`, y
-`mikroscope-agent -version` si es distinta), la versión de RouterOS y la placa, lo que gana un
-atacante y la forma más corta de reproducirlo. Si una prueba de concepto necesita una credencial,
-una dirección de router o un export, no lo envíes: descríbelo.
+Informa de una vulnerabilidad en privado, nunca con sus detalles en un issue ni en una discusión
+públicos: abre la [pestaña Security](https://github.com/jmrplens/mikroscope/security) del
+repositorio y elige **Report a vulnerability**. GitHub abre entonces un aviso privado que solo ve el
+mantenedor. Si ese botón no aparece, abre una discusión en
+[General](https://github.com/jmrplens/mikroscope/discussions/categories/general) que pida un canal
+privado y no diga nada más del problema, y espera ahí una respuesta que te lo indique; los issues
+pasan por formularios que piden los detalles, así que un issue no puede quedarse tan vacío. Incluye
+la versión (`mikroscope version`, y la del agente, de la línea `agent:` de `mikroscope status`, si es
+distinta), la versión de RouterOS y la placa, lo que gana un atacante y la forma más corta de
+reproducirlo. Si una prueba de concepto necesita una credencial, una dirección de router o un
+export, no lo envíes: descríbelo.
 
 La política en sí es <Src path="SECURITY.md" />. Promete un acuse de recibo en una semana y, una vez
 confirmado el informe, una corrección publicada antes que el aviso; quien quiera que se le mencione

@@ -2068,7 +2068,7 @@ is reported per CPU, not per port.
 not applied to a board nobody has measured, because a confidently wrong port name
 sends someone to the wrong cable. On such a board `status` says so and asks for
 the pair: bring one port down, see which `ethN` the log names, and send that pair
-with the board string.
+with the board string in a [board report](https://github.com/jmrplens/mikroscope/issues/new?template=2-board-report.yml).
 
 ### What kind of event it was
 
@@ -2697,6 +2697,10 @@ router first, then seven faults read against it.
   it, source by source.
 - [How the project tests itself](https://jmrp.io/docs/mikroscope/reference/testing/): what has been
   proven and how, if you are wondering whether it is you or the project.
+- [Discussions](https://github.com/jmrplens/mikroscope/discussions): a question
+  in Q&A, a reading nobody can place in Reading the data. A failure you can
+  reproduce is a [bug report](https://github.com/jmrplens/mikroscope/issues/new?template=1-bug-report.yml),
+  and it asks for the outputs this page names.
 
 ## Glossary
 
