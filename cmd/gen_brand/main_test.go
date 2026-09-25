@@ -486,14 +486,16 @@ func readManifest(t *testing.T) manifestJSON {
 }
 
 // TestTheManifestResolvesUnderAnyBasePath: every URL in it is relative, so it
-// works under whatever path the site is served from, and it carries no "id",
-// which resolves against the origin of start_url rather than against the
-// manifest, so a relative one would claim the host's root, a different site.
+// works under whatever path the site is served from, and it carries no "id".
+// An id is resolved against the ORIGIN of start_url, not against the manifest,
+// so "./" names jmrplens.github.io/, which the host's own hub already claims
+// with a manifest of its own, and an id that stays inside this site has to
+// spell out /mikroscope/, the base path nothing else here names.
 func TestTheManifestResolvesUnderAnyBasePath(t *testing.T) {
 	t.Parallel()
 	m := readManifest(t)
 	if _, ok := m.keys["id"]; ok {
-		t.Error(`the manifest carries an "id"; a relative one resolves to the host's root, so it is left to default to start_url`)
+		t.Error(`the manifest carries an "id"; it resolves against start_url's origin, so it would have to name the base path, and is left to default to start_url`)
 	}
 	urls := map[string]string{"start_url": m.app.StartURL, "scope": m.app.Scope}
 	for _, icon := range m.app.Icons {
@@ -574,12 +576,19 @@ func TestTheCommittedWebFilesMatchTheGenerator(t *testing.T) {
 	}
 }
 
-// TestTheChromeColorIsTheHeaders: theme_color and the page's two theme-color
-// tags are the header's color in each theme, which lives in the site's
-// stylesheet, so this reads it from there rather than trusting a copy. Dark,
-// the header is --ms-surface; light, it is --sl-color-gray-7, which theme.css
-// mixes from --ms-surface and --ms-page (Starlight paints its header with
+// TestTheChromeColorIsTheHeaders: theme_color and the page's theme-color tag
+// are the header's color in each theme, which lives in the site's stylesheet,
+// so this reads it from there rather than trusting a copy. Dark, the header is
+// --ms-surface; light, it is --sl-color-gray-7, which theme.css mixes from
+// --ms-surface and --ms-page (Starlight paints its header with
 // --sl-color-bg-nav: gray-6 in the dark theme, gray-7 in the light one).
+//
+// The tag is one, not a pair split by prefers-color-scheme, because the page's
+// theme is `data-theme`, not the system's scheme. Its `content` is the dark
+// header, the theme Starlight renders on the server and the one a page without
+// JavaScript keeps; `data-dark` and `data-light` are what the script in
+// overrides/Head.astro copies into it when `data-theme` changes, so this also
+// holds that script to the attributes it reads.
 func TestTheChromeColorIsTheHeaders(t *testing.T) {
 	t.Parallel()
 	css, err := os.ReadFile(filepath.Join("..", "..", "site", "src", "styles", "theme.css"))
@@ -628,14 +637,34 @@ func TestTheChromeColorIsTheHeaders(t *testing.T) {
 	}
 	lightHeader := fmt.Sprintf("#%02x%02x%02x", mixed[0], mixed[1], mixed[2])
 
-	for scheme, want := range map[string]string{"dark": chromeDark, "light": lightHeader} {
-		tag := regexp.MustCompile(`name: "theme-color",\s*content: "(#[0-9a-f]{6})",\s*media: "\(prefers-color-scheme: `+scheme+`\)"`).FindAllSubmatch(config, -1)
-		if len(tag) != 1 {
-			t.Errorf("astro.config.mjs has %d theme-color tags for the %s scheme, want one", len(tag), scheme)
-			continue
+	if n := strings.Count(string(config), `name: "theme-color"`); n != 1 {
+		t.Fatalf("astro.config.mjs declares %d theme-color tags, want one that follows data-theme", n)
+	}
+	tag := regexp.MustCompile(`name: "theme-color",\s*content: "(#[0-9a-f]{6})",\s*"data-dark": "(#[0-9a-f]{6})",\s*"data-light": "(#[0-9a-f]{6})",\s*}`).FindSubmatch(config)
+	if tag == nil {
+		t.Fatal(`astro.config.mjs's theme-color tag is not {name, content, "data-dark", "data-light"}, in that order and nothing else`)
+	}
+	for _, c := range []struct{ what, got, want string }{
+		{"content, the theme the server renders,", string(tag[1]), chromeDark},
+		{"data-dark", string(tag[2]), chromeDark},
+		{"data-light", string(tag[3]), lightHeader},
+	} {
+		if c.got != c.want {
+			t.Errorf("the theme-color tag's %s is %s, and that header is %s", c.what, c.got, c.want)
 		}
-		if got := string(tag[0][1]); got != want {
-			t.Errorf("the %s theme-color tag is %s, and the %s header is %s", scheme, got, scheme, want)
+	}
+
+	head, err := os.ReadFile(filepath.Join("..", "..", "site", "src", "components", "overrides", "Head.astro"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`document.querySelector('meta[name="theme-color"][data-light]')`,
+		`root.dataset.theme === "light" ? tag.dataset.light : tag.dataset.dark`,
+		`attributeFilter: ["data-theme"]`,
+	} {
+		if !strings.Contains(string(head), want) {
+			t.Errorf("overrides/Head.astro no longer has %s, so nothing moves the theme-color tag with data-theme", want)
 		}
 	}
 }

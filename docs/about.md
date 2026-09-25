@@ -566,15 +566,28 @@ the same host give the same four mark and favicon files.
 | `apple-touch-icon.png`, `icon-192.png`, `icon-512.png` | `site/public/` | `icons`    | 180, 192 and 512 px, each drawn at its own size                                                       |
 | `icon-maskable-512.png`                                | `site/public/` | `icons`    | Inset further, to sit inside the circle 80 % of the icon across that a launcher may crop to           |
 
-Every page's head links `favicon.svg`, `favicon.ico`, `apple-touch-icon.png` and
-`site.webmanifest`. The `.ico` link says `sizes="32x32"`, which keeps Chromium on the SVG alone:
-headless Chromium 153 requested only `favicon.svg` on 2026-09-25. The manifest names
-`icon-192.png`, `icon-512.png` and `icon-maskable-512.png` by URLs relative to itself, and carries
-no `id`: a relative one resolves against the host's root, which is another site's address. It
-leaves out `favicon.svg`, the one icon with no ground of its own, since whatever lands on a home
-screen brings its own. Two `theme-color` tags, one per `prefers-color-scheme`, give the header's
-own colour, `#151c20` dark and `#fafbfb` light: Chrome reads the tags, and Safari 26 ignores them
-and takes the colour of the fixed header, so the two browsers agree.
+Every page's head links `favicon.svg`, `favicon.ico`, `apple-touch-icon.png` and `site.webmanifest`.
+The `.ico` link says `sizes="32x32"`, which keeps Chromium on the SVG alone: headless Chromium 153
+requested only `favicon.svg` on 2026-09-25. The manifest names `icon-192.png`, `icon-512.png` and
+`icon-maskable-512.png` by URLs relative to itself, and leaves out `favicon.svg`, the one icon with
+no ground of its own, since whatever lands on a home screen brings its own. It carries no `id`,
+which is resolved against the origin of `start_url` rather than against the manifest: Chromium 153
+resolved `./` to the root of the origin, here `https://jmrplens.github.io/`, the address the host's
+own hub already claims with a manifest of its own, and an `id` that stays inside this site has to
+spell out `/mikroscope/`, the base path nothing else in the manifest names. Left out, it defaults to
+`start_url`, which Chromium resolves to `/mikroscope/`, the `id` it recommends.
+
+One `theme-color` tag gives the colour of the header on screen, `#151c20` dark and `#fafbfb` light.
+It follows the site's theme, not the system's scheme: it is served with the dark header, the theme a
+page without JavaScript keeps whatever the system says, and a script in the head moves it to the
+light one whenever the page turns light, from the system's scheme, the theme select, a stored choice
+or the phone's toggle. Chrome reads the tag; Safari 26, by public reports and not tried here,
+ignores it and takes the colour of the fixed header. In headless Chromium and WebKit on 2026-09-25,
+in both schemes, after a pick, after a stored pick and a reload, after the phone's toggle and with
+JavaScript off, the tag held the header's colour every time; the pair of tags split by
+`prefers-color-scheme` it replaced held the other theme's colour after each pick, and on a light
+system without JavaScript. Whether a phone's Chrome repaints its toolbar the moment the tag changes
+was not tried on a device.
 
 `TestTheCommittedWebFilesMatchTheGenerator` compares `favicon.svg` and `site.webmanifest` in
 `site/public/` with what the generator writes now, so an edit that is not regenerated fails

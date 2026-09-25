@@ -330,35 +330,39 @@ export default defineConfig({
 					attrs: { rel: "manifest", href: "/mikroscope/site.webmanifest" },
 				},
 				// The colour a browser paints its own chrome in, which is the
-				// header's colour in each theme: --ms-surface (#151c20) in the
-				// dark one, and in the light one --sl-color-gray-7, a mix of
-				// --ms-surface and the page that Chromium and WebKit both resolve
-				// to color(srgb 0.978431 0.982745 0.984902), #fafbfb once rounded
-				// (measured 2026-09-25). The header, because Safari 26 ignores
-				// theme-color and samples the fixed header instead, and Chrome
-				// reads these tags: matching the header keeps the two alike. Not
-				// the accent, which theme.css keeps for things a reader can act
-				// on. The dark value is the manifest's theme_color too.
+				// header's colour in the theme on screen: --ms-surface (#151c20)
+				// in the dark one, and in the light one --sl-color-gray-7, a mix
+				// of --ms-surface and the page that Chromium and WebKit both
+				// resolve to color(srgb 0.978431 0.982745 0.984902), #fafbfb once
+				// rounded (measured 2026-09-25). The header, because Safari 26
+				// ignores theme-color and samples the fixed header instead, and
+				// Chrome reads this tag: matching the header keeps the two alike.
+				// Not the accent, which theme.css keeps for things a reader can
+				// act on. The dark value is the manifest's theme_color too.
 				// cmd/gen_brand's TestTheChromeColorIsTheHeaders recomputes both
-				// from theme.css and fails when either tag drifts from it.
+				// from theme.css and fails when either drifts from it.
 				//
-				// `media` follows the operating system's scheme, not Starlight's
-				// theme select: a reader who picks the opposite theme by hand
-				// gets browser chrome in the other colour. Known, and left.
+				// One tag that follows `data-theme`, not two split by
+				// `media="(prefers-color-scheme: …)"`. Those followed the
+				// operating system, and the page does not: the theme select can
+				// put a light page on a dark system and the reverse, and without
+				// JavaScript the page stays in the dark theme Starlight renders
+				// on the server whatever the system says. Measured 2026-09-25 on
+				// the split pair, headless Chromium and WebKit (Playwright 1.63):
+				// after a pick in the select, after a stored pick and a reload,
+				// after the phone toggle, and with JavaScript off on a light
+				// system, the tag in force carried the other theme's header
+				// colour. So `content` is the dark header, right for the page as
+				// served, and the script at the end of overrides/Head.astro sets
+				// it from `data-dark` or `data-light` each time `data-theme`
+				// changes.
 				{
 					tag: "meta",
 					attrs: {
 						name: "theme-color",
 						content: "#151c20",
-						media: "(prefers-color-scheme: dark)",
-					},
-				},
-				{
-					tag: "meta",
-					attrs: {
-						name: "theme-color",
-						content: "#fafbfb",
-						media: "(prefers-color-scheme: light)",
+						"data-dark": "#151c20",
+						"data-light": "#fafbfb",
 					},
 				},
 			],

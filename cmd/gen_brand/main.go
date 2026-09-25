@@ -477,9 +477,11 @@ const manifestName = "site.webmanifest"
 // chromeDark is the color a browser is asked to paint its own chrome in: the
 // dark theme's --ms-surface in site/src/styles/theme.css, which is what
 // Starlight paints the header with (--sl-color-bg-nav is --sl-color-gray-6,
-// set to --ms-surface). The manifest's theme_color and the page's dark
-// theme-color tag carry the same value, so an installed window's title bar and
-// Chrome's address bar match the header under them.
+// set to --ms-surface). The manifest's theme_color and the page's theme-color
+// tag as served carry the same value (Starlight renders the dark theme on the
+// server, and a script moves the tag to the light header when the page turns
+// light), so an installed window's title bar and Chrome's address bar match
+// the header under them.
 // TestTheChromeColorIsTheHeaders reads theme.css to hold it there.
 const chromeDark = "#151c20"
 
@@ -511,9 +513,12 @@ type webApp struct {
 // Every URL in it is relative, and resolves against the manifest's own URL, so
 // this generator never has to know that the site is served under /mikroscope/.
 // It carries no "id" on purpose: an id resolves against the ORIGIN of
-// start_url, so "./" would claim jmrplens.github.io/ itself, the address of a
-// different site on the same host. Left out, it defaults to start_url, which is
-// this site's own directory.
+// start_url, not against the manifest, so "./" would claim jmrplens.github.io/
+// itself, which the host's own hub already does with a manifest of its own
+// (jmrplens.github.io/site.webmanifest, "jmrp docs", start_url "/", read
+// 2026-09-25), and an id that stays inside this site would have to spell out
+// /mikroscope/, the base path this generator otherwise never needs. Left out,
+// it defaults to start_url, which is this site's own directory.
 //
 // favicon.svg is not in it either: it is the one icon with no ground of its
 // own, and whatever lands on a home screen brings its own.

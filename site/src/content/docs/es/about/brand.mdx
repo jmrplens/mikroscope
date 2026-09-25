@@ -175,14 +175,29 @@ equipo dan los mismos cuatro ficheros de marca y de favicon.
 </ScrollTable>
 
 La cabecera de cada página enlaza `favicon.svg`, `favicon.ico`, `apple-touch-icon.png` y
-`site.webmanifest`. El enlace al `.ico` dice `sizes="32x32"`, lo que mantiene a Chromium solo en
-el SVG: Chromium 153 sin interfaz pidió únicamente `favicon.svg` el 2026-09-25. El manifiesto
-nombra `icon-192.png`, `icon-512.png` e `icon-maskable-512.png` con URL relativas a él mismo, y no
-lleva `id`: uno relativo se resuelve contra la raíz del dominio, que es la dirección de otro
-sitio. Deja fuera `favicon.svg`, el único icono sin fondo propio, porque lo que acaba en una
-pantalla de inicio lleva el suyo. Dos etiquetas `theme-color`, una por `prefers-color-scheme`,
-dan el color de la propia cabecera, `#151c20` en oscuro y `#fafbfb` en claro: Chrome lee las
-etiquetas, y Safari 26 las ignora y toma el color de la cabecera fija, así que los dos coinciden.
+`site.webmanifest`. El enlace al `.ico` dice `sizes="32x32"`, lo que mantiene a Chromium solo en el
+SVG: Chromium 153 sin interfaz pidió únicamente `favicon.svg` el 2026-09-25. El manifiesto nombra
+`icon-192.png`, `icon-512.png` e `icon-maskable-512.png` con URL relativas a él mismo, y deja fuera
+`favicon.svg`, el único icono sin fondo propio, porque lo que acaba en una pantalla de inicio lleva
+el suyo. No lleva `id`, que se resuelve contra el origen de `start_url` y no contra el manifiesto:
+Chromium 153 resolvió `./` a la raíz del origen, aquí `https://jmrplens.github.io/`, la dirección
+que ya reclama el sitio central del dominio con un manifiesto propio, y un `id` que se quede dentro
+de este sitio tiene que escribir `/mikroscope/`, la ruta base que nada más en el manifiesto nombra.
+Sin él, toma el valor de `start_url`, que Chromium resuelve a `/mikroscope/`, el `id` que
+recomienda.
+
+Una sola etiqueta `theme-color` da el color de la cabecera que está en pantalla, `#151c20` en oscuro
+y `#fafbfb` en claro. Sigue al tema del sitio, no al esquema del sistema: se sirve con la cabecera
+oscura, el tema que conserva una página sin JavaScript diga lo que diga el sistema, y un script de
+la cabecera del documento la pasa a la clara cada vez que la página se vuelve clara, por el esquema
+del sistema, el selector de tema, una elección guardada o el botón del teléfono. Chrome lee la
+etiqueta; Safari 26, según informes públicos y sin probarlo aquí, la ignora y toma el color de la
+cabecera fija. En Chromium y WebKit sin interfaz el 2026-09-25, con los dos esquemas, tras elegir en
+el selector, tras una elección guardada y una recarga, tras el botón del teléfono y sin JavaScript,
+la etiqueta tuvo el color de la cabecera todas las veces; el par de etiquetas separadas por
+`prefers-color-scheme` al que sustituye tenía el color del otro tema tras cada elección, y en un
+sistema claro sin JavaScript. No se ha probado en un dispositivo si el Chrome de un teléfono repinta
+su barra en cuanto cambia la etiqueta.
 
 `TestTheCommittedWebFilesMatchTheGenerator` compara `favicon.svg` y `site.webmanifest` de
 `site/public/` con lo que el generador escribe ahora, así que un cambio sin regenerar hace fallar
