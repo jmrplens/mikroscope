@@ -4,6 +4,54 @@ Notable changes per release. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the versions
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **The "Not available on this device" row painted red badges when it was
+  opened.** Its panels kept their queries in the committed files, a
+  grafana.com download and `--no-probe`, so opening the row ran them. Measured
+  on 2026-09-25 with the committed InfluxDB file in Grafana 12.3.0 and 13.2.1
+  over a throwaway InfluxDB 3.11.2 Core store that had neither table: five
+  queries, five `table … not found` badges, on both versions. After a probe
+  the moved panels shipped with no target at all instead, and Grafana 12.3.0
+  fills an empty target list with a default query, which the InfluxDB plugin
+  answered with `No SQL statements were provided in the query string`: 35 red
+  badges in view when the row was opened after a probed `import` over a store
+  holding two tables. 13.2.1 sent nothing for those panels. Every query of a
+  panel in the row now ships hidden, with or without a probe, and each panel
+  says in its no-value text why and how to switch it back on; opening the row
+  sent no query and painted no badge on either version. `dashboards check`
+  skips a hidden query, as Grafana does, so on the reference store (Grafana
+  13.2.2, 2026-09-25, `--no-probe --window 1h`) the five panels read
+  `none rows=0 frames=0` where 1.3.0 printed `400 … not found` on each. The
+  Graphite and Elasticsearch dashboards no longer carry the queue-depth and
+  busy-percent panels, which have no query in either store and shipped with
+  an empty target list: 39 and 28 panels, from 41 and 30. Not rendered:
+  Grafana 12.3.2 and 13.2.2, and the Prometheus, PostgreSQL, Graphite and
+  Elasticsearch dashboards. A dashboard imported earlier keeps the old row
+  until it is imported again.
+- **The detections annotation read a column that may not exist, and ignored
+  the probe.** Its SQL named `key`, which the InfluxDB sink writes only when a
+  detection has one; six rules never do, and on a store whose detections were
+  all keyless the layer failed with `Schema error: No field named key`
+  (InfluxDB 3.11.2 Core, Grafana 12.3.0 and 13.2.1, 2026-09-25). The marker
+  text is now `rule: message`; every keyed rule already opens its message
+  with the key, so on the reference store it reads `microburst: cpu0: …`
+  instead of `microburst cpu0: cpu0: …`, 44 rows over 6 hours either way.
+  "Detections in this window" selects `key` too and now declares it, so a
+  probe routes it when the column is missing. `import` now passes the probe to
+  the annotations: on InfluxDB, a store with no `mikroscope_detection` (or no
+  `mikroscope_trigger`) gets that layer switched off, its query kept. Without
+  a probe the detections layer stays on, because no SQL form tolerates a
+  missing table (`WHERE false`, a `UNION ALL` and an `EXISTS` guard all failed
+  at planning), a failing layer showed nothing on Grafana 13.2.1 beyond one
+  error-level log line per load, and it starts drawing once the first
+  detection creates the table. Prometheus is unchanged: an absent counter is
+  an empty result there. The same renders found that Grafana 12.3.0 never
+  sends the InfluxDB detections annotation's query, with or without the
+  table; that is not fixed here and has not been looked into.
+
 ## [1.3.0] - 2026-09-25
 
 ### Fixed

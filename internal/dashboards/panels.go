@@ -26,16 +26,19 @@ import (
 // Grafana wants them and why their targets never run until someone expands
 // the row.
 //
-// Two panels are dropped rather than shipped:
+// One kind of panel is dropped, and one is moved:
 //
-//   - no query for this store. A panel whose promQL is empty is absent from
-//     the Prometheus dashboard instead of reading "No data" forever. A
-//     section all of whose panels go this way emits no row at all, which is
-//     why the Prometheus dashboard has fewer bands than the InfluxDB one.
-//   - KnownEmpty. The measurement does not exist in the store on this device,
-//     so the panel is moved out of its own section and into the collapsed
-//     not-available row. It is not deleted: it is a panel waiting for a
-//     device that produces the measurement.
+//   - dropped: no query for this store. A panel whose promQL is empty is
+//     absent from the Prometheus dashboard instead of reading "No data"
+//     forever. A section all of whose panels go this way emits no row at all,
+//     which is why the Prometheus dashboard has fewer bands than the InfluxDB
+//     one. An Absent panel with no query for this store is dropped too: no
+//     device can ever fill it there.
+//   - moved: Absent. The measurement does not exist in the store on this
+//     device, so the panel is moved out of its own section and into the
+//     collapsed not-available row, its queries shipped hidden (targetsFor).
+//     It is not deleted: it is a panel waiting for a device that produces the
+//     measurement.
 func panelsFor(store Store, present map[string]bool) []Panel {
 	b := qb{store: store}
 	out := make([]Panel, 0, 176)
@@ -55,9 +58,14 @@ func panelsFor(store Store, present map[string]bool) []Panel {
 			}
 			p = resolveAvailability(p, store, present)
 			switch {
-			case len(p.Queries) == 0 && !p.Absent:
+			case len(p.Queries) == 0:
 				// No query for this store: dropped rather than shipped to
-				// read "No data" forever.
+				// read "No data" forever. That holds for an Absent panel too:
+				// the Graphite and Elasticsearch forms of the queue-depth and
+				// busy-percent panels have no query at all, so no device can
+				// ever fill them there, and a panel with an empty targets
+				// array is not inert — Grafana 12.3.0 gives it a default
+				// target (see targetsFor).
 			case p.Absent:
 				// The measurement does not exist in the store on this
 				// device: out of its own section and into the collapsed
@@ -114,18 +122,27 @@ func measurementsOf(p Panel) []string {
 // from the store itself rather than from a compiled claim about one router.
 //
 // present == nil is "nobody asked the datasource" — `dashboards gen` writing a
-// file — and the compiled Absent flags stand. With a probe the flag is
-// recomputed both ways: a panel whose measurements are all there loses Absent
-// even if the reference device could not produce it, and a panel with a
-// missing measurement gains it. In the second case the TARGETS ARE DROPPED,
-// which is the part the compiled flag could never do: moving a panel into the
-// collapsed row hid the query until someone opened the row, and then InfluxDB
-// 3 answered `table … not found` at planning time and Grafana painted a red
-// badge over the careful NoValue text explaining why the panel is empty.
-// With no target there is no query, no badge, and the explanation is all the
-// reader sees.
+// file — and the compiled Absent flags stand, with compiledAbsentNote as the
+// text. With a probe the flag is recomputed both ways: a panel whose
+// measurements are all there loses Absent even if the reference device could
+// not produce it, and a panel with a missing measurement gains it.
+//
+// Either way an Absent panel keeps its queries, and targetsFor ships every one
+// of them hidden. Moving a panel into the collapsed row alone only kept its
+// query from running until someone opened the row; then InfluxDB 3 answered
+// `table … not found` at planning time and Grafana painted a red badge over
+// the NoValue text explaining why the panel is empty. From 2026-09-13 until
+// the 2026-09-25 fix a probed panel shipped with its targets removed instead,
+// which Grafana 12.3.0 turned into a red badge of its own (see targetsFor). A
+// hidden target runs nowhere, and the NoValue text is all the reader sees.
 func resolveAvailability(p Panel, store Store, present map[string]bool) Panel {
-	if present == nil || len(p.Queries) == 0 {
+	if len(p.Queries) == 0 {
+		return p
+	}
+	if present == nil {
+		if p.Absent {
+			p.NoValue = compiledAbsentNote(store)
+		}
 		return p
 	}
 	var missing []string
@@ -148,15 +165,35 @@ func resolveAvailability(p Panel, store Store, present map[string]bool) Panel {
 	}
 	p.Absent = true
 	p.KnownEmpty = true
-	p.Queries = nil
+	// The queries are KEPT and shipped hidden (targetsFor), not dropped: an
+	// empty targets array is not inert on every Grafana this project tested.
 	note := "this deployment's " + string(store) + " store holds no " + strings.Join(missing, ", ") +
-		", so the panel has no query to run here."
+		", so this panel's queries ship switched off. Run `mikroscope dashboards import` again once it holds them."
 	if p.NoValue == "" {
 		p.NoValue = note
 	} else {
 		p.NoValue = note + " " + p.NoValue
 	}
 	return p
+}
+
+// compiledAbsentNote is the no-value text of a panel that ships in the
+// not-available row of a file nobody probed: `gen`, the committed files and a
+// grafana.com download. Its queries are hidden, so this text is ALL the panel
+// shows on every store, including one that holds the measurement. It must
+// therefore be true for every reader, which the panel's own reason ("this
+// kernel exposes no /proc/pressure") is not: that is the reference device.
+// The date is when the reference store was last asked: on 2026-09-25 it held
+// neither mikroscope_psi nor mikroscope_disk, RouterOS 7.24.4. Only InfluxDB
+// and Prometheus can be probed (Grafana.Measurements), so only they are sent
+// to `import`.
+func compiledAbsentNote(store Store) string {
+	note := "Queries switched off in this file: the reference RB5009 does not produce this measurement (none in its store on 2026-09-25, RouterOS 7.24.4). " +
+		"If your router does, switch them on in the panel editor"
+	if store == Influx || store == Prometheus {
+		note += ", or run `mikroscope dashboards import`, which asks your store and moves the panel back into its own section"
+	}
+	return note + "."
 }
 
 // presentAsHistogram covers the Prometheus histogram whose base name is never
@@ -178,9 +215,13 @@ func presentAsHistogram(name string, present map[string]bool) bool {
 // `table 'public.iox.mikroscope_psi' not found` rather than "No data" — and
 // Grafana paints that as a red panel error no field option suppresses.
 // Expanded, those panels were about a screen and a half of dead space with
-// red triangles on it. Collapsed, their queries never run until an operator
-// opens the row, and they stay documented and still walked by
-// `dashboards check`.
+// red triangles on it. Collapsed, their queries did not run until an operator
+// opened the row, and then they did, badges and all: in the browser on
+// 2026-09-25 (Grafana 12.3.0 and 13.2.1 over InfluxDB 3.11.2 Core) opening
+// this row in the committed InfluxDB file sent the PSI and queue-depth
+// queries and painted a badge on both. Since then every query in the row
+// ships hidden, so opening it sends nothing; the panels stay documented, and
+// `dashboards check` lists them without running a hidden target.
 //
 // The title deliberately names no device. WHICH measurements are absent is
 // exactly the thing that differs per deployment: on the reference RB5009

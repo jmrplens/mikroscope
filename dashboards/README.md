@@ -7,15 +7,17 @@ datasource is a `${DS_MIKROSCOPE}` placeholder declared in `__inputs`, the
 there is no `id`. Beside them, three files of Grafana alert rules.
 
 The panel counts are the panels in each file as generated on 2026-09-24
-(commit af277a4, 1.2.0), rows not counted.
+(commit af277a4, 1.2.0), rows not counted. Graphite and Elasticsearch were
+recounted on 2026-09-25, when the two not-available panels that have no query
+in either store (block-device queue depth and busy percent) were left out.
 
 | File | Panels | Store |
 |---|---|---|
 | `mikroscope-influxdb.json` | 177 | InfluxDB 3 (SQL; every query is time-bounded, as InfluxDB 3 Core requires) |
 | `mikroscope-prometheus.json` | 135 | Prometheus scraping the collector's `/metrics` (which carries everything the agent's does plus the collector's own derived and detection families) |
 | `mikroscope-postgres.json` | 161 | PostgreSQL, written by `--postgres` or by applying the `--sql` script |
-| `mikroscope-graphite.json` | 41 | Graphite, from `--graphite` |
-| `mikroscope-elasticsearch.json` | 30 | Elasticsearch, from `--elastic` |
+| `mikroscope-graphite.json` | 39 | Graphite, from `--graphite` |
+| `mikroscope-elasticsearch.json` | 28 | Elasticsearch, from `--elastic` |
 | `mikroscope-alerts-influxdb.yaml`, `mikroscope-alerts-postgres.yaml`, `mikroscope-alerts-prometheus.yaml` | 14 / 11 / 15 rules | Grafana unified-alerting provisioning; replace `DS_UID_PLACEHOLDER` with your datasource UID |
 
 Twenty-three sections on InfluxDB and twenty-two on Prometheus — twenty-two
@@ -31,7 +33,8 @@ interrupts, temperature and clock, the kernel log), then the deliberate deep
 tiers (busy runs, fragmentation, reclaim, PMU, flash wear, NAND health, the API
 cross-checks, the observer and its sampler timing, and the device as the agent
 established it). A panel whose measurement the store does not hold is routed
-into a collapsed "Not available on this device" row with its query removed.
+into a collapsed "Not available on this device" row with its queries switched
+off.
 Every detection and trigger marker is also a dashboard annotation.
 
 The alert rules are the panels' own fault counters and the collector's

@@ -104,10 +104,13 @@ prometheus, postgres, graphite or elasticsearch), and pick the datasource when G
 `DS_MIKROSCOPE`.
 
 A file uploaded this way carries the **compiled defaults**: the five panels the reference device
-cannot produce sit in the not-available row, and every other panel ships with its query, whether
-your store holds its measurement or not. On InfluxDB a panel whose table or column is missing then
-shows InfluxDB 3's planning error, as a red badge, when its section is opened. `import` from the CLI
-avoids that.
+cannot produce (three on Graphite and Elasticsearch) sit in the not-available row with their
+queries switched off, and every other panel ships with its query on, whether your store holds its
+measurement or not. On InfluxDB a panel whose table or column is missing then shows InfluxDB 3's
+planning error, as a red badge, when its section is opened. `import` from the CLI avoids that. The
+detections annotation stays on in a file uploaded this way; before the first detection it fails
+without showing anything, as
+[the annotations section](/mikroscope/dashboards/#the-red-dashed-lines-on-every-panel) describes.
 
 ## Importing from the CLI
 
@@ -303,8 +306,15 @@ so it is larger than the number of measurements. It then generates against the a
 - A panel whose measurements and required fields are all present ships in its own section with its
   query — including a panel the reference device could not produce.
 - A panel with anything missing moves into the collapsed "Not available on this device" row **with
-  its query removed**. It runs nothing, so it cannot paint a red `table … not found` badge; its
-  no-value text names what this store does not hold.
+  its queries hidden**. It runs nothing, so it cannot paint a red `table … not found` badge; its
+  no-value text names what this store does not hold. The queries stay in the panel, so they can be
+  switched back on in its editor. Up to 1.3.0 they were removed instead, and Grafana 12.3.0 gives a
+  panel with no query a default one: on 2026-09-25 the InfluxDB plugin answered it with
+  `No SQL statements were provided in the query string`, as a red badge. Grafana 13.2.1 sent
+  nothing for the same panel.
+- On InfluxDB, a store with no `mikroscope_detection` (or no `mikroscope_trigger`) gets that
+  annotation layer switched off, its query kept. Prometheus answers an absent counter with an empty
+  result, so the probe leaves its layers as they are.
 - A probe that fails — an error from Grafana, or an answer with no `mikroscope_` names in it — is a
   warning, not an error. `import` and `check` print `warning: could not ask <store> which
 measurements it holds`, with the reason, and carry on with the compiled defaults, so you are told
@@ -323,9 +333,10 @@ declares rather than the one their data supports.
 ## What `check` verifies
 
 `check` generates the dashboard exactly as `import` would — probe included — and then, for every
-panel, including every panel nested inside a collapsed row, sends each of its queries through
-Grafana's `/api/ds/query` against your datasource over the window, and counts the rows that come
-back. The request carries the step Grafana would compute for that panel: the window divided by 900
+panel, including every panel nested inside a collapsed row, sends each of its queries that is not
+hidden through Grafana's `/api/ds/query` against your datasource over the window, and counts the
+rows that come back. A hidden query is skipped because Grafana does not run it either, so a panel
+in the not-available row reads `none … rows=0 frames=0` with no error. The request carries the step Grafana would compute for that panel: the window divided by 900
 data points, raised to the panel's own minimum interval where it has one. Without that step, an
 `increase(x[$__interval])` target returns an empty frame, because a step below the scrape interval
 leaves fewer than two points in the range. Every InfluxDB panel that bins with `$__dateBin` has a
@@ -394,6 +405,18 @@ A panel answers differently over a window with data than over one without, and a
 as good as the window it is pointed at.
 
 ## What has been verified
+
+**2026-09-25**, on the owner's Grafana 13.2.2, against the reference InfluxDB 3 store, with a build
+of the change that hides the not-available queries: `dashboards check --window 1h`, with the probe
+and with `--no-probe`, gave 164 panels with rows, 12 known-empty tolerated and 1 failing, "Detections
+in the window", because the store held no detection in that hour. Without the probe the five
+not-available panels read `none … rows=0 frames=0` with no error text, where 1.3.0 printed
+`400 … table … not found` on each. The two trigger panels still answer `mikroscope_trigger not found`
+without the probe, because that store has no trigger table. The detections annotation's SQL, sent
+through `/api/ds/query`, returned 44 rows over 6 hours. The same day, Grafana 12.3.0 and 13.2.1 over
+a throwaway InfluxDB 3.11.2 Core store were used for the renders on
+[Five dashboards](/mikroscope/dashboards/#not-available-on-this-device): the not-available row, a
+probed `import` from 1.3.0 and from the change, and the detections layer.
 
 **2026-09-16**, on the owner's Grafana 13.2.1, against the reference deployment: the agent on the
 reference RB5009 (RouterOS 7.24.2, privileged, the default triggers);

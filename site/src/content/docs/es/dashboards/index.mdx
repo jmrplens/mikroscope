@@ -262,16 +262,45 @@ Cada dashboard trae dos capas:
 
 <ScrollTable label="Las dos capas de anotaciones">
 
-| Capa           | Color   | Por defecto | Qué es cada marca                                                                                                  |
-| -------------- | ------- | ----------- | ------------------------------------------------------------------------------------------------------------------ |
-| **detections** | rojo    | activada    | una fila de `mikroscope_detection`: la regla, su clave y su mensaje, de la etapa de derivación del colector        |
-| **triggers**   | naranja | desactivada | un marcador de captura del agente: la condición que se disparó, el campo y el valor                                 |
+| Capa           | Color   | Por defecto                                                                            | Qué es cada marca                                                                          |
+| -------------- | ------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| **detections** | rojo    | activada; desactivada tras un sondeo de InfluxDB que no encuentra `mikroscope_detection` | una fila de `mikroscope_detection`: `regla: mensaje`, de la etapa de derivación del colector |
+| **triggers**   | naranja | desactivada                                                                            | un marcador de captura del agente: la condición que se disparó, el campo y el valor        |
 
 </ScrollTable>
 
 Al pasar el ratón por una marca sale el mensaje que lleva la fila, así que la raya responde al *qué*
-además de al *cuándo*. La capa de disparos viene apagada para que un dashboard tranquilo siga
-tranquilo; actívala cuando estés trabajando con [capturas disparadas](/mikroscope/es/record/triggers/).
+además de al *cuándo*. Una regla que se dispara por clave (un núcleo, un puerto, una zona térmica)
+empieza su mensaje con esa clave, así que la marca dice, por ejemplo, `microburst: cpu0: …`. El SQL
+no lee la columna `key`: el sink de InfluxDB solo la escribe cuando la detección tiene una, y seis
+reglas no la tienen nunca, así que un almacén cuyas detecciones son todas de esas no tiene esa
+columna y una consulta que la nombre falla. La capa de disparos viene apagada para que un dashboard
+tranquilo siga tranquilo; actívala cuando estés trabajando con
+[capturas disparadas](/mikroscope/es/record/triggers/).
+
+**Antes de la primera detección.** Un almacén InfluxDB no tiene la tabla `mikroscope_detection`
+hasta que el colector escribe su primera detección. InfluxDB 3 rechaza una consulta que nombra una
+tabla que no existe, y ninguna forma de la consulta lo evita: `WHERE false`, un `UNION ALL` y una
+guarda `EXISTS` sobre `information_schema` fallaron todas al planificar en InfluxDB 3.11.2 Core el
+2026-09-25. `mikroscope dashboards import` pregunta antes al almacén y, si la tabla no está, publica
+la capa de detecciones apagada, con su consulta, para que puedas encenderla más adelante. Los
+ficheros del repositorio y una [importación a mano](/mikroscope/es/dashboards/import-and-check/#importar-a-mano)
+no tienen a quién preguntar, así que la capa sigue encendida. La consulta falla entonces en cada
+carga y cada refresco, pero en silencio: el 2026-09-25, sobre InfluxDB 3.11.2 Core, Grafana 13.2.1
+no mostró nada por ello en el dashboard y escribió cada vez una línea de nivel error
+`Partial data response error` en su log. Las marcas aparecen solas cuando la primera detección crea
+la tabla. En Prometheus el contador simplemente no existe y la consulta devuelve un resultado vacío,
+así que la capa sigue encendida también tras un sondeo. El sink de PostgreSQL crea todas las tablas
+antes de su primera inserción, así que allí la consulta devuelve cero filas; eso sale del código, no
+de un dashboard renderizado.
+
+<NotClaimed variant="untested" title="La capa de detecciones en Grafana 12.3.0">
+	En esos mismos renderizados, Grafana 12.3.0 no llegó a enviar la consulta de la capa de
+	detecciones de InfluxDB, con la tabla o sin ella: su interruptor se quedó con un indicador de
+	carga, apagarlo, encenderlo y refrescar no envió nada, y no se dibujó ninguna marca, ni en el
+	dashboard completo ni en una copia de un solo panel. Grafana 13.2.1 la envió en el acto sobre el
+	mismo almacén. Por qué, y si 12.3.2 hace lo mismo, no se ha investigado.
+</NotClaimed>
 
 **Cómo apagarlas.** Las dos capas son casillas en la fila de submenú de debajo del título del
 dashboard — la misma fila en la que van las variables de un dashboard, que en los de InfluxDB,
@@ -490,22 +519,34 @@ sección y se lleva a esta fila, donde su descripción dice qué está esperando
 
 En los ficheros del repositorio — los valores compilados por defecto, que son lo que escribe `gen` a
 secas y lo que recibe una subida manual a Grafana — la fila contiene los cinco paneles que el RB5009
-de referencia (RouterOS 7.24.2, kernel 5.6.3 arm64) no puede producir:
+de referencia (RouterOS 7.24.2, kernel 5.6.3 arm64) no puede producir. En Graphite y Elasticsearch
+contiene tres: los paneles de profundidad de cola y de porcentaje ocupado no tienen consulta en el
+lenguaje de ninguno de los dos almacenes, así que esos dos dashboards los dejan fuera.
 
 <DashboardPanels section="Not available on this device" />
 
 El panel de PSI está vacío allí porque ese kernel no tiene `/proc/pressure`. Los paneles de dispositivos de bloques están vacíos allí porque el agente descarta un dispositivo de
 bloques cuyas lecturas, escrituras y peticiones en curso son todas cero en un tick, y en ese router
-todos los dispositivos listados se quedan a cero, así que ningún destino llega a crear la tabla.
+todos los dispositivos listados se quedan a cero, así que ningún destino llega a crear la tabla. El
+almacén de referencia seguía sin ninguna de las dos tablas el 2026-09-25, con RouterOS 7.24.4.
+
+**Todas las consultas de esta fila se publican apagadas** (ocultas, en el editor de consultas de
+Grafana), así que abrir la fila no ejecuta nada y cada panel muestra una nota breve en lugar de
+datos. Hasta 1.3.0 las consultas se ejecutaban al abrir la fila: el 2026-09-25, con el fichero de
+InfluxDB del repositorio importado en Grafana 12.3.0 y 13.2.1 sobre un almacén InfluxDB 3.11.2 Core
+sin ninguna de las dos tablas, abrir la fila envió las consultas de los cinco paneles, cada una
+respondida con `table … not found`, y pintó cinco insignias rojas. Con las consultas apagadas no
+envió ninguna ni pintó insignias, en ninguna de las dos versiones. Si tu almacén sí tiene la medida, vuelve a encender
+las consultas del panel en su editor, o deja que lo haga `import`.
 
 Para estos paneles hay declaradas dos secciones, **Pressure stall (PSI)** y **Block devices**, que no
 emiten fila mientras todos sus paneles estén ausentes. En un kernel compilado con PSI, o en una placa
 con almacenamiento USB o eMMC que se mueva, `import` encuentra la medida y la sección aparece en su
-sitio sin tocar el generador. `import` también funciona en el otro sentido: en un almacén al que le
-falta una medida que sí tenía el equipo de referencia — o un campo añadido después de que ese almacén
-se escribiera por primera vez — el panel pasa a esta fila con su consulta eliminada, así que muestra
-su explicación y no una insignia roja de error. Cómo decide el sondeo está en
-[Importar y comprobar](/mikroscope/es/dashboards/import-and-check/#el-sondeo).
+sitio, con las consultas encendidas, sin tocar el generador. `import` también funciona en el otro
+sentido: en un almacén al que le falta una medida que sí tenía el equipo de referencia — o un campo
+añadido después de que ese almacén se escribiera por primera vez — el panel pasa a esta fila con sus
+consultas apagadas, así que muestra su explicación y no una insignia roja de error. Cómo decide el
+sondeo está en [Importar y comprobar](/mikroscope/es/dashboards/import-and-check/#el-sondeo).
 
 ## Cómo tratan los dashboards los cocientes, los huecos y las cifras
 
@@ -543,8 +584,9 @@ su explicación y no una insignia roja de error. Cómo decide el sondeo está en
 	la serie temporal de memoria; no se hizo un recuento de insignias fila a fila. Las opciones de los
 	paneles están escritas según el esquema que espera Grafana 13.2.1 — la marca del xychart, por
 	ejemplo, cambió de sitio entre Grafana 11 y 13 — y `__requires` declara Grafana 11.0.0. No se ha
-	probado ninguna versión aparte de esas cuatro, y la 12.3.0 se comprobó solo por consulta, sin
-	renderizar nunca en un navegador.
+	probado ninguna versión aparte de esas cuatro. En la 12.3.0 los únicos renderizados son los del
+	2026-09-25 sobre un almacén InfluxDB 3.11.2 Core desechable, de la fila no disponible y de la capa
+	de detecciones (más arriba); el resto del dashboard se comprobó allí solo por consulta.
 </NotClaimed>
 
 <SeeAlso>

@@ -60,7 +60,7 @@ func detectionPanels(b qb) []Panel {
 				{Field: "message", Width: fi(900)},
 			},
 			Description:    "One row per detection event, newest first: when, which rule, the key it is about (a cpu, a core, a zone, a port), the value the rule compared, the threshold it compared against, and the collector's one-line message. The threshold column is the honesty of this table — a reader can see exactly what tripped and decide whether the rule's threshold suits their device. InfluxDB only: Prometheus carries the per-rule counter, not the rows.",
-			RequiresFields: []string{"mikroscope_detection.rule"},
+			RequiresFields: []string{"mikroscope_detection.rule", "mikroscope_detection.key"},
 			Queries: b.q(
 				`SELECT time, rule, key, seq, value, threshold, message FROM mikroscope_detection WHERE $__timeFilter(time) ORDER BY time DESC LIMIT 200`,
 				``,

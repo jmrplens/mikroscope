@@ -37,7 +37,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT time, concat(rule, CASE WHEN key \u003c\u003e '' THEN concat(' ', key) ELSE '' END, ': ', message) AS text, rule AS tags FROM mikroscope_detection WHERE $__timeFilter(time) ORDER BY time",
+          "rawSql": "SELECT time, concat(rule, ': ', message) AS text, rule AS tags FROM mikroscope_detection WHERE $__timeFilter(time) ORDER BY time",
           "refId": "Anno"
         }
       },
@@ -14767,7 +14767,7 @@
               "displayName": "${__field.labels.metric}",
               "mappings": [],
               "min": 0,
-              "noValue": "this kernel exposes no /proc/pressure, so the measurement does not exist in the store — a property of the kernel build, not a fault",
+              "noValue": "Queries switched off in this file: the reference RB5009 does not produce this measurement (none in its store on 2026-09-25, RouterOS 7.24.4). If your router does, switch them on in the panel editor, or run `mikroscope dashboards import`, which asks your store and moves the panel back into its own section.",
               "unit": "percent"
             },
             "overrides": []
@@ -14802,6 +14802,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "hide": true,
               "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'cpu some' AS metric, sum(cpu_some_us) * 0.0001 / ($__interval_ms / 1000.0) AS value FROM mikroscope_psi WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
@@ -14815,6 +14816,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "hide": true,
               "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'memory some' AS metric, sum(mem_some_us) * 0.0001 / ($__interval_ms / 1000.0) AS value FROM mikroscope_psi WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
@@ -14828,6 +14830,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "hide": true,
               "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'memory full (a 0 and a kernel with no full line read alike)' AS metric, sum(mem_full_us) * 0.0001 / ($__interval_ms / 1000.0) AS value FROM mikroscope_psi WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
@@ -14841,6 +14844,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "hide": true,
               "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'io some' AS metric, sum(io_some_us) * 0.0001 / ($__interval_ms / 1000.0) AS value FROM mikroscope_psi WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
@@ -14854,6 +14858,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "hide": true,
               "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, 'io full' AS metric, sum(io_full_us) * 0.0001 / ($__interval_ms / 1000.0) AS value FROM mikroscope_psi WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
@@ -14888,7 +14893,7 @@
               "displayName": "${__field.labels.metric}",
               "mappings": [],
               "min": 0,
-              "noValue": "no rows for any block device in this window — on many deployments the table does not exist at all, because the agent drops a device that did nothing and never creates it",
+              "noValue": "Queries switched off in this file: the reference RB5009 does not produce this measurement (none in its store on 2026-09-25, RouterOS 7.24.4). If your router does, switch them on in the panel editor, or run `mikroscope dashboards import`, which asks your store and moves the panel back into its own section.",
               "thresholds": {
                 "mode": "absolute",
                 "steps": [
@@ -14940,6 +14945,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "hide": true,
               "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, device AS metric, max(inflight) AS value FROM mikroscope_disk WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
@@ -14980,7 +14986,7 @@
               "displayName": "${__field.labels.metric}",
               "mappings": [],
               "min": 0,
-              "noValue": "no rows for any block device in this window — on many deployments the table does not exist at all, because the agent drops a device that did nothing and never creates it",
+              "noValue": "Queries switched off in this file: the reference RB5009 does not produce this measurement (none in its store on 2026-09-25, RouterOS 7.24.4). If your router does, switch them on in the panel editor, or run `mikroscope dashboards import`, which asks your store and moves the panel back into its own section.",
               "unit": "iops"
             },
             "overrides": []
@@ -15015,6 +15021,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "hide": true,
               "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, device || ' reads' AS metric, sum(reads) / ($__interval_ms / 1000.0) AS value FROM mikroscope_disk WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
@@ -15028,6 +15035,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "hide": true,
               "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, device || ' writes' AS metric, sum(writes) / ($__interval_ms / 1000.0) AS value FROM mikroscope_disk WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
@@ -15068,7 +15076,7 @@
               "displayName": "${__field.labels.metric}",
               "mappings": [],
               "min": 0,
-              "noValue": "no rows for any block device in this window — on many deployments the table does not exist at all, because the agent drops a device that did nothing and never creates it",
+              "noValue": "Queries switched off in this file: the reference RB5009 does not produce this measurement (none in its store on 2026-09-25, RouterOS 7.24.4). If your router does, switch them on in the panel editor, or run `mikroscope dashboards import`, which asks your store and moves the panel back into its own section.",
               "unit": "percent"
             },
             "overrides": []
@@ -15103,6 +15111,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "hide": true,
               "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, device AS metric, sum(io_s) * 1000.0 / $__interval_ms * 100.0 AS value FROM mikroscope_disk WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
@@ -15143,7 +15152,7 @@
               "displayName": "${__field.labels.metric}",
               "mappings": [],
               "min": 0,
-              "noValue": "no rows for any block device in this window — on many deployments the table does not exist at all, because the agent drops a device that did nothing and never creates it",
+              "noValue": "Queries switched off in this file: the reference RB5009 does not produce this measurement (none in its store on 2026-09-25, RouterOS 7.24.4). If your router does, switch them on in the panel editor, or run `mikroscope dashboards import`, which asks your store and moves the panel back into its own section.",
               "unit": "Bps"
             },
             "overrides": []
@@ -15178,6 +15187,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "hide": true,
               "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, device || ' read' AS metric, CAST(sum(read_sectors) AS DOUBLE) * 512.0 / ($__interval_ms / 1000.0) AS value FROM mikroscope_disk WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
@@ -15191,6 +15201,7 @@
               },
               "editorMode": "code",
               "format": "time_series",
+              "hide": true,
               "interval": "1s",
               "rawQuery": true,
               "rawSql": "SELECT $__dateBin(time) AS time, device || ' write' AS metric, CAST(sum(write_sectors) AS DOUBLE) * 512.0 / ($__interval_ms / 1000.0) AS value FROM mikroscope_disk WHERE $__timeFilter(time) GROUP BY 1, 2 ORDER BY 1",
