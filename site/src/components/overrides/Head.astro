@@ -1,7 +1,8 @@
 ---
 // Starlight's head, plus everything this site says to machines: one JSON-LD
 // `@graph` per page, the Open Graph tags Starlight gets wrong for this site,
-// and the links to the page's markdown twin and to the llms.txt indexes.
+// and the links to the page's markdown twin and to the llms.txt indexes. Last,
+// the script that keeps the theme-color tag on the theme on screen.
 //
 // One graph rather than a scattering of separate scripts, because the nodes
 // refer to each other by `@id`: the article is `isPartOf` the website and
@@ -527,3 +528,33 @@ const llmsCorePath = locale === "es" ? `${BASE}/es/llms-core.txt` : `${BASE}/llm
 <link rel="alternate" type="text/plain" href={llmsPath} title="llms.txt" />
 <link rel="alternate" type="text/plain" href={llmsCorePath} title="llms-core.txt" />
 <link rel="alternate" type="text/plain" href={llmsFullPath} title="llms-full.txt" />
+{
+	/*
+	 * The theme-color tag astro.config.mjs declares follows the theme on
+	 * screen, `data-theme`: Starlight's ThemeProvider sets it from the stored
+	 * choice or the system's scheme, its select sets it on a pick and again
+	 * when the system's scheme changes under "Auto", and ThemeToggle sets it
+	 * on the phone. The tag's own `content` is the dark header, the theme the
+	 * server renders, so a page without JavaScript is already right.
+	 *
+	 * Inline and here, after the tag, rather than bundled: ThemeProvider sets
+	 * `data-theme` at the top of <body>, before the first paint, and this
+	 * observer is already registered when it does. meta-csp.mjs hashes it
+	 * with the page's other inline scripts.
+	 */
+}
+<script is:inline>
+	(() => {
+		const tag = document.querySelector('meta[name="theme-color"][data-light]');
+		if (!tag) return;
+		const root = document.documentElement;
+		const follow = () => {
+			tag.content = root.dataset.theme === "light" ? tag.dataset.light : tag.dataset.dark;
+		};
+		follow();
+		new MutationObserver(follow).observe(root, {
+			attributes: true,
+			attributeFilter: ["data-theme"],
+		});
+	})();
+</script>

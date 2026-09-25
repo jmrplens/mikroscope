@@ -141,7 +141,7 @@ publicados. Desde la raíz del repositorio:
 ```sh
 go run ./cmd/gen_brand mark -out brand          # la marca y el favicon, por tema
 go run ./cmd/gen_brand compose -out brand       # el banner, la imagen social y el og:image
-go run ./cmd/gen_brand icons -out site/public   # el favicon y los iconos táctiles
+go run ./cmd/gen_brand icons -out site/public   # el favicon, los iconos táctiles y el manifiesto de aplicación web
 ```
 
 `mark` es texto puro. `compose` lee los tres fondos `bg-*.png` del directorio
@@ -155,29 +155,55 @@ equipo dan los mismos cuatro ficheros de marca y de favicon.
 
 <ScrollTable label="Los ficheros de la marca, dónde está cada uno y la suborden que lo escribe">
 
-| Fichero                                                | Dónde          | Suborden  | Qué es                                                                                                     |
-| ------------------------------------------------------ | -------------- | --------- | ---------------------------------------------------------------------------------------------------------- |
-| `mark-dark.svg`, `mark-light.svg`                      | `brand/`       | `mark`    | La marca, una por tema                                                                                     |
-| `favicon-dark.svg`, `favicon-light.svg`                | `brand/`       | `mark`    | La variante de cinco barras, una por tema                                                                  |
-| `mark-inline.svg`                                      | `brand/`       | `mark`    | La marca para una página que la incrusta: el tono fuerte es `currentColor`, el tranquilo `--ms-mark-quiet` |
-| `favicon-inline.svg`                                   | `brand/`       | `mark`    | El favicon para una página que lo incrusta, el gemelo en línea de `favicon.svg`                            |
-| `banner.svg` y `.png`                                  | `brand/`       | `compose` | 1280×320, para el README                                                                                   |
-| `social.svg` y `.png`                                  | `brand/`       | `compose` | 1280×640, la vista previa social del repositorio                                                           |
-| `og.svg` y `.png`                                      | `brand/`       | `compose` | 1200×630, el `og:image` de la documentación                                                                |
-| `background.png`                                       | `brand/`       | ninguna   | El campo generado del que se recortan las tres composiciones                                               |
-| `bg-banner.png`, `bg-social.png`, `bg-og.png`          | `brand/`       | ninguna   | Esos recortes, que lee `compose`                                                                           |
-| `favicon.svg`                                          | `site/public/` | `icons`   | Las dos paletas, cambiando según `prefers-color-scheme`                                                    |
-| `favicon-32x32.png`                                    | `site/public/` | `icons`   | 32 px, sobre su propio fondo                                                                               |
-| `favicon.ico`                                          | `site/public/` | `icons`   | Tres dibujos, a 16, 32 y 48 px, en vez de uno escalado de tres formas                                      |
-| `apple-touch-icon.png`, `icon-192.png`, `icon-512.png` | `site/public/` | `icons`   | 180, 192 y 512 px, cada uno dibujado a su propio tamaño                                                    |
-| `icon-maskable-512.png`                                | `site/public/` | `icons`   | Con más margen, para quedar dentro del 80 % central al que un lanzador puede recortar                      |
+| Fichero                                                | Dónde          | Suborden  | Qué es                                                                                                       |
+| ------------------------------------------------------ | -------------- | --------- | ------------------------------------------------------------------------------------------------------------ |
+| `mark-dark.svg`, `mark-light.svg`                      | `brand/`       | `mark`    | La marca, una por tema                                                                                       |
+| `favicon-dark.svg`, `favicon-light.svg`                | `brand/`       | `mark`    | La variante de cinco barras, una por tema                                                                    |
+| `mark-inline.svg`                                      | `brand/`       | `mark`    | La marca para una página que la incrusta: el tono fuerte es `currentColor`, el tranquilo `--ms-mark-quiet`   |
+| `favicon-inline.svg`                                   | `brand/`       | `mark`    | El favicon para una página que lo incrusta, el gemelo en línea de `favicon.svg`                              |
+| `banner.svg` y `.png`                                  | `brand/`       | `compose` | 1280×320, para el README                                                                                     |
+| `social.svg` y `.png`                                  | `brand/`       | `compose` | 1280×640, la vista previa social del repositorio                                                             |
+| `og.svg` y `.png`                                      | `brand/`       | `compose` | 1200×630, el `og:image` de la documentación                                                                  |
+| `background.png`                                       | `brand/`       | ninguna   | El campo generado del que se recortan las tres composiciones                                                 |
+| `bg-banner.png`, `bg-social.png`, `bg-og.png`          | `brand/`       | ninguna   | Esos recortes, que lee `compose`                                                                             |
+| `favicon.svg`                                          | `site/public/` | `icons`   | Las dos paletas, cambiando según `prefers-color-scheme`                                                      |
+| `site.webmanifest`                                     | `site/public/` | `icons`   | El manifiesto de aplicación web: nombra las imágenes de 192, 512 y la enmascarable, con URL relativas        |
+| `favicon.ico`                                          | `site/public/` | `icons`   | Tres dibujos, a 16, 32 y 48 px, en vez de uno escalado de tres formas                                        |
+| `apple-touch-icon.png`, `icon-192.png`, `icon-512.png` | `site/public/` | `icons`   | 180, 192 y 512 px, cada uno dibujado a su propio tamaño                                                      |
+| `icon-maskable-512.png`                                | `site/public/` | `icons`   | Con más margen, para quedar dentro del círculo de 80 % del ancho del icono al que un lanzador puede recortar |
 
 </ScrollTable>
 
-Las cuatro últimas filas están escritas para un manifiesto de aplicación web. Este sitio no declara
-ninguno y solo enlaza `favicon.svg`, `favicon.ico` y `apple-touch-icon.png`, así que
-`favicon-32x32.png`, `icon-192.png`, `icon-512.png` e `icon-maskable-512.png` se publican sin
-consumidor: ningún lanzador lee el margen de la versión enmascarable.
+La cabecera de cada página enlaza `favicon.svg`, `favicon.ico`, `apple-touch-icon.png` y
+`site.webmanifest`. El enlace al `.ico` dice `sizes="32x32"`, lo que mantiene a Chromium solo en el
+SVG: Chromium 153 sin interfaz pidió únicamente `favicon.svg` el 2026-09-25. El manifiesto nombra
+`icon-192.png`, `icon-512.png` e `icon-maskable-512.png` con URL relativas a él mismo, y deja fuera
+`favicon.svg`, el único icono sin fondo propio, porque lo que acaba en una pantalla de inicio lleva
+el suyo. No lleva `id`, que se resuelve contra el origen de `start_url` y no contra el manifiesto:
+Chromium 153 resolvió `./` a la raíz del origen, aquí `https://jmrplens.github.io/`, la dirección
+que ya reclama el sitio central del dominio con un manifiesto propio, y un `id` que se quede dentro
+de este sitio tiene que escribir `/mikroscope/`, la ruta base que nada más en el manifiesto nombra.
+Sin él, toma el valor de `start_url`, que Chromium resuelve a `/mikroscope/`, el `id` que
+recomienda.
+
+Una sola etiqueta `theme-color` da el color de la cabecera que está en pantalla, `#151c20` en oscuro
+y `#fafbfb` en claro. Sigue al tema del sitio, no al esquema del sistema: se sirve con la cabecera
+oscura, el tema que conserva una página sin JavaScript diga lo que diga el sistema, y un script de
+la cabecera del documento la pasa a la clara cada vez que la página se vuelve clara, por el esquema
+del sistema, el selector de tema, una elección guardada o el botón del teléfono. Chrome lee la
+etiqueta; Safari 26, según informes públicos y sin probarlo aquí, la ignora y toma el color de la
+cabecera fija. En Chromium y WebKit sin interfaz el 2026-09-25, con los dos esquemas, tras elegir en
+el selector, tras una elección guardada y una recarga, tras el botón del teléfono y sin JavaScript,
+la etiqueta tuvo el color de la cabecera todas las veces; el par de etiquetas separadas por
+`prefers-color-scheme` al que sustituye tenía el color del otro tema tras cada elección, y en un
+sistema claro sin JavaScript. No se ha probado en un dispositivo si el Chrome de un teléfono repinta
+su barra en cuanto cambia la etiqueta.
+
+`TestTheCommittedWebFilesMatchTheGenerator` compara `favicon.svg` y `site.webmanifest` de
+`site/public/` con lo que el generador escribe ahora, así que un cambio sin regenerar hace fallar
+`make test`; los PNG dependen de los conversores instalados y no se comparan. Sin probar: un
+teléfono real, una instalación en la pantalla de inicio y cómo recorta de verdad un lanzador el
+icono enmascarable.
 
 La marca de la cabecera de este sitio es `favicon-inline.svg`, el dibujo de cinco barras, pintada
 con la paleta propia del sitio; `mark-inline.svg` ocupa el hueco del hero. En ambos casos el
