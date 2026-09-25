@@ -294,9 +294,12 @@ an issue once it is established.
 | A question the data cannot answer, with no known source | [Ideas](https://github.com/jmrplens/mikroscope/discussions/categories/ideas) |
 | A fault you found, a dashboard you built | [Show and tell](https://github.com/jmrplens/mikroscope/discussions/categories/show-and-tell) |
 
-The forms ask for the version, the RouterOS version and board, the output of
-`mikroscope doctor` and the sinks in use, and never for a credential; each one
-names the outputs that carry one. A security vulnerability does not go in an
+The bug and board reports ask for the mikroscope version, the board and its
+RouterOS version, and the output of `mikroscope doctor`; only the bug report
+asks for the sinks in use. A feature request asks where the data would come
+from and what you have seen of it on a device, and a documentation report asks
+for the page, its language and what it should say. No form asks for a
+credential, and each one names the outputs that carry one. A security vulnerability does not go in an
 issue or a discussion: [SECURITY.md](SECURITY.md) says where it goes instead.
 How people are expected to talk to each other in any of those places is
 [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md), and reporting a breach of it is
