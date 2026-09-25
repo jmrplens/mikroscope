@@ -133,7 +133,17 @@ con el mismo resultado. Los cambios de diseño de 1.2.0 —números de las
 estadísticas a 32 px fijos y la memoria en uso como serie temporal— se
 comprobaron el 2026-09-24 importando el dashboard de InfluxDB en el Grafana del
 propietario y capturándolo a 390x844 y a 1600x1000; los otros cuatro dashboards
-no se capturaron.
+no se capturaron. El 2026-09-25, Grafana 12.3.0 y 13.2.1 sobre un almacén
+InfluxDB 3.11.2 Core desechable renderizaron la fila no disponible del dashboard
+de InfluxDB: tal como estaba en 1.3.0, abrirla envió cinco consultas y pintó
+cinco insignias `table … not found` en las dos versiones; con sus consultas
+publicadas ocultas no envió ninguna ni pintó ninguna, y 13.2.2 hizo lo mismo en
+un segundo renderizado ese día. Los otros cuatro dashboards conservan
+encendidas las consultas de esa fila salvo que un sondeo no haya encontrado la
+medida, porque en sus almacenes una medida ausente responde sin error (vacío en
+Prometheus, PostgreSQL y Graphite, ceros en Elasticsearch) en lugar de fallar; eso se comprobó por consulta, no renderizando. Esos mismos renderizados
+vieron que 12.3.0 nunca envía la consulta de la anotación de detecciones de
+InfluxDB, con la tabla o sin ella, y eso no se ha investigado.
 
 ### Las reglas de alerta
 

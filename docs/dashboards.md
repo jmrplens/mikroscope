@@ -22,8 +22,8 @@ alert rules generated beside them are on [Alert rules](https://jmrp.io/docs/mikr
   - mikroscope-influxdb.json 177 panels, InfluxDB 3 (SQL)
   - mikroscope-prometheus.json 135 panels, Prometheus
   - mikroscope-postgres.json 161 panels, PostgreSQL / TimescaleDB
-  - mikroscope-graphite.json 41 panels, Graphite
-  - mikroscope-elasticsearch.json 30 panels, Elasticsearch
+  - mikroscope-graphite.json 39 panels, Graphite
+  - mikroscope-elasticsearch.json 28 panels, Elasticsearch
   - mikroscope-alerts-influxdb.yaml 14 rules
   - mikroscope-alerts-prometheus.yaml 15 rules
   - mikroscope-alerts-postgres.yaml 10 rules
@@ -134,8 +134,8 @@ Panels per section, per store:
 | The observer | 11 | 9 | 10 | 3 | 3 |
 | The observer: sampler timing and self events | 6 | 7 | 6 | no row | no row |
 | This device | 3 | 3 | 3 | no row | no row |
-| Not available on this device | 5 | 5 | 5 | 5 | 5 |
-| **Total** | **177** | **135** | **161** | **41** | **30** |
+| Not available on this device | 5 | 5 | 5 | 3 | 3 |
+| **Total** | **177** | **135** | **161** | **39** | **28** |
 
 The counts are those of the committed files, which carry the compiled defaults. `import` and
 `check` ask the datasource what it holds first and can move panels into or out of the last row;
@@ -324,14 +324,43 @@ having to scroll to the Detections section to find out that anything happened at
 
 Two layers ship with every dashboard:
 
-| Layer          | Colour | Default | What each marker is                                                                                     |
-| -------------- | ------ | ------- | ------------------------------------------------------------------------------------------------------- |
-| **detections** | red    | on      | one row of `mikroscope_detection`: the rule, its key and its message, from the collector's derive stage |
-| **triggers**   | orange | off     | one capture marker from the agent: the condition that fired, the field and the value                    |
+| Layer          | Colour | Default                                                              | What each marker is                                                                                  |
+| -------------- | ------ | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| **detections** | red    | on; off after an InfluxDB probe that finds no `mikroscope_detection` | one row of `mikroscope_detection`: `rule: message`, from the collector's derive stage                |
+| **triggers**   | orange | off                                                                  | one capture marker from the agent: the condition that fired, the field and the value                 |
 
 Hovering a marker shows the message the row carries, so the line answers *what* as well as *when*.
-The triggers layer is off by default so that a quiet dashboard stays quiet; turn it on when you are
-working with [triggered captures](https://jmrp.io/docs/mikroscope/record/triggers/).
+A rule that fires per key (a core, a port, a thermal zone) opens its message with that key, so the
+marker reads, for example, `microburst: cpu0: …`. The SQL does not read the `key` column: the
+InfluxDB sink writes it only when a detection has one, and six rules never do, so a store whose
+detections are all of those has no such column and a query naming it fails. The triggers layer is
+off by default so that a quiet dashboard stays quiet; turn it on when you are working with
+[triggered captures](https://jmrp.io/docs/mikroscope/record/triggers/).
+
+**Before the first detection.** An InfluxDB store has no `mikroscope_detection` table until the
+collector writes its first detection. InfluxDB 3 refuses a query that names a missing table, and no
+form of the query avoids that: `WHERE false`, a `UNION ALL` and an `EXISTS` guard over
+`information_schema` all failed at planning on InfluxDB 3.11.2 Core on 2026-09-25.
+`mikroscope dashboards import` asks the store first, and when the table is not there it ships the
+detections layer switched off, with its query kept, so you can switch it on later. The committed
+files and a [manual import](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/#importing-by-hand) have nobody
+to ask, so the layer stays on. The query then fails on every load and refresh, but silently: on
+2026-09-25, over InfluxDB 3.11.2 Core, Grafana 13.2.1 showed nothing for it on the dashboard and
+wrote one error-level `Partial data response error` line to its log each time. The markers appear
+on their own once the first detection creates the table. On Prometheus the counter is simply
+absent and the query returns an empty result, so the layer stays on after a probe too. The
+PostgreSQL sink creates every table before its first insert, so there the query returns no rows:
+on 2026-09-25, in the project's container suite (Grafana 13.2.1, PostgreSQL 18.6), the layer's
+query answered 200 with no rows over a window before any detection, and 10 rows over the run's own.
+That was a query through Grafana's API, not a rendered dashboard.
+
+> **The detections layer on Grafana 12.3.0**
+>
+> In the same renders, Grafana 12.3.0 never sent the InfluxDB detections layer's query, with or
+> without the table: its toggle kept a loading indicator, switching it off and on and refreshing
+> sent nothing, and no marker was drawn, on the full dashboard and on a one-panel copy. Grafana
+> 13.2.1 sent it at once over the same store. Why, and whether 12.3.2 does the same, has not been
+> looked into.
 
 **Turning them off.** Both layers are checkboxes in the submenu row under the dashboard title — the
 same row a dashboard's variables sit in, which on the InfluxDB, Prometheus and PostgreSQL
@@ -634,7 +663,9 @@ moved out of its own section into this row, where its description says what it i
 
 In the committed files — the compiled defaults, which are what plain `gen` writes and what a manual
 upload into Grafana gets — the row holds the five panels the reference RB5009 (RouterOS 7.24.2,
-kernel 5.6.3 arm64) cannot produce:
+kernel 5.6.3 arm64) cannot produce. On Graphite and Elasticsearch it holds three: the queue-depth
+and busy-percent panels have no query in either store's language, so those two dashboards leave
+them out.
 
 - Pressure stall (PSI), where the kernel exposes it
 - Block-device queue depth (requests in flight)
@@ -644,15 +675,44 @@ kernel 5.6.3 arm64) cannot produce:
 
 The PSI panel is empty there because that kernel has no `/proc/pressure`. The block-device panels are empty there because the agent drops a block device whose reads, writes
 and in-flight count are all zero in a tick, and on that router every listed device stays at zero,
-so no sink ever creates the table.
+so no sink ever creates the table. The reference store still held neither table on 2026-09-25, on
+RouterOS 7.24.4.
+
+**On InfluxDB every query in this row ships switched off** (hidden, in Grafana's query editor), so
+opening the row runs nothing and each panel shows a short note instead of data. Up to 1.3.0 the
+queries ran when the row was opened: on 2026-09-25, with the committed InfluxDB file imported into
+Grafana 12.3.0 and 13.2.1 over an InfluxDB 3.11.2 Core store that had neither table, opening the row
+sent the queries of all five panels, each answered `table … not found`, and painted five red
+badges. With the queries switched off it sent none and painted no badge, on either version, nor on
+13.2.2 in a second render the same day. If your store does hold the measurement, switch the panel's
+queries back on in its editor, or run `import` (InfluxDB and Prometheus; the other three cannot be
+probed), which asks the store and moves the panel back into its own section.
+
+**On the other four stores the row keeps its queries on**, as it did up to 1.3.0, because there a
+missing measurement is not an error. The PostgreSQL sink creates every table, `mikroscope_psi` and
+`mikroscope_disk` included, before its first insert, so the queries return no rows; Prometheus
+answers an absent metric with an empty result, and Graphite a path that matches nothing with an
+empty body. Elasticsearch answers with a line at zero: a `sum` over documents that lack the field is
+0 in every bucket. Each of those was measured on 2026-09-25 by sending the committed files' queries
+through Grafana 13.2.1 in the project's container suite, where the store held nothing for them
+(Prometheus 3.14.0, PostgreSQL 18.6, graphite-statsd 1.1.10-5, Elasticsearch 9.5.3): every one
+answered 200 with no error, and on Elasticsearch every point was 0, whether or not another router in
+the same index had mapped the field. A zero there is a value, not an empty result, and it cannot
+tell a router that lacks the measurement from one whose values add up to zero: the row's title,
+not the line, is what says the measurement is not produced. The queries stay on so that
+a router that does produce the measurement fills the panel with no edit; on PostgreSQL, Graphite and
+Elasticsearch no probe could switch them back on. After a probe, on any store, a panel the probe
+found missing ships with its queries switched off, as on InfluxDB.
 
 Two sections are declared for these panels, **Pressure stall (PSI)** and **Block devices**, and ship
 no row while every panel in them is absent. On a kernel built with PSI, or a board with USB or eMMC
-storage that moves, `import` finds the measurement and the section appears in its place with no edit
-to the generator. `import` also works the other way: on a store that lacks a measurement the
-reference device had — or a field added after that store was first written — the panel moves into
-this row with its query removed, so it shows its explanation and not a red error badge. How the
-probe decides is on [Import and check](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/#the-probe).
+storage that moves, `import` finds the measurement and the section appears in its place, queries
+on, with no edit to the generator. That takes a store `import` can probe, InfluxDB or Prometheus;
+the other three cannot be probed and keep the compiled row. `import` also works the other way: on a store that lacks a
+measurement the reference device had — or a field added after that store was first written — the
+panel moves into this row with its queries switched off, so it shows its explanation and not a red
+error badge. How the probe decides is on
+[Import and check](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/#the-probe).
 
 ### How the dashboards handle ratios, holes and figures
 
@@ -685,8 +745,10 @@ probe decides is on [Import and check](https://jmrp.io/docs/mikroscope/dashboard
 > read later that day, and rendered at 390x844 and 1600x1000 to check the 32 px stat text and the
 > memory time series; no row-by-row badge count was taken. The panel options are written to the
 > schema Grafana 13.2.1 expects — the xychart's mark, for one, moved between Grafana 11 and 13 —
-> and `__requires` declares Grafana 11.0.0. No version other than those four has been tried, and
-> 12.3.0 was checked by query only, never rendered in a browser.
+> and `__requires` declares Grafana 11.0.0. No version other than those four has been tried. On
+> 12.3.0 the only renders are those of 2026-09-25 over a throwaway InfluxDB 3.11.2 Core store, of
+> the not-available row and the detections layer (above); the rest of the dashboard was checked
+> there by query only.
 
 ### See also
 
@@ -789,6 +851,16 @@ real number; "core 2's busy ratio" is not expressible at all without a nested ma
 not declare. So the Elasticsearch panels are the scalar aggregates, and the per-core ones are
 absent rather than wrong.
 
+The dashboard has one variable, **Host**, filled by a terms lookup on `host.keyword`, because one
+index can hold several routers. Up to 1.3.0 that lookup was written as a JSON object, a form the
+datasource does not read: Grafana 13.2.1 and 13.2.2 sent it as an empty query and got 400
+`invalid query, missing metrics and aggregations`, 12.3.0 did not send it at all, and Host stayed
+empty. Opened without `?var-host=`, six Overview panels then failed with
+`Failed to parse query [host.keyword:]`, as red badges. It is now the JSON string the datasource
+parses, and on 2026-09-25, over Elasticsearch 9.5.3, Host filled from the index and no panel
+showed a badge on any of the three versions. `check` could not have caught it: it takes the value
+from `--var host=` and never runs the lookup.
+
 ### Importing by hand
 
 Grafana → Dashboards → New → Import, as [Grafana's own import
@@ -798,10 +870,14 @@ prometheus, postgres, graphite or elasticsearch), and pick the datasource when G
 `DS_MIKROSCOPE`.
 
 A file uploaded this way carries the **compiled defaults**: the five panels the reference device
-cannot produce sit in the not-available row, and every other panel ships with its query, whether
-your store holds its measurement or not. On InfluxDB a panel whose table or column is missing then
-shows InfluxDB 3's planning error, as a red badge, when its section is opened. `import` from the CLI
-avoids that.
+cannot produce (three on Graphite and Elasticsearch) sit in the not-available row. On InfluxDB
+their queries are switched off; on the other four stores they stay on, because a missing
+measurement is not an error there ([why](https://jmrp.io/docs/mikroscope/dashboards/#not-available-on-this-device)).
+Every other panel ships with its query on, whether your store holds its measurement or not. On InfluxDB a panel whose table or column is missing then shows InfluxDB 3's
+planning error, as a red badge, when its section is opened. `import` from the CLI avoids that. The
+detections annotation stays on in a file uploaded this way; before the first detection it fails
+without showing anything, as
+[the annotations section](https://jmrp.io/docs/mikroscope/dashboards/#the-red-dashed-lines-on-every-panel) describes.
 
 ### Importing from the CLI
 
@@ -980,8 +1056,15 @@ so it is larger than the number of measurements. It then generates against the a
 - A panel whose measurements and required fields are all present ships in its own section with its
   query — including a panel the reference device could not produce.
 - A panel with anything missing moves into the collapsed "Not available on this device" row **with
-  its query removed**. It runs nothing, so it cannot paint a red `table … not found` badge; its
-  no-value text names what this store does not hold.
+  its queries hidden**. It runs nothing, so it cannot paint a red `table … not found` badge; its
+  no-value text names what this store does not hold. The queries stay in the panel, so they can be
+  switched back on in its editor. Up to 1.3.0 they were removed instead, and Grafana 12.3.0 gives a
+  panel with no query a default one: on 2026-09-25 the InfluxDB plugin answered it with
+  `No SQL statements were provided in the query string`, as a red badge. Grafana 13.2.1 sent
+  nothing for the same panel.
+- On InfluxDB, a store with no `mikroscope_detection` (or no `mikroscope_trigger`) gets that
+  annotation layer switched off, its query kept. Prometheus answers an absent counter with an empty
+  result, so the probe leaves its layers as they are.
 - A probe that fails — an error from Grafana, or an answer with no `mikroscope_` names in it — is a
   warning, not an error. `import` and `check` print `warning: could not ask <store> which
 measurements it holds`, with the reason, and carry on with the compiled defaults, so you are told
@@ -1000,9 +1083,10 @@ declares rather than the one their data supports.
 ### What `check` verifies
 
 `check` generates the dashboard exactly as `import` would — probe included — and then, for every
-panel, including every panel nested inside a collapsed row, sends each of its queries through
-Grafana's `/api/ds/query` against your datasource over the window, and counts the rows that come
-back. The request carries the step Grafana would compute for that panel: the window divided by 900
+panel, including every panel nested inside a collapsed row, sends each of its queries that is not
+hidden through Grafana's `/api/ds/query` against your datasource over the window, and counts the
+rows that come back. A hidden query is skipped because Grafana does not run it either, so a panel
+in the not-available row reads `none … rows=0 frames=0` with no error. The request carries the step Grafana would compute for that panel: the window divided by 900
 data points, raised to the panel's own minimum interval where it has one. Without that step, an
 `increase(x[$__interval])` target returns an empty frame, because a step below the scrape interval
 leaves fewer than two points in the range. Every InfluxDB panel that bins with `$__dateBin` has a
@@ -1051,6 +1135,9 @@ What else is outside its reach, from the code:
 - **Annotations.** Only panels are walked; the detections and triggers annotation queries are not
   run.
 - **Alert rules.** The provisioning files `gen` writes are not loaded or evaluated.
+- **A variable's own query.** `check` takes each variable's value from `--var` and never runs the
+  lookup that fills the picker. Up to 1.3.0 the Elasticsearch Host lookup failed on Grafana 12.3.0,
+  13.2.1 and 13.2.2 while `check` passed.
 - **What the browser does to a query.** Some variables are substituted in the browser, not by the
   server `check` talks to. On 2026-09-14 the InfluxDB datasource escaped `$__interval_ms` in five
   panels, in the browser, into SQL InfluxDB 3 could not parse; the rendered dashboard showed it.
@@ -1071,6 +1158,21 @@ A panel answers differently over a window with data than over one without, and a
 as good as the window it is pointed at.
 
 ### What has been verified
+
+**2026-09-25**, on the owner's Grafana 13.2.2, against the reference InfluxDB 3 store, with a build
+of the change that hides the not-available queries: `dashboards check --window 1h`, with the probe
+and with `--no-probe`, gave 164 panels with rows, 12 known-empty tolerated and 1 failing, "Detections
+in the window", because the store held no detection in that hour. Without the probe the five
+not-available panels read `none … rows=0 frames=0` with no error text, where 1.3.0 printed
+`400 … table … not found` on each. The two trigger panels still answer `mikroscope_trigger not found`
+without the probe, because that store has no trigger table. The detections annotation's SQL, sent
+through `/api/ds/query`, returned 44 rows over 6 hours. Run again later that day, after the other
+four stores' unprobed files got their not-available queries back, it gave the same counts, and the
+detections layer 32 rows over 6 hours; the InfluxDB file it checked was byte-identical to the first
+run's. The same day, Grafana 12.3.0 and 13.2.1 over
+a throwaway InfluxDB 3.11.2 Core store were used for the renders on
+[Five dashboards](https://jmrp.io/docs/mikroscope/dashboards/#not-available-on-this-device): the not-available row, a
+probed `import` from 1.3.0 and from the change, and the detections layer.
 
 **2026-09-16**, on the owner's Grafana 13.2.1, against the reference deployment: the agent on the
 reference RB5009 (RouterOS 7.24.2, privileged, the default triggers);

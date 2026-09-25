@@ -113,6 +113,11 @@ type PanelResult struct {
 // Grafana.
 // Check runs every panel's own query through Grafana's query API.
 //
+// A hidden target is skipped, as Grafana skips it: the not-available row
+// ships its queries hidden, and running them here would report a planning
+// error that no reader of the dashboard ever sees. A panel whose targets are
+// all hidden reads rows=0 frames=0 with no error.
+//
 // vars stands in for the dashboard's variables. Grafana interpolates those in
 // the browser, and this path has no browser: a Graphite target reading
 // `$prefix.$host.cpu.*` would be sent verbatim and match nothing, which reads
@@ -137,6 +142,10 @@ func (g *Grafana) Check(ctx context.Context, dashboard []byte, pluginID, dsUID s
 	for _, p := range flattenPanels(doc.Panels) {
 		pr := PanelResult{Title: p.Title, KnownEmpty: p.KnownEmpty}
 		for _, t := range p.Targets {
+			if hide, _ := t["hide"].(bool); hide {
+				// Grafana does not run a hidden query, so neither does this.
+				continue
+			}
 			q := map[string]any{"refId": t["refId"], "datasource": map[string]any{"type": pluginID, "uid": dsUID}, "intervalMs": intervalMS(p.Interval, window), "maxDataPoints": checkMaxDataPoints}
 			for k, v := range t {
 				if k == "datasource" {
@@ -278,9 +287,13 @@ func countRows(body []byte, ref string) (rows, frames int, errText string) {
 //
 // With a probe, `import` and `check` decide from the store: a panel whose
 // measurements are all present ships in its own section with its query, and a
-// panel with a missing measurement ships in the not-available row with NO
-// TARGET AT ALL — no query, no badge, just the NoValue text saying what is
-// missing. `gen`, which has no datasource to ask, keeps the compiled defaults.
+// panel with a missing measurement ships in the not-available row with every
+// query HIDDEN — nothing runs, no badge, just the NoValue text saying what is
+// missing. (Until 2026-09-25 it shipped with no target at all, and Grafana
+// 12.3.0 filled the empty list with a default target that failed; see
+// targetsFor.) The detections and triggers annotations follow the same
+// answer on InfluxDB (annotationsFor). `gen`, which has no datasource to ask,
+// keeps the compiled defaults.
 //
 // A nil map means "could not probe"; the caller then keeps the defaults rather
 // than hiding everything.

@@ -36,7 +36,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT time, concat(rule, CASE WHEN key \u003c\u003e '' THEN concat(' ', key) ELSE '' END, ': ', message) AS text, rule AS tags FROM mikroscope_detection WHERE $__timeFilter(time) ORDER BY time",
+          "rawSql": "SELECT time, concat(rule, ': ', message) AS text, rule AS tags FROM mikroscope_detection WHERE $__timeFilter(time) ORDER BY time",
           "refId": "Anno"
         }
       },

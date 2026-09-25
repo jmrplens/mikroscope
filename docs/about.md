@@ -95,7 +95,7 @@ alert rules for the three whose query language the rules are written in. The two
 SQL stores are asked the same question in two dialects: the PostgreSQL panels are
 the InfluxDB ones rewritten, and the container suite has a real PostgreSQL plan
 every one of their queries. Graphite and Elasticsearch carry fewer panels on
-purpose (41 and 30 against 177):
+purpose (39 and 28 against 177):
 Graphite has no labels and Elasticsearch no nested documents, so what they
 cannot express is absent rather than wrong.
 
@@ -116,7 +116,18 @@ port-event panels and the interface-inventory table it does not cover. A walk on
 panels with the same result. The 1.2.0 layout changes — stat numbers at a fixed
 32 px, memory in use as a time series — were checked on 2026-09-24 by importing
 the InfluxDB dashboard into the owner's Grafana and capturing it at 390x844 and
-1600x1000; the other four dashboards were not captured.
+1600x1000; the other four dashboards were not captured. On 2026-09-25, Grafana
+12.3.0 and 13.2.1 over a throwaway InfluxDB 3.11.2 Core store rendered the
+not-available row of the InfluxDB dashboard: as committed in 1.3.0, opening it
+sent five queries and painted five `table … not found` badges on both versions;
+with its queries shipped hidden it sent none and painted none, and 13.2.2 did
+the same in a second render that day. The other four dashboards keep that row's
+queries on unless a probe found the measurement missing, because on their
+stores a missing measurement answers without an error (empty on Prometheus,
+PostgreSQL and Graphite, zeros on Elasticsearch) rather than failing; that was
+checked by query, not rendered. The same renders
+found that 12.3.0 never sends the InfluxDB detections annotation's query, with
+or without the table, which has not been looked into.
 
 #### The alert rules
 

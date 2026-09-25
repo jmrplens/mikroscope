@@ -95,6 +95,17 @@ núcleos, que es un número real; «la proporción de ocupación del núcleo 2»
 mapeo nested que el destino no declara. Así que los paneles de Elasticsearch son los agregados
 escalares, y los de por núcleo están ausentes en vez de equivocados.
 
+El dashboard tiene una variable, **Host**, que se llena con una búsqueda de términos sobre
+`host.keyword`, porque un índice puede contener varios routers. Hasta 1.3.0 esa búsqueda se
+escribía como un objeto JSON, una forma que la fuente de datos no lee: Grafana 13.2.1 y 13.2.2 la
+enviaban como una consulta vacía y recibían 400
+`invalid query, missing metrics and aggregations`, 12.3.0 ni la enviaba, y Host se quedaba vacía.
+Abierto sin `?var-host=`, seis paneles del Overview fallaban entonces con
+`Failed to parse query [host.keyword:]`, como insignias rojas. Ahora es la cadena JSON que la
+fuente de datos analiza, y el 2026-09-25, sobre Elasticsearch 9.5.3, Host se llenó desde el índice
+y ningún panel mostró insignia en ninguna de las tres versiones. `check` no podía detectarlo: toma
+el valor de `--var host=` y nunca ejecuta la búsqueda.
+
 ## Importar a mano
 
 Grafana → Dashboards → New → Import, como lo describe la [guía de importación del propio
@@ -104,10 +115,15 @@ Grafana](https://grafana.com/docs/grafana/latest/visualizations/dashboards/build
 Grafana pida `DS_MIKROSCOPE`.
 
 Un fichero subido así lleva los **valores compilados por defecto**: los cinco paneles que el equipo
-de referencia no puede producir están en la fila de no disponibles, y todos los demás paneles se
-publican con su consulta, tenga o no tu almacén su medida. En InfluxDB, un panel al que le falta la
-tabla o la columna muestra entonces el error de planificación de InfluxDB 3, como una insignia roja,
-cuando se abre su sección. `import` desde la CLI lo evita.
+de referencia no puede producir (tres en Graphite y Elasticsearch) están en la fila de no
+disponibles. En InfluxDB sus consultas van apagadas; en los otros cuatro almacenes siguen
+encendidas, porque allí que falte una medida no es un error
+([por qué](/mikroscope/es/dashboards/#no-disponible-en-este-equipo)). Todos los demás paneles se
+publican con su consulta encendida, tenga o no tu almacén su medida. En InfluxDB, un panel al que le falta la tabla o la
+columna muestra entonces el error de planificación de InfluxDB 3, como una insignia roja, cuando se
+abre su sección. `import` desde la CLI lo evita. La anotación de detecciones sigue encendida en un
+fichero subido así; antes de la primera detección falla sin mostrar nada, como cuenta
+[el apartado de anotaciones](/mikroscope/es/dashboards/#las-rayas-rojas-discontinuas-de-todos-los-paneles).
 
 ## Importar desde la CLI
 
@@ -308,8 +324,15 @@ Imprime `datasource holds N measurements`; en InfluxDB, N cuenta las tablas más
 - Un panel cuyas medidas y campos obligatorios están todos presentes se publica en su propia sección
   con su consulta — incluido un panel que el equipo de referencia no podía producir.
 - Un panel al que le falta cualquier cosa pasa a la fila plegada "Not available on this device" **con
-  su consulta eliminada**. No ejecuta nada, así que no puede pintar una insignia roja `table … not
-found`; su texto de sin valor nombra lo que este almacén no contiene.
+  sus consultas ocultas**. No ejecuta nada, así que no puede pintar una insignia roja `table … not
+found`; su texto de sin valor nombra lo que este almacén no contiene. Las consultas siguen en el
+  panel, así que se pueden volver a encender en su editor. Hasta 1.3.0 se eliminaban, y Grafana
+  12.3.0 le da a un panel sin consultas una por defecto: el 2026-09-25 el plugin de InfluxDB le
+  respondió `No SQL statements were provided in the query string`, como una insignia roja. Grafana
+  13.2.1 no envió nada por ese mismo panel.
+- En InfluxDB, un almacén sin `mikroscope_detection` (o sin `mikroscope_trigger`) recibe esa capa
+  de anotaciones apagada, con su consulta. Prometheus responde a un contador que no existe con un
+  resultado vacío, así que el sondeo deja sus capas como están.
 - Un sondeo que falla — un error de Grafana, o una respuesta sin ningún nombre `mikroscope_` — es un
   aviso, no un error. `import` y `check` imprimen `warning: could not ask <store> which
 measurements it holds`, con el motivo, y siguen con los valores compilados por defecto, de modo que
@@ -329,8 +352,9 @@ dashboard que declara la lista de paneles, no el que sus datos admiten.
 
 `check` genera el dashboard exactamente como lo haría `import` — sondeo incluido — y después, para
 cada panel, incluidos todos los paneles anidados dentro de una fila plegada, envía cada una de sus
-consultas a través de `/api/ds/query` de Grafana contra tu fuente de datos sobre la ventana, y cuenta
-las filas que vuelven. La petición lleva el paso que Grafana calcularía para ese panel: la ventana
+consultas que no esté oculta a través de `/api/ds/query` de Grafana contra tu fuente de datos sobre
+la ventana, y cuenta las filas que vuelven. Una consulta oculta se salta porque Grafana tampoco la
+ejecuta, así que un panel de la fila no disponible sale como `none … rows=0 frames=0` sin error. La petición lleva el paso que Grafana calcularía para ese panel: la ventana
 dividida entre 900 puntos de datos, o el intervalo mínimo propio del panel si lo tiene y es mayor. Sin
 ese paso, un objetivo `increase(x[$__interval])` devuelve un frame vacío, porque un paso por debajo del
 intervalo de scrape deja menos de dos puntos en el rango. Todo panel de InfluxDB que agrupa con
@@ -384,6 +408,9 @@ Qué más queda fuera de su alcance, según el código:
   de disparos no se ejecutan.
 - **Las reglas de alerta.** Los ficheros de aprovisionamiento que escribe `gen` no se cargan ni se
   evalúan.
+- **La consulta propia de una variable.** `check` toma el valor de cada variable de `--var` y nunca
+  ejecuta la búsqueda que llena el selector. Hasta 1.3.0 la búsqueda de Host de Elasticsearch fallaba
+  en Grafana 12.3.0, 13.2.1 y 13.2.2 mientras `check` pasaba.
 - **Lo que el navegador le hace a una consulta.** Algunas variables se sustituyen en el navegador, no
   en el servidor con el que habla `check`. El 2026-09-14 la fuente de datos de InfluxDB escapó
   `$__interval_ms` en cinco paneles, en el navegador, convirtiéndolo en un SQL que InfluxDB 3 no podía
@@ -406,6 +433,22 @@ Un panel responde de forma distinta sobre una ventana con datos que sobre una si
 comprobación vale lo que vale la ventana a la que apunta.
 
 ## Lo que se ha verificado
+
+**2026-09-25**, en el Grafana 13.2.2 del propietario, contra el almacén InfluxDB 3 de referencia,
+con una compilación del cambio que oculta las consultas de la fila no disponible:
+`dashboards check --window 1h`, con el sondeo y con `--no-probe`, dio 164 paneles con filas, 12
+vacíos tolerados y 1 fallo, "Detections in the window", porque el almacén no tenía ninguna detección
+en esa hora. Sin el sondeo, los cinco paneles no disponibles salen como `none … rows=0 frames=0` sin
+texto de error, donde 1.3.0 imprimía `400 … table … not found` en cada uno. Los dos paneles de
+disparos siguen respondiendo `mikroscope_trigger not found` sin el sondeo, porque ese almacén no
+tiene tabla de disparos. El SQL de la anotación de detecciones, enviado por `/api/ds/query`, devolvió
+44 filas en 6 horas. Repetido más tarde ese día, después de que los ficheros sin sondeo de los
+otros cuatro almacenes recuperaran sus consultas de la fila no disponible, dio los mismos recuentos,
+y la capa de detecciones 32 filas en 6 horas; el fichero de InfluxDB comprobado era idéntico byte a
+byte al de la primera vez. Ese mismo día, Grafana 12.3.0 y 13.2.1 sobre un almacén InfluxDB 3.11.2 Core
+desechable sirvieron para los renderizados de
+[Cinco dashboards](/mikroscope/es/dashboards/#no-disponible-en-este-equipo): la fila no disponible, un
+`import` con sondeo desde 1.3.0 y desde el cambio, y la capa de detecciones.
 
 **2026-09-16**, en el Grafana 13.2.1 del propietario, contra el despliegue de referencia: el agente en
 el RB5009 de referencia (RouterOS 7.24.2, privilegiado, los disparadores por defecto);

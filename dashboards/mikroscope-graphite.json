@@ -2777,76 +2777,6 @@
             "type": "graphite",
             "uid": "${DS_MIKROSCOPE}"
           },
-          "description": "IOInProgress from /proc/diskstats field 9: requests issued to the device and not yet completed, at the instant of the read, one row per block device the kernel lists. An ABSOLUTE level living inside a measurement of deltas, so the bin reducer is max and it must never be summed over time. The device set comes from the data — GROUP BY device on InfluxDB, the device label on Prometheus — so it is whatever block devices the board has, named however the kernel names them. WHY THIS PANEL CAN BE EMPTY ON ANY DEVICE, which is a property of the agent and not of one router: sample.diskDelta drops a device whose reads, writes and inflight are all zero in the tick, because a row per tick per idle device is pure payload. A device that never moves never reaches a sink, and if that is every device, no sink ever creates the table. On the reference device (RB5009, RouterOS 7.24.2, kernel 5.6.3 arm64, 4 cores, 1 GiB) that is what happens: verified through the Grafana datasource proxy on 2026-09-12, the table is still absent and the query answers `table 'public.iox.mikroscope_disk' not found` — an InfluxDB 3 planning error, not 'No data'. Same device, 2026-09-12: loop0 (SquashFS) only moves when something faults pages in; mtdblock0-2 read all-zero because RouterOS writes flash through YAFFS rather than through a block device, which is why the flash family and not this one carries NAND wear; nbd0-15 are present and idle. Your device will differ — a board with USB or eMMC storage populates this panel, and then none of the preceding applies to it. Note the storage policy: diskstats is read every tick, but a device whose reads, writes and inflight are all zero in the tick is dropped, so the newest inflight value for an idle device is as old as its last non-zero tick. WHAT IT CANNOT TELL YOU: how long a request waited. /proc/diskstats offers no percentiles — but it does offer means, and that is a gap in the agent rather than in the source: read_ticks and write_ticks (fields 4 and 8) and weighted time_in_queue (field 11) are all present in the 14-column line procfs.ParseDiskstats requires and none of the three is kept, so mean service time and mean queue depth over the interval are unavailable and this panel is a max of sampled instants instead. Queue depth is also not saturation — a device that serves requests concurrently can sit at depth 1 while busy and depth 30 while busy. THRESHOLDS: green with one step at 1, colored blue rather than orange. A state timeline needs some coloring or it falls back to the classic palette per distinct value, and 0-versus-at-least-1 is arithmetic on a request count, not a calibration against a board — every device has an idle state and a has-work state at the same boundary. The color matters: orange at 1 reads as an alarm, so on any device that actually serves I/O the lane would be permanently amber while behaving perfectly. Blue says 'a request is outstanding' without a verdict. No higher band: a saturation step needs a queue ceiling, and nr_requests is not emitted.",
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "thresholds"
-              },
-              "custom": {
-                "fillOpacity": 70,
-                "hideFrom": {
-                  "legend": false,
-                  "tooltip": false,
-                  "viz": false
-                },
-                "insertNulls": 300000,
-                "lineWidth": 0,
-                "spanNulls": false
-              },
-              "mappings": [],
-              "min": 0,
-              "noValue": "no rows for any block device in this window — on many deployments the table does not exist at all, because the agent drops a device that did nothing and never creates it",
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green",
-                    "value": null
-                  },
-                  {
-                    "color": "blue",
-                    "value": 1
-                  }
-                ]
-              },
-              "unit": "short"
-            },
-            "overrides": []
-          },
-          "gridPos": {
-            "h": 6,
-            "w": 12,
-            "x": 12,
-            "y": 160
-          },
-          "id": 52,
-          "knownEmpty": true,
-          "options": {
-            "alignValue": "left",
-            "legend": {
-              "calcs": [],
-              "displayMode": "list",
-              "placement": "bottom",
-              "showLegend": true
-            },
-            "mergeValues": true,
-            "rowHeight": 0.9,
-            "showValue": "never",
-            "tooltip": {
-              "mode": "single",
-              "sort": "none"
-            }
-          },
-          "targets": [],
-          "title": "Block-device queue depth (requests in flight)",
-          "type": "state-timeline"
-        },
-        {
-          "datasource": {
-            "type": "graphite",
-            "uid": "${DS_MIKROSCOPE}"
-          },
           "description": "Requests completed per second per block device and direction, from /proc/diskstats fields 1 and 5 via the agent's deltas. The device set comes from GROUP BY device (InfluxDB) or the device label (Prometheus); on Prometheus the direction comes from the op label too, so that side is a single query where InfluxDB needs one per direction — reads and writes are separate FIELDS in the line protocol, not tag values. /proc/diskstats is global and readable from inside the container, so this covers the router's real block devices. EMPTY BY CONSTRUCTION, stated as the agent's rule rather than one router's result: sample.diskDelta filters any device with zero reads, zero writes and zero inflight in the tick, so a wholly idle set of devices produces no rows and the table is never created. On the reference device (RB5009, RouterOS 7.24.2, kernel 5.6.3 arm64) that is the steady state — verified 2026-09-12 through the Grafana datasource proxy: mikroscope_disk still does not exist in the live InfluxDB. Your device will differ; this populates on anything that does block I/O, loop0 under page-fault load or a hEX S with USB storage among them, and loop0 does move on this same board when something faults pages in. WHAT IT CANNOT TELL YOU: how much data moved. A 4 KiB read and a 512 KiB read are both one request — the throughput panel answers that, and reading the two together is how you tell large-sequential from small-random — and it cannot tell you latency either, because the per-direction tick fields that would give a mean are not emitted. It also cannot attribute a request to a file or a process. No thresholds: an IOPS figure that means trouble is a property of the storage device — a NAND-backed loopback, a USB stick and an NVMe differ by three orders of magnitude — and mikroscope collects nothing that would let the dashboard derive a ceiling.",
           "fieldConfig": {
             "defaults": {
@@ -2880,10 +2810,10 @@
           "gridPos": {
             "h": 8,
             "w": 12,
-            "x": 0,
-            "y": 168
+            "x": 12,
+            "y": 160
           },
-          "id": 53,
+          "id": 52,
           "knownEmpty": true,
           "options": {
             "legend": {
@@ -2908,65 +2838,6 @@
             }
           ],
           "title": "Block-device requests per second (reads and writes completed)",
-          "type": "timeseries"
-        },
-        {
-          "datasource": {
-            "type": "graphite",
-            "uid": "${DS_MIKROSCOPE}"
-          },
-          "description": "The fraction of wall time each device had at least one request in flight: /proc/diskstats field 10 (IOTicks, milliseconds, shipped as io_s in seconds) over the bin's duration. This is the quantity iostat prints as %util, and the division is the dashboard's, not the agent's — the agent ships raw deltas. The device set comes from GROUP BY device (InfluxDB) or the device label (Prometheus). READ IT AS 'the device was doing something', NOT as saturation. On any device that serves requests concurrently, 100 % busy with one request outstanding and 100 % busy with thirty are the same number, which is why the queue-depth panel sits beside it; that caveat is a property of the metric and holds on every board. A value above 100 means the bin's samples did not cover its wall clock — samples were missed, or the window extends past the capture — not that the device was over-subscribed. The axis is not capped at 100, for exactly that reason: 100 is the arithmetic ceiling of a share rather than a board figure, but pinning the axis there would clip away the one diagnostic the overshoot carries. Sampling caveat, attributed: diskstats is read every tick, but a tick in which a device did no reads, no writes and had nothing in flight is not stored at all, so the io_ms of an idle stretch arrives as a gap rather than as zeroes. The bin sum is exact for any bin wide enough to contain the device's activity; a narrower bin reads 0 and not 'idle'. The per-source floors are described in docs/limits.md, and FLOOR_HZ overrides all of them at once. EMPTY BY CONSTRUCTION: diskDelta drops devices with zero reads, writes and inflight, and where that is all of them the table is never created; verified on the reference device 2026-09-12, mikroscope_disk is still absent from the live InfluxDB. Your device will differ. WHAT IT CANNOT TELL YOU: how many requests made up that busy time, or their size. No thresholds: 'busy' is not 'saturated' on a concurrent device, so a red band at any percentage would assert something the metric cannot support.",
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "palette-classic"
-              },
-              "custom": {
-                "drawStyle": "line",
-                "fillOpacity": 8,
-                "hideFrom": {
-                  "legend": false,
-                  "tooltip": false,
-                  "viz": false
-                },
-                "insertNulls": 300000,
-                "lineWidth": 1,
-                "showPoints": "never",
-                "spanNulls": false,
-                "stacking": {
-                  "group": "A",
-                  "mode": "none"
-                }
-              },
-              "mappings": [],
-              "min": 0,
-              "noValue": "no rows for any block device in this window — on many deployments the table does not exist at all, because the agent drops a device that did nothing and never creates it",
-              "unit": "percent"
-            },
-            "overrides": []
-          },
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 12,
-            "y": 168
-          },
-          "id": 54,
-          "knownEmpty": true,
-          "options": {
-            "legend": {
-              "calcs": [],
-              "displayMode": "list",
-              "placement": "bottom",
-              "showLegend": true
-            },
-            "tooltip": {
-              "mode": "multi",
-              "sort": "desc"
-            }
-          },
-          "targets": [],
-          "title": "Block-device busy percent (io_s / wall time)",
           "type": "timeseries"
         },
         {
@@ -3008,9 +2879,9 @@
             "h": 7,
             "w": 24,
             "x": 0,
-            "y": 176
+            "y": 168
           },
-          "id": 55,
+          "id": 53,
           "knownEmpty": true,
           "options": {
             "legend": {

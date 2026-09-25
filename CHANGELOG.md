@@ -20,6 +20,76 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   carries 16, 32 and 48 px. Not tested: a real phone, an actual install, how
   a launcher crops the maskable icon, Firefox.
 
+### Fixed
+
+- **The "Not available on this device" row painted red badges when it was
+  opened.** Its panels kept their queries in the committed files, a
+  grafana.com download and `--no-probe`, so opening the row ran them. Measured
+  on 2026-09-25 with the committed InfluxDB file in Grafana 12.3.0 and 13.2.1
+  over a throwaway InfluxDB 3.11.2 Core store that had neither table: five
+  queries, five `table … not found` badges, on both versions. After a probe
+  the moved panels shipped with no target at all instead, and Grafana 12.3.0
+  fills an empty target list with a default query, which the InfluxDB plugin
+  answered with `No SQL statements were provided in the query string`: 35 red
+  badges in view when the row was opened after a probed `import` over a store
+  holding two tables. 13.2.1 sent nothing for those panels. Every query of a
+  panel in the row now ships hidden where a missing measurement is an error
+  or a probe found it missing: on InfluxDB with or without a probe, and on
+  any store after a probe. Each such panel says in its no-value text why and
+  how to switch it back on; opening the row sent no query and painted no
+  badge on 12.3.0, 13.2.1 or 13.2.2. The unprobed PostgreSQL, Prometheus,
+  Graphite and Elasticsearch files keep the row's queries on, as in 1.3.0,
+  because a missing measurement is no error there: sent through Grafana
+  13.2.1 in the container suite on 2026-09-25 with nothing in the store for
+  them, every one of those queries answered 200 with no error (Elasticsearch
+  with a line at 0, a `sum` over documents without the field). Hiding them
+  would show a router that does produce PSI or block-device data a note
+  instead of it, and on PostgreSQL, Graphite and Elasticsearch no probe could
+  bring the queries back. `dashboards check` skips a hidden query, as
+  Grafana does, so on the reference store (Grafana 13.2.2, 2026-09-25,
+  `--no-probe --window 1h`) the five panels read `none rows=0 frames=0` where
+  1.3.0 printed `400 … not found` on each. The Graphite and Elasticsearch
+  dashboards no longer carry the queue-depth and busy-percent panels, which
+  have no query in either store and shipped with an empty target list: 39 and
+  28 panels, from 41 and 30. Not rendered: Grafana 12.3.2, and the
+  Prometheus, PostgreSQL, Graphite and Elasticsearch dashboards' row. A
+  dashboard imported earlier keeps the old row until it is imported again.
+- **The detections annotation read a column that may not exist, and ignored
+  the probe.** Its SQL named `key`, which the InfluxDB sink writes only when a
+  detection has one; six rules never do, and on a store whose detections were
+  all keyless the layer failed with `Schema error: No field named key`
+  (InfluxDB 3.11.2 Core, Grafana 12.3.0 and 13.2.1, 2026-09-25). The marker
+  text is now `rule: message`; every keyed rule already opens its message
+  with the key, so on the reference store it reads `microburst: cpu0: …`
+  instead of `microburst cpu0: cpu0: …`, 44 rows over 6 hours either way.
+  "Detections in this window" selects `key` too and now declares it, so a
+  probe routes it when the column is missing. `import` now passes the probe to
+  the annotations: on InfluxDB, a store with no `mikroscope_detection` (or no
+  `mikroscope_trigger`) gets that layer switched off, its query kept. Without
+  a probe the detections layer stays on, because no SQL form tolerates a
+  missing table (`WHERE false`, a `UNION ALL` and an `EXISTS` guard all failed
+  at planning), a failing layer showed nothing on Grafana 13.2.1 beyond one
+  error-level log line per load, and it starts drawing once the first
+  detection creates the table. Prometheus is unchanged: an absent counter is
+  an empty result there. The same renders found that Grafana 12.3.0 never
+  sends the InfluxDB detections annotation's query, with or without the
+  table; that is not fixed here and has not been looked into.
+- **The Elasticsearch dashboard opened with an empty Host and six red
+  badges.** Its Host variable's terms lookup was written as a JSON object,
+  which the Elasticsearch datasource does not read as a variable query:
+  Grafana 13.2.1 and 13.2.2 sent it as an empty query and got 400 `invalid
+  query, missing metrics and aggregations` (a warning triangle on Host),
+  12.3.0 sent nothing, and with Host empty six Overview panels failed with
+  `Failed to parse query [host.keyword:]`. It is now the JSON string the
+  datasource parses; on 2026-09-25, over Elasticsearch 9.5.3 in the
+  container suite, the 1.3.0 file gave six badges and an empty Host on all
+  three versions and the fixed one none, with Host filled from the index.
+  `dashboards check` could not catch it, because it takes `--var host=` and
+  never runs a variable's query. On 12.3.0 the detections annotation's
+  `_msearch` still answers 400 `[range] query does not support [from]`
+  against Elasticsearch 9, which is that Grafana's browser code and not the
+  dashboard; 13.2.1 and 13.2.2 answer 200.
+
 ## [1.3.0] - 2026-09-25
 
 ### Fixed

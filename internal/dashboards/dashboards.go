@@ -233,13 +233,33 @@ type Panel struct {
 	// a query naming a missing table before it runs, and Grafana paints that
 	// as a red badge no field option suppresses. panelsFor routes an Absent
 	// panel out of its own section and into the collapsed not-available row,
-	// where no query runs until an operator deliberately expands it. Absent
-	// implies KnownEmpty for `check`; a merely KnownEmpty panel stays in its
-	// own section, which is already collapsed and therefore already costs
-	// nothing.
+	// and HideQueries decides whether its queries run once an operator
+	// expands the row. Absent implies KnownEmpty for `check`; a merely
+	// KnownEmpty panel stays in its own section, which is already collapsed
+	// and therefore already costs nothing.
 	NoValue    string
 	KnownEmpty bool
 	Absent     bool
+
+	// HideQueries ships every target of the panel with `hide: true`, so
+	// Grafana sends none of them and the NoValue text is all the panel
+	// shows. resolveAvailability sets it on an Absent panel only where a
+	// query over the missing measurement is an ERROR, or where a probe has
+	// said the measurement is not there: on InfluxDB, whose planner refuses
+	// a missing table, and on any store `import` probed. Unprobed elsewhere
+	// the queries stay on, because a missing measurement is no error there
+	// and a reader whose router does produce it would see a note instead of
+	// the data, with no probe to bring it back (only InfluxDB and Prometheus
+	// can be probed): the PostgreSQL sink creates every table, mikroscope_psi
+	// and mikroscope_disk included, before its first insert (sinks/sql.go
+	// sqlSchema); Prometheus answers an absent metric with an empty result;
+	// Graphite with an empty body (countRows); Elasticsearch with a line at
+	// 0, a sum over documents that lack the field, which a present field
+	// summing to zero also draws. Each of those was sent
+	// through Grafana 13.2.1 in the docker suite on 2026-09-25, from the
+	// committed files, with nothing in the store for them: all answered 200
+	// with no error.
+	HideQueries bool
 
 	// RequiresFields names `measurement.field` pairs an InfluxDB panel needs
 	// beyond the measurement itself, for the probe to check. A store written
@@ -440,7 +460,7 @@ func GenerateFor(store Store, present map[string]bool) ([]byte, error) {
 		// the Overview's own eight panels read the same at either range.
 		"refresh":     "5m",
 		"time":        map[string]any{"from": "now-3h", "to": "now"},
-		"annotations": map[string]any{"list": annotationsFor(store, dsUID, pluginID)},
+		"annotations": map[string]any{"list": annotationsFor(store, dsUID, pluginID, present)},
 		"templating":  map[string]any{"list": templatingFor(store, dsUID, pluginID)},
 		"panels":      out,
 	}
@@ -481,11 +501,16 @@ func templatingFor(store Store, dsUID, pluginID string) []any {
 			variable("host", "Host", "$prefix.*", "$prefix.*"),
 		}
 	case Elasticsearch:
-		return []any{
-			variable("host", "Host", "host.keyword", map[string]any{
-				"find": "terms", "field": "host.keyword", "size": 100,
-			}),
-		}
+		// The terms lookup as a JSON STRING, the form the Elasticsearch
+		// datasource parses for a variable. Written as an object (up to
+		// 1.3.0), Grafana 13.2.1 and 13.2.2 sent it as an empty query and got
+		// 400 `invalid query, missing metrics and aggregations`, 12.3.0 sent
+		// nothing, and with Host empty every `host.keyword:$host` panel failed
+		// to parse: six red badges on the Overview at first load, measured in
+		// the browser over Elasticsearch 9.5.3 on 2026-09-25. As a string,
+		// none, and Host filled from the index.
+		const hosts = `{"find": "terms", "field": "host.keyword", "size": 100}`
+		return []any{variable("host", "Host", hosts, hosts)}
 	case Influx, Prometheus, Postgres:
 		return []any{}
 	}
@@ -497,11 +522,33 @@ func templatingFor(store Store, dsUID, pluginID string) []any {
 // line with its message, which is the form a "look here" should take, and
 // it needs no panel of its own to be seen. Both are off by default in the
 // annotation toggle bar except detections, so a quiet dashboard stays quiet.
-func annotationsFor(store Store, dsUID, pluginID string) []any {
+//
+// present is the probe's answer, nil when nobody asked. A file nobody probed
+// (`gen`, the committed files, a grafana.com download) keeps detections on
+// even though a store with no detection yet has no mikroscope_detection
+// table, and no SQL form tolerates a missing table: on InfluxDB 3.11.2 Core
+// on 2026-09-25, `WHERE false`, a UNION ALL and an EXISTS over
+// information_schema all still failed at planning. Measured in the browser
+// the same day, such a layer showed nothing on Grafana 13.2.1: no badge, no
+// toast, one error-level "Partial data response error" line in Grafana's log
+// per load and refresh. (Grafana 12.3.0 never sent this layer's query at all,
+// with or without the table, which is a separate fault and not handled here.)
+// It starts drawing by itself once the first detection creates the table,
+// where switching it off would hide the markers from every importer whose
+// store already has detections.
+func annotationsFor(store Store, dsUID, pluginID string, present map[string]bool) []any {
 	ds := map[string]any{"type": pluginID, "uid": dsUID}
 	mk := func(name, color string, enable bool, target map[string]any) map[string]any {
 		target["refId"] = "Anno"
 		return map[string]any{"name": name, "iconColor": color, "enable": enable, "datasource": ds, "target": target}
+	}
+	// A layer whose table the probe did not find ships switched off, its
+	// query kept. Only where a missing name is an ERROR: InfluxDB 3 refuses
+	// it at planning time on every load and every refresh, while Prometheus
+	// answers an absent counter with an empty frame, which is the right
+	// reading before the first detection and fills in by itself after it.
+	on := func(def bool, table string) bool {
+		return def && (present == nil || !store.sql() || present[table])
 	}
 	if store.sql() {
 		// The same two queries on both SQL stores; only InfluxDB names a
@@ -514,8 +561,11 @@ func annotationsFor(store Store, dsUID, pluginID string) []any {
 			return t
 		}
 		return []any{
-			mk("detections", "red", true, extra("SELECT time, concat(rule, CASE WHEN key <> '' THEN concat(' ', key) ELSE '' END, ': ', message) AS text, rule AS tags FROM mikroscope_detection WHERE $__timeFilter(time) ORDER BY time")),
-			mk("triggers", "orange", false, extra("SELECT time, concat('capture #', id, ' (', cause, '): ', field, ' = ', value) AS text, cause AS tags FROM mikroscope_trigger WHERE $__timeFilter(time) ORDER BY time")),
+			// No `key`: the InfluxDB sink writes it only when a detection has
+			// one, so a store whose detections are all keyless has no such
+			// column, and every keyed rule opens its message with the key.
+			mk("detections", "red", on(true, "mikroscope_detection"), extra("SELECT time, concat(rule, ': ', message) AS text, rule AS tags FROM mikroscope_detection WHERE $__timeFilter(time) ORDER BY time")),
+			mk("triggers", "orange", on(false, "mikroscope_trigger"), extra("SELECT time, concat('capture #', id, ' (', cause, '): ', field, ' = ', value) AS text, cause AS tags FROM mikroscope_trigger WHERE $__timeFilter(time) ORDER BY time")),
 		}
 	}
 	switch store {
@@ -776,6 +826,16 @@ func targetsFor(store Store, p Panel, dsUID, pluginID string) []any {
 		t := map[string]any{"refId": string(rune('A' + i)), "datasource": map[string]any{"type": pluginID, "uid": dsUID}, "__query": q}
 		if iv != "" {
 			t["interval"] = iv
+		}
+		if p.HideQueries {
+			// Hidden, not removed. Measured in the browser on 2026-09-25 over
+			// an InfluxDB 3.11.2 Core datasource: Grafana 12.3.0 and 13.2.1
+			// both send nothing for a panel whose targets are all hidden and
+			// paint its noValue text. With the targets removed instead, 13.2.1
+			// sends nothing, but 12.3.0 adds a default {"refId":"A"} and the
+			// plugin answers it with `No SQL statements were provided in the
+			// query string`, as a red badge. Which panels: Panel.HideQueries.
+			t["hide"] = true
 		}
 		switch {
 		case store.sql():

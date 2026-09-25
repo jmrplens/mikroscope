@@ -210,3 +210,42 @@ func assertTargets(t *testing.T, doc checkDoc, want string) int {
 	}
 	return n
 }
+
+// TestESHostVariableQueryIsAString: the Elasticsearch datasource reads a
+// variable's legacy terms query from a JSON STRING. Written as an object,
+// Grafana 13.2.1 and 13.2.2 sent it as an empty query and got 400 `invalid
+// query, missing metrics and aggregations`, 12.3.0 sent nothing, Host stayed
+// empty either way, and every panel filtering on `host.keyword:$host` failed
+// to parse: six red badges on the Overview at first load (2026-09-25, over
+// Elasticsearch 9.5.3).
+func TestESHostVariableQueryIsAString(t *testing.T) {
+	b, err := Generate(Elasticsearch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Templating struct {
+			List []map[string]any `json:"list"`
+		} `json:"templating"`
+	}
+	if err = json.Unmarshal(b, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if len(doc.Templating.List) != 1 || doc.Templating.List[0]["name"] != "host" {
+		t.Fatalf("variables = %v, want the one host variable", doc.Templating.List)
+	}
+	q, ok := doc.Templating.List[0]["query"].(string)
+	if !ok {
+		t.Fatalf("host query is %T, want a JSON string", doc.Templating.List[0]["query"])
+	}
+	var find struct {
+		Find, Field string
+		Size        int
+	}
+	if err = json.Unmarshal([]byte(q), &find); err != nil {
+		t.Fatalf("host query %q is not JSON: %v", q, err)
+	}
+	if find.Find != "terms" || find.Field != "host.keyword" || find.Size <= 0 {
+		t.Errorf("host query = %+v, want a terms lookup on host.keyword", find)
+	}
+}

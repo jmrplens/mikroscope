@@ -245,16 +245,45 @@ Two layers ship with every dashboard:
 
 <ScrollTable label="The two annotation layers">
 
-| Layer          | Colour | Default | What each marker is                                                                                     |
-| -------------- | ------ | ------- | ------------------------------------------------------------------------------------------------------- |
-| **detections** | red    | on      | one row of `mikroscope_detection`: the rule, its key and its message, from the collector's derive stage |
-| **triggers**   | orange | off     | one capture marker from the agent: the condition that fired, the field and the value                    |
+| Layer          | Colour | Default                                                              | What each marker is                                                                                  |
+| -------------- | ------ | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| **detections** | red    | on; off after an InfluxDB probe that finds no `mikroscope_detection` | one row of `mikroscope_detection`: `rule: message`, from the collector's derive stage                |
+| **triggers**   | orange | off                                                                  | one capture marker from the agent: the condition that fired, the field and the value                 |
 
 </ScrollTable>
 
 Hovering a marker shows the message the row carries, so the line answers *what* as well as *when*.
-The triggers layer is off by default so that a quiet dashboard stays quiet; turn it on when you are
-working with [triggered captures](/mikroscope/record/triggers/).
+A rule that fires per key (a core, a port, a thermal zone) opens its message with that key, so the
+marker reads, for example, `microburst: cpu0: …`. The SQL does not read the `key` column: the
+InfluxDB sink writes it only when a detection has one, and six rules never do, so a store whose
+detections are all of those has no such column and a query naming it fails. The triggers layer is
+off by default so that a quiet dashboard stays quiet; turn it on when you are working with
+[triggered captures](/mikroscope/record/triggers/).
+
+**Before the first detection.** An InfluxDB store has no `mikroscope_detection` table until the
+collector writes its first detection. InfluxDB 3 refuses a query that names a missing table, and no
+form of the query avoids that: `WHERE false`, a `UNION ALL` and an `EXISTS` guard over
+`information_schema` all failed at planning on InfluxDB 3.11.2 Core on 2026-09-25.
+`mikroscope dashboards import` asks the store first, and when the table is not there it ships the
+detections layer switched off, with its query kept, so you can switch it on later. The committed
+files and a [manual import](/mikroscope/dashboards/import-and-check/#importing-by-hand) have nobody
+to ask, so the layer stays on. The query then fails on every load and refresh, but silently: on
+2026-09-25, over InfluxDB 3.11.2 Core, Grafana 13.2.1 showed nothing for it on the dashboard and
+wrote one error-level `Partial data response error` line to its log each time. The markers appear
+on their own once the first detection creates the table. On Prometheus the counter is simply
+absent and the query returns an empty result, so the layer stays on after a probe too. The
+PostgreSQL sink creates every table before its first insert, so there the query returns no rows:
+on 2026-09-25, in the project's container suite (Grafana 13.2.1, PostgreSQL 18.6), the layer's
+query answered 200 with no rows over a window before any detection, and 10 rows over the run's own.
+That was a query through Grafana's API, not a rendered dashboard.
+
+<NotClaimed variant="untested" title="The detections layer on Grafana 12.3.0">
+	In the same renders, Grafana 12.3.0 never sent the InfluxDB detections layer's query, with or
+	without the table: its toggle kept a loading indicator, switching it off and on and refreshing
+	sent nothing, and no marker was drawn, on the full dashboard and on a one-panel copy. Grafana
+	13.2.1 sent it at once over the same store. Why, and whether 12.3.2 does the same, has not been
+	looked into.
+</NotClaimed>
 
 **Turning them off.** Both layers are checkboxes in the submenu row under the dashboard title — the
 same row a dashboard's variables sit in, which on the InfluxDB, Prometheus and PostgreSQL
@@ -465,21 +494,52 @@ moved out of its own section into this row, where its description says what it i
 
 In the committed files — the compiled defaults, which are what plain `gen` writes and what a manual
 upload into Grafana gets — the row holds the five panels the reference RB5009 (RouterOS 7.24.2,
-kernel 5.6.3 arm64) cannot produce:
+kernel 5.6.3 arm64) cannot produce. On Graphite and Elasticsearch it holds three: the queue-depth
+and busy-percent panels have no query in either store's language, so those two dashboards leave
+them out.
 
 <DashboardPanels section="Not available on this device" />
 
 The PSI panel is empty there because that kernel has no `/proc/pressure`. The block-device panels are empty there because the agent drops a block device whose reads, writes
 and in-flight count are all zero in a tick, and on that router every listed device stays at zero,
-so no sink ever creates the table.
+so no sink ever creates the table. The reference store still held neither table on 2026-09-25, on
+RouterOS 7.24.4.
+
+**On InfluxDB every query in this row ships switched off** (hidden, in Grafana's query editor), so
+opening the row runs nothing and each panel shows a short note instead of data. Up to 1.3.0 the
+queries ran when the row was opened: on 2026-09-25, with the committed InfluxDB file imported into
+Grafana 12.3.0 and 13.2.1 over an InfluxDB 3.11.2 Core store that had neither table, opening the row
+sent the queries of all five panels, each answered `table … not found`, and painted five red
+badges. With the queries switched off it sent none and painted no badge, on either version, nor on
+13.2.2 in a second render the same day. If your store does hold the measurement, switch the panel's
+queries back on in its editor, or run `import` (InfluxDB and Prometheus; the other three cannot be
+probed), which asks the store and moves the panel back into its own section.
+
+**On the other four stores the row keeps its queries on**, as it did up to 1.3.0, because there a
+missing measurement is not an error. The PostgreSQL sink creates every table, `mikroscope_psi` and
+`mikroscope_disk` included, before its first insert, so the queries return no rows; Prometheus
+answers an absent metric with an empty result, and Graphite a path that matches nothing with an
+empty body. Elasticsearch answers with a line at zero: a `sum` over documents that lack the field is
+0 in every bucket. Each of those was measured on 2026-09-25 by sending the committed files' queries
+through Grafana 13.2.1 in the project's container suite, where the store held nothing for them
+(Prometheus 3.14.0, PostgreSQL 18.6, graphite-statsd 1.1.10-5, Elasticsearch 9.5.3): every one
+answered 200 with no error, and on Elasticsearch every point was 0, whether or not another router in
+the same index had mapped the field. A zero there is a value, not an empty result, and it cannot
+tell a router that lacks the measurement from one whose values add up to zero: the row's title,
+not the line, is what says the measurement is not produced. The queries stay on so that
+a router that does produce the measurement fills the panel with no edit; on PostgreSQL, Graphite and
+Elasticsearch no probe could switch them back on. After a probe, on any store, a panel the probe
+found missing ships with its queries switched off, as on InfluxDB.
 
 Two sections are declared for these panels, **Pressure stall (PSI)** and **Block devices**, and ship
 no row while every panel in them is absent. On a kernel built with PSI, or a board with USB or eMMC
-storage that moves, `import` finds the measurement and the section appears in its place with no edit
-to the generator. `import` also works the other way: on a store that lacks a measurement the
-reference device had — or a field added after that store was first written — the panel moves into
-this row with its query removed, so it shows its explanation and not a red error badge. How the
-probe decides is on [Import and check](/mikroscope/dashboards/import-and-check/#the-probe).
+storage that moves, `import` finds the measurement and the section appears in its place, queries
+on, with no edit to the generator. That takes a store `import` can probe, InfluxDB or Prometheus;
+the other three cannot be probed and keep the compiled row. `import` also works the other way: on a store that lacks a
+measurement the reference device had — or a field added after that store was first written — the
+panel moves into this row with its queries switched off, so it shows its explanation and not a red
+error badge. How the probe decides is on
+[Import and check](/mikroscope/dashboards/import-and-check/#the-probe).
 
 ## How the dashboards handle ratios, holes and figures
 
@@ -511,8 +571,10 @@ probe decides is on [Import and check](/mikroscope/dashboards/import-and-check/#
 	read later that day, and rendered at 390x844 and 1600x1000 to check the 32 px stat text and the
 	memory time series; no row-by-row badge count was taken. The panel options are written to the
 	schema Grafana 13.2.1 expects — the xychart's mark, for one, moved between Grafana 11 and 13 —
-	and `__requires` declares Grafana 11.0.0. No version other than those four has been tried, and
-	12.3.0 was checked by query only, never rendered in a browser.
+	and `__requires` declares Grafana 11.0.0. No version other than those four has been tried. On
+	12.3.0 the only renders are those of 2026-09-25 over a throwaway InfluxDB 3.11.2 Core store, of
+	the not-available row and the detections layer (above); the rest of the dashboard was checked
+	there by query only.
 </NotClaimed>
 
 <SeeAlso>
