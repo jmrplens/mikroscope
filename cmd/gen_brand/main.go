@@ -578,6 +578,9 @@ func served(path string) error {
 // them. It exists for browsers and pinned-tab lists that never learned the SVG.
 var icoSizes = []int{16, 32, 48}
 
+// icoName is the .ico's file name, which the site's head links as written.
+const icoName = "favicon.ico"
+
 // faviconSVG is the only file here with no ground of its own. The tones are
 // named once in a style block and referenced by every rect, so the drawing is
 // written once rather than twice and the two palettes cannot drift apart in it.
@@ -662,21 +665,21 @@ func iconsCmd(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 		ico = append(ico, name)
 	}
 	// #nosec G204 -- every name in ico is built from icoSizes just above.
-	cmd := exec.CommandContext(ctx, "magick", append(ico, "favicon.ico")...)
+	cmd := exec.CommandContext(ctx, "magick", append(ico, icoName)...)
 	cmd.Dir = dir
 	cmd.Stdout, cmd.Stderr = stdout, stderr
 	if err = cmd.Run(); err != nil {
-		return fail(stderr, fmt.Errorf("magick favicon.ico: %w", err))
+		return fail(stderr, fmt.Errorf("magick %s: %w", icoName, err))
 	}
 	for _, name := range ico {
 		if err = os.Remove(filepath.Clean(pyJoin(dir, name))); err != nil {
 			return fail(stderr, err)
 		}
 	}
-	if err = served(pyJoin(dir, "favicon.ico")); err != nil {
+	if err = served(pyJoin(dir, icoName)); err != nil {
 		return fail(stderr, err)
 	}
-	fmt.Fprintln(stdout, "wrote", pyJoin(dir, "favicon.ico"))
+	fmt.Fprintln(stdout, "wrote", pyJoin(dir, icoName))
 	return 0
 }
 
