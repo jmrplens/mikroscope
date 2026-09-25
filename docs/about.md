@@ -276,7 +276,8 @@ measurements have not been repeated on 7.24.4.
 > agent's `linux/arm/v5` build is for — has not arrived, so the 32-bit counter-wrap path and neither
 > 32-bit ARM image have run on hardware. No x86_64 RouterOS host. No RouterOS before 7.24, and
 > none of the 7.24.2 figures re-measured on 7.24.4. Nothing that needs a reboot, which waits for
-> a maintenance window.
+> a maintenance window. A [board report](https://github.com/jmrplens/mikroscope/issues/new?template=2-board-report.yml) from any
+> other board is what changes the first of these.
 
 ### Found and not fixed
 

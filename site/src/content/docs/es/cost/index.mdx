@@ -109,7 +109,9 @@ curl -s http://<collector host>:9124/metrics | grep -E 'self_cpu_usec_total|self
 
 La diferencia de `self_cpu_usec_total` dividida entre 60 000 000 es la fracción
 de un núcleo. Tómala en régimen estacionario, con el anillo lleno: un agente
-recién arrancado todavía lo está llenando y marcará de menos.
+recién arrancado todavía lo está llenando y marcará de menos. Medida en una
+placa que no sea un RB5009, con la tasa, la fecha y lo que hacía el router,
+va en un [informe de placa](https://github.com/jmrplens/mikroscope/issues/new?template=2-board-report.yml).
 
 La dirección es la del colector, no la del agente: desde 1.0.5 el agente no
 sirve ningún `/metrics`, y esos dos contadores llegan al colector en cada
