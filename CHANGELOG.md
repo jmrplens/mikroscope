@@ -60,6 +60,21 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   an empty result there. The same renders found that Grafana 12.3.0 never
   sends the InfluxDB detections annotation's query, with or without the
   table; that is not fixed here and has not been looked into.
+- **The Elasticsearch dashboard opened with an empty Host and six red
+  badges.** Its Host variable's terms lookup was written as a JSON object,
+  which the Elasticsearch datasource does not read as a variable query:
+  Grafana 13.2.1 and 13.2.2 sent it as an empty query and got 400 `invalid
+  query, missing metrics and aggregations` (a warning triangle on Host),
+  12.3.0 sent nothing, and with Host empty six Overview panels failed with
+  `Failed to parse query [host.keyword:]`. It is now the JSON string the
+  datasource parses; on 2026-09-25, over Elasticsearch 9.5.3 in the
+  container suite, the 1.3.0 file gave six badges and an empty Host on all
+  three versions and the fixed one none, with Host filled from the index.
+  `dashboards check` could not catch it, because it takes `--var host=` and
+  never runs a variable's query. On 12.3.0 the detections annotation's
+  `_msearch` still answers 400 `[range] query does not support [from]`
+  against Elasticsearch 9, which is that Grafana's browser code and not the
+  dashboard; 13.2.1 and 13.2.2 answer 200.
 
 ## [1.3.0] - 2026-09-25
 

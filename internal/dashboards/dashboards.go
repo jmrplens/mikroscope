@@ -500,11 +500,16 @@ func templatingFor(store Store, dsUID, pluginID string) []any {
 			variable("host", "Host", "$prefix.*", "$prefix.*"),
 		}
 	case Elasticsearch:
-		return []any{
-			variable("host", "Host", "host.keyword", map[string]any{
-				"find": "terms", "field": "host.keyword", "size": 100,
-			}),
-		}
+		// The terms lookup as a JSON STRING, the form the Elasticsearch
+		// datasource parses for a variable. Written as an object (up to
+		// 1.3.0), Grafana 13.2.1 and 13.2.2 sent it as an empty query and got
+		// 400 `invalid query, missing metrics and aggregations`, 12.3.0 sent
+		// nothing, and with Host empty every `host.keyword:$host` panel failed
+		// to parse: six red badges on the Overview at first load, measured in
+		// the browser over Elasticsearch 9.5.3 on 2026-09-25. As a string,
+		// none, and Host filled from the index.
+		const hosts = `{"find": "terms", "field": "host.keyword", "size": 100}`
+		return []any{variable("host", "Host", hosts, hosts)}
 	case Influx, Prometheus, Postgres:
 		return []any{}
 	}

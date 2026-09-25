@@ -2702,18 +2702,14 @@
           "type": "elasticsearch",
           "uid": "${DS_MIKROSCOPE}"
         },
-        "definition": "host.keyword",
+        "definition": "{\"find\": \"terms\", \"field\": \"host.keyword\", \"size\": 100}",
         "hide": 0,
         "includeAll": false,
         "label": "Host",
         "multi": false,
         "name": "host",
         "options": [],
-        "query": {
-          "field": "host.keyword",
-          "find": "terms",
-          "size": 100
-        },
+        "query": "{\"find\": \"terms\", \"field\": \"host.keyword\", \"size\": 100}",
         "refresh": 1,
         "sort": 1,
         "type": "query"

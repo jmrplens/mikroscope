@@ -95,6 +95,16 @@ real number; "core 2's busy ratio" is not expressible at all without a nested ma
 not declare. So the Elasticsearch panels are the scalar aggregates, and the per-core ones are
 absent rather than wrong.
 
+The dashboard has one variable, **Host**, filled by a terms lookup on `host.keyword`, because one
+index can hold several routers. Up to 1.3.0 that lookup was written as a JSON object, a form the
+datasource does not read: Grafana 13.2.1 and 13.2.2 sent it as an empty query and got 400
+`invalid query, missing metrics and aggregations`, 12.3.0 did not send it at all, and Host stayed
+empty. Opened without `?var-host=`, six Overview panels then failed with
+`Failed to parse query [host.keyword:]`, as red badges. It is now the JSON string the datasource
+parses, and on 2026-09-25, over Elasticsearch 9.5.3, Host filled from the index and no panel
+showed a badge on any of the three versions. `check` could not have caught it: it takes the value
+from `--var host=` and never runs the lookup.
+
 ## Importing by hand
 
 Grafana → Dashboards → New → Import, as [Grafana's own import
@@ -386,6 +396,9 @@ What else is outside its reach, from the code:
 - **Annotations.** Only panels are walked; the detections and triggers annotation queries are not
   run.
 - **Alert rules.** The provisioning files `gen` writes are not loaded or evaluated.
+- **A variable's own query.** `check` takes each variable's value from `--var` and never runs the
+  lookup that fills the picker. Up to 1.3.0 the Elasticsearch Host lookup failed on Grafana 12.3.0,
+  13.2.1 and 13.2.2 while `check` passed.
 - **What the browser does to a query.** Some variables are substituted in the browser, not by the
   server `check` talks to. On 2026-09-14 the InfluxDB datasource escaped `$__interval_ms` in five
   panels, in the browser, into SQL InfluxDB 3 could not parse; the rendered dashboard showed it.

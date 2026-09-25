@@ -95,6 +95,17 @@ núcleos, que es un número real; «la proporción de ocupación del núcleo 2»
 mapeo nested que el destino no declara. Así que los paneles de Elasticsearch son los agregados
 escalares, y los de por núcleo están ausentes en vez de equivocados.
 
+El dashboard tiene una variable, **Host**, que se llena con una búsqueda de términos sobre
+`host.keyword`, porque un índice puede contener varios routers. Hasta 1.3.0 esa búsqueda se
+escribía como un objeto JSON, una forma que la fuente de datos no lee: Grafana 13.2.1 y 13.2.2 la
+enviaban como una consulta vacía y recibían 400
+`invalid query, missing metrics and aggregations`, 12.3.0 ni la enviaba, y Host se quedaba vacía.
+Abierto sin `?var-host=`, seis paneles del Overview fallaban entonces con
+`Failed to parse query [host.keyword:]`, como insignias rojas. Ahora es la cadena JSON que la
+fuente de datos analiza, y el 2026-09-25, sobre Elasticsearch 9.5.3, Host se llenó desde el índice
+y ningún panel mostró insignia en ninguna de las tres versiones. `check` no podía detectarlo: toma
+el valor de `--var host=` y nunca ejecuta la búsqueda.
+
 ## Importar a mano
 
 Grafana → Dashboards → New → Import, como lo describe la [guía de importación del propio
@@ -397,6 +408,9 @@ Qué más queda fuera de su alcance, según el código:
   de disparos no se ejecutan.
 - **Las reglas de alerta.** Los ficheros de aprovisionamiento que escribe `gen` no se cargan ni se
   evalúan.
+- **La consulta propia de una variable.** `check` toma el valor de cada variable de `--var` y nunca
+  ejecuta la búsqueda que llena el selector. Hasta 1.3.0 la búsqueda de Host de Elasticsearch fallaba
+  en Grafana 12.3.0, 13.2.1 y 13.2.2 mientras `check` pasaba.
 - **Lo que el navegador le hace a una consulta.** Algunas variables se sustituyen en el navegador, no
   en el servidor con el que habla `check`. El 2026-09-14 la fuente de datos de InfluxDB escapó
   `$__interval_ms` en cinco paneles, en el navegador, convirtiéndolo en un SQL que InfluxDB 3 no podía
