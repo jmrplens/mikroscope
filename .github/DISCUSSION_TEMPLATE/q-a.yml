@@ -21,7 +21,9 @@ body:
         [When something does not work](https://jmrp.io/docs/mikroscope/reference/troubleshooting/)
         may answer it before you ask. **Never paste a
         credential**, `.env`, or the output of `/container/print detail`,
-        `/container/envs/print`, `/export` or `plan --rsc`.
+        `/container/envs/print`, `/export` or `plan --rsc`, and replace the
+        router's public address, its DDNS name and any ssh target reachable
+        from the internet.
   - type: textarea
     id: goal
     attributes:

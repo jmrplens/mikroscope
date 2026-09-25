@@ -41,9 +41,13 @@ on:
 
 # No concurrency group, on purpose. gitlab-mcp-server found that one which
 # cancels in progress makes every pull request renamed seconds after opening
-# show a cancelled run in its checks. Every step here only adds (sync-labels is
-# false, and the title and assign steps only add), so two runs at once are
-# harmless: each adds what it finds and neither removes anything.
+# show a cancelled run in its checks. The title and assign steps only add. The
+# labeler removes nothing either (sync-labels is false), but it writes the
+# whole set in one PUT: it re-reads the labels just before, to keep any added
+# since it started, and a label another run or a person adds between that
+# read and the PUT is lost (src/labeler.ts at the pinned commit). The window
+# is one API round trip wide. A path or title label lost in it comes back on
+# the next push or edit; one added by hand does not.
 
 permissions:
   contents: read

@@ -10,8 +10,10 @@ body:
         [board report](https://github.com/jmrplens/mikroscope/issues/new?template=2-board-report.yml),
         which is how it gets its row in the README.
 
-        Crop addresses, host names and tokens out of screenshots. English or
-        Spanish, whichever you prefer.
+        Crop addresses, host names and tokens out of screenshots, and never
+        paste a credential or the output of `/container/print detail`,
+        `/container/envs/print`, `/export` or `plan --rsc`. English or Spanish,
+        whichever you prefer.
   - type: textarea
     id: what
     attributes:

@@ -11,7 +11,9 @@ body:
         Every source on the router costs CPU on a device that is also routing,
         so the cost of one read is usually what decides. Saying that you do not
         know where the data would come from, or what it costs, is useful in
-        itself. English or Spanish, whichever you prefer.
+        itself. **Never paste a credential** or the output of
+        `/container/print detail`, `/container/envs/print`, `/export` or
+        `plan --rsc`. English or Spanish, whichever you prefer.
   - type: textarea
     id: question
     attributes:

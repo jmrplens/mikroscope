@@ -8,7 +8,8 @@ body:
       value: |
         The two most useful requests here are a kernel interface a RouterOS
         container can read that is not sampled yet, and a question about a
-        router that the recorded data cannot answer.
+        router that the recorded data cannot answer, once it is known where the
+        answer comes from.
 
         This form is for a change that can be built: you know where the data
         would come from. If what you have is the question and not the source,
@@ -20,6 +21,10 @@ body:
         Every source on the router costs CPU on a device that is also routing,
         so the cost of one read is usually what decides. "Not measured" is a
         valid answer, and a useful one.
+
+        **Never paste a credential** or the output of `/container/print detail`,
+        `/container/envs/print`, `/export` or `plan --rsc`, and replace the
+        router's public address or DDNS name in anything you quote from it.
   - type: dropdown
     id: part
     attributes:

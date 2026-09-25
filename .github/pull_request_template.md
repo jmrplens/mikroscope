@@ -2,8 +2,9 @@
 The title becomes the commit subject: this repository merges by squash only.
 Start it with a conventional prefix (feat, fix, docs, test, ci or chore, with a
 scope when one fits: `fix(router): …`). `fix` adds the bug label and `feat`
-the enhancement label; the paths add the area labels, and each area names the
-checks below that apply.
+the enhancement label; the paths add the area labels. The first two checks
+below apply to every change, and each of the others names the areas it
+applies to.
 -->
 
 ## What this changes
@@ -24,12 +25,12 @@ date it was measured on, and its spread.
 
 - [ ] `make analyze` (golangci-lint, govulncheck, actionlint, shellcheck, markdownlint, links, generated artifacts)
 - [ ] `go build ./... && go test ./...`
-- [ ] `make test-race` (the sampler, the ring, the stream or a sink)
+- [ ] `make test-race` (the sampler, the ring, the stream or a sink: `agent`, `collector`, `sinks`)
 - [ ] `make agent-size` (anything the agent links: `agent`)
 - [ ] `make test-e2e-docker` (a sink, its encoding or its schema: `sinks`)
-- [ ] `make agent-smoke PLATFORM=…` (`internal/image`, or how the agent starts)
+- [ ] `make agent-smoke PLATFORM=…` (`internal/image`, or how the agent starts: `router`, `distribution`)
 - [ ] `make gen-dashboards` and the result committed (`dashboards`)
-- [ ] `make site-check` (anything under `site/`: it builds first, then lints)
+- [ ] `make site-check` (anything under `site/`, so `site` or `documentation`: it builds first, then lints)
 
 ## What it touched on a router
 

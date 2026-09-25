@@ -9,7 +9,7 @@ contact_links:
   - name: An idea whose source is not known yet
     url: https://github.com/jmrplens/mikroscope/discussions/categories/ideas
     about: A question the data cannot answer, before anyone knows which file or API would answer it and what reading it costs.
-  - name: Documentation
+  - name: Read the documentation
     url: https://jmrp.io/docs/mikroscope/
     about: Install, record, sinks, dashboards, limits and security, in English and Spanish. The troubleshooting page lists the symptoms in the words you actually see.
   - name: Security vulnerability

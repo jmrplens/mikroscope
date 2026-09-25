@@ -20,8 +20,8 @@ body:
           truth, goes to
           [Reading the data](https://github.com/jmrplens/mikroscope/discussions/categories/reading-the-data)
           first. On the reference router the kernel log reported a layer-2
-          loop while every RouterOS API counter reported a healthy device, and
-          the kernel was right.
+          loop while RouterOS's own log and port monitor reported a healthy
+          device, and the kernel was right.
         - **A board other than the RB5009** that it ran, or failed to run, on is a
           [board report](https://github.com/jmrplens/mikroscope/issues/new?template=2-board-report.yml).
         - **When the code and the documentation disagree** and you cannot tell
@@ -36,14 +36,16 @@ body:
         `/export`, which can carry other containers' secrets in their `cmd=`
         lines, and not `/container/envs/print` or `mikroscope plan --rsc`, which
         print the agent's token in clear. `mikroscope doctor`, `status` and
-        `plan` without `--rsc` print it masked or not at all. Replace router
-        addresses and names you consider private with placeholders; the report
-        is just as useful.
+        `plan` without `--rsc` print it masked or not at all. Replace with
+        placeholders the router's public address, its DDNS name
+        (`*.sn.mynetname.net`), an ssh target reachable from the internet, and
+        any other address or name you consider private; the report is just as
+        useful.
   - type: input
     id: version
     attributes:
       label: mikroscope version
-      description: The output of `mikroscope version`, and of `mikroscope-agent -version` if the agent was built separately.
+      description: The output of `mikroscope version`, and the agent's version from the `agent:` line of `mikroscope status` (or its start-up line in the router log) if it differs.
       placeholder: mikroscope 1.3.0 (commit abc1234, built 2026-09-25T10:00:00Z)
     validations:
       required: true
@@ -115,8 +117,9 @@ body:
       label: The output of `mikroscope doctor`
       description: >
         Read-only: it writes nothing to the router, and it counts the agent's
-        token without printing it. Paste it whole, with addresses and names you
-        consider private replaced. Write "no router involved" if there is none.
+        token without printing it. Paste it whole, with the router's public
+        address or DDNS name and anything else you consider private replaced.
+        Write "no router involved" if there is none.
       render: text
     validations:
       required: true
@@ -161,7 +164,7 @@ body:
     attributes:
       label: Before submitting
       options:
-        - label: Nothing above carries a credential, a token, or `/container/print detail`, `/container/envs/print`, `/export` or `plan --rsc` output.
+        - label: Nothing above carries a credential, a token, `/container/print detail`, `/container/envs/print`, `/export` or `plan --rsc` output, or the router's public address or DDNS name.
           required: true
         - label: This happens on the latest release, or I checked that it is still there.
           required: false

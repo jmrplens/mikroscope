@@ -286,9 +286,9 @@ an issue once it is established.
 | You have | Where it goes |
 | --- | --- |
 | A reproducible failure: it measured, wrote or installed the wrong thing | [Bug report](https://github.com/jmrplens/mikroscope/issues/new?template=1-bug-report.yml) |
-| mikroscope run, or tried, on a board other than the RB5009 | [Board report](https://github.com/jmrplens/mikroscope/issues/new?template=2-board-report.yml) |
+| A run, or an attempt, on a board other than the RB5009 | [Board report](https://github.com/jmrplens/mikroscope/issues/new?template=2-board-report.yml) |
 | A change whose source is known: a kernel file, an API path, a store's write API | [Feature request](https://github.com/jmrplens/mikroscope/issues/new?template=3-feature-request.yml) |
-| A page that is wrong, broken, or disagrees with its Spanish twin | [Documentation](https://github.com/jmrplens/mikroscope/issues/new?template=4-documentation.yml) |
+| A page that is wrong, has a broken link, or disagrees with its Spanish twin | [Documentation](https://github.com/jmrplens/mikroscope/issues/new?template=4-documentation.yml) |
 | A question about installing or using it | [Q&A](https://github.com/jmrplens/mikroscope/discussions/categories/q-a) |
 | A reading you cannot explain | [Reading the data](https://github.com/jmrplens/mikroscope/discussions/categories/reading-the-data) |
 | A question the data cannot answer, with no known source | [Ideas](https://github.com/jmrplens/mikroscope/discussions/categories/ideas) |

@@ -15,13 +15,22 @@
 # back exactly.
 #
 # Only ever adds, like the labeler: a label placed by hand survives an edit,
-# and an answer changed to "Not sure" removes nothing. An answer this file does
-# not know fails the run after the known ones are applied, so a form and this
-# map cannot drift apart unnoticed.
+# and an answer changed to "Not sure" removes nothing. An edit adds only the
+# areas it newly names, read against the body as it was before that edit, so
+# an area label the maintainer removed stays removed through a title fix or a
+# reworded paragraph, and comes back only if the answer is changed to name it
+# again. An edit that leaves the body alone does not run at all. An answer
+# this file does not know fails the run after the known ones are applied, so
+# a form and this map cannot drift apart unnoticed.
 #
-# The body is text anyone can write. It reaches the script as an environment
-# variable and is only matched against fixed strings; every label added comes
-# from the map below, never from the body. Nothing is checked out.
+# No concurrency group: each run reads its own "before" from its own event,
+# so runs are independent, and one cancelled by the next would lose the areas
+# only it had seen.
+#
+# The body, before an edit and after it, is text anyone can write. It reaches
+# the script as environment variables and is only matched against fixed
+# strings; every label added comes from the map below, never from the body.
+# Nothing is checked out.
 
 name: Issue area
 
@@ -32,10 +41,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: issue-area-${{ github.event.issue.number }}
-  cancel-in-progress: true
-
 jobs:
   area:
     name: Area from the form
@@ -43,8 +48,11 @@ jobs:
     timeout-minutes: 5
     # A pull request has no form. gitlab-mcp-server saw the issues event carry
     # pull requests on milestoned; opened and edited are not known to, and the
-    # guard costs nothing.
-    if: ${{ !github.event.issue.pull_request }}
+    # guard costs nothing. An edit runs only when it changed the body: a title
+    # edit carries no changes.body.
+    if: >-
+      ${{ !github.event.issue.pull_request &&
+      (github.event.action == 'opened' || github.event.changes.body) }}
     permissions:
       issues: write
     steps:
@@ -56,6 +64,8 @@ jobs:
           GH_REPO: ${{ github.repository }}
           ISSUE: ${{ github.event.issue.number }}
           BODY: ${{ github.event.issue.body }}
+          # The body before this edit; empty when the issue was just opened.
+          BEFORE: ${{ github.event.changes.body.from }}
         run: |
           set -euo pipefail
           # A form renders each field as a level-3 heading, a blank line and
@@ -64,31 +74,57 @@ jobs:
           # is the right answer for it. Carriage returns go first: a body sent
           # from Windows ends its lines with them, and awk does not count one
           # as whitespace, so the heading would never match.
-          answer=$(printf '%s\n' "$BODY" | tr -d '\r' | awk '
-            /^### Which part[[:space:]]*$/ { seen = 1; next }
-            seen && NF { print; exit }
-          ')
+          answer_of() {
+            printf '%s\n' "$1" | tr -d '\r' | awk '
+              /^### Which part[[:space:]]*$/ { seen = 1; next }
+              seen && NF { print; exit }
+            '
+          }
+          area_of() {
+            case "$1" in
+              "On the router: doctor / plan / install / status / upgrade / uninstall") echo router ;;
+              "The agent: sampling / captures / its HTTP endpoints")                    echo agent ;;
+              "Recording: record / mark / plot")                                         echo collector ;;
+              "The collector: forward / derive / the RouterOS API tier")                 echo collector ;;
+              "A sink or the store behind it")                                           echo sinks ;;
+              "The Grafana dashboards or alert rules")                                   echo dashboards ;;
+              "Getting it: install.sh / install.ps1 / a release archive / an image")    echo distribution ;;
+              "The documentation site: a page that breaks / search / layout")            echo site ;;
+              "Not sure")                                                                echo none ;;
+              *)                                                                         echo unknown ;;
+            esac
+          }
+
+          answer=$(answer_of "$BODY")
           case "$answer" in
             ""|"_No response_")
               echo "no part named, nothing to add"; exit 0 ;;
           esac
 
+          # The areas the body named before this edit. Keyed by label, never
+          # by the text: the old body is as untrusted as the new one.
+          declare -A before=()
+          old=$(answer_of "${BEFORE:-}")
+          while IFS= read -r part; do
+            area=$(area_of "$part")
+            case "$area" in none|unknown) ;; *) before[$area]=1 ;; esac
+          done <<< "${old//, /$'\n'}"
+
           declare -A labels=()
           unknown=0
           while IFS= read -r part; do
-            case "$part" in
-              "On the router: doctor / plan / install / status / upgrade / uninstall") labels[router]=1 ;;
-              "The agent: sampling / captures / its HTTP endpoints")                    labels[agent]=1 ;;
-              "Recording: record / mark / plot")                                         labels[collector]=1 ;;
-              "The collector: forward / derive / the RouterOS API tier")                 labels[collector]=1 ;;
-              "A sink or the store behind it")                                           labels[sinks]=1 ;;
-              "The Grafana dashboards or alert rules")                                   labels[dashboards]=1 ;;
-              "Getting it: install.sh / install.ps1 / a release archive / an image")    labels[distribution]=1 ;;
-              "The documentation site: a page that breaks / search / layout")            labels[site]=1 ;;
-              "Not sure") ;;
-              *)
+            area=$(area_of "$part")
+            case "$area" in
+              none) ;;
+              unknown)
                 echo "::error::unknown answer '${part}' under Which part; the forms and this workflow disagree"
                 unknown=1 ;;
+              *)
+                if [ -n "${before[$area]:-}" ]; then
+                  echo "${area} was named before this edit too, so it is left as it is"
+                else
+                  labels[$area]=1
+                fi ;;
             esac
           done <<< "${answer//, /$'\n'}"
 

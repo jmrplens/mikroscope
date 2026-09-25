@@ -1,5 +1,5 @@
 name: Documentation
-description: A page on the documentation site is wrong, out of date or broken, or its English and Spanish versions disagree.
+description: A page on the documentation site is wrong, out of date or has a broken link, or its English and Spanish versions disagree.
 labels: [documentation]
 assignees: [jmrplens]
 body:
@@ -11,16 +11,23 @@ body:
         device, version or date, a broken link or capture, or an English page
         and its Spanish twin that say different things.
 
-        Two things go elsewhere. When the code and the page disagree and you
+        Three things go elsewhere. When the code and the page disagree and you
         cannot tell which is wrong, that is a
         [bug report](https://github.com/jmrplens/mikroscope/issues/new?template=1-bug-report.yml).
-        When an explanation simply did not land, ask in
+        So is a page that fails to load, a search that finds nothing, or a
+        layout that breaks on a phone or a desktop: that is the site itself,
+        the bug report's "The documentation site" part. When an explanation
+        simply did not land, ask in
         [Q&A](https://github.com/jmrplens/mikroscope/discussions/categories/q-a):
         the answer usually becomes a better page.
 
         The pages live under `site/src/content/docs/` and `site/src/content/docs/es/`.
         The Markdown under `docs/` in the repository is generated from the
         English pages, so a fix goes to the page and its twin, never to `docs/`.
+
+        **Never paste a credential** or the output of `/container/print detail`,
+        `/container/envs/print`, `/export` or `plan --rsc`, and replace the
+        router's public address or DDNS name in any output you quote.
   - type: input
     id: page
     attributes:
@@ -45,11 +52,10 @@ body:
       label: What is wrong
       options:
         - A claim the code or a measurement no longer supports
-        - A command or flag or output the tool does not have or print
-        - A number without its device or RouterOS version or date
+        - A command, flag or output the tool does not have or print
+        - A number without its device, RouterOS version or date
         - The English and Spanish pages say different things
-        - A broken link or anchor or image or capture
-        - The layout on a phone or a desktop
+        - A broken link, anchor, image or capture
         - Something else
     validations:
       required: true

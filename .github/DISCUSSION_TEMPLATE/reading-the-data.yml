@@ -8,8 +8,8 @@ body:
 
         Such a reading can be the router telling the truth about something
         nobody expected. On the reference RB5009 the kernel log reported a
-        layer-2 loop while every RouterOS API counter looked healthy, and a
-        Home Assistant MikroTik integration took the timer interrupts from
+        layer-2 loop while RouterOS's log and port monitor looked healthy, and
+        a Home Assistant MikroTik integration took the timer interrupts from
         about 2 500 to about 35 000 a second while user time stayed flat and
         RouterOS's own profile barely showed it. Both are written up in
         [How to read what it shows](https://jmrp.io/docs/mikroscope/playbooks/),
@@ -21,8 +21,11 @@ body:
         If it turns out mikroscope measured wrong, it becomes a bug report that
         links back here.
 
-        Crop addresses, host names and tokens out of screenshots. English or
-        Spanish, whichever you prefer.
+        Crop addresses, host names and tokens out of screenshots. **Never paste
+        a credential** or the output of `/container/print detail`,
+        `/container/envs/print`, `/export` or `plan --rsc`, and replace the
+        router's public address or DDNS name. English or Spanish, whichever you
+        prefer.
   - type: dropdown
     id: kind
     attributes:
@@ -56,7 +59,10 @@ body:
       label: What you see, and over which window
       description: >
         The dashboard and panel or the series, the window in UTC, and the
-        values. A screenshot helps. A kernel-log record is best pasted as text.
+        values. A screenshot helps. A kernel-log record is best pasted as text;
+        a MAC address in it can be replaced with one from the block RFC 7042
+        reserves for documentation, such as `00:00:5e:00:53:01`, if you would
+        rather not publish it.
     validations:
       required: true
   - type: textarea
@@ -64,9 +70,10 @@ body:
     attributes:
       label: What the router was doing then
       description: >
-        Traffic, a configuration change, a reboot, other containers, anything
-        that polls the RouterOS API (a monitoring system, a home-automation
-        integration). "Nothing that I know of" is an answer.
+        Traffic, a configuration change, a reboot, other containers (by name
+        and image, not `/container/print` output), anything that polls the
+        RouterOS API (a monitoring system, a home-automation integration).
+        "Nothing that I know of" is an answer.
     validations:
       required: true
   - type: textarea

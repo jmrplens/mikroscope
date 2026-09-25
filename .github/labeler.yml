@@ -26,11 +26,16 @@
 # every changed file has to be prose, a page's data or a capture. A list of
 # separate globs would not do it: the action needs ONE glob that matches every
 # file. docs/ is generated from site/src/content/docs and changes with it.
+# site/scripts/anchors.txt is in it because `pnpm run lint` fails until a
+# heading added or removed on a page is listed there, so a prose change that
+# touches a heading carries it. A new page is not docs-only: it has to be
+# claimed in site/scripts/gen-docs.mjs, and that change is the site's, so its
+# pull request is labelled site (4 of the 61 added a page).
 # Would have fired on 3 of the 61 pull requests (5 %).
 documentation:
   - changed-files:
       - any-glob-to-all-files:
-          - "{**/*.md,site/src/content/**,site/src/data/**,site/src/assets/**,.github/ISSUE_TEMPLATE/**,.github/DISCUSSION_TEMPLATE/**}"
+          - "{**/*.md,site/src/content/**,site/src/data/**,site/src/assets/**,site/scripts/anchors.txt,.github/assets/**,.github/ISSUE_TEMPLATE/**,.github/DISCUSSION_TEMPLATE/**}"
 
 # The files that state the security posture, and the code that enforces it:
 # the agent's token gate, the bounds on every value that reaches a RouterOS
@@ -90,14 +95,16 @@ distribution:
           - .github/RELEASING.md
 
 # The label .github/dependabot.yml asks for, so a bump made by hand and one
-# Dependabot opened land in the same filter.
-# Would have fired on 8 of the 61 pull requests (13 %).
+# Dependabot opened land in the same filter. site/package.json is left out:
+# it changes with every new pnpm script (#7, #58 and #60 changed only
+# "scripts"), and a dependency it names cannot change without the lock file,
+# because CI installs with --frozen-lockfile.
+# Would have fired on 5 of the 61 pull requests (8 %).
 dependencies:
   - changed-files:
       - any-glob-to-any-file:
           - go.mod
           - go.sum
-          - site/package.json
           - site/pnpm-lock.yaml
           - site/pnpm-workspace.yaml
 
@@ -130,7 +137,11 @@ agent:
 # What reads and writes a RouterOS device over ssh: doctor, plan, install,
 # status, upgrade, uninstall, and the image they upload. The review question is
 # the one CONTRIBUTING.md's "Working against a real router" asks: exact tags,
-# --dry-run first, one connection.
+# --dry-run first, one connection. cmd/mikroscope/main.go is left out on
+# purpose: it holds the first five and their flags, but also the usage text
+# that lists every verb, so a sink that adds its flag there (#35) would be
+# labelled router. Nine of the ten pull requests that touched it were
+# labelled router by another file.
 # Would have fired on 13 of the 61 pull requests (21 %).
 router:
   - changed-files:
@@ -205,7 +216,10 @@ dashboards:
           - site/scripts/gen-dashboard-captures.mjs
 
 # The documentation site's machinery, not its content: content is on the other
-# side of the docs-only line above. Review asks `make site-check`.
+# side of the docs-only line above. Review asks `make site-check`. Every
+# directory under site/src except the three that hold content, rather than a
+# list of today's four, so a new one (layouts/, i18n/) is the site's from its
+# first file; the two match the same 67 files today.
 # Would have fired on 17 of the 61 pull requests (28 %).
 site:
   - changed-files:
@@ -213,10 +227,7 @@ site:
           - site/*.{mjs,json}
           - site/.*
           - site/src/*.{ts,mjs}
-          - site/src/components/**
-          - site/src/styles/**
-          - site/src/lib/**
-          - site/src/pages/**
+          - "site/src/!(content|data|assets)/**"
           - site/scripts/*.mjs
           - site/public/**
           - .github/workflows/docs.yml
