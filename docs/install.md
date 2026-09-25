@@ -376,8 +376,8 @@ Two arguments, which are also the `VERSION` and `BIN_DIR` variables so they can
 be set through a pipe:
 
 ```sh
-curl -fsSL .../install.sh | VERSION=1.3.0 BIN_DIR=~/bin bash
-./install.sh --version 1.3.0 --dir ~/bin      # the same, with the file downloaded first
+curl -fsSL .../install.sh | VERSION=1.3.1 BIN_DIR=~/bin bash
+./install.sh --version 1.3.1 --dir ~/bin      # the same, with the file downloaded first
 ```
 
 The rest of this page is what those scripts do, one platform at a time, for
@@ -404,7 +404,7 @@ Anything whose name starts with `mikroscope-agent` is the other program.
   1. Download the archive and the checksums:
 
      ```sh
-     VERSION=1.3.0
+     VERSION=1.3.1
      curl -fsSLO https://github.com/jmrplens/mikroscope/releases/download/v$VERSION/mikroscope_${VERSION}_linux_x86_64.tar.gz
      curl -fsSLO https://github.com/jmrplens/mikroscope/releases/download/v$VERSION/checksums.txt
      ```
@@ -431,7 +431,7 @@ Anything whose name starts with `mikroscope-agent` is the other program.
      `darwin_x86_64` for Intel — and the checksums:
 
      ```sh
-     VERSION=1.3.0
+     VERSION=1.3.1
      curl -fsSLO https://github.com/jmrplens/mikroscope/releases/download/v$VERSION/mikroscope_${VERSION}_darwin_arm64.tar.gz
      curl -fsSLO https://github.com/jmrplens/mikroscope/releases/download/v$VERSION/checksums.txt
      ```
@@ -462,13 +462,13 @@ Anything whose name starts with `mikroscope-agent` is the other program.
   2. Check it in PowerShell, against the line for your file in `checksums.txt`:
 
      ```powershell
-     Get-FileHash .\mikroscope_1.3.0_windows_x86_64.zip -Algorithm SHA256
+     Get-FileHash .\mikroscope_1.3.1_windows_x86_64.zip -Algorithm SHA256
      ```
 
   3. Unpack it somewhere permanent and put that folder on your `PATH`:
 
      ```powershell
-     Expand-Archive .\mikroscope_1.3.0_windows_x86_64.zip -DestinationPath $HOME\mikroscope
+     Expand-Archive .\mikroscope_1.3.1_windows_x86_64.zip -DestinationPath $HOME\mikroscope
      $env:PATH += ";$HOME\mikroscope"
      ```
 
@@ -872,17 +872,17 @@ nothing uploaded:
 
 ```sh
 mikroscope install --router user@192.168.88.1 \
-  --remote-image jmrplens/mikroscope-agent:1.3.0
+  --remote-image jmrplens/mikroscope-agent:1.3.1
 ```
 
 Nothing is uploaded, no tar lands on the device, and `uninstall` has no file to
 account for: the container step becomes
-`/container/add remote-image="registry-1.docker.io/jmrplens/mikroscope-agent:1.3.0" …`
+`/container/add remote-image="registry-1.docker.io/jmrplens/mikroscope-agent:1.3.1" …`
 and the plan prints
-`the router pulls registry-1.docker.io/jmrplens/mikroscope-agent:1.3.0 (nothing is uploaded)`
+`the router pulls registry-1.docker.io/jmrplens/mikroscope-agent:1.3.1 (nothing is uploaded)`
 where the upload line would be. The release publishes the image twice, as
-`jmrplens/mikroscope-agent:1.3.0` on Docker Hub and as
-`ghcr.io/jmrplens/mikroscope-agent:1.3.0` on GHCR. Both carry `linux/amd64`,
+`jmrplens/mikroscope-agent:1.3.1` on Docker Hub and as
+`ghcr.io/jmrplens/mikroscope-agent:1.3.1` on GHCR. Both carry `linux/amd64`,
 `linux/arm64`, `linux/arm/v7` and `linux/arm/v5`, and RouterOS picks the one its
 architecture needs — which is why this route asks nothing about the board: the
 two kinds of 32-bit ARM MikroTik ships are both in the index.
@@ -895,9 +895,9 @@ registry, and it has to have room in RAM for the layers while it extracts them.
 mikroscope hands RouterOS the whole reference, registry host included. A
 reference with no host, as above, or one that starts with `docker.io/`,
 `index.docker.io/` or `registry.hub.docker.com/`, goes out as
-`registry-1.docker.io/jmrplens/mikroscope-agent:1.3.0`, the host Docker Hub's
+`registry-1.docker.io/jmrplens/mikroscope-agent:1.3.1`, the host Docker Hub's
 registry answers on; any other host is kept as given, so the GHCR reference goes
-out as `ghcr.io/jmrplens/mikroscope-agent:1.3.0`. RouterOS takes a registry host
+out as `ghcr.io/jmrplens/mikroscope-agent:1.3.1`. RouterOS takes a registry host
 there since [7.18](https://download.mikrotik.com/routeros/7.18/CHANGELOG), whose
 changelog lists "container - allow specifying registry using remote-image
 property", and mikroscope needs 7.24. So `/container/config registry-url`, one
@@ -952,7 +952,7 @@ The other side of that change: a reference with no host no longer follows
 `registry-url`. A router that reached Docker Hub through a mirror or a
 pull-through cache named there now pulls from `registry-1.docker.io` directly,
 on `install` as on `upgrade`. To keep using it, name that host in the
-reference, `--remote-image <mirror-host>/jmrplens/mikroscope-agent:1.3.0`,
+reference, `--remote-image <mirror-host>/jmrplens/mikroscope-agent:1.3.1`,
 which mikroscope sends as given; `upgrade` prints a `note` naming the
 `registry-url` host and that reference when the two hosts differ. A pull
 through a mirror named in the reference has not been tried on RouterOS.
@@ -998,7 +998,7 @@ from another machine at all:
 
 ```sh
 mikroscope plan --rsc \
-  --remote-image jmrplens/mikroscope-agent:1.3.0 \
+  --remote-image jmrplens/mikroscope-agent:1.3.1 \
   --out install.rsc
 ```
 
@@ -1151,7 +1151,7 @@ with EN7562CT CPU like the hEX Refresh, only arm32v5 container images are
 supported", and an ARMv5 image runs on
 every 32-bit ARM MikroTik ships, while an ARMv7 one does not run on those.
 
-1. Download `mikroscope_1.3.0_<os>_<arch>.tar.gz` (`.zip` on Windows) and the
+1. Download `mikroscope_1.3.1_<os>_<arch>.tar.gz` (`.zip` on Windows) and the
    agent image tar from the table above, together with `checksums.txt` and
    `checksums.txt.sigstore.json`.
 
@@ -1160,7 +1160,7 @@ every 32-bit ARM MikroTik ships, while an ARMv7 one does not run on those.
 3. Unpack the CLI and install:
 
    ```sh
-   tar xzf mikroscope_1.3.0_linux_x86_64.tar.gz
+   tar xzf mikroscope_1.3.1_linux_x86_64.tar.gz
    ./mikroscope install --router user@192.168.88.1 \
      --arch arm64 --agent-tar mikroscope-agent-arm64.tar
    ```
@@ -1183,7 +1183,7 @@ up with `scp`, RouterOS extracts it at add time, and `install` deletes it.
 > **Two assets have similar names**
 >
 > `mikroscope-agent-arm64.tar` is the side-loadable container image, the one `--agent-tar` wants.
-> `mikroscope-agent_1.3.0_linux_arm64.tar.gz` is an archive of the bare agent binary, for reading or
+> `mikroscope-agent_1.3.1_linux_arm64.tar.gz` is an archive of the bare agent binary, for reading or
 > running it outside a container; `--agent-tar` rejects it.
 
 #### Verifying the download
