@@ -13,7 +13,7 @@ collector for MikroTik RouterOS, needs first: which parts work end to end, on wh
 was shown, what the observer costs today, which defects are known and still open, and whether
 there is anything to download. It was checked against the code at 1.2.0 on 2026-09-24, and what
 1.2.1 and 1.2.2 changed was checked against the code at 1.2.2 the same day; the current release
-is [1.3.0](https://github.com/jmrplens/mikroscope/releases/tag/v1.3.0).
+is [1.3.1](https://github.com/jmrplens/mikroscope/releases/tag/v1.3.1).
 
 ### What works end to end
 
@@ -321,7 +321,7 @@ and the hardware watchdog at `/sys/class/watchdog/watchdog0`.
 
 ### What the release publishes
 
-The repository's [`VERSION`](https://github.com/jmrplens/mikroscope/blob/main/VERSION) file holds **1.3.0**, which the
+The repository's [`VERSION`](https://github.com/jmrplens/mikroscope/blob/main/VERSION) file holds **1.3.1**, which the
 changelog, [`CHANGELOG.md`](https://github.com/jmrplens/mikroscope/blob/main/CHANGELOG.md), dates 2026-09-25. It is
 compiled into both binaries and reported by `mikroscope version`, and the
 changelog says what every release changed. Not every number has a release of its own: 1.0.5, 1.0.8
@@ -341,8 +341,8 @@ configuration, which publishes:
   `mikroscope-agent-armv7.tar`, `mikroscope-agent-amd64.tar` (32-bit ARM is two:
   EN7562CT boards take only v5) — which `install --agent-tar` uploads to the
   router.
-- **The agent image in two registries**, `jmrplens/mikroscope-agent:1.3.0` on
-  Docker Hub and `ghcr.io/jmrplens/mikroscope-agent:1.3.0` on GHCR (each also
+- **The agent image in two registries**, `jmrplens/mikroscope-agent:1.3.1` on
+  Docker Hub and `ghcr.io/jmrplens/mikroscope-agent:1.3.1` on GHCR (each also
   tagged `latest`), each one manifest over `linux/amd64`, `linux/arm64`,
   `linux/arm/v7` and `linux/arm/v5`, which
   `install --remote-image` makes the router pull. mikroscope sends the whole
@@ -352,8 +352,8 @@ configuration, which publishes:
   [Nothing to set on the router](https://jmrp.io/docs/mikroscope/install/routes/#nothing-to-set-on-the-router)
   has what was measured. Up to 1.2.2 the host was left to `registry-url`, whose
   RouterOS default has not always been Docker Hub.
-- **The collector image**, `jmrplens/mikroscope:1.3.0` on Docker Hub and
-  `ghcr.io/jmrplens/mikroscope:1.3.0` on GHCR (each also tagged `latest`), over
+- **The collector image**, `jmrplens/mikroscope:1.3.1` on Docker Hub and
+  `ghcr.io/jmrplens/mikroscope:1.3.1` on GHCR (each also tagged `latest`), over
   `linux/amd64` and `linux/arm64`, for the compose stacks under [`deploy/`](https://github.com/jmrplens/mikroscope/tree/main/deploy).
 - **`checksums.txt`**, covering every archive and every image tar, a keyless
   cosign signature over it, and an SPDX SBOM per archive, signed in its own
@@ -386,7 +386,7 @@ The current mikroscope release and its date, read at build from VERSION and CHAN
 
 Source: <https://jmrp.io/docs/mikroscope/about/changelog/>
 
-The current release of mikroscope is [1.3.0](https://github.com/jmrplens/mikroscope/releases/tag/v1.3.0), released on 2026-09-25. Neither is typed
+The current release of mikroscope is [1.3.1](https://github.com/jmrplens/mikroscope/releases/tag/v1.3.1), released on 2026-09-25. Neither is typed
 on this page: both are read at build from the repository's `VERSION` file and from the dated heading
 that version has in `CHANGELOG.md`, and the site does not build when that heading is missing. The
 install commands on every page carry the same version, from the same file.
