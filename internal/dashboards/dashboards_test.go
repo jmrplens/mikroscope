@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 )
 
 // testPanel is the slice of a generated panel the assertions read. A
@@ -564,6 +565,66 @@ func TestPrometheusRateWindowsSurviveTheScrapeInterval(t *testing.T) {
 					"no data whenever $__interval falls below the scrape interval; use $__rate_interval or set MinInterval",
 					p.Title)
 			}
+		}
+	}
+}
+
+// TestInfluxDateBinPanelsFloorTheirIntervalAtOneSecond guards the zero-width
+// bin: Grafana's $__dateBin writes the whole seconds of the query's interval,
+// so below 1 s the panel reads "No data" or DATE_BIN refuses the query (see
+// dateBinFloor). Every InfluxDB panel that bins with it must carry a Min
+// interval of at least 1 s, on the panel and on each target, and
+// `dashboards check` must then send at least 1000 ms for it.
+func TestInfluxDateBinPanelsFloorTheirIntervalAtOneSecond(t *testing.T) {
+	_, top := parse(t, Influx)
+	binned := 0
+	for _, p := range charts(top) {
+		uses := false
+		for _, tg := range p.Targets {
+			if sql, _ := tg["rawSql"].(string); strings.Contains(sql, "$__dateBin") {
+				uses = true
+			}
+		}
+		if !uses {
+			continue
+		}
+		binned++
+		for _, tg := range p.Targets {
+			iv, _ := tg["interval"].(string)
+			d, err := time.ParseDuration(iv)
+			if err != nil || d < time.Second {
+				t.Errorf("panel %q target %v: interval %q; a $__dateBin panel needs at least 1s", p.Title, tg["refId"], iv)
+			}
+			if got := intervalMS(iv, 10*time.Minute); got < 1000 {
+				t.Errorf("panel %q: dashboards check would send %d ms over 10 minutes", p.Title, got)
+			}
+		}
+	}
+	if binned == 0 {
+		t.Fatal("no InfluxDB panel uses $__dateBin; the test no longer looks at anything")
+	}
+}
+
+func TestMinIntervalKeepsAWiderOrUnparsedOne(t *testing.T) {
+	binned := Panel{Queries: []string{"SELECT $__dateBin(time) AS time FROM x WHERE $__timeFilter(time) GROUP BY 1"}}
+	fixed := Panel{Queries: []string{"SELECT date_bin(interval '1 second', time) AS time FROM x WHERE $__timeFilter(time) GROUP BY 1"}}
+	for _, c := range []struct {
+		name  string
+		store Store
+		p     Panel
+		min   string
+		want  string
+	}{
+		{"binned, none set", Influx, binned, "", "1s"},
+		{"binned, narrower", Influx, binned, "500ms", "1s"},
+		{"binned, wider", Influx, binned, "1m", "1m"},
+		{"binned, Grafana-only unit", Influx, binned, "1d", "1d"},
+		{"fixed bin", Influx, fixed, "", ""},
+		{"not InfluxDB", Postgres, binned, "", ""},
+	} {
+		c.p.MinInterval = c.min
+		if got := minInterval(c.store, c.p); got != c.want {
+			t.Errorf("%s: minInterval = %q, want %q", c.name, got, c.want)
 		}
 	}
 }

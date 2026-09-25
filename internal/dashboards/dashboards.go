@@ -36,6 +36,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
+	"time"
 )
 
 // Store selects the query language.
@@ -675,8 +677,8 @@ func panelJSON(store Store, p Panel, id int, dsUID, pluginID string) map[string]
 		"fieldConfig": fieldConfigFor(store, p, typ),
 		"options":     optionsFor(p, typ),
 	}
-	if p.MinInterval != "" {
-		m["interval"] = p.MinInterval
+	if iv := minInterval(store, p); iv != "" {
+		m["interval"] = iv
 	}
 	if len(p.Transformations) > 0 {
 		tr := make([]any, len(p.Transformations))
@@ -722,12 +724,58 @@ func sqlTarget(t map[string]any, store Store, p Panel) {
 	}
 }
 
+// dateBinFloor is the narrowest bin $__dateBin can draw. Grafana's InfluxDB
+// SQL macro writes the query's interval as `interval '<n> second'`, n its
+// whole seconds, so an interval under 1 s becomes a bin of 0 seconds.
+// Measured through /api/ds/query against Grafana 13.2.1 and InfluxDB 3.11.2
+// Core in the docker e2e stack on 2026-09-25: intervalMs 1000 and 1500 both
+// expanded to `interval '1 second'` and 60000 to `interval '60 second'`,
+// while 1, 666 and 999 returned no frame and no error over points that were
+// there. On GitHub's runners on 2026-09-24 the same images answered 82 of the
+// 143 InfluxDB panels with `DATE_BIN stride must be non-zero` at 666 ms. And
+// on the reference deployment's Grafana 13.2.2 on 2026-09-25, "CPU busy per
+// core" over the last 5 minutes returned no frame at 200 and 500 ms and 899
+// rows over 15 minutes at 1000 ms. Grafana derives the interval from the
+// range and the panel's width in pixels, so a range under about 15 minutes
+// on a 900-pixel panel lands below 1 s and every such panel reads "No data"
+// exactly when someone zooms in; the browser's own interval was computed
+// here, not captured. The floor also keeps $__interval_ms, which the rate
+// denominators divide by, equal to the bin the macro actually drew.
+const dateBinFloor = time.Second
+
+// minInterval is the Min interval a panel ships with: its own, raised to
+// dateBinFloor for an InfluxDB panel whose SQL bins with $__dateBin.
+func minInterval(store Store, p Panel) string {
+	if store != Influx {
+		return p.MinInterval
+	}
+	binned := false
+	for _, q := range p.Queries {
+		if strings.Contains(q, "$__dateBin") {
+			binned = true
+			break
+		}
+	}
+	if !binned {
+		return p.MinInterval
+	}
+	// A Min interval Go cannot parse, such as Grafana's "1d", is the author's
+	// and is kept.
+	if p.MinInterval != "" {
+		if d, err := time.ParseDuration(p.MinInterval); err != nil || d >= dateBinFloor {
+			return p.MinInterval
+		}
+	}
+	return dateBinFloor.String()
+}
+
 func targetsFor(store Store, p Panel, dsUID, pluginID string) []any {
 	targets := make([]any, 0, len(p.Queries))
+	iv := minInterval(store, p)
 	for i, q := range p.Queries {
 		t := map[string]any{"refId": string(rune('A' + i)), "datasource": map[string]any{"type": pluginID, "uid": dsUID}, "__query": q}
-		if p.MinInterval != "" {
-			t["interval"] = p.MinInterval
+		if iv != "" {
+			t["interval"] = iv
 		}
 		switch {
 		case store.sql():
