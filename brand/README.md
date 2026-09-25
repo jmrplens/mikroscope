@@ -13,7 +13,7 @@ Run from the root of the repository, writing into this directory:
 ```sh
 go run ./cmd/gen_brand mark -out brand         # the mark and the favicon, per theme
 go run ./cmd/gen_brand compose -out brand      # the banner, the social image and the og:image
-go run ./cmd/gen_brand icons -out site/public  # the favicon and touch icons a web page asks for
+go run ./cmd/gen_brand icons -out site/public  # the favicon, the touch icons and the web app manifest a web page asks for
 ```
 
 `compose` reads the three `bg-*.png` backgrounds from the same directory it

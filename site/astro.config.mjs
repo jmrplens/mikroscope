@@ -322,6 +322,45 @@ export default defineConfig({
 						href: "/mikroscope/apple-touch-icon.png",
 					},
 				},
+				// The web app manifest, written by `gen_brand icons` beside the
+				// icons it names: 192, 512 and the maskable 512. Its URLs are
+				// relative to itself, so only this link carries the base path.
+				{
+					tag: "link",
+					attrs: { rel: "manifest", href: "/mikroscope/site.webmanifest" },
+				},
+				// The colour a browser paints its own chrome in, which is the
+				// header's colour in each theme: --ms-surface (#151c20) in the
+				// dark one, and in the light one --sl-color-gray-7, a mix of
+				// --ms-surface and the page that Chromium and WebKit both resolve
+				// to color(srgb 0.978431 0.982745 0.984902), #fafbfb once rounded
+				// (measured 2026-09-25). The header, because Safari 26 ignores
+				// theme-color and samples the fixed header instead, and Chrome
+				// reads these tags: matching the header keeps the two alike. Not
+				// the accent, which theme.css keeps for things a reader can act
+				// on. The dark value is the manifest's theme_color too.
+				// cmd/gen_brand's TestTheChromeColorIsTheHeaders recomputes both
+				// from theme.css and fails when either tag drifts from it.
+				//
+				// `media` follows the operating system's scheme, not Starlight's
+				// theme select: a reader who picks the opposite theme by hand
+				// gets browser chrome in the other colour. Known, and left.
+				{
+					tag: "meta",
+					attrs: {
+						name: "theme-color",
+						content: "#151c20",
+						media: "(prefers-color-scheme: dark)",
+					},
+				},
+				{
+					tag: "meta",
+					attrs: {
+						name: "theme-color",
+						content: "#fafbfb",
+						media: "(prefers-color-scheme: light)",
+					},
+				},
 			],
 			social: [
 				{
