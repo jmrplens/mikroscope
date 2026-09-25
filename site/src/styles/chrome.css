@@ -62,9 +62,8 @@
 
 /* Below md the mark already sits above the centred copy (Starlight's own
  * order). What changes is the padding, which Starlight sizes for a desktop
- * fold, and the actions: the primary one spans the column and the other two
- * share a row, so each tap target is still wide and the three cost two rows
- * of height instead of three. */
+ * fold, and the actions: the primary one spans the column and the rest share
+ * rows, so each tap target is still wide. */
 @media (max-width: 49.99rem) {
 	.hero {
 		padding-block: 1rem 0.5rem;
@@ -84,11 +83,27 @@
 		flex-wrap: wrap;
 		gap: 0.75rem;
 	}
+	/* The page has four actions, not three, and the three that shared a row
+	 * got equal thirds of it: 119, 133 and 83 px at 390, so "What it costs"
+	 * and "On GitHub" (ES "Lo que cuesta", "En GitHub") broke onto two lines,
+	 * 48 px tall beside a 40 px primary, and the borderless `minimal` link
+	 * sat between outlined pills like loose text (WebKit 390 and Chromium
+	 * 360, both locales, 2026-09-24). Labels stay on one line now; the two
+	 * outlined secondaries share the second row, and the minimal link, which
+	 * is a link and not a button, takes a row of its own under them.
+	 *
+	 * A zero basis, so the two that share a row are the same width: with
+	 * `auto` each got its label's width plus half the room left, and "What it
+	 * costs" and "Download" came out 166 and 180 px at WebKit 390 px. The
+	 * widest label in either locale needs 136 px (Chromium, "Descargar"), and
+	 * half the row is 158 px at 360 px (2026-09-24). */
 	.hero .actions .sl-link-button {
 		flex: 1 1 0;
 		justify-content: center;
+		white-space: nowrap;
 	}
-	.hero .actions .sl-link-button:first-child {
+	.hero .actions .sl-link-button:first-child,
+	.hero .actions .sl-link-button.minimal {
 		flex-basis: 100%;
 	}
 }
@@ -118,4 +133,63 @@
  * select's label. Header only: the drawer's footer select has its own row. */
 .header starlight-theme-select select {
 	width: calc(7.25em + var(--sl-inline-padding) * 2);
+}
+
+/* ------------------------------------------- Starlight's components, phone */
+
+/* Tabs. Starlight pads each tab 1.25rem a side and lets the label wrap, so at
+ * WebKit 390 px "InfluxDB / 3" and "With / Go" broke onto two lines and every
+ * tab grew to 47 px, and at Chromium 360 px the tab list overflowed by 27-42 px
+ * and cut its last tab to "PostgreS" or "Wit" with nothing saying it scrolled
+ * (dashboards/alerts and install/cli, both locales, 2026-09-24). A label is
+ * one line and the padding is what a phone can spare. Selected through the
+ * wrapper class so the rule outranks the component's own scoped one. */
+@media (max-width: 49.99rem) {
+	.sl-markdown-content .tablist-wrapper .tab > [role="tab"] {
+		padding-inline: 0.625rem;
+		white-space: nowrap;
+	}
+}
+
+/* An aside's icon on its title's first line, not the middle of the block: a
+ * title that wraps to three or four lines on a phone had the icon 11-21 px
+ * below the line it belongs to (es/reference/cli, es/install/routes,
+ * reference/environment, install, WebKit 390 px, 2026-09-24). The offset
+ * centres the icon on the first line: the icon is 1.333em of the title's
+ * size, so a line of the title is `line-height × 0.75` of the icon's em. */
+.starlight-aside__title {
+	align-items: flex-start;
+}
+
+.starlight-aside__title > .starlight-aside__icon {
+	flex-shrink: 0;
+	margin-top: calc((var(--sl-line-height-headings) * 0.75em - 1em) / 2);
+}
+
+/* The file tree's 1.5rem per level and 1rem of padding put 355 px of names in
+ * a 326 px box at Chromium 360 px, "mikroscope-alerts-influxdb.yar" cut at the
+ * edge with no sign it scrolled (dashboards, both locales, 2026-09-24). A
+ * level is still a step of 12 px, and the tree fits the box. */
+@media (max-width: 49.99rem) {
+	.sl-markdown-content starlight-file-tree {
+		--x-space: 0.75rem;
+		padding: 0.75rem 0.5rem;
+	}
+}
+
+/* Steps. Starlight's number rail is a 1.75rem bubble plus 1rem of gap, 44 px of
+ * a 358 px column at WebKit 390 px, and every line of every step starts after
+ * it (install/cli, install/prerequisites, install/routes, start/walkthrough,
+ * both locales, 2026-09-24): the indent the owner reported on the landing,
+ * whose steps have no rail now (home.css). On a phone the bubble is 1.375rem,
+ * still clear of its two-digit numbers at Starlight's 0.8125rem, and the gap
+ * 0.5rem: 30 px. The guide line and the first line's alignment are computed
+ * from `--bullet-size` by Starlight, so they follow. */
+@media (max-width: 49.99rem) {
+	.sl-markdown-content .sl-steps {
+		--bullet-size: 1.375rem;
+	}
+	.sl-markdown-content .sl-steps > li {
+		padding-inline-start: calc(var(--bullet-size) + 0.5rem);
+	}
 }

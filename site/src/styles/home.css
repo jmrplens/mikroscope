@@ -124,20 +124,62 @@
 
 /* ---------------------------------------------------------------- steps */
 
+/* The step numbers are drawn by a counter inside the code box's copy strip,
+ * not by the list's own markers in an indent.
+ *
+ * Each step opens with its command, and the browser puts an outside marker on
+ * the first line box, which is inside that command's scrolling `pre`: WebKit
+ * clipped it there, so Safari showed no numbers at all while the list still
+ * reserved a 24 px indent for them — the "indented to the right" the owner
+ * reported from an iPhone (WebKit at 390 and at 1280 px, both themes;
+ * Chromium drew "1." to "5." in the indent; 2026-09-24). The strip at the top
+ * of an untitled code box (components.css) is empty on its leading side, so
+ * the number sits there, against the copy button on the other side, and the
+ * command gets the column's whole width at every size. A number in `::before`
+ * keeps the list a list for WebKit's accessibility tree, which drops list
+ * semantics from `list-style: none` unless the items carry such a marker. */
 .sl-markdown-content .ms-steps {
 	display: grid;
-	gap: 0.75rem;
-	padding-inline-start: 1.5rem;
+	gap: 1.25rem;
+	padding-inline-start: 0;
+	list-style: none;
+	counter-reset: ms-step;
 }
 
-/* Not a grid: `display: grid` on an <li> drops its list-item marker, and the
- * step numbers are the point of an ordered list. */
 .ms-steps > li {
+	position: relative;
 	min-width: 0;
+	counter-increment: ms-step;
 }
 
+.ms-steps > li::before {
+	content: counter(ms-step);
+	position: absolute;
+	z-index: 2;
+	/* Centred in the strip, like the copy button on its other side, and as far
+	 * from the box's left edge as the button is from its right (the strip's
+	 * 0.5rem `padding-inline-end`, components.css). */
+	inset-block-start: calc((var(--ms-copy-strip, 2.125rem) - 1.5rem) / 2);
+	inset-inline-start: 0.5rem;
+	display: grid;
+	place-items: center;
+	inline-size: 1.5rem;
+	block-size: 1.5rem;
+	border: 1px solid var(--ms-border-strong);
+	border-radius: 50%;
+	color: var(--ms-heading);
+	font-size: var(--sl-text-xs);
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+	line-height: 1;
+	pointer-events: none;
+}
+
+/* Starlight gives the last block of a list item a 1.25rem bottom margin, which
+ * the grid's gap already provides. */
 .sl-markdown-content .ms-steps > li > p {
-	margin-top: 0.25rem;
+	margin-top: 0.375rem;
+	margin-bottom: 0;
 	color: var(--ms-body);
 }
 

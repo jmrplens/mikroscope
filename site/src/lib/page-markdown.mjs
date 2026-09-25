@@ -1074,6 +1074,13 @@ const EXPRESSION = /\{[^}\n]*\}/;
 // component. MDX renders the string, so the reduction does too.
 const JSX_STRING = /\{(?:"([^"\n]*)"|'([^'\n]*)')\}/g;
 
+// A heading's pinned id, `## Heading {#id}` (astro.config.mjs says why a page
+// pins one). The built page carries it as the heading's `id`. Markdown has no
+// such syntax, so GitHub would print the braces, and a twin's reader has no
+// use for them.
+const HEADING_ID =
+	/^([ \t]*#{1,6}[ \t].*?)[ \t]+\{[ \t]*#[^\s{}]+[ \t]*\}[ \t]*$/gm;
+
 /**
  * The body of one page as Markdown: the version placeholder replaced, code
  * protected, components resolved, imports dropped, blank lines tidied.
@@ -1106,10 +1113,9 @@ export function reduceBody({ body: page, file, locale }) {
 		},
 		assets: readImports(body),
 	};
-	const source = maskCode(stripImports(body)).replaceAll(
-		JSX_STRING,
-		(_, a, b) => a ?? b,
-	);
+	const source = maskCode(stripImports(body))
+		.replaceAll(HEADING_ID, "$1")
+		.replaceAll(JSX_STRING, (_, a, b) => a ?? b);
 	const markdown = unmask(tidy(reduce(source, context)).trim());
 	const left = EXPRESSION.exec(maskCode(markdown));
 	if (left) {

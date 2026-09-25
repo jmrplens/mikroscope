@@ -29,7 +29,7 @@ On top of them the collector adds what only it has: the RouterOS API tier's gaug
 the derive stage's values, its detection and gap counters, and the device-info
 families from the agent's `/capabilities`.
 
-<Aside type="caution" title="Sized for 10 Hz, whatever the agent runs at">
+<Aside type="caution" title="Sized for 10 Hz, whatever the agent runs at">
 	The collector sizes its `mikroscope_cpu_busy_ticks` histogram from a constant 10 Hz, not from the
 	connected agent, so the bucket layout does not change when it reconnects to an agent configured
 	differently. Read from the code, not measured, the same constant sets more than that, and against
@@ -63,6 +63,8 @@ There is nothing left to double-count, and no keep list to maintain.
 
 ### What the collector knows, and how
 
+<ScrollTable label="Where the collector's families come from">
+
 | Family                                                         | Where it comes from                                              |
 | -------------------------------------------------------------- | ---------------------------------------------------------------- |
 | every kernel-tier family                                       | folded from the samples, by the same code the agent used to run  |
@@ -71,6 +73,8 @@ There is nothing left to double-count, and no keep list to maintain.
 | `mikroscope_trigger_fired_total`, `_suppressed_total`          | the same, one series per configured condition, present at 0      |
 | `mikroscope_captures_held`, `mikroscope_capture_bytes`, `mikroscope_capture_budget_bytes`, `mikroscope_capture_bytes_served_total`, `mikroscope_capture_refused_total{reason}` | the same: what the agent holds, has served and has refused |
 | `mikroscope_api_*`, `mikroscope_derived_*`, `_collector_*`     | the collector's own: the API tier, the derive stage, its counters |
+
+</ScrollTable>
 
 The one thing that changed meaning: these figures are now as fresh as the collector's
 health cadence, a minute, rather than as fresh as the scrape. For counters of fired

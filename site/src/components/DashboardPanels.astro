@@ -8,10 +8,13 @@
  * store has no row at all, every panel would repeat the same words, and the
  * count table says it once. Titles are Grafana UI strings and stay English on
  * the Spanish page, marked `lang="en"` so a screen reader pronounces them as
- * such.
+ * such. A title keeps its values whole ("per 1 000 packets" broke as "1" /
+ * "000" at WebKit 390 px, 2026-09-24), by the rule the markdown pages get
+ * from src/lib/nowrap-values.mjs; the note after it keeps to one line.
  */
 import { isSection, panelsOf, sectionNames } from "../data/dashboards";
 import { langOf } from "../lib/lang";
+import { keepValues } from "../lib/nowrap-values.mjs";
 
 interface Props {
 	/** The row title, as the dashboard shows it. */
@@ -37,7 +40,7 @@ const titleLang = lang === "en" ? undefined : "en";
 	{
 		entries.map((e) => (
 			<li>
-				<span lang={titleLang}>{e.title}</span>
+				<span lang={titleLang}>{keepValues(e.title)}</span>
 				{e.only !== null && stores.length === 2 && <span class="ms-panel-only">{` — ${t(ONLY[e.only])}`}</span>}
 			</li>
 		))

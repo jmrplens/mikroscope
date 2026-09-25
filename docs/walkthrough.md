@@ -166,7 +166,7 @@ them. Most flags have no variable at all —
    time, for a machine where `curl | bash` is not something to type:
 
    ```sh wrap
-   tar xzf mikroscope_1.2.2_linux_x86_64.tar.gz   # a .zip on Windows
+   tar xzf mikroscope_1.3.0_linux_x86_64.tar.gz   # a .zip on Windows
    ./mikroscope version
    ```
 
@@ -176,8 +176,8 @@ them. Most flags have no variable at all —
    travels separately, as four image tars, one per architecture
    (`mikroscope-agent-amd64.tar`, `-arm64`, `-armv5`, `-armv7` — 32-bit ARM was split in two in
    1.0.2, and the wrong tar is an `exec format error`) and as a registry image, published both as
-   `jmrplens/mikroscope-agent:1.2.2` on Docker Hub and as
-   `ghcr.io/jmrplens/mikroscope-agent:1.2.2` on GHCR; step 2 takes one of the two.
+   `jmrplens/mikroscope-agent:1.3.0` on Docker Hub and as
+   `ghcr.io/jmrplens/mikroscope-agent:1.3.0` on GHCR; step 2 takes one of the two.
 
    From a checkout instead:
 
@@ -219,9 +219,9 @@ them. Most flags have no variable at all —
      checkout. The CLI reads the tar before it uploads it — it has to be a mikroscope agent image
      and its architecture has to match `--arch`, or the verb stops and names the asset to download
      instead;
-   - **the registry**, `--remote-image jmrplens/mikroscope-agent:1.2.2`: the router pulls the image
+   - **the registry**, `--remote-image jmrplens/mikroscope-agent:1.3.0`: the router pulls the image
      itself, nothing is uploaded, and `uninstall` has no file to account for. mikroscope hands
-     RouterOS the whole reference, `registry-1.docker.io/jmrplens/mikroscope-agent:1.2.2`,
+     RouterOS the whole reference, `registry-1.docker.io/jmrplens/mikroscope-agent:1.3.0`,
      so the global `/container/config registry-url`, which every container on the device shares,
      does not decide the pull: nothing is set there first and mikroscope never writes it. No
      registry login is needed either. On the reference router the host inside `remote-image=` overrode
@@ -229,9 +229,9 @@ them. Most flags have no variable at all —
      agent with the device's registry username and password cleared (verified
      on RB5009UG+S+, RouterOS 7.24.4, 2026-09-24); a router with `registry-url` at its factory
      default has not been tried. The GHCR reference,
-     `ghcr.io/jmrplens/mikroscope-agent:1.2.2`, goes out with its own host the same way.
+     `ghcr.io/jmrplens/mikroscope-agent:1.3.0`, goes out with its own host the same way.
      Since 1.2.0 `doctor` prints `WARN` when `/container/config` holds a registry username that may
-     not belong to the registry of the pull; after 1.2.2 it decides that by comparing the host
+     not belong to the registry of the pull; since 1.3.0 it decides that by comparing the host
      `registry-url` names with the one the image comes from. That one credential is for the whole
      device, and a Docker Hub account sent to GHCR ended a pull in `auth error`. A `WARN` does not
      stop `install`. The pull needs the router to reach the registry and the free RAM
@@ -242,7 +242,7 @@ them. Most flags have no variable at all —
    if they differ.
 
    On a router you only reach through WinBox or WebFig, there is a fourth way with no CLI on your
-   side at all: `mikroscope plan --rsc --remote-image jmrplens/mikroscope-agent:1.2.2 --out install.rsc`
+   side at all: `mikroscope plan --rsc --remote-image jmrplens/mikroscope-agent:1.3.0 --out install.rsc`
    writes the same commands, in the same order and with the same tags, as a RouterOS script to
    paste into the terminal or `/import`. [Installing the agent](https://jmrp.io/docs/mikroscope/install/) has that path
    and its two caveats in full.

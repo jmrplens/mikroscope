@@ -94,7 +94,7 @@ ARMv5 funciona en las dos, una ARMv7 no arranca en las primeras. Así que:
 mikroscope 1.2.2 y anteriores ponían la referencia en `remote-image=` sin su
 host de registro, así que RouterOS tomaba el host de `/container/config
 registry-url`, un único ajuste para todo el equipo, y `doctor` comparaba ese
-ajuste con las referencias que nombraban un host. mikroscope después de la 1.2.2
+ajuste con las referencias que nombraban un host. Desde la 1.3.0, mikroscope
 envía la referencia entera, con el host del registro incluido, y ni comprueba el
 ajuste ni lo necesita: en el router de referencia el host dentro de
 `remote-image=` mandó sobre `registry-url` (verificado

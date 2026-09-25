@@ -8,14 +8,21 @@
  * A campaign whose source records no date says "date not recorded" instead of
  * borrowing one. Dates stay ISO in both locales, which is unambiguous in both.
  *
- * Segments are separated by " · " with ordinary spaces, so a phone wraps
- * between them; inside a segment the spaces are U+00A0, so "RouterOS 7.24.2"
- * never splits. The conditions are a clause, not a segment, and wrap freely.
+ * Segments are separated by " · ", a U+00A0 before the dot and an ordinary
+ * space after it, so a phone wraps between segments and the dot ends the line
+ * it closes. With ordinary spaces on both sides WebKit broke before the dot,
+ * and a line started "· 2026-09-12 · agent at…" in one block of 12 English
+ * pages (WebKit 390 px, 2026-09-24; Chromium never did). Inside a segment
+ * the spaces are U+00A0, so "RouterOS 7.24.2" never splits. The conditions
+ * are a clause, not a segment, and wrap freely, except inside a value: they
+ * are data strings the markdown pass never sees, so CodeText gives them the
+ * same src/lib/nowrap-values.mjs rule ("a 60 s ring" broke as "60" / "s" on
+ * six pages at WebKit 390 px, 2026-09-24).
  */
 import { campaigns, describeCpu, isCampaignId } from "../data/measurements";
-import { codeSpans, unbreakable } from "../lib/format";
+import { unbreakable } from "../lib/format";
 import { langOf } from "../lib/lang";
-import InlineCode from "./InlineCode.astro";
+import CodeText from "./CodeText.astro";
 
 interface Props {
 	of: string;
@@ -30,6 +37,7 @@ if (of === "image" || of === "image-v100") {
 	throw new Error("Provenance: the image size was not measured on a device; say where it comes from in prose");
 }
 const c = campaigns[of];
+const SEP = "\u00a0· ";
 const lang = langOf(Astro.locals.starlightRoute);
 const t = Astro.locals.t;
 // The short facts, each kept on one line. U+00A0 alone was not enough:
@@ -48,12 +56,12 @@ const facts = [
 	{
 		facts.map((fact, i) => (
 			<Fragment>
-				{i > 0 && " · "}
+				{i > 0 && SEP}
 				<span class="ms-provenance-fact">{fact}</span>
 			</Fragment>
 		))
 	}
-	{" · "}
+	{SEP}
 	{
 		c.date === null ? (
 			t("ms.provenance.undated")
@@ -63,6 +71,6 @@ const facts = [
 			</time>
 		)
 	}
-	{" · "}
-	{codeSpans(c.conditions[lang]).map((part) => (part.code ? <InlineCode text={part.text} /> : part.text))}
+	{SEP}
+	<CodeText text={c.conditions[lang]} />
 </p>

@@ -9,9 +9,8 @@
  * change a page's outline or the parity gate's heading ladder.
  */
 import { isRouterCommand, routerObjects } from "../data/router-objects";
-import { codeSpans } from "../lib/format";
 import { langOf } from "../lib/lang";
-import InlineCode from "./InlineCode.astro";
+import CodeText from "./CodeText.astro";
 
 interface Props {
 	command: string;
@@ -39,23 +38,23 @@ const verifies = command === "install" || command === "uninstall";
 
 <div class="ms-writes" data-writes={command}>
 	<p class="ms-writes-title">
-		{codeSpans(t(TITLES[command])).map((p) => (p.code ? <InlineCode text={p.text} /> : p.text))}
+		<CodeText text={t(TITLES[command])} />
 	</p>
 	<ul>
 		{
 			routerObjects[command].map((o) => (
-				<li>{codeSpans(o[lang]).map((p) => (p.code ? <InlineCode text={p.text} /> : p.text))}</li>
+				<li><CodeText text={o[lang]} /></li>
 			))
 		}
 	</ul>
 	<p>
 		{t("ms.writes.tag")}{" "}
-		<code class="ms-writes-tag">{"mikroscope:<name> (managed by mikroscope)"}</code>
+		<code class="ms-writes-tag"><span class="ms-code-unit">{"mikroscope:<name>"}</span>{" (managed by mikroscope)"}</code>
 	</p>
-	<p>{codeSpans(t("ms.writes.plan")).map((p) => (p.code ? <InlineCode text={p.text} /> : p.text))}</p>
+	<p><CodeText text={t("ms.writes.plan")} /></p>
 	{
 		verifies && (
-			<p>{codeSpans(t("ms.writes.verify")).map((p) => (p.code ? <InlineCode text={p.text} /> : p.text))}</p>
+			<p><CodeText text={t("ms.writes.verify")} /></p>
 		)
 	}
 </div>

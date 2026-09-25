@@ -39,8 +39,42 @@
 /* ------------------------------------------------------ Inline code */
 
 /* Set by src/lib/inline-code.mjs on short inline code and on a long one's
- * leading flag, so `--for` never renders as "-" / "-for". */
+ * flags, so `--for` never renders as "-" / "-for". */
 .sl-markdown-content .ms-code-nowrap {
+	white-space: nowrap;
+}
+
+/* A chip and the characters that touch it, "(`--for`),", drawn as one box.
+ *
+ * As a nowrap inline, a chip that did not fit the rest of its line made
+ * WebKit paint the word before it twice, "the list your / your
+ * `in-interface-list=!…`" (install/prerequisites, reference/cli,
+ * playbooks/flash-wear, sinks/api-tier; WebKit 390 px, 2026-09-24). A box does
+ * not, and the characters it takes (src/lib/inline-code.mjs) are what an
+ * atomic inline would otherwise let loose: without them it left "(" at a line
+ * end and opened the next line with ")", "," or ":" 123 times at WebKit 390 px,
+ * 161 at Chromium 360 px and 186 at Chromium 1280 px (all 116 pages). The
+ * chip inside the box stays an inline, so its padding does not make a line
+ * taller: page heights with the boxes and without them differ only where a
+ * line breaks in another place (a whole line, on 3-8 of 116 pages per
+ * engine) and by 0.8 px on two pages at Chromium 360 px (2026-09-25). */
+.ms-code-unit {
+	display: inline-block;
+	white-space: nowrap;
+}
+
+/* A box does not take the underline of a link around it (CSS Text Decoration
+ * 3 §2.1: decorations do not propagate into atomic inlines), so "[What
+ * `--expose` opens](…)" showed its chip without the line under the rest. */
+a > .ms-code-unit {
+	text-decoration: inherit;
+}
+
+/* ------------------------------------------------------ Values in prose */
+
+/* Set by src/lib/nowrap-values.mjs on an ISO date in running text, which
+ * otherwise breaks at a hyphen: "2026-09-" / "18". */
+.ms-nowrap {
 	white-space: nowrap;
 }
 
@@ -87,8 +121,13 @@
 	vertical-align: top;
 }
 
+/* Not when the last column is short: ScrollTable's script marks a table whose
+ * last column never holds more than a few words, where the minimum took 224 px
+ * for values like "12" and `pgscan_kswapd > 0` and squeezed the columns that
+ * do hold text to 44-89 px, one word per line (record/triggers and
+ * sinks/derive at WebKit 390 px, 2026-09-24). */
 .sl-markdown-content
-	.ms-scroll:not([data-nowrap])
+	.ms-scroll:not([data-nowrap], [data-short-last])
 	:is(th, td):last-child:not(:first-child) {
 	min-width: 14rem;
 }
@@ -124,6 +163,12 @@
 	box-shadow:
 		-2px 0 0 var(--ms-page),
 		inset -1px 0 0 var(--ms-border);
+	/* The shadow is the column's rule, so the collapsed border it replaces is
+	 * hidden: with both, the rule was two 1 px lines half a pixel apart before
+	 * any scrolling (cost/rate-ceiling, about/brand, about/status, dashboards
+	 * and the landing, WebKit and Chromium, both themes, 2026-09-24). `hidden`
+	 * wins the collapsed-border conflict with the next cell's border. */
+	border-inline-end-style: hidden;
 }
 
 .sl-markdown-content .ms-scroll[data-sticky] thead th:first-child {
@@ -157,20 +202,34 @@
 	white-space: nowrap;
 }
 
+/* Cards are further apart than the fields inside one, so a card reads as a
+ * unit. It was the other way round: once a cell is a block, Starlight's
+ * sibling rule (`:not(…) + :not(…) { margin-top: 1rem }`) put 16 px above
+ * every field while the cards were 8 px apart, and the fields of one card
+ * drifted into the next. At WebKit 390 px the 208 stacked tables on 75 pages
+ * came to 491 627 px, 32 523 of them on reference/metrics; with these rules,
+ * 418 719 and 27 819 (201 tables: 7 now fit as tables, see
+ * `data-short-last`; 2026-09-24). */
 .sl-markdown-content .ms-scroll[data-stacked] tbody tr {
 	border: 1px solid var(--ms-border);
 	border-radius: var(--ms-radius);
-	padding-block: 0.25rem;
+	padding-block: 0.375rem;
 }
 
 .sl-markdown-content .ms-scroll[data-stacked] tbody tr + tr {
-	margin-top: 0.5rem;
+	margin-top: 0.75rem;
 }
 
+/* `text-align: start` because a card is read down its leading edge: a number
+ * column's `.ms-num` and a markdown `---:` column (an inline `text-align:
+ * right`, hence the !important) left "Rules / 14" and "Threshold (C) / < 1"
+ * alone against the card's far edge (dashboards/alerts, both locales). */
 .sl-markdown-content .ms-scroll[data-stacked] :is(th, td) {
 	border: 0;
 	min-width: 0;
+	margin: 0;
 	padding: 0.2rem 0.6rem;
+	text-align: start !important;
 }
 
 .sl-markdown-content .ms-scroll[data-stacked] :is(th, td):first-child {
@@ -190,6 +249,16 @@
 	color: var(--ms-muted);
 	font-size: var(--sl-text-xs);
 	font-weight: 600;
+}
+
+/* A header that was code (`--arch`, `reason`) is code as a label too: the
+ * label is its text only, and lost the monospace that said it was a name to
+ * type (install/prerequisites, limits/source-floors, 2026-09-24). */
+.sl-markdown-content
+	.ms-scroll[data-stacked]
+	:is(th, td)[data-label-code]::before {
+	font-family: var(--sl-font-mono);
+	font-weight: 400;
 }
 
 .sl-markdown-content .ms-scroll-hint {
@@ -288,7 +357,12 @@
 	font-weight: 600;
 }
 
-/* The 41-character tag breaks at its spaces on a phone, never mid-word. */
+/* The 41-character tag breaks at its spaces on a phone, never mid-word. Its
+ * name, `mikroscope:<name>`, is a unit (RouterWrites.astro): as plain text
+ * WebKit broke it after the colon, "mikroscope:" / "<name> (managed by
+ * mikroscope)", in the Spanish box at 390 px (2026-09-24), where the lead-in
+ * is longer. The whole tag is about 345 px of mono and does not fit the box's
+ * 322 px on a phone, so the rest still breaks at its spaces. */
 .ms-writes-tag {
 	white-space: normal;
 	overflow-wrap: normal;
@@ -296,11 +370,26 @@
 
 /* --------------------------------------------------------------- SeeAlso */
 
+/* The page's last section, set off like one. With only Starlight's 1rem above
+ * it, where an h2 gets 1.5em, the box sat on the aside or NotClaimed before
+ * it and the two read as one group; inside, the heading was 4 px from the
+ * top edge against 16 px at the sides (every page, both engines, 2026-09-24). */
 .sl-markdown-content .ms-see-also {
 	background: var(--ms-surface);
 	border: 1px solid var(--ms-border);
 	border-radius: var(--ms-radius);
-	padding: 0.25rem 1rem 1rem;
+	padding: 0.75rem 1rem 1rem;
+	margin-top: 2.5rem;
+}
+
+/* Lists in a box take a hanging indent, not the browser's 40 px, which came on
+ * top of the box's own padding: the text started 57-59 px into a 358 px
+ * column and kept 282 px of it (See also, RouterWrites and FaultSignature,
+ * WebKit 390 px and Chromium 360 px, 2026-09-24). The box's edge already says
+ * where the list is. The same at every width: at 1280 px it was 40 px of a
+ * 616 px column for nothing. */
+.sl-markdown-content :is(.ms-see-also, .ms-writes, .ms-fault) :is(ul, ol) {
+	padding-inline-start: 1.25rem;
 }
 
 /* ≥ 24 px tap targets between stacked links (WCAG 2.5.8). */
@@ -378,6 +467,9 @@
  * title, so it is quieter, and still a word, never only a colour. */
 .ms-panel-only {
 	color: var(--ms-muted);
+	/* "— InfluxDB only" is one note: 18 of the 39 on /dashboards/ broke as
+	 * "—" / "InfluxDB only" or "InfluxDB" / "only" at 390 px (2026-09-24). */
+	white-space: nowrap;
 }
 
 /* ----------------------------------------------------------------- Charts */
@@ -388,6 +480,13 @@
  * from reading as a bare white block on the dark page. */
 .sl-markdown-content .ms-chart-link {
 	display: block;
+}
+
+/* Starlight's sibling spacing skips `a`, so the chart's frame touched the
+ * heading above it, 0 px where every other block gets 16 (start/walkthrough,
+ * at 390 and 1280 px, 2026-09-24). */
+.sl-markdown-content * + .ms-chart-link {
+	margin-top: var(--sl-content-gap-y);
 }
 
 .sl-markdown-content .ms-chart {
@@ -425,8 +524,8 @@
  *     tall at the default font size (measured 2026-09-17) — and the button now
  *     sits in it, against the right edge.
  *   * A frame with no title and no terminal chrome has its header set to
- *     `display: none` by Expressive Code, so one is made: the frame gets top
- *     padding the button lives in, and the code starts below it.
+ *     `display: none` by Expressive Code, so one is made: the code box itself
+ *     gets top padding the button lives in, and the code starts below it.
  *
  * Either way it is opaque at rest, on every pointer type, and it overlaps
  * nothing. */
@@ -441,17 +540,38 @@
 	padding-inline-end: 0.5rem;
 }
 
-/* The strip for a frame that has no header of its own. `:has()` is what tells
- * the two apart without a class: a terminal frame's figcaption is displayed,
- * an untitled frame's is not. */
-.expressive-code .frame:not(.is-terminal):not(.has-title) {
+/* The strip for a frame that has no header of its own; Expressive Code's own
+ * classes tell a terminal frame and a titled one apart from it.
+ *
+ * The strip is padding on the `pre`, not on the frame. On the frame it lay
+ * outside the box that paints the code's ground and border, so every untitled
+ * block showed its copy button floating over a bare, page-coloured band above
+ * the code: all 416 untitled-frame measurements on 50 pages, WebKit 390 px
+ * and Chromium 360 px, both themes, and the same band at 1280 px (detector
+ * check c, 2026-09-24; 0 after). Inside the `pre` the strip takes the code's
+ * background, border and corners in both themes, and a long line's
+ * horizontal scroll never moves it. Expressive Code's own 0.75rem above the
+ * first line is trimmed under it, because the strip already keeps that line
+ * off the box's edge: kept, the line would start 2.875rem into the box and
+ * end 0.75rem from its bottom. */
+.expressive-code .frame:not(.is-terminal):not(.has-title) pre {
 	padding-block-start: var(--ms-copy-strip, 2.125rem);
+}
+
+.expressive-code .frame:not(.is-terminal):not(.has-title) pre > code {
+	padding-block-start: 0.125rem;
 }
 
 /* The button itself. Expressive Code draws the clipboard glyph as a masked
  * ::after on the button and the "Copied!" tooltip as a ::before on a sibling
  * div, so only the box, the colours and the states are the site's business. */
 .expressive-code .copy button {
+	/* Centred in the strip. Expressive Code sets `align-self: flex-end`, which
+	 * beat the strip's `align-items: center` and sat the button on the strip's
+	 * bottom edge, 6 px from its top and 0 from the code: 3 px lower than the
+	 * landing's step numbers centred in the same strip (WebKit 390 px and
+	 * Chromium 360 px, 2026-09-24). */
+	align-self: center;
 	opacity: 1;
 	inline-size: 1.75rem;
 	block-size: 1.75rem;
@@ -493,6 +613,28 @@
 	block-size: 2.125rem;
 }
 
+/* ------------------------------------------------ Expressive Code `wrap` */
+
+/* A fence marked `wrap` (start/walkthrough, both locales) wraps long lines,
+ * and Expressive Code lets them break anywhere, `overflow-wrap: break-word`:
+ * "--e|phemeral", "&|&", "192.16|8.88.1", "-|-log-markers", 17-18 breaks per
+ * page in each engine at 390 and 360 px (2026-09-24). A reader copying by eye
+ * sees a different flag, the failure src/lib/inline-code.mjs exists to stop
+ * in inline code. No `overflow-wrap` value stops the break after a hyphen,
+ * so src/lib/code-wrap-words.mjs puts each space-separated word of such a
+ * line in a `.ms-code-word`, drawn here as one inline block: a word that
+ * fits the box moves to the next line whole. A long word is also cut into
+ * `.ms-code-piece` blocks where inline code of the same text may break, and
+ * a word wider than the box breaks between those, and a piece wider than
+ * the box where the box ends, instead of running under its edge. Expressive
+ * Code already resets `text-indent` on every element inside a line, so a
+ * word keeps no share of the line's hanging indent. */
+.expressive-code pre.wrap .ec-line .code :is(.ms-code-word, .ms-code-piece) {
+	display: inline-block;
+	max-inline-size: 100%;
+	overflow-wrap: anywhere;
+}
+
 /* ------------------------------------------------- Inline code, two details */
 
 /* A chip's trailing padding sits between its last glyph and the punctuation
@@ -514,6 +656,21 @@
 .sl-markdown-content :not(pre) > code {
 	-webkit-box-decoration-break: clone;
 	box-decoration-break: clone;
+}
+
+/* Code in a heading is set in the heading's own voice: monospace, a little
+ * smaller, no chip. Starlight keeps it at the heading's full size, and with
+ * the chip's fill and its em-sized padding a 24-29 px code heading became a
+ * grey slab that started 9 px right of every other heading, one box per
+ * wrapped line (reference/troubleshooting, reference/http, glossary). At
+ * Chromium 360 px `uninstall --targets data`, one unbreakable chip, ran 20 px
+ * out of its block and 8 px off the screen, and widened the page (detector
+ * checks a, b and f, 2026-09-24). */
+.sl-markdown-content :is(h1, h2, h3, h4, h5, h6) code {
+	font-size: 0.875em;
+	background: none;
+	padding: 0;
+	margin: 0;
 }
 
 /* ------------------------------------------- The phone's "On this page" menu */

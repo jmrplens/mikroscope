@@ -6,17 +6,32 @@
  * Without it the doctor checks on reference/cli rendered `--memory-max` as
  * "-" / "-memory-max" at 390 px (2026-09-15), because the markdown plugin
  * never sees code a component renders.
+ *
+ * Short code is drawn as a unit, `.ms-code-unit`, with `before` and `after`,
+ * the characters that touch it in the string it came from (codeRuns, used by
+ * <CodeText>); inline-code.mjs says why. `unit={false}` leaves the unit to the
+ * page: <Src> is written inline in MDX, where the markdown plugin draws the
+ * unit around the whole link and the punctuation beside it.
  */
-import { inlineCodeParts } from "../lib/inline-code.mjs";
+import { inlineCodeParts, keepClass } from "../lib/inline-code.mjs";
 
 interface Props {
 	text: string;
 	class?: string;
+	before?: string;
+	after?: string;
+	unit?: boolean;
 }
 
-const { text, class: extra } = Astro.props;
+const { text, class: extra, before = "", after = "", unit = true } = Astro.props;
 const { nowrap, parts } = inlineCodeParts(text);
 const className = [extra, nowrap ? "ms-code-nowrap" : undefined].filter(Boolean).join(" ") || undefined;
 ---
 
-<code class={className}>{parts.map((p) => (p.kind === "wbr" ? <wbr /> : p.kind === "keep" ? <span class="ms-code-nowrap">{p.value}</span> : p.value))}</code>
+{
+	nowrap && unit ? (
+		<span class="ms-code-unit">{before}<code class={className}>{text}</code>{after}</span>
+	) : (
+		<Fragment>{before}<code class={className}>{parts.map((p) => (p.kind === "wbr" ? <wbr /> : p.kind === "keep" ? <span class={keepClass(p)}>{p.value}</span> : p.value))}</code>{after}</Fragment>
+	)
+}

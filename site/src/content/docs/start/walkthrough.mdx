@@ -143,7 +143,7 @@ them. Most flags have no variable at all —
      default has not been tried. The GHCR reference,
      `ghcr.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}`, goes out with its own host the same way.
      Since 1.2.0 `doctor` prints `WARN` when `/container/config` holds a registry username that may
-     not belong to the registry of the pull; after 1.2.2 it decides that by comparing the host
+     not belong to the registry of the pull; since 1.3.0 it decides that by comparing the host
      `registry-url` names with the one the image comes from. That one credential is for the whole
      device, and a Docker Hub account sent to GHCR ended a pull in `auth error`. A `WARN` does not
      stop `install`. The pull needs the router to reach the registry and the free RAM

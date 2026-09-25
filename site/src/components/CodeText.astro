@@ -4,9 +4,20 @@
  *
  * The data files keep a flag or a path in backticks so that one string serves
  * both a table cell and a sentence; this turns it into markup without
- * `set:html`, which the MDX pipeline here mangles (astro.config.mjs).
+ * `set:html`, which the MDX pipeline here mangles (astro.config.mjs). Each
+ * short code is drawn as a unit with the punctuation that touches it
+ * (codeRuns in src/lib/inline-code.mjs).
+ *
+ * The text between the codes gets the value rule the markdown pages get from
+ * src/lib/nowrap-values.mjs, which never sees a component's output: a date
+ * stays on one line, a number keeps its unit. Without it the doctor-checks
+ * table broke "2026-" / "09-21" in Chromium at 360 px (Spanish,
+ * install/prerequisites and reference/cli), and "64 MiB", "16 MiB" and
+ * "85 %" in the doctor, envlist and alert tables were free to split
+ * (2026-09-25).
  */
-import { codeSpans } from "../lib/format";
+import { codeRuns } from "../lib/inline-code.mjs";
+import { valueParts } from "../lib/nowrap-values.mjs";
 import InlineCode from "./InlineCode.astro";
 
 interface Props {
@@ -16,4 +27,12 @@ interface Props {
 const { text } = Astro.props;
 ---
 
-{codeSpans(text).map((p) => (p.code ? <InlineCode text={p.text} /> : p.text))}
+{
+	codeRuns(text).map((p) =>
+		p.kind === "code" ? (
+			<InlineCode text={p.value} before={p.before} after={p.after} />
+		) : (
+			valueParts(p.value).map((v) => (v.kind === "date" ? <span class="ms-nowrap">{v.value}</span> : v.value))
+		),
+	)
+}

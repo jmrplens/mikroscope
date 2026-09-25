@@ -69,6 +69,13 @@
 
 	--ms-mark-highlight: #3b3413;
 	--ms-shadow: rgb(0 0 0 / 0.45);
+	/* The ground of an inline code chip. Starlight's own is gray-5 in dark and
+	 * gray-6 in light, and light gray-6 is `--ms-surface`, the ground of See
+	 * also, FaultSignature and every table header: there a chip matched its box
+	 * at 1.00:1 and only its uneven padding showed, as a stray space
+	 * (238 chips on 84 pages, 2026-09-24). Its own token, one step off every
+	 * ground a chip sits on, in both themes. */
+	--ms-code-bg: #2a333a; /* 1.45:1 against the page, 1.34:1 a surface */
 
 	--ms-radius: 0.5rem;
 	/* The width of a rule that carries meaning: NotClaimed's dashed edge and
@@ -85,6 +92,7 @@
 	--sl-color-gray-6: var(--ms-surface);
 	--sl-color-gray-7: color-mix(in srgb, var(--ms-surface) 55%, var(--ms-page));
 	--sl-color-black: var(--ms-page);
+	--sl-color-bg-inline-code: var(--ms-code-bg);
 
 	--sl-color-accent-low: var(--ms-accent-soft);
 	--sl-color-accent: var(--ms-accent);
@@ -140,6 +148,7 @@
 
 	--ms-mark-highlight: #fff0c9;
 	--ms-shadow: rgb(14 19 22 / 0.14);
+	--ms-code-bg: #dfe5e8; /* 1.27:1 against the page, 1.18:1 a surface */
 
 	--sl-color-white: var(--ms-heading);
 	--sl-color-gray-1: color-mix(in srgb, var(--ms-heading) 65%, var(--ms-body));
@@ -150,6 +159,7 @@
 	--sl-color-gray-6: var(--ms-surface);
 	--sl-color-gray-7: color-mix(in srgb, var(--ms-surface) 55%, var(--ms-page));
 	--sl-color-black: var(--ms-page);
+	--sl-color-bg-inline-code: var(--ms-code-bg);
 
 	--sl-color-accent-low: var(--ms-accent-soft);
 	--sl-color-accent: var(--ms-accent);

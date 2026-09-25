@@ -740,12 +740,16 @@ The entries install writes into the agent's envlist:
 > The factor is measured, not chosen. On the reference RB5009 (RouterOS 7.24.2, 10 Hz, 300 s, every
 > source on) on 2026-09-17, four limits over four windows of about 12 000 samples each:
 >
-> | limit          | ring multiple | RSS       | CPU per sample | |
+>
+>
+> | limit          | ring multiple | RSS       | CPU per sample | What it cost |
 > | -------------- | ------------- | --------- | -------------- | ------------------------ |
 > | 40 MiB         | 4.0×          | 32.9 MiB  | 2 657 µs       | the limit never binds    |
 > | 24 MiB         | 2.4×          | 26.3 MiB  | 2 780 µs       | no measurable cost       |
 > | 21 MiB         | 2.1×          | 23.5 MiB  | 3 250 µs       | +22 %, and climbing      |
 > | 18 MiB         | 1.8×          | 20.4 MiB  | 14 800 µs      | +457 %, worst tick 52 ms |
+>
+>
 >
 > The rows are the ones the comment on `memLimitRingFactor` in [`internal/router/options.go`](https://github.com/jmrplens/mikroscope/blob/main/internal/router/options.go) records.
 > The 2.5× factor `install` derives would be 25 MiB at 300 s; the window measured nearest it was
@@ -806,7 +810,7 @@ board has no port map, and a token should not be needed for that.
 The relay transport cannot present a token. `/tool fetch` runs on the router
 and sends no `Authorization` header ([`internal/transport/transport.go`](https://github.com/jmrplens/mikroscope/blob/main/internal/transport/transport.go)), so
 the relay reaches `/healthz` and nothing else on an agent that has one.
-`--expose` makes the token mandatory; [what --expose
+`--expose` makes the token mandatory; [what `--expose`
 opens](https://jmrp.io/docs/mikroscope/security/expose/) says why.
 
 ### The paths
@@ -1103,7 +1107,7 @@ capture](https://jmrp.io/docs/mikroscope/record/triggers/).
   these paths.
 - [Prometheus metric families](https://jmrp.io/docs/mikroscope/reference/metrics/): what the collector's `/metrics` carries.
 - [Triggered capture](https://jmrp.io/docs/mikroscope/record/triggers/): the conditions behind `/captures`.
-- [What --expose opens](https://jmrp.io/docs/mikroscope/security/expose/): when the token becomes mandatory.
+- [What `--expose` opens](https://jmrp.io/docs/mikroscope/security/expose/): when the token becomes mandatory.
 
 ## Prometheus metric families
 
@@ -2413,7 +2417,7 @@ not run on the first. So:
 mikroscope 1.2.2 and earlier put the reference into `remote-image=` without its
 registry host, so RouterOS took the host from `/container/config registry-url`,
 one setting for the whole device, and `doctor` checked that setting against a
-reference that named a host. mikroscope after 1.2.2 sends the whole reference,
+reference that named a host. Since 1.3.0 mikroscope sends the whole reference,
 registry host included, and neither checks the setting nor needs it: on the
 reference router the host inside `remote-image=` overrode `registry-url`
 (verified on RB5009UG+S+, RouterOS 7.24.4, 2026-09-24), and Docker Hub served the

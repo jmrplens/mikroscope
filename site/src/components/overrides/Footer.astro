@@ -38,12 +38,17 @@ if (!github) {
 	);
 }
 const handle = new URL(github).pathname.replaceAll("/", "");
+// The name and the handle are one unit that never wraps inside (the
+// `.ms-byline-name` rule below). At 390 px "(jmrplens)" dropped onto a line of
+// its own, and a U+00A0 before it alone only moved the break into the
+// compound surname, "Requena" / "Plens" (WebKit 390 px, both locales,
+// 2026-09-24). The line now breaks after "by" / "por".
 const site = new URL(home).host;
 ---
 
 <Default />
 <address class="ms-byline">
-	<span>{Astro.locals.t("ms.footer.byline")}{" "}<span translate="no">{name} ({handle})</span></span>
+	<span>{Astro.locals.t("ms.footer.byline")}{" "}<span class="ms-byline-name" translate="no">{`${name}\u00a0(${handle})`}</span></span>
 	<span class="ms-byline-sep ms-byline-lead" aria-hidden="true">·</span>
 	<span class="ms-byline-links">
 		<a href={home} rel="author" translate="no">{site}</a>
@@ -61,10 +66,21 @@ const site = new URL(home).host;
 		gap: 0.25rem 0.5rem;
 		margin-top: 1.5rem;
 		padding-top: 1rem;
-		border-top: 1px solid var(--ms-rule);
+		/* `--ms-rule` is a width (3px), not a colour, so this declaration was
+		 * invalid and dropped and the rule never drew, on any page (computed
+		 * `border-top: 0px none`, both engines, 2026-09-24). */
+		border-top: 1px solid var(--ms-border);
 		font-size: var(--sl-text-xs);
 		font-style: normal;
 		color: var(--ms-muted);
+	}
+	/* An atomic box, not only nowrap: as a nowrap inline WebKit kept the
+	 * Spanish name on the "por" line and let it hang 2.3 px past the column
+	 * (390 px, 2026-09-24). Nothing follows the name inside its line, so no
+	 * punctuation can come loose from it (components.css, `.ms-code-nowrap`). */
+	.ms-byline-name {
+		display: inline-block;
+		white-space: nowrap;
 	}
 	.ms-byline-links {
 		display: inline-flex;

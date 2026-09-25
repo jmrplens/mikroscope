@@ -113,6 +113,11 @@ make check-docs     # or just fail if docs/ is stale
 `make site-check` is `cd site && pnpm install && pnpm run build && pnpm run
 lint`; the gates read `site/dist`, so the build has to come first.
 
+A heading's id is a published address. `site/scripts/anchors.txt` lists every
+one, and the lint fails when a build loses one (keep it with `{#old-id}` at
+the end of the heading) or has one the list lacks (`pnpm run anchors` in
+`site/`, after the build, adds it).
+
 `docs/` is generated from the English pages of the site by
 `site/scripts/gen-docs.mjs` and never edited by hand: change the page and its
 Spanish twin, then `pnpm run docs` in `site/`.

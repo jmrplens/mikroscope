@@ -198,12 +198,16 @@ La hipótesis era "el equipo de `ether2` tiene un segundo camino hasta el router
 través de los otros AP, que cuelgan del switch". Primero se hicieron dos cambios
 en el switch, y el resultado honesto es que **no sirvieron de nada**:
 
+<ScrollTable label="Tasa de sucesos tras cada cambio en el switch">
+
 | Cambio                | Tasa de sucesos                     |
 | --------------------- | ----------------------------------- |
 | línea base            | <Measured id="loop.eventsBefore" /> |
 | cambio en el switch 1 | 1,67 /s                             |
 | cambio en el switch 2 | 1,47 /s                             |
 | (banda de ruido)      | ±0,2 /s                             |
+
+</ScrollTable>
 
 Una lectura más de la misma serie, 1,50 /s, también quedó dentro de esa banda.
 
@@ -229,11 +233,15 @@ de blocking/learning), apareció **cero** veces en 300 s.
 La segunda confirmación, independiente, es la que merece la pena interiorizar: la
 visión del bridge se volvió _coherente_.
 
+<ScrollTable label="El bridge antes y después de actualizar el firmware">
+
 |                       | Antes | Después  |
 | --------------------- | ----- | -------- |
 | MAC en `ether2`       | 0     | **24**   |
 | MAC en `sfp-sfpplus1` | 60    | **36**   |
 | `edge` de `ether2`    | false | **true** |
+
+</ScrollTable>
 
 Los mismos 60 equipos, repartidos 36/24 en lugar de 60/0. Mientras existió el
 bucle, el router aprendía casi todos los equipos en el puerto equivocado; el

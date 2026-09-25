@@ -51,7 +51,7 @@ El transporte por relay no puede presentar un token. `/tool fetch` se ejecuta en
 el router y no envía cabecera `Authorization`
 (<Src path="internal/transport/transport.go" />), así que en un agente con token el relay
 llega a `/healthz` y a nada más. `--expose` hace obligatorio el token; [lo que
-abre --expose](/mikroscope/es/security/expose/) cuenta por qué.
+abre `--expose`](/mikroscope/es/security/expose/) cuenta por qué.
 
 ## Las rutas
 
@@ -392,6 +392,6 @@ condiciones, el presupuesto y lo que una captura no puede mostrar están en
 - [Familias de métricas de Prometheus](/mikroscope/es/reference/metrics/): lo que lleva el `/metrics` del colector.
 - [Captura por disparo](/mikroscope/es/record/triggers/): las condiciones que hay detrás de
   `/captures`.
-- [Lo que abre --expose](/mikroscope/es/security/expose/): cuándo el token pasa a ser obligatorio.
+- [Lo que abre `--expose`](/mikroscope/es/security/expose/): cuándo el token pasa a ser obligatorio.
 
 </SeeAlso>

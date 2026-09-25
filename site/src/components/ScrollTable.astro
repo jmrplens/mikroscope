@@ -101,7 +101,11 @@ if ((!label || label.trim() === "") && !labelledby) {
 		// not a scrollable region and has no business being a landmark. Both
 		// stay in the server-rendered markup, so a reader without JavaScript
 		// still gets the named, focusable region.
-		const overflow = region.scrollWidth > region.clientWidth;
+		// With the same 1 px of slack as the stacking test: a table whose right
+		// border alone was clipped showed "Scroll sideways" over nothing to
+		// scroll to (playbooks/flash-wear in WebKit 390 px, sinks/detections
+		// and sinks/device-info in Chromium 360 px, 2026-09-24).
+		const overflow = region.scrollWidth > region.clientWidth + 1;
 		if (overflow) {
 			region.setAttribute("tabindex", "0");
 			region.setAttribute("role", "region");
@@ -125,8 +129,17 @@ if ((!label || label.trim() === "") && !labelledby) {
 		const head = table?.tHead?.rows[table.tHead.rows.length - 1];
 		if (!table || !head || table.tBodies.length === 0) return;
 		const labels: string[] = [];
+		const codeLabels: boolean[] = [];
 		for (const cell of head.cells) {
-			for (let i = 0; i < cell.colSpan; i++) labels.push(cell.textContent?.trim() ?? "");
+			const text = cell.textContent?.trim() ?? "";
+			// A header that is one code span and nothing else keeps its monospace
+			// as a card label (components.css, `data-label-code`).
+			const only = cell.children.length === 1 ? cell.firstElementChild : null;
+			const code = only?.tagName === "CODE" && only.textContent?.trim() === text;
+			for (let i = 0; i < cell.colSpan; i++) {
+				labels.push(text);
+				codeLabels.push(code);
+			}
 		}
 		table.setAttribute("role", "table");
 		for (const group of [table.tHead, ...table.tBodies]) group?.setAttribute("role", "rowgroup");
@@ -139,15 +152,33 @@ if ((!label || label.trim() === "") && !labelledby) {
 					"role",
 					inHead ? "columnheader" : cell.tagName === "TH" ? "rowheader" : "cell",
 				);
-				if (!inHead && labels[col]) cell.dataset.label = labels[col];
+				if (!inHead && labels[col]) {
+					cell.dataset.label = labels[col];
+					if (codeLabels[col]) cell.dataset.labelCode = "";
+				}
 				col += cell.colSpan;
 			}
 		}
 		region.dataset.stack = "";
 		update(region);
 	};
+	// The last column's 14rem minimum is for a column of sentences. A last
+	// column that never holds more than SHORT_LAST characters is marked, and
+	// keeps its natural width instead (components.css, `data-short-last`).
+	const SHORT_LAST = 32;
+	const markShortLast = (region: HTMLElement) => {
+		const table = region.querySelector("table");
+		if (!table || table.tBodies.length === 0) return;
+		const lengths = [...table.tBodies].flatMap((body) =>
+			[...body.rows].map((row) => row.cells[row.cells.length - 1]?.textContent?.trim().length ?? 0),
+		);
+		if (Math.max(0, ...lengths) <= SHORT_LAST) region.dataset.shortLast = "";
+	};
 	for (const region of document.querySelectorAll<HTMLElement>(".ms-scroll")) {
-		if (!region.hasAttribute("data-nowrap")) stack(region);
+		if (!region.hasAttribute("data-nowrap")) {
+			markShortLast(region);
+			stack(region);
+		}
 		observer.observe(region);
 		for (const child of region.children) observer.observe(child);
 	}

@@ -121,15 +121,3 @@ export function spellCount(n: number, lang: Lang, capital = false): string {
 
 /** Joins words with U+00A0, so a short fact like "RouterOS 7.24.2" wraps as one. */
 export const unbreakable = (s: string): string => s.replace(/ /g, NBSP);
-
-/**
- * Splits a translation on backticks into text and code runs, so a string such
- * as "What `install` writes" renders a real `<code>` without `set:html` on
- * translated text.
- */
-export function codeSpans(s: string): { code: boolean; text: string }[] {
-	return s
-		.split("`")
-		.map((text, i) => ({ code: i % 2 === 1, text }))
-		.filter((part) => part.text !== "");
-}
