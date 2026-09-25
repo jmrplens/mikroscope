@@ -14,18 +14,20 @@
 //
 //	go run ./cmd/gen_brand mark -out brand          # the mark and the favicon, per theme
 //	go run ./cmd/gen_brand compose -out brand       # the banner, the social image and the og:image
-//	go run ./cmd/gen_brand icons -out site/public   # the favicon and the touch icons
+//	go run ./cmd/gen_brand icons -out site/public   # the favicon, the touch icons and the web app manifest
 //
 // The mark family is pure text. The compose family reads a background raster
 // out of the same directory, embeds it, and shells out to rsvg-convert for the
 // PNG that actually ships. The icons family shells out too, to rsvg-convert
 // and to ImageMagick for the .ico, and is the only one that writes outside
-// brand/ — its output is a web page's, not a repository's.
+// brand/ — its output is a web page's, not a repository's, so it is also the
+// only one whose files are written readable by everyone.
 package main
 
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"math"
@@ -139,7 +141,8 @@ func usage(w io.Writer) {
 
   mark      the mark and the favicon, one file per theme
   compose   the banner, the social image and the og:image, SVG and PNG
-  icons     the favicon and the touch icons a web page asks for
+  icons     the favicon, the touch icons and the web app manifest a web page
+            asks for
 
 -out defaults to the working directory. For compose it is also where the
 background rasters are read from; icons writes there and nowhere else.
@@ -445,23 +448,138 @@ const iconGround = "#0e1316" // the dark theme's page, which its tones are measu
 
 // The rasters. inset is the share of the canvas left empty on each side, on
 // top of the padding the drawing already carries: a maskable icon may be
-// cropped to a circle by the launcher, and Android's safe zone is the middle
-// 80%, so its drawing has to sit well inside that.
+// cropped to a circle by the launcher, and the maskable-icon safe zone is a
+// circle whose diameter is 80% of the icon, so its drawing has to sit inside
+// that circle, corners included.
+//
+// purpose is what the web app manifest says the file is for, and empty means
+// the manifest does not name it: iOS reads the apple-touch-icon from the
+// page's link tag, never from a manifest. There is no 32 px PNG: the .ico
+// already carries 32 px, and until 2026-09-25 a favicon-32x32.png shipped
+// that nothing linked, neither the site's head nor its manifest.
 var iconTargets = []struct {
-	name  string
-	px    int
-	inset float64
+	name    string
+	px      int
+	inset   float64
+	purpose string
 }{
-	{"favicon-32x32.png", 32, 0},
-	{"apple-touch-icon.png", 180, 0.08},
-	{"icon-192.png", 192, 0.08},
-	{"icon-512.png", 512, 0.08},
-	{"icon-maskable-512.png", 512, 0.12},
+	{"apple-touch-icon.png", 180, 0.08, ""},
+	{"icon-192.png", 192, 0.08, "any"},
+	{"icon-512.png", 512, 0.08, "any"},
+	{"icon-maskable-512.png", 512, 0.12, "maskable"},
+}
+
+// manifestName is the web app manifest's file name, which the site's head
+// links. .webmanifest is the extension the specification registers, and GitHub
+// Pages serves it as application/manifest+json.
+const manifestName = "site.webmanifest"
+
+// chromeDark is the color a browser is asked to paint its own chrome in: the
+// dark theme's --ms-surface in site/src/styles/theme.css, which is what
+// Starlight paints the header with (--sl-color-bg-nav is --sl-color-gray-6,
+// set to --ms-surface). The manifest's theme_color and the page's theme-color
+// tag as served carry the same value (Starlight renders the dark theme on the
+// server, and a script moves the tag to the light header when the page turns
+// light), so an installed window's title bar and Chrome's address bar match
+// the header under them.
+// TestTheChromeColorIsTheHeaders reads theme.css to hold it there.
+const chromeDark = "#151c20"
+
+// manifestIcon and webApp are the manifest, written as structs so the field
+// order is the order written here rather than a map's.
+type manifestIcon struct {
+	Src     string `json:"src"`
+	Sizes   string `json:"sizes"`
+	Type    string `json:"type"`
+	Purpose string `json:"purpose"`
+}
+
+type webApp struct {
+	Name            string         `json:"name"`
+	ShortName       string         `json:"short_name"`
+	Description     string         `json:"description"`
+	Lang            string         `json:"lang"`
+	StartURL        string         `json:"start_url"`
+	Scope           string         `json:"scope"`
+	Display         string         `json:"display"`
+	BackgroundColor string         `json:"background_color"`
+	ThemeColor      string         `json:"theme_color"`
+	Icons           []manifestIcon `json:"icons"`
+}
+
+// webManifest is the web app manifest, which names the rasters iconTargets
+// marks with a purpose.
+//
+// Every URL in it is relative, and resolves against the manifest's own URL, so
+// this generator never has to know that the site is served under /mikroscope/.
+// It carries no "id" on purpose: an id resolves against the ORIGIN of
+// start_url, not against the manifest, so "./" would claim jmrplens.github.io/
+// itself, which the host's own hub already does with a manifest of its own
+// (jmrplens.github.io/site.webmanifest, "jmrp docs", start_url "/", read
+// 2026-09-25), and an id that stays inside this site would have to spell out
+// /mikroscope/, the base path this generator otherwise never needs. Left out,
+// it defaults to start_url, which is this site's own directory.
+//
+// favicon.svg is not in it either: it is the one icon with no ground of its
+// own, and whatever lands on a home screen brings its own.
+func webManifest() ([]byte, error) {
+	app := webApp{
+		Name:        brandName,
+		ShortName:   brandName,
+		Description: tagline,
+		Lang:        "en",
+		StartURL:    "./",
+		Scope:       "./",
+		Display:     "standalone",
+		// The splash screen sits flush with the icon's own ground.
+		BackgroundColor: iconGround,
+		ThemeColor:      chromeDark,
+	}
+	for _, t := range iconTargets {
+		if t.purpose == "" {
+			continue
+		}
+		app.Icons = append(app.Icons, manifestIcon{
+			Src:     t.name,
+			Sizes:   fmt.Sprintf("%dx%d", t.px, t.px),
+			Type:    "image/png",
+			Purpose: t.purpose,
+		})
+	}
+	// Tabs, because .editorconfig asks every file for them and Prettier, which
+	// checks this file in site/, takes its indentation from there.
+	b, err := json.MarshalIndent(app, "", "\t")
+	if err != nil {
+		return nil, err
+	}
+	return append(b, '\n'), nil
+}
+
+// writeServed writes a file a web server hands to every reader. The mode is
+// set twice because os.WriteFile applies it only to a file it creates, and
+// through the umask: a favicon.svg left at 0600 by an earlier version of this
+// command stayed 0600, and a local build copied that mode into site/dist.
+func writeServed(path string, b []byte) error {
+	p := filepath.Clean(path)
+	if err := os.WriteFile(p, b, 0o644); err != nil { // #nosec G306 -- published by a web server to every reader
+		return err
+	}
+	return served(p)
+}
+
+// served makes a file the command wrote readable by everyone, whoever created
+// it: the rasters are written by rsvg-convert and ImageMagick under the
+// operator's umask.
+func served(path string) error {
+	return os.Chmod(filepath.Clean(path), 0o644) // #nosec G302 -- published by a web server to every reader; WriteFile keeps an existing file's mode
 }
 
 // icoSizes are what a .ico is asked for, in the one order every tool writes
 // them. It exists for browsers and pinned-tab lists that never learned the SVG.
 var icoSizes = []int{16, 32, 48}
+
+// icoName is the .ico's file name, which the site's head links as written.
+const icoName = "favicon.ico"
 
 // faviconSVG is the only file here with no ground of its own. The tones are
 // named once in a style block and referenced by every rect, so the drawing is
@@ -507,16 +625,30 @@ func iconsCmd(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	}
 
 	svgPath := pyJoin(dir, "favicon.svg")
-	if err := os.WriteFile(filepath.Clean(svgPath), []byte(faviconSVG()), 0o600); err != nil {
+	err := writeServed(svgPath, []byte(faviconSVG()))
+	if err != nil {
 		return fail(stderr, err)
 	}
 	fmt.Fprintln(stdout, "wrote", svgPath)
 
+	manifest, err := webManifest()
+	if err != nil {
+		return fail(stderr, err)
+	}
+	manifestPath := pyJoin(dir, manifestName)
+	if err = writeServed(manifestPath, manifest); err != nil {
+		return fail(stderr, err)
+	}
+	fmt.Fprintln(stdout, "wrote", manifestPath)
+
 	// Each raster is cut from its own source rather than from one big PNG,
-	// so a 32-pixel icon is drawn at 32 pixels rather than downsampled into
+	// so a 180-pixel icon is drawn at 180 pixels rather than downsampled into
 	// a blur. The sources are temporary: what ships is the PNG.
 	for _, t := range iconTargets {
-		if err := rasterize(ctx, dir, groundedSVG(t.inset), t.px, t.name, stdout, stderr); err != nil {
+		if err = rasterize(ctx, dir, groundedSVG(t.inset), t.px, t.name, stdout, stderr); err != nil {
+			return fail(stderr, err)
+		}
+		if err = served(pyJoin(dir, t.name)); err != nil {
 			return fail(stderr, err)
 		}
 		fmt.Fprintln(stdout, "wrote", pyJoin(dir, t.name))
@@ -527,24 +659,27 @@ func iconsCmd(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	ico := make([]string, 0, len(icoSizes))
 	for _, px := range icoSizes {
 		name := fmt.Sprintf("_ico-%d.png", px)
-		if err := rasterize(ctx, dir, groundedSVG(0), px, name, stdout, stderr); err != nil {
+		if err = rasterize(ctx, dir, groundedSVG(0), px, name, stdout, stderr); err != nil {
 			return fail(stderr, err)
 		}
 		ico = append(ico, name)
 	}
 	// #nosec G204 -- every name in ico is built from icoSizes just above.
-	cmd := exec.CommandContext(ctx, "magick", append(ico, "favicon.ico")...)
+	cmd := exec.CommandContext(ctx, "magick", append(ico, icoName)...)
 	cmd.Dir = dir
 	cmd.Stdout, cmd.Stderr = stdout, stderr
-	if err := cmd.Run(); err != nil {
-		return fail(stderr, fmt.Errorf("magick favicon.ico: %w", err))
+	if err = cmd.Run(); err != nil {
+		return fail(stderr, fmt.Errorf("magick %s: %w", icoName, err))
 	}
 	for _, name := range ico {
-		if err := os.Remove(filepath.Clean(pyJoin(dir, name))); err != nil {
+		if err = os.Remove(filepath.Clean(pyJoin(dir, name))); err != nil {
 			return fail(stderr, err)
 		}
 	}
-	fmt.Fprintln(stdout, "wrote", pyJoin(dir, "favicon.ico"))
+	if err = served(pyJoin(dir, icoName)); err != nil {
+		return fail(stderr, err)
+	}
+	fmt.Fprintln(stdout, "wrote", pyJoin(dir, icoName))
 	return 0
 }
 

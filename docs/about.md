@@ -538,7 +538,7 @@ not one of the two released binaries. From the root of the repository:
 ```sh
 go run ./cmd/gen_brand mark -out brand          # the mark and the favicon, per theme
 go run ./cmd/gen_brand compose -out brand       # the banner, the social image and the og:image
-go run ./cmd/gen_brand icons -out site/public   # the favicon and the touch icons
+go run ./cmd/gen_brand icons -out site/public   # the favicon, the touch icons and the web app manifest
 ```
 
 `mark` is pure text. `compose` reads the three `bg-*.png` backgrounds from the
@@ -561,15 +561,38 @@ the same host give the same four mark and favicon files.
 | `background.png`                                       | `brand/`       | none       | The generated field the three compositions crop from                                                  |
 | `bg-banner.png`, `bg-social.png`, `bg-og.png`          | `brand/`       | none       | Those crops, which `compose` reads                                                                    |
 | `favicon.svg`                                          | `site/public/` | `icons`    | Both palettes, switching on `prefers-color-scheme`                                                    |
-| `favicon-32x32.png`                                    | `site/public/` | `icons`    | 32 px, on its own ground                                                                              |
+| `site.webmanifest`                                     | `site/public/` | `icons`    | The web app manifest: names the 192, 512 and maskable rasters, with relative URLs                     |
 | `favicon.ico`                                          | `site/public/` | `icons`    | Three drawings, at 16, 32 and 48 px, rather than one scaled three ways                                |
 | `apple-touch-icon.png`, `icon-192.png`, `icon-512.png` | `site/public/` | `icons`    | 180, 192 and 512 px, each drawn at its own size                                                       |
-| `icon-maskable-512.png`                                | `site/public/` | `icons`    | Inset further, to sit inside the middle 80 % a launcher may crop to                                   |
+| `icon-maskable-512.png`                                | `site/public/` | `icons`    | Inset further, to sit inside the circle 80 % of the icon across that a launcher may crop to           |
 
-The last four rows are written for a web app manifest. This site declares none and links only
-`favicon.svg`, `favicon.ico` and `apple-touch-icon.png`, so `favicon-32x32.png`, `icon-192.png`,
-`icon-512.png` and `icon-maskable-512.png` ship without a consumer: no launcher reads the maskable
-inset.
+Every page's head links `favicon.svg`, `favicon.ico`, `apple-touch-icon.png` and `site.webmanifest`.
+The `.ico` link says `sizes="32x32"`, which keeps Chromium on the SVG alone: headless Chromium 153
+requested only `favicon.svg` on 2026-09-25. The manifest names `icon-192.png`, `icon-512.png` and
+`icon-maskable-512.png` by URLs relative to itself, and leaves out `favicon.svg`, the one icon with
+no ground of its own, since whatever lands on a home screen brings its own. It carries no `id`,
+which is resolved against the origin of `start_url` rather than against the manifest: Chromium 153
+resolved `./` to the root of the origin, here `https://jmrplens.github.io/`, the address the host's
+own hub already claims with a manifest of its own, and an `id` that stays inside this site has to
+spell out `/mikroscope/`, the base path nothing else in the manifest names. Left out, it defaults to
+`start_url`, which Chromium resolves to `/mikroscope/`, the `id` it recommends.
+
+One `theme-color` tag gives the colour of the header on screen, `#151c20` dark and `#fafbfb` light.
+It follows the site's theme, not the system's scheme: it is served with the dark header, the theme a
+page without JavaScript keeps whatever the system says, and a script in the head moves it to the
+light one whenever the page turns light, from the system's scheme, the theme select, a stored choice
+or the phone's toggle. Chrome reads the tag; Safari 26, by public reports and not tried here,
+ignores it and takes the colour of the fixed header. In headless Chromium and WebKit on 2026-09-25,
+in both schemes, after a pick, after a stored pick and a reload, after the phone's toggle and with
+JavaScript off, the tag held the header's colour every time; the pair of tags split by
+`prefers-color-scheme` it replaced held the other theme's colour after each pick, and on a light
+system without JavaScript. Whether a phone's Chrome repaints its toolbar the moment the tag changes
+was not tried on a device.
+
+`TestTheCommittedWebFilesMatchTheGenerator` compares `favicon.svg` and `site.webmanifest` in
+`site/public/` with what the generator writes now, so an edit that is not regenerated fails
+`make test`; the PNGs depend on the installed converters and are not compared. Not tested: a real
+phone, an install to a home screen, and how a launcher actually crops the maskable icon.
 
 The mark in this site's header is `favicon-inline.svg`, the five-bar drawing, painted by the
 site's own palette; `mark-inline.svg` fills the hero slot. Either way the drawing in the chrome is

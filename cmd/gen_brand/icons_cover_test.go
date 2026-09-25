@@ -119,3 +119,49 @@ func TestRasterizeRemovesItsSource(t *testing.T) {
 		t.Error("the source SVG was left behind")
 	}
 }
+
+// TestIconsCmdLeavesEveryServedFileReadableByAll. Every file the command
+// writes is published by a web server, and a local build copies each file's
+// mode into site/dist. os.WriteFile applies a mode only to a file it creates,
+// so a favicon.svg an earlier version left at 0600 stayed 0600; and the
+// rasters are created by the converters, under the operator's umask. So every
+// output is planted at 0600 first, which the stubs keep when they truncate it,
+// and has to come back 0644.
+func TestIconsCmdLeavesEveryServedFileReadableByAll(t *testing.T) {
+	stubConverters(t, "", "")
+	out := t.TempDir()
+	served := []string{"favicon.svg", manifestName, "favicon.ico"}
+	for _, target := range iconTargets {
+		served = append(served, target.name)
+	}
+	for _, name := range served {
+		if err := os.WriteFile(filepath.Join(out, name), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var stdout, stderr bytes.Buffer
+	if code := iconsCmd(context.Background(), []string{"-out", out}, &stdout, &stderr); code != 0 {
+		t.Fatalf("iconsCmd = %d, stderr:\n%s", code, stderr.String())
+	}
+	for _, name := range served {
+		info, err := os.Stat(filepath.Join(out, name))
+		if err != nil {
+			t.Errorf("%s: %v", name, err)
+			continue
+		}
+		if mode := info.Mode().Perm(); mode != 0o644 {
+			t.Errorf("%s is %#o, want 0644 for a file a web server publishes", name, mode)
+		}
+	}
+	manifest, err := os.ReadFile(filepath.Join(out, manifestName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, genErr := webManifest()
+	if genErr != nil || !bytes.Equal(manifest, want) {
+		t.Errorf("%s was not written as webManifest() returns it (err %v)", manifestName, genErr)
+	}
+	if !strings.Contains(stdout.String(), manifestName) {
+		t.Errorf("iconsCmd did not report the manifest:\n%s", stdout.String())
+	}
+}
