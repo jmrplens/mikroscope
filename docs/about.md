@@ -120,7 +120,11 @@ the InfluxDB dashboard into the owner's Grafana and capturing it at 390x844 and
 12.3.0 and 13.2.1 over a throwaway InfluxDB 3.11.2 Core store rendered the
 not-available row of the InfluxDB dashboard: as committed in 1.3.0, opening it
 sent five queries and painted five `table … not found` badges on both versions;
-with its queries shipped hidden it sent none and painted none. The same renders
+with its queries shipped hidden it sent none and painted none, and 13.2.2 did
+the same in a second render that day. The other four dashboards keep that row's
+queries on unless a probe found the measurement missing, because on their
+stores a missing measurement answers empty rather than failing; that was
+checked by query, not rendered. The same renders
 found that 12.3.0 never sends the InfluxDB detections annotation's query, with
 or without the table, which has not been looked into.
 

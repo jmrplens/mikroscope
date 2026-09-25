@@ -95,28 +95,52 @@ func TestNoPanelShipsWithoutATarget(t *testing.T) {
 
 // TestAbsentPanelsShipWithTheirQueriesHidden: a panel in the not-available row
 // keeps its queries, each switched off, so it issues none when the row is
-// opened and a reader can switch one back on in the panel editor. No panel
-// outside that row carries a hidden query.
+// opened and a reader can switch one back on in the panel editor — on
+// InfluxDB, where a missing table is a planning error, and on any store a
+// probe found without the measurement. No panel outside that row carries a
+// hidden query.
 func TestAbsentPanelsShipWithTheirQueriesHidden(t *testing.T) {
-	for _, store := range Stores {
-		cases := []struct {
-			name    string
-			present map[string]bool
-		}{{"no probe", nil}}
-		if store != Graphite && store != Elasticsearch {
-			// Their queries name paths and fields, not mikroscope_ tables, and
-			// Measurements cannot ask either store, so no probe reaches them.
-			cases = append(cases, struct {
-				name    string
-				present map[string]bool
-			}{"probe without psi and disk", probeWithout(store, "mikroscope_psi", "mikroscope_disk")})
+	top := generateDoc(t, Influx, nil).Panels
+	assertWaitingAreHidden(t, "influxdb (no probe)", notAvailable(top))
+	assertNothingElseHidden(t, "influxdb (no probe)", top)
+	// Graphite and Elasticsearch name paths and fields, not mikroscope_
+	// tables, and Measurements cannot ask either store, so no probe reaches
+	// them. PostgreSQL cannot be probed either, but its queries name the
+	// tables, so the generator's answer to a probe is still defined.
+	for _, store := range []Store{Influx, Prometheus, Postgres} {
+		label := string(store) + " (probe without psi and disk)"
+		probed := generateDoc(t, store, probeWithout(store, "mikroscope_psi", "mikroscope_disk")).Panels
+		assertWaitingAreHidden(t, label, notAvailable(probed))
+		assertNothingElseHidden(t, label, probed)
+	}
+}
+
+// TestUnprobedAbsentPanelsRunWhereAMissingMeasurementIsNoError: on the four
+// stores that answer an absent measurement with an empty result instead of an
+// error — the PostgreSQL sink creates every table before its first insert,
+// Prometheus returns an empty vector, Graphite an empty body — a file nobody
+// probed keeps the not-available row's queries on and the panel's own
+// no-value text. Hiding them there would show a reader whose router DOES
+// produce PSI or block-device data a note instead of that data, and on
+// PostgreSQL, Graphite and Elasticsearch no probe could bring it back.
+func TestUnprobedAbsentPanelsRunWhereAMissingMeasurementIsNoError(t *testing.T) {
+	for _, store := range []Store{Prometheus, Postgres, Graphite, Elasticsearch} {
+		top := generateDoc(t, store, nil).Panels
+		waiting := notAvailable(top)
+		if len(waiting) == 0 {
+			t.Fatalf("%s: no not-available row", store)
 		}
-		for _, c := range cases {
-			label := string(store) + " (" + c.name + ")"
-			top := generateDoc(t, store, c.present).Panels
-			assertWaitingAreHidden(t, label, notAvailable(top))
-			assertNothingElseHidden(t, label, top)
+		for _, p := range waiting {
+			for _, tg := range p.Targets {
+				if hidden(tg) {
+					t.Errorf("%s: %q ships %v hidden in a file nobody probed", store, p.Title, tg["refId"])
+				}
+			}
+			if nv, _ := p.FieldConfig.Defaults["noValue"].(string); strings.HasPrefix(nv, "Queries switched off") {
+				t.Errorf("%s: %q says its queries are off when they are on: %q", store, p.Title, nv)
+			}
 		}
+		assertNothingElseHidden(t, string(store)+" (no probe)", top)
 	}
 }
 
@@ -203,7 +227,10 @@ func TestDetectionsAnnotationFollowsTheProbe(t *testing.T) {
 		if a["enable"] != c.want {
 			t.Errorf("%s, probe %v: detections enable=%v, want %v", c.store, c.present != nil, a["enable"], c.want)
 		}
-		if tg, _ := a["target"].(map[string]any); tg["rawSql"] == "" && tg["expr"] == "" {
+		tg, _ := a["target"].(map[string]any)
+		sql, _ := tg["rawSql"].(string)
+		expr, _ := tg["expr"].(string)
+		if sql == "" && expr == "" {
 			t.Errorf("%s: the detections annotation lost its query", c.store)
 		}
 	}

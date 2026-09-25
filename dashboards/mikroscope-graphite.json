@@ -2734,7 +2734,7 @@
               },
               "mappings": [],
               "min": 0,
-              "noValue": "Queries switched off in this file: the reference RB5009 does not produce this measurement (none in its store on 2026-09-25, RouterOS 7.24.4). If your router does, switch them on in the panel editor.",
+              "noValue": "this kernel exposes no /proc/pressure, so the measurement does not exist in the store — a property of the kernel build, not a fault",
               "unit": "percent"
             },
             "overrides": []
@@ -2765,7 +2765,6 @@
                 "type": "graphite",
                 "uid": "${DS_MIKROSCOPE}"
               },
-              "hide": true,
               "refId": "A",
               "target": "aliasByNode($prefix.$host.psi.*_us, 3)"
             }
@@ -2803,7 +2802,7 @@
               },
               "mappings": [],
               "min": 0,
-              "noValue": "Queries switched off in this file: the reference RB5009 does not produce this measurement (none in its store on 2026-09-25, RouterOS 7.24.4). If your router does, switch them on in the panel editor.",
+              "noValue": "no rows for any block device in this window — on many deployments the table does not exist at all, because the agent drops a device that did nothing and never creates it",
               "unit": "iops"
             },
             "overrides": []
@@ -2834,7 +2833,6 @@
                 "type": "graphite",
                 "uid": "${DS_MIKROSCOPE}"
               },
-              "hide": true,
               "refId": "A",
               "target": "aliasByNode($prefix.$host.disk.*.{reads,writes}, 4)"
             }
@@ -2872,7 +2870,7 @@
               },
               "mappings": [],
               "min": 0,
-              "noValue": "Queries switched off in this file: the reference RB5009 does not produce this measurement (none in its store on 2026-09-25, RouterOS 7.24.4). If your router does, switch them on in the panel editor.",
+              "noValue": "no rows for any block device in this window — on many deployments the table does not exist at all, because the agent drops a device that did nothing and never creates it",
               "unit": "Bps"
             },
             "overrides": []
@@ -2903,7 +2901,6 @@
                 "type": "graphite",
                 "uid": "${DS_MIKROSCOPE}"
               },
-              "hide": true,
               "refId": "A",
               "target": "aliasByNode(scale($prefix.$host.disk.*.read_sectors, 512), 3)"
             }

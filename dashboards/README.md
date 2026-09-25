@@ -33,8 +33,9 @@ interrupts, temperature and clock, the kernel log), then the deliberate deep
 tiers (busy runs, fragmentation, reclaim, PMU, flash wear, NAND health, the API
 cross-checks, the observer and its sampler timing, and the device as the agent
 established it). A panel whose measurement the store does not hold is routed
-into a collapsed "Not available on this device" row with its queries switched
-off.
+into a collapsed "Not available on this device" row, its queries switched off
+on InfluxDB and after a probe; unprobed, the other four stores keep them on,
+because a missing measurement is not an error there.
 Every detection and trigger marker is also a dashboard annotation.
 
 The alert rules are the panels' own fault counters and the collector's

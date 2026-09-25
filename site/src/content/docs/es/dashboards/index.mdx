@@ -291,8 +291,10 @@ no mostró nada por ello en el dashboard y escribió cada vez una línea de nive
 `Partial data response error` en su log. Las marcas aparecen solas cuando la primera detección crea
 la tabla. En Prometheus el contador simplemente no existe y la consulta devuelve un resultado vacío,
 así que la capa sigue encendida también tras un sondeo. El sink de PostgreSQL crea todas las tablas
-antes de su primera inserción, así que allí la consulta devuelve cero filas; eso sale del código, no
-de un dashboard renderizado.
+antes de su primera inserción, así que allí la consulta devuelve cero filas: el 2026-09-25, en la
+batería de contenedores del proyecto (Grafana 13.2.1, PostgreSQL 18.6), la consulta de la capa
+respondió 200 sin filas sobre una ventana anterior a cualquier detección, y 10 filas sobre la de la
+propia ejecución. Fue una consulta por la API de Grafana, no un dashboard renderizado.
 
 <NotClaimed variant="untested" title="La capa de detecciones en Grafana 12.3.0">
 	En esos mismos renderizados, Grafana 12.3.0 no llegó a enviar la consulta de la capa de
@@ -530,19 +532,40 @@ bloques cuyas lecturas, escrituras y peticiones en curso son todas cero en un ti
 todos los dispositivos listados se quedan a cero, así que ningún destino llega a crear la tabla. El
 almacén de referencia seguía sin ninguna de las dos tablas el 2026-09-25, con RouterOS 7.24.4.
 
-**Todas las consultas de esta fila se publican apagadas** (ocultas, en el editor de consultas de
-Grafana), así que abrir la fila no ejecuta nada y cada panel muestra una nota breve en lugar de
-datos. Hasta 1.3.0 las consultas se ejecutaban al abrir la fila: el 2026-09-25, con el fichero de
-InfluxDB del repositorio importado en Grafana 12.3.0 y 13.2.1 sobre un almacén InfluxDB 3.11.2 Core
-sin ninguna de las dos tablas, abrir la fila envió las consultas de los cinco paneles, cada una
-respondida con `table … not found`, y pintó cinco insignias rojas. Con las consultas apagadas no
-envió ninguna ni pintó insignias, en ninguna de las dos versiones. Si tu almacén sí tiene la medida, vuelve a encender
-las consultas del panel en su editor, o deja que lo haga `import`.
+**En InfluxDB todas las consultas de esta fila se publican apagadas** (ocultas, en el editor de
+consultas de Grafana), así que abrir la fila no ejecuta nada y cada panel muestra una nota breve en
+lugar de datos. Hasta 1.3.0 las consultas se ejecutaban al abrir la fila: el 2026-09-25, con el
+fichero de InfluxDB del repositorio importado en Grafana 12.3.0 y 13.2.1 sobre un almacén InfluxDB
+3.11.2 Core sin ninguna de las dos tablas, abrir la fila envió las consultas de los cinco paneles,
+cada una respondida con `table … not found`, y pintó cinco insignias rojas. Con las consultas
+apagadas no envió ninguna ni pintó insignias, en ninguna de las dos versiones, ni en 13.2.2 en un
+segundo renderizado ese mismo día. Si tu almacén sí tiene la medida, vuelve a encender las
+consultas del panel en su editor, o ejecuta `import` (InfluxDB y Prometheus; los otros tres no se
+pueden sondear), que pregunta al almacén y devuelve el panel a su propia sección.
+
+**En los otros cuatro almacenes la fila conserva sus consultas encendidas**, como hasta 1.3.0,
+porque allí que falte una medida no es un error. El sink de PostgreSQL crea todas las tablas,
+`mikroscope_psi` y `mikroscope_disk` incluidas, antes de su primera inserción, así que las
+consultas devuelven cero filas; Prometheus responde a una métrica ausente con un resultado vacío, y
+Graphite a una ruta que no casa con nada con un cuerpo vacío. Elasticsearch responde con una línea
+en cero: una `sum` sobre documentos que no tienen el campo da 0 en cada intervalo. Cada uno de esos
+casos se midió el 2026-09-25 enviando las consultas de los ficheros del repositorio a través de
+Grafana 13.2.1 en la batería de contenedores del proyecto, con el almacén sin nada para ellas
+(Prometheus 3.14.0, PostgreSQL 18.6, graphite-statsd 1.1.10-5, Elasticsearch 9.5.3): todas
+respondieron 200 sin error, y en Elasticsearch todos los puntos fueron 0, tanto si otro router del
+mismo índice había mapeado el campo como si no. Así que en Elasticsearch un cero plano en esta fila
+significa que el router no produce la medida, que es lo que dice el título de la fila. Las
+consultas siguen encendidas para que un router que sí produce la medida llene el panel sin tocar
+nada; en PostgreSQL, Graphite y Elasticsearch ningún sondeo podría volver a encenderlas. Tras un
+sondeo, en cualquier almacén, un panel que el sondeo no encontró se publica con sus consultas
+apagadas, como en InfluxDB.
 
 Para estos paneles hay declaradas dos secciones, **Pressure stall (PSI)** y **Block devices**, que no
 emiten fila mientras todos sus paneles estén ausentes. En un kernel compilado con PSI, o en una placa
 con almacenamiento USB o eMMC que se mueva, `import` encuentra la medida y la sección aparece en su
-sitio, con las consultas encendidas, sin tocar el generador. `import` también funciona en el otro
+sitio, con las consultas encendidas, sin tocar el generador. Eso requiere un almacén que `import`
+pueda sondear, InfluxDB o Prometheus; los otros tres no se pueden sondear y conservan la fila
+compilada. `import` también funciona en el otro
 sentido: en un almacén al que le falta una medida que sí tenía el equipo de referencia — o un campo
 añadido después de que ese almacén se escribiera por primera vez — el panel pasa a esta fila con sus
 consultas apagadas, así que muestra su explicación y no una insignia roja de error. Cómo decide el

@@ -19,18 +19,27 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   answered with `No SQL statements were provided in the query string`: 35 red
   badges in view when the row was opened after a probed `import` over a store
   holding two tables. 13.2.1 sent nothing for those panels. Every query of a
-  panel in the row now ships hidden, with or without a probe, and each panel
-  says in its no-value text why and how to switch it back on; opening the row
-  sent no query and painted no badge on either version. `dashboards check`
-  skips a hidden query, as Grafana does, so on the reference store (Grafana
-  13.2.2, 2026-09-25, `--no-probe --window 1h`) the five panels read
-  `none rows=0 frames=0` where 1.3.0 printed `400 … not found` on each. The
-  Graphite and Elasticsearch dashboards no longer carry the queue-depth and
-  busy-percent panels, which have no query in either store and shipped with
-  an empty target list: 39 and 28 panels, from 41 and 30. Not rendered:
-  Grafana 12.3.2 and 13.2.2, and the Prometheus, PostgreSQL, Graphite and
-  Elasticsearch dashboards. A dashboard imported earlier keeps the old row
-  until it is imported again.
+  panel in the row now ships hidden where a missing measurement is an error
+  or a probe found it missing: on InfluxDB with or without a probe, and on
+  any store after a probe. Each such panel says in its no-value text why and
+  how to switch it back on; opening the row sent no query and painted no
+  badge on 12.3.0, 13.2.1 or 13.2.2. The unprobed PostgreSQL, Prometheus,
+  Graphite and Elasticsearch files keep the row's queries on, as in 1.3.0,
+  because a missing measurement is no error there: sent through Grafana
+  13.2.1 in the container suite on 2026-09-25 with nothing in the store for
+  them, every one of those queries answered 200 with no error (Elasticsearch
+  with a line at 0, a `sum` over documents without the field). Hiding them
+  would show a router that does produce PSI or block-device data a note
+  instead of it, and on PostgreSQL, Graphite and Elasticsearch no probe could
+  bring the queries back. `dashboards check` skips a hidden query, as
+  Grafana does, so on the reference store (Grafana 13.2.2, 2026-09-25,
+  `--no-probe --window 1h`) the five panels read `none rows=0 frames=0` where
+  1.3.0 printed `400 … not found` on each. The Graphite and Elasticsearch
+  dashboards no longer carry the queue-depth and busy-percent panels, which
+  have no query in either store and shipped with an empty target list: 39 and
+  28 panels, from 41 and 30. Not rendered: Grafana 12.3.2, and the
+  Prometheus, PostgreSQL, Graphite and Elasticsearch dashboards' row. A
+  dashboard imported earlier keeps the old row until it is imported again.
 - **The detections annotation read a column that may not exist, and ignored
   the probe.** Its SQL named `key`, which the InfluxDB sink writes only when a
   detection has one; six rules never do, and on a store whose detections were

@@ -2441,7 +2441,7 @@
               },
               "mappings": [],
               "min": 0,
-              "noValue": "Queries switched off in this file: the reference RB5009 does not produce this measurement (none in its store on 2026-09-25, RouterOS 7.24.4). If your router does, switch them on in the panel editor.",
+              "noValue": "this kernel exposes no /proc/pressure, so the measurement does not exist in the store — a property of the kernel build, not a fault",
               "unit": "percent"
             },
             "overrides": []
@@ -2485,7 +2485,6 @@
                 "type": "elasticsearch",
                 "uid": "${DS_MIKROSCOPE}"
               },
-              "hide": true,
               "metrics": [
                 {
                   "field": "psi.cpu_some",
@@ -2531,7 +2530,7 @@
               },
               "mappings": [],
               "min": 0,
-              "noValue": "Queries switched off in this file: the reference RB5009 does not produce this measurement (none in its store on 2026-09-25, RouterOS 7.24.4). If your router does, switch them on in the panel editor.",
+              "noValue": "no rows for any block device in this window — on many deployments the table does not exist at all, because the agent drops a device that did nothing and never creates it",
               "unit": "iops"
             },
             "overrides": []
@@ -2575,7 +2574,6 @@
                 "type": "elasticsearch",
                 "uid": "${DS_MIKROSCOPE}"
               },
-              "hide": true,
               "metrics": [
                 {
                   "field": "disk.reads_completed",
@@ -2621,7 +2619,7 @@
               },
               "mappings": [],
               "min": 0,
-              "noValue": "Queries switched off in this file: the reference RB5009 does not produce this measurement (none in its store on 2026-09-25, RouterOS 7.24.4). If your router does, switch them on in the panel editor.",
+              "noValue": "no rows for any block device in this window — on many deployments the table does not exist at all, because the agent drops a device that did nothing and never creates it",
               "unit": "Bps"
             },
             "overrides": []
@@ -2665,7 +2663,6 @@
                 "type": "elasticsearch",
                 "uid": "${DS_MIKROSCOPE}"
               },
-              "hide": true,
               "metrics": [
                 {
                   "field": "disk.read_sectors",

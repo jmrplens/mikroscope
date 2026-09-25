@@ -272,8 +272,10 @@ to ask, so the layer stays on. The query then fails on every load and refresh, b
 wrote one error-level `Partial data response error` line to its log each time. The markers appear
 on their own once the first detection creates the table. On Prometheus the counter is simply
 absent and the query returns an empty result, so the layer stays on after a probe too. The
-PostgreSQL sink creates every table before its first insert, so there the query returns no rows;
-that is from the code, not from a rendered dashboard.
+PostgreSQL sink creates every table before its first insert, so there the query returns no rows:
+on 2026-09-25, in the project's container suite (Grafana 13.2.1, PostgreSQL 18.6), the layer's
+query answered 200 with no rows over a window before any detection, and 10 rows over the run's own.
+That was a query through Grafana's API, not a rendered dashboard.
 
 <NotClaimed variant="untested" title="The detections layer on Grafana 12.3.0">
 	In the same renders, Grafana 12.3.0 never sent the InfluxDB detections layer's query, with or
@@ -503,18 +505,36 @@ and in-flight count are all zero in a tick, and on that router every listed devi
 so no sink ever creates the table. The reference store still held neither table on 2026-09-25, on
 RouterOS 7.24.4.
 
-**Every query in this row ships switched off** (hidden, in Grafana's query editor), so opening the
-row runs nothing and each panel shows a short note instead of data. Up to 1.3.0 the queries ran
-when the row was opened: on 2026-09-25, with the committed InfluxDB file imported into Grafana
-12.3.0 and 13.2.1 over an InfluxDB 3.11.2 Core store that had neither table, opening the row sent
-the queries of all five panels, each answered `table … not found`, and painted five red badges.
-With the queries switched off it sent none and painted no badge, on either version. If your store does
-hold the measurement, switch the panel's queries back on in its editor, or let `import` do it.
+**On InfluxDB every query in this row ships switched off** (hidden, in Grafana's query editor), so
+opening the row runs nothing and each panel shows a short note instead of data. Up to 1.3.0 the
+queries ran when the row was opened: on 2026-09-25, with the committed InfluxDB file imported into
+Grafana 12.3.0 and 13.2.1 over an InfluxDB 3.11.2 Core store that had neither table, opening the row
+sent the queries of all five panels, each answered `table … not found`, and painted five red
+badges. With the queries switched off it sent none and painted no badge, on either version, nor on
+13.2.2 in a second render the same day. If your store does hold the measurement, switch the panel's
+queries back on in its editor, or run `import` (InfluxDB and Prometheus; the other three cannot be
+probed), which asks the store and moves the panel back into its own section.
+
+**On the other four stores the row keeps its queries on**, as it did up to 1.3.0, because there a
+missing measurement is not an error. The PostgreSQL sink creates every table, `mikroscope_psi` and
+`mikroscope_disk` included, before its first insert, so the queries return no rows; Prometheus
+answers an absent metric with an empty result, and Graphite a path that matches nothing with an
+empty body. Elasticsearch answers with a line at zero: a `sum` over documents that lack the field is
+0 in every bucket. Each of those was measured on 2026-09-25 by sending the committed files' queries
+through Grafana 13.2.1 in the project's container suite, where the store held nothing for them
+(Prometheus 3.14.0, PostgreSQL 18.6, graphite-statsd 1.1.10-5, Elasticsearch 9.5.3): every one
+answered 200 with no error, and on Elasticsearch every point was 0, whether or not another router in
+the same index had mapped the field. So on Elasticsearch a flat zero in this row means the router
+does not produce the measurement, which is what the row's title says. The queries stay on so that
+a router that does produce the measurement fills the panel with no edit; on PostgreSQL, Graphite and
+Elasticsearch no probe could switch them back on. After a probe, on any store, a panel the probe
+found missing ships with its queries switched off, as on InfluxDB.
 
 Two sections are declared for these panels, **Pressure stall (PSI)** and **Block devices**, and ship
 no row while every panel in them is absent. On a kernel built with PSI, or a board with USB or eMMC
 storage that moves, `import` finds the measurement and the section appears in its place, queries
-on, with no edit to the generator. `import` also works the other way: on a store that lacks a
+on, with no edit to the generator. That takes a store `import` can probe, InfluxDB or Prometheus;
+the other three cannot be probed and keep the compiled row. `import` also works the other way: on a store that lacks a
 measurement the reference device had — or a field added after that store was first written — the
 panel moves into this row with its queries switched off, so it shows its explanation and not a red
 error badge. How the probe decides is on

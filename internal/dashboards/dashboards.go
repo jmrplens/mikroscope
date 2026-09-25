@@ -233,14 +233,32 @@ type Panel struct {
 	// a query naming a missing table before it runs, and Grafana paints that
 	// as a red badge no field option suppresses. panelsFor routes an Absent
 	// panel out of its own section and into the collapsed not-available row,
-	// and targetsFor ships its queries hidden, so none runs even when an
-	// operator expands the row. Absent
-	// implies KnownEmpty for `check`; a merely KnownEmpty panel stays in its
-	// own section, which is already collapsed and therefore already costs
-	// nothing.
+	// and HideQueries decides whether its queries run once an operator
+	// expands the row. Absent implies KnownEmpty for `check`; a merely
+	// KnownEmpty panel stays in its own section, which is already collapsed
+	// and therefore already costs nothing.
 	NoValue    string
 	KnownEmpty bool
 	Absent     bool
+
+	// HideQueries ships every target of the panel with `hide: true`, so
+	// Grafana sends none of them and the NoValue text is all the panel
+	// shows. resolveAvailability sets it on an Absent panel only where a
+	// query over the missing measurement is an ERROR, or where a probe has
+	// said the measurement is not there: on InfluxDB, whose planner refuses
+	// a missing table, and on any store `import` probed. Unprobed elsewhere
+	// the queries stay on, because a missing measurement is no error there
+	// and a reader whose router does produce it would see a note instead of
+	// the data, with no probe to bring it back (only InfluxDB and Prometheus
+	// can be probed): the PostgreSQL sink creates every table, mikroscope_psi
+	// and mikroscope_disk included, before its first insert (sinks/sql.go
+	// sqlSchema); Prometheus answers an absent metric with an empty result;
+	// Graphite with an empty body (countRows); Elasticsearch with a line at
+	// 0, a sum over documents that lack the field. Each of those was sent
+	// through Grafana 13.2.1 in the docker suite on 2026-09-25, from the
+	// committed files, with nothing in the store for them: all answered 200
+	// with no error.
+	HideQueries bool
 
 	// RequiresFields names `measurement.field` pairs an InfluxDB panel needs
 	// beyond the measurement itself, for the probe to check. A store written
@@ -803,14 +821,14 @@ func targetsFor(store Store, p Panel, dsUID, pluginID string) []any {
 		if iv != "" {
 			t["interval"] = iv
 		}
-		if p.Absent {
+		if p.HideQueries {
 			// Hidden, not removed. Measured in the browser on 2026-09-25 over
 			// an InfluxDB 3.11.2 Core datasource: Grafana 12.3.0 and 13.2.1
 			// both send nothing for a panel whose targets are all hidden and
 			// paint its noValue text. With the targets removed instead, 13.2.1
 			// sends nothing, but 12.3.0 adds a default {"refId":"A"} and the
 			// plugin answers it with `No SQL statements were provided in the
-			// query string`, as a red badge.
+			// query string`, as a red badge. Which panels: Panel.HideQueries.
 			t["hide"] = true
 		}
 		switch {

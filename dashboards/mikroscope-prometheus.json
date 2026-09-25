@@ -10857,7 +10857,7 @@
               },
               "mappings": [],
               "min": 0,
-              "noValue": "Queries switched off in this file: the reference RB5009 does not produce this measurement (none in its store on 2026-09-25, RouterOS 7.24.4). If your router does, switch them on in the panel editor, or run `mikroscope dashboards import`, which asks your store and moves the panel back into its own section.",
+              "noValue": "this kernel exposes no /proc/pressure, so the measurement does not exist in the store — a property of the kernel build, not a fault",
               "unit": "percent"
             },
             "overrides": []
@@ -10889,7 +10889,6 @@
                 "uid": "${DS_MIKROSCOPE}"
               },
               "expr": "sum by (resource, kind) (rate(mikroscope_psi_stall_usec_total[$__rate_interval])) / 1e6 * 100",
-              "hide": true,
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
@@ -10922,7 +10921,7 @@
               },
               "mappings": [],
               "min": 0,
-              "noValue": "Queries switched off in this file: the reference RB5009 does not produce this measurement (none in its store on 2026-09-25, RouterOS 7.24.4). If your router does, switch them on in the panel editor, or run `mikroscope dashboards import`, which asks your store and moves the panel back into its own section.",
+              "noValue": "no rows for any block device in this window — on many deployments the table does not exist at all, because the agent drops a device that did nothing and never creates it",
               "thresholds": {
                 "mode": "absolute",
                 "steps": [
@@ -10971,7 +10970,6 @@
                 "uid": "${DS_MIKROSCOPE}"
               },
               "expr": "max by (device) (mikroscope_disk_inflight)",
-              "hide": true,
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
@@ -11010,7 +11008,7 @@
               },
               "mappings": [],
               "min": 0,
-              "noValue": "Queries switched off in this file: the reference RB5009 does not produce this measurement (none in its store on 2026-09-25, RouterOS 7.24.4). If your router does, switch them on in the panel editor, or run `mikroscope dashboards import`, which asks your store and moves the panel back into its own section.",
+              "noValue": "no rows for any block device in this window — on many deployments the table does not exist at all, because the agent drops a device that did nothing and never creates it",
               "unit": "iops"
             },
             "overrides": []
@@ -11042,7 +11040,6 @@
                 "uid": "${DS_MIKROSCOPE}"
               },
               "expr": "sum by (device, op) (rate(mikroscope_disk_operations_total[$__rate_interval]))",
-              "hide": true,
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
@@ -11081,7 +11078,7 @@
               },
               "mappings": [],
               "min": 0,
-              "noValue": "Queries switched off in this file: the reference RB5009 does not produce this measurement (none in its store on 2026-09-25, RouterOS 7.24.4). If your router does, switch them on in the panel editor, or run `mikroscope dashboards import`, which asks your store and moves the panel back into its own section.",
+              "noValue": "no rows for any block device in this window — on many deployments the table does not exist at all, because the agent drops a device that did nothing and never creates it",
               "unit": "percent"
             },
             "overrides": []
@@ -11113,7 +11110,6 @@
                 "uid": "${DS_MIKROSCOPE}"
               },
               "expr": "sum by (device) (rate(mikroscope_disk_io_seconds_total[$__rate_interval])) * 100",
-              "hide": true,
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
@@ -11152,7 +11148,7 @@
               },
               "mappings": [],
               "min": 0,
-              "noValue": "Queries switched off in this file: the reference RB5009 does not produce this measurement (none in its store on 2026-09-25, RouterOS 7.24.4). If your router does, switch them on in the panel editor, or run `mikroscope dashboards import`, which asks your store and moves the panel back into its own section.",
+              "noValue": "no rows for any block device in this window — on many deployments the table does not exist at all, because the agent drops a device that did nothing and never creates it",
               "unit": "Bps"
             },
             "overrides": []
@@ -11184,7 +11180,6 @@
                 "uid": "${DS_MIKROSCOPE}"
               },
               "expr": "sum by (device, op) (rate(mikroscope_disk_sectors_total[$__rate_interval])) * 512",
-              "hide": true,
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
