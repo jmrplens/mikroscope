@@ -254,7 +254,8 @@ type Panel struct {
 	// and mikroscope_disk included, before its first insert (sinks/sql.go
 	// sqlSchema); Prometheus answers an absent metric with an empty result;
 	// Graphite with an empty body (countRows); Elasticsearch with a line at
-	// 0, a sum over documents that lack the field. Each of those was sent
+	// 0, a sum over documents that lack the field, which a present field
+	// summing to zero also draws. Each of those was sent
 	// through Grafana 13.2.1 in the docker suite on 2026-09-25, from the
 	// committed files, with nothing in the store for them: all answered 200
 	// with no error.

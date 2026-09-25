@@ -553,8 +553,9 @@ casos se midió el 2026-09-25 enviando las consultas de los ficheros del reposit
 Grafana 13.2.1 en la batería de contenedores del proyecto, con el almacén sin nada para ellas
 (Prometheus 3.14.0, PostgreSQL 18.6, graphite-statsd 1.1.10-5, Elasticsearch 9.5.3): todas
 respondieron 200 sin error, y en Elasticsearch todos los puntos fueron 0, tanto si otro router del
-mismo índice había mapeado el campo como si no. Así que en Elasticsearch un cero plano en esta fila
-significa que el router no produce la medida, que es lo que dice el título de la fila. Las
+mismo índice había mapeado el campo como si no. Ese cero es un valor, no un resultado vacío, y no
+distingue un router que no tiene la medida de uno cuyos valores suman cero: es el título de la
+fila, no la línea, lo que dice que la medida no se produce. Las
 consultas siguen encendidas para que un router que sí produce la medida llene el panel sin tocar
 nada; en PostgreSQL, Graphite y Elasticsearch ningún sondeo podría volver a encenderlas. Tras un
 sondeo, en cualquier almacén, un panel que el sondeo no encontró se publica con sus consultas

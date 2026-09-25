@@ -139,7 +139,8 @@ func measurementsOf(p Panel) []string {
 //
 // Unprobed, only InfluxDB hides them, with compiledAbsentNote as the text:
 // there the missing table is the error. On the other four stores an absent
-// measurement reads empty (see Panel.HideQueries), so the queries stay on and
+// measurement reads without an error, empty on three and zeros on
+// Elasticsearch (see Panel.HideQueries), so the queries stay on and
 // the panel keeps its own no-value text, as it did up to 1.3.0; a reader
 // whose router produces the measurement sees it without an edit.
 func resolveAvailability(p Panel, store Store, present map[string]bool) Panel {
@@ -228,8 +229,9 @@ func presentAsHistogram(name string, present map[string]bool) bool {
 // InfluxDB row, and in the row of any probed store, ships hidden, so opening
 // it sends nothing; the panels stay documented, and `dashboards check` lists
 // them without running a hidden target. The other four stores' unprobed rows
-// keep their queries on, because there a missing measurement reads empty
-// rather than failing (Panel.HideQueries).
+// keep their queries on, because there a missing measurement reads without an
+// error rather than failing: empty, or zeros on Elasticsearch, which a present
+// measurement summing to zero also draws (Panel.HideQueries).
 //
 // The title deliberately names no device. WHICH measurements are absent is
 // exactly the thing that differs per deployment: on the reference RB5009

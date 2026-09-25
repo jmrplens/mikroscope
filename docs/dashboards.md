@@ -697,8 +697,9 @@ empty body. Elasticsearch answers with a line at zero: a `sum` over documents th
 through Grafana 13.2.1 in the project's container suite, where the store held nothing for them
 (Prometheus 3.14.0, PostgreSQL 18.6, graphite-statsd 1.1.10-5, Elasticsearch 9.5.3): every one
 answered 200 with no error, and on Elasticsearch every point was 0, whether or not another router in
-the same index had mapped the field. So on Elasticsearch a flat zero in this row means the router
-does not produce the measurement, which is what the row's title says. The queries stay on so that
+the same index had mapped the field. A zero there is a value, not an empty result, and it cannot
+tell a router that lacks the measurement from one whose values add up to zero: the row's title,
+not the line, is what says the measurement is not produced. The queries stay on so that
 a router that does produce the measurement fills the panel with no edit; on PostgreSQL, Graphite and
 Elasticsearch no probe could switch them back on. After a probe, on any store, a panel the probe
 found missing ships with its queries switched off, as on InfluxDB.
