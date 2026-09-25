@@ -188,7 +188,9 @@ cross-compiled and CI-checked and has never run on hardware.
 [Where it stands](https://jmrp.io/docs/mikroscope/about/status/) is the
 measurement behind each claim. If you run mikroscope on another board,
 `mikroscope status` names it, and that plus what you measured is everything a
-pull request needs to add a row.
+pull request needs to add a row, or a
+[board report](https://github.com/jmrplens/mikroscope/issues/new?template=2-board-report.yml)
+if you would rather someone else wrote it.
 
 ## Documentation
 
@@ -218,9 +220,12 @@ All of it is at <https://jmrp.io/docs/mikroscope/>, in English and Spanish.
 ## Contributing
 
 [`CONTRIBUTING.md`](CONTRIBUTING.md) has the layout, the two test suites and
-which one to run for which change. The Markdown under `docs/` is **generated**
-from the site's English pages — change the page and its Spanish twin, then run
-`pnpm run docs` in `site/`.
+which one to run for which change. Questions go to
+[Discussions](https://github.com/jmrplens/mikroscope/discussions); a bug, a
+board report, a feature request and a documentation defect each have an
+[issue form](https://github.com/jmrplens/mikroscope/issues/new/choose). The
+Markdown under `docs/` is **generated** from the site's English pages — change
+the page and its Spanish twin, then run `pnpm run docs` in `site/`.
 
 Lineage: the deployment steps, the dockerless image builder and the vendored
 RouterOS API client come from `cmd/perfmon` and `internal/rosapi` in

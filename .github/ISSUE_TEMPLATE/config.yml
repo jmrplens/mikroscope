@@ -1,8 +1,17 @@
-blank_issues_enabled: true
+blank_issues_enabled: false
 contact_links:
+  - name: Ask a question
+    url: https://github.com/jmrplens/mikroscope/discussions/categories/q-a
+    about: Installing, flags, sinks and dashboards, on any board. An answer there stays searchable for the next person. English or Spanish.
+  - name: A reading you cannot explain
+    url: https://github.com/jmrplens/mikroscope/discussions/categories/reading-the-data
+    about: A panel, a kernel-log record or a number that looks wrong and may be the router telling the truth. It is read together first, and becomes a bug report if the tool is wrong.
+  - name: An idea whose source is not known yet
+    url: https://github.com/jmrplens/mikroscope/discussions/categories/ideas
+    about: A question the data cannot answer, before anyone knows which file or API would answer it and what reading it costs.
   - name: Documentation
     url: https://jmrp.io/docs/mikroscope/
-    about: Install, record, sinks, dashboards, limits and security, in English and Spanish.
+    about: Install, record, sinks, dashboards, limits and security, in English and Spanish. The troubleshooting page lists the symptoms in the words you actually see.
   - name: Security vulnerability
     url: https://github.com/jmrplens/mikroscope/security/advisories/new
-    about: Report it privately. It does not go in a public issue.
+    about: Report it privately. It does not go in a public issue, and neither does a credential.

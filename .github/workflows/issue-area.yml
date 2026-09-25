@@ -1,0 +1,100 @@
+# Applies the area labels an issue form's "Which part" answer names.
+#
+# The bug report and the feature request carry a "Which part" dropdown whose
+# options name the same areas .github/labeler.yml puts on pull requests, so an
+# issue and the pull request that closes it carry the same word. A form can
+# only apply the fixed labels in its front matter; GitHub cannot map a
+# dropdown answer to a label by itself, so this reads the rendered answer out
+# of the body.
+#
+# The dropdown is multiple-choice, because a fault can span the collector and
+# a sink. GitHub renders a multiple answer as one line joined by ", " (seen on
+# davisking/dlib#3038: "Linux (x86-64), macOS (Apple Silicon)"), and that is
+# ambiguous for an option that itself holds a comma. So no option has one, the
+# forms say so next to the options, and splitting on ", " gives the answers
+# back exactly.
+#
+# Only ever adds, like the labeler: a label placed by hand survives an edit,
+# and an answer changed to "Not sure" removes nothing. An answer this file does
+# not know fails the run after the known ones are applied, so a form and this
+# map cannot drift apart unnoticed.
+#
+# The body is text anyone can write. It reaches the script as an environment
+# variable and is only matched against fixed strings; every label added comes
+# from the map below, never from the body. Nothing is checked out.
+
+name: Issue area
+
+on:
+  issues:
+    types: [opened, edited]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-area-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  area:
+    name: Area from the form
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # A pull request has no form. gitlab-mcp-server saw the issues event carry
+    # pull requests on milestoned; opened and edited are not known to, and the
+    # guard costs nothing.
+    if: ${{ !github.event.issue.pull_request }}
+    permissions:
+      issues: write
+    steps:
+      - name: Apply the areas the form named
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # GH_REPO rather than --repo: nothing is checked out, so gh has no
+          # repository to infer from the working directory.
+          GH_REPO: ${{ github.repository }}
+          ISSUE: ${{ github.event.issue.number }}
+          BODY: ${{ github.event.issue.body }}
+        run: |
+          set -euo pipefail
+          # A form renders each field as a level-3 heading, a blank line and
+          # the answer. Take the first non-empty line after "Which part". A
+          # body written by hand has no such heading and yields nothing, which
+          # is the right answer for it. Carriage returns go first: a body sent
+          # from Windows ends its lines with them, and awk does not count one
+          # as whitespace, so the heading would never match.
+          answer=$(printf '%s\n' "$BODY" | tr -d '\r' | awk '
+            /^### Which part[[:space:]]*$/ { seen = 1; next }
+            seen && NF { print; exit }
+          ')
+          case "$answer" in
+            ""|"_No response_")
+              echo "no part named, nothing to add"; exit 0 ;;
+          esac
+
+          declare -A labels=()
+          unknown=0
+          while IFS= read -r part; do
+            case "$part" in
+              "On the router: doctor / plan / install / status / upgrade / uninstall") labels[router]=1 ;;
+              "The agent: sampling / captures / its HTTP endpoints")                    labels[agent]=1 ;;
+              "Recording: record / mark / plot")                                         labels[collector]=1 ;;
+              "The collector: forward / derive / the RouterOS API tier")                 labels[collector]=1 ;;
+              "A sink or the store behind it")                                           labels[sinks]=1 ;;
+              "The Grafana dashboards or alert rules")                                   labels[dashboards]=1 ;;
+              "Getting it: install.sh / install.ps1 / a release archive / an image")    labels[distribution]=1 ;;
+              "The documentation site: a page that breaks / search / layout")            labels[site]=1 ;;
+              "Not sure") ;;
+              *)
+                echo "::error::unknown answer '${part}' under Which part; the forms and this workflow disagree"
+                unknown=1 ;;
+            esac
+          done <<< "${answer//, /$'\n'}"
+
+          if [ "${#labels[@]}" -gt 0 ]; then
+            list=$(IFS=,; echo "${!labels[*]}")
+            echo "the form names: ${list}"
+            gh issue edit "$ISSUE" --add-label "$list"
+          fi
+          exit "$unknown"

@@ -1,0 +1,49 @@
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A question about a router that the recorded data cannot answer, a kernel
+        interface that is not sampled yet, a sink, a panel. Ideas start here
+        while the source is still open; once it is known where the data comes
+        from and what reading it costs, it becomes a
+        [feature request](https://github.com/jmrplens/mikroscope/issues/new?template=3-feature-request.yml).
+
+        Every source on the router costs CPU on a device that is also routing,
+        so the cost of one read is usually what decides. Saying that you do not
+        know where the data would come from, or what it costs, is useful in
+        itself. English or Spanish, whichever you prefer.
+  - type: textarea
+    id: question
+    attributes:
+      label: The question it would let you answer
+      description: What you would put on a dashboard, or ask of a recording, that you cannot today.
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What is missing
+    validations:
+      required: true
+  - type: input
+    id: source
+    attributes:
+      label: Where it might come from
+      description: A file under /proc or /sys, a RouterOS API path, or a store's write API, if you have a guess.
+  - type: textarea
+    id: evidence
+    attributes:
+      label: What you have seen of it on a device
+      description: >
+        The board, the RouterOS version and the date, whether it is readable
+        from an unprivileged container, how often it changes, and what one read
+        costs, marked measured or not.
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Taking part
+      options:
+        - label: I could measure it on my board.
+          required: false
+        - label: I could help build or review it.
+          required: false

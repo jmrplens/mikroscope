@@ -1,0 +1,222 @@
+# Path-based labels applied to pull requests by .github/workflows/labeler.yml.
+#
+# Every key must name a label that already exists in the repository. The
+# action sends the pull request's whole label set in one PUT, so a single name
+# the repository does not have fails the entire call and the pull request gets
+# none of its labels. The workflow grants pull-requests: write and not
+# issues: write, under which that call is refused rather than creating the
+# label default grey with no description; CONTRIBUTING.md lists the labels and
+# who applies each one. Add the label first, then the rule.
+#
+# The map is read from the base branch, never from the pull request: the
+# action fetches this file through the API at the base branch's commit, so a
+# pull request that changes a rule is labelled by the old rule until it merges.
+#
+# Every rule below was measured against the complete changed-file lists of
+# pull requests #1 to #61 (read 2026-09-25) before it went in, and none would
+# have fired on more than half of them. "Touches docs/ or site/src/content/"
+# was true of 47 of the 61 and "touches CHANGELOG.md" of 41, because every
+# change here ships with its documentation, so neither is a label; the
+# documentation label is the docs-only one below. The comment above each area
+# says what it asks of the review, which is the reason it exists.
+
+# --- Kind of change -----------------------------------------------------------
+
+# Documentation *only*: any-glob-to-all-files against one braced pattern, so
+# every changed file has to be prose, a page's data or a capture. A list of
+# separate globs would not do it: the action needs ONE glob that matches every
+# file. docs/ is generated from site/src/content/docs and changes with it.
+# Would have fired on 3 of the 61 pull requests (5 %).
+documentation:
+  - changed-files:
+      - any-glob-to-all-files:
+          - "{**/*.md,site/src/content/**,site/src/data/**,site/src/assets/**,.github/ISSUE_TEMPLATE/**,.github/DISCUSSION_TEMPLATE/**}"
+
+# The files that state the security posture, and the code that enforces it:
+# the agent's token gate, the bounds on every value that reaches a RouterOS
+# command, and the installer a reader pipes to sh. Deliberately over-eager: a
+# test added to options_test.go picks it up without meriting it, and that is
+# the cheap direction to be wrong in.
+# Would have fired on 9 of the 61 pull requests (15 %).
+security:
+  - changed-files:
+      - any-glob-to-any-file:
+          - SECURITY.md
+          - .gitguardian.yaml
+          - .github/workflows/codeql.yml
+          - scripts/govulncheck.sh
+          - internal/agent/http*.go
+          - internal/router/options*.go
+          - install.sh
+          - install.ps1
+
+# The pipeline, whose failure mode is that nobody finds out until it runs.
+# actionlint is the check that reads these.
+# Would have fired on 11 of the 61 pull requests (18 %).
+ci:
+  - changed-files:
+      - any-glob-to-any-file:
+          - .github/workflows/**
+          - .github/scripts/**
+          - .github/labeler.yml
+          - .github/dependabot.yml
+          - Makefile
+          - .golangci.yml
+          - .markdownlint-cli2.jsonc
+          - .markdownlint-cli2.yaml
+          - .coderabbit.yaml
+          - sonar-project.properties
+          - scripts/check-doc-links.mjs
+
+# What a user installs: the release, the two images, the installers and
+# VERSION. A mistake here cannot be taken back once a tag is pushed, which is
+# what .github/RELEASING.md is about. VERSION alone accounts for 16 of the 23:
+# the release pull requests, which is the point.
+# Would have fired on 23 of the 61 pull requests (38 %).
+distribution:
+  - changed-files:
+      - any-glob-to-any-file:
+          - VERSION
+          - .goreleaser.yaml
+          - Dockerfile.agent
+          - Dockerfile.collector
+          - .dockerignore
+          - install.sh
+          - install.ps1
+          - install_test.go
+          - install_powershell_test.go
+          - scripts/agent-tars.sh
+          - .github/workflows/release.yml
+          - .github/RELEASING.md
+
+# The label .github/dependabot.yml asks for, so a bump made by hand and one
+# Dependabot opened land in the same filter.
+# Would have fired on 8 of the 61 pull requests (13 %).
+dependencies:
+  - changed-files:
+      - any-glob-to-any-file:
+          - go.mod
+          - go.sum
+          - site/package.json
+          - site/pnpm-lock.yaml
+          - site/pnpm-workspace.yaml
+
+# --- Area ---------------------------------------------------------------------
+#
+# Where a change lives. The same words are what the "Which part" answers of the
+# bug and feature forms map to (.github/workflows/issue-area.yml), so an issue
+# and the pull request that closes it carry the same label. Keep this list in
+# step with the packages: a new package with no entry here goes out unlabelled,
+# and the pull request template asks for the entry.
+
+# What runs on the router. The agent links only procfs, sample, agent, version
+# and the standard library; review asks `make agent-size`, and `make test-race`
+# for the sampler or the ring.
+# Would have fired on 9 of the 61 pull requests (15 %).
+agent:
+  - changed-files:
+      - any-glob-to-any-file:
+          - cmd/mikroscope-agent/**
+          - internal/agent/**
+          - internal/procfs/**
+          - internal/sample/**
+          - internal/version/**
+          - version.go
+          - Dockerfile.agent
+          - testdata/**
+          - test/e2e/agent_e2e_test.go
+          - test/e2e/docker/captures_test.go
+
+# What reads and writes a RouterOS device over ssh: doctor, plan, install,
+# status, upgrade, uninstall, and the image they upload. The review question is
+# the one CONTRIBUTING.md's "Working against a real router" asks: exact tags,
+# --dry-run first, one connection.
+# Would have fired on 13 of the 61 pull requests (21 %).
+router:
+  - changed-files:
+      - any-glob-to-any-file:
+          - internal/router/**
+          - internal/image/**
+          - internal/health/**
+          - cmd/mikroscope/health*.go
+          - cmd/mikroscope/uninstall*.go
+          - cmd/mikroscope/image_test.go
+          - cmd/mikroscope/buildimage_cover_test.go
+          - cmd/mikroscope/deploy_cover_test.go
+          - scripts/roundtrip.sh
+
+# What runs on the operator's machine and pulls from the agent: forward,
+# record, mark and plot, the derive stage, and the RouterOS API tier, whose
+# polling costs the router CPU.
+# Would have fired on 15 of the 61 pull requests (25 %).
+collector:
+  - changed-files:
+      - any-glob-to-any-file:
+          - internal/forward/**
+          - internal/derive/**
+          - internal/transport/**
+          - internal/record/**
+          - internal/chart/**
+          - internal/apitier/**
+          - internal/rosapi/**
+          - cmd/mikroscope/forward*.go
+          - cmd/mikroscope/record.go
+          - cmd/mikroscope/runforward_cover_test.go
+          - cmd/mikroscope/runrecord_cover_test.go
+          - cmd/mikroscope/script_plot_cover_test.go
+          - cmd/mikroscope/logmarkers_cover_test.go
+          - Dockerfile.collector
+          - deploy/**
+
+# The eleven sinks and the stores behind them. Review asks
+# `make test-e2e-docker`: a capture server accepts bytes a store rejects.
+# Would have fired on 16 of the 61 pull requests (26 %).
+sinks:
+  - changed-files:
+      - any-glob-to-any-file:
+          - internal/sinks/**
+          - internal/expo/**
+          - internal/teardown/**
+          - cmd/mikroscope/sinkflags*.go
+          - cmd/mikroscope/dsn*.go
+          - cmd/mikroscope/influxurl*.go
+          - test/e2e/*sink*_test.go
+          - test/e2e/{elasticsearch,file,graphite,influx,loki,otlp,prometheus,sql,stdout,telegraf}_e2e_test.go
+          - test/e2e/docker/**
+
+# The generated Grafana dashboards and alert rules, and what shows them. Review
+# asks `make gen-dashboards` committed, and every panel's query run.
+# Would have fired on 26 of the 61 pull requests (43 %).
+dashboards:
+  - changed-files:
+      - any-glob-to-any-file:
+          - internal/dashboards/**
+          - dashboards/**
+          - cmd/mikroscope/dashboards*.go
+          - cmd/mikroscope/publish*.go
+          - cmd/mikroscope/rundashboards_cover_test.go
+          - cmd/mikroscope/dashboardscheck_cover_test.go
+          - test/e2e/dashboards_e2e_test.go
+          - test/e2e/docker/grafana_test.go
+          - test/e2e/docker/publish_test.go
+          - test/e2e/docker/*_dashboard_test.go
+          - site/src/assets/dashboards/**
+          - site/src/data/dashboards.ts
+          - site/scripts/gen-dashboard-captures.mjs
+
+# The documentation site's machinery, not its content: content is on the other
+# side of the docs-only line above. Review asks `make site-check`.
+# Would have fired on 17 of the 61 pull requests (28 %).
+site:
+  - changed-files:
+      - any-glob-to-any-file:
+          - site/*.{mjs,json}
+          - site/.*
+          - site/src/*.{ts,mjs}
+          - site/src/components/**
+          - site/src/styles/**
+          - site/src/lib/**
+          - site/src/pages/**
+          - site/scripts/*.mjs
+          - site/public/**
+          - .github/workflows/docs.yml
