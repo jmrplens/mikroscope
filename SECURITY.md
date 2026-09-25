@@ -2,18 +2,21 @@
 
 ## Reporting a vulnerability
 
-Do not put the details in a public issue.
+Do not put the details in a public issue or discussion.
 
 Use GitHub's private vulnerability reporting: the **Security** tab of this
 repository, then **Report a vulnerability**. It creates a private advisory that
-only the maintainer can see. If that button is not there, open an issue that
-asks for a private channel and says nothing else about the problem, and wait
-there for a reply that names one.
+only the maintainer can see. If that button is not there, start a discussion
+in [General](https://github.com/jmrplens/mikroscope/discussions/categories/general)
+that asks for a private channel and says nothing else about the problem, and
+wait there for a reply that names one. Issues go through forms that ask for
+the details, so an issue cannot stay that empty.
 
-Please include the version (`mikroscope version`, and `mikroscope-agent
--version` if it differs), the RouterOS version and board, what an attacker
-gains, and the smallest way to reproduce it. If a proof of concept needs a
-credential, a router address or an export, do not send it: describe it.
+Please include the version (`mikroscope version`, and the agent's from the
+`agent:` line of `mikroscope status` if it differs), the RouterOS version and
+board, what an attacker gains, and the smallest way to reproduce it. If a proof
+of concept needs a credential, a router address or an export, do not send it:
+describe it.
 
 You can expect an acknowledgement within a week and, once the report is
 confirmed, a fix released before the advisory is published. A reporter who
