@@ -14,6 +14,7 @@ make lab-cli ARGS='doctor --arch amd64 --remote-image $(LAB_REMOTE_IMAGE)'
 make lab-profile PROFILE=doctor-lists
 make lab-ssh CMD='/container/print'
 make lab-reset              # back to the clean snapshot
+make test-lab               # the end-to-end suite against it
 make lab-down
 ```
 
@@ -165,6 +166,125 @@ this branch and its agent:
   answered after its veth was taken out of `LAN` and its /30 out of `LANs`.
 - `doctor-lists` and `tmpfs-disk` imported twice left one list, one member,
   one address-list entry and one disk.
+
+## The end-to-end suite
+
+`make test-lab` runs `test/e2e/lab` (build tag `labe2e`) against the lab that
+is running: this checkout's CLI (`make build`) through `lab.sh cli`, and this
+checkout's agent from its image tar (`make agent-tars`). It holds the lab's
+lock for the whole run, so nothing drives the lab between two of its steps.
+
+```sh
+make lab-up
+make test-lab                               # x86_64
+make test-lab LAB_ARCH=arm64                # the emulated one, much slower
+make test-lab LAB_RUN='S09'                 # one scenario, by a -run pattern
+```
+
+- **No lab, no test.** Without a running lab every test skips;
+  `MIKROSCOPE_LAB_REQUIRED=1`, which CI sets, makes that a failure. A lab
+  another checkout started stops the run at once, with the `LAB_STATE_DIR` to
+  export.
+- **Nothing reaches another router.** Every RouterOS action goes through
+  `lab.sh` and every deploy verb through `lab.sh cli`; the log has one line
+  per call, and each CLI call's `using <bin>: <version>` line. Every
+  `MIKROSCOPE_*` variable is dropped from the environment before anything
+  starts, so a shell set up for a real router cannot steer the suite. Reads of
+  the agent go to the lab's loopback port, or, for an address the host has no
+  port for, to `curl` inside the lab's namespace.
+- **Each scenario starts from `lab.sh reset`** and the profiles it names, and
+  takes the router's export and residue there as its baseline. It ends by
+  comparing them: the export must be equal, and after an install the residue
+  too, apart from what the scenario names.
+- **Tar first.** Scenarios install the branch's tar. Only S2 (install and
+  upgrade) and S4's pull case pull from Docker Hub: three pulls per run, of
+  `LAB_REMOTE_IMAGE`.
+- **Secrets.** S8 uses the agent token from `.env`, and puts it on no command
+  line: the CLI gets it as `MIKROSCOPE_TOKEN` through `LAB_CLI_TOKEN=lab`, and
+  `curl` reads its header from stdin. The suite also replaces every value of
+  `.env` with `<lab secret>` in each line it logs.
+- **The CLI's working directory** is `build/lab-e2e/<test>`, inside the
+  repository and so inside one of the two directories `lab.sh cli` mounts, and
+  removed when the test ends. The CLI writes nothing there: `plan --rsc`
+  prints the script and the test writes the file.
+- **One export line is left out.** RouterOS 7.24.4 added
+  `/system keymat-provider add disabled=yes … name=default …` to `/export` and
+  dropped it again on its own, with nothing but reads going to the router
+  (2026-09-26, both arches): absent at 5 s of uptime and present at 6 s or
+  11 s; absent for a whole 80-second boot; present at 17 s and gone at 3 min
+  of the same boot. mikroscope never touches `/system keymat-provider`, so the
+  suite compares exports without that exact line.
+- **S7 waits before it cuts the power.** RouterOS had not written an install
+  to its disk within seconds: on the arm64 lab (2026-09-26), three of four
+  power cuts made as soon as the agent answered brought back no agent within
+  90 s, and the two looked at had a container that could not start
+  (`Exec format error`, `Segmentation fault`), while a cut 45 s later brought
+  the agent back 29 s after it. On x86_64 the three immediate cuts that day
+  came back. So S7 waits 45 s between the install and
+  the cut: it tests start-on-boot, not a power loss right after an install.
+
+**What 1.3.1 does, asserted as known.** The suite encodes the behaviour of
+the code on the branch, bugs included, and fails when one of them changes
+without the scenario changing with it:
+
+- S1: doctor with its defaults misses exactly the interface list `LAN`, the
+  address list `LANs` and, on x86_64, the architecture (`--arch` defaults to
+  arm64).
+- S9: with a client on `/stream`, the first `uninstall` is refused with
+  `cannot remove running` (its fixed 4 s wait against the agent's 5 s
+  shutdown), and a second one cleans up.
+- Every other uninstall may meet the same race without a client, since the
+  wait is fixed; the suite allows one retry for it and says so in the log.
+- The empty `mikroscope` directory an uninstall leaves in `/file` is allowed
+  in the residue, and logged.
+
+**Scenarios.** The numbers follow the lab's plan; the gaps (S5, S10, S11 and
+S13 to S18) are scenarios that come with the changes that make them pass.
+
+| Test                                          | Profiles                 | What it does                                                                                                    | What it asserts                                                                                                                                                                                   |
+| --------------------------------------------- | ------------------------ | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| S1 `TestS01DoctorDefaultsMissTheKnownChecks`  | none                     | `doctor --remote-image` with every other flag at its default                                                    | exit 1, exactly the known MISSING set, export unchanged                                                                                                                                           |
+| S2 `TestS02PullInstallStatusUpgradeUninstall` | doctor-lists             | install *pull*, `/healthz` and `/capabilities`, `status`, `upgrade` to the same reference, `uninstall`          | the agent answers; `status` names it; the export equals the baseline; the residue too, apart from the known directory                                                                             |
+| S3 `TestS03TarInstallUpgradeUninstall`        | doctor-lists             | install from the branch's tar, `upgrade` from it, `uninstall`                                                   | the agent reports the branch build's version, commit and date before and after the upgrade, and restarted; clean export                                                                           |
+| S4 `TestS04PlanScriptImported`                | doctor-lists             | `plan --rsc` for the tar (the tar put as `mikroscope.tar`) and for *pull*; `/import`; `status`; `uninstall`     | the agent answers; `status` recognises the script's objects; clean export                                                                                                                         |
+| S6 `TestS06EphemeralThroughAPowerCut`         | tmpfs-disk, doctor-lists | install `--ephemeral`, power cycle, `uninstall --ephemeral`                                                     | after the cut the container is configured and stopped, its root and image are gone, the tmpfs disk is there and empty, nothing answers; afterwards nothing at all is left, the directory included |
+| S7 `TestS07StartOnBootAfterAPowerCut`         | doctor-lists             | a persistent install, 45 s for it to reach the disk, power cycle                                                | the agent answers within 90 s, as a new start; clean export                                                                                                                                       |
+| S8 `TestS08ExposeWithToken`                   | doctor-lists             | install `--expose --lan-address 192.168.88.1 --token …`, reads from the LAN side, uninstall with the same flags | `/healthz` 200, `/capabilities` 401 without the token and 200 with it; both firewall rules there, then gone; clean export                                                                         |
+| S9 `TestS09UninstallWhileAClientStreams`      | doctor-lists             | install, a client on `/stream`, uninstall, uninstall again                                                      | the known refusal, then a clean router                                                                                                                                                            |
+| S12 `TestS12TwoInstallsSideBySide`            | doctor-lists             | install a, install b (`--name b --veth veth-b --subnet 172.30.11.0/30 --port 9200`), uninstall b, uninstall a   | b answers on its own /30; removing b leaves every object of a and a running agent; clean export                                                                                                   |
+| `TestRepeatedTarInstalls`                     | doctor-lists             | `LAB_INSTALL_REPEAT` installs and uninstalls on one boot (10 on x86_64, 3 on arm64)                             | no install fails; how often uninstall met the race is logged                                                                                                                                      |
+
+**How long it took**, on 2026-09-26 on the machine described under
+[how long each step took](#how-long-each-step-took), CHR 7.24.4 and the 1.3.1
+code of this branch, one run per architecture. `make test-lab` took 7 min
+29 s on x86_64 and 12 min 12 s on arm64, with the builds already cached; the
+arm64 figures are the emulation's, not a router's.
+
+| Test                                    | x86_64 (KVM)          | arm64 (TCG)             |
+| --------------------------------------- | --------------------- | ----------------------- |
+| S1                                      | 23.8 s                | 31.8 s                  |
+| S2                                      | 30.9 s                | 65.7 s                  |
+| S3                                      | 33.4 s                | 58.7 s                  |
+| S4, both routes                         | 55.0 s                | 106.1 s                 |
+| S6                                      | 45.8 s                | 75.3 s                  |
+| S7                                      | 41.3 s                | 90.4 s                  |
+| S8                                      | 25.4 s                | 57.5 s                  |
+| S9                                      | 29.3 s                | 67.9 s                  |
+| S12                                     | 36.1 s                | 78.8 s                  |
+| `TestRepeatedTarInstalls`               | 126.2 s (10)          | 97.8 s (3)              |
+| … the reset each scenario starts with   | 9.2–18.6 s            | 20.8–34.1 s             |
+| … one tar install / uninstall, repeated | 5.9–7.0 s / 5.4–5.5 s | 10.1–12.8 s / 7.0–7.6 s |
+
+The last run of the branch, with S7's 45 s wait and both suites side by side
+on a host busy with other work, took 9 min 49 s on x86_64 and 16 min 48 s on
+arm64 (`lab.sh lock go test`, the builds done before); S7 took 88.3 s and
+143.5 s, and the agent answered 18.2 s and 30 s after the cut.
+
+No install failed, and no uninstall without a client on `/stream` met the
+stop/remove race at its first attempt: 19 on x86_64 and 12 on arm64 in these
+two runs, and 19 more on x86_64 while the suite was written. Before the
+[blackhole routes](#how-it-is-put-together), 5 of 15 first attempts on x86_64
+had failed; whether the routes are why was not examined.
 
 ## How it is put together
 

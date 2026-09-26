@@ -21,7 +21,7 @@ SHELL := /bin/bash
 	gen-dashboards check-dashboards gen-brand check-brand check-generated \
 	install-tools tools-versions release-check roundtrip \
 	lab-up lab-down lab-reset lab-status lab-ssh lab-cli lab-console lab-provision \
-	lab-profile lab-export lab-residue lab-power-cycle
+	lab-profile lab-export lab-residue lab-power-cycle test-lab e2e-lab-build
 
 # ─── Variables ──────────────────────────────────────────────────────────────
 
@@ -283,6 +283,12 @@ e2e-docker-build: ## Type-check the docker suite without starting anything
 	go vet -tags dockere2e ./test/e2e/docker/
 	go test -c -o /dev/null -tags dockere2e ./test/e2e/docker/
 
+# The lab suite (test/e2e/lab) is tagged for the same reason, and compiled here
+# for the same one: it needs a running lab, which no default job has.
+e2e-lab-build: ## Type-check the lab suite without starting anything
+	go vet -tags labe2e ./test/e2e/lab/
+	go test -c -o /dev/null -tags labe2e ./test/e2e/lab/
+
 ##@ Documentation
 
 # docs/ is generated from the English pages of the site, and a page changed
@@ -322,7 +328,7 @@ cover-check: ## Fail if coverage over cmd/ and internal/ is below COVERAGE_MIN
 
 ##@ Static analysis
 
-lint: golangci-lint e2e-docker-build govulncheck ## Run golangci-lint, type-check the tagged suite, and govulncheck
+lint: golangci-lint e2e-docker-build e2e-lab-build govulncheck ## Run golangci-lint, type-check the tagged suites, and govulncheck
 
 # The three commands CI's golangci-lint job runs, in its order.
 golangci-lint: ## Verify the linter config, check formatting, then lint
@@ -583,6 +589,17 @@ lab-console: ## Attach to the lab router's serial console
 
 lab-provision: ## Rebuild the lab's clean snapshot from MikroTik's image (FORCE=1 redoes an existing one)
 	@$(LAB) provision
+
+# The end-to-end suite against the lab router (test/e2e/lab, build tag labe2e),
+# holding the lab's lock for the whole run so no other checkout or agent
+# drives the lab between two of its steps. It needs a running lab (make
+# lab-up): without one every test skips, or fails with
+# MIKROSCOPE_LAB_REQUIRED=1, which is what CI sets. LAB_RUN narrows it to the
+# tests a -run pattern matches; LAB_INSTALL_REPEAT sets how many installs the
+# repeat test makes (10 on x86_64, 3 on arm64).
+test-lab: build agent-tars ## Run the end-to-end suite against the lab router (make lab-up first; LAB_ARCH, LAB_RUN='S0[1-4]')
+	LAB_REMOTE_IMAGE='$(LAB_REMOTE_IMAGE)' MIKROSCOPE_LAB_REQUIRED='$(MIKROSCOPE_LAB_REQUIRED)' \
+	  $(LAB) lock go test -tags labe2e -count=1 -timeout 75m -v $(if $(LAB_RUN),-run '$(LAB_RUN)') ./test/e2e/lab/
 
 ##@ Reference device
 
