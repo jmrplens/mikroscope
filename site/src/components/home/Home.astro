@@ -4,12 +4,12 @@
  *
  * Seven sections, in the order a first-time reader's doubts arrive: what the
  * numbers are, why a one-second average is not enough, what the observer
- * costs, what it can and cannot see, what it does to the router, what is not
- * claimed, and where to read on. Copy comes from src/data/home.ts, numbers
+ * costs, what it can and cannot see, what it does to the router, where the
+ * proof is, and where to read on. Copy comes from src/data/home.ts, numbers
  * from src/data/measurements.ts, the release from src/data/release.ts; nothing
- * here is typed per locale. The campaign under the cost table is
- * `LANDING_CAMPAIGN`, the same constant src/lib/page-markdown.mjs gives the
- * markdown twin, so the page and its twin cannot name two campaigns again.
+ * here is typed per locale. The landing is a guide (src/lib/voice.mjs): the
+ * device, the RouterOS versions and the dates are on Tested on, which the copy
+ * links, and src/lib/page-markdown.mjs renders the same copy into the twin.
  *
  * The copy is HTML strings, which the markdown pass that keeps a date or a
  * number and its unit on one line never sees, so it goes through the same
@@ -29,10 +29,8 @@
  * while the fence on es/cost/ said "¡Copiado!" (dist, 2026-09-15).
  */
 import { Code } from "@astrojs/starlight/components";
-import { LANDING_CAMPAIGN, type HomeContent } from "../../data/home";
+import type { HomeContent } from "../../data/home";
 import { release } from "../../data/release";
-import NotClaimed from "../NotClaimed.astro";
-import Provenance from "../Provenance.astro";
 import RouterWrites from "../RouterWrites.astro";
 import RunsTable from "../RunsTable.astro";
 import Version from "../Version.astro";
@@ -69,8 +67,7 @@ if (content.lang !== lang) {
 
 	<section class="ms-home-cost" aria-labelledby="ms-home-cost">
 		<h2 id="ms-home-cost">{content.cost.title}</h2>
-		<p>{content.cost.lead}</p>
-		<Provenance of={LANDING_CAMPAIGN} />
+		<p set:html={valuesInHtml(codeInHtml(content.cost.lead))} />
 		<RunsTable only={content.cost.runs} />
 		<p>{content.cost.after}</p>
 		<p><a href={content.cost.href}>{content.cost.linkText}</a></p>
@@ -108,13 +105,14 @@ if (content.lang !== lang) {
 			}
 		</ol>
 		<RouterWrites command="install" />
+		<p><a href={content.install.more.href}>{content.install.more.text}</a></p>
 	</section>
 
+	{/* The id is the one this section was published under, when it was a
+	 * "not claimed" callout; external links to it keep landing here. */}
 	<section class="ms-home-not-claimed" aria-labelledby="ms-home-not-claimed">
-		<h2 id="ms-home-not-claimed">{content.notClaimed.title}</h2>
-		<NotClaimed variant="not-measured">
-			{content.notClaimed.paragraphs.map((p) => <p class="ms-home-claim" set:html={valuesInHtml(codeInHtml(p))} />)}
-		</NotClaimed>
+		<h2 id="ms-home-not-claimed">{content.testedOn.title}</h2>
+		{content.testedOn.paragraphs.map((p) => <p class="ms-home-claim" set:html={valuesInHtml(codeInHtml(p))} />)}
 	</section>
 
 	<section class="ms-home-next" aria-labelledby="ms-home-next">
@@ -135,10 +133,10 @@ if (content.lang !== lang) {
 </div>
 
 <style>
-	/* The callout's statements, one subject each. home.css zeroes the
+	/* The Tested on statements, one subject each. home.css zeroes the
 	 * landing's sibling margins, so without this they ran together as one
-	 * block (390 px render, 2026-09-24); the gap is the one a NotClaimed on a
-	 * doc page gets from Starlight between its paragraphs. */
+	 * block (390 px render, 2026-09-24); the gap is the one Starlight puts
+	 * between a doc page's paragraphs. */
 	.ms-home-claim + .ms-home-claim {
 		margin-top: var(--sl-content-gap-y);
 	}

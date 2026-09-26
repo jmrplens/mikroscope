@@ -1002,19 +1002,19 @@ const TAGLINES = Object.fromEntries(
  * The page itself is one component tag over a typed object: every heading,
  * paragraph, link and command below is in that object, and the figures come
  * from src/data/measurements.ts through it. Reducing the tag alone would
- * publish an empty page, so the object is walked here. The `<code>` spans the
- * copy carries become Markdown code, which is the same thing said the other
- * way round.
+ * publish an empty page, so the object is walked here. The `<code>` spans and
+ * `<a href>` links the copy carries become Markdown code and links, which is
+ * the same thing said the other way round.
  *
  * It says what the HTML says in the same order, with the hero's tagline first
- * because the hero is the first thing the page shows. The campaign under the
- * cost table is `home.LANDING_CAMPAIGN`, the constant `<Home>` renders too:
- * this function named its own until 2026-09-24 and kept the 2026-09-15 one
- * after the page had moved on.
+ * because the hero is the first thing the page shows. Like the page, it names
+ * no campaign: the landing is a guide, and its copy links Tested on.
  */
 function renderHome(content, context) {
-	const { t } = context;
-	const inline = (html) => html.replaceAll(/<\/?code>/g, "`");
+	const inline = (html) =>
+		html
+			.replaceAll(/<a href="([^"]+)">([^<]*)<\/a>/g, "[$2]($1)")
+			.replaceAll(/<\/?code>/g, "`");
 	const readout = content.readout.items.map(
 		(item) =>
 			`- [**${item.id === "run.gapsDrops" ? home.gapsDrops(content.lang) : formatQuantity(measurements[item.id], content.lang)}** — ${item.label}](${item.href})`,
@@ -1036,14 +1036,7 @@ function renderHome(content, context) {
 		"",
 		`## ${content.cost.title}`,
 		"",
-		content.cost.lead,
-		"",
-		renderSelfClosing(
-			"Provenance",
-			{ of: home.LANDING_CAMPAIGN },
-			{},
-			context,
-		).trim(),
+		inline(content.cost.lead),
 		"",
 		renderSelfClosing(
 			"RunsTable",
@@ -1079,14 +1072,11 @@ function renderHome(content, context) {
 			context,
 		).trim(),
 		"",
-		`## ${content.notClaimed.title}`,
+		`[${content.install.more.text}](${content.install.more.href})`,
 		"",
-		blockquote(
-			[
-				`**${t("ms.claim.notMeasured")}**`,
-				...content.notClaimed.paragraphs.map(inline),
-			].join("\n\n"),
-		),
+		`## ${content.testedOn.title}`,
+		"",
+		content.testedOn.paragraphs.map(inline).join("\n\n"),
 		"",
 		`## ${content.next.title}`,
 		"",

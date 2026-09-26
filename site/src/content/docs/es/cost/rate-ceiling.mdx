@@ -1,5 +1,6 @@
 ---
-title: El techo de muestreo
+title: Techo de muestreo
+docType: evidence
 description: Seis ejecuciones medidas a 10, 20, 50 y 100 Hz en un RB5009 con la configuración de serie, sin perder ni una muestra, y lo que aporta muestrear más rápido.
 head:
   - tag: title
@@ -13,15 +14,11 @@ import Provenance from "../../../../components/Provenance.astro";
 import RunsTable from "../../../../components/RunsTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
 
-La pregunta que responde esta página es la que merece la pena hacer antes de
-fiarse de nada de lo demás: **¿a qué velocidad puede muestrear antes de empezar
-a perder datos?**
+**El agente no perdió ninguna muestra en el RB5009 a ninguna cadencia hasta el tope de 100 Hz de la
+propia CLI**, con todas las fuentes leídas en cada tick en el peor caso. Eso no es una extrapolación
+desde la cifra de 10 Hz: son seis ejecuciones.
 
-En el equipo de referencia la respuesta es que no pierde, hasta el tope de
-100 Hz de la propia CLI, con todas las fuentes leídas en cada tick. Eso no es
-una extrapolación desde la cifra de 10 Hz. Son seis ejecuciones.
-
-## Las seis ejecuciones
+## Ejecuciones {#las-seis-ejecuciones}
 
 Cada cifra sale del propio cgroup del agente, viaja en cada muestra y se lee de vuelta desde el almacén, con el conjunto completo de fuentes.
 Cada fila es una ventana con el anillo ya lleno:
@@ -39,8 +36,8 @@ deriva de él —16 MiB a 10 y 20 Hz, 25 a 50, 48 a 100— bajo el tope de con
 de serie de 64M. La campaña anterior no podía hacer eso: necesitaba
 `--memory-max 96M` a 50 Hz y `128M` a 100, y su fila de 10 Hz guardaba un anillo
 de 300 s. Mismo equipo, mismas fuentes: **entre un 38 y un 59 % menos de memoria
-por fila, y la CPU sin moverse** —2,85 % de un núcleo a 10 Hz entonces frente a
-2,69 % ahora—.
+por fila, y la CPU sin moverse**: 2,85 % de un núcleo a 10 Hz el 2026-09-15 frente a
+2,69 % el 2026-09-18.
 
 La memoria sigue cambiando de fila en fila porque el anillo cambia: guarda 60 s
 de muestras sea cual sea el ritmo, así que diez veces el ritmo son diez veces el
@@ -53,9 +50,9 @@ anillo.
 	InfluxDB 3 de ningún descarte en ninguna ventana.
 </Aside>
 
-## Dos cosas de esa tabla que merecen releerse
+## Leer la tabla {#dos-cosas-de-esa-tabla-que-merecen-releerse}
 
-### El coste por muestra baja cuando sube la cadencia
+### Coste por muestra {#el-coste-por-muestra-baja-cuando-sube-la-cadencia}
 
 Una muestra cuesta <Measured id="run.10hz.usPerSample" /> a 10 Hz frente a <Measured id="run.100hz.usPerSample" /> a 100 Hz. No es
 una paradoja, son los suelos funcionando: las fuentes caras se amortizan entre más muestras.
@@ -68,7 +65,7 @@ Con `FLOOR_HZ` no hay nada que amortizar y el coste por muestra es plano —
 son <Measured id="run.50hz-floor.usPerSample" /> a 50 Hz y <Measured id="run.100hz-floor.usPerSample" /> a 100 Hz — así que la CPU
 escala linealmente con la cadencia: <Measured id="run.50hz-floor.cpu" />, y luego <Measured id="run.100hz-floor.cpu" />.
 
-### Un tick retrasado no es una muestra perdida
+### Ticks retrasados {#un-tick-retrasado-no-es-una-muestra-perdida}
 
 La muestra se produce igual y se entrega igual, llevando su `dt_ns` real, así
 que cualquier tasa calculada a partir de ella sigue siendo correcta. Es un
@@ -77,7 +74,7 @@ emborronamiento, no un agujero, y se ve en
 29 994 intervalos —el 99,3 %— cayeron aun así dentro de 11 ms de un período de
 10 ms; el percentil 99,5 fue 11,3 ms y el peor intervalo suelto, 21,7 ms.
 
-## Lo que limita es la lectura, no la CPU
+## Lectura frente a CPU {#lo-que-limita-es-la-lectura-no-la-cpu}
 
 Con los suelos por defecto, todas las fuentes de un tick se leen en menos de
 2 ms en el <Measured id="read.under2ms" /> de las muestras a 100 Hz, holgadamente dentro de un período de
@@ -90,7 +87,7 @@ por defecto a 100 Hz la lectura media fue de <Measured id="read.100hz.meanMs" /
 dura más que su período llega tarde por definición. De ahí, y no de un muro de CPU con
 un <Measured id="run.100hz.cpu" /> de un núcleo, vienen los pocos retrasos de esa ejecución.
 
-## La memoria que cuesta un ritmo, y dónde comprarla
+## Memoria por cadencia {#la-memoria-que-cuesta-un-ritmo-y-dónde-comprarla}
 
 La memoria es el anillo. Todas las demás cifras —el runtime de Go, el margen del
 recolector, la fragmentación del asignador— se derivan de cuántas entradas
@@ -105,7 +102,7 @@ comprimir el anillo 4,7×, y la compresión se midió en este equipo en
 **+1 331 µs por muestra**, que a 100 Hz son +74 % de CPU y seis veces los ticks
 retrasados—. Los segundos son gratis; la compresión no.
 
-## Lo que muestrear más rápido compra de verdad
+## Cadencias más altas {#lo-que-muestrear-más-rápido-compra-de-verdad}
 
 Resolución de porcentaje de CPU no. El jiffie son 10 ms, así que a 100 Hz una
 muestra contiene 0 o 1 ticks ocupados y la proporción de ocupación por muestra
@@ -124,17 +121,19 @@ estrecha sobre cuánto puede esconderse una ráfaga entre dos muestras.
 	ventanas, con picos a 933 Mbit/s. Antes de citar un número para tu equipo, vuelve a medirlo allí:
 	dos lecturas del `/metrics` del colector separadas 60 s en régimen estacionario, o los propios
 	`cpu_us` y `rss` del agente en el almacén que uses — `mikroscope_self` en InfluxDB y en los
-	almacenes SQL, con otros nombres en el resto, que [medirlo en tu propio
-	equipo](/mikroscope/es/cost/#medirlo-en-tu-propio-equipo) enumera.
+	almacenes SQL, con otros nombres en el resto, que
+	[Medir en tu router](/mikroscope/es/cost/#medirlo-en-tu-propio-equipo) enumera.
 </NotClaimed>
 
 <SeeAlso>
 
 ## Véase también
 
-- [El coste del observador](/mikroscope/es/cost/): el presupuesto contra el que se miden estas
+- [Coste del agente](/mikroscope/es/cost/): el presupuesto contra el que se miden estas
   ejecuciones, y las tres órdenes para medirlo tú.
-- [Lo que los números no dicen](/mikroscope/es/cost/limits/): lo que `/metrics` puede y no puede
+- [Límites de la evidencia](/mikroscope/es/cost/limits/): lo que `/metrics` puede y no puede
   recuperar a cualquiera de estas cadencias.
+- [Probado en](/mikroscope/es/about/status/#campaigns): las dos campañas de cadencias y todas las
+  demás medidas que hay detrás de estas páginas.
 
 </SeeAlso>

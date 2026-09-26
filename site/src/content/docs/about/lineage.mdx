@@ -1,22 +1,23 @@
 ---
 title: Lineage and licence
 description: Which parts of mikroscope came from cs-routeros-bouncer, ghchronicle and go-routeros, what changed on the way, and the MIT licence they arrive under.
+docType: about
 ---
 
 import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
 import Src from "../../../components/Src.astro";
 
-This page answers where mikroscope's code came from: which packages started
-as someone else's, what was changed when they arrived, and under what licence.
-The attribution is also in the code, so it survives being read without this
+Parts of mikroscope started as code from cs-routeros-bouncer, ghchronicle and
+go-routeros, all MIT-licensed. Below: which packages, what changed when they
+arrived, and the licence. The attribution is also in the code, so it survives being read without this
 site: in the package doc comment of <Src path="internal/router/" />, of the image
 builder <Src path="internal/image/" />, of the chart <Src path="internal/chart/" /> and
 of the dashboard generator <Src path="internal/dashboards/" />; in the API client's
 own <Src path="internal/rosapi/README.md" /> and <Src path="internal/rosapi/LICENSE" />;
 and in the header of <Src path=".golangci.yml" />.
 
-## Where the sampler came from
+## Sampler origin {#where-the-sampler-came-from}
 
 The sampler that proved this works is `cmd/perfmon` in
 [cs-routeros-bouncer](https://github.com/jmrplens/cs-routeros-bouncer), built
@@ -24,7 +25,7 @@ for one benchmark and kept there as a developer instrument. The deployment steps
 dockerless image builder, the deterministic chart and the vendored RouterOS
 API client come from that repository, under its MIT licence.
 
-## What was taken, package by package
+## Imported packages {#what-was-taken-package-by-package}
 
 <ScrollTable label="Packages taken from other repositories and what changed">
 
@@ -41,14 +42,14 @@ API client come from that repository, under its MIT licence.
 
 What PR #123 brought, and what mikroscope's installer keeps from it, is the
 containment rule: every object created carries one exact comment tag, every
-removal selects by that tag plus the object's identity — never by pattern —
-and `uninstall` verifies by ownership counts before it reports success.
+removal selects by that tag plus the object's identity (never by pattern), and
+`uninstall` verifies by ownership counts before it reports success.
 Nothing is written without being listed first.
 
 The chart's output is deterministic: the same input always yields the same
 bytes.
 
-## What was modelled, not taken
+## Modelled designs {#what-was-modelled-not-taken}
 
 The model is [ghchronicle](https://github.com/jmrplens/ghchronicle), the other
 telemetry project of mikroscope's maintainer, José Manuel Requena Plens, which
@@ -67,7 +68,7 @@ end-to-end suite under <Src path="test/e2e/" /> follows
 which builds its binary and drives it against a fake GitHub with one test file
 per sink.
 
-## The RouterOS API client
+## RouterOS API client {#the-routeros-api-client}
 
 `internal/rosapi` has two generations of lineage. mikroscope's copy is
 cs-routeros-bouncer's, with nothing modified in the shipped code. What changed since is
@@ -82,16 +83,16 @@ itself a pruned vendoring of
 at **v3.0.1** (upstream commit of 2025-02-16), MIT, copyright 2016 André Luiz dos
 Santos, whose `LICENSE` file stays in the package.
 
-### Why it is vendored
+### Why vendored {#why-it-is-vendored}
 
 Upstream is effectively unmaintained: its last commit predates the copy by
 eighteen months, and the pull requests and issues filed against the async mode
 in mid-2026 (#31–#34) have had no maintainer response. No maintained
-alternative exists — `swoga/go-routeros` is a copy that only receives
+alternative exists: `swoga/go-routeros` is a copy that only receives
 dependabot bumps for its GitHub Actions, and `jda/routeros-api-go` stopped in 2016. Vendoring keeps the code buildable and lets the copy fix and prune what it
 uses.
 
-### What differs from upstream v3.0.1
+### Changes from upstream {#what-differs-from-upstream-v301}
 
 These changes were made in cs-routeros-bouncer and arrive unchanged:
 
@@ -102,7 +103,7 @@ These changes were made in cs-routeros-bouncer and arrive unchanged:
 2. **The protocol reader and writer read and write directly**, instead of
    dispatching every call to a fresh goroutine with a channel and a copy
    buffer; only the removed async mode ever cancelled an in-flight read. At the
-   bouncer's production scale — 22k address-list entries fetched every cycle —
+   bouncer's production scale (22k address-list entries fetched every cycle)
    that layer cost ~294 000 goroutine spawns, ~62 MB of garbage and ~76 % of
    all allocations per reconcile cycle. The rewrite was checked against pristine
    upstream with a differential test: the SHA-256 fingerprint over all 22 037
@@ -135,13 +136,12 @@ corrections to this page included, is in <Src path="CHANGELOG.md" />.
 
 ## See also
 
-- [What the installer refuses](/mikroscope/security/installer/): the containment rules the
-  deployment code inherited, as they stand now.
-- [The RouterOS API tier](/mikroscope/sinks/api-tier/): what the vendored client reads.
-- [Record, mark, plot](/mikroscope/record/): the deterministic chart `internal/chart` draws.
-- [Where the project stands](/mikroscope/about/status/): what works today, and what the release
-  publishes.
-- [Releases](/mikroscope/about/changelog/): the current release, and where the history of every
-  release, this page's corrections among them, is kept.
+- [Installer safeguards](/mikroscope/security/installer/): the containment rules the deployment
+  code inherited, as they stand now.
+- [RouterOS API tier](/mikroscope/sinks/api-tier/): what the vendored client reads.
+- [Record, mark and plot](/mikroscope/record/): the deterministic chart `internal/chart` draws.
+- [Tested on](/mikroscope/about/status/): what works today, and on what it has run.
+- [Releases](/mikroscope/about/changelog/): the current release, what it publishes, and where the
+  history of every release, this page's corrections among them, is kept.
 
 </SeeAlso>

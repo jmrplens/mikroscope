@@ -4,57 +4,94 @@ description: The current mikroscope release and its date, read at build from VER
 head:
   - tag: title
     content: mikroscope releases for MikroTik RouterOS
+docType: about
 ---
 
+import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
+import Src from "../../../components/Src.astro";
 import Version from "../../../components/Version.astro";
 
-The current release of mikroscope is <Version link />, released on <Version show="date" />. Neither is typed
-on this page: both are read at build from the repository's `VERSION` file and from the dated heading
-that version has in `CHANGELOG.md`, and the site does not build when that heading is missing. The
-install commands on every page carry the same version, from the same file.
+The current release of mikroscope is <Version link />, released on <Version show="date" />. Both are
+read at build from the repository's <Src path="VERSION" /> file and from the dated heading that
+version has in <Src path="CHANGELOG.md" />, and the site does not build when that heading is missing.
+The version is compiled into both binaries and reported by `mikroscope version`, and the install
+commands on every page carry it.
 
-## Where the history is
+## Release history {#where-the-history-is}
 
 - [`CHANGELOG.md`](https://github.com/jmrplens/mikroscope/blob/main/CHANGELOG.md) has one section
   per release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) form.
-  Its headings carry a date from 1.1.0 on. Not every earlier section became a published release:
-  on 2026-09-24, 1.0.5 and 1.0.8 had no tag, and 1.0.6 a tag and no release page.
+  Its headings carry a date from 1.1.0 on.
 - [GitHub Releases](https://github.com/jmrplens/mikroscope/releases) has each tag's notes, archives,
   image tars, checksums, signatures and SBOMs.
 - [The releases feed](https://github.com/jmrplens/mikroscope/releases.atom) is the same list as
   Atom, for a feed reader.
 
 Version numbers follow [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html), as the
-changelog states. A sentence on this site about a past release, such as "since 1.1.0", keeps that
-release's number, because it was checked against that release and not against a later one.
+changelog states. The guides describe the current release; what changed between releases, and
+when, is in the changelog.
 
-## What a release publishes
+Not every number has a release of its own:
 
-- **The CLI**, as an archive per platform: linux and FreeBSD on amd64, arm64 and arm; macOS and
-  Windows on amd64 and arm64.
-- **The agent**, as one side-loadable image tar per architecture, and as a registry image,
-  `jmrplens/mikroscope-agent` on Docker Hub and `ghcr.io/jmrplens/mikroscope-agent` on GHCR, whose
-  index carries `linux/amd64`, `linux/arm64`, `linux/arm/v7` and `linux/arm/v5`.
-- **The collector**, since 1.1.0, as the image `jmrplens/mikroscope` and
-  `ghcr.io/jmrplens/mikroscope` for `linux/amd64` and `linux/arm64`.
-- **`checksums.txt`** over every archive and every agent image tar, signed keylessly with cosign,
-  and an SPDX SBOM per archive with a signature of its own. [Verifying the
+<ScrollTable label="Version numbers without a release of their own">
+
+| Version | Tag and release                | Its changes ship in | Changelog section |
+| ------- | ------------------------------ | ------------------- | ----------------- |
+| 1.0.5   | never tagged                   | v1.0.7              | yes               |
+| 1.0.6   | tagged; its release run failed | v1.0.7              | yes               |
+| 1.0.8   | never tagged                   | v1.0.9              | yes               |
+| 1.0.10  | never tagged                   | v1.1.0              | none              |
+
+</ScrollTable>
+
+## Release assets {#what-a-release-publishes}
+
+A `v*` tag runs the GoReleaser configuration, <Src path=".goreleaser.yaml" />, which publishes:
+
+- **CLI archives** for linux and freebsd on amd64, arm64 and arm (ARMv7), and for darwin and
+  windows on amd64 and arm64: `.tar.gz`, and `.zip` on Windows, each carrying the
+  MIT <Src path="LICENSE" /> and <Src path="README.md" />.
+- **Agent archives** for linux on amd64, arm64, armv5 and armv7, for a host that wants the bare
+  binary rather than an image.
+- **Side-loadable agent image tars**, four of them: `mikroscope-agent-arm64.tar`,
+  `mikroscope-agent-armv5.tar`, `mikroscope-agent-armv7.tar` and `mikroscope-agent-amd64.tar`.
+  32-bit ARM is two because EN7562CT boards take only v5. `install --agent-tar` uploads one to the
+  router.
+- **The agent image in two registries**, `jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}` on
+  Docker Hub and `ghcr.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}` on GHCR (each also
+  tagged `latest`), each one manifest over `linux/amd64`, `linux/arm64`, `linux/arm/v7` and
+  `linux/arm/v5`, which `install --remote-image` makes the router pull. mikroscope sends the whole
+  reference, registry host included (`registry-1.docker.io/…` for Docker Hub), so the global
+  `/container/config registry-url` is neither needed nor written, and Docker Hub serves the image
+  with no registry login. Up to 1.2.2 the host was left to `registry-url`, whose RouterOS default
+  has not always been Docker Hub.
+- **The collector image**, from 1.1.0 on, `jmrplens/mikroscope:{{MIKROSCOPE_VERSION}}` on Docker
+  Hub and `ghcr.io/jmrplens/mikroscope:{{MIKROSCOPE_VERSION}}` on GHCR (each also tagged
+  `latest`), over `linux/amd64` and `linux/arm64`, for the compose stacks
+  under <Src path="deploy/" />.
+- **`checksums.txt`**, covering every archive and every agent image tar, a keyless cosign
+  signature over it, and an SPDX SBOM per archive, signed in its own right. [Verifying the
   download](/mikroscope/install/routes/#verifying-the-download) has the commands.
 
-This is the short form. The full list, with the bare agent archives, the name of each image tar
-and the releases that were never tagged, is [What the release
-publishes](/mikroscope/about/status/#what-the-release-publishes) on the status page.
+Installing from a release needs no Go toolchain and no checkout. A checkout and Go 1.27 install an
+agent built from your own tree instead: `make build` for the CLI, `make build-agent` for the agent,
+which `install` and `image` also compile themselves. [Install
+methods](/mikroscope/install/routes/) compares the ways to get the agent onto a router and what
+each one needs.
+
+The `linux/arm/v5`, `linux/arm/v7` and `linux/amd64` builds are cross-built and checked in CI.
+Which builds have run on hardware, and on which router, is on [Tested
+on](/mikroscope/about/status/).
 
 <SeeAlso>
 
 ## See also
 
-- [Four ways to install](/mikroscope/install/routes/): which of those files each install route
-  takes, and how to verify it.
-- [Getting the CLI onto your machine](/mikroscope/install/cli/): the archive, `go install` or the
-  install script, at the current release.
-- [Where the project stands](/mikroscope/about/status/): what the current release has run on, and
-  what it has not.
+- [Install methods](/mikroscope/install/routes/): which of those files each install method takes,
+  and how to verify it.
+- [Install the CLI](/mikroscope/install/cli/): the archive, `go install` or the install script, at
+  the current release.
+- [Tested on](/mikroscope/about/status/): what the current release has run on, and what it has not.
 
 </SeeAlso>

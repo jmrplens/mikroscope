@@ -1,9 +1,10 @@
 ---
-title: A port losing frames
+title: Port losing frames
 description: "A MikroTik port counting rx-overflow: telling a load from a microburst with the port counters, what did not fix it, and the sender pacing that did."
 head:
   - tag: title
     content: "MikroTik port rx-overflow: load or microburst? | mikroscope"
+docType: evidence
 ---
 
 import FaultSignature from "../../../components/FaultSignature.astro";
@@ -13,16 +14,6 @@ import NotClaimed from "../../../components/NotClaimed.astro";
 import Provenance from "../../../components/Provenance.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
 
-**Port errors in the window** is green at 0 and red above it. This page is what to
-do when it is red: how to get from that one number to which port, which error,
-and — the question that decides the fix — whether the port is losing frames
-because it is busy or because the sender is bursting.
-
-The whole page is one real fault on the reference RB5009, found on 2026-09-19
-and fixed the same afternoon.
-
-<Provenance of="port-overflow-2026-09-19" />
-
 **In short:** an `rx-overflow` on one port whose overflowing intervals carry a
 small fraction of the link's capacity is a burst, not a load. Here it was a
 2.5 Gbit/s sender bursting into a 1 Gbit/s port, with the overflowing intervals
@@ -31,7 +22,15 @@ flow control both failed to stop it; pacing the sender below what the slowest
 destination can drain did, from <Measured id="overflow.perHourBefore" /> overflows
 an hour to none in the 39 minutes measured.
 
-## From the tile to the port
+When **Port errors in the window** is red (it is green at 0, red above it), the
+sections below go from that one number to the port, the error, and whether the
+port is losing frames because it is busy or because the sender is bursting,
+which decides the fix. The readings are one real fault on the reference RB5009,
+found on 2026-09-19 and fixed the same afternoon.
+
+<Provenance of="port-overflow-2026-09-19" />
+
+## Find the port {#from-the-tile-to-the-port}
 
 The tile sums every typed MAC error on every port. It deliberately says nothing
 about which: open **Interface traffic** and read _Port errors per bin_, which
@@ -47,14 +46,12 @@ correctly and were dropped for want of somewhere to put them. It is not a
 cabling fault. `rx-fcs-error`, `rx-fragment` and the collision counters are,
 and they send you somewhere else entirely: the cable, the duplex, the port.
 
-## Load, or a burst?
+## Load or burst {#load-or-a-burst}
 
-This is the question the fix hangs on, and the counters answer it.
-
-Take the receive volume in the 10-second intervals that overflowed and compare
+The fix depends on this, and the counters answer it. Take the receive volume in the 10-second intervals that overflowed and compare
 it with what the link could have carried. On the reference device the median
 interval with an overflow carried <Measured id="overflow.burstRate" /> on a
-2.5 Gbit/s link — <Measured id="overflow.occupancy" /> of its capacity.
+2.5 Gbit/s link: <Measured id="overflow.occupancy" /> of its capacity.
 
 A port cannot be overwhelmed at 0.36 % occupancy by sustained load. It can only
 be overwhelmed by bursts too short for a one-second average to show: the mean
@@ -65,20 +62,20 @@ hour, <Measured id="overflow.shareBefore" /> of every packet the sender sent.
 If instead the intervals that overflow are the ones near line rate, stop here:
 that is a capacity problem and the answer is a faster link or less traffic.
 
-## Where the frames were going
+## Traffic path {#where-the-frames-were-going}
 
 A burst overflows on ingress because something downstream cannot take it. The
 per-port counters find it by correlation: rank the overflow deltas against each
 other port's transmit deltas over the same intervals.
 
 On the reference device the strongest was `ether4` at ρ 0.53, a 1 Gbit/s port,
-and `sfp-sfpplus1` at ρ 0.42 — which is 10 Gbit/s itself but feeds a switch
+and `sfp-sfpplus1` at ρ 0.42, which is 10 Gbit/s itself but feeds a switch
 whose ports are not. The CPU-bound share of the traffic correlated at ρ 0.00,
 which rules out the router's own forwarding: these frames never reached the
 CPU.
 
 `ether4` also carried 6 644 `tx-queue-drop`. That is the same event counted
-from the other end — the egress queue that could not drain fast enough — and
+from the other end, the egress queue that could not drain fast enough, and
 finding both is what turns a correlation into a mechanism: a 2.5 Gbit/s sender
 bursting at line rate into a 1 Gbit/s destination.
 
@@ -87,10 +84,43 @@ On the dashboard it is _Egress queue drops — the router's own transmit queue_,
 consecutive minutes of dropping, so bursts like these show on the panel and
 deliberately do not page you.
 
-## What did not work
+## Fifteen hours of counters
 
-Two things were tried on the reference device before the one that worked, and
-both are worth knowing about because both look right.
+On 2026-09-15, four days before the fix, the API tier's counters on the same
+port said what kind of event the overflow is. The port counters are the only
+place these overflows appear. Measured between 07:13 and 22:20 UTC, over
+4 471 consecutive 10 s counter polls of `ether1` (2.5 Gbps to a NAS, MTU 9000):
+
+- 126 443 `rx-overflow` events in all, present in 40 % of the intervals; per
+  interval the median is 29, the p99 about 1 036 and the largest 3 747. Over
+  the run that is 0.53 % of the packets the NAS sent.
+- Rank correlation over the 10 s deltas: 0.85 against the part of the NAS's
+  receive the switch forwarded in hardware (`rx-bytes` minus `driver-rx-byte`),
+  0.00 against the part it sent to the CPU (`driver-rx-byte`).
+- Where it was going: `ether8` (NGINX, 1 Gbps) carries most of the volume,
+  `ether4` (Mastodon, 1 Gbps) is the most frequent destination; the SFP+ cage,
+  `ether2`, `ether3` and the CPU path show nothing.
+- The frames were large: the 1024-and-up frame-size bucket on `ether1` has a
+  median of 9 331 per interval with overflow against 1 336 per interval without.
+- The load was not high: the median NAS receive in an interval with overflow is
+  about 9 Mbit/s as a 10 s mean. Bursts, not sustained load.
+- Nothing on the CPU side: softnet dropped 0, `time_squeeze` correlates 0.04 and
+  the `switch0` interrupts 0.05 against the overflows, with the agent's 10 Hz
+  data binned to 10 s. No pause frames on `ether1` in either direction.
+
+Read together, that is consistent with 2.5 Gbps line-rate bursts switched inside
+the chip toward 1 Gbps ports with no flow control in effect. Not verified: the
+switch chip's exact counter semantics, and the NAS's own retransmit count; the
+counters are the port's, not the conversation's.
+
+The kernel tier cannot see any of it by construction. A frame the switch chip
+forwards in hardware never reaches the CPU, so no `/proc` file on the router has
+a number for it; it takes the per-port counters, and only the API has those.
+
+## Failed fixes {#what-did-not-work}
+
+Two fixes that look right were tried on the reference device first, and neither
+worked.
 
 **A smaller MTU.** Dropping the sender and the port from 9000 to 1500 cut the
 worst bursts by 91 % and the data lost per dropped frame by six, and **did not
@@ -103,11 +133,11 @@ minutes with pause negotiated, 5 578 overflows, and `rx-pause` and `tx-pause`
 both still **0**. Check those two counters before believing pause is helping
 you. The chip is dropping the frame rather than asking the sender to wait.
 
-## What worked
+## Fix {#what-worked}
 
-Pace the sender. Not an AQM — the sender's queue is empty at 0.36 % occupancy,
-so an AQM has nothing to manage and hands the NIC the burst unchanged — but a
-shaper with a rate **below what the slowest destination can drain**:
+Pace the sender with a shaper whose rate is **below what the slowest destination
+can drain**. Not an AQM: the sender's queue is empty at 0.36 % occupancy, so an
+AQM has nothing to manage and hands the NIC the burst unchanged. On the sender:
 
 ```sh
 tc qdisc replace dev <iface> root cake bandwidth 900Mbit
@@ -120,7 +150,7 @@ to put on the wire back to back at line rate.
 
 The result on the reference device, at the same traffic volume: the overflow
 went from 1 054–3 681 per 20 minutes to **0**, and `ether4`'s `tx-queue-drop`
-to 0 with it. The cost was nothing measurable — the highest second of egress
+to 0 with it. The cost was nothing measurable: the highest second of egress
 observed was 70 Mbit/s against a 900 Mbit cap.
 
 The reference InfluxDB store kept counting past the 39 minutes those figures
@@ -132,14 +162,14 @@ holds.
 
 <Figure name="port-overflow-2026-09-19" />
 
-## The signature
+## Signature {#the-signature}
 
 <FaultSignature origin="real" date="2026-09-19">
 
 - **Port errors in the window** red, and _Port errors per bin_ drawing one row:
   a `rx overflow` on one port and nothing else.
-- The intervals that overflow carry a small fraction of the link's capacity —
-  a burst, not a load.
+- The intervals that overflow carry a small fraction of the link's capacity: a
+  burst, not a load.
 - A slower port's transmit correlates with the overflow, and carries
   `tx-queue-drop` of its own.
 - `rx-pause` and `tx-pause` stay at 0 whatever the negotiated flow control
@@ -159,8 +189,8 @@ holds.
 ## See also
 
 - [Interface traffic](/mikroscope/dashboards/#interface-traffic): the panels this page reads.
-- [The API tier](/mikroscope/sinks/api-tier/): where the per-port counters come from, and why the
-  agent cannot see them.
+- [RouterOS API tier](/mikroscope/sinks/api-tier/): where the per-port counters come from, and why
+  the agent cannot see them.
 - [Alert rules](/mikroscope/dashboards/alerts/): the rule that fires on this, and what it cannot
   tell apart.
 

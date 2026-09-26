@@ -1,9 +1,10 @@
 ---
-title: A CPU-bound workload
+title: CPU-bound core
 description: "One saturated core of a MikroTik RB5009 read at 10 Hz: why the device total hides it, the scheduler moving the load between cores, and the temperature."
 head:
   - tag: title
     content: "Per-core CPU on a MikroTik RB5009 at 10 Hz | mikroscope"
+docType: evidence
 ---
 
 import FaultSignature from "../../../components/FaultSignature.astro";
@@ -12,21 +13,19 @@ import NotClaimed from "../../../components/NotClaimed.astro";
 import Provenance from "../../../components/Provenance.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
 
-This page answers what a single-threaded bottleneck looks like in the per-core
-data, and why the device total hides it. The workload was provoked on purpose.
-
-<Provenance of="playbooks-2026-09-12" />
-
 **In short:** one saturated core on the four-core RB5009 reads as about 29 % of
 the device, so it is the per-core row, not the total, that shows a
 single-threaded bottleneck: here one core at 99.8 % while three idled. At 10 Hz
 the scheduler moving the load between cores is visible for about 20 s before it
-settles; sampled once a second, that is a vague plateau.
+settles; sampled once a second, that is a vague plateau. The load was provoked
+on purpose.
 
-## How it was provoked
+<Provenance of="playbooks-2026-09-12" />
 
-With no configuration change and no external dependency — a console loop that
-burns one core and ends on its own:
+## Setup {#how-it-was-provoked}
+
+A console loop that burns one core and ends on its own, with no configuration
+change and no external dependency:
 
 ```text
 :local i 0; :while ($i < 4000000) do={ :set i ($i + 1) }
@@ -34,12 +33,11 @@ burns one core and ends on its own:
 
 It ran 58.8 s.
 
-## What the agent recorded
+## Recording {#what-the-agent-recorded}
 
 In 5-second buckets. The agent ships raw tick deltas; the percentages below were
-computed from them afterwards. There is no chart of this run: it was read on
-2026-09-12, before the history of the reference InfluxDB store begins on
-2026-09-19.
+computed from them afterwards. There is no chart: the run predates the history
+of the reference InfluxDB store, which begins on 2026-09-19.
 
 ```text
    t  busy%   per-core busy%          ctxt/s  temp   MHz
@@ -52,7 +50,7 @@ computed from them afterwards. There is no chart of this run: it was read on
   11   33.0   11.8  11.2   9.0  99.7   12222  37.3  1400
 ```
 
-## What to read
+## What to look at {#what-to-read}
 
 - **Total ~29 % is one core of four.** A device total is a trap; always look at
   the per-core row. "29 % CPU" here means "one core is saturated and three are
@@ -60,7 +58,7 @@ computed from them afterwards. There is no chart of this run: it was read on
 - **The scheduler took ~20 s to settle.** Buckets 0–3 show the work moving
   between cores (40 % → 90 % → 76 % → 82 %) before pinning on core 3 at 99.8 %.
   If you sample at 1 s or slower you see a vague plateau; at 10 Hz you see the
-  migration. This is the resolution earning its cost.
+  migration.
 - **Temperature followed: 36.5 → 37.3 °C.** One saturated core is worth ~0.8 °C
   on this passively cooled board. Small, but it tracks, and it is read from
   `/sys/class/thermal` with no API call.
@@ -74,28 +72,34 @@ computed from them afterwards. There is no chart of this run: it was read on
   a minute, and on a scaling clock you get every step that lasts at least one
   tick.
 
-## Check the sampler before the CPU
+## Sampler check {#check-the-sampler-before-the-cpu}
 
 Before you conclude anything from a CPU number, confirm
 `mikroscope_slipped_total` is 0. A slipped tick is one whose read finished
 after the next tick was due, and the sampler's own accounting is then the first
 thing you should distrust.
 
-## When the cores are not busy but the kernel is
+## Kernel-bound load {#when-the-cores-are-not-busy-but-the-kernel-is}
 
-The opposite shape reached the reference RB5009 on its own, on RouterOS 7.24.4, at
-2026-09-23 12:08:50 UTC: a Home Assistant MikroTik integration started a wake-up storm.
-Timer interrupts went from about 2 500 to about 35 000 a second, in bursts of 20–90 s on
-one core at a time, while user time and traffic stayed flat, and it barely showed in
-RouterOS's own profile. The busy columns above would not have caught it; the context-switch
-rate, which on that router moved with the timer interrupts (r = 1.0), did. Disabling the
-integration on 2026-09-24 brought the timer back to about 2 500 a second within 30 s. It
-is one event on one router, read from the InfluxDB reference store, and it has no reading
-page of its own yet: the rule that watches for it is `mikroscope-wakeup-storm` in
-[Alert rules](/mikroscope/dashboards/alerts/), which compares the last ten minutes' context-switch
-rate with the router's own previous 24 hours.
+The opposite shape: the cores are not busy, but the kernel is. It reached the
+reference RB5009 on its own, on RouterOS 7.24.4, at 2026-09-23 12:08:50 UTC,
+when a Home Assistant MikroTik integration started a wake-up storm:
 
-## The signature
+- Timer interrupts went from about 2 500 to about 35 000 a second, in bursts of
+  20–90 s on one core at a time, while user time and traffic stayed flat.
+- It barely showed in RouterOS's own profile, and the busy columns above would
+  not have caught it. The context-switch rate did: on that router it moved with
+  the timer interrupts (r = 1.0).
+- Disabling the integration on 2026-09-24 brought the timer back to about 2 500
+  a second within 30 s.
+
+It is one event on one router, read from the InfluxDB reference store, and it
+has no case study of its own yet. The rule that watches for it is
+`mikroscope-wakeup-storm` in [Alert rules](/mikroscope/dashboards/alerts/),
+which compares the last ten minutes' context-switch rate with the router's own
+previous 24 hours.
+
+## Signature {#the-signature}
 
 <FaultSignature origin="provoked" date="2026-09-12">
 
@@ -116,11 +120,11 @@ rate with the router's own previous 24 hours.
 
 ## See also
 
-- [The resolution floor is the kernel's](/mikroscope/limits/): why a 100 ms sample resolves one core
+- [Resolution limits](/mikroscope/limits/): why a 100 ms sample resolves one core
   in <Measured id="tick.stepOneCore" /> steps, and the PMU counters that read beneath it.
-- [Five minutes with a router](/mikroscope/start/walkthrough/): a recorded script loop pinning one
-  core, with markers naming what else the router was doing.
-- [Each source at its own floor](/mikroscope/limits/source-floors/): why temperature is read at
-  the zone's declared 1 Hz and frequency is stored only when it changes.
+- [Record, mark and plot](/mikroscope/record/): record a window like this one, with markers naming
+  what else the router was doing.
+- [Source cadences](/mikroscope/limits/source-floors/): why temperature is read at the zone's
+  declared 1 Hz and frequency is stored only when it changes.
 
 </SeeAlso>

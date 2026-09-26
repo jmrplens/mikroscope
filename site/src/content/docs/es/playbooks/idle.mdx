@@ -1,9 +1,10 @@
 ---
-title: La forma de un router en reposo
+title: Línea base en reposo
 description: "Sesenta segundos en reposo de un MikroTik RB5009 leídos a 10 Hz: el suelo de ocupación, un squeeze de softnet que nunca es cero y un log del kernel mudo."
 head:
   - tag: title
     content: "Un MikroTik RB5009 en reposo, por núcleo, a 10 Hz | mikroscope"
+docType: evidence
 ---
 
 import Measured from "../../../../components/Measured.astro";
@@ -11,19 +12,15 @@ import NotClaimed from "../../../../components/NotClaimed.astro";
 import Provenance from "../../../../components/Provenance.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
 
-Esta página responde a qué aspecto tiene lo "normal", para que las demás páginas
-tengan algo respecto a lo que ser anómalas. Conoce esta forma antes de salir a
-buscar anomalías, o las encontrarás en todas partes.
+**En resumen:** en reposo, los cuatro núcleos del RB5009 de referencia están
+ocupados un 6–8 %, `time_squeeze` nunca es cero (unos 200 cada 20 s) y el log
+del kernel calla. Lee todos los demás casos contra esa forma: un flujo constante
+de sucesos del kernel en reposo es la anomalía, y un squeeze distinto de cero,
+por sí solo, no.
 
 <Provenance of="playbooks-2026-09-12" />
 
-**En resumen:** en reposo, los cuatro núcleos del RB5009 de referencia están
-ocupados un 6–8 %, `time_squeeze` nunca es cero (unos 200 cada 20 s) y el log
-del kernel calla. Lee todas las demás páginas contra esa forma: un flujo
-constante de sucesos del kernel en reposo es la anomalía, y un squeeze distinto
-de cero, por sí solo, no.
-
-## Sesenta segundos en reposo
+## Grabación {#sesenta-segundos-en-reposo}
 
 Tres tramos de 20 segundos:
 
@@ -34,13 +31,12 @@ Tres tramos de 20 segundos:
    2    6.5   7.1   5.2   6.7   6.8  58259     199      179  36.3  1400       0
 ```
 
-Los porcentajes de esa tabla se calcularon a posteriori a partir de los deltas de
-ticks en bruto que envía el agente; el agente nunca los convierte en porcentajes.
+Los porcentajes se calcularon después a partir de los deltas de ticks en bruto
+que envía el agente; el agente nunca los convierte en porcentajes. No hay
+gráfico: la lectura es anterior al historial del almacén InfluxDB de referencia,
+que empieza el 2026-09-19.
 
-No hay gráfico de estos sesenta segundos: se leyeron el 2026-09-12, antes de que
-empiece el historial del almacén InfluxDB de referencia, el 2026-09-19.
-
-## Qué leer
+## Qué mirar {#qué-leer}
 
 - **Un 6–8 % de ocupación en los cuatro núcleos es el suelo de este router**, no
   un problema. Son DNS, DHCP, WireGuard, el bridge y su propio mantenimiento.
@@ -52,41 +48,48 @@ empiece el historial del almacén InfluxDB de referencia, el 2026-09-19.
   actividad.**
 - **Cero sucesos del kernel es el estado sano.** Cualquier flujo constante de
   `events` en reposo merece el tratamiento del [caso del
-  bucle](/mikroscope/es/playbooks/loop/) — así es exactamente como empezó.
+  bucle](/mikroscope/es/playbooks/loop/): así empezó.
 
-## El squeeze de fondo y la marca de ráfaga
+## Squeezes de fondo {#el-squeeze-de-fondo-y-la-marca-de-ráfaga}
 
 El suelo del squeeze se volvió a medir en las 24 h hasta el 2026-09-16 a las
-07:00 UTC, en el mismo equipo, sobre 3 738 704 muestras por CPU: alrededor
-del <Measured id="squeeze.backgroundOne" /> de las muestras llevan un squeeze de fondo,
-el <Measured id="squeeze.backgroundTwo" /> exactamente dos y el <Measured id="squeeze.exactlyThree" />
-exactamente tres. Medido en este router el 2026-09-15: una regla que marque cualquier squeeze salta
-92 veces en veinte minutos, y no significa nada.
+07:00 UTC, en el mismo equipo, sobre 3 738 704 muestras por CPU:
+
+- alrededor del <Measured id="squeeze.backgroundOne" /> de las muestras llevan un squeeze de fondo;
+- el <Measured id="squeeze.backgroundTwo" /> lleva exactamente dos;
+- el <Measured id="squeeze.exactlyThree" /> lleva exactamente tres.
+
+En este router, el 2026-09-15, una regla que marcaba cualquier squeeze saltó 92
+veces en veinte minutos, y no significaba nada.
 
 Así que la marca `burst` del colector es una desviación respecto a la norma del
-propio equipo: un paquete descartado, o más squeezes de los que esa CPU suele
-tener (por encima de su percentil 90 móvil y al menos 3) en una muestra cuyo
-número de paquetes estuvo en su mediana móvil o por debajo. Las líneas base
-móviles abarcan diez segundos de reloj de pared a cualquier cadencia. Tres
-muestras marcadas en una CPU en 60 s disparan la detección `microburst`; una sola
-muestra marcada se queda en un dato.
+propio equipo. Marca una muestra cuyo número de paquetes estuvo en su mediana
+móvil o por debajo y que tiene:
+
+- un paquete descartado, o
+- más squeezes de los que esa CPU suele tener: por encima de su percentil 90
+  móvil y al menos 3.
+
+Las líneas base móviles abarcan diez segundos de reloj de pared a cualquier
+cadencia. Tres muestras marcadas en una CPU en 60 s disparan la detección
+`microburst`; una sola muestra marcada se queda en un dato.
 
 <NotClaimed variant="device-specific">
 	Este suelo es un RB5009 con el reloj fijado a 1400 MHz, que ejecuta el DNS, el DHCP, el WireGuard
-	y el bridge de este propietario. Un router con otros servicios, un reloj que escala o una placa
+	y el bridge de su propietario. Un router con otros servicios, un reloj que escala o una placa
 	distinta tiene otra forma en reposo. Toma los mismos sesenta segundos en el tuyo antes de leer
-	cualquier otra página contra ella.
+	cualquier otro caso contra ella.
 </NotClaimed>
 
 <SeeAlso>
 
 ## Véase también
 
-- [Una inundación de paquetes](/mikroscope/es/playbooks/packet-flood/): lo que hace el squeeze cuando
+- [Inundación de paquetes](/mikroscope/es/playbooks/packet-flood/): lo que hace el squeeze cuando
   sí cambia.
-- [Un bucle que solo veía el kernel](/mikroscope/es/playbooks/loop/): lo que resultó ser un flujo
-  constante de sucesos en reposo.
-- [Detecciones](/mikroscope/es/sinks/detections/): la regla `microburst` y las demás, con lo que cada
-  una no puede afirmar.
+- [Bucle de capa 2](/mikroscope/es/playbooks/loop/): lo que resultó ser un flujo constante de
+  sucesos en reposo.
+- [Reglas de detección](/mikroscope/es/sinks/detections/): la regla `microburst` y las demás, con lo
+  que cada una no puede afirmar.
 
 </SeeAlso>

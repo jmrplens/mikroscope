@@ -6,25 +6,27 @@
  * Spanish page that silently renders less. `<Home>` also refuses content
  * whose `lang` is not the page's, which the parity gate cannot see.
  *
- * No measured figure is typed here. Numbers, rates, windows, devices,
- * versions and dates come from src/data/measurements.ts through `q()`, the
- * run and campaign records, so a repeated run updates the landing in both
- * languages. Counts the Go source decides (the sinks) come from
- * src/data/stats.json, and the release from src/data/release.ts, through
- * `<Home>`. The exceptions are design facts, not readings, each named once
- * below (`API_HZ`), and the requirements a reader needs to install
- * (`REQUIRES`), which no run can change. Strings in `hides`, `tiers`,
- * `install.prereq`, `notClaimed.paragraphs`, `readout.claim` and
- * `hides.linkText` may carry `<code>` and nothing else; `<Home>` renders them
- * with `set:html`, which is safe because they are in the repository, not user
- * input.
+ * No measured figure is typed here. Numbers, rates and windows come from
+ * src/data/measurements.ts through `q()`, the run and campaign records, so a
+ * repeated run updates the landing in both languages. Counts the Go source
+ * decides (the sinks) come from src/data/stats.json, and the release from
+ * src/data/release.ts, through `<Home>`. The exceptions are design facts, not
+ * readings, each named once below (`API_HZ`), and the requirements a reader
+ * needs to install (`REQUIRES`), which no run can change.
+ *
+ * The landing is a guide (src/lib/voice.mjs): its copy names no device, no
+ * RouterOS release other than the minimum and no date. Tested on names them,
+ * and the copy links it (`TESTED_ON`).
+ *
+ * Strings in `hides`, `tiers`, `install.prereq`, `testedOn.paragraphs`,
+ * `readout.claim`, `cost.lead` and `hides.linkText` may carry `<code>` and
+ * `<a href="/mikroscope/…">` and nothing else; `<Home>` renders them with
+ * `set:html`, which is safe because they are in the repository, not user
+ * input, and src/lib/page-markdown.mjs turns both into Markdown for the twin.
  */
 import {
 	burst,
 	campaigns,
-	RB5009,
-	RB5009_NOW,
-	describeCpu,
 	measurements,
 	readBound,
 	runs,
@@ -41,6 +43,7 @@ import {
 	numberWord,
 	spellCount,
 } from "../lib/format";
+import { campaignAnchor, testedOnHref } from "../lib/voice.mjs";
 
 export interface HomeContent {
 	lang: Lang;
@@ -79,14 +82,16 @@ export interface HomeContent {
 		title: string;
 		prereq: string;
 		steps: { cmd: string; note: string }[];
+		/** The step-by-step page the five commands summarise. */
+		more: { text: string; href: string };
 	};
 	/**
-	 * Short statements, one subject each: the device, the load, what cost
-	 * scales with, the sinks, the builds. They were one 95-word sentence,
-	 * which a reader, or a model quoting one of them, could not lift out whole
-	 * (GEO audit, 2026-09-24).
+	 * Where the proof is: short statements, one subject each, that name no
+	 * device, version or date and link Tested on, which does. They were one
+	 * 95-word sentence, which a reader, or a model quoting one of them, could
+	 * not lift out whole (GEO audit, 2026-09-24).
 	 */
-	notClaimed: { title: string; paragraphs: string[] };
+	testedOn: { title: string; paragraphs: string[] };
 	next: {
 		title: string;
 		links: { text: string; href: string; note: string }[];
@@ -99,6 +104,15 @@ const q = (id: MeasurementId, lang: Lang): string =>
 /** Gaps and drops summed over every run, so a lossy run cannot hide in one row. */
 const totalGaps = runs.reduce((n, r) => n + r.gaps, 0);
 const totalDrops = runs.reduce((n, r) => n + r.drops, 0);
+
+/**
+ * Tested on, in each locale: the page that names the device, the RouterOS
+ * versions and the dates behind every figure on the landing.
+ */
+const TESTED_ON: Record<Lang, string> = {
+	en: testedOnHref("en"),
+	es: testedOnHref("es"),
+};
 
 /** "0 / 0", in the locale's digits. */
 export function gapsDrops(lang: Lang): string {
@@ -117,9 +131,11 @@ export function gapsDrops(lang: Lang): string {
  */
 export const LANDING_CAMPAIGN = "rates-2026-09-18" satisfies CampaignId;
 
+/** A campaign's entry on Tested on, where its device, versions and dates are. */
+const campaignOn = (lang: Lang, id: CampaignId): string =>
+	testedOnHref(lang, campaignAnchor(id));
+
 const rates = campaigns[LANDING_CAMPAIGN];
-const kernel = campaigns["kernel-2026-09-11"];
-const netns = campaigns["netns-2026-09-12"];
 
 function run(key: RunKey) {
 	const r = runs.find((x) => x.key === key);
@@ -211,13 +227,23 @@ export const REQUIRES = {
 	notArches: ["MIPS", "TILE"],
 } as const;
 
-/** The RB5009's architecture: the one build of the three that has run on hardware. */
+/**
+ * The architecture of the one hardware device the builds have run on (the
+ * amd64 build has also run on the virtual lab's CHR, which is not hardware).
+ * `testedOn` says some builds have not run on hardware, which is true while
+ * another architecture is published; Tested on names them.
+ */
 const DEVICE_ARCH = "arm64" satisfies (typeof REQUIRES.arches)[number];
 const crossBuilt = REQUIRES.arches.filter((a) => a !== DEVICE_ARCH);
+if (crossBuilt.length === 0) {
+	throw new Error(
+		"home.ts: testedOn says some builds have not run on hardware; every architecture has now, so rewrite it",
+	);
+}
 
 /**
- * Where the measured answer to "how many seconds does `cpu-load` average
- * over?" lives: a heading on sinks/api-tier in each language, linked from the
+ * Where the answer to "how many seconds does `cpu-load` average over?"
+ * lives: a heading on sinks/api-tier in each language, linked from the
  * arithmetic in `hides`. The fragments are those headings' ids as the build
  * writes them (github-slugger), so a renamed heading breaks the link, and
  * scripts/check-twins.mjs fails on any landing link whose page or fragment the
@@ -260,15 +286,11 @@ const sinksPhrase = (lang: "en" | "es"): string => {
 
 /*
  * Which sinks have had samples from the router: every sink a campaign on the
- * device forwarded to, oldest campaign first. It is three (file, Prometheus
- * and InfluxDB 3, about/status) out of the eleven the collector has
- * (src/data/stats.json, from the Go source), and the callout below says so
- * by count and by name; a campaign that adds a sink changes both.
+ * device forwarded to. It is fewer than the sinks the collector has
+ * (src/data/stats.json, from the Go source), and `testedOn` says some sinks
+ * have not run from a router; a campaign that covers them all makes that
+ * false, and the guard below says so. Tested on names them.
  */
-const SINK_NAME: Record<Lang, Record<string, string>> = {
-	en: {},
-	es: { file: "fichero" },
-};
 const sinksFromRouter = [
 	...new Set(
 		(Object.values(campaigns) as Campaign[])
@@ -299,14 +321,9 @@ export const SINKS_WORD: Record<Lang, string> = {
 };
 if (sinksFromRouter.length === 0 || sinksFromRouter.length >= sinksTotal) {
 	throw new Error(
-		`home.ts: notClaimed says ${sinksFromRouter.length} of ${sinksTotal} sinks have run from the router and the rest have not; rewrite it`,
+		`home.ts: testedOn says some of the ${sinksTotal} sinks have not run from a router, and ${sinksFromRouter.length} have; rewrite it`,
 	);
 }
-const routerSinks = (lang: Lang) =>
-	joinList(
-		sinksFromRouter.map((s) => SINK_NAME[lang][s] ?? s),
-		lang,
-	);
 
 /*
  * "One window, not repeated, so no spread": the readout and the cost lead
@@ -353,41 +370,40 @@ export const en: HomeContent = {
 			{
 				id: "run.10hz.cpu",
 				label: `of one core at ${hz(run10.rateHz, "en")}, the install default`,
-				href: "/mikroscope/cost/",
+				href: campaignOn("en", LANDING_CAMPAIGN),
 			},
 			{
 				id: "run.10hz.rss",
 				label: `resident memory at ${hz(run10.rateHz, "en")}`,
-				href: "/mikroscope/cost/",
+				href: campaignOn("en", LANDING_CAMPAIGN),
 			},
 			{
 				id: "run.100hz.cpu",
 				label: `of one core at ${hz(run100.rateHz, "en")}, the CLI's cap`,
-				href: "/mikroscope/cost/rate-ceiling/",
+				href: campaignOn("en", LANDING_CAMPAIGN),
 			},
 			{
 				id: "run.gapsDrops",
 				label: `gaps and drops, across ${spellCount(runs.length, "en")} runs`,
-				href: "/mikroscope/cost/rate-ceiling/",
+				href: campaignOn("en", LANDING_CAMPAIGN),
 			},
 		],
-		claim: `The first three are from the agent's own cgroup, carried on every sample; the fourth is from ${sinksPhrase("en")} the collector forwarded to. All four were measured on an RB5009 (${describeCpu(rates, "en")}, RouterOS ${rates.routeros}) on ${rates.date}. Each of the first three is one ${win("en")} window at steady state, not repeated, so none has a spread. At ${hz(run10.rateHz, "en")} the memory is inside the ≤ ${q("budget.rss", "en")} the budget asks for and the CPU is above the ≤ ${q("budget.cpu", "en")}.`,
+		claim: `The first three are from the agent's own cgroup, carried on every sample; the fourth is from ${sinksPhrase("en")} the collector forwarded to. Each of the first three is one ${win("en")} window at steady state, not repeated, so none has a spread. At ${hz(run10.rateHz, "en")} the memory is inside the ≤ ${q("budget.rss", "en")} the budget asks for and the CPU is above the ≤ ${q("budget.cpu", "en")}. The router, the RouterOS version and the date are on <a href="${campaignOn("en", LANDING_CAMPAIGN)}">Tested on</a>.`,
 	},
 	hides: {
 		title: "A one-second average is a report about a second",
 		paragraphs: [
 			`The RouterOS API reports <code>cpu-load</code> once a second. A core saturated for ${burstOn("en")} and idle for the other ${burstOff("en")} moves a ${spellCount(cores, "en")}-core, one-second average by ${q("burst.100msOn4Cores", "en")}. That is arithmetic, not a measurement, and the figure is true: it just cannot say when.`,
 			`The agent reads <code>/proc/stat</code>, <code>/proc/interrupts</code>, <code>/proc/softirqs</code> and <code>/proc/net/softnet_stat</code> from inside the router, at ${hz(installDefault.rateHz, "en")} by default, and ships raw tick deltas with the interval each one covers. It never computes a percentage; the window is yours.`,
-			`The floor is the kernel's, not the tool's. <code>/proc/stat</code> counts in ticks of ${q("tick.ms", "en")}, so a ${stepWindow("en")} sample resolves one core to ${q("tick.stepOneCore", "en")} steps. On the RB5009 (RouterOS ${kernel.routeros}, Linux ${kernel.kernel}) there is no PSI and no schedstat to go finer: both files are absent, checked ${kernel.date}.`,
+			`The floor is the kernel's, not the tool's. <code>/proc/stat</code> counts in ticks of ${q("tick.ms", "en")}, so a ${stepWindow("en")} sample resolves one core to ${q("tick.stepOneCore", "en")} steps. There is nothing finer to read where the kernel has no PSI and no schedstat, and the tested router has neither (<a href="${campaignOn("en", "kernel-2026-09-11")}">Tested on</a>).`,
 		],
-		linkText:
-			"How many seconds <code>cpu-load</code> averages over, fitted against <code>/proc/stat</code> →",
+		linkText: "How many seconds <code>cpu-load</code> averages over →",
 		href: CPU_LOAD_ANSWER.en,
 	},
 	release: { label: "Current release:", changelog: "Changelog" },
 	cost: {
 		title: `What it costs, at ${spellCount(RUNS_ON_LANDING.length, "en")} rates`,
-		lead: `Each row is one ${win("en")} window with the ring already full, not repeated, so no row has a spread. Memory differs by row because the ring and the memory limit do.`,
+		lead: `Conditions: ${rates.conditions.en}. Each row is one window, not repeated, so no row has a spread; memory differs by row because the ring and the memory limit do.`,
 		runs: RUNS_ON_LANDING,
 		after: `Nothing was lost at any of these rates: every sink reported ${formatNumber(totalGaps, "en", 0)} gaps and ${formatNumber(totalDrops, "en", 0)} drops, and the delivered rate matched the configured one to three figures. At the default floors and ${hz(run100.rateHz, "en")}, a whole tick's sources were read in under ${formatQuantity(readBound, "en")} for ${q("read.under2ms", "en")} of samples, inside a ${period(run100.rateHz, "en")} period.`,
 		linkText: `All ${spellCount(runs.length, "en")} runs, including every source on every tick →`,
@@ -401,7 +417,7 @@ export const en: HomeContent = {
 		},
 		api: {
 			title: `API tier · the collector · ${hz(API_HZ, "en")}`,
-			body: `The container has its own network namespace, so <code>/proc/net/dev</code> describes the container, not the router. Interface bytes and packets come from the RouterOS API and are merged by the collector, not interpolated. <code>privileged=yes</code> does not change that (checked ${netns.date}).`,
+			body: "The container has its own network namespace, so <code>/proc/net/dev</code> describes the container, not the router. Interface bytes and packets come from the RouterOS API and are merged by the collector, not interpolated. <code>privileged=yes</code> does not change that.",
 		},
 	},
 	install: {
@@ -420,52 +436,51 @@ export const en: HomeContent = {
 			{ cmd: CMD.status, note: "Ownership counts and the agent's health." },
 			{ cmd: CMD.uninstall, note: "Removes and verifies." },
 		],
+		more: { text: "Quick install, step by step →", href: "/mikroscope/start/" },
 	},
-	notClaimed: {
-		title: "What is not claimed",
+	testedOn: {
+		title: "Tested on",
 		paragraphs: [
-			`The project has run on one device: an ${RB5009.device}, ${DEVICE_ARCH}, on RouterOS ${RB5009.routeros} and later ${RB5009_NOW.routeros}. No rate is claimed for any other board.`,
-			`No traffic load heavier than this router's ordinary traffic has been measured. That traffic is about ${q("load.ordinary", "en")} on the WAN.`,
-			"Cost scales with core speed, source set and ring size. Measure it on your own device before you budget for it.",
-			`${spellCount(sinksFromRouter.length, "en", true)} of the ${SINKS_WORD.en} sinks have run from the router: ${routerSinks("en")}. The other ${spellCount(sinksTotal - sinksFromRouter.length, "en")} have not yet had router samples through them. The test suite writes into each one's real product in containers and reads it back, off the device. The SQL script is loaded into PostgreSQL, and stdout is read locally.`,
-			`The ${joinList(crossBuilt, "en")} builds are cross-built and checked in CI. They have never run on hardware.`,
+			`The figures on this page come from one router. <a href="${TESTED_ON.en}">Tested on</a> names it, with the RouterOS versions, the dates and the conditions of every run.`,
+			"It also lists what has not been tested: other boards, traffic heavier than that router's ordinary load, and the sinks and builds that have not run on hardware. No rate is claimed for any other board.",
+			`Cost scales with core speed, source set and ring size. <a href="/mikroscope/cost/#measuring-it-on-your-own-device">Measure it on your own router</a> before you budget for it.`,
 		],
 	},
 	next: {
 		title: "Where to go next",
 		links: [
 			{
-				text: "What it is",
+				text: "Quick install",
 				href: "/mikroscope/start/",
-				note: "Two programs, one container, four limits stated first",
+				note: "Install the CLI, check the router and run the agent in a RouterOS container",
 			},
 			{
-				text: "How it compares",
+				text: "Compared with alternatives",
 				href: "/mikroscope/start/compared/",
-				note: "The other ways to watch a RouterOS device, what each one reads, and when not to use this one",
+				note: "The other ways to watch a RouterOS device, what each one reads, and when to use another tool",
 			},
 			{
-				text: "Five minutes with a router",
+				text: "First recording",
 				href: "/mikroscope/start/walkthrough/",
-				note: "Install, record while you change something, draw the chart, from a real RB5009 recording",
+				note: "Record while you change something, mark it, and draw the chart",
 			},
 			{
-				text: "Installing the agent",
-				href: "/mikroscope/install/",
-				note: "Four ways to get the agent onto the router, what install writes and in which order, and how uninstall removes only what it created",
+				text: "Install methods",
+				href: "/mikroscope/install/routes/",
+				note: "Every way to get the agent onto a router, and what each one needs",
 			},
 			{
-				text: "The collector",
+				text: "Run the collector",
 				href: "/mikroscope/sinks/",
 				note: `Pull, merge, derive, fan out to ${SINKS_WORD.en} sinks, and why a slow one never stops the loop`,
 			},
 			{
-				text: "How to read what it shows",
+				text: "Diagnose faults",
 				href: "/mikroscope/playbooks/",
-				note: "A production fault the API could not see, provoked faults, and the idle shape they are read against",
+				note: "What each fault looks like in the kernel and port data, and the checks to make before you trust a reading",
 			},
 			{
-				text: "What the numbers do not say",
+				text: "Limits of the evidence",
 				href: "/mikroscope/cost/limits/",
 				note: "Every limit on the figures above",
 			},
@@ -481,41 +496,40 @@ export const es: HomeContent = {
 			{
 				id: "run.10hz.cpu",
 				label: `de un núcleo a ${hz(run10.rateHz, "es")}, la cadencia por defecto`,
-				href: "/mikroscope/es/cost/",
+				href: campaignOn("es", LANDING_CAMPAIGN),
 			},
 			{
 				id: "run.10hz.rss",
 				label: `de memoria residente a ${hz(run10.rateHz, "es")}`,
-				href: "/mikroscope/es/cost/",
+				href: campaignOn("es", LANDING_CAMPAIGN),
 			},
 			{
 				id: "run.100hz.cpu",
 				label: `de un núcleo a ${hz(run100.rateHz, "es")}, el máximo de la CLI`,
-				href: "/mikroscope/es/cost/rate-ceiling/",
+				href: campaignOn("es", LANDING_CAMPAIGN),
 			},
 			{
 				id: "run.gapsDrops",
 				label: `huecos y descartes, en ${spellCount(runs.length, "es")} ejecuciones`,
-				href: "/mikroscope/es/cost/rate-ceiling/",
+				href: campaignOn("es", LANDING_CAMPAIGN),
 			},
 		],
-		claim: `Las tres primeras salen del propio cgroup del agente, en cada muestra; la cuarta, de ${sinksPhrase("es")} al que reenviaba el colector. Las cuatro se midieron en un RB5009 (${describeCpu(rates, "es")}, RouterOS ${rates.routeros}) el ${rates.date}. Cada una de las tres primeras es una sola ventana de ${win("es")} en régimen estacionario, sin repetir, así que ninguna tiene dispersión. A ${hz(run10.rateHz, "es")} la memoria está dentro de los ≤ ${q("budget.rss", "es")} que pide el presupuesto y la CPU por encima del ≤ ${q("budget.cpu", "es")}.`,
+		claim: `Las tres primeras salen del propio cgroup del agente, en cada muestra; la cuarta, de ${sinksPhrase("es")} al que reenviaba el colector. Cada una de las tres primeras es una sola ventana de ${win("es")} en régimen estacionario, sin repetir, así que ninguna tiene dispersión. A ${hz(run10.rateHz, "es")} la memoria está dentro de los ≤ ${q("budget.rss", "es")} que pide el presupuesto y la CPU por encima del ≤ ${q("budget.cpu", "es")}. El router, la versión de RouterOS y la fecha están en <a href="${campaignOn("es", LANDING_CAMPAIGN)}">Probado en</a>.`,
 	},
 	hides: {
 		title: "Una media de un segundo es un informe sobre un segundo",
 		paragraphs: [
 			`La API de RouterOS publica <code>cpu-load</code> una vez por segundo. Un núcleo saturado ${burstOn("es")} y ocioso los otros ${burstOff("es")} mueve la media de un segundo de ${spellCount(cores, "es")} núcleos en ${q("burst.100msOn4Cores", "es")}. Es aritmética, no una medida, y la cifra es cierta: solo que no puede decir cuándo.`,
 			`El agente lee <code>/proc/stat</code>, <code>/proc/interrupts</code>, <code>/proc/softirqs</code> y <code>/proc/net/softnet_stat</code> desde dentro del router, a ${hz(installDefault.rateHz, "es")} por defecto, y envía los deltas crudos de ticks con el intervalo que cubre cada uno. Nunca calcula un porcentaje; la ventana la eliges tú.`,
-			`El suelo es del kernel, no de la herramienta. <code>/proc/stat</code> cuenta en ticks de ${q("tick.ms", "es")}, así que una muestra de ${stepWindow("es")} resuelve un núcleo en escalones de ${q("tick.stepOneCore", "es")}. En el RB5009 (RouterOS ${kernel.routeros}, Linux ${kernel.kernel}) no hay PSI ni schedstat con los que afinar: ambos ficheros faltan, comprobado el ${kernel.date}.`,
+			`El suelo es del kernel, no de la herramienta. <code>/proc/stat</code> cuenta en ticks de ${q("tick.ms", "es")}, así que una muestra de ${stepWindow("es")} resuelve un núcleo en escalones de ${q("tick.stepOneCore", "es")}. No hay nada más fino que leer donde el kernel no tiene PSI ni schedstat, y el router probado no tiene ninguno de los dos (<a href="${campaignOn("es", "kernel-2026-09-11")}">Probado en</a>).`,
 		],
-		linkText:
-			"Cuántos segundos promedia <code>cpu-load</code>, ajustado contra <code>/proc/stat</code> →",
+		linkText: "Cuántos segundos promedia <code>cpu-load</code> →",
 		href: CPU_LOAD_ANSWER.es,
 	},
 	release: { label: "Versión actual:", changelog: "Registro de cambios" },
 	cost: {
 		title: `Lo que cuesta, a ${spellCount(RUNS_ON_LANDING.length, "es")} cadencias`,
-		lead: `Cada fila es una ventana de ${win("es")} con el anillo ya lleno, sin repetir, así que ninguna fila tiene dispersión. La memoria cambia por fila porque cambian el anillo y el límite de memoria.`,
+		lead: `Condiciones: ${rates.conditions.es}. Cada fila es una sola ventana, sin repetir, así que ninguna fila tiene dispersión; la memoria cambia por fila porque cambian el anillo y el límite de memoria.`,
 		runs: RUNS_ON_LANDING,
 		after: `No se perdió nada a ninguna de estas cadencias: todos los destinos informaron de ${formatNumber(totalGaps, "es", 0)} huecos y ${formatNumber(totalDrops, "es", 0)} descartes, y la cadencia entregada coincidió con la configurada a tres cifras. Con los suelos por defecto y a ${hz(run100.rateHz, "es")}, todas las fuentes de un tick se leyeron en menos de ${formatQuantity(readBound, "es")} en el ${q("read.under2ms", "es")} de las muestras, dentro de un periodo de ${period(run100.rateHz, "es")}.`,
 		linkText: `Las ${spellCount(runs.length, "es")} ejecuciones, incluida la de todas las fuentes en cada tick →`,
@@ -529,7 +543,7 @@ export const es: HomeContent = {
 		},
 		api: {
 			title: `Capa de la API · el colector · ${hz(API_HZ, "es")}`,
-			body: `El contenedor tiene su propio espacio de nombres de red, así que <code>/proc/net/dev</code> describe al contenedor, no al router. Los bytes y paquetes por interfaz vienen de la API de RouterOS y los fusiona el colector, sin interpolar. <code>privileged=yes</code> no cambia eso (comprobado el ${netns.date}).`,
+			body: "El contenedor tiene su propio espacio de nombres de red, así que <code>/proc/net/dev</code> describe al contenedor, no al router. Los bytes y paquetes por interfaz vienen de la API de RouterOS y los fusiona el colector, sin interpolar. <code>privileged=yes</code> no cambia eso.",
 		},
 	},
 	install: {
@@ -548,52 +562,54 @@ export const es: HomeContent = {
 			{ cmd: CMD.status, note: "Recuento de propiedad y salud del agente." },
 			{ cmd: CMD.uninstall, note: "Elimina y verifica." },
 		],
+		more: {
+			text: "Instalación rápida, paso a paso →",
+			href: "/mikroscope/es/start/",
+		},
 	},
-	notClaimed: {
-		title: "Lo que no se afirma",
+	testedOn: {
+		title: "Probado en",
 		paragraphs: [
-			`El proyecto ha corrido en un solo equipo: un ${RB5009.device}, ${DEVICE_ARCH}, con RouterOS ${RB5009.routeros} y después ${RB5009_NOW.routeros}. No se afirma ninguna cadencia en otra placa.`,
-			`No se ha medido ninguna carga de tráfico mayor que el tráfico corriente de este router. Ese tráfico ronda los ${q("load.ordinary", "es")} en la WAN.`,
-			"El coste depende de la velocidad del núcleo, del conjunto de fuentes y del tamaño del anillo. Mídelo en tu propio equipo antes de presupuestarlo.",
-			`${spellCount(sinksFromRouter.length, "es", true)} de los ${SINKS_WORD.es} destinos han corrido desde el router: ${routerSinks("es")}. Los otros ${spellCount(sinksTotal - sinksFromRouter.length, "es")} aún no han recibido muestras del router. La batería de pruebas escribe en el producto real de cada uno, en contenedores, y lo relee, fuera del equipo. El script SQL se carga en PostgreSQL y stdout se lee en local.`,
-			`Las compilaciones para ${joinList(crossBuilt, "es")} son cruzadas y pasan por CI. No han corrido nunca en hardware.`,
+			`Las cifras de esta página salen de un solo router. <a href="${TESTED_ON.es}">Probado en</a> dice cuál, con las versiones de RouterOS, las fechas y las condiciones de cada ejecución.`,
+			"También dice lo que no se ha probado: otras placas, un tráfico mayor que la carga corriente de ese router, y los destinos y las compilaciones que no han corrido en hardware. No se afirma ninguna cadencia en otra placa.",
+			`El coste depende de la velocidad del núcleo, del conjunto de fuentes y del tamaño del anillo. <a href="/mikroscope/es/cost/#medirlo-en-tu-propio-equipo">Mídelo en tu propio router</a> antes de presupuestarlo.`,
 		],
 	},
 	next: {
 		title: "Por dónde seguir",
 		links: [
 			{
-				text: "Qué es",
+				text: "Instalación rápida",
 				href: "/mikroscope/es/start/",
-				note: "Dos programas, un contenedor, cuatro límites dichos primero",
+				note: "Instala la CLI, comprueba el router y pon en marcha el agente en un contenedor de RouterOS",
 			},
 			{
-				text: "Cómo se compara",
+				text: "Comparado con alternativas",
 				href: "/mikroscope/es/start/compared/",
-				note: "Las otras formas de vigilar un equipo RouterOS, qué lee cada una y cuándo no usar esta",
+				note: "Las otras formas de vigilar un equipo RouterOS, qué lee cada una y cuándo usar otra herramienta",
 			},
 			{
-				text: "Cinco minutos con un router",
+				text: "Primera grabación",
 				href: "/mikroscope/es/start/walkthrough/",
-				note: "Instalar, grabar mientras cambias algo y dibujar el gráfico, con una grabación real de un RB5009",
+				note: "Graba mientras cambias algo, márcalo y dibuja el gráfico",
 			},
 			{
-				text: "Instalar el agente",
-				href: "/mikroscope/es/install/",
-				note: "Cuatro maneras de llevar el agente al router, qué escribe install y en qué orden, y cómo uninstall quita solo lo que creó",
+				text: "Métodos de instalación",
+				href: "/mikroscope/es/install/routes/",
+				note: "Todas las maneras de llevar el agente a un router, y lo que necesita cada una",
 			},
 			{
-				text: "El colector",
+				text: "Ejecutar el colector",
 				href: "/mikroscope/es/sinks/",
 				note: `Extraer, fusionar, derivar, repartir a ${SINKS_WORD.es} destinos, y por qué uno lento nunca para el bucle`,
 			},
 			{
-				text: "Cómo leer lo que muestra",
+				text: "Diagnosticar fallos",
 				href: "/mikroscope/es/playbooks/",
-				note: "Un fallo de producción que la API no veía, fallos provocados y la forma en reposo contra la que se leen",
+				note: "Qué aspecto tiene cada fallo en los datos del kernel y de los puertos, y qué comprobar antes de fiarte de una lectura",
 			},
 			{
-				text: "Lo que los números no dicen",
+				text: "Límites de la evidencia",
 				href: "/mikroscope/es/cost/limits/",
 				note: "Cada límite de las cifras de arriba",
 			},

@@ -1,22 +1,26 @@
 ---
-title: Lo que los números no dicen
+title: Límites de la evidencia
 description: Las preguntas que las medidas de este sitio no pueden responder, y a qué métrica acudir en vez de adivinar.
+docType: evidence
+head:
+  - tag: title
+    content: Lo que los números no dicen | mikroscope
 ---
 
 import Measured from "../../../../components/Measured.astro";
 import NotClaimed from "../../../../components/NotClaimed.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
 
-Todas las medidas hechas en un router que recoge este sitio se tomaron en un único equipo, el
-RB5009UG+S+ de referencia, con el tráfico propio de ese router y los pocos
-sucesos [provocados a propósito](/mikroscope/es/playbooks/). No se tomaron en un
-día: la más antigua, el coste de una conexión ssh, es del 2026-08-26 con
-RouterOS 7.24.1, y las demás que llevan fecha son del 2026-09-11 en adelante,
-con 7.24.2 y después 7.24.4, y cada una dice cuál. Esta página es la lista de lo
-que por tanto no te dicen — guardada aquí, en la documentación, en vez de dejarla
-para que un lector la descubra equivocándose.
+Todas las medidas hechas en un router que recoge este sitio se tomaron en un único equipo, un
+RB5009UG+S+, con el tráfico propio de ese router y los pocos sucesos
+[provocados a propósito](/mikroscope/es/playbooks/). No se tomaron en un día: la más antigua, el
+coste de una conexión SSH, es del 2026-08-26 con RouterOS 7.24.1, y las demás son del 2026-09-11 en
+adelante, con 7.24.2 y después 7.24.4; [Probado en](/mikroscope/es/about/status/) fecha cada una. El
+CHR del laboratorio virtual aporta corrección, no coste: no es una placa, y ninguna de sus duraciones
+ni de sus cifras de CPU mide un router. Lo que sigue es lo que estas medidas no te dicen, guardado
+aquí en vez de dejarlo para que un lector lo descubra equivocándose.
 
-## Lo que `/metrics` puede recuperar y lo que no
+## Límites del histograma {#lo-que-metrics-puede-recuperar-y-lo-que-no}
 
 El histograma `mikroscope_cpu_busy_ticks` (ticks ocupados enteros por muestra y núcleo, lo que
 mantiene la fluctuación de temporización fuera de la elección de bucket) recupera el **tiempo por encima de un umbral** con resolución de una muestra. Lo que no puede recuperar es la
@@ -35,7 +39,7 @@ del agente y no sobre los instantes de tu scrape. Para ver
 la _forma_ de un transitorio en vez de su envolvente, grábalo con `record`, o
 deja que un disparador lo capture.
 
-## El emborronamiento del muestreador se publica, no se esconde
+## Tiempos del muestreador {#el-emborronamiento-del-muestreador-se-publica-no-se-esconde}
 
 Cuánto tardó el muestreador en despertar tras su temporizador y cuánto tardó la
 lectura son `mikroscope_tick_wake_latency_seconds` y
@@ -43,7 +47,7 @@ lectura son `mikroscope_tick_wake_latency_seconds` y
 `mikroscope_tick_interval_seconds`. Si sospechas del muestreador y no del
 router, esos tres son el primer sitio donde mirar.
 
-## Los huecos se informan, nunca se tapan
+## Huecos {#los-huecos-se-informan-nunca-se-tapan}
 
 El agente guarda 60 s por defecto. Un corte del colector más corto que eso se
 rellena al reconectar mediante `since=<seq>`; uno más largo se informa como un
@@ -51,7 +55,7 @@ hueco de longitud conocida — un marcador en una grabación, un contador en el
 colector. Un gráfico con un agujero es un gráfico diciendo la verdad.
 
 <NotClaimed>
-	Cualquier placa que no sea el RB5009 [del techo de muestreo](/mikroscope/es/cost/rate-ceiling/).
+	Cualquier placa que no sea el RB5009 de [Techo de muestreo](/mikroscope/es/cost/rate-ceiling/).
 	Tráfico por encima de unos <Measured id="load.ordinary" />. Una compilación de RouterOS de 32 bits,
 	que llegará con un hEX S pero todavía no ha llegado. Funcionamiento sostenido más allá de las
 	ventanas indicadas. Ninguna de estas es una afirmación de este proyecto, y ninguna debería
@@ -62,9 +66,10 @@ colector. Un gráfico con un agujero es un gráfico diciendo la verdad.
 
 ## Véase también
 
-- [El techo de muestreo](/mikroscope/es/cost/rate-ceiling/): las seis ejecuciones y las condiciones
-  en que se tomaron.
-- [El coste del observador](/mikroscope/es/cost/): el presupuesto, y cómo medir el coste en un
-  equipo que no sea este.
+- [Techo de muestreo](/mikroscope/es/cost/rate-ceiling/): las seis ejecuciones y las condiciones en
+  que se tomaron.
+- [Coste del agente](/mikroscope/es/cost/): el presupuesto, y cómo medir el coste en un equipo que
+  no sea este.
+- [Probado en](/mikroscope/es/about/status/#not-tested): todo lo demás que no se ha probado.
 
 </SeeAlso>

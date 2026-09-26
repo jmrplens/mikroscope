@@ -4,6 +4,7 @@ description: "El recuento real de conntrack de un router MikroTik desde un conte
 head:
   - tag: title
     content: "El conntrack de RouterOS desde un contenedor | mikroscope"
+docType: evidence
 ---
 
 import FaultSignature from "../../../../components/FaultSignature.astro";
@@ -13,11 +14,6 @@ import NotClaimed from "../../../../components/NotClaimed.astro";
 import Provenance from "../../../../components/Provenance.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
 
-Esta página responde a cuántas conexiones está rastreando el router, sin recorrer
-una tabla por una sesión de la API. El techo y los timeouts se leyeron los dos el 2026-09-14.
-
-<Provenance of="playbooks-2026-09-12" />
-
 **En resumen:** dentro del contenedor del agente, `nf_conntrack_count` marca 0 por
 muy ocupado que esté el router, porque pertenece al namespace de red del
 contenedor. El recuento real de conexiones del router son los objetos activos de
@@ -25,16 +21,19 @@ la caché de slab `nf_conntrack` en `/proc/slabinfo`, legible con
 `privileged=yes`, y su techo, `nf_conntrack_max`, marca lo mismo desde el
 contenedor que desde RouterOS. En cinco días de medias horarias del almacén de
 referencia, ese recuento del slab siguió al `count-only` de la API y quedó
-siempre un pequeño porcentaje por encima.
+siempre un pequeño porcentaje por encima. El techo y los timeouts se leyeron los
+dos el 2026-09-14.
 
-## El namespace informa de cero
+<Provenance of="playbooks-2026-09-12" />
+
+## Recuento del namespace {#el-namespace-informa-de-cero}
 
 El namespace de red del propio contenedor informa de `nf_conntrack_count` = 0 por
 muy ocupado que esté el router.
 
 <Provenance of="netns-2026-09-12" />
 
-## El asignador slab no
+## Recuento del slab {#el-asignador-slab-no}
 
 El asignador slab es global. Con `privileged=yes` el agente lee `/proc/slabinfo`
 e informa del número de objetos activos de la caché `nf_conntrack`, que **es** la
@@ -49,7 +48,7 @@ slab: {'nf_conntrack': 6240, 'skbuff_head_cache': 1008, 'skbuff_fclone_cache': 4
 En una muestra es el mapa `slab`; en `/metrics` es
 `mikroscope_slab_active_objects{cache="nf_conntrack"}`. La familia no aparece sin
 `privileged=yes`, porque `/proc/slabinfo` solo lo puede leer root. Una caché que
-el kernel no tiene se omite, no se informa como un 0 permanente — el agente
+el kernel no tiene se omite, no se informa como un 0 permanente: el agente
 también pide `dst_cache` e `ip_dst_cache`, que no aparecen en la salida de arriba.
 
 `/proc/slabinfo` es el fichero más caro que analiza el agente, así que se lee con
@@ -58,9 +57,10 @@ un suelo de presupuesto de 6 Hz, redondeado a ticks enteros: uno de cada 2 ticks
 menos la tasa a la que se midió que cambia `nf_conntrack`. Se guarda cuando
 cambia, más un latido cada 60 s.
 
-## Compruébalo una vez
+## Contraste con la API {#compruébalo-una-vez}
 
-Compruébalo contra la API una vez, para fiarte de él a partir de entonces:
+Contrasta el recuento del slab con la API una vez, para fiarte de él a partir de
+entonces:
 
 ```text
 /ip/firewall/connection/print count-only
@@ -69,8 +69,9 @@ Compruébalo contra la API una vez, para fiarte de él a partir de entonces:
 En el RB5009 esa cuenta dio <Measured id="conntrack.api" /> el 2026-09-11, el día antes de las
 lecturas del slab. Esas, el 2026-09-12, fueron <Measured id="conntrack.slabDiscovery" /> en el
 contenedor de descubrimiento privilegiado y <Measured id="conntrack.slab" /> desde el agente, y el
-fragmento de arriba recogió un tercer momento, sin fecha, 6 240. Con un día de diferencia, muestran el mismo orden de
-magnitud, no que los dos se sigan: en tu equipo, haz el recuento y lee el slab en el mismo minuto.
+fragmento de arriba recogió un tercer momento, sin fecha, 6 240. Con un día de
+diferencia, muestran el mismo orden de magnitud, no que los dos se sigan: en tu
+equipo, haz el recuento y lee el slab en el mismo minuto.
 
 El almacén de referencia lo ha hecho desde entonces durante cinco días. Con
 `forward --conntrack-every` activado, el colector pidió el recuento a la API
@@ -79,15 +80,15 @@ horarias, con el cociente entre ellos debajo:
 
 <Figure name="conntrack-2026-09-19" />
 
-Ni aun así coincidirán exactamente — se muestrean en instantes distintos, y el
+Ni aun así coincidirán exactamente: se muestrean en instantes distintos, y el
 slab cuenta objetos que el asignador aún retiene. La diferencia de coste es lo que
-importa: la lectura de un fichero varias veces por segundo
-frente a recorrer una tabla por una sesión de la API.
+importa: la lectura de un fichero varias veces por segundo frente a recorrer una
+tabla por una sesión de la API.
 
-## El techo también se puede leer
+## Techo de la tabla {#el-techo-también-se-puede-leer}
 
 Junto a `nf_conntrack_count` en `/proc/sys/net/netfilter`, `nf_conntrack_max` no
-va por namespace. Marca **966 656** desde dentro del contenedor — el mismo número
+va por namespace. Marca **966 656** desde dentro del contenedor, el mismo número
 que un `/ip/firewall/connection/tracking/print` de solo lectura da como
 `max-entries` en el router de referencia (2026-09-14). Así que "cómo de llena está
 la tabla de conexiones" se puede responder sin la API: la población del slab
@@ -105,23 +106,23 @@ guardado anterior, y `conntrack-high`, cuando la ocupación supera el 80 % de
 llenarse. La regla de alerta `mikroscope-conntrack-near-limit` vigila la misma
 proporción en el almacén y salta tras cinco minutos por encima del 80 %.
 
-El mismo subárbol tiene una trampa. Los _timeouts_ de conntrack que hay ahí
+Una trampa en el mismo subárbol: los _timeouts_ de conntrack que hay ahí
 marcan los valores por defecto de Linux (`tcp_timeout_established` 432 000 s,
 frente al `1d` de RouterOS; leído el 2026-09-14), así que nunca deben presentarse
 como la configuración del router.
 
-## Las cachés vecinas
+## Cachés slab relacionadas {#las-cachés-vecinas}
 
-Merece la pena vigilarlas por sí mismas:
+Merece la pena vigilar por sí mismas las demás cachés del mapa `slab`:
 
-- `skbuff_head_cache` / `skbuff_fclone_cache` — búferes de paquetes en tránsito. Un
-  pico aquí durante un suceso de tráfico es presión de memoria que viene del
+- `skbuff_head_cache` / `skbuff_fclone_cache`: búferes de paquetes en tránsito.
+  Un pico aquí durante un suceso de tráfico es presión de memoria que viene del
   camino de red, no de algo que hayas instalado.
-- `TCP` / `UDP` / `sock_inode_cache` — sockets que mantiene el propio router.
-- `kmalloc-1k` / `kmalloc-2k` — donde se ven las tormentas de asignaciones
+- `TCP` / `UDP` / `sock_inode_cache`: sockets que mantiene el propio router.
+- `kmalloc-1k` / `kmalloc-2k`: donde se ven las tormentas de asignaciones
   grandes.
 
-## La firma
+## Firma {#la-firma}
 
 <FaultSignature origin="unprovoked" date="2026-09-12">
 
@@ -147,11 +148,12 @@ Merece la pena vigilarlas por sí mismas:
 
 ## Véase también
 
-- [La CPU del router, la red del contenedor](/mikroscope/es/limits/namespaces/): qué contadores oculta
-  el namespace de red, y la excepción del slab.
-- [Lo que aporta privileged](/mikroscope/es/limits/privileged/): los ficheros que solo lee root,
+- [Visibilidad del contenedor](/mikroscope/es/limits/namespaces/): qué contadores oculta el
+  namespace de red, y la excepción del slab.
+- [Modo privilegiado](/mikroscope/es/limits/privileged/): los ficheros que solo lee root,
   `/proc/slabinfo` entre ellos.
-- [Detecciones](/mikroscope/es/sinks/detections/): `conntrack-cliff` y `conntrack-high` completas.
+- [Reglas de detección](/mikroscope/es/sinks/detections/): `conntrack-cliff` y `conntrack-high`
+  completas.
 - [Reglas de alerta](/mikroscope/es/dashboards/alerts/): `mikroscope-conntrack-near-limit`, la regla
   que avisa sobre la misma proporción.
 

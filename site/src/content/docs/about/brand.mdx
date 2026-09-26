@@ -1,6 +1,7 @@
 ---
 title: The mark
 description: Nine sample bars and the line of their own mean, why none of it is drawn at partial opacity, and the contrast each tone measures against its page.
+docType: about
 ---
 
 import Mark from "../../../assets/mark-inline.svg";
@@ -8,10 +9,10 @@ import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
 import Src from "../../../components/Src.astro";
 
-This page answers what the mikroscope mark says, how it is made, and why its
-colours are the ones they are — with the contrast of every tone measured
-against the background it is drawn on, and the cost of that choice stated
-beside it.
+The mikroscope mark is nine sample bars and the line of their own mean, drawn in
+two solid tones per theme. Below: what it says, how it is generated, and the
+contrast of every tone against the background it is drawn on, with the cost of
+that choice beside it.
 
 <p style="color: var(--ms-accent)">
 	<Mark
@@ -22,18 +23,18 @@ beside it.
 	/>
 </p>
 
-## A spike standing over its own average
+## Concept {#a-spike-standing-over-its-own-average}
 
 The mark is geometry, not a drawing: nine sample bars whose envelope is a
 burst, crossed by the flat line of their own mean. That is the whole claim of
-the project in one shape — a one-second average reports the line, and
+the project in one shape: a one-second average reports the line, and
 sub-second sampling is what resolves the spike standing over it.
 
 The burst is asymmetric the way a real one is: three quiet samples, a fast
 rise, the peak, a slower fall, three quiet again. The peak sits in the middle
 of an odd number of bars, so the mark balances on its own centre.
 
-## The line is the mean, and it is computed
+## Mean line {#the-line-is-the-mean-and-it-is-computed}
 
 The generator draws the line at the arithmetic mean of the heights it was
 given, not at a number chosen to look right, and a bar takes the loud tone
@@ -42,7 +43,7 @@ the code enforces: three of the nine samples are above their own average, and
 they are the three the eye goes to. `TestTheLineSitsAtTheMeanOfTheBars` fails
 the build if the drawing and the arithmetic drift apart.
 
-## Four tones, two per theme, and no opacity anywhere
+## Palette {#four-tones-two-per-theme-and-no-opacity-anywhere}
 
 Measured against the background each is drawn on, as WCAG 2.2 defines contrast:
 
@@ -67,49 +68,47 @@ background, or if a theme's two tones are less than 2.0:1 apart. A tone edited
 without checking it fails the build rather than shipping.
 `TestNothingInTheMarkDependsOnOpacity` guards the other half of the decision.
 
-## Why the quiet bars are not opacity
+## No opacity {#why-the-quiet-bars-are-not-opacity}
 
 A quiet bar drawn as the loud colour at a low opacity reads well and fails.
 Composited over the page, 0.28 of `#f59e0b` gives **1.73:1** on the dark
 background and 0.42 of `#a16207` gives **1.80:1** on white, where AA asks
 4.5:1. Reaching 4.5 by raising the alpha needs 0.68 in the dark theme and 0.96
-in the light one — at which point a quiet bar is a loud bar and the one
+in the light one, at which point a quiet bar is a loud bar and the one
 distinction the mark exists to make is gone. So the split is two solid tones.
 
 That costs punch. Solid against solid gives about **2.1:1** between the two
 groups; drawing the quiet bar at 0.28 (0.42 on white) separates them by about
 5:1 in the dark theme and 2.7:1 in the light one, at alphas that read 1.73:1 and
 1.80:1 against their own page and so fail AA. What it buys is that nothing in
-the mark composites against a background this repository does not control — a
-README on GitHub, an `og:image` in a chat client, a favicon over browser chrome
-— so every number in the table is the number the reader actually gets.
+the mark composites against a background this repository does not control (a
+README on GitHub, an `og:image` in a chat client, a favicon over browser
+chrome), so every number in the table is the number the reader actually gets.
 
-## A house rule, stricter than the standard
+## Contrast rule {#a-house-rule-stricter-than-the-standard}
 
 WCAG 1.4.11 asks **3:1** of a graphical object, and 1.4.3 exempts logotypes
 from any minimum at all. 4.5:1 on every bar is a house rule stricter than the
-standard, chosen by the project's maintainer, José Manuel Requena Plens, on
-2026-09-15 over the smaller change of lifting the alphas to 3:1.
+standard, chosen by the project's maintainer, José Manuel Requena Plens, over
+the smaller change of lifting the alphas to 3:1.
 
-## Amber also means threshold
+## Amber {#amber-also-means-threshold}
 
 Amber also means _threshold_ on this project's dashboards, where a panel turns
-orange before it turns red. The two do not collide literally — the panels use
-Grafana's own named colours and never these hexes — but a reader who has learnt
+orange before it turns red. The two do not collide literally (the panels use
+Grafana's own named colours and never these hexes), but a reader who has learnt
 "amber means look at this" on a dashboard is being asked to read the same hue
-as the project's own mark. That is the cost of the choice, made knowingly
-(the maintainer, 2026-09-15).
+as the project's own mark. That is the cost of the choice, made knowingly.
 
-## The bars are proportions, not packets
+## Bar heights {#the-bars-are-proportions-not-packets}
 
-The bar heights are not a real capture. The burst
-measured on the reference RB5009 on 2026-09-15 peaked at 736 packets in one
-20 ms sample against a median of 28, and 26× is a range no single square
+The bar heights are not a real capture. A burst mikroscope measured peaked at
+736 packets in one 20 ms sample against a median of 28, and 26× is a range no single square
 renders: the quiet samples collapse to dots, or a log scale flattens the very
 spike the mark exists to show. The heights in the mark are proportions of the
 drawn height.
 
-## The favicon is a different drawing
+## Favicon {#the-favicon-is-a-different-drawing}
 
 Nine bars at sixteen pixels is mush, so the favicon drops to five and keeps the
 spike standing over the line, which is the part that carries the meaning.
@@ -120,7 +119,7 @@ signal browser chrome itself follows, so it draws `#fbbf24`/`#c2740a` over a
 dark chrome and `#633009`/`#b45309` over a light one. Every raster brings its
 own `#0e1316` ground instead, because an `.ico` has no way to ask.
 
-## One generator, three families of files
+## Generated files {#one-generator-three-families-of-files}
 
 The mark lives as a generator, <Src path="cmd/gen_brand/" />, rather than as a folder of
 hand-drawn files, because changing the palette or the bar count is then one
@@ -164,7 +163,7 @@ the same host give the same four mark and favicon files.
 
 Every page's head links `favicon.svg`, `favicon.ico`, `apple-touch-icon.png` and `site.webmanifest`.
 The `.ico` link says `sizes="32x32"`, which keeps Chromium on the SVG alone: headless Chromium 153
-requested only `favicon.svg` on 2026-09-25. The manifest names `icon-192.png`, `icon-512.png` and
+requested only `favicon.svg`. The manifest names `icon-192.png`, `icon-512.png` and
 `icon-maskable-512.png` by URLs relative to itself, and leaves out `favicon.svg`, the one icon with
 no ground of its own, since whatever lands on a home screen brings its own. It carries no `id`,
 which is resolved against the origin of `start_url` rather than against the manifest: Chromium 153
@@ -178,8 +177,8 @@ It follows the site's theme, not the system's scheme: it is served with the dark
 page without JavaScript keeps whatever the system says, and a script in the head moves it to the
 light one whenever the page turns light, from the system's scheme, the theme select, a stored choice
 or the phone's toggle. Chrome reads the tag; Safari 26, by public reports and not tried here,
-ignores it and takes the colour of the fixed header. In headless Chromium and WebKit on 2026-09-25,
-in both schemes, after a pick, after a stored pick and a reload, after the phone's toggle and with
+ignores it and takes the colour of the fixed header. In headless Chromium and WebKit, in both
+schemes, after a pick, after a stored pick and a reload, after the phone's toggle and with
 JavaScript off, the tag held the header's colour every time; the pair of tags split by
 `prefers-color-scheme` it replaced held the other theme's colour after each pick, and on a light
 system without JavaScript. Whether a phone's Chrome repaints its toolbar the moment the tag changes
@@ -194,14 +193,14 @@ The mark in this site's header is `favicon-inline.svg`, the five-bar drawing, pa
 site's own palette; `mark-inline.svg` fills the hero slot. Either way the drawing in the chrome is
 the drawing in `brand/`.
 
-## The background
+## Background {#the-background}
 
 Not written by the generator: `background.png` was generated once with
 inference.sh (`openai/gpt-image-2`, 1536×1024, `quality: high`, $0.16) and is
 kept as a raster. Everything drawn over it is vector, so the type stays crisp
 at whatever size the raster is produced. The prompt asked for a near-black
 field of faint vertical sample bars growing denser and warmer toward the right,
-and for the left third to stay empty — which is where the mark and the type
+and for the left third to stay empty, which is where the mark and the type
 sit, so the composition never fights its own background.
 
 The three crops keep the whole left-to-right gradient rather than taking a
@@ -216,11 +215,11 @@ magick background.png -resize 1200x -gravity center -crop 1200x630+0+0 +repage b
 The compositions are light on dark throughout, so they take the dark theme's
 two tones and need no theme pair. Measured over the field's own darkest ground
 (`#020608`, sampled from the left edge), the heading `#f6f3ee` reads 18.38:1,
-the tagline `#cfc6b8` 12.04:1, and the mark's two tones 12.19:1 and 5.62:1 —
+the tagline `#cfc6b8` 12.04:1, and the mark's two tones 12.19:1 and 5.62:1:
 higher than on the page, the field being darker than it. The tagline is "Sub-second
 kernel telemetry from inside the router".
 
-## Setting the social preview
+## Social preview {#setting-the-social-preview}
 
 Manual: Settings, then Social preview, then upload `social.png`. GitHub offers
 no API for it.
@@ -229,8 +228,8 @@ no API for it.
 
 ## See also
 
-- [Five dashboards, one panel list](/mikroscope/dashboards/): where amber means a threshold.
-- [What it is](/mikroscope/start/): the claim the mark draws, in words.
+- [Dashboards](/mikroscope/dashboards/): where amber means a threshold.
+- [The landing page](/mikroscope/): the claim the mark draws, in words.
 - [Lineage and licence](/mikroscope/about/lineage/): where the rest of the code came from.
 
 </SeeAlso>

@@ -73,9 +73,8 @@ export const RB5009 = {
  * 11:13:35 UTC on (src/data/figures/data/*.json). An upgrade needs a reboot,
  * so the router has run 7.24.4 since that boot at the latest. Campaigns dated
  * 2026-09-16 to 2026-09-18 still inherit 7.24.2 from `RB5009`; this bound
- * neither confirms nor refutes that. The landing's "has run on" names both,
- * and takes this one from here rather than from a campaign, so the next
- * campaign on 7.24.4 cannot change what the sentence says.
+ * neither confirms nor refutes that. Tested on (about/status, "Devices and
+ * versions") names both and states this bound.
  */
 export const RB5009_NOW: { readonly routeros: string } = {
 	routeros: "7.24.4",
@@ -83,6 +82,10 @@ export const RB5009_NOW: { readonly routeros: string } = {
 
 export const campaigns = {
 	"rates-2026-09-18": {
+		title: {
+			en: "Rates at the shipped configuration",
+			es: "Cadencias con la configuración de serie",
+		},
 		...RB5009,
 		date: "2026-09-18",
 		windowS: 300,
@@ -94,6 +97,10 @@ export const campaigns = {
 		source: "site/src/content/docs/cost/rate-ceiling.mdx",
 	},
 	"rates-2026-09-15": {
+		title: {
+			en: "Rates into three sinks",
+			es: "Cadencias hacia tres destinos",
+		},
 		...RB5009,
 		date: "2026-09-15",
 		windowS: 60,
@@ -105,6 +112,10 @@ export const campaigns = {
 		source: "site/src/content/docs/cost/rate-ceiling.mdx",
 	},
 	"kernel-2026-09-11": {
+		title: {
+			en: "Kernel accounting files",
+			es: "Ficheros de contabilidad del kernel",
+		},
 		...RB5009,
 		kernel: "5.6.3",
 		date: "2026-09-11",
@@ -118,6 +129,10 @@ export const campaigns = {
 	// centisecond from the operator host on the same LAN. The point of the run
 	// was the server's own 30 s WriteTimeout, so nothing else was varied.
 	"stream-2026-09-21": {
+		title: {
+			en: "`/stream` connection lifetime",
+			es: "Duración de una conexión `/stream`",
+		},
 		...RB5009,
 		routeros: "7.24.4",
 		date: "2026-09-21",
@@ -134,6 +149,10 @@ export const campaigns = {
 	// re-measured against today's source set. The read cost beside it is the
 	// same campaign's ≈ 0.77 ms per sample.
 	"busybox-2026-09-11": {
+		title: {
+			en: "Busybox shell loop",
+			es: "Bucle de shell de busybox",
+		},
 		...RB5009,
 		kernel: "5.6.3",
 		date: "2026-09-11",
@@ -146,6 +165,10 @@ export const campaigns = {
 			"site/src/content/docs/cost/index.mdx; measured on the RB5009, RouterOS 7.24.2, kernel 5.6.3, 2026-09-11: 7 files at 10 Hz, 2.40 and 2.48 % of one core over two 60 s runs, cgroup cpu.stat over /proc/uptime",
 	},
 	"netns-2026-09-12": {
+		title: {
+			en: "Network namespace under privileged",
+			es: "Espacio de red con privileged",
+		},
 		...RB5009,
 		date: "2026-09-12",
 		conditions: {
@@ -159,6 +182,10 @@ export const campaigns = {
 	// testdata/proc/rb5009, and internal/procfs/slabinfo.go cites its
 	// nf_conntrack row.
 	"discovery-2026-09-12": {
+		title: {
+			en: "Privileged discovery container",
+			es: "Contenedor de descubrimiento privilegiado",
+		},
 		...RB5009,
 		kernel: "5.6.3",
 		date: "2026-09-12",
@@ -170,6 +197,10 @@ export const campaigns = {
 			"site/src/content/docs/limits/namespaces.mdx; testdata/proc/rb5009/slabinfo (nf_conntrack 6582 active of 8075); the comment on Slab, internal/procfs/slabinfo.go",
 	},
 	"playbooks-2026-09-12": {
+		title: {
+			en: "Case-study readings",
+			es: "Lecturas de los casos reales",
+		},
 		...RB5009,
 		kernel: "5.6.3",
 		date: "2026-09-12",
@@ -177,13 +208,18 @@ export const campaigns = {
 			en: "agent at 10 Hz in an ephemeral privileged container",
 			es: "agente a 10 Hz en un contenedor privilegiado efímero",
 		},
-		source: "site/src/content/docs/playbooks/index.mdx",
+		source:
+			"the case studies playbooks/{idle,cpu,packet-flood,flash-wear,conntrack}.mdx and reference/port-names.mdx; about/status.mdx (Tested on) keeps the campaign's entry",
 	},
 	// One recording, the one the walkthrough's chart is drawn from. The sample
 	// count and span are the chart's own subtitle; the gaps and the skew have no
 	// source outside the record pages' own prose, so they stay there and out of
 	// this line.
 	"record-2026-09-12": {
+		title: {
+			en: "Recording of a script loop",
+			es: "Grabación de un bucle de script",
+		},
 		...RB5009,
 		date: "2026-09-12",
 		conditions: {
@@ -198,6 +234,10 @@ export const campaigns = {
 	// the span are the chart's subtitle; the per-panel readings the page quotes
 	// are read off that chart and say so.
 	"record-2026-09-16": {
+		title: {
+			en: "Recording at rest",
+			es: "Grabación en reposo",
+		},
 		...RB5009,
 		date: "2026-09-16",
 		conditions: {
@@ -213,6 +253,10 @@ export const campaigns = {
 	// router still ran 7.24.1 (the 7.24.2 upgrade reboot was 2026-09-10), so it
 	// names its own version.
 	"ssh-connect": {
+		title: {
+			en: "SSH connect cost",
+			es: "Coste de una conexión SSH",
+		},
 		...RB5009,
 		routeros: "7.24.1",
 		date: "2026-08-26",
@@ -224,6 +268,10 @@ export const campaigns = {
 			"site/src/content/docs/install/index.mdx; measured on the RB5009 on 2026-08-26 under RouterOS 7.24.1, before the 7.24.2 upgrade of 2026-09-10; the same cost showed in /tool profile on 7.24.2, 2026-09-11 (17–33 % for 1–2 snapshots)",
 	},
 	"relay-fetch": {
+		title: {
+			en: "Relay fetch limit",
+			es: "Límite del fetch del relay",
+		},
 		...RB5009,
 		kernel: "5.6.3",
 		date: "2026-09-11",
@@ -238,6 +286,10 @@ export const campaigns = {
 	// "about a day before" the slab reading of 2026-09-12; the day is the one recorded
 	// with the ten calls.
 	"api-conntrack": {
+		title: {
+			en: "Conntrack count over the API",
+			es: "Cuenta de conntrack por la API",
+		},
 		...RB5009,
 		kernel: "5.6.3",
 		date: "2026-09-11",
@@ -248,18 +300,30 @@ export const campaigns = {
 		source:
 			"measured on the RB5009, RouterOS 7.24.2, kernel 5.6.3, 2026-09-11: 6 212 entries, median 1.3 ms, n = 10, min 1.1, first call 71 ms cold; site/src/content/docs/sinks/api-tier.mdx, playbooks/conntrack.mdx and reference/cli.mdx give that date; the time of day is not recorded",
 	},
-	// No date beside it in the source cited, so it renders "date not recorded"
-	// wherever a page gives it provenance.
+	// The pages gave it no date, but the code that took its floors does: the
+	// comment above the floor constants in internal/agent/source.go names the
+	// device, RouterOS 7.24.2, kernel 5.6.3 and "a 10.5 h capture at 50 Hz on
+	// 2026-09-13", and plan/overnight/forward-20260913-0040.log is its log.
 	"floors-overnight": {
+		title: {
+			en: "Overnight source cadences",
+			es: "Cadencias de las fuentes en una noche",
+		},
 		...RB5009,
-		date: null,
+		kernel: "5.6.3",
+		date: "2026-09-13",
 		conditions: {
 			en: "a 10.5 h capture at 50 Hz over one idle night, clock pinned",
 			es: "una captura de 10,5 h a 50 Hz durante una noche en reposo, con el reloj fijo",
 		},
-		source: "site/src/content/docs/limits/source-floors.mdx (undated there)",
+		source:
+			"internal/agent/source.go, the comment above the floor constants (device, RouterOS, kernel, 10.5 h at 50 Hz, 2026-09-13); site/src/content/docs/limits/source-floors.mdx",
 	},
 	"squeeze-2026-09-16": {
+		title: {
+			en: "Softnet squeeze distribution",
+			es: "Distribución de los squeezes de softnet",
+		},
 		...RB5009,
 		date: "2026-09-16",
 		conditions: {
@@ -270,6 +334,10 @@ export const campaigns = {
 			"site/src/content/docs/sinks/detections.mdx; the same distribution is the comment on minSqueeze, internal/derive/derive.go",
 	},
 	"microburst-replay-2026-09-16": {
+		title: {
+			en: "Microburst rule replay",
+			es: "Reejecución de la regla de microrráfagas",
+		},
 		...RB5009,
 		date: "2026-09-16",
 		conditions: {
@@ -289,6 +357,10 @@ export const campaigns = {
 	// about 2026-09-18 22:43 UTC and ran 7.24.4 when that was read (see
 	// RB5009_NOW), so it ran 7.24.4 all of 2026-09-19.
 	"port-overflow-2026-09-19": {
+		title: {
+			en: "Port overflow before and after",
+			es: "Desbordamiento del puerto antes y después",
+		},
 		...RB5009,
 		routeros: "7.24.4",
 		date: "2026-09-19",
@@ -300,6 +372,10 @@ export const campaigns = {
 			"a per-port audit of the RB5009 on 2026-09-19; the counters are RouterOS /interface/ethernet/print stats on ether1, read by the API tier every 10 s",
 	},
 	"line-size-2026-09-17": {
+		title: {
+			en: "Ring line with every source",
+			es: "Línea del anillo con todas las fuentes",
+		},
 		...RB5009,
 		date: "2026-09-17",
 		conditions: {
@@ -310,6 +386,10 @@ export const campaigns = {
 			"internal/agent/agent.go, ApproxLineBytes: 3 230 B measured, charged from Go's 3 456 B size class. The 2 439 B of 2026-09-12 understated the ring by 35 %, which is why the budget check never bound.",
 	},
 	"line-size": {
+		title: {
+			en: "First ring line measurement",
+			es: "Primera medición de la línea del anillo",
+		},
 		...RB5009,
 		date: "2026-09-12",
 		conditions: {
@@ -323,6 +403,10 @@ export const campaigns = {
 	// a 14 MiB soft limit and then with room. The figures are
 	// site/src/content/docs/about/status.mdx's; that page gives the date too.
 	gc: {
+		title: {
+			en: "Memory limit and garbage collector",
+			es: "Límite de memoria y recolector",
+		},
 		...RB5009,
 		date: "2026-09-12",
 		conditions: {
@@ -335,6 +419,10 @@ export const campaigns = {
 	// this project says everywhere, or a longer one? Settled by correlating the
 	// API series against the kernel tier's own busy ratio at 10 Hz.
 	"cpu-load-window-2026-09-15": {
+		title: {
+			en: "`cpu-load` averaging window",
+			es: "Ventana de promedio de `cpu-load`",
+		},
 		...RB5009,
 		kernel: "5.6.3",
 		date: "2026-09-15",
@@ -343,6 +431,59 @@ export const campaigns = {
 			es: "`/system/resource` consultado a 1 Hz frente a la proporción de ocupación por núcleo del agente a 10 Hz, en dos horas distintas",
 		},
 		source: "measured from the collector's own InfluxDB series",
+	},
+	// The line-protocol size the InfluxDB and Telegraf sinks size their byte
+	// budgets from (sinks/influxdb, sinks/other). One render of one sample,
+	// with the source set of that date: no PMU, buddyinfo or MTD yet.
+	"line-protocol-2026-09-12": {
+		title: {
+			en: "Line-protocol sample size",
+			es: "Tamaño de una muestra en protocolo de líneas",
+		},
+		...RB5009,
+		kernel: "5.6.3",
+		date: "2026-09-12",
+		conditions: {
+			en: "one kernel sample at 10 Hz rendered to InfluxDB line protocol, with the agent's source set of that date",
+			es: "una muestra del kernel a 10 Hz renderizada en protocolo de líneas de InfluxDB, con el conjunto de fuentes que tenía el agente en esa fecha",
+		},
+		source:
+			"site/src/content/docs/sinks/influxdb.mdx and sinks/other.mdx at dc0e354 (about 1.2 KiB, RB5009, RouterOS 7.24.2, kernel 5.6.3, 2026-09-12); moved to Tested on in PR3",
+	},
+	// One read of the counters RouterOS keeps per port and per interface, which
+	// six guides quoted: the wire against the CPU on a switch port, and the
+	// fast-path share on the software interfaces. Cumulative figures, so the
+	// window is whatever lay behind each counter's last reset.
+	"counters-2026-09-16": {
+		title: {
+			en: "Port and fast-path counters",
+			es: "Contadores de puerto y de fast path",
+		},
+		...RB5009,
+		date: "2026-09-16",
+		conditions: {
+			en: "RouterOS port and interface counters read over the API, cumulative since boot or since each port's last counter reset",
+			es: "contadores de puerto y de interfaz de RouterOS leídos por la API, acumulados desde el arranque o desde el último reinicio del contador de cada puerto",
+		},
+		source:
+			"site/src/content/docs/sinks/{prometheus,influxdb,api-tier,derive}.mdx, reference/{metrics,measurements}.mdx and dashboards/index.mdx at dc0e354 (ether1 255.8 GB rx-bytes, 29.7 GB driver-rx-byte; bridge 211.9 of 663.0 GB fast-pathed; PPPoE_DIGI 99.97 %; fp-tx-byte 0 on every interface); moved to Tested on in PR3",
+	},
+	// What the API tier costs the router, from RouterOS's own profiler: one
+	// 60 s profile per condition, no spread (cost/#api-tier-cost).
+	"api-profile-2026-09-16": {
+		title: {
+			en: "API tier router profile",
+			es: "Perfil del router con la capa de la API",
+		},
+		...RB5009,
+		date: "2026-09-16",
+		windowS: 60,
+		conditions: {
+			en: "`/tool profile duration=60s cpu=total`, once with the collector stopped and once with it running `--interfaces bridge,ether1,PPPoE_DIGI --counters-every 10s --api-every 1s`; the first five one-second snapshots of each profile dropped, because they hold the SSH connect that asked for it",
+			es: "`/tool profile duration=60s cpu=total`, una vez con el colector parado y otra con él en marcha con `--interfaces bridge,ether1,PPPoE_DIGI --counters-every 10s --api-every 1s`; descartadas las cinco primeras instantáneas de un segundo de cada perfil, porque llevan la conexión SSH que lo pidió",
+		},
+		source:
+			"site/src/content/docs/sinks/api-tier.mdx at dc0e354, “What the tier costs the router”; moved to cost/#api-tier-cost in PR3",
 	},
 	// The image tar's size is a property of the build, not of the router: the
 	// device fields are here only because every campaign has them, and
@@ -356,6 +497,10 @@ export const campaigns = {
 	// of manifest and tar headers. The other architectures' tars are
 	// 7 214 592 B (armv5, armv7) and 7 222 784 B (amd64).
 	image: {
+		title: {
+			en: "Published image size",
+			es: "Tamaño de la imagen publicada",
+		},
 		...RB5009,
 		date: "2026-09-24",
 		conditions: {
@@ -369,6 +514,10 @@ export const campaigns = {
 	// give; v1.0.0 was tagged 2026-09-16, which is a release date, not a
 	// measurement date, so the date stays null.
 	"image-v100": {
+		title: {
+			en: "Image size at 1.0.0",
+			es: "Tamaño de la imagen en 1.0.0",
+		},
 		...RB5009,
 		date: null,
 		conditions: {
@@ -1100,11 +1249,11 @@ for (const r of runs) {
 		);
 	}
 }
-// "on RouterOS 7.24.2 and later 7.24.4": src/data/home.ts notClaimed.body
-// names both versions, which says nothing if they are the same.
+// "7.24.2, then 7.24.4": about/status.mdx (Tested on, "Devices and versions",
+// both locales) names both versions, which says nothing if they are the same.
 if (RB5009_NOW.routeros === RB5009.routeros) {
 	throw new Error(
-		"measurements.ts: RB5009_NOW.routeros equals RB5009.routeros; rewrite home.ts notClaimed.body, which names both",
+		"measurements.ts: RB5009_NOW.routeros equals RB5009.routeros; rewrite about/status.mdx (Devices and versions, both locales), which names both",
 	);
 }
 // "nothing was lost": cost/rate-ceiling.mdx (both locales), src/data/home.ts cost.after.

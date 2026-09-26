@@ -1,9 +1,10 @@
 ---
-title: The shape of an idle router
+title: Idle baseline
 description: "Sixty idle seconds on a MikroTik RB5009 read at 10 Hz: the busy floor, a softnet squeeze that is never zero, and a kernel log that stays silent."
 head:
   - tag: title
     content: "An idle MikroTik RB5009, per core, at 10 Hz | mikroscope"
+docType: evidence
 ---
 
 import Measured from "../../../components/Measured.astro";
@@ -11,18 +12,14 @@ import NotClaimed from "../../../components/NotClaimed.astro";
 import Provenance from "../../../components/Provenance.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
 
-This page answers what "normal" looks like, so that the other pages have
-something to be anomalous against. Know this shape before you go looking for
-anomalies, or you will find them everywhere.
+**In short:** on the reference RB5009 at idle, the four cores sit at 6–8 % busy,
+`time_squeeze` is never zero (about 200 per 20 s), and the kernel log is silent.
+Read every other case study against that shape: a steady stream of kernel events
+at idle is the anomaly, and a nonzero squeeze on its own is not.
 
 <Provenance of="playbooks-2026-09-12" />
 
-**In short:** on the reference RB5009 at idle, the four cores sit at 6–8 % busy,
-`time_squeeze` is never zero (about 200 per 20 s), and the kernel log is silent.
-Read every other page against that shape: a steady stream of kernel events at
-idle is the anomaly, and a nonzero squeeze on its own is not.
-
-## Sixty seconds at idle
+## Recording {#sixty-seconds-at-idle}
 
 Three 20-second buckets:
 
@@ -33,13 +30,12 @@ Three 20-second buckets:
    2    6.5   7.1   5.2   6.7   6.8  58259     199      179  36.3  1400       0
 ```
 
-The percentages in that table were computed after the fact from the raw tick
-deltas the agent ships; the agent never turns them into percentages.
+The percentages were computed afterwards from the raw tick deltas the agent
+ships; the agent never turns them into percentages. There is no chart: the
+reading predates the history of the reference InfluxDB store, which begins on
+2026-09-19.
 
-There is no chart of these sixty seconds: they were read on 2026-09-12, before
-the history of the reference InfluxDB store begins on 2026-09-19.
-
-## What to read
+## What to look at {#what-to-read}
 
 - **6–8 % busy across four cores is this router's floor**, not a problem. It is
   DNS, DHCP, WireGuard, the bridge and its own housekeeping.
@@ -50,38 +46,47 @@ the history of the reference InfluxDB store begins on 2026-09-19.
 - **`arch_timer` and `switch0` are always the top two interrupt sources.**
 - **Zero kernel events is the healthy state.** Any steady stream of `events` at
   idle deserves the treatment in [the loop case
-  study](/mikroscope/playbooks/loop/) — that is exactly how it started.
+  study](/mikroscope/playbooks/loop/): that is how it started.
 
-## The background squeeze and the burst flag
+## Background squeezes {#the-background-squeeze-and-the-burst-flag}
 
 The squeeze floor was measured again in the 24 h to 2026-09-16 07:00 UTC, on
-the same device, over 3 738 704 per-CPU samples: about <Measured id="squeeze.backgroundOne" /> of
-samples carry one squeeze as background, <Measured id="squeeze.backgroundTwo" /> exactly two,
-and <Measured id="squeeze.exactlyThree" /> exactly three. Measured on this router on 2026-09-15: a rule
-that flags any squeeze fires 92 times in twenty minutes, and means nothing.
+the same device, over 3 738 704 per-CPU samples:
 
-So the collector's `burst` flag is a deviation from the device's own norm: a
-dropped packet, or more squeezes than that CPU usually has (above its trailing
-90th percentile and at least 3) in a sample whose packet count was at or below
-its trailing median. The trailing baselines span ten seconds of wall clock at
-any rate. Three flagged samples on one CPU within 60 s raise the `microburst`
-detection; one flagged sample stays a data point.
+- about <Measured id="squeeze.backgroundOne" /> of samples carry one squeeze as background;
+- <Measured id="squeeze.backgroundTwo" /> carry exactly two;
+- <Measured id="squeeze.exactlyThree" /> carry exactly three.
+
+On this router on 2026-09-15, a rule that flagged any squeeze fired 92 times in
+twenty minutes, and meant nothing.
+
+So the collector's `burst` flag is a deviation from the device's own norm. It
+flags a sample whose packet count was at or below its trailing median and that
+has either:
+
+- a dropped packet, or
+- more squeezes than that CPU usually has: above its trailing 90th percentile
+  and at least 3.
+
+The trailing baselines span ten seconds of wall clock at any rate. Three flagged
+samples on one CPU within 60 s raise the `microburst` detection; one flagged
+sample stays a data point.
 
 <NotClaimed variant="device-specific">
-	This floor is one RB5009 with its clock pinned at 1400 MHz, running this owner's DNS, DHCP,
+	This floor is one RB5009 with its clock pinned at 1400 MHz, running its owner's DNS, DHCP,
 	WireGuard and bridge. A router with different services, a scaling clock or a different board has a
-	different idle shape. Take the same sixty seconds on yours before reading any other page against
-	it.
+	different idle shape. Take the same sixty seconds on yours before reading any other case study
+	against it.
 </NotClaimed>
 
 <SeeAlso>
 
 ## See also
 
-- [A packet flood](/mikroscope/playbooks/packet-flood/): what the squeeze does when it does change.
-- [A loop only the kernel could see](/mikroscope/playbooks/loop/): what a steady stream of events at
-  idle turned out to be.
-- [Detections](/mikroscope/sinks/detections/): the `microburst` rule and the others, with what each
-  may not claim.
+- [Packet flood](/mikroscope/playbooks/packet-flood/): what the squeeze does when it does change.
+- [Layer-2 loop](/mikroscope/playbooks/loop/): what a steady stream of events at idle turned out to
+  be.
+- [Detection rules](/mikroscope/sinks/detections/): the `microburst` rule and the others, with what
+  each may not claim.
 
 </SeeAlso>

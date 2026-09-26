@@ -4,6 +4,7 @@ description: "A MikroTik RB5009 writes to its NAND at idle: see it in the YAFFS 
 head:
   - tag: title
     content: "MikroTik NAND flash wear: YAFFS and ECC counters | mikroscope"
+docType: evidence
 ---
 
 import FaultSignature from "../../../components/FaultSignature.astro";
@@ -12,12 +13,6 @@ import Provenance from "../../../components/Provenance.astro";
 import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
 
-This page answers what is writing to the router's flash, and whether the flash is
-wearing. Nothing needed provoking: the RB5009 writes to NAND on its own, and the
-agent's `yaffs` source shows it. The MTD figures are from 2026-09-14.
-
-<Provenance of="playbooks-2026-09-12" />
-
 **In short:** the reference RB5009 wrote to its NAND at idle because a logging
 rule sent the `dns` topic to disk; the YAFFS page-write and erasure counters show
 writes like these, and `/system/logging` finds their cause. Whether the flash
@@ -25,14 +20,19 @@ itself is wearing is a question for the ECC counters, readable with
 `privileged=yes`: `corrected_bits` rising warns before a block is lost, and every
 one of them read 0 on 2026-09-14.
 
-## What the router writes at idle
+Nothing was provoked: the RB5009 writes to NAND on its own, and the agent's
+`yaffs` source shows it. The MTD figures are from 2026-09-14.
+
+<Provenance of="playbooks-2026-09-12" />
+
+## Idle writes {#what-the-router-writes-at-idle}
 
 Over one 30-second window at idle, the Main partition took **2 page writes and
-14 page reads**; over another, zero. There is no chart of those windows: they
-were read in the campaign of 2026-09-12, before the history of the reference
-InfluxDB store begins on 2026-09-19.
+14 page reads**; over another, zero. There is no chart: the windows were read in
+the campaign of 2026-09-12, which predates the history of the reference
+InfluxDB store (from 2026-09-19).
 
-The cause is findable:
+Find the cause in the logging actions that write to disk:
 
 ```text
 /system/logging/print where action="disk"
@@ -44,7 +44,7 @@ The `dns` topic logs to disk, which is also why this device's log holds tens of
 thousands of rows. If the `pw` (page writes) or `er` (erasures) deltas climb, ask
 what started writing.
 
-## What the fields mean
+## YAFFS fields {#what-the-fields-mean}
 
 <ScrollTable label="YAFFS fields in a sample and how to read them">
 
@@ -71,19 +71,19 @@ in a sample means neither happened, not that the source is absent.
 
 ## Boot and Main
 
-Both YAFFS devices are reported. The split is instructive: after two weeks, the
+Both YAFFS devices are reported. After two weeks, the
 **Main** partition showed 83 812 page writes and 1 579 erasures, while the
 **Boot** partition showed **6** page writes and 16 erasures for the device's
-whole life — Boot is written only by a firmware upgrade.
+whole life: Boot is written only by a firmware upgrade.
 
-## The ECC counters: the warning before the loss
+## ECC counters {#the-ecc-counters-the-warning-before-the-loss}
 
 Under `privileged=yes` the MTD ECC counters are readable too, from
 `/sys/class/mtd`: `corrected_bits`, `ecc_failures` and `bad_blocks`. All are zero
 on a healthy device. `corrected_bits` climbing is aging NAND; `ecc_failures` is
 data loss.
 
-The YAFFS bad-block count is the post-mortem — a block is retired only after the
+The YAFFS bad-block count is the post-mortem: a block is retired only after the
 ECC has failed on it. The corrected-bit count is the leading indicator, because it
 climbs as the cells weaken. The kernel publishes the ceiling as well:
 `bitflip_threshold` is the corrected bits per ECC step at which it moves the data
@@ -101,15 +101,15 @@ In a sample they are `mtd` rows (`corr`, `fail`, `bad`, `bbt`,
 `mikroscope_mtd_ecc_failures_total`, `mikroscope_mtd_blocks{kind="bad"|"bbt"}`,
 `mikroscope_mtd_bitflip_threshold` and `mikroscope_mtd_ecc_strength`. They are cumulative since boot and shipped as read,
 never differenced, because they move on the scale of a device's lifetime. The
-agent reads them every 10 s — an arbitrary, generous cadence, not a measured
+agent reads them every 10 s: an arbitrary, generous cadence, not a measured
 floor.
 
-## Why `--ephemeral` exists
+## Why `--ephemeral` {#why---ephemeral-exists}
 
 This is the source that justifies `--ephemeral`: a deployment with its root and
-image on tmpfs adds nothing to these counters at all.
+image on tmpfs adds nothing to these counters.
 
-## The signature
+## Signature {#the-signature}
 
 <FaultSignature origin="unprovoked" date="2026-09-12">
 
@@ -131,10 +131,9 @@ image on tmpfs adds nothing to these counters at all.
 
 ## See also
 
-- [What privileged buys](/mikroscope/limits/privileged/): why the ECC counters need
-  `privileged=yes`.
-- [Where things go](/mikroscope/install/layout/): what `--ephemeral` puts on tmpfs and what it gives
-  up.
+- [Privileged mode](/mikroscope/limits/privileged/): why the ECC counters need `privileged=yes`.
+- [Storage and container settings](/mikroscope/install/layout/): what `--ephemeral` puts on tmpfs
+  and what it gives up.
 - [Alert rules](/mikroscope/dashboards/alerts/): the uncorrectable ECC failure alert.
 
 </SeeAlso>

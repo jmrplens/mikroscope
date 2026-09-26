@@ -1,6 +1,7 @@
 ---
-title: El coste del observador
-description: Lo que le cuesta el agente a un MikroTik RB5009 de 10 a 100 Hz, medido desde su propio cgroup, y cómo medirlo en un equipo que no sea este.
+title: Coste del agente
+description: Lo que le cuestan a un MikroTik RB5009 el agente, una conexión SSH y la capa de la API de RouterOS, medido desde el propio cgroup del agente y con el profiler de RouterOS, y cómo medir el agente en tu router.
+docType: evidence
 head:
   - tag: title
     content: El coste del observador en un MikroTik RB5009 | mikroscope
@@ -9,26 +10,27 @@ head:
 import { Aside } from "@astrojs/starlight/components";
 import Measured from "../../../../components/Measured.astro";
 import Provenance from "../../../../components/Provenance.astro";
+import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
+import Src from "../../../../components/Src.astro";
 
-Con los valores por defecto de la instalación — 10 Hz, los suelos por fuente por defecto, anillo
-de 60 s — el agente le cuesta a un MikroTik RB5009 **un <Measured id="run.10hz.cpu" /> de un núcleo
+Con los valores por defecto de la instalación — 10 Hz, los suelos por fuente por defecto, anillo
+de 60 s — el agente le cuesta a un MikroTik RB5009 **un <Measured id="run.10hz.cpu" /> de un núcleo
 y un <Measured id="run.10hz.rss" /> de RSS**, leído desde su propio cgroup:
 
 <Provenance of="rates-2026-09-18" />
 
-Un observador que cuesta un 20 % de aquello que observa no está midiendo el
-router: se está midiendo a sí mismo. Por eso aquí ese número es un resultado de
-primera clase y no una nota al pie: el agente lo publica en cada muestra, y CI comprueba el presupuesto de tamaño de la imagen.
+El agente publica su propio coste en cada muestra, y la CI comprueba el presupuesto de tamaño de la
+imagen.
 
-## El presupuesto, y lo que cuesta de verdad
+## Presupuesto {#el-presupuesto-y-lo-que-cuesta-de-verdad}
 
-El presupuesto es **≤ <Measured id="budget.cpu" /> de un núcleo, ≤ <Measured id="budget.rss" /> de
-RSS, ≤ <Measured id="budget.image" /> de imagen**. La imagen arm64 publicada de 1.2.1 mide <Measured id="image.size" /> (6 690 304 B, medido sobre
-el artefacto de la versión el 2026-09-24); la de 1.0.0 medía <Measured id="image.size.v100" />, la
-cifra que dan las notas de esa versión. Los
-otros dos dependen de la cadencia y de cuánto le pidas leer, y la respuesta honesta es una tabla, no
-un número: [el techo de muestreo](/mikroscope/es/cost/rate-ceiling/) es esa tabla.
+El presupuesto es **≤ <Measured id="budget.cpu" /> de un núcleo, ≤ <Measured id="budget.rss" /> de
+RSS, ≤ <Measured id="budget.image" /> de imagen**. La imagen arm64 publicada de 1.2.1
+mide <Measured id="image.size" /> (6 690 304 B, medido sobre el artefacto de la versión el 2026-09-24); la
+de 1.0.0 medía <Measured id="image.size.v100" />, la cifra que dan las notas de esa versión. Los otros
+dos dependen de la cadencia y de cuánto le pidas leer al agente, así que la respuesta es una tabla y
+no un número: [Techo de muestreo](/mikroscope/es/cost/rate-ceiling/) es esa tabla.
 
 **La memoria está dentro del presupuesto y la CPU no.** <Measured id="run.10hz.rss" /> frente a
 los <Measured id="budget.rss" /> que pide el presupuesto, y un <Measured id="run.10hz.cpu" /> frente
@@ -36,70 +38,137 @@ al <Measured id="budget.cpu" />, con todas las fuentes leídas, entre ellas los 
 buddyinfo, los contadores ECC de MTD, slabinfo, el log del kernel y los eventos de cgroup. El
 tráfico por interfaz no está en ese conjunto: el contenedor no lo ve, y viene de la capa de la API.
 
-Estuvo por encima de los dos hasta 1.0.6. El anillo guardaba 300 s en vez de 60 y el límite de
-memoria era un 40 MiB fijo que nunca apretaba, lo que dejaba al mismo agente en 31,3 MiB; ninguna de
-las dos cifras decía nada sobre el ritmo. Nada del muestreo cambió: la CPU pasó del 2,85 % al
-2,69 %, que es el ruido entre dos ventanas.
+La campaña del 2026-09-15 estaba por encima en los dos. Su anillo guardaba 300 s en vez de 60 y su
+límite de memoria era un 40 MiB fijo que nunca apretaba, lo que dejaba al mismo agente en 31,3 MiB;
+ninguna de las dos cifras decía nada sobre la cadencia. Nada del muestreo cambió entre las dos
+campañas: la CPU pasó del 2,85 % al 2,69 %, que es el ruido entre dos ventanas.
 
-### Lo que cuesta la alternativa
+### Bucle de shell como base {#lo-que-cuesta-la-alternativa}
 
-El presupuesto dice lo que se le permite costar al agente. La otra comparación,
-la que suele querer quien lee, es contra hacerlo de la forma obvia: un bucle de
-shell de busybox. El 2026-09-11, en el mismo router, un bucle que leía a 10 Hz el conjunto de
-ficheros que leía entonces el agente costó **<Measured id="busybox.cpu" /> de un núcleo**,
-mientras que las lecturas en sí rondaban los <Measured id="procread.ms" /> por muestra.
+El presupuesto dice lo que se le permite costar al agente. La comparación que suele querer quien lee
+es contra la forma obvia: un bucle de shell de busybox. El 2026-09-11, en el mismo router, un bucle
+que leía a 10 Hz el conjunto de ficheros que leía entonces el agente costó
+**<Measured id="busybox.cpu" /> de un núcleo**, mientras que las lecturas en sí rondaban
+los <Measured id="procread.ms" /> por muestra.
 
 <Provenance of="busybox-2026-09-11" />
 
-Así que la mayor parte del coste del bucle de shell no estaba en leer. Paga un fork
-por iteración y el agente no paga ninguno: un proceso arranca, abre sus ficheros
-una vez y los deja abiertos, y por eso el agente es un binario y no un script. Aun
-así, las dos cifras no se pueden poner una al lado de la otra. Hoy el agente lee
-mucho más — perf, buddyinfo, los contadores ECC de la MTD, slabinfo, el log del
-kernel — y el bucle no se ha vuelto a medir con ese conjunto, así que no se puede
-comparar con <Measured id="run.10hz.cpu" />.
+Así que la mayor parte del coste del bucle de shell no estaba en leer. Paga un fork por iteración y
+el agente no paga ninguno: un proceso arranca, abre sus ficheros una vez y los deja abiertos, y por
+eso el agente es un binario y no un script. Aun así, las dos cifras no se pueden poner una al lado de
+la otra. Hoy el agente lee mucho más — perf, buddyinfo, los contadores ECC de la MTD, slabinfo, el
+log del kernel — y el bucle no se ha vuelto a medir con ese conjunto, así que no se puede comparar
+con <Measured id="run.10hz.cpu" />.
 
 <Aside type="note" title="De dónde sale el número">
 	No de `top`, y no de una instantánea. El agente cuenta sus propios microsegundos de CPU y su RSS
-	desde su cgroup y los lleva en cada muestra, en el bloque `self`, como `cpu_us` y `rss`; el colector
-	los representa como `mikroscope_self_cpu_usec_total` y `mikroscope_self_rss_bytes`. Dos lecturas del
-	`/metrics` DEL COLECTOR separadas 60 s, en régimen estacionario y con el anillo ya lleno, son la
-	medida — el agente no sirve exposición propia desde 1.0.5. El `/tool profile` de RouterOS muestra el mismo proceso como `mikroscope-agent`.
+	desde su cgroup y los lleva en cada muestra, en el bloque `self`, como `cpu_us` y `rss`; el
+	colector los representa como `mikroscope_self_cpu_usec_total` y `mikroscope_self_rss_bytes`. Dos
+	lecturas del `/metrics` del colector separadas 60 s, en régimen estacionario y con el anillo ya
+	lleno, son la medida: el agente no sirve exposición propia. El `/tool profile` de RouterOS
+	muestra el mismo proceso como `mikroscope-agent`.
 </Aside>
 
 Quien tira del agente se suma a eso. Además del colector y de `record`, un `doctor` independiente
 lee el anillo una vez, en una sola petición: el anillo entero cuando no guarda más de 10 000
-muestras, y si no las 10 000 más recientes. Con los valores por defecto es el anillo entero de
-60 s, unos 1,9 MB a 10 Hz, y esa
-petición se sirve en el núcleo del muestreador; el coste de esa lectura en el RB5009 no se ha
-medido.
+muestras, y si no las 10 000 más recientes. Con los valores por defecto es el anillo entero de 60 s,
+unos 1,9 MB a 10 Hz, y esa petición se sirve en el núcleo del muestreador; el coste de esa lectura en
+el RB5009 no se ha medido.
 
-## Dimensiona el límite de memoria según los datos
+## Límite de memoria {#dimensiona-el-límite-de-memoria-según-los-datos}
 
-El error más caro disponible aquí es dar al proceso menos memoria de la que su
-anillo necesita. El recolector de basura de Go responde a un límite blando
-ajustado ejecutándose más a menudo, y el coste de CPU se dispara por un motivo
-que no tiene nada que ver con la cadencia de muestreo.
+El error más caro disponible aquí es dar al proceso menos memoria de la que su anillo necesita. El
+recolector de basura de Go responde a un límite blando ajustado ejecutándose más a menudo, y el
+coste de CPU se dispara por un motivo que no tiene nada que ver con la cadencia de muestreo. El
+anillo guarda líneas ya codificadas en vez de structs por la misma razón. Si subes `--buffer` o la
+cadencia, sube con ellos `--mem-limit-mb` y el `--memory-max` del contenedor; las opciones que usó
+cada ejecución están junto a ella en [Techo de muestreo](/mikroscope/es/cost/rate-ceiling/).
 
-El anillo guarda líneas ya codificadas en vez de structs por la misma razón. Si
-subes `--buffer` o la cadencia, sube con ellos `--mem-limit-mb` y el
-`--memory-max` del contenedor; los valores usados en cada fila de las medidas
-están junto a ellas en [el techo de
-muestreo](/mikroscope/es/cost/rate-ceiling/).
+`install` deriva `MEM_LIMIT_MB` del anillo: cadencia × buffer × el tamaño de línea, por 2,5, con un
+mínimo de 16 MiB y un máximo de tres cuartos de `memory-max`, así que la instalación por defecto
+escribe 16 para un anillo de 60 s a 10 Hz. El factor está medido. En el RB5009 (RouterOS 7.24.2,
+10 Hz, un anillo de 300 s, todas las fuentes activas) el 2026-09-17, cuatro límites en cuatro
+ventanas de unas 12 000 muestras cada una:
+
+<ScrollTable label="Límite de memoria frente a RSS y CPU por muestra, RB5009, 2026-09-17" nowrap sticky={false}>
+
+| límite | múltiplo del anillo | RSS      | CPU por muestra | Lo que costó                  |
+| ------ | ------------------- | -------- | --------------- | ----------------------------- |
+| 40 MiB | 4,0×                | 32,9 MiB | 2 657 µs        | el límite nunca aprieta       |
+| 24 MiB | 2,4×                | 26,3 MiB | 2 780 µs        | ningún coste medible          |
+| 21 MiB | 2,1×                | 23,5 MiB | 3 250 µs        | +22 %, y subiendo             |
+| 18 MiB | 1,8×                | 20,4 MiB | 14 800 µs       | +457 %, el peor tick de 52 ms |
+
+</ScrollTable>
+
+Las filas son las que registra el comentario de `memLimitRingFactor`
+en <Src path="internal/router/options.go" />. El factor de 2,5× serían 25 MiB a 300 s; la ventana medida
+más cercana fue la de 24 MiB, y ninguna de las cuatro ventanas se anotó con su dispersión. El mismo
+precipicio se midió desde el otro lado el 2026-09-12: un <Measured id="gc.tight.cpu" /> de un núcleo
+con 14 MiB frente a un <Measured id="gc.roomy.cpu" /> con margen, las dos con el anillo lleno.
 
 El análisis no es donde se va el tiempo. Analizar los siete ficheros globales de `/proc` más un
 delta costó 27 µs y 239 asignaciones por muestra en el equipo de desarrollo amd64 (Go 1.27.1, tres
 ejecuciones, 26,7–27,5 µs, 2026-09-11). En el Cortex-A72 del RB5009 un tick entero — con
-temporizadores, JSON y el recolector de basura incluidos — cuesta <Measured id="run.10hz.usPerSample" />
-a 10 Hz con los suelos por defecto, y [las seis
-ejecuciones](/mikroscope/es/cost/rate-ceiling/) lo dan a cada cadencia. El análisis por sí solo no
-se midió en el A72.
+temporizadores, JSON y el recolector de basura incluidos —
+cuesta <Measured id="run.10hz.usPerSample" /> a 10 Hz con los suelos por defecto, y
+[las seis ejecuciones](/mikroscope/es/cost/rate-ceiling/) lo dan a cada cadencia. El análisis por sí
+solo no se midió en el A72.
 
-## Medirlo en tu propio equipo
+## Coste de SSH {#ssh-cost}
 
-Nada de esto se traslada a una placa que no sea un RB5009: otro número de
-núcleos, otro reloj, otro kernel y otra flash lo mueven. El procedimiento son
-tres órdenes y lleva un minuto:
+Cada conexión SSH le cuesta al RB5009 un <Measured id="ssh.connectCpu" /> de CPU mientras dura.
+
+<Provenance of="ssh-connect" />
+
+Esa lectura es anterior al agente y se tomó con RouterOS 7.24.1. Con 7.24.2, el 2026-09-11, el mismo
+coste apareció en `/tool profile` como un 17–33 % en una o dos instantáneas, no en una ventana
+medida. Por eso la CLI agrupa todas las lecturas en una sola conexión — `doctor` es una, `status` es
+una, las preguntas de estado de `install` son una — y cada escritura suma otra, más la subida por
+`scp`. SSH nunca es un camino de datos: `record` y `forward` llegan al agente por HTTP o por la API
+de RouterOS.
+
+## Coste de la capa API {#api-tier-cost}
+
+Medido con el propio [profiler](https://help.mikrotik.com/docs/spaces/ROS/pages/8323153/Profiler)
+de RouterOS, una vez con el colector parado y otra con él haciendo una ronda cada segundo:
+
+<Provenance of="api-profile-2026-09-16" />
+
+<ScrollTable label="CPU del router con y sin la capa de la API, RB5009, 2026-09-16">
+
+| Fila del perfil  | Colector parado | Colector en marcha |
+| ---------------- | --------------- | ------------------ |
+| total            | 5,93 %          | 6,04 %             |
+| `interface-mgmt` | 0,40 %          | 0,87 %             |
+| `config-db`      | unos 0 %        | 0,15 %             |
+
+</ScrollTable>
+
+El total se mueve 0,11 puntos, dentro del ruido del tráfico de un minuto; las dos filas que responden
+a las preguntas de la capa se mueven juntas medio punto. En ninguno de los dos perfiles aparece una
+fila de proceso `api`: el proceso de la API hace de intermediario y el trabajo cae en el subsistema
+que responde. Así que una capa que hace una ronda por segundo le cuesta al router en torno al 0,5 %
+de su CPU total. Esa tabla es un único perfil de 60 s por condición, sin dispersión.
+
+Una configuración mayor se midió como A/B en el mismo router el 2026-09-19, el día de la
+actualización de RouterOS que lo dejó en 7.24.4; no quedó registrado sobre qué versión corrió el A/B
+en sí. Todas las interfaces salvo `lo` en `--interfaces` (16) y `--conntrack-every 10s`, 8 min sin
+ella frente a 14 min con ella: el `cpu-load` medio pasó de 7,12 % a 7,91 % y la ocupación media del
+kernel de 7,70 % a 8,46 %, unos +0,8 puntos. Es una cota inferior, porque el tráfico del bridge bajó
+de 48,0 a 38,9 Mbit/s entre las ventanas. El p50 de `cpu-load` se quedó en 6 y el p95 pasó de 16 a
+18.
+
+`--conntrack-every` pregunta `/ip/firewall/connection/print count-only`: una llamada
+tardó <Measured id="api.conntrackMs" /> con <Measured id="conntrack.api" /> entradas, la mediana de diez
+llamadas; la más rápida tardó 1,1 ms y la primera 71 ms, en frío.
+
+<Provenance of="api-conntrack" />
+
+## Medir en tu router {#medirlo-en-tu-propio-equipo}
+
+Nada de esto se traslada a una placa que no sea un RB5009: otro número de núcleos, otro reloj, otro
+kernel y otra flash lo mueven. El procedimiento son tres órdenes y lleva un minuto:
 
 ```sh
 curl -s http://<collector host>:9124/metrics | grep -E 'self_cpu_usec_total|self_rss_bytes'
@@ -107,27 +176,48 @@ sleep 60
 curl -s http://<collector host>:9124/metrics | grep -E 'self_cpu_usec_total|self_rss_bytes'
 ```
 
-La diferencia de `self_cpu_usec_total` dividida entre 60 000 000 es la fracción
-de un núcleo. Tómala en régimen estacionario, con el anillo lleno: un agente
-recién arrancado todavía lo está llenando y marcará de menos. Medida en una
-placa que no sea un RB5009, con la tasa, la fecha y lo que hacía el router,
-va en un [informe de placa](https://github.com/jmrplens/mikroscope/issues/new?template=2-board-report.yml).
+La diferencia de `self_cpu_usec_total` dividida entre 60 000 000 es la fracción de un núcleo. O deja
+que la shell haga la división, en tres minutos:
 
-La dirección es la del colector, no la del agente: desde 1.0.5 el agente no
-sirve ningún `/metrics`, y esos dos contadores llegan al colector en cada
-muestra. Sin destino de Prometheus configurado, esos mismos dos números son
-`cpu_us` y `rss` en `mikroscope_self` en InfluxDB, Telegraf, stdout y los almacenes SQL, `self.cpu_us` y
-`self.rss` en los documentos de muestra de Elasticsearch, `self.cpu_us` y `self.rss_bytes` en
-Graphite, y `mikroscope.self.cpu.time` / `mikroscope.self.memory{kind="rss"}` en OTLP.
+```sh
+U=http://<equipo del colector>:9124/metrics
+get() { curl -s "$U" | awk -v k="$1" '$1==k{print $2}'; }
+c0=$(get mikroscope_self_cpu_usec_total); t0=$(date +%s)
+sleep 180
+c1=$(get mikroscope_self_cpu_usec_total); t1=$(date +%s)
+echo "$c0 $c1 $t0 $t1" | awk '{printf "%.2f %% of one core\n", 100*($2-$1)/1e6/($4-$3)}'
+```
+
+Tres cosas que cabe esperar:
+
+- **El coste y la memoria suben hasta que el anillo se llena.** Con el anillo por defecto de 60 s a
+  10 Hz el agente guarda 600 muestras ya codificadas; una cifra tomada en el primer minuto tras la
+  instalación se mide sobre un heap casi vacío y sale baja. Espera a que pase `BUFFER_S` antes de
+  citar una cifra de régimen estacionario.
+- **Una instantánea lo exagera.** Un `/snapshot` de 60 s entrega unas 600 líneas, unos 1,9 MB, y el
+  `self.cpu_us` de esas muestras incluye el coste de servirlas; leer el coste en instantáneas
+  repetidas lo exagera más.
+- **`mikroscope_slipped_total` es el número que importa.** Un muestreador que cuesta algo más pero
+  nunca pierde ticks te está diciendo la verdad; uno que los pierde, no.
+
+La dirección es la del colector, no la del agente: el agente no sirve ningún `/metrics`, y esos dos
+contadores llegan al colector en cada muestra. Sin destino de Prometheus configurado, esos mismos dos
+números son `cpu_us` y `rss` en `mikroscope_self` en InfluxDB, Telegraf, stdout y los almacenes SQL,
+`self.cpu_us` y `self.rss` en los documentos de muestra de Elasticsearch, `self.cpu_us` y
+`self.rss_bytes` en Graphite, y `mikroscope.self.cpu.time` / `mikroscope.self.memory{kind="rss"}` en
+OTLP. Medida en una placa que no sea un RB5009, con la cadencia, la fecha y lo que hacía el router,
+la cifra va en un
+[informe de placa](https://github.com/jmrplens/mikroscope/issues/new?template=2-board-report.yml).
 
 <SeeAlso>
 
 ## Véase también
 
-- [El techo de muestreo](/mikroscope/es/cost/rate-ceiling/): las seis ejecuciones, los valores por defecto de
-  memoria de cada una y lo que compra muestrear más rápido.
-- [Lo que los números no dicen](/mikroscope/es/cost/limits/): lo que estas cifras no pueden decirte
+- [Techo de muestreo](/mikroscope/es/cost/rate-ceiling/): las seis ejecuciones, los valores por
+  defecto que usó cada una y lo que compra muestrear más rápido.
+- [Límites de la evidencia](/mikroscope/es/cost/limits/): lo que estas cifras no pueden decirte
   sobre otro equipo u otra carga.
-- [Qué es](/mikroscope/es/start/): el agente, la CLI y los cuatro límites dichos primero.
+- [Probado en](/mikroscope/es/about/status/): el equipo, las versiones de RouterOS y cada campaña
+  que hay detrás de estas cifras.
 
 </SeeAlso>

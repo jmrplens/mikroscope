@@ -1,5 +1,6 @@
 ---
-title: The rate ceiling
+title: Rate ceiling
+docType: evidence
 description: Six measured runs at 10, 20, 50 and 100 Hz on an RB5009 at its shipped configuration, none of which lost a sample, and what sampling faster buys.
 head:
   - tag: title
@@ -13,14 +14,11 @@ import Provenance from "../../../components/Provenance.astro";
 import RunsTable from "../../../components/RunsTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
 
-The question this page answers is the one worth asking before trusting any of
-it: **how fast can it sample before it starts losing data?**
+**The agent lost no sample on the RB5009 at any rate up to the CLI's own 100 Hz cap**, with every
+source read on every tick in the worst case. That is not an extrapolation from the 10 Hz figure: it
+is six runs.
 
-On the reference device the answer is that it does not, up to the CLI's own
-100 Hz cap, with every source read on every tick. That is not an extrapolation
-from the 10 Hz figure. It is six runs.
-
-## The six runs
+## Runs {#the-six-runs}
 
 Every figure is from the agent's own cgroup, carried in every sample and read back from the store, with the full source set. Each row is
 one window with the ring already full:
@@ -37,8 +35,8 @@ the 60 s ring is the default and the limit is derived from it — 16 MiB at 10
 20 Hz, 25 at 50, 48 at 100 — under the default 64M container cap. The campaign
 before this one could not do that. It needed `--memory-max 96M` at 50 Hz and
 `128M` at 100, and its 10 Hz row held a 300 s ring. Same device, same sources:
-**38 to 59 % less memory per row, and the CPU unmoved** — 2.85 % of one core at
-10 Hz then against 2.69 % now.
+**38 to 59 % less memory per row, and the CPU unmoved**: 2.85 % of one core at
+10 Hz on 2026-09-15 against 2.69 % on 2026-09-18.
 
 Memory still differs by row because the ring does: it holds 60 s of samples
 whatever the rate, so ten times the rate is ten times the ring.
@@ -49,9 +47,9 @@ whatever the rate, so ten times the rate is ten times the ring.
 	source on every tick. The collector reported 0 gaps and its InfluxDB 3 sink 0 drops in every window.
 </Aside>
 
-## Two things in that table worth reading twice
+## Reading the table {#two-things-in-that-table-worth-reading-twice}
 
-### Per-sample cost falls as the rate rises
+### Per-sample cost {#per-sample-cost-falls-as-the-rate-rises}
 
 A sample costs <Measured id="run.10hz.usPerSample" /> at 10 Hz against <Measured id="run.100hz.usPerSample" /> at 100 Hz. That is not a
 paradox, it is the floors working: the expensive sources are amortised over more samples.
@@ -65,7 +63,7 @@ With `FLOOR_HZ` there is no amortisation to be had and the per-sample cost is
 flat — <Measured id="run.50hz-floor.usPerSample" /> at 50 Hz and <Measured id="run.100hz-floor.usPerSample" /> at
 100 Hz — so CPU scales linearly with the rate: <Measured id="run.50hz-floor.cpu" />, then <Measured id="run.100hz-floor.cpu" />.
 
-### A slipped tick is not a lost sample
+### Slipped ticks {#a-slipped-tick-is-not-a-lost-sample}
 
 The sample is still produced and still delivered, carrying its real `dt_ns`, so
 any rate computed from it stays correct. It is a smear, not a hole, and
@@ -74,7 +72,7 @@ everything on every tick, 29 777 of 29 994 intervals — 99.3 % — still lan
 within 11 ms of a 10 ms period; the 99.5th percentile was 11.3 ms and the worst
 single interval 21.7 ms.
 
-## What binds is the read, not the CPU
+## Read time vs CPU {#what-binds-is-the-read-not-the-cpu}
 
 At the default floors a whole tick's sources are read in under 2 ms for <Measured id="read.under2ms" /> of
 samples at 100 Hz, comfortably inside a 10 ms period. `FLOOR_HZ` pushes <Measured id="read.floorOver5ms" />
@@ -86,7 +84,7 @@ I/O rather than about the A72. Even at the default floors at 100 Hz the mean re
 worst <Measured id="read.100hz.worstMs" />, and a tick whose read outlasts its period is late by definition. That, and not a
 CPU wall at <Measured id="run.100hz.cpu" /> of one core, is where the few slips there come from.
 
-## The memory a rate costs, and where to buy it
+## Memory per rate {#the-memory-a-rate-costs-and-where-to-buy-it}
 
 The ring is the memory. Every other figure — the Go runtime, the collector's
 headroom, the allocator's fragmentation — follows from how many entries it
@@ -101,7 +99,7 @@ the ring 4.7× would give, and compression was measured on this device at
 **+1 331 µs a sample**, which at 100 Hz is +74 % CPU and six times the slipped
 ticks. The seconds are free; the compression is not.
 
-## What sampling faster actually buys
+## Higher rates {#what-sampling-faster-actually-buys}
 
 Not CPU-percent resolution. The jiffie is 10 ms, so at 100 Hz a sample holds
 either 0 or 1 busy tick and the per-sample busy ratio has two possible values.
@@ -118,17 +116,19 @@ and a tighter bound on how long a burst can hide between two samples.
 	with peaks to 933 Mbit/s. Before quoting a number for your device, re-measure it there: two reads
 	of the collector's `/metrics` 60 s apart at steady state, or the agent's own `cpu_us` and `rss`
 	in the store you write to — `mikroscope_self` on InfluxDB and the SQL stores, under other names
-	on the rest, which [measuring it on your own
-	device](/mikroscope/cost/#measuring-it-on-your-own-device) lists.
+	on the rest, which [Measure on your router](/mikroscope/cost/#measuring-it-on-your-own-device)
+	lists.
 </NotClaimed>
 
 <SeeAlso>
 
 ## See also
 
-- [The cost of the observer](/mikroscope/cost/): the budget these runs are measured against, and the
-  three commands to measure it yourself.
-- [What the numbers do not say](/mikroscope/cost/limits/): what `/metrics` can and cannot recover
-  at any of these rates.
+- [Agent cost](/mikroscope/cost/): the budget these runs are measured against, and the three
+  commands to measure it yourself.
+- [Limits of the evidence](/mikroscope/cost/limits/): what `/metrics` can and cannot recover at any
+  of these rates.
+- [Tested on](/mikroscope/about/status/#campaigns): the two rate campaigns and every other
+  measurement behind these pages.
 
 </SeeAlso>
