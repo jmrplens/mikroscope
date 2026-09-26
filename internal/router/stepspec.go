@@ -228,7 +228,8 @@ var containerStepSpec = stepSpec{
 	},
 	Present: ts(`:put [:len [/container/find comment="{{tag}}"]]`),
 	Remove: []fragment{
-		t(`:do { /container/stop [find comment="{{tag}}"]; :delay 4s } on-error={}; ` +
+		t(`:do { /container/stop [find comment="{{tag}}"] } on-error={}; ` +
+			`:local s 0; :while (([:len [/container/find comment="{{tag}}" running]] + [:len [/container/find comment="{{tag}}" stopping]]) > 0 && $s < 30) do={ :delay 1s; :set s ($s + 1) }; ` +
 			`/container/remove [find comment="{{tag}}"]; ` +
 			`:local i 0; :while ([:len [/container/find comment="{{tag}}"]] > 0 && $i < 20) do={ :delay 1s; :set i ($i + 1) }; ` +
 			`:if ([:len ` + markerFind + `] > 0) do={ `),

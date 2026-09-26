@@ -484,11 +484,23 @@ func TestWritesThatPrintAreFailures(t *testing.T) {
 	}
 }
 
+// TestContainerStopIsGuarded pins F1: the stop is guarded, the removal then
+// waits, bounded, while the container is running OR stopping — /container/remove
+// refuses a stopping container with "cannot remove running", and `running` is
+// already clear while it stops (measured in the virtual lab, CHR x86_64,
+// RouterOS 7.24.4, with a client on /stream) — and only then removes it.
 func TestContainerStopIsGuarded(t *testing.T) {
-	plan := Plan(defaults(t, nil))
+	o := defaults(t, nil)
+	plan := Plan(o)
 	rm := plan[len(plan)-1].Remove
-	if !strings.HasPrefix(rm, ":do { /container/stop [find") || !strings.Contains(rm, "} on-error={}; /container/remove [find") {
-		t.Fatalf("container removal does not guard the stop: %s", rm)
+	tag := `comment="` + o.Tag() + `"`
+	stop := `:do { /container/stop [find ` + tag + `] } on-error={}; `
+	wait := `:local s 0; :while (([:len [/container/find ` + tag + ` running]] + [:len [/container/find ` + tag + ` stopping]]) > 0 && $s < 30) do={ :delay 1s; :set s ($s + 1) }; `
+	if !strings.HasPrefix(rm, stop+wait+`/container/remove [find `+tag+`]; `) {
+		t.Fatalf("container removal does not guard the stop, then wait while running or stopping, then remove: %s", rm)
+	}
+	if strings.Contains(rm, ":delay 4s") {
+		t.Fatalf("the fixed delay is back: %s", rm)
 	}
 	// The derived resources are touched only after the asynchronous remove
 	// has finished: a wait loop sits between /container/remove and the guard.

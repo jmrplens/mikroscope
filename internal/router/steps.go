@@ -119,7 +119,18 @@ func Plan(o Options) []Step {
 //
 // The stop is guarded, because stop errors on a container that is not
 // running and RouterOS abandons the rest of a `;`-joined line at the first
-// error; remove is not, so a failure there is reported.
+// error; remove is not, so a failure there is reported. Between the two the
+// removal waits, up to 30 s, while the container is `running` or `stopping`:
+// a stop returns at once, the container stays `stopping` until the agent has
+// exited, and /container/remove refuses it meanwhile with `failure: cannot
+// remove running`. Measured in the virtual lab (CHR x86_64, RouterOS 7.24.4):
+// with a client reading /stream the container was `stopping`, with `running`
+// already clear, for 6 s, and a remove 0.3 s after the stop was refused so;
+// without a client it was `stopped` within a second. Waiting on `running`
+// alone would have gone straight to the refused remove. The agent's HTTP
+// shutdown takes at most 5 s and RouterOS's stop-time is 10 s. The fixed
+// `:delay 4s` this replaces lost the race on 5 of 15 first attempts on the
+// lab's x86_64 router, and on every attempt while a client held /stream.
 //
 // /container/remove returns before the container is gone (RouterOS logs
 // `removing files … remove done` seconds later) and a /file/remove of the
