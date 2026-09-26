@@ -16,9 +16,9 @@ const labLANAddress = "192.168.88.1"
 // without the token and answer one with it, and uninstall with the same flags
 // must take both firewall rules away. The token comes from the lab's .env and
 // is never logged, and the suite puts it on no command line of its own: the
-// harness redacts it from every line it prints, lab.sh cli hands it to the
-// CLI as MIKROSCOPE_TOKEN in its container's environment (LAB_CLI_TOKEN=lab),
-// and curl reads its header from stdin. As a --token argument it sat in the
+// harness redacts it from every line it prints, the lab driver's cli hands it
+// to the CLI as MIKROSCOPE_TOKEN in its container's environment
+// (LAB_CLI_TOKEN=lab), and curl reads its header from stdin. As a --token argument it sat in the
 // host's process table for as long as each install and uninstall ran. The
 // 1.3.1 CLI itself still hands the RouterOS script, token included, to ssh as
 // an argument, so the token shows in the process table while that ssh runs;

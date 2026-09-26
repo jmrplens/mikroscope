@@ -10,20 +10,23 @@
 // one, with the branch's CLI, and reads back what RouterOS did: the agent's
 // own answers, `/export`, and what an uninstall left in `/file`.
 //
-// Every RouterOS action goes through test/lab/lab.sh, and every deploy verb
-// through `lab.sh cli`, which runs the CLI inside the lab's LAN namespace. That
-// is not a convenience: the agent's default address, 172.30.10.2, leaves a
-// host by its default route, and on a host whose network already has an
-// agent there the CLI's probes would reach that one. Nothing here runs a
-// deploy verb in the test process's own namespace, and every MIKROSCOPE_*
-// variable is dropped from the environment before anything is started, so a
-// shell set up for a real router cannot steer a test towards it.
+// Every RouterOS action goes through the lab's driver, internal/lab, called
+// in this process with the arguments `mikroscope-lab` takes on its command
+// line, and every deploy verb through its `cli`, which runs the CLI inside
+// the lab's LAN namespace. That is not a convenience: the agent's default
+// address, 172.30.10.2, leaves a host by its default route, and on a host
+// whose network already has an agent there the CLI's probes would reach that
+// one. Nothing here runs a deploy verb in the test process's own namespace,
+// and every MIKROSCOPE_* variable is dropped from the environment before
+// anything is started, so a shell set up for a real router cannot steer a
+// test towards it.
 //
 // It is behind the `labe2e` build tag, so `go test ./...` and `make test`
 // never compile it. With no running lab the tests skip, and with
 // MIKROSCOPE_LAB_REQUIRED=1 (CI) they fail instead. `make test-lab` builds the
-// CLI and the agent tars first and runs it while holding the lab's lock;
-// test/lab/README.md says what the lab is and where it stops being a router.
+// CLI, the agent tars and bin/mikroscope-lab first and runs it while holding
+// the lab's lock; test/lab/README.md says what the lab is and where it stops
+// being a router.
 package lab
 
 import (
@@ -36,42 +39,43 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"os/user"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"testing"
 	"time"
+
+	"github.com/jmrplens/mikroscope/internal/lab"
 )
 
-// Settings the harness reads. The LAB_* ones are lab.sh's own and reach it
-// unchanged; MIKROSCOPE_LAB_REQUIRED is read once, before the MIKROSCOPE_*
-// variables are dropped.
+// Settings the harness reads. The LAB_* ones are the lab driver's own and
+// reach it unchanged; MIKROSCOPE_LAB_REQUIRED is read once, before the
+// MIKROSCOPE_* variables are dropped.
 const (
 	envRequired    = "MIKROSCOPE_LAB_REQUIRED"
 	envArch        = "LAB_ARCH"
 	envKind        = "LAB_KIND"
-	envStateDir    = "LAB_STATE_DIR"
+	envInstance    = "LAB_INSTANCE"
 	envRemoteImage = "LAB_REMOTE_IMAGE"
 	envLockHeld    = "LAB_LOCK_HELD"
-	envLockWait    = "LAB_LOCK_WAIT"
 	envBin         = "MIKROSCOPE_BIN"
 )
 
-// How long one lab.sh call may take before the test gives up on it. A reset
-// is a container start and a boot (arm64 emulated: about 30 s); a CLI verb
-// with a pull or a power cycle is the slowest single step.
+// How long one call of the lab's driver may take before the test gives up
+// on it. A reset is a container start and a boot (arm64 emulated: about
+// 30 s); a CLI verb with a pull or a power cycle is the slowest single step.
 const (
 	callTimeout  = 5 * time.Minute
 	resetTimeout = 10 * time.Minute
 	httpTimeout  = 3 * time.Second
 )
 
-// Result is one lab.sh run: what it printed, how it exited and how long it
-// took. String() is redacted and is what a failure message carries.
+// Result is one run of the lab's driver: what it printed, how it exited and
+// how long it took. String() is redacted and is what a failure message
+// carries.
 type Result struct {
 	Args   []string
 	Stdout string
@@ -86,14 +90,14 @@ type Result struct {
 func (r Result) Output() string { return r.Stdout + r.Stderr }
 
 func (r Result) String() string {
-	return r.lab.redact(fmt.Sprintf("lab.sh %s: exit %d in %s\n--- stdout\n%s--- stderr\n%s",
+	return r.lab.redact(fmt.Sprintf("mikroscope-lab %s: exit %d in %s\n--- stdout\n%s--- stderr\n%s",
 		strings.Join(r.Args, " "), r.Code, r.Took.Round(100*time.Millisecond), r.Stdout, r.Stderr))
 }
 
-// Lab is the running lab the tests drive, as `lab.sh status` described it.
+// Lab is the running lab the tests drive, as the lab's driver describes it.
 type Lab struct {
 	Repo        string // the repository root
-	Script      string // test/lab/lab.sh
+	Tool        string // bin/mikroscope-lab, what the lab's containers run
 	Bin         string // the CLI under test, bin/mikroscope
 	Arch        string // LAB_ARCH: x86_64 or arm64
 	Kind        string // LAB_KIND: chr or iso
@@ -101,7 +105,8 @@ type Lab struct {
 	Container   string // the lab's docker container
 	RemoteImage string // what the *pull* scenarios pull
 	Token       string // LAB_AGENT_TOKEN from the lab's .env; never logged
-	port        int    // the host's loopback port for the agent: 910N
+	port        int    // the host's loopback port for the agent: 910N, plus an instance's offset
+	cfg         *lab.Config
 	secrets     []string
 }
 
@@ -116,8 +121,8 @@ var (
 // Prepare is what TestMain calls before any test: it reads
 // MIKROSCOPE_LAB_REQUIRED, drops every MIKROSCOPE_* variable from the
 // process's environment, and takes the lab's lock unless the caller holds it
-// already (`lab.sh lock go test …`, which is what `make test-lab` runs). The
-// returned function releases the lock.
+// already (`mikroscope-lab lock go test …`, which is what `make test-lab`
+// runs). The returned function releases the lock.
 func Prepare() (release func(), err error) {
 	required = os.Getenv(envRequired) == "1"
 	for _, kv := range os.Environ() {
@@ -147,6 +152,9 @@ func Require(t *testing.T) *Lab {
 		if kind := envOr(envKind, "chr"); kind != "chr" {
 			up += " LAB_KIND=" + kind
 		}
+		if instance := os.Getenv(envInstance); instance != "" {
+			up += " LAB_INSTANCE=" + instance
+		}
 		t.Skipf("lab: %s (%s)", skipWhy, up)
 	}
 	return shared
@@ -169,70 +177,79 @@ func repoRoot() (string, error) {
 		return "", err
 	}
 	root := filepath.Clean(filepath.Join(wd, "..", "..", ".."))
-	if _, statErr := os.Stat(filepath.Join(root, "test", "lab", "lab.sh")); statErr != nil {
-		return "", fmt.Errorf("no test/lab/lab.sh under %s: %w", root, statErr)
+	if _, statErr := os.Stat(filepath.Join(root, "test", "lab", "Dockerfile")); statErr != nil {
+		return "", fmt.Errorf("no test/lab/Dockerfile under %s: %w", root, statErr)
 	}
 	return root, nil
 }
 
-// statusLine is the first line of `lab.sh status`:
-// "container: mikroscope-lab-x86 (running), image …".
-var statusLine = regexp.MustCompile(`(?m)^container: (\S+) \((\w+)\)`)
+// config is the lab this run drives, from the same environment the lab's
+// driver reads, with MIKROSCOPE_BIN pointing at the CLI under test.
+func config(root string) (*lab.Config, error) {
+	env := environ(filepath.Join(root, "bin", "mikroscope"))
+	return lab.Load(func(name string) string {
+		for _, kv := range slices.Backward(env) {
+			if k, v, ok := strings.Cut(kv, "="); ok && k == name {
+				return v
+			}
+		}
+		return ""
+	}, filepath.Join(root, "test", "lab"), root, root)
+}
 
-// discover asks lab.sh for the lab's state, which takes no lock, and reads
-// what the tests need from the environment and the lab's .env. A lab that is
-// not running is not an error: it leaves shared nil and skipWhy set.
+// discover asks the lab's driver for the lab's state, which takes no lock,
+// and reads what the tests need from the environment and the lab's .env. A
+// lab that is not running is not an error: it leaves shared nil and skipWhy
+// set.
 func discover(ctx context.Context) (*Lab, error) {
 	root, err := repoRoot()
 	if err != nil {
 		return nil, err
 	}
+	cfg, err := config(root)
+	if err != nil {
+		return nil, err
+	}
 	l := &Lab{
-		Repo:   root,
-		Script: filepath.Join(root, "test", "lab", "lab.sh"),
-		Bin:    filepath.Join(root, "bin", "mikroscope"),
-		Arch:   archFromEnv(),
-		Kind:   envOr(envKind, "chr"),
+		Repo: root,
+		Tool: filepath.Join(root, "bin", "mikroscope-lab"),
+		Bin:  filepath.Join(root, "bin", "mikroscope"),
+		Arch: cfg.Arch,
+		Kind: cfg.Kind,
+		port: cfg.PortAgent,
+		cfg:  cfg,
 	}
 	switch l.Arch {
 	case "x86_64":
 		l.GoArch = "amd64"
 	case "arm64":
 		l.GoArch = "arm64"
-	default:
-		return nil, fmt.Errorf("%s=%s: the lab has x86_64 and arm64", envArch, l.Arch)
 	}
-	switch {
-	case l.Kind == "iso":
-		l.port = 9103
-	case l.Arch == "arm64":
-		l.port = 9102
-	default:
-		l.port = 9101
-	}
-	cmd := exec.CommandContext(ctx, l.Script, "status") // #nosec G204 -- the repository's own lab script
-	cmd.Env = l.environ()
-	out, err := cmd.Output()
+	driver := lab.New(cfg, l.options(nil, root, nil, nil))
+	st, err := driver.State(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("lab.sh status: %w\n%s", err, out)
+		return nil, err
 	}
-	m := statusLine.FindStringSubmatch(string(out))
-	if m == nil {
-		return nil, fmt.Errorf("lab.sh status printed no container line:\n%s", out)
-	}
-	if m[2] != "running" {
-		skipWhy = fmt.Sprintf("%s is %s", m[1], m[2])
+	if st != "running" {
+		skipWhy = fmt.Sprintf("%s is %s", cfg.Name, st)
 		return nil, nil //nolint:nilnil // no lab is a skip, not an error; Require reads skipWhy
 	}
-	l.Container = m[1]
+	l.Container = cfg.Name
 	// A lab another checkout started keeps its key and password there; every
-	// driving verb would stop on it, so the run stops once, here, with
-	// lab.sh's own hint.
-	if hint := regexp.MustCompile(`\(the running lab keeps its state in [^)]*\)`).Find(out); hint != nil {
-		return nil, fmt.Errorf("%s is not this checkout's lab: %s", l.Container, hint)
+	// driving verb would stop on it, so the run stops once, here, with the
+	// driver's own hint.
+	src, err := driver.StateElsewhere(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if src != "" {
+		return nil, fmt.Errorf("%s is not this checkout's lab: the running lab keeps its state in %s: export LAB_STATE_DIR=%s", l.Container, src, src)
 	}
 	if _, statErr := os.Stat(l.Bin); statErr != nil {
 		return nil, fmt.Errorf("the CLI under test is missing (make build): %w", statErr)
+	}
+	if _, statErr := os.Stat(l.Tool); statErr != nil {
+		return nil, fmt.Errorf("the lab's driver is missing (make lab-tool): %w", statErr)
 	}
 	l.RemoteImage = os.Getenv(envRemoteImage)
 	if l.RemoteImage == "" {
@@ -255,22 +272,10 @@ func lastTag(ctx context.Context, root string) string {
 	return "latest"
 }
 
-// stateDir is where lab.sh keeps .cache and .env: LAB_STATE_DIR, else this
-// checkout's test/lab.
-func (l *Lab) stateDir() string {
-	if d := os.Getenv(envStateDir); d != "" {
-		if abs, err := filepath.Abs(d); err == nil {
-			return abs
-		}
-		return d
-	}
-	return filepath.Join(l.Repo, "test", "lab")
-}
-
 // readEnvFile takes the agent token from the lab's .env and remembers every
 // value in it as a secret the logs must not show.
 func (l *Lab) readEnvFile() error {
-	path := filepath.Join(l.stateDir(), ".env")
+	path := l.cfg.EnvFile
 	f, err := os.Open(path) // #nosec G304 -- the lab's own credentials file
 	if err != nil {
 		return fmt.Errorf("the lab's credentials: %w", err)
@@ -310,22 +315,27 @@ func (l *Lab) redact(s string) string {
 }
 
 // environ is the test process's environment without any MIKROSCOPE_*
-// variable, plus the one lab.sh cli reads: the CLI under test.
-func (l *Lab) environ() []string {
+// variable, plus the one the driver's cli reads: the CLI under test.
+func environ(bin string) []string {
 	env := make([]string, 0, len(os.Environ())+1)
 	for _, kv := range os.Environ() {
 		if !strings.HasPrefix(kv, "MIKROSCOPE_") {
 			env = append(env, kv)
 		}
 	}
-	if l.Bin != "" {
-		env = append(env, envBin+"="+l.Bin)
+	return append(env, envBin+"="+bin)
+}
+
+// options is one call of the lab's driver, in this process.
+func (l *Lab) options(args []string, dir string, stdout, stderr io.Writer) lab.Options {
+	return lab.Options{
+		Args: args, Env: environ(l.Bin), Dir: dir, Stdout: stdout, Stderr: stderr,
+		LabDir: filepath.Join(l.Repo, "test", "lab"), Repo: l.Repo, Tool: l.Tool,
 	}
-	return env
 }
 
 // WorkDir is the test's own directory under build/, the CLI's working
-// directory: lab.sh cli mounts it and the repository, and nothing else, into
+// directory: the driver's cli mounts it and the repository, and nothing else, into
 // the CLI's container. It is under the repository rather than the system's
 // temporary directory so that every path a test hands the CLI is inside one
 // of the two mounts, and it is per lab (build/lab-e2e/<lab>/<test>), so the
@@ -333,7 +343,7 @@ func (l *Lab) environ() []string {
 func (l *Lab) WorkDir(t *testing.T) string {
 	t.Helper()
 	name := regexp.MustCompile(`[^A-Za-z0-9_.-]+`).ReplaceAllString(t.Name(), "_")
-	dir := filepath.Join(l.Repo, "build", "lab-e2e", lockID(), name)
+	dir := filepath.Join(l.Repo, "build", "lab-e2e", l.cfg.ID, name)
 	if err := os.RemoveAll(dir); err != nil {
 		t.Fatalf("clearing %s: %v", dir, err)
 	}
@@ -344,36 +354,25 @@ func (l *Lab) WorkDir(t *testing.T) string {
 	return dir
 }
 
-// run runs lab.sh with args and logs one line for it. The lab is driven
-// through nothing else.
+// run runs the lab's driver with args, as `mikroscope-lab` would on its
+// command line but in this process, and logs one line for it. The lab is
+// driven through nothing else.
 func (l *Lab) run(t *testing.T, dir string, timeout time.Duration, args ...string) Result {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), timeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, l.Script, args...) // #nosec G204 -- the repository's own lab script
-	cmd.Env = l.environ()
-	cmd.Dir = dir
 	var stdout, stderr strings.Builder
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	started := time.Now()
-	err := cmd.Run()
-	r := Result{Args: args, Stdout: stdout.String(), Stderr: stderr.String(), Took: time.Since(started), lab: l}
-	var exitErr *exec.ExitError
-	switch {
-	case err == nil:
-	case errors.As(err, &exitErr):
-		r.Code = exitErr.ExitCode()
-	default:
-		t.Fatalf("lab.sh %s: %v", l.redact(strings.Join(args, " ")), err)
-	}
+	code := lab.Main(ctx, l.options(args, dir, &stdout, &stderr))
+	r := Result{Args: args, Stdout: stdout.String(), Stderr: stderr.String(), Code: code, Took: time.Since(started), lab: l}
 	if ctx.Err() != nil {
-		t.Fatalf("lab.sh %s did not finish within %s\n%s", l.redact(strings.Join(args, " ")), timeout, r)
+		t.Fatalf("mikroscope-lab %s did not finish within %s\n%s", l.redact(strings.Join(args, " ")), timeout, r)
 	}
 	line := l.redact(strings.Join(args, " "))
 	if args[0] == "ssh" {
 		line = clip(line)
 	}
-	t.Logf("lab.sh %s: exit %d in %s", line, r.Code, r.Took.Round(100*time.Millisecond))
+	t.Logf("mikroscope-lab %s: exit %d in %s", line, r.Code, r.Took.Round(100*time.Millisecond))
 	return r
 }
 
@@ -396,10 +395,10 @@ func (l *Lab) must(t *testing.T, r Result) Result {
 	return r
 }
 
-// CLI runs the CLI under test through `lab.sh cli`, from the lab's LAN side,
-// with the test's WorkDir as its working directory. Its first stderr line is
-// lab.sh's "using <bin>: <version>", which the log keeps as the record of
-// which binary ran.
+// CLI runs the CLI under test through the driver's `cli`, from the lab's
+// LAN side, with the test's WorkDir as its working directory. Its first
+// stderr line is the driver's "using <bin>: <version>", which the log keeps
+// as the record of which binary ran.
 func (l *Lab) CLI(t *testing.T, dir string, args ...string) Result {
 	t.Helper()
 	r := l.run(t, dir, callTimeout, append([]string{"cli"}, args...)...)
@@ -451,7 +450,7 @@ func (l *Lab) Export(t *testing.T) string {
 }
 
 // Reset puts the router back to its clean snapshot and boots it; the boot
-// adds the blackhole routes lab.sh keeps for the agent addresses.
+// adds the blackhole routes the driver keeps for the agent addresses.
 func (l *Lab) Reset(t *testing.T) {
 	t.Helper()
 	l.must(t, l.run(t, l.Repo, resetTimeout, "reset"))
@@ -469,8 +468,8 @@ func (l *Lab) Put(t *testing.T, path, name string) {
 	l.must(t, l.run(t, l.Repo, callTimeout, "put", path, name))
 }
 
-// ImportFile uploads a RouterOS script, /imports it and deletes it; lab.sh
-// fails unless RouterOS says the script ran.
+// ImportFile uploads a RouterOS script, /imports it and deletes it; the
+// driver fails unless RouterOS says the script ran.
 func (l *Lab) ImportFile(t *testing.T, path string) Result {
 	t.Helper()
 	return l.must(t, l.run(t, l.Repo, callTimeout, "import", path))
@@ -482,7 +481,7 @@ func (l *Lab) PowerCycle(t *testing.T) {
 	l.must(t, l.run(t, l.Repo, resetTimeout, "power-cycle"))
 }
 
-// Residue is what `lab.sh residue` counts: one line of counts per kind of
+// Residue is what the driver's `residue` counts: one line of counts per kind of
 // object an install makes, and the router's /file entries. RouterOS makes
 // `skins` for WebFig on its own, so it is left out.
 type Residue struct {
@@ -505,7 +504,7 @@ func (l *Lab) Residue(t *testing.T) Residue {
 		}
 	}
 	if res.Counts == "" {
-		t.Fatalf("lab.sh residue printed no counts:\n%s", out)
+		t.Fatalf("mikroscope-lab residue printed no counts:\n%s", out)
 	}
 	return res
 }
@@ -649,100 +648,33 @@ func (l *Lab) AgentTar(t *testing.T) string {
 
 // ─── The lab's lock ─────────────────────────────────────────────────────────
 
-// lockID is lab.sh's name for one lab: its lock file is <state>/.cache/<id>.lock.
-func lockID() string {
-	id := archFromEnv()
-	if envOr(envKind, "chr") == "iso" {
-		id += "-iso"
-	}
-	return id
-}
-
-// takeLock holds the same flock lab.sh takes, for the whole run, and exports
-// LAB_LOCK_HELD so the lab.sh calls under it do not wait for it. Nothing to
-// do when the caller holds it already, or when there is no lab state yet (no
-// lab has ever run, so the tests will skip).
+// takeLock holds the lab's lock for the whole run, the flock the driver
+// takes for each verb, and exports LAB_LOCK_HELD so every driver call under
+// it finds its own lock there instead of waiting for itself. Nothing to do
+// when the caller holds it already (`mikroscope-lab lock go test …`, which is
+// what `make test-lab` runs), or when there is no lab state yet (no lab has
+// ever run, so the tests will skip). LAB_LOCK_WAIT bounds the wait, as for
+// any driver.
 func takeLock() (func(), error) {
 	root, err := repoRoot()
 	if err != nil {
 		return func() {}, err
 	}
-	state := os.Getenv(envStateDir)
-	if state == "" {
-		state = filepath.Join(root, "test", "lab")
-	}
-	if state, err = filepath.Abs(state); err != nil {
-		return func() {}, err
-	}
-	cache := filepath.Join(state, ".cache")
-	lock := filepath.Join(cache, lockID()+".lock")
-	for held := range strings.SplitSeq(os.Getenv(envLockHeld), ":") {
-		if held == lock {
-			return func() {}, nil
-		}
-	}
-	if _, statErr := os.Stat(cache); statErr != nil {
-		return func() {}, nil // no lab state: nothing to lock, and Require will skip
-	}
-	f, err := os.OpenFile(lock, os.O_CREATE|os.O_RDWR, 0o644) // #nosec G302 G304 -- lab.sh's lock file; 0644 as lab.sh makes it
+	cfg, err := config(root)
 	if err != nil {
 		return func() {}, err
-	}
-	if err = flockWait(f, lock); err != nil {
-		_ = f.Close()
-		return func() {}, err
-	}
-	who := "unknown"
-	if u, userErr := user.Current(); userErr == nil {
-		who = u.Username
 	}
 	wd, _ := os.Getwd()
-	if err = f.Truncate(0); err == nil {
-		// What lab.sh writes for its own verbs, so `lab.sh status` names this
-		// run the same way.
-		_, err = fmt.Fprintf(f, "pid %d (%s), go test ./test/e2e/lab, since %s, in %s\n",
-			os.Getpid(), who, time.Now().UTC().Format("2006-01-02T15:04:05Z"), wd)
-	}
+	driver := lab.New(cfg, lab.Options{Env: environ(""), Dir: wd, Stderr: os.Stderr, LabDir: filepath.Join(root, "test", "lab"), Repo: root})
+	release, err := driver.Lock(context.Background(), "go test ./test/e2e/lab")
 	if err != nil {
-		_ = f.Close()
 		return func() {}, err
 	}
-	held := lock
-	if prev := os.Getenv(envLockHeld); prev != "" {
-		held = prev + ":" + lock
-	}
-	if err = os.Setenv(envLockHeld, held); err != nil {
-		_ = f.Close()
-		return func() {}, err
-	}
-	return func() { _ = f.Close() }, nil
-}
-
-// flockWait takes an exclusive flock, waiting LAB_LOCK_WAIT seconds when that
-// is set (0: not at all) and for as long as it takes when it is not, and says
-// who it waits for.
-func flockWait(f *os.File, path string) error {
-	fd := int(f.Fd()) // #nosec G115 -- a file descriptor fits an int
-	if syscall.Flock(fd, syscall.LOCK_EX|syscall.LOCK_NB) == nil {
-		return nil
-	}
-	holder, _ := os.ReadFile(path) // #nosec G304 -- lab.sh's lock file
-	wait := -1
-	if v := os.Getenv(envLockWait); v != "" {
-		n, err := strconv.Atoi(v)
-		if err != nil || n < 0 {
-			return fmt.Errorf("%s=%s: want a number of seconds", envLockWait, v)
+	if held := driver.LockHeldEnv(); held != "" {
+		if err = os.Setenv(envLockHeld, held); err != nil {
+			release()
+			return func() {}, err
 		}
-		wait = n
 	}
-	fmt.Fprintf(os.Stderr, "lab: %s is held by %s; waiting\n", path, strings.TrimSpace(string(holder)))
-	for waited := 0; ; waited++ {
-		if syscall.Flock(fd, syscall.LOCK_EX|syscall.LOCK_NB) == nil {
-			return nil
-		}
-		if wait >= 0 && waited >= wait {
-			return fmt.Errorf("the lab's lock %s was still held after %ds by %s", path, wait, strings.TrimSpace(string(holder)))
-		}
-		time.Sleep(time.Second)
-	}
+	return release, nil
 }
