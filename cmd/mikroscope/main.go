@@ -165,7 +165,7 @@ func parseWith(verb string, args []string, fs *flag.FlagSet) (cli, error) {
 	fs.StringVar(&c.opts.Disk, "disk", env("DISK", ""), "RouterOS disk for image and root: empty = internal flash, tmpfs, disk1, usb1 …")
 	fs.BoolVar(&c.opts.Ephemeral, "ephemeral", false, "root on the tmpfs disk, start-on-boot=no unless --start-on-boot yes: nothing written to flash, nothing survives a reboot")
 	fs.StringVar(&c.opts.Arch, "arch", env("ARCH", router.ArchAuto), "device architecture: arm64, arm, amd64 or "+router.ArchAuto+
-		"; "+router.ArchAuto+", the default when neither this flag nor MIKROSCOPE_ARCH is set, is "+c.opts.Arch+" for plan, --dry-run and image (MIKROSCOPE_ARCH)")
+		"; "+router.ArchAuto+", the default when neither this flag nor MIKROSCOPE_ARCH is set, is read from the router by doctor, install and upgrade, and is "+c.opts.Arch+" for plan, --dry-run and image (MIKROSCOPE_ARCH)")
 	// 5, not the toolchain's 7. MikroTik's container documentation says the
 	// package exists for arm, arm64 and x86 only, and that "for devices with
 	// EN7562CT CPU like the hEX Refresh, only arm32v5 container images are
@@ -387,22 +387,99 @@ func agentAsset(arch, goarm string) string {
 // loadAgentTar reads an image tar and refuses one that is not this agent, or
 // not for this architecture.
 func loadAgentTar(path, arch, goarm string) ([]byte, error) {
-	data, err := os.ReadFile(path) // #nosec G304 -- the operator's own --agent-tar path
+	data, info, err := inspectAgentTar(path)
 	if err != nil {
-		return nil, fmt.Errorf("--agent-tar: %w", err)
-	}
-	info, err := image.Inspect(data)
-	if err != nil {
-		return nil, fmt.Errorf("--agent-tar %s: %w", path, err)
+		return nil, err
 	}
 	if info.Arch != arch {
 		return nil, fmt.Errorf("--agent-tar %s is a linux/%s image and --arch says %s: download the %s asset instead", path, info.Arch, arch, agentAsset(arch, goarm))
+	}
+	return data, nil
+}
+
+// inspectAgentTar reads an image tar, refuses one that is not this agent,
+// and says which it is.
+func inspectAgentTar(path string) ([]byte, image.Info, error) {
+	data, err := os.ReadFile(path) // #nosec G304 -- the operator's own --agent-tar path
+	if err != nil {
+		return nil, image.Info{}, fmt.Errorf("--agent-tar: %w", err)
+	}
+	info, err := image.Inspect(data)
+	if err != nil {
+		return nil, image.Info{}, fmt.Errorf("--agent-tar %s: %w", path, err)
 	}
 	fmt.Fprintf(os.Stderr, "using %s: linux/%s%s, agent %d KiB\n", path, info.Arch, info.Variant, info.Size/1024)
 	if note := image.VariantNote(info); note != "" {
 		fmt.Fprintln(os.Stderr, note)
 	}
-	return data, nil
+	return data, info, nil
+}
+
+// agentTar is an --agent-tar read before anything connects: its bytes and
+// the GOARCH its manifest declares. The zero value is no tar.
+type agentTar struct {
+	data []byte
+	arch string
+}
+
+// loaded says whether an --agent-tar was read.
+func (t agentTar) loaded() bool { return t.data != nil }
+
+// readAgentTar loads --agent-tar, or returns the zero agentTar without one. With --arch
+// named, the tar must be for it; with auto the router has not been asked
+// yet, and doctor, or resolveArch after --no-doctor, compares the two.
+func (c cli) readAgentTar() (agentTar, error) {
+	if c.agentTar == "" || c.opts.UsesRemoteImage() {
+		return agentTar{}, nil
+	}
+	if !c.opts.DetectArch {
+		data, err := loadAgentTar(c.agentTar, c.opts.Arch, c.goarm)
+		if err != nil {
+			return agentTar{}, err
+		}
+		return agentTar{data: data, arch: c.opts.Arch}, nil
+	}
+	data, info, err := inspectAgentTar(c.agentTar)
+	if err != nil {
+		return agentTar{}, err
+	}
+	return agentTar{data: data, arch: info.Arch}, nil
+}
+
+// resolveArch settles --arch auto once the router has said what it is:
+// the tar's own architecture with --agent-tar (checked against the
+// router's), the router's otherwise. With --remote-image the router picks
+// from the image's index and Arch only names it in the listing. An --arch
+// that was given is left as it is.
+func resolveArch(c *cli, routerArch string, tar agentTar) error {
+	if !c.opts.DetectArch {
+		return nil
+	}
+	c.opts.DetectArch = false
+	goarch, known := router.GOARCHFor(routerArch)
+	switch {
+	case tar.loaded():
+		if known && goarch != tar.arch {
+			return fmt.Errorf("--agent-tar %s is a linux/%s image and the router is %s: download the %s asset instead", c.agentTar, tar.arch, routerArch, agentAsset(goarch, c.goarm))
+		}
+		c.opts.Arch = tar.arch
+	case known:
+		c.opts.Arch = goarch
+		fmt.Printf("architecture: the router is %s, so the image is linux/%s\n", routerArch, goarch)
+	case c.opts.UsesRemoteImage():
+	default:
+		return fmt.Errorf("the router's architecture is %q, and MikroTik publishes the container package for arm, arm64 and x86_64 only; nothing was written", routerArch)
+	}
+	return nil
+}
+
+// image is the bytes the container step uploads: the tar read before the
+// router was asked, or one built now for the architecture it said.
+func (c cli) image(tar agentTar) ([]byte, error) {
+	if tar.loaded() {
+		return tar.data, nil
+	}
+	return buildImage(c)
 }
 
 // writeScript renders the install as a RouterOS script for the operator to
@@ -445,7 +522,11 @@ func doctor(c cli) error {
 	if err != nil {
 		return err
 	}
-	rep, err := router.Doctor(r, c.opts, router.DoctorImage{Bytes: doctorImageBytes(c)})
+	tar, err := c.readAgentTar()
+	if err != nil {
+		return err
+	}
+	rep, err := router.Doctor(r, c.opts, c.doctorImage(tar))
 	if err != nil {
 		return err
 	}
@@ -461,11 +542,12 @@ func doctor(c cli) error {
 	return nil
 }
 
-// doctorImageBytes is the image size standalone doctor sizes the flash check
-// for, since it builds nothing: 7 MiB for a tar, and none with --remote-image,
-// where install uploads no tar either and asks for the 4 MiB of headroom
-// alone. Doctor used to assume the tar under --remote-image too and asked for
-// 18.0 MiB that the install it was checking for would never use.
+// doctorImageBytes is the image size doctor sizes the flash check for when
+// no tar has been read: 7 MiB for one install would build, and none with
+// --remote-image, where install uploads no tar and doctor asks for room for
+// the extracted root and the 4 MiB of headroom. Doctor used to assume the
+// tar under --remote-image too and asked for 18.0 MiB that the install it
+// was checking for would never use.
 func doctorImageBytes(c cli) int {
 	if c.opts.UsesRemoteImage() {
 		return 0
@@ -473,29 +555,49 @@ func doctorImageBytes(c cli) int {
 	return 7 << 20
 }
 
-func install(c cli) error {
-	img, err := buildImage(c)
-	if err != nil {
-		return err
+// doctorImage is what doctor is told of the image: an --agent-tar's size
+// and architecture, or the estimate for one install would build.
+func (c cli) doctorImage(tar agentTar) router.DoctorImage {
+	if tar.loaded() {
+		return router.DoctorImage{Bytes: len(tar.data), Arch: tar.arch}
 	}
-	router.Listing(c.opts, len(img), os.Stdout)
+	return router.DoctorImage{Bytes: doctorImageBytes(c)}
+}
+
+// install asks the router first — doctor's one batch, which also reads the
+// architecture — and only then builds or loads the image, lists every write
+// and asks. Nothing is written before it is listed: doctor only reads. plan
+// and --dry-run connect to nothing and list the arm64 plan when --arch is
+// auto.
+func install(c cli) error {
 	if c.dryRun {
+		img, err := buildImage(c)
+		if err != nil {
+			return err
+		}
+		router.Listing(c.opts, len(img), os.Stdout)
 		return nil
 	}
 	r, err := c.runner()
 	if err != nil {
 		return err
 	}
-	if !c.noDoctor {
-		rep, docErr := router.Doctor(r, c.opts, router.DoctorImage{Bytes: len(img)})
-		if docErr != nil {
-			return docErr
-		}
-		rep.Print(os.Stdout)
-		if failed := rep.Failed(); len(failed) > 0 {
-			return fmt.Errorf("%d prerequisite(s) missing; nothing was written", len(failed))
-		}
+	tar, err := c.readAgentTar()
+	if err != nil {
+		return err
 	}
+	routerArch, err := c.installPreflight(r, tar)
+	if err != nil {
+		return err
+	}
+	if archErr := resolveArch(&c, routerArch, tar); archErr != nil {
+		return archErr
+	}
+	img, err := c.image(tar)
+	if err != nil {
+		return err
+	}
+	router.Listing(c.opts, len(img), os.Stdout)
 	if !c.yes && !confirm() {
 		return errors.New("not confirmed; nothing written")
 	}
@@ -505,6 +607,29 @@ func install(c cli) error {
 	}
 	fmt.Printf("install done: %d step(s) created\n", created)
 	return probe(c, r)
+}
+
+// installPreflight runs doctor and returns the architecture it read. With
+// --no-doctor there is no doctor batch, so when --arch is auto and the
+// image is not pulled, the architecture takes a connect of its own, which
+// is said.
+func (c cli) installPreflight(r router.Runner, tar agentTar) (string, error) {
+	if !c.noDoctor {
+		rep, err := router.Doctor(r, c.opts, c.doctorImage(tar))
+		if err != nil {
+			return "", err
+		}
+		rep.Print(os.Stdout)
+		if failed := rep.Failed(); len(failed) > 0 {
+			return "", fmt.Errorf("%d prerequisite(s) missing; nothing was written", len(failed))
+		}
+		return rep.Arch, nil
+	}
+	if !c.opts.DetectArch || c.opts.UsesRemoteImage() {
+		return "", nil
+	}
+	fmt.Println("reading the router's architecture: one connect more, because --no-doctor skips the batch that reads it with everything else")
+	return router.ReadArch(r)
 }
 
 // probe waits for the agent on the veth and says which transport works.
@@ -588,35 +713,47 @@ func printBoard(board string) {
 }
 
 func upgrade(c cli) error {
-	img, err := buildImage(c)
-	if err != nil {
-		return err
-	}
-	// The plan first, and --dry-run stops here — before the runner exists, so
-	// a dry run opens no connection to the router at all. Until 1.1.0 this
-	// function ignored c.dryRun outright: it printed no plan and fell through
-	// to confirm(), so `upgrade --dry-run --yes` replaced the container on a
-	// live router while the flag promised nothing would be written.
-	router.UpgradeListing(c.opts, len(img), os.Stdout)
+	// --dry-run lists and stops before the runner exists, so a dry run opens
+	// no connection to the router at all. Until 1.1.0 this function ignored
+	// c.dryRun outright: it printed no plan and fell through to confirm(),
+	// so `upgrade --dry-run --yes` replaced the container on a live router
+	// while the flag promised nothing would be written.
 	if c.dryRun {
+		img, err := buildImage(c)
+		if err != nil {
+			return err
+		}
+		router.UpgradeListing(c.opts, len(img), os.Stdout)
 		return nil
 	}
 	r, err := c.runner()
 	if err != nil {
 		return err
 	}
-	// One connect asks whether the install is there and, with
-	// --remote-image, what doctor's credential check reads; upgrade runs no
-	// doctor and removes the old container before the router pulls, so the
-	// check and any note about registry-url are printed here, before the
-	// confirmation and before anything is removed.
-	installed, err := router.UpgradePreflight(r, c.opts, os.Stdout)
+	tar, err := c.readAgentTar()
 	if err != nil {
 		return err
 	}
-	if !installed {
+	// One connect asks whether the install is there, the router's
+	// architecture and, with --remote-image, what doctor's credential check
+	// reads; upgrade runs no doctor and removes the old container before the
+	// router pulls, so the check and any note about registry-url are printed
+	// here, before the listing, the confirmation and anything removed.
+	st, err := router.UpgradeRead(r, c.opts, os.Stdout)
+	if err != nil {
+		return err
+	}
+	if !st.Installed {
 		return errors.New("nothing to upgrade: run install first")
 	}
+	if archErr := resolveArch(&c, st.Arch, tar); archErr != nil {
+		return archErr
+	}
+	img, err := c.image(tar)
+	if err != nil {
+		return err
+	}
+	router.UpgradeListing(c.opts, len(img), os.Stdout)
 	if !c.yes && !confirm() {
 		return errors.New("not confirmed; nothing written")
 	}

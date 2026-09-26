@@ -690,6 +690,30 @@ func isYes(s string) bool {
 	return false
 }
 
+// GOARCHFor is the GOARCH of the agent image a router of this
+// architecture-name runs, and ok is false for one MikroTik publishes no
+// container package for.
+func GOARCHFor(routerArch string) (goarch string, ok bool) {
+	if !slices.Contains(containerArches, routerArch) {
+		return "", false
+	}
+	return goarchOf(routerArch), true
+}
+
+// ReadArch reads the router's architecture-name in one connect of its own:
+// what install asks when --arch is auto and --no-doctor skipped the batch
+// that reads it with everything else.
+func ReadArch(r Runner) (string, error) {
+	a, stray, err := readKeyed(r, []query{{key: qArch, text: `:put [/system/resource/get architecture-name]`}})
+	if err != nil {
+		return "", err
+	}
+	if !a.has(qArch) {
+		return "", fmt.Errorf("the router did not say its architecture; it printed %q", strings.Join(stray, " / "))
+	}
+	return a.get(qArch), nil
+}
+
 func goarchOf(routerArch string) string {
 	for g, r := range routerOSArch {
 		if r == routerArch {

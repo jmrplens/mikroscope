@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -106,4 +107,66 @@ func Upgrade(r Runner, o Options, image []byte, w io.Writer) error {
 	}
 	fmt.Fprintf(w, "  new   %s\n", c.Name)
 	return nil
+}
+
+// UpgradeState is what upgrade reads before it writes anything.
+type UpgradeState struct {
+	// Installed is true when every step of the plan is this install's.
+	Installed bool
+	// Arch is the router's architecture-name, for --arch auto; empty when
+	// the router did not say.
+	Arch string
+}
+
+// UpgradeRead is what upgrade asks the router before it writes anything,
+// in one connect: whether every step of this install is owned, the router's
+// architecture, and, with --remote-image, the two /container/config answers
+// doctor's credential check reads. upgrade runs no doctor, and it removes the
+// old container before the router pulls the new image, so a pull that fails
+// leaves the router without an agent. When the install is there, this
+// prints that credential check and, when registry-url names a host other
+// than the one the pull goes to, a note with the reference that keeps that
+// host (registryURLNote), so the operator reads both before the
+// confirmation. It prints nothing for a tar upgrade or when the install is
+// not there, and writes nothing.
+func UpgradeRead(r Runner, o Options, w io.Writer) (UpgradeState, error) {
+	plan := Plan(o)
+	qs := make([]query, 0, len(plan)+3)
+	qs = append(qs, query{key: qArch, text: `:put [/system/resource/get architecture-name]`})
+	for i, s := range plan {
+		qs = append(qs, query{key: "owned." + strconv.Itoa(i), text: s.Owned})
+	}
+	if o.UsesRemoteImage() {
+		qs = append(qs, query{key: qRegistryURL, text: registryURLQuery}, query{key: qRegistryUser, text: registryUserQuery})
+	}
+	a, stray, err := readKeyed(r, qs)
+	if err != nil {
+		return UpgradeState{}, err
+	}
+	st := UpgradeState{Installed: true}
+	if a.has(qArch) {
+		st.Arch = a.get(qArch)
+	}
+	for i, s := range plan {
+		owned, ok := a["owned."+strconv.Itoa(i)]
+		if !ok {
+			return UpgradeState{}, fmt.Errorf("the router gave no answer to %q; it printed %q", s.Owned, strings.Join(stray, " / "))
+		}
+		if owned == "0" {
+			st.Installed = false
+		}
+	}
+	if !st.Installed || !o.UsesRemoteImage() {
+		return st, nil
+	}
+	registryURL := a.get(qRegistryURL)
+	var rep Report
+	addRegistryCredential(&rep, o, registryURL, isYes(a.get(qRegistryUser)))
+	for _, it := range rep.Items {
+		it.print(w)
+	}
+	if note := registryURLNote(o, registryURL); note != "" {
+		fmt.Fprintf(w, "  %-7s %s\n", "note", note)
+	}
+	return st, nil
 }
