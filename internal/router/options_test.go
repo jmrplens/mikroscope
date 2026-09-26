@@ -199,3 +199,39 @@ func TestInstallRefusesAContainerNameInUse(t *testing.T) {
 		t.Fatalf("without --container-name the name is not ours to check: %v", err)
 	}
 }
+
+// F5: the token --expose makes mandatory is the envlist's, and only the verbs
+// that write (or render) the envlist need it: install, upgrade and plan.
+// uninstall and status select the two firewall rules by the LAN address, the
+// port and the tag, so --expose --lan-address is all they need; doctor only
+// reads, and image builds a tar. A verb Finish does not know is checked as an
+// install is.
+func TestExposeNeedsATokenOnlyWhereTheEnvlistIsWritten(t *testing.T) {
+	t.Parallel()
+	for verb, needs := range map[string]bool{
+		"install": true, "upgrade": true, "plan": true, "frobnicate": true,
+		"doctor": false, "image": false, "uninstall": false, "status": false,
+	} {
+		o := Defaults()
+		o.Expose, o.LANAddress = true, "192.168.88.1"
+		err := o.FinishFor(verb)
+		switch {
+		case needs && (err == nil || !strings.Contains(err.Error(), "a token is mandatory")):
+			t.Errorf("%s --expose without a token: %v, want the token refused", verb, err)
+		case !needs && err != nil:
+			t.Errorf("%s --expose without a token: %v", verb, err)
+		}
+		// The LAN address is still every verb's to give: the selectors use it.
+		o = Defaults()
+		o.Expose = true
+		if err = o.FinishFor(verb); err == nil || !strings.Contains(err.Error(), "IPv4 LAN address") {
+			t.Errorf("%s --expose without --lan-address: %v", verb, err)
+		}
+	}
+	// Finish is FinishFor("install").
+	o := Defaults()
+	o.Expose, o.LANAddress = true, "192.168.88.1"
+	if err := o.Finish(); err == nil {
+		t.Error("Finish accepted --expose without a token")
+	}
+}

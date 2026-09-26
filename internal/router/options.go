@@ -196,8 +196,16 @@ func Defaults() Options {
 }
 
 // Finish validates every field and derives the /30 ends. It is the only
-// gate between operator input and a RouterOS command.
-func (o *Options) Finish() error {
+// gate between operator input and a RouterOS command. It checks the options
+// as an install needs them; FinishFor checks them for another verb.
+func (o *Options) Finish() error { return o.FinishFor("install") }
+
+// FinishFor is Finish for the CLI verb the options are for. The verbs differ
+// in one thing: `doctor`, `image`, `status` and `uninstall` neither write nor
+// render the envlist, so --expose needs no token there (verbWritesToken).
+// Every other verb — install, upgrade, plan, and any verb this does not
+// know — is checked as an install is.
+func (o *Options) FinishFor(verb string) error {
 	o.deriveMemLimit()
 	if err := o.validateNames(); err != nil {
 		return err
@@ -208,7 +216,7 @@ func (o *Options) Finish() error {
 	if err := o.validateContainerSettings(); err != nil {
 		return err
 	}
-	if err := o.validateExpose(); err != nil {
+	if err := o.validateExpose(verbWritesToken(verb)); err != nil {
 		return err
 	}
 	if o.RemoteImage != "" && !validImageRef.MatchString(o.RemoteImage) {
@@ -456,7 +464,19 @@ func durationSeconds(d string) int {
 	}
 }
 
-func (o *Options) validateExpose() error {
+// verbWritesToken says whether a verb writes, or renders, the envlist the
+// token goes into: install and upgrade write it, and plan renders it into
+// the listing and the script. doctor only reads, image builds a tar, and
+// uninstall and status select objects by their tag and identity, none of
+// which holds the token, so --expose needs none there. A verb this does not
+// know is held to install's rule.
+func verbWritesToken(verb string) bool {
+	return !slices.Contains([]string{"doctor", "image", "status", "uninstall"}, verb)
+}
+
+// validateExpose checks the LAN address --expose publishes the agent on
+// and, when the verb writes the envlist, that there is a token for it.
+func (o *Options) validateExpose(needToken bool) error {
 	if !o.Expose {
 		return nil
 	}
@@ -465,7 +485,7 @@ func (o *Options) validateExpose() error {
 		return fmt.Errorf("--expose needs the router's IPv4 LAN address, got %q", o.LANAddress)
 	}
 	o.LANAddress = ip.To4().String()
-	if o.Token == "" {
+	if needToken && o.Token == "" {
 		return errors.New("--expose makes the agent reachable from the LAN: a token is mandatory")
 	}
 	return nil

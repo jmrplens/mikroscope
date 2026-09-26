@@ -214,7 +214,7 @@ func parseWith(verb string, args []string, fs *flag.FlagSet) (cli, error) {
 	if !slices.Contains([]string{"5", "6", "7"}, c.goarm) {
 		return c, fmt.Errorf("goarm must be 5, 6 or 7, got %q", c.goarm)
 	}
-	if err := c.opts.Finish(); err != nil {
+	if err := c.opts.FinishFor(verb); err != nil {
 		return c, err
 	}
 	return c, nil

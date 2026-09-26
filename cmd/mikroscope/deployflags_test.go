@@ -150,3 +150,20 @@ func TestSSHOptionsFromTheEnvironmentAndTheFlag(t *testing.T) {
 		t.Errorf("the runner does not carry the options: %#v", r)
 	}
 }
+
+// F5: `uninstall --expose --lan-address x` parses without a token, as does
+// `status --expose`; install still refuses it.
+func TestUninstallAndStatusExposeNeedNoToken(t *testing.T) {
+	blankEnvironment(t)
+	for _, verb := range []string{"uninstall", "status"} {
+		if _, err := parse(verb, []string{"--expose", "--lan-address", "192.168.88.1"}); err != nil {
+			t.Errorf("%s --expose --lan-address without a token: %v", verb, err)
+		}
+	}
+	if err := uninstall([]string{"--expose", "--lan-address", "192.168.88.1"}, &strings.Builder{}); err != nil {
+		t.Errorf("the uninstall verb, listing only: %v", err)
+	}
+	if _, err := parse("install", []string{"--expose", "--lan-address", "192.168.88.1"}); err == nil {
+		t.Error("install --expose without a token parsed")
+	}
+}
