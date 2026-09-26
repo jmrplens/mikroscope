@@ -6,54 +6,59 @@ head:
     content: "Lo que el instalador rechaza en un router MikroTik | mikroscope"
 ---
 
-import NotClaimed from "../../../../components/NotClaimed.astro";
 import RouterWrites from "../../../../components/RouterWrites.astro";
 import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
-import Verified from "../../../../components/Verified.astro";
 
 El instalador escribe en un router que no configuró él, por la propia sesión ssh de administrador
 del operador, así que no hay ninguna frontera de privilegios entre un error y el router. Lo que hace
-sus veces es un conjunto de rechazos. Esta página los enumera: dónde se detiene `install` antes de
-escribir, qué no toca, qué trata como un fallo, y cómo `uninstall` demuestra que ha terminado en vez
-de limitarse a decirlo.
+sus veces es un conjunto de rechazos: dónde se detiene `install` antes de escribir, qué no toca, qué
+trata como un fallo, y cómo `uninstall` demuestra que ha terminado en vez de limitarse a decirlo.
 
-## Nada se escribe antes de listarse
+## Listado antes de escribir {#nada-se-escribe-antes-de-listarse}
 
-`install` construye la imagen, imprime cada orden que ejecutaría con su texto exacto de RouterOS y
-después, en este orden:
+`install` no escribe nada hasta haber impreso cada orden que ejecutaría, con su texto exacto de
+RouterOS. En este orden:
 
-1. ejecuta `doctor`, la comprobación previa de solo lectura, salvo que se dé `--no-doctor`; un
-   requisito que falte lo detiene con `N prerequisite(s) missing; nothing was written`. Una línea
-   `WARN` (una credencial de registro pensada para otro registro, o una instalación ya publicada en
-   la LAN sin token) se imprime y no lo detiene;
-2. pregunta `write the objects above to the router? [y/N]`, salvo que se dé `--yes`; cualquier cosa
+1. ejecuta `doctor`, la comprobación previa de solo lectura, en una sola conexión ssh, salvo que se
+   dé `--no-doctor`; un requisito que falte lo detiene con
+   `N prerequisite(s) missing; nothing was written`. Una línea `WARN` se imprime y no lo detiene.
+   Con `--no-doctor`, sin `--arch` y sin `--remote-image`, una conexión de una sola lectura toma en
+   su lugar la arquitectura del router, y la salida lo dice;
+2. construye o carga la imagen de la arquitectura que informó el router (`--agent-tar` tiene que
+   coincidir con ella; `--remote-image` deja la elección a RouterOS);
+3. imprime el listado, con el token enmascarado como `value="(token)"`;
+4. pregunta `write the objects above to the router? [y/N]`, salvo que se dé `--yes`; cualquier cosa
    que no sea `y` o `Y` lo detiene con `not confirmed; nothing written`;
-3. solo entonces escribe.
+5. solo entonces escribe, el manifiesto de la instalación el primero.
 
-`plan`, `install --dry-run` y `upgrade --dry-run` se detienen después del listado —el último
-solo desde 1.1.0, que es cuando `upgrade` empezó a respetar el flag. El listado enmascara el token como
-`value="(token)"`.
+`plan`, `install --dry-run` y `upgrade --dry-run` se detienen después del listado y no abren
+ninguna conexión.
 
-`upgrade` no tiene esta garantía. Construye la imagen, rechaza un router en el que falte cualquier
-paso del plan construido con sus propias opciones (`nothing to upgrade: run install first`) y hace
-la misma pregunta `write the objects above to the router? [y/N]` —y desde 1.1.0 sí imprime un
-listado propio, solo el paso del contenedor. Sigue sin ejecutar `doctor` antes; con `--remote-image` lee `registry-url` y si
-hay un usuario de registro puesto, en la misma conexión en la que comprueba que la instalación está, e imprime la comprobación de
-la credencial de doctor antes de la pregunta. Con `y` quita el contenedor, la envlist y
-la imagen y los vuelve a escribir, la envlist a partir de las opciones dadas a `upgrade`; [lo que abre
-`--expose`](/mikroscope/es/security/expose/) explica lo que eso supone para el token.
+`upgrade` no ejecuta `doctor`. En una sola conexión lee la forma con la que se hizo la instalación
+(su manifiesto, o sus objetos etiquetados para una instalación que no lo tiene), si están todos los
+pasos, la arquitectura del router y, con `--remote-image`, la comprobación de credencial de registro
+de doctor, que imprime; cuando la forma que lee cambia el plan que daban las opciones, una segunda
+conexión pregunta por los pasos de ese plan. Rechaza un router sin instalación (`nothing to upgrade: run install first`)
+y una instalación cuya envlist tiene un `TOKEN` si no recibe `--token`. Lista el manifiesto de la
+instalación, que escribe siempre el primero, y el paso del contenedor; cualquier otro paso de la
+instalación que el router ya no tenga se lista después y se crea antes del contenedor. Después hace
+la misma pregunta. Con `y` quita el contenedor, la envlist y la imagen y los vuelve a
+escribir, la envlist a partir de las opciones dadas a `upgrade`.
 
 <RouterWrites command="install" />
 
-## Objetos que no son suyos
+## Objetos ajenos {#objetos-que-no-son-suyos}
 
-Antes de escribir, `install` hace al router tres preguntas sobre cada paso en una sola conexión ssh:
-¿está nuestro objeto?, ¿existe algo con el mismo efecto?, ¿lleva nuestra etiqueta? Un objeto que
-existe pero no lleva la etiqueta de mikroscope detiene `install`, nombrando el paso:
+`doctor` nombra los objetos con los que chocaría una instalación antes de escribir nada: una veth,
+una envlist o un nombre de contenedor que no son de esta instalación, un fichero en la ruta del
+manifiesto de la instalación que no es su manifiesto, y una ruta que se solapa con la /30. Después, antes de escribir, `install` hace al router tres preguntas sobre cada paso en una
+sola conexión ssh: ¿está nuestro objeto?, ¿existe algo con el mismo efecto?, ¿lleva nuestra
+etiqueta? Un objeto que existe pero no lleva la etiqueta de mikroscope detiene `install`, nombrando
+el paso:
 
 ```text
-veth interface veth-mikroscope exists on the router and was not created by mikroscope (no ownership tag); pick another --name/--veth/--subnet, or remove it by hand if it is yours
+veth interface veth-mikroscope exists on the router and was not created by mikroscope (no ownership tag); pick another --name/--veth/--subnet, or remove it by hand if it is yours; nothing was written
 ```
 
 Lo que cuenta como «el mismo efecto» es la identidad del objeto, no solo su nombre:
@@ -62,66 +67,73 @@ Lo que cuenta como «el mismo efecto» es la identidad del objeto, no solo su no
 
 | Paso                                  | Choca con cualquier existente                                                                                           | Es nuestro cuando lleva                                 |
 | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| manifiesto de la instalación | un fichero en `mikroscope/<name>.manifest.txt` en el disco de la instalación | su línea `tag=` con la etiqueta |
 | veth                                  | `/interface/veth` con el mismo nombre                                                                                   | la etiqueta en `comment`                                |
 | dirección del router                  | `/ip/address` en esa veth                                                                                               | la etiqueta en `comment`                                |
 | pertenencia a la lista de interfaces  | miembro con esa interfaz en esa lista                                                                                   | la etiqueta en `comment`                                |
 | pertenencia a la lista de direcciones | entrada con la /30 en esa lista                                                                                         | la etiqueta en `comment`                                |
 | dst-nat de expose                     | regla `dstnat` con esa dirección de destino, puerto y protocolo                                                         | la etiqueta en `comment`                                |
 | accept en forward de expose           | regla `forward` con la dirección del contenedor, ese puerto y ese protocolo                                             | la etiqueta en `comment`                                |
-| contenedor                            | un contenedor que use el mismo fichero de imagen, una envlist llamada `<name>-env` o un fichero en la ruta de la imagen | un contenedor con la etiqueta; una envlist con la marca |
+| contenedor | un contenedor en la misma veth, una envlist llamada `<name>-env`, un fichero en la ruta de la imagen o un contenedor llamado como `--container-name` | un contenedor con la etiqueta; una envlist con la marca |
 
 </ScrollTable>
 
 Un paso que ya es nuestro se salta, así que ejecutar `install` dos veces no crea nada la segunda vez.
 
-El rechazo ocurre cuando `install` llega al paso en conflicto. Los pasos anteriores que faltaban ya
-se han creado; llevan la etiqueta, y `uninstall` los quita. `uninstall` nunca toca el objeto ajeno.
+`install` tiene todas las respuestas antes de su primera escritura, así que un objeto ajeno en
+cualquier paso lo detiene sin haber escrito nada, también con `--no-doctor`. `uninstall` nunca toca
+el objeto ajeno.
 
-### La envlist y la imagen no llevan comentario
+### Objetos sin etiqueta {#la-envlist-y-la-imagen-no-llevan-comentario}
 
-Ni `/container/envs` ni `/file` tienen campo de comentario, así que el paso del contenedor los firma
-de otra manera: la primera entrada que se escribe en la envlist es `MIKROSCOPE_TAG` con la etiqueta
+Ni `/container/envs` ni `/file` tienen campo de comentario, así que la instalación los firma de otra
+manera. El manifiesto lleva la etiqueta en una línea `tag=` y es de esta instalación solo mientras
+la lleve. En el paso del contenedor, la primera entrada que se escribe en la envlist es `MIKROSCOPE_TAG` con la etiqueta
 exacta, y el fichero de imagen cuenta como nuestro solo mientras exista esa marca. Una envlist ajena
 con el mismo nombre, un fichero ajeno en la ruta de la imagen o la envlist de otro contenedor son,
 por tanto, ajenos, y detienen `install`. Los restos de una instalación anterior de mikroscope — una
 envlist bajo nuestra marca sin contenedor — son nuestros para sustituirlos, e `install` los limpia
 antes de escribir los nuevos.
 
-## Los selectores son exactos
+## Selectores exactos {#los-selectores-son-exactos}
 
 Todo objeto que crea `install` lleva el comentario `mikroscope:<name> (managed by mikroscope)`, al
 pie de la letra. Todo objeto de red se elimina por ese comentario exacto junto con la identidad
 que usó su comprobación — `comment="…"`, nunca una coincidencia por patrón. El contenedor se elimina
 solo por el comentario, y la envlist y la imagen, que no llevan comentario, por `list="<name>-env"`
 y el nombre exacto del fichero de imagen, solo mientras exista la entrada de marca con la etiqueta
-exacta. Así que `uninstall` no puede alcanzar una instalación hecha a mano, ni nada cuyo comentario
+exacta; el manifiesto, la raíz del contenedor y el directorio `mikroscope`, por sus rutas exactas,
+que derivan de `--name` y `--disk`. Así que `uninstall` no puede alcanzar una instalación hecha a mano, ni nada cuyo comentario
 o nombre comparta una subcadena con el nombre del contenedor.
 
 Todo `find` pone entre comillas cada valor no numérico salvo los enumerados `chain` y `action`. Sin
 comillas, una dirección o un puerto se interpretan como valores tipados y la comparación con el
-valor guardado sale vacía; verificado para los dos en <Verified of="find-quoting" />. Una palabra
-suelta como `tcp` se lee como el nombre de una variable, cuyo valor sin definir es vacío: en el
-mismo RB5009 con RouterOS 7.24.4, el 2026-09-21, `find chain=dstnat protocol=tcp` devolvió 0 de 15
-reglas dstnat y `protocol="tcp"` devolvió 10. Antes de 1.1.0 el `protocol` de las reglas de expose era
-el único valor sin comillas, así que `uninstall --expose` no quitaba ninguna de las dos reglas y las
-daba por quitadas.
+valor guardado sale vacía. Una palabra suelta como `tcp` se lee como el nombre de una variable,
+cuyo valor sin definir es vacío, así que `find chain=dstnat protocol=tcp` no coincide con ninguna
+regla mientras que `protocol="tcp"` coincide con todas las de TCP.
 
-## Una escritura que imprime es un fallo
+## Errores de escritura {#una-escritura-que-imprime-es-un-fallo}
 
 Una escritura de RouterOS no imprime nada cuando tiene éxito, y por ssh informa de los errores como
-texto con estado de salida 0, abandonando el resto de una línea unida con `;`. Así que `install`
-trata cualquier salida de una escritura como un fallo (`create <step>: router said "…"`) y se
-detiene ahí.
+texto, con estado de salida 0 o 1, abandonando el resto de una línea unida con `;`. Así que
+`install` trata cualquier salida de una escritura como un fallo
+(`create <step>: router said "…"`) y se detiene ahí. Cuando ssh sale con un estado distinto de
+cero, el error empieza por lo que imprimió RouterOS, así que sus palabras sobreviven donde solo se
+muestra la primera línea de un error, como en las líneas `skip` de `uninstall`.
 
 El tar de la imagen se sube con scp antes de que se ejecute el paso del contenedor, y antes de que
 exista la marca. Si ese paso falla después, `install` borra el fichero subido
 (`undo  removed the uploaded …`); de lo contrario contaría como fichero ajeno en cada intento
-posterior.
+posterior. El tar se queda cuando ya lo tiene un contenedor de esta instalación — el paso se detuvo
+en su espera de la extracción, y RouterOS puede seguir extrayéndolo (`keep  …`) — y `uninstall`
+retira los dos juntos. El plazo de ssh para una orden es de 3 minutos, o el `--extract-timeout` y un
+minuto más cuando eso es mayor, así que la espera de la extracción termina con su propio mensaje y
+no con ssh interrumpido.
 
 `uninstall` lee la salida de la misma manera en sentido contrario: una eliminación que imprimió algo
 se informa como `skip`, no como `gone`.
 
-## Valores que no mete en una orden
+## Límites de entrada {#valores-que-no-mete-en-una-orden}
 
 Toda opción que llega a una orden de RouterOS se interpola en ella tal cual. No hay privilegio que
 escalar — la orden se ejecuta como tu administrador — pero unas comillas o un punto y coma
@@ -134,9 +146,11 @@ de estos límites detiene la orden con la regla que ha incumplido:
 | Opción                                  | Se acepta                                                                                       |
 | --------------------------------------- | ----------------------------------------------------------------------------------------------- |
 | `--name`                                | `^[A-Za-z0-9][A-Za-z0-9_.-]{0,31}$`                                                             |
-| `--veth`, `--iface-list`, `--addr-list` | `^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`                                                             |
+| `--veth` | `^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$` |
+| `--iface-list`, `--addr-list` | `^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`, o `none` para no unirse a ninguna lista; `--iface-list` rechaza las listas integradas de RouterOS `all`, `dynamic` y `static`, que no admiten miembros |
+| `--container-name` | `^[A-Za-z0-9][A-Za-z0-9_.-]{0,31}$`, o vacío para el nombre que ponga RouterOS |
 | `--disk`                                | `^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$`, o vacío para la flash interna; `--ephemeral` fuerza `tmpfs` |
-| `--arch`                                | `^[a-z0-9]{1,16}$`                                                                              |
+| `--arch` | `arm64`, `arm`, `amd64` o `auto` |
 | `--token`                               | `^[A-Za-z0-9_.-]{0,128}$`                                                                       |
 | `--subnet`                              | una /30 IPv4, escrita como su dirección de red                                                  |
 | `--port`                                | 1–65535                                                                                         |
@@ -146,11 +160,23 @@ de estos límites detiene la orden con la regla que ha incumplido:
 | `--mem-limit-mb`                        | 8–1024                                                                                          |
 | `--floor-hz`                            | 0–1000                                                                                          |
 | `--capture-mb`                          | 0–256                                                                                           |
-| `--expose`                              | necesita `--lan-address` como dirección IPv4, y un token no vacío                               |
+| `--restart-max-count` | 0–100 |
+| `--restart-interval` | `^\d{1,4}[smh]$` |
+| `--start-on-boot` | `auto`, `yes` o `no` |
+| `--extract-timeout` | `^\d{1,4}[smh]$`, 10–600 s |
+| `--expose` | necesita `--lan-address` como dirección IPv4; `install`, `upgrade` y `plan` necesitan además un token no vacío |
 | `--triggers`                            | la propia lista de condiciones del agente, interpretada por `agent.ParseTriggers`               |
 | `--remote-image`                        | una referencia de registro: `owner/name:1.0.0`, con host o sin él, sin comillas, espacios ni punto y coma  |
+| `--ssh-option` | una clave entre `StrictHostKeyChecking`, `UserKnownHostsFile`, `ConnectTimeout`, `HostKeyAlgorithms`, `PubkeyAcceptedAlgorithms`, `IdentitiesOnly` y `ServerAliveInterval`, y un valor que cumpla `^[A-Za-z0-9_./~+:-]{1,256}$` |
 
 </ScrollTable>
+
+`--ssh-option` no llega a RouterOS sino a las líneas de órdenes de ssh y scp, y rige la misma regla:
+ninguna clave que ejecute una orden o lea un fichero como configuración (`ProxyCommand`,
+`LocalCommand`, `Include`), para que un valor en un fichero de entorno no pueda convertirse en
+ejecución de órdenes. Sus opciones van antes de las propias de la CLI,
+`-o BatchMode=yes -o ConnectTimeout=15`, porque ssh se queda con el primer valor que lee de cada
+opción.
 
 No hay excepción. `--triggers` la comprueba la misma puerta que el resto: `Finish` se la pasa a
 `agent.ParseTriggers`, el propio intérprete del agente, que es la autoridad sobre lo que significa
@@ -160,20 +186,20 @@ hacen fallar el verbo con estado de salida 2 antes de la primera conexión, y no
 El agente vuelve a interpretar `TRIGGERS` al arrancar, porque la envlist se puede editar a mano en
 el router. Ante un valor que no puede interpretar sale con un estado distinto de cero y una línea
 `mikroscope-agent: bad configuration: …` en el log del router; con la política on-failure, RouterOS
-puede reintentarlo hasta cinco veces. No hay registrada ninguna ejecución con un `TRIGGERS` erróneo
-en el router.
+lo reintenta hasta `--restart-max-count` veces.
 
-## Lo que se niega a enviar al router
+## Comprobaciones de la imagen {#lo-que-se-niega-a-enviar-al-router}
 
 Dos de las cuatro vías de instalación entregan al router algo que la CLI no ha construido, y cada
 una tiene su propia comprobación antes de que se escriba nada.
 
 - **`--agent-tar <fichero>`**, el tar de imagen que publica la release, se lee e inspecciona primero
   en tu máquina. Tiene que ser un tar de tipo docker-save con exactamente una imagen de una sola
-  capa cuyo entrypoint sea `/mikroscope-agent`, y su arquitectura tiene que coincidir con `--arch`;
-  si no, el verbo se detiene, y ante una discrepancia nombra el recurso que hay que descargar
-  (`--agent-tar … is a linux/arm64 image and --arch says arm: download the mikroscope-agent-arm.tar
-  asset instead`). Esa comprobación dice que el tar es una imagen del agente de mikroscope de la
+  capa cuyo entrypoint sea `/mikroscope-agent`, y su arquitectura tiene que coincidir con la del
+  router (que lee `doctor`) o con un `--arch` explícito; si no, el verbo se detiene, y ante una
+  discrepancia nombra el recurso que hay que descargar (`--agent-tar … is a linux/arm64 image and
+  the router is arm: download the mikroscope-agent-armv5.tar asset instead`, con `armv7` para
+  `--goarm 7`). Esa comprobación dice que el tar es una imagen del agente de mikroscope de la
   arquitectura correcta. No dice que sea el tar que publicó la release: verifícalo contra
   `checksums.txt` de la release, y su firma cosign si la usas, antes de pasarlo.
 - **`--remote-image <referencia>`** hace que el router se descargue la imagen él mismo, así que no
@@ -183,27 +209,30 @@ una tiene su propia comprobación antes de que se escriba nada.
   del registro incluido: una referencia sin host, o con un alias de Docker Hub, pasa a ser
   `registry-1.docker.io/…`, y cualquier otro host se conserva. Después el router necesita alcanzar
   ese registro por su propia red. **mikroscope nunca escribe `/container/config`**, el ajuste global
-  que guarda el `registry-url` del equipo y su único usuario y contraseña de registro, y ya no
-  necesita nada de él: en el router de referencia el host dentro de `remote-image=` mandó sobre
-  `registry-url` (verificado en <Verified of="remote-image-host" />), y
-  [Nada que ajustar en el router](/mikroscope/es/install/routes/#nada-que-ajustar-en-el-router)
-  dice lo que no se ha medido. Confiar en la imagen es confiar en ese registro: nada en la CLI
-  verifica lo que el router se descarga. Cuando está puesto, RouterOS presentó ese usuario al
-  registro que nombraba `registry-url`: una cuenta de Docker Hub enviada a GHCR terminó una descarga
-  en `auth error` el 2026-09-21. No se ha medido si lo presenta a un host que solo nombra
-  `remote-image=`. `doctor` avisa cuando hay un usuario puesto y `registry-url` está vacío o nombra
+  que guarda el `registry-url` del equipo y su único usuario y contraseña de registro, y no necesita
+  nada de él: el host dentro de `remote-image=` manda sobre `registry-url` ([Nada que ajustar en el
+  router](/mikroscope/es/install/routes/#nada-que-ajustar-en-el-router)). Confiar en la imagen es
+  confiar en ese registro: nada en la CLI verifica lo que el router se descarga. Cuando hay un
+  usuario puesto, RouterOS lo presenta al registro que nombra `registry-url`, y una credencial
+  pensada para otro registro puede terminar en `auth error` la descarga de una imagen pública. `doctor` avisa cuando hay un usuario puesto y `registry-url` está vacío o nombra
   un host distinto del que viene la imagen (`WARN no registry credential meant for another
   registry`), y `upgrade` imprime la misma comprobación antes de retirar nada; los dos leen
   `registry-url` y solo si hay un usuario puesto, nunca el nombre. La contraseña no se puede leer en
   absoluto. `--agent-tar` no descarga de ningún registro, así que no se envía ninguna
   credencial de registro.
 
-## Un script .rsc generado es una credencial
+## Scripts y tokens {#un-script-rsc-generado-es-una-credencial}
 
 `plan --rsc` escribe la instalación como un script de RouterOS para un router al que solo llegas por
-WinBox o WebFig. Lleva las mismas órdenes que ejecuta `install`, en el mismo orden y con las mismas
-etiquetas — y, cuando `--token` o `MIKROSCOPE_TOKEN` está fijado, la línea de la envlist lleva el
-token en claro, porque el router lo necesita. El propio script lo dice en su cabecera. Trata el
+WinBox o WebFig. Lleva las mismas órdenes que ejecuta `install`, en el mismo orden, con las mismas
+etiquetas y el mismo manifiesto de la instalación, así que `uninstall` retira una instalación hecha
+por script tan por completo como una propia. Se ejecuta como un solo bloque cuyas guardas lo
+detienen antes de su primera escritura en un router que no puede recibirlo: por debajo de RouterOS
+7.24, sin el paquete container o sin device-mode, sin el tar en la vía del tar, o con una veth, una
+envlist, un contenedor de `--container-name` o un fichero en la ruta del manifiesto con los nombres
+de la instalación que no son de mikroscope. Una envlist sin la marca de mikroscope recibiría si no
+la marca, y `uninstall` retiraría después con ella las entradas de su dueño. Y, cuando `--token` o
+`MIKROSCOPE_TOKEN` está fijado, la línea de la envlist lleva el token en claro, porque el router lo necesita. El propio script lo dice en su cabecera. Trata el
 fichero como tratas el token: no lo subas a un repositorio, no lo pegues donde quede registrado y
 bórralo de los Files del router después del `/import`. Sin token no guarda ningún secreto, solo el
 plan.
@@ -211,46 +240,65 @@ plan.
 `plan`, `install --dry-run` y `upgrade --dry-run` enmascaran el token en lo que imprimen por el
 terminal (`value="(token)"`); `--rsc` no puede, porque el script tiene que ejecutarse.
 
-## Cómo demuestra uninstall que ha terminado
+Las órdenes de la propia CLI nunca ponen el token en una línea de órdenes de esta máquina: la orden
+de RouterOS que lo escribe le llega a ssh por su entrada estándar, así que no aparece en la tabla de
+procesos mientras se ejecuta ssh. La CLI lo lee de `--token` o de `MIKROSCOPE_TOKEN`; la variable lo
+mantiene también fuera de la línea de órdenes de la propia CLI.
 
-`uninstall` ejecuta cada eliminación de la más reciente a la más antigua, ignorando lo que ya no
-está. Después pregunta al router, en una sola conexión, cuántos de los objetos que creó cada paso
-siguen ahí, imprime una línea por paso con la cuenta y falla nombrando cada paso cuya cuenta no sea
-cero (`uninstall left objects behind: …`). Una eliminación que no imprimió nada no es una prueba; la
-cuenta sí. `status` hace esa misma cuenta de forma independiente.
+## Verificación de uninstall {#cómo-demuestra-uninstall-que-ha-terminado}
 
-La cuenta cubre solo los pasos del plan construido con las propias opciones de `uninstall`, no todo
-lo que lleva la etiqueta en el router. Con otras opciones que las de la instalación — sin
-`--expose`, u otro `--name`, `--veth`, `--subnet`, `--port`, `--iface-list` o `--addr-list` — pasa
-por alto objetos que siguen ahí: en el RB5009 de referencia (RouterOS 7.24.4, 2026-09-21) un
-`uninstall` sin `--expose` imprimió `verified: nothing mikroscope created remains on the router`
-con el dst-nat de expose todavía en su sitio. Pásale las opciones que tuvo `install`; [órdenes y
-opciones](/mikroscope/es/reference/cli/#pasa-la-misma-forma-a-status-upgrade-y-uninstall) tiene la
-prueba.
+`uninstall` retira todo lo que creó la instalación, y nada más.
+
+1. Lee el manifiesto de la instalación, `mikroscope/<name>.manifest.txt`, en la conexión que lee la
+   forma de la instalación, y toma de él la forma con que se hizo; rechaza una opción que la
+   contradiga, nombrando los dos valores. Una instalación hecha por 1.3.x no tiene manifiesto, y su
+   forma se lee de sus objetos etiquetados.
+2. Ejecuta cada eliminación de la más reciente a la más antigua, ignorando lo que ya no está. El
+   paso del contenedor, una vez retirado el contenedor de esta instalación, retira la raíz del
+   contenedor `mikroscope/<name>` si RouterOS la dejó.
+3. Elimina, por la etiqueta exacta y nada más amplio, cualquier otro objeto que lleve la etiqueta de
+   la instalación en los menús donde escribe una instalación, y en cualquier otro menú que liste el
+   manifiesto.
+4. Elimina el manifiesto el último: primero la raíz del contenedor, si queda una, ningún contenedor
+   la usa y el manifiesto es de esta instalación, después el manifiesto, y después el directorio
+   `mikroscope` cuando no queda nada más en él. Un `/file/remove` de un directorio se lleva todo lo
+   que hay debajo, así que un directorio con cualquier otra cosa dentro se queda. Una ruta solo se
+   borra con la palabra del contenedor etiquetado o del manifiesto; sin ninguno de los dos, una raíz
+   que ningún contenedor usa se informa, no se borra.
+5. Pregunta al router, en una sola conexión, cuántos objetos de cada paso siguen ahí, cuántos llevan
+   la etiqueta en cada menú además de los que contaron esos pasos, y si está alguna ruta que lista
+   el manifiesto; imprime una línea por paso con la cuenta y falla nombrando cada paso, menú o ruta
+   que quede (`uninstall left objects behind: …`). Una eliminación que no imprimió nada no es una
+   prueba; la cuenta sí.
+
+`status` hace esa misma cuenta de forma independiente, en la conexión que lee la forma de la
+instalación.
+
+Lo que `uninstall` nunca toca: device-mode, el paquete `container`, `/container/config`, ni ninguna
+lista, disco, regla o fichero que el router ya tuviera antes de la instalación, incluido un
+directorio `mikroscope` con otros ficheros dentro. Un directorio `mikroscope` vacío en el disco de
+la instalación se borra aunque estuviera antes de la instalación: nada en él dice de quién es, y
+borrarlo no se lleva nada consigo.
 
 El paso del contenedor es el lento, y el orden dentro de él es lo que mantiene honesta la cuenta:
 
-- el contenedor se detiene (con guarda, porque detener un contenedor detenido es un error) y se
-  elimina;
+- el contenedor se detiene (con guarda, porque detener un contenedor detenido es un error), y
+  `uninstall` espera, hasta 30 s, a que RouterOS lo informe ni en marcha ni deteniéndose: RouterOS
+  se niega a eliminar un contenedor que aún se está deteniendo (`cannot remove running`), y quita la
+  marca de en marcha antes de que se haya detenido;
 - `/container/remove` vuelve antes de que el contenedor haya desaparecido, y un `/file/remove` de la
-  imagen lanzado entretanto no hizo nada, en silencio (<Verified of="remove-race" />) — así
-  que espera hasta 20 s a que el contenedor desaparezca, y luego reintenta la eliminación del fichero
-  durante hasta 15 s;
+  imagen lanzado entretanto no hace nada, en silencio, así que espera hasta 20 s a que el contenedor
+  desaparezca, y luego reintenta la eliminación del fichero durante hasta 15 s;
 - se va el resto de la envlist, y la marca se va la última, solo cuando el fichero ya no está.
 
 Si la eliminación del fichero no surte efecto, la marca se queda, la cuenta sigue incluyendo la
 envlist y el fichero, y `uninstall` lo dice en vez de informar de que está limpio.
 
-Un recorrido doctor → install → status → upgrade → uninstall (el guion del ciclo, entonces `make roundtrip`; contra un router real ahora es `make roundtrip-device`) dejó el `/export` del RB5009 idéntico byte a byte, comparado por hash (verificado en <Verified of="export-identical" />). `make roundtrip` ejecuta ahora el mismo guion en el [laboratorio virtual de RouterOS](/mikroscope/es/reference/testing/#el-laboratorio-virtual-de-routeros).
-
-<NotClaimed variant="device-specific">
-	El `/export` idéntico byte a byte tras ese único recorrido, y cada comportamiento de RouterOS
-	citado en esta página — el `/file/remove` silencioso, los selectores `find` entre comillas, los
-	errores impresos con estado de salida 0 — se observaron en un RB5009 con RouterOS 7.24.2, salvo el
-	caso de `protocol=tcp` sin comillas, medido en el mismo equipo con 7.24.4. La lógica de rechazo
-	en sí está cubierta por pruebas contra un router simulado, no por una ejecución en otra placa u
-	otra versión de RouterOS.
-</NotClaimed>
+El [laboratorio virtual de
+RouterOS](/mikroscope/es/reference/testing/#el-laboratorio-virtual-de-routeros) lo comprueba para
+cada vía de instalación, y para una instalación sin manifiesto: después de `uninstall`, el `/export`
+del router es igual al tomado antes de la instalación, y `/file` no lista ninguna ruta de
+mikroscope.
 
 <SeeAlso>
 

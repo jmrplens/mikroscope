@@ -8,7 +8,6 @@ import EnvlistKeys from "../../../../components/EnvlistKeys.astro";
 import Measured from "../../../../components/Measured.astro";
 import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
-import Verified from "../../../../components/Verified.astro";
 import Src from "../../../../components/Src.astro";
 
 Dos programas leen variables de entorno, y leen variables distintas. La
@@ -16,14 +15,23 @@ Dos programas leen variables de entorno, y leen variables distintas. La
 las opciones, además de un puñado de credenciales que no tienen opción, además
 de `GRAFANA_URL` y `GRAFANA_TOKEN`. El **agente** en el router lee variables
 sin prefijo (`RATE_HZ`, `TOKEN` …) de la envlist de su contenedor, que escribe
-`install`. Esta página enumera ambas, a partir de los ficheros Go
-de <Src path="cmd/mikroscope/" /> y de <Src path="internal/agent/config.go" />.
+`install`. Las de la CLI se definen en <Src path="cmd/mikroscope/" />, las del
+agente en <Src path="internal/agent/config.go" />.
 
-## Cómo las lee la CLI
+## Precedencia {#cómo-las-lee-la-cli}
 
 - Una variable fija el **valor por defecto** de una opción; la opción en la
   línea de órdenes gana.
 - Una variable con la cadena vacía se trata como no definida.
+- Las variables de forma (`MIKROSCOPE_VETH`, `MIKROSCOPE_SUBNET`,
+  `MIKROSCOPE_IFACE_LIST`, `MIKROSCOPE_ADDR_LIST`, `MIKROSCOPE_DISK`,
+  `MIKROSCOPE_LAN_ADDRESS`, `MIKROSCOPE_REMOTE_IMAGE`) fijan lo que escribe
+  `install`. `status`, `upgrade` y `uninstall` toman en su lugar la forma de la
+  instalación que hay en el router, de su manifiesto o de sus objetos
+  etiquetados, y rechazan una variable u opción que la contradiga, nombrando
+  los dos valores; `MIKROSCOPE_REMOTE_IMAGE` es la excepción, que se rellena
+  para `status` y `uninstall` y nunca se rechaza. Por eso `.env.example` las
+  deja sin definir.
 - La CLI nunca lee un fichero `.env`. Expórtalo antes a la shell:
 
   ```sh
@@ -36,8 +44,10 @@ de <Src path="cmd/mikroscope/" /> y de <Src path="internal/agent/config.go" />.
 
 La mayoría de las opciones de despliegue **no** tienen variable. `--rate`,
 `--buffer`, `--port`, `--memory-max`, `--mem-limit-mb`, `--capture-mb`,
-`--triggers`, `--floor-hz`, `--privileged`, `--ephemeral` y `--expose` se fijan
-en la línea de órdenes o no se fijan. [Órdenes y
+`--triggers`, `--floor-hz`, `--privileged`, `--ephemeral`, `--expose`,
+`--restart-max-count`, `--restart-interval`, `--start-on-boot`,
+`--container-name` y `--extract-timeout` se fijan en la línea de órdenes o no
+se fijan. [Órdenes y
 opciones](/mikroscope/es/reference/cli/) tiene todas las opciones.
 
 ## Router y despliegue
@@ -49,30 +59,38 @@ opciones](/mikroscope/es/reference/cli/) tiene todas las opciones.
 | `MIKROSCOPE_ROUTER`       | `--router`       | `doctor`, `install`, `upgrade`, `uninstall`, `status` | ninguno (obligatoria)           | definida                |
 | `MIKROSCOPE_SSH_PORT`     | `--ssh-port`     | los mismos                                            | configuración de ssh            | `22`                    |
 | `MIKROSCOPE_SSH_KEY`      | `--ssh-key`      | los mismos                                            | agente o configuración de ssh   | vacío                   |
-| `MIKROSCOPE_ARCH`         | `--arch`         | los verbos de despliegue                              | `arm64`                         | `arm64`                 |
+| `MIKROSCOPE_SSH_OPTIONS` | `--ssh-option` | los mismos | ninguno | comentada, `StrictHostKeyChecking=accept-new` |
+| `MIKROSCOPE_ARCH` | `--arch` | los verbos de despliegue | `auto` | comentada, `auto` |
 | `MIKROSCOPE_AGENT_TAR`    | `--agent-tar`    | `plan`, `install`, `upgrade`, `image`                 | vacío (compilar el agente aquí) | comentada               |
 | `MIKROSCOPE_REMOTE_IMAGE` | `--remote-image` | `plan`, `install`, `upgrade`                          | vacío (subir un tar)            | comentada               |
 | `MIKROSCOPE_NAME`         | `--name`         | los verbos de despliegue                              | `mikroscope`                    | comentada               |
-| `MIKROSCOPE_VETH`         | `--veth`         | los verbos de despliegue                              | `veth-mikroscope`               | `veth-mikroscope`       |
-| `MIKROSCOPE_SUBNET`       | `--subnet`       | los verbos de despliegue, `record`, `forward`         | `172.30.10.0/30`                | `172.30.10.0/30`        |
-| `MIKROSCOPE_IFACE_LIST`   | `--iface-list`   | los verbos de despliegue                              | `LAN`                           | `LAN`                   |
-| `MIKROSCOPE_ADDR_LIST`    | `--addr-list`    | los verbos de despliegue                              | `LANs`                          | `LANs`                  |
+| `MIKROSCOPE_VETH` | `--veth` | los verbos de despliegue | `veth-mikroscope` | comentada |
+| `MIKROSCOPE_SUBNET` | `--subnet` | los verbos de despliegue, `record`, `forward` | `172.30.10.0/30` | comentada |
+| `MIKROSCOPE_IFACE_LIST` | `--iface-list` | los verbos de despliegue | `LAN`; `none` no se une a ninguna lista | comentada |
+| `MIKROSCOPE_ADDR_LIST` | `--addr-list` | los verbos de despliegue | `LANs`; `none` no se une a ninguna lista | comentada |
 | `MIKROSCOPE_DISK`         | `--disk`         | los verbos de despliegue                              | vacío (flash interna)           | comentada, `tmpfs`      |
 | `MIKROSCOPE_LAN_ADDRESS`  | `--lan-address`  | los verbos de despliegue                              | vacío                           | comentada               |
 | `MIKROSCOPE_TOKEN`        | `--token`        | los verbos de despliegue, `record`, `forward`         | vacío                           | comentada               |
 
 </ScrollTable>
 
-`MIKROSCOPE_TOKEN` es dos cosas a la vez. Para `install` es el token que se
-escribe en la envlist del agente, y que el agente pasa entonces a exigir. Para
+`MIKROSCOPE_SSH_OPTIONS` es una lista de pares `Clave=valor` separados por
+comas, lo mismo que repetir `--ssh-option`; el primer `--ssh-option` en la
+línea de órdenes sustituye la lista entera. [Órdenes y
+opciones](/mikroscope/es/reference/cli/) tiene las claves que admite.
+
+`MIKROSCOPE_TOKEN` es dos cosas a la vez. Para `install` y `upgrade` es el
+token que se escribe en la envlist del agente, y que el agente pasa entonces a
+exigir; la CLI entrega a ssh la orden que lo escribe por su entrada estándar,
+nunca en una línea de órdenes. `status` y `uninstall` no lo necesitan. Para
 `record`, `forward` y la sección de salud de `doctor` es el token que se envía
 al agente por el transporte directo; sin él, `doctor` se salta el anillo de un
 agente que lo tenga. La envlist no
 es un almacén de secretos: cualquier usuario de RouterOS con la política `read`
-puede listar la envlist de todos los contenedores por la API (verificado
-en <Verified of="read-user-envlist" />), y por eso el token es la única credencial que va ahí.
+puede listar la envlist de todos los contenedores por la API, y por eso el
+token es la única credencial que va ahí.
 
-## Llegar al agente y a la API de RouterOS
+## Agente y API {#llegar-al-agente-y-a-la-api-de-routeros}
 
 <ScrollTable label="Variables MIKROSCOPE_* de la capa de la API y del relay">
 
@@ -115,7 +133,7 @@ construye todos los destinos cuya opción acaba no vacía, venga de la línea de
 órdenes o de la variable. Todos estos nombres llevan el prefijo `MIKROSCOPE_`:
 un `LOKI_URL` a secas no lo lee nada.
 
-## Credenciales que no tienen opción
+## Variables de credenciales {#credenciales-que-no-tienen-opción}
 
 Una opción se ve en `ps` y en el historial de la shell, así que todos los
 secretos que usa la CLI se leen solo del entorno.
@@ -160,7 +178,7 @@ El token es `GRAFANA_TOKEN`, el mismo, sin prefijo. `forward --grafana` se niega
 a publicar sin él: hay Grafanas que aceptan una petición anónima, y uno que lo
 hiciera escribiría como aquel por quien el servidor tome a quien pregunta.
 
-## La envlist del agente
+## Envlist del agente {#la-envlist-del-agente}
 
 El agente lee estas variables del entorno de su contenedor al arrancar. Un
 valor no válido le hace imprimir una línea que empieza por
@@ -202,64 +220,43 @@ Antes de escuchar, el agente compara el anillo con el propio `memory.max` del
 contenedor: `RATE_HZ × BUFFER_S × 3 456 B` más `CAPTURE_MB` tiene que caber, o
 se niega a arrancar y nombra las tres variables y `--memory-max`. Si esa cifra
 supera la mitad de `MEM_LIMIT_MB`, arranca y registra un aviso con el límite al
-que subir. 3 456 B no es una medida en sí: es la clase de tamaño del asignador
-de Go que sirve la línea medida en el RB5009 con todas las fuentes activas
-(<Measured id="ring.lineBytes" />, 4 núcleos, `IRQ_TOP_K` 8, RouterOS 7.24.2, 2026-09-17), porque es
-esa clase lo que se le carga al heap. Los 2 560 B usados antes de la 1.0.5
-salían de una línea de 2 439 B medida el 2026-09-12, antes de que llevara la PMU
-y los tiempos del propio muestreador, y se quedaban un 35 % cortos con el
-anillo. Una placa con más núcleos
-o más líneas de interrupción escribe líneas más largas, así que la comprobación
-peca de permisiva. Cuando el agente no puede leer su `memory.max`, la
+que subir. 3 456 B no es una medida en sí: es la clase de tamaño del asignador
+de Go que sirve una línea con todas las fuentes activas
+(<Measured id="ring.lineBytes" />, 4 núcleos, `IRQ_TOP_K` 8), porque es esa
+clase lo que se le carga al heap. Una placa con más núcleos o más líneas de
+interrupción escribe líneas más largas, así que la comprobación peca de
+permisiva. Cuando el agente no puede leer su `memory.max`, la
 comprobación que lo niega no se ejecuta.
 
-### Lo que escribe install en ella
+### Escrito por install {#lo-que-escribe-install-en-ella}
 
 `install` y `upgrade` escriben la envlist `<name>-env` con estas entradas, en
-este orden, y nada más:
+este orden, y nada más. La forma de la instalación (sus listas, su disco y su
+exposición) no está en la envlist: `install` la registra en el manifiesto de la
+instalación, `mikroscope/<name>.manifest.txt` en el disco de la instalación,
+que tampoco guarda ningún secreto.
 
 <EnvlistKeys />
 
 <Aside type="note" title="Los valores por defecto del agente y los de install no son los mismos">
 
-El anillo son **60 s** por defecto, no los 300 que fueron hasta 1.0.6. Lo que compra es cuánto tiempo
-puede estar ausente el colector antes de que se pierdan muestras, y no es una ventana que nadie lea
-— el colector lo vacía dos veces por segundo. Medido en el despliegue de referencia sobre 24 horas
-el 2026-09-17: la mayor interrupción en la entrega fueron 114,5 s, y fue autoinfligida (un cambio de
-contenedor más el minuto que tarda el colector en notar un agente reiniciado); en operación normal
-el colector nunca se queda atrás. 60 s cubren el reinicio de cualquiera de las dos partes en una LAN
-y cuestan 2,0 MiB de anillo a 10 Hz en vez de 9,9. Un enlace que caiga más tiempo lo sube con
-`--buffer`, y el límite de memoria lo sigue porque se deriva del anillo.
+Un agente arrancado sin ninguna entrada en la envlist usa un límite blando de memoria de 14 MiB. El
+anillo son **60 s** por defecto. Lo que compra es cuánto tiempo puede estar ausente el colector
+antes de que se pierdan muestras, y no es una ventana que nadie lea: el colector lo vacía dos veces
+por segundo. 60 s cubren el reinicio de cualquiera de las dos partes en una LAN y cuestan 2,0 MiB
+de anillo a 10 Hz. Un enlace que caiga más tiempo lo sube con `--buffer`, y el límite de memoria lo
+sigue porque se deriva del anillo.
 
-Un agente arrancado sin ninguna entrada en la envlist usa un límite blando de memoria de 14 MiB.
-`install` **deriva** `MEM_LIMIT_MB` del anillo — ritmo × búfer × tamaño de línea, por 2,5, con suelo
-de 16 MiB y tope en tres cuartos de `memory-max` —, así que la instalación por defecto escribe
-`MEM_LIMIT_MB=16` para un anillo de 60 s a 10 Hz, donde antes escribía un 40 fijo. Un número fijo no
-puede ser correcto para todos los ritmos: ese mismo 40 dejaba 8 MiB sin usar a 10 Hz y queda por
-debajo del propio anillo a 50 Hz.
+`install` **deriva** `MEM_LIMIT_MB` del anillo: ritmo × búfer × tamaño de línea, por 2,5, con suelo
+de 16 MiB y tope en tres cuartos de `memory-max`. La instalación por defecto escribe
+`MEM_LIMIT_MB=16` para un anillo de 60 s a 10 Hz. Un número fijo no puede ser correcto para todos
+los ritmos, y por debajo de unas dos veces el anillo el recolector de Go se ejecuta tan a menudo que
+la CPU por muestra se dispara
+([Coste del agente](/mikroscope/es/cost/#dimensiona-el-límite-de-memoria-según-los-datos)).
 
-El factor está medido, no elegido. En el RB5009 de referencia (RouterOS 7.24.2, 10 Hz, 300 s, todas
-las fuentes activas) el 2026-09-17, cuatro límites sobre cuatro ventanas de unas 12 000 muestras cada
-una:
-
-<ScrollTable label="Límite de memoria frente a RSS y CPU por muestra, RB5009, 2026-09-17" nowrap sticky={false}>
-
-| límite        | múltiplo del anillo | RSS       | CPU por muestra | Lo que costó |
-| ------------- | ------------------- | --------- | --------------- | ------------------------- |
-| 40 MiB        | 4,0×                | 32,9 MiB  | 2 657 µs        | el límite nunca aprieta   |
-| 24 MiB        | 2,4×                | 26,3 MiB  | 2 780 µs        | sin coste medible         |
-| 21 MiB        | 2,1×                | 23,5 MiB  | 3 250 µs        | +22 %, y subiendo         |
-| 18 MiB        | 1,8×                | 20,4 MiB  | 14 800 µs       | +457 %, peor tick 52 ms   |
-
-</ScrollTable>
-
-Las filas son las que registra el comentario de `memLimitRingFactor` en el
-fichero <Src path="internal/router/options.go" />. El factor 2,5× que deriva `install` daría 25 MiB a 300 s; la ventana
-medida más cercana fue la de 24 MiB, y ninguna de las cuatro ventanas se anotó con su dispersión.
-
-El mismo acantilado se midió desde el otro lado el 2026-09-12: <Measured id="gc.tight.cpu" /> de un núcleo con 14 MiB frente a <Measured id="gc.roomy.cpu" /> con margen, ambos con el anillo lleno. `IRQ_TOP_K`,
-`CAPTURE_PRE_S`, `CAPTURE_POST_S`, `CAPTURE_POLICY`, `TRIGGER_REFRACTORY_S`, `SOURCES`, `PROC_ROOT`
-y `SYS_ROOT` no tienen opción, así que un agente instalado funciona con sus valores por defecto.
+`IRQ_TOP_K`, `CAPTURE_PRE_S`, `CAPTURE_POST_S`, `CAPTURE_POLICY`, `TRIGGER_REFRACTORY_S`,
+`SOURCES`, `PROC_ROOT` y `SYS_ROOT` no tienen opción, así que un agente instalado funciona con sus
+valores por defecto.
 
 </Aside>
 

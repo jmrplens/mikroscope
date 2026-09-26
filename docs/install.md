@@ -96,13 +96,14 @@ and goes straight to the probe.
 
 **What `install` writes to your router**
 
+- the install manifest, a file `mikroscope/<name>.manifest.txt` on the install's disk that lists the options and every object below
 - a veth
 - one address
-- one interface-list membership
-- one address-list entry
+- one interface-list membership, unless `--iface-list none`
+- one address-list entry, unless `--addr-list none`
 - an envlist
-- the image tar, unless `--remote-image` has the router pull the image
-- the container
+- the image tar, deleted once the container is extracted, unless `--remote-image` has the router pull the image
+- the container, and its root `mikroscope/<name>` on the same disk
 
 Every object carries the comment `mikroscope:<name> (managed by mikroscope)`
 
@@ -140,8 +141,10 @@ on [What the installer refuses](https://jmrp.io/docs/mikroscope/security/install
 
 **What `upgrade` replaces**
 
+- the install manifest, written first every time, so an install made before there was one gets it
 - a new image and the container
-- the envlist, rewritten from the flags `upgrade` is given
+- the envlist, rewritten from the flags `upgrade` is given; it refuses an install with a token when no `--token` is given
+- any other object of the install the router no longer holds, created again before the container
 - network objects stay
 
 Every object carries the comment `mikroscope:<name> (managed by mikroscope)`
@@ -189,13 +192,10 @@ re-creates the agent with no token, while the two LAN firewall rules stay.
 
 **What `uninstall` removes**
 
-- a veth
-- one address
-- one interface-list membership
-- one address-list entry
-- an envlist
-- the image tar, unless `--remote-image` has the router pull the image
-- the container
+- every object in the install's manifest, and any other object that carries its tag
+- the container root `mikroscope/<name>`, with the container, or on the manifest's word when a root is left
+- the manifest, last, and then the `mikroscope` directory when nothing else is in it
+- never device-mode, the `container` package, `/container/config`, or a list, disk or rule the router had before
 
 Every object carries the comment `mikroscope:<name> (managed by mikroscope)`
 
@@ -655,17 +655,34 @@ The checks doctor runs:
 
 | Check, as printed | Passes when | The fix it names |
 | --- | --- | --- |
-| no registry credential meant for another registry | a warning, with `--remote-image` only: no `/container/config` username is set, or the host of `registry-url` is the host the image is pulled from, every spelling of Docker Hub counted as one. An empty `registry-url` with a username set warns. Doctor reads whether a username is set, never the name, and cannot read the password | `/container/config` holds one username for the whole device. A credential from another registry makes a pull end in `auth error` even for a public image (measured on the reference RB5009 with a Docker Hub login sent to GHCR, 2026-09-21); whether RouterOS presents it to a host named only in `remote-image=` was not measured. Install from a tar with `--agent-tar`, pass a `--remote-image` on the registry the username belongs to, or clear the username if nothing else needs it |
-| container package installed and enabled | a `container` package exists with `disabled=no` | download, upload, reboot; then `/system/package/enable container` |
-| device-mode container=yes | `/system/device-mode` reports `container=yes` | `/system/device-mode/update container=yes`, then the reset or mode button, or a power cycle, within 5 minutes |
-| architecture matches --arch <arch> | the router's `architecture-name` is the one `--arch` maps to (`arm64`, `arm`, `x86_64`) | re-run with the `--arch` it names |
+| RouterOS 7.24 or later | `/system/resource` reports a `version` of 7.24 or later; `7.24.4 (stable)`, `7.24 (stable)` and `7.25rc1 (testing)` all read | upgrade RouterOS to 7.24 or later (`/system/package/update`), and the `container` package with it |
+| architecture has a container package | the router's `architecture-name` is `arm`, `arm64` or `x86_64`, the architectures MikroTik publishes a `container` package for | none: no agent can run on this router |
+| the router picks the image's architecture | with `--remote-image`: always, naming the router's architecture, because RouterOS picks it from the image's multi-architecture index. A warning on `arm`, where the index holds both `linux/arm/v5` and `linux/arm/v7` and which one RouterOS pulls is not known | on `arm`, if the container stops with `Exec format error`, install from `mikroscope-agent-armv5.tar` with `--agent-tar` |
+| architecture matches the --agent-tar image | with `--agent-tar`: the tar's own architecture is the router's (`amd64` for `x86_64`); `--arch` is not needed | download the release asset it names, `mikroscope-agent-<arch>.tar` |
+| architecture read from the router | with neither image flag and `--arch` unset (or `auto`): always; `install` and `upgrade` build or load the image for the architecture doctor read | none |
+| architecture matches --arch <arch> | with an explicit `--arch` and neither image flag: the router's `architecture-name` is the one `--arch` maps to (`arm64`, `arm`, `x86_64`) | re-run with the `--arch` it names, or leave `--arch` out so that `install` reads it from the router |
+| container package installed and enabled | a `container` package exists with `disabled=no` | download the `container` package for this architecture and RouterOS version, upload it and reboot; when it is there and disabled, `/system/package/enable container` and reboot |
+| device-mode container=yes | `/system/device-mode` reports `container=yes` | `/system/device-mode/update container=yes`, then confirm it as the console asks: on a router that says `update: please activate by turning power off or pressing reset or mode button`, press the reset or mode button or cut the power; on CHR, which says `update: turn off power in 5m to activate changes`, power the VM off and on again within 5 minutes |
 | free memory ≥ <--memory-max> | `free-memory` is at least what `--memory-max` asks for, 64 MiB by default | free memory on the router, or ask for less with `--memory-max` |
-| free flash ≥ <size> (image tar + extracted root) | without `--disk`: `free-hdd-space` is at least twice the image plus 4 MiB | free flash, or install with `--disk tmpfs` or `--ephemeral` where a tmpfs disk exists |
-| disk <disk> exists | with `--disk` or `--ephemeral`: a disk with that slot exists; its free space is not checked | `/disk/add type=tmpfs tmpfs-max-size=64M slot=tmpfs` for a RAM disk, or name an existing disk with `--disk` |
-| interface list <list> exists (raw rule trap) | the `--iface-list` list (default `LAN`) exists | `/interface/list/add name=…`, or pass the list your `in-interface-list=!…` drop rule uses |
-| address list <list> has entries (raw rule trap) | the `--addr-list` list (default `LANs`) has at least one entry | pass the list your `drop local if not from default IP range` rule uses; an empty list is fine only if there is no such rule |
-| veth name <veth> is free or ours | always reported `ok`, with the count found | none: a collision is caught by `install` itself |
-| the installed agent published on the LAN asks for a token | a warning, shown only when an install of this `--name` has a dst-nat on the LAN: its environment holds a `TOKEN`. Doctor counts the entries, never reads the value | `upgrade` with the same `--name`, the flags it was installed with (`--expose --lan-address` among them) and `--token <secret>`; or remove the agent, LAN rules and container together, with `uninstall --name <name> --expose --lan-address <router LAN IPv4> --token <any> --yes` plus any other shape flag the install was given (`--port`, `--veth`, `--subnet`) |
+| free memory leaves room for the pull | a warning, with `--remote-image` only: `free-memory` is at least `--memory-max` plus 16 MiB, room for RouterOS to pull and extract the image before the agent starts. How much a pull takes is not measured, so the margin is an estimate | install from a tar with `--agent-tar` if the pull fails |
+| free flash ≥ <size> (image tar + extracted root) | without `--disk` or `--ephemeral`: `free-hdd-space` is at least twice the image plus 4 MiB. With `--remote-image` nothing is uploaded and the name ends in `(extracted root)`: the root the pulled image is extracted into, 7 MiB, plus 4 MiB | free flash, or install with `--disk tmpfs` or `--ephemeral` where a tmpfs disk exists |
+| disk <disk> exists | with `--disk` or `--ephemeral`: a disk with that slot exists | `/disk/add type=tmpfs tmpfs-max-size=64M slot=tmpfs` for a RAM disk, or name an existing disk with `--disk` |
+| disk <disk> has ≥ <size> free (image tar + extracted root) | with `--disk` or `--ephemeral`, once the disk exists: its free space is at least twice the image plus 4 MiB; with `--remote-image`, the 7 MiB root plus 4 MiB, as the flash check | free space on that disk, or give a tmpfs disk a larger `tmpfs-max-size` |
+| disk tmpfs is RAM | with `--ephemeral`: the disk in slot `tmpfs` is of type `tmpfs` | free the slot for a tmpfs disk, or install with `--disk <slot>` without `--ephemeral` |
+| start-on-boot suits a root in RAM | a warning, when the disk is a tmpfs disk: start-on-boot resolves to `no`, since a reboot empties the disk and a container started at boot has no root | pass `--start-on-boot no`, or `--ephemeral` |
+| veth name <veth> is free or ours | no veth has that name, or the one that has it carries this install's tag | pick another `--veth` (and `--subnet`), or remove the veth by hand if it is a leftover of yours |
+| envlist <name>-env is free or ours | no envlist has that name, or the one that has it holds this install's `MIKROSCOPE_TAG` entry | pick another `--name` |
+| install manifest <disk/>mikroscope/<name>.manifest.txt is free or ours | no file is at the install manifest's path, or the one there holds this install's `tag=` line | move the file away, or pick another `--name` |
+| container name <name> is free or ours | with `--container-name`: no container has that name, or the one that has it carries this install's tag | pick another `--container-name` |
+| subnet <subnet> does not overlap a route | no route of the main table, active or not, lies inside the /30, and no connected network on another interface holds its router end. Routes that only contain the /30 (a default route, a wider prefix to a VPN), blackhole routes and the install's own veth are left out | pick another /30 with `--subnet` |
+| interface list <list> exists | the `--iface-list` list (default `LAN`) exists. With `--iface-list none` doctor prints `interface list the veth joins` and passes: no membership is written | `--iface-list none` when no firewall rule needs the veth in a list (doctor offers it first then); otherwise `/interface/list/add name=…`, or pass the list your `in-interface-list=!…` drop rule uses |
+| address list <list> | always: install adds the /30 to the `--addr-list` list (default `LANs`), which creates it when it is missing, and uninstall removes the entry. With `--addr-list none` doctor prints `address list the /30 joins`. Whether a rule needs the membership is the next row's question | none |
+| no firewall rule drops the agent's replies | doctor reads every enabled rule of the chains the agent's replies meet, `/ip/firewall/raw` prerouting and `/ip/firewall/filter` forward and input, and walks each one as RouterOS does, first match wins, with the replies in the lists the plan joins: no rule drops them. A warning when a rule might, because it matches on something doctor does not judge (a destination, a mark, a rate), and when the replies to a LAN host pass but a rule may drop the ones to the router itself (filter input), which the relay transport needs | the `--iface-list` and `--addr-list` that let the replies through; when no list does (a `src-address=!<range>` rule, say), add an accept rule for `in-interface=<veth>` before that rule, or pick a `--subnet` inside the range |
+| --lan-address <address> is the router's | with `--expose`: an interface of the router holds that address | pass the address the router has on its LAN, as `/ip/address/print` lists it |
+| --lan-address is not on the uplink | a warning, with `--expose`: the interface that holds the address carries no default route, is in no `WAN` list, and shares no interface list with the interface that carries the default route | pass the router's LAN address: on the uplink the dst-nat would publish the agent on the Internet side |
+| no registry credential meant for another registry | a warning, with `--remote-image` only: no `/container/config` username is set, or the host of `registry-url` is the host the image is pulled from, every spelling of Docker Hub counted as one. An empty `registry-url` with a username set warns. Doctor reads whether a username is set, never the name, and cannot read the password | `/container/config` holds one username for the whole device, and a credential from another registry can make the pull of a public image end in `auth error`. Install from a tar with `--agent-tar`, pass a `--remote-image` on the registry the username belongs to, or clear the username if nothing else needs it |
+| the installed agent published on the LAN asks for a token | a warning, shown only when an install of this `--name` has a dst-nat on the LAN: its environment holds a `TOKEN`. Doctor counts the entries, never reads the value | `upgrade` with the same `--name` and `--token <secret>`; or remove the agent, the LAN rules and the container together with `uninstall --name <name> --yes` |
+| nothing tagged for <name> that these flags do not select | a warning: in every menu an install writes to, the objects that carry the install's tag are no more than the plan for these flags selects. An install made with other flags (`--expose`, other lists, another `--subnet`) leaves more | run `status` and `uninstall` with no shape flag, so that they read the install manifest, or with the flags that install was given |
 
 The flash check uses the real tar size under `install`. `doctor` on its own
 assumes a 7 MiB image, so it asks for 18.0 MiB. Twice the image because the tar
@@ -1415,7 +1432,7 @@ The entries install writes into the agent's envlist:
 | `BUFFER_S` | always | `--buffer`, default `60`, 10–3600 | the ring's length, in seconds |
 | `PORT` | always | `--port`, default `9123`, 1–65535 | the agent's HTTP port |
 | `ADDR` | always | `--subnet` | the agent's address, the `.2` of the /30; the agent binds only there |
-| `MEM_LIMIT_MB` | always | `--mem-limit-mb`, 8–1024 | the agent's Go soft memory limit, in MiB; derived from the ring since 1.0.6 (rate × buffer × line, × 2.5, at least 16 MiB, at most three quarters of `--memory-max` while that still holds the ring) rather than a flat number |
+| `MEM_LIMIT_MB` | always | `--mem-limit-mb`, 8–1024 | the agent's Go soft memory limit, in MiB; derived from the ring (rate × buffer × line, × 2.5, at least 16 MiB, at most three quarters of `--memory-max` while that still holds the ring) unless `--mem-limit-mb` gives it |
 | `FLOOR_HZ` | only when above 0 | `--floor-hz`, default `0`, 0–1000 | one cadence for every level source, in Hz |
 | `CAPTURE_MB` | always | `--capture-mb`, default `4`, 0–256 | the triggered-capture budget, in MiB; `0` turns captures off |
 | `TRIGGERS` | only when set | `--triggers` | the trigger conditions; unset, the agent uses its default set |
@@ -1559,7 +1576,7 @@ fails naming `install --expose`.
 
 - two firewall rules, tagged
 - a token becomes mandatory
-- `uninstall` and `status` see the two rules only when given `--expose` again
+- `uninstall` and `status` find the two rules through the manifest and the tag, with or without `--expose`
 
 Every object carries the comment `mikroscope:<name> (managed by mikroscope)`
 
