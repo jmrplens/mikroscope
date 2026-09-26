@@ -19,7 +19,8 @@ SHELL := /bin/bash
 	fmt fmt-check vet tidy lint golangci-lint govulncheck actionlint shellcheck analyze analyze-fix sonar \
 	mdlint mdlint-fix check-doc-links \
 	gen-dashboards check-dashboards gen-brand check-brand check-generated \
-	install-tools tools-versions release-check roundtrip
+	install-tools tools-versions release-check roundtrip \
+	lab-up lab-down lab-reset lab-status lab-ssh lab-cli lab-console lab-provision
 
 # ─── Variables ──────────────────────────────────────────────────────────────
 
@@ -345,7 +346,7 @@ actionlint: ## Lint the GitHub workflows (shellcheck is used when it is on PATH,
 # most readers will execute.
 shellcheck: ## Lint the installer and every shell script the repository ships
 	@echo "=== shellcheck ==="
-	shellcheck install.sh scripts/*.sh .github/scripts/*.sh
+	shellcheck install.sh scripts/*.sh .github/scripts/*.sh test/lab/*.sh test/lab/vm/*.sh
 
 # Scoped to FMT_PATHS for the reason given where it is defined, and because the
 # formatter is the one command that rewrites files: with no path argument
@@ -516,6 +517,43 @@ tools-versions: ## Show the pinned tool versions beside what PATH actually resol
 release-check: ## Validate .goreleaser.yaml without releasing anything
 	@command -v goreleaser >/dev/null 2>&1 || { echo "make release-check: goreleaser is not installed (make install-tools)"; exit 2; }
 	goreleaser check
+
+##@ Virtual RouterOS lab
+
+# MikroTik's Cloud Hosted Router under QEMU in a Docker container, so no
+# RouterOS test depends on a real router: test/lab/README.md says what it is,
+# what it needs (Docker; /dev/kvm for x86_64) and where it stops being a
+# router. The first `lab-up` downloads RouterOS from MikroTik and provisions a
+# clean snapshot (container package installed, device-mode container=yes
+# confirmed); every later one boots in seconds. Nothing here reaches any router
+# but the lab's own.
+LAB_ARCH ?= x86_64
+LAB_ROS  ?= 7.24.4
+LAB      := LAB_ARCH=$(LAB_ARCH) LAB_ROS=$(LAB_ROS) test/lab/lab.sh
+
+lab-up: ## Start the lab router (LAB_ARCH=x86_64|arm64, LAB_ROS=7.24.4); the first run provisions it
+	@$(LAB) up
+
+lab-down: ## Shut the lab router down and remove its container; the disk keeps its state
+	@$(LAB) down
+
+lab-reset: ## Put the lab router back to its clean snapshot, in seconds
+	@$(LAB) reset
+
+lab-status: ## Show the lab container and what the router reports
+	@$(LAB) status
+
+lab-ssh: ## A console on the lab router over ssh; CMD='/ip/address/print' runs one command
+	@$(LAB) ssh $${CMD:+"$$CMD"}
+
+lab-cli: ## Run the mikroscope CLI against the lab from its LAN side: ARGS='doctor --arch amd64'
+	@$(LAB) cli $$ARGS
+
+lab-console: ## Attach to the lab router's serial console
+	@$(LAB) console
+
+lab-provision: ## Rebuild the lab's clean snapshot from MikroTik's image (FORCE=1 redoes an existing one)
+	@$(LAB) provision
 
 ##@ Reference device
 

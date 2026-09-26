@@ -1,0 +1,27 @@
+# The lab router, as seen from inside the lab's network namespace: the lab
+# container itself and every `lab.sh cli` run, which share it. Host keys are
+# not pinned: the router lives on a tap inside a namespace nothing else can
+# reach, it is re-provisioned from scratch at will, and a stale known_hosts
+# entry would be the lab's most common failure and never a real one.
+Host lab
+	HostName 192.168.88.1
+	User admin
+	IdentityFile ~/.ssh/id_ed25519
+	IdentitiesOnly yes
+	StrictHostKeyChecking no
+	UserKnownHostsFile /dev/null
+	LogLevel ERROR
+	ConnectTimeout 10
+
+# The same router over ether1, through QEMU's forward: the first boot, before
+# ether2 has an address, and the way back in after a test broke the LAN side.
+Host lab-wan
+	HostName 127.0.0.1
+	Port 10022
+	User admin
+	IdentityFile ~/.ssh/id_ed25519
+	IdentitiesOnly yes
+	StrictHostKeyChecking no
+	UserKnownHostsFile /dev/null
+	LogLevel ERROR
+	ConnectTimeout 10
