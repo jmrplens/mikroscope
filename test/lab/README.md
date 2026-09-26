@@ -28,7 +28,7 @@ TCG) and boots from its snapshot in 26–27 s against x86_64's 7 s. It is there
 because the RB5009 the project is verified on runs the arm64 agent: the lab
 runs the same arm64 `container` package, the same agent image and the same CPU
 model as that router, far slower. [Emulated arm64](#emulated-arm64) says what
-that costs and which of its numbers mean nothing.
+that costs and which of its numbers are the emulation's, not the router's.
 
 ```sh
 make lab-up LAB_ARCH=arm64
@@ -43,12 +43,10 @@ make lab-cli LAB_ARCH=arm64 ARGS='doctor --remote-image jmrplens/mikroscope-agen
   slower; that fallback was not measured.
 - Nothing more for arm64, which never gets KVM on an x86 host. Measured
   from the host: QEMU uses 9–10 % of one core and 360 MiB with the router
-  idle, and 18 % of one core with the agent sampling at 10 Hz. With an agent
-  started, QEMU's own heap grew, to 2.8 GiB in one boot (3.3 GiB resident)
-  and to 1.1 GiB in another, and gave little of it back before the next boot.
-- About 800 MB of disk: the lab image is 697 MB, and one version and
-  architecture of RouterOS takes 115 MB (x86_64) or 105 MB (arm64) under
-  `test/lab/.cache/`. For x86_64: 54 MB of downloads, 47 MB base disk, 4 MB
+  idle, and 15–18 % of one core and 465 MiB with the agent sampling at 10 Hz.
+- About 800 MB of disk for one architecture, 920 MB for both: the lab image is
+  697 MB, and one version and architecture of RouterOS takes 115 MB (x86_64)
+  or 105 MB (arm64) under `test/lab/.cache/`. For x86_64: 54 MB of downloads, 47 MB base disk, 4 MB
   clean snapshot, then the live layer. For arm64: 66 MB of downloads, 26 MB
   base disk, 4 MB clean snapshot, then the live layer.
 - Network access to `download.mikrotik.com` once, and to Docker Hub for
@@ -102,6 +100,15 @@ host                      lab container (its own network namespace)
   ssh key is `.cache/ssh/id_ed25519`. Nothing prints them. Host keys are not
   pinned: the router lives on a tap nothing else can reach and is
   re-provisioned at will.
+- **Agent addresses end at the router.** Every `up` gives the router a
+  blackhole route for each of `LAB_AGENT_ROUTES`, commented
+  `lab: LAB_AGENT_ROUTES end here`, so a connection to an agent address with
+  no veth behind it is dropped there, as a real ISP would drop it. Without them it
+  leaves by ether1, and QEMU's user networking opens a socket for it in the
+  lab's namespace, which routes it back to the router: a loop that adds a
+  socket every lap ([what that did](#emulated-arm64)). An installed agent's
+  /30 is more specific and still wins. They are the one thing on the router
+  beyond the snapshot, and they show in `/export`.
 - **The container is the power.** QEMU is its main process: the guest powering
   off ends the container, `lab.sh power-cycle` quits QEMU and starts the
   container again, and there is no restart policy, so the lab does not come
@@ -149,7 +156,8 @@ KVM and arm64 under TCG; where the two differed, both are given.
    message included (`… in 4m59s …` the second time).
 5. **Snapshot.** `/system/shutdown`, then `provision.qcow2` becomes
    `clean.qcow2`. Nothing else is configured: no interface list beyond the
-   built-in ones, no address list, no firewall rule, which is what CHR ships.
+   built-in ones, no address list, no firewall rule, which is what CHR ships
+   (every boot adds the blackhole routes described above).
    A test that needs more sets it up itself: `routeros/doctor-lists.rsc` is the
    one mikroscope's doctor asks for (below), applied with
    `lab.sh import test/lab/routeros/doctor-lists.rsc`.
@@ -190,7 +198,7 @@ the two provisions of each architecture were each from scratch.
 | … shutdown for the snapshot                             | 2 and 3 s                   | 3 and 3 s                             |
 | `make lab-up` with the downloads cached and no disk yet | 53 s                        | not run as one command                |
 | `make lab-up` from the snapshot, until ssh answers      | 7 s (6.9 and 7.2)           | 26 to 27 s (25.7, 26.6, 27.0)         |
-| `make lab-reset`                                        | 9 to 21 s (8.8, 8.9, 21.3)  | 28 s (27.8, 28.4, 28)                 |
+| `make lab-reset`                                        | 9 to 21 s (8.8, 8.9, 21.3)  | 21 to 29 s over seven resets          |
 | `make lab-down`                                         | 1.6 s                       | 2.2 s                                 |
 
 The downloads measure this connection, not the architecture: the arm64 CHR
@@ -241,41 +249,45 @@ the container's start and stop, the agent's capability detection on an arm64
 kernel, its sample format and its ring.
 
 **How slow it is.** Booting from the snapshot takes 26–27 s against x86_64's
-7 s, and a provision 97–105 s against 41–43 s. Once the agent is running it
-keeps up at 10 Hz: over five minutes 3,003 ticks in 300.1 s with 1 slipped,
-and in the last 600 samples of `/snapshot` the tick interval ran from 98.3 to
-102.0 ms, the read took 4.2 ms at the median and 6.7 ms at p99, and the wake-up
-lag 1.6 ms at p99. QEMU used 18 % of one host core meanwhile.
+7 s, and a provision 97–105 s against 41–43 s. The agent keeps up at 10 Hz
+from its first tick: over five minutes 3,003 ticks in 300.1 s with 1 slipped,
+and over two minutes from a first start 1,202 ticks in 120.1 s with none. In
+the last 600 samples of `/snapshot` the tick interval ran from 92.4 to 107.7 ms
+(98.3 to 102.0 in the other run), the read took 3.7 ms at the median and
+9.5 ms at p99, and the wake-up lag 2.1 ms at p99. QEMU used 15–18 % of one
+host core meanwhile, and 360–465 MiB.
 
-**The agent's first start after a boot was slow, twice out of twice.** Eight
-starts of the agent were watched:
+**A lab bug this run found, and what it did to the numbers.** Before
+`lab.sh up` gave the router its [blackhole routes](#how-it-is-put-together),
+any connection from the lab's namespace to an agent address with no veth
+behind it — doctor's probe of 172.30.10.2 before an install, a poll of a
+stopped agent — looped: the router sent it out ether1, QEMU's user networking
+opened a socket for it in the lab container's namespace, that socket's SYN
+went back to the router over lan0, and every lap added a socket. One doctor
+run had QEMU's main thread at 100 % of a host core and 6,100 sockets within two
+minutes; QEMU's heap grew from 10 MiB to between 1.1 and 2.8 GiB. None of it
+left the namespace, whose route for 172.30.0.0/16 points at lan0.
 
-| Start                                  | `/healthz`                                  | slipped                                  |
-| -------------------------------------- | ------------------------------------------- | ---------------------------------------- |
-| install, first start after a boot      | none to 2, 10 and 20 s tries for 55 s        | 224 (about 4 samples/s for 85 s)         |
-| container restart, 5.5 min after stop  | first answer 92.7 s after the start         | 178 by then, 180 at the next stop        |
-| container restart, 8 s after stop      | from the first second                       | 0 in 1,195 samples                       |
-| container restart, 330 s after stop    | every second                                | 0 in 2,281 samples                       |
-| install, same boot                     | probe answered, seq 38                      | 9 then, 12 in 3,868 samples              |
-| `.rsc` import, same boot               | 9.1 s after the upload began                | 10 at 3.6 s of uptime, 18 at 12 s        |
-| `--agent-tar` install, same boot       | probe answered, seq 4                       | 0 at the probe                           |
-| install, first start after a new boot  | first answer at 18 s of uptime              | 47 then, 61 at 36 s, 62 at 136 s         |
+While a storm lasted, the emulated router crawled, and the agent looked like
+the culprit. Three of eight starts before the fix spent 18 to 92 s unable to
+answer `/healthz`, slipped 62 to 224 ticks, and two of them made `install`
+exit 1 on a complete install; the agent's own account said it was using 1.4
+to 1.9 of the 2 vCPUs while QEMU got 1.1 host cores. Each of the three came
+after connections to 172.30.10.2 while no veth held it: doctor before the
+install, a poll of the stopped agent every 2 s for five minutes, and
+`install`'s own probe, which starts while RouterOS is still extracting the
+image and the veth is not up yet. Two starts with a lead-in of a few seconds
+— a 5 s extract, 9 s of polls — slipped 9 to 18 ticks at first and then kept
+up; the three with none slipped 0. After the fix, four starts — two of them the first after a boot, one
+after 30 s of polling a stopped agent — answered from the first poll and
+slipped 0 or 1, and QEMU's heap stayed at 11 MiB. The x86_64 lab has the same
+loop whenever something probes an absent agent; under KVM its cost was not
+measured, and the x86_64 results above were taken without the fix.
 
-Both first starts after a boot made `install` exit 1: its probe gives the agent
-30 s, two seconds a try. The install itself was complete and the agent
-answered later. On arm64, wait for `/healthz` rather than trusting the exit
-status of the first install after `lab-up` or `lab-reset`.
-
-Both slow first starts came with QEMU's own heap growing: from 10 MiB to
-1.1 GiB within 20 s of the start in the second (sampled every 10 s), and the
-container from 355 MiB to 2.2 GiB across the first (`docker stats`). Starts
-later in the same boot, with the heap already grown, were not slow, except the
-one 5.5 minutes after a stop. The cause was not found. What is known is how
-the numbers lie while it happens: under TCG the guest's clock follows the
-host's, so the time QEMU spends outside guest code — translating, allocating,
-waiting for the host — is charged to whichever guest task was running. The
-agent's own account said 1.4 to 1.9 of the 2 vCPUs were its own while QEMU was
-getting 1.1 host cores. That is not evidence about the agent.
+The lesson for reading the arm64 lab stands without the bug: under TCG the
+guest's clock follows the host's, so time QEMU spends outside guest code —
+translating, serving its own network, waiting for the host — is charged to
+whichever guest task was running.
 
 **Numbers from the arm64 lab that must not be used as costs:**
 
@@ -336,17 +348,18 @@ something a user of a router that is not the reference RB5009 meets too.
 - On arm64, `doctor` with its defaults failed the same two list checks and
   passed the architecture (arm64 is the default); after
   `routeros/doctor-lists.rsc` all nine checks passed. Docker Hub served the
-  arm64 image anonymously (one 2,799,631-byte layer); RouterOS's log put 3, 2
-  and 9 s between the layer's line and `download/extract done`, and the three
-  installs took 38.4, 11.8 and 34.1 s, the first and third exiting 1 as
-  [above](#emulated-arm64). The script `plan --rsc` wrote was byte for byte
-  the x86_64 one — with `--remote-image` the router picks the architecture —
-  and `/healthz` answered 9.1 s after its upload began. `--agent-tar` with the
-  release's `mikroscope-agent-arm64.tar` (SHA-256 as in `checksums.txt`)
-  took 9.6 s. `uninstall` cleaned up at the first attempt four times out of
-  four, and with a client on `/stream` failed as on x86_64 — the stop took 5 s
-  against the 4 s wait, the veth went from under the stopped container — and a
-  second run cleaned up.
+  arm64 image anonymously (one 2,799,631-byte layer), and RouterOS's log put
+  2 to 9 s between the layer's line and `download/extract done`. With the
+  blackhole routes, `install` took 10.3 and 10.2 s and its probe answered;
+  before them it took 38.4, 11.8 and 34.1 s and the first and third exited 1,
+  for the reason [above](#emulated-arm64). The script `plan --rsc` wrote was
+  byte for byte the x86_64 one — with `--remote-image` the router picks the
+  architecture — and `/healthz` answered 9.1 and 9.5 s after its upload
+  began. `--agent-tar` with the release's `mikroscope-agent-arm64.tar`
+  (SHA-256 as in `checksums.txt`) took 9.6 and 9.2 s. `uninstall` cleaned up
+  at the first attempt eight times out of eight, and with a client on
+  `/stream` failed as on x86_64 — the stop took 5 s against the 4 s wait, the
+  veth went from under the stopped container — and a second run cleaned up.
 - When `install`'s probe fails, it asks the router whether the container runs
   with `:put [:len [/container/find comment="…" status="running"]]`
   (`cmd/mikroscope/main.go:414`), and on RouterOS 7.24.4 that reads 0 for a

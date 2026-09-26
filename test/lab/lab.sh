@@ -359,7 +359,35 @@ cmd_up() {
 		start run.qcow2
 	fi
 	wait_ssh lab 300
+	agent_routes_end_here
 	say "up: ssh 127.0.0.1:$P_SSH, WebFig http://127.0.0.1:$P_HTTP, API 127.0.0.1:$P_API, agent 127.0.0.1:$P_AGENT (-> $LAB_AGENT_TARGET)"
+}
+
+# agent_routes_end_here gives the router a blackhole route for each of
+# LAB_AGENT_ROUTES, so a packet for an agent address the router has no veth
+# for is dropped there instead of leaving by the default route on ether1.
+#
+# On a real router that packet goes to the ISP and dies. In the lab, ether1 is
+# QEMU's user networking, which opens a socket for every connection the guest
+# makes, in the lab container's namespace — where LAB_AGENT_ROUTES lead back to
+# the router over lan0. The SYN comes back in on ether2, goes out ether1
+# again, and every lap is one more socket. One doctor run against a lab with
+# no agent installed (its probe of 172.30.10.2:9123) had QEMU's main thread at
+# 100 % of a host core and 6,100 sockets in SYN_SENT within two minutes, 7,100
+# within four, measured on the arm64 lab on 2026-09-26; the route below
+# drained them in 80 s. While it lasted, the emulated router crawled. None of
+# those sockets left the namespace: its route for LAB_AGENT_ROUTES points at
+# lan0.
+#
+# An installed agent's /30 is a connected route and more specific, so it
+# still wins. The routes are set at every boot rather than baked into the
+# snapshot, so they follow LAB_AGENT_ROUTES; they show in /export, commented.
+agent_routes_end_here() {
+	local cmd='/ip/route/remove [find comment="lab: LAB_AGENT_ROUTES end here"]; ' net
+	for net in $LAB_AGENT_ROUTES; do
+		cmd+="/ip/route/add dst-address=$net blackhole comment=\"lab: LAB_AGENT_ROUTES end here\"; "
+	done
+	ros "$cmd" >/dev/null
 }
 
 cmd_down() {
