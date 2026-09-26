@@ -248,18 +248,38 @@ func states(r Runner, plan []Step) ([]state, error) {
 	}
 	out := make([]state, len(plan))
 	for i, s := range plan {
-		present, check, owned := lines[3*i] != "0", lines[3*i+1] != "0", lines[3*i+2] != "0"
-		switch {
-		case present:
-			out[i] = stateOwned
-		case !check:
-			out[i] = stateAbsent
-		case s.Present != "" && owned:
-			// Absent but the leftovers carry our marker: Create replaces them.
-			out[i] = stateAbsent
-		default:
-			out[i] = stateForeign
-		}
+		out[i] = stateOf(s, lines[3*i], lines[3*i+1], lines[3*i+2])
 	}
 	return out, nil
+}
+
+// stateQueries are the three questions stateOf decides on, for every step,
+// keyed present.<n>, check.<n> and owned.<n>.
+func stateQueries(plan []Step) []query {
+	qs := make([]query, 0, 3*len(plan))
+	for i, s := range plan {
+		present := s.Owned
+		if s.Present != "" {
+			present = s.Present
+		}
+		n := strconv.Itoa(i)
+		qs = append(qs, query{key: "present." + n, text: present}, query{key: "check." + n, text: s.Check}, query{key: "owned." + n, text: s.Owned})
+	}
+	return qs
+}
+
+// stateOf is the decision on one step from its three answers: ours already,
+// absent (so Create may write it), or something else's.
+func stateOf(s Step, present, check, owned string) state {
+	switch {
+	case present != "0":
+		return stateOwned
+	case check == "0":
+		return stateAbsent
+	case s.Present != "" && owned != "0":
+		// Absent but the leftovers carry our marker: Create replaces them.
+		return stateAbsent
+	default:
+		return stateForeign
+	}
 }

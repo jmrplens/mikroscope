@@ -78,23 +78,32 @@ func WaitReachable(ctx context.Context, host string, port int, deadline time.Dur
 }
 
 // Upgrade replaces the container with a new image: the install manifest is
-// written first, which gives an install made before it existed one, then the
-// container step is removed (waiting for the asynchronous removal) and
-// created again; the network objects stay. UpgradePreflight has already
-// refused a file at the manifest's path that is not this install's. It
-// returns nothing until the new agent answers.
-func Upgrade(r Runner, o Options, image []byte, w io.Writer) error {
+// written first, then the steps UpgradeRead found missing, in the plan's
+// order, then the container step is removed (waiting for the asynchronous
+// removal) and created again; the network objects stay. Writing the manifest
+// every time is what UpgradeListing lists, and it gives an install made
+// before the manifest existed one and keeps it consistent with the plan the
+// upgrade leaves; UpgradeRead has already refused a file at its path that is
+// not this install's. A missing step — a membership since lost — is made
+// whole by the same upgrade that lists it. It returns nothing until the new
+// agent answers.
+func Upgrade(r Runner, o Options, missing []Step, image []byte, w io.Writer) error {
 	plan := Plan(o)
 	m, c := plan[0], plan[len(plan)-1]
-	out, err := r.Run(m.Create)
-	if err == nil && trimSpace(out) != "" {
-		err = fmt.Errorf("router said %q", trimSpace(out))
-	}
-	if err != nil {
-		return fmt.Errorf("write %s: %w", m.Name, err)
+	if err := createStep(r, o, m, nil, w); err != nil {
+		return err
 	}
 	fmt.Fprintf(w, "  wrote %s\n", m.Name)
-	out, err = r.Run(c.Remove)
+	for _, s := range missing {
+		if s.Name == c.Name || s.Name == m.Name {
+			continue
+		}
+		if err := createStep(r, o, s, nil, w); err != nil {
+			return err
+		}
+		fmt.Fprintf(w, "  new   %s\n", s.Name)
+	}
+	out, err := r.Run(c.Remove)
 	if err != nil {
 		return fmt.Errorf("remove old container: %w", err)
 	}
@@ -109,64 +118,151 @@ func Upgrade(r Runner, o Options, image []byte, w io.Writer) error {
 	return nil
 }
 
+// MissingListing prints the steps upgrade creates besides the container, as
+// the plan writes them, after UpgradeListing and before the confirmation.
+func MissingListing(o Options, missing []Step, w io.Writer) {
+	if len(missing) == 0 {
+		return
+	}
+	fmt.Fprintf(w, "  also:    %d step(s) of the plan are missing on the router, and upgrade creates them first\n", len(missing))
+	for _, s := range missing {
+		fmt.Fprintf(w, "      %s\n      %s\n", s.Name, mask(s.Create, o.Token))
+	}
+}
+
 // UpgradeState is what upgrade reads before it writes anything.
 type UpgradeState struct {
-	// Installed is true when every step of the plan is this install's.
+	// Installed is true when the router holds this install's container.
 	Installed bool
+	// Missing are the other steps of the plan the router does not hold,
+	// which upgrade creates (Upgrade, MissingListing): neither the
+	// container, which it replaces anyway, nor the manifest, which it
+	// always writes.
+	Missing []Step
 	// Arch is the router's architecture-name, for --arch auto; empty when
 	// the router did not say.
 	Arch string
 }
 
 // UpgradeRead is what upgrade asks the router before it writes anything,
-// in one connect: whether every step of this install is owned, the router's
-// architecture, and, with --remote-image, the two /container/config answers
-// doctor's credential check reads. upgrade runs no doctor, and it removes the
-// old container before the router pulls the new image, so a pull that fails
-// leaves the router without an agent. When the install is there, this
-// prints that credential check and, when registry-url names a host other
-// than the one the pull goes to, a note with the reference that keeps that
-// host (registryURLNote), so the operator reads both before the
-// confirmation. It prints nothing for a tar upgrade or when the install is
-// not there, and writes nothing.
-func UpgradeRead(r Runner, o Options, w io.Writer) (UpgradeState, error) {
-	plan := Plan(o)
-	qs := make([]query, 0, len(plan)+3)
+// in one connect: the install's shape (ReadShape), whether every step of
+// the plan is owned, the router's architecture, and, with --remote-image, the
+// two /container/config answers doctor's credential check reads.
+//
+// adopt, when the router holds the install, turns its shape into the
+// options upgrade goes on with (the CLI fills the flags that were not given
+// and refuses the ones that contradict it). The ownership counts were asked
+// for the options as given; when adopting the shape changed what the plan
+// reads, they are asked again for the new plan, and that is the one case
+// that takes a second connect.
+//
+// upgrade runs no doctor, and it removes the old container before the router
+// pulls the new image, so a pull that fails leaves the router without an
+// agent. When the install is there, this prints that credential check and,
+// when registry-url names a host other than the one the pull goes to, a note
+// with the reference that keeps that host (registryURLNote), so the operator
+// reads both before the confirmation. It prints nothing for a tar upgrade or
+// when the install is not there, and writes nothing.
+func UpgradeRead(r Runner, o Options, adopt func(Shape) (Options, error), w io.Writer) (UpgradeState, Options, error) {
+	qs := shapeQueries(o)
 	qs = append(qs, query{key: qArch, text: `:put [/system/resource/get architecture-name]`})
-	for i, s := range plan {
-		qs = append(qs, query{key: "owned." + strconv.Itoa(i), text: s.Owned})
-	}
 	if o.UsesRemoteImage() {
 		qs = append(qs, query{key: qRegistryURL, text: registryURLQuery}, query{key: qRegistryUser, text: registryUserQuery})
 	}
+	plan := Plan(o)
+	qs = append(qs, stateQueries(plan)...)
 	a, stray, err := readKeyed(r, qs)
 	if err != nil {
-		return UpgradeState{}, err
+		return UpgradeState{}, o, err
 	}
 	st := UpgradeState{Installed: true}
-	if a.has(qArch) {
-		st.Arch = a.get(qArch)
+	if arch, ok := a[qArch]; ok {
+		st.Arch = arch
 	}
+	registryURL, userSet := a.get(qRegistryURL), isYes(a.get(qRegistryUser))
+	if shape := parseShape(a, o.Name); adopt != nil && shape.Found {
+		if o, err = adopt(shape); err != nil {
+			return UpgradeState{}, o, err
+		}
+		if next := Plan(o); !sameQuestions(plan, next) {
+			plan = next
+			if a, stray, err = readKeyed(r, stateQueries(plan)); err != nil {
+				return UpgradeState{}, o, err
+			}
+		}
+	}
+	var foreign []string
+	st.Installed, st.Missing, foreign, err = classifySteps(plan, a, stray)
+	if err != nil {
+		return UpgradeState{}, o, err
+	}
+	if !st.Installed {
+		return UpgradeState{Arch: st.Arch}, o, nil
+	}
+	if len(foreign) > 0 {
+		return st, o, fmt.Errorf("%s exist on the router and were not created by mikroscope (no ownership tag), so upgrade would not recreate them; "+
+			"remove them by hand if they are yours, or run upgrade with the flags the install was made with", strings.Join(foreign, ", "))
+	}
+	if o.UsesRemoteImage() {
+		printCredentialCheck(o, registryURL, userSet, w)
+	}
+	return st, o, nil
+}
+
+// classifySteps reads the three answers stateQueries asked for each step of
+// plan: installed is false when the container step is absent; missing are
+// the other steps the router does not hold, but the manifest, which Upgrade
+// writes every time, as the upgrade listing says; foreign are the steps
+// something else holds.
+func classifySteps(plan []Step, a answers, stray []string) (installed bool, missing []Step, foreign []string, err error) {
+	installed = true
 	for i, s := range plan {
-		owned, ok := a["owned."+strconv.Itoa(i)]
-		if !ok {
-			return UpgradeState{}, fmt.Errorf("the router gave no answer to %q; it printed %q", s.Owned, strings.Join(stray, " / "))
+		n := strconv.Itoa(i)
+		present, okP := a["present."+n]
+		check, okC := a["check."+n]
+		owned, okO := a["owned."+n]
+		if !okP || !okC || !okO {
+			return false, nil, nil, fmt.Errorf("the router gave no answer about %s; it printed %q", s.Name, strings.Join(stray, " / "))
 		}
-		if owned == "0" {
-			st.Installed = false
+		switch stateOf(s, present, check, owned) {
+		case stateForeign:
+			foreign = append(foreign, s.Name)
+		case stateAbsent:
+			switch i {
+			case len(plan) - 1:
+				installed = false
+			case 0:
+			default:
+				missing = append(missing, s)
+			}
+		case stateOwned:
 		}
 	}
-	if !st.Installed || !o.UsesRemoteImage() {
-		return st, nil
+	return installed, missing, foreign, nil
+}
+
+// sameQuestions says whether two plans ask the router the same questions.
+func sameQuestions(a, b []Step) bool {
+	if len(a) != len(b) {
+		return false
 	}
-	registryURL := a.get(qRegistryURL)
+	for i := range a {
+		if a[i].Owned != b[i].Owned || a[i].Check != b[i].Check || a[i].Present != b[i].Present {
+			return false
+		}
+	}
+	return true
+}
+
+// printCredentialCheck prints doctor's registry credential item and the
+// registry-url note, for upgrade.
+func printCredentialCheck(o Options, registryURL string, userSet bool, w io.Writer) {
 	var rep Report
-	addRegistryCredential(&rep, o, registryURL, isYes(a.get(qRegistryUser)))
+	addRegistryCredential(&rep, o, registryURL, userSet)
 	for _, it := range rep.Items {
 		it.print(w)
 	}
 	if note := registryURLNote(o, registryURL); note != "" {
 		fmt.Fprintf(w, "  %-7s %s\n", "note", note)
 	}
-	return st, nil
 }

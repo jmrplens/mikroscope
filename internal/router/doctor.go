@@ -81,7 +81,7 @@ const (
 )
 
 // The two /container/config reads the credential check takes, for doctor and
-// for upgrade (UpgradePreflight). The second asks only whether a registry
+// for upgrade (UpgradeRead). The second asks only whether a registry
 // username is set, as a boolean: the name is the operator's, and the password
 // cannot be read back at all.
 const (
@@ -538,10 +538,9 @@ func (d *doctorRun) advisories() {
 			Name: "the installed agent published on the LAN asks for a token", OK: tokenSet, Warn: true,
 			Got: "dst-nat=" + exposed + " token=" + setOrUnset(tokenSet),
 			Fix: "the install named " + o.Name + " publishes the agent on the LAN with no token, so any host there can read it. " +
-				"Re-run `mikroscope upgrade` with the same --name, the flags it was installed with (--expose --lan-address among them) and --token <secret>; " +
-				"or remove the agent entirely, LAN rules and container together, with `mikroscope uninstall --name " + o.Name +
-				" --expose --lan-address <router LAN IPv4> --yes`, plus any other shape flag the install was given, such as --port, --veth or --subnet " +
-				"(uninstall refuses --expose without --lan-address, and without --yes it only lists)",
+				"Run `mikroscope upgrade --name " + o.Name + " --token <secret>`, which reads how the install was made from the router; " +
+				"or remove the agent, the LAN rules and the container together with `mikroscope uninstall --name " + o.Name + " --yes` " +
+				"(without --yes it only lists)",
 		})
 	}
 	d.leftoverCheck()
@@ -573,8 +572,9 @@ func (d *doctorRun) exposeChecks() {
 
 // leftoverCheck is check 18: objects carrying this install's tag that the
 // current plan does not select — an install made with other flags (an
-// --expose, other lists) left them, and an uninstall with these flags would
-// not see them.
+// --expose, other lists) left them. status and uninstall read the install's
+// shape and sweep the tag, so they find them; an install with these flags
+// would not.
 func (d *doctorRun) leftoverCheck() {
 	plan := Plan(*d.o)
 	planned := map[string]int{}
@@ -598,8 +598,10 @@ func (d *doctorRun) leftoverCheck() {
 		}
 	}
 	d.warn("nothing tagged for "+d.o.Name+" that these flags do not select", len(extra) == 0, "extra="+quoteEmpty(strings.Join(extra, ", ")),
-		"objects tagged "+d.o.Tag()+" exist that the plan for these flags does not name, so status would not count them and uninstall would not remove them: "+
-			"an earlier install with other flags (--expose, other lists, another --subnet) made them. Run `mikroscope status` and `uninstall` with the flags that install was given")
+		"objects tagged "+d.o.Tag()+" exist that the plan for these flags does not name: an earlier install with other flags "+
+			"(--expose, other lists, another --subnet) made them, and an install with these flags would sit beside them. "+
+			"Run `mikroscope status --name "+d.o.Name+"` and `mikroscope uninstall --name "+d.o.Name+"` with no shape flag: they read the install's "+
+			"shape from the router (its manifest, or its tagged objects), count what carries the tag and remove it all")
 }
 
 func setOrUnset(set bool) string {

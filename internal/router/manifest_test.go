@@ -292,22 +292,41 @@ func TestVerifyReadsTheManifestInTheSameConnect(t *testing.T) {
 	}
 }
 
-// TestUpgradePreflightRefusesAForeignManifest: a file at the manifest's path
-// that is not this install's manifest stops upgrade before it writes, and a
-// missing manifest does not make the install look absent.
-func TestUpgradePreflightRefusesAForeignManifest(t *testing.T) {
+// TestUpgradeReadWritesTheManifestOrRefusesAForeignFile: an install made
+// before the manifest existed is installed, and nothing but the manifest is
+// missing from it, which upgrade writes anyway and so does not list again; a
+// manifest of this install with other content is the same; a file at the
+// manifest's path that is not this install's stops upgrade before it writes.
+func TestUpgradeReadWritesTheManifestOrRefusesAForeignFile(t *testing.T) {
 	o := defaults(t, nil)
-	objects := map[string]bool{o.Veth: true, o.IfaceList: true, o.AddrList: true, o.Subnet: true, o.ContainerIP: true, o.EnvList(): true}
-	installed, err := UpgradePreflight(&fakeRunner{present: objects}, o, &bytes.Buffer{})
-	if err != nil || !installed {
-		t.Fatalf("an install without a manifest: installed %v, %v", installed, err)
+	plan := Plan(o)
+	f := &fakeRunner{present: map[string]bool{}}
+	for _, s := range plan[1:] {
+		f.present[s.Owned] = true
+		if s.Present != "" {
+			f.present[s.Present] = true
+		}
 	}
-	foreign := maps.Clone(objects)
-	foreign[`:put [:len [/file/find name="`+ManifestFile(o)+`"]]`] = true
-	owned := map[string]bool{o.Veth: true, o.IfaceList: true, o.AddrList: true, o.Subnet: true, o.ContainerIP: true, o.EnvList(): true}
-	if _, err = UpgradePreflight(&fakeRunner{present: foreign, owned: owned}, o, &bytes.Buffer{}); err == nil ||
-		!strings.Contains(err.Error(), "is not this install's manifest") {
+	st, _, err := UpgradeRead(exactRunner{f}, o, nil, &bytes.Buffer{})
+	if err != nil || !st.Installed || len(st.Missing) != 0 {
+		t.Fatalf("an install without a manifest: %+v, %v", st, err)
+	}
+	f.present[plan[0].Check] = true
+	if _, _, err = UpgradeRead(exactRunner{f}, o, nil, &bytes.Buffer{}); err == nil ||
+		!strings.Contains(err.Error(), plan[0].Name+" exist on the router and were not created by mikroscope") {
 		t.Fatalf("a foreign file at the manifest's path: %v", err)
+	}
+	f.present[plan[0].Owned] = true
+	if st, _, err = UpgradeRead(exactRunner{f}, o, nil, &bytes.Buffer{}); err != nil || !st.Installed || len(st.Missing) != 0 {
+		t.Fatalf("this install's manifest with other content: %+v, %v", st, err)
+	}
+	var out bytes.Buffer
+	w := &fakeRunner{present: map[string]bool{}}
+	if err = Upgrade(w, o, st.Missing, []byte("img"), &out); err != nil {
+		t.Fatal(err)
+	}
+	if len(w.ran) == 0 || w.ran[0] != plan[0].Create || !strings.Contains(out.String(), "wrote "+plan[0].Name) {
+		t.Errorf("upgrade did not write the manifest first: %q\n%s", w.ran, out.String())
 	}
 }
 

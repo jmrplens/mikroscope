@@ -37,8 +37,10 @@ func stubRouter(t *testing.T, answer string) {
 
 // keyedEcho is the stubs' answer to one line: $v under every key the line
 // prints (`:put ("@@<key>=" . …)`), or $v alone for a line that prints none.
+// The reads of an install's shape find no tagged object (a count of 0), so a
+// stub that answers 1 to everything is an install made with the defaults.
 const keyedEcho = `ks=$(printf '%s' "$line" | grep -o '("@@[^"=]*=" \. ' | sed 's/("@@\([^"=]*\)=" \. /\1/'); ` +
-	`if [ -n "$ks" ]; then for k in $ks; do echo "@@$k=$v"; done; else echo "$v"; fi`
+	`if [ -n "$ks" ]; then for k in $ks; do case "$k" in shape.*) echo "@@$k=0" ;; *) echo "@@$k=$v" ;; esac; done; else echo "$v"; fi`
 
 func deployCLI(t *testing.T) cli {
 	t.Helper()

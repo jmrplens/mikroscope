@@ -444,6 +444,9 @@ func (o *Options) validateContainerSettings() error {
 	return nil
 }
 
+// ValidName says whether s is a name --name and --container-name take.
+func ValidName(s string) bool { return validName.MatchString(s) }
+
 // ExtractTimeoutS is ExtractTimeout in seconds, once Finish has accepted it.
 func (o *Options) ExtractTimeoutS() int { return durationSeconds(o.ExtractTimeout) }
 

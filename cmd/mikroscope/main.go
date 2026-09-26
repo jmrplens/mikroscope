@@ -32,7 +32,8 @@ verbs
   plan       print every object install would create, and stop (nothing is written);
              --rsc writes it as a RouterOS script to run on the router itself
   install    doctor, get the agent image, deploy it, then probe the agent; --dry-run = plan
-  upgrade    replace the container with a fresh image; network objects stay
+  upgrade    rewrite the install manifest, make any step that is missing, and replace the
+             container with a fresh image; network objects stay
   uninstall  remove what this put in place: --targets router (default), dashboard, data, all;
              lists and removes nothing without --yes
   status     ownership counts and, if reachable, the agent's health
@@ -86,6 +87,10 @@ type cli struct {
 	agentTar   string
 	rsc        bool
 	opts       router.Options
+	// explicit names the deployment flags given on the command line or by
+	// their MIKROSCOPE_* variable, and where each came from: the ones an
+	// install's stored shape does not override (applyShape).
+	explicit map[string]string
 }
 
 // sshOptions is --ssh-option: repeatable, each one checked by
@@ -207,6 +212,7 @@ func parseWith(verb string, args []string, fs *flag.FlagSet) (cli, error) {
 	if err := fs.Parse(args); err != nil {
 		return c, err
 	}
+	c.explicit = explicitFlags(fs)
 	if err := c.sshOptions.check(); err != nil {
 		return c, err
 	}
@@ -671,8 +677,17 @@ func status(c cli) error {
 	if err != nil {
 		return err
 	}
-	verifyErr := router.Verify(r, c.opts, os.Stdout)
-	if verifyErr == nil {
+	// One connect reads the install's shape, its manifest and the counts
+	// for the plan the flags give; a second asks again only when the shape
+	// the router holds changes that plan.
+	present, err := router.Status(r, c.opts, func(s router.Shape) (router.Options, error) {
+		adoptErr := adoptShape(&c, s, "status", os.Stdout)
+		return c.opts, adoptErr
+	}, os.Stdout)
+	if err != nil {
+		return err
+	}
+	if !present {
 		return nil // nothing installed, nothing to probe
 	}
 	h, rtt, probeErr := router.Probe(context.Background(), c.opts.ContainerIP, c.opts.Port, 3*time.Second)
@@ -734,15 +749,20 @@ func upgrade(c cli) error {
 	if err != nil {
 		return err
 	}
-	// One connect asks whether the install is there, the router's
-	// architecture and, with --remote-image, what doctor's credential check
-	// reads; upgrade runs no doctor and removes the old container before the
-	// router pulls, so the check and any note about registry-url are printed
-	// here, before the listing, the confirmation and anything removed.
-	st, err := router.UpgradeRead(r, c.opts, os.Stdout)
+	// One connect asks how the install was made, whether it is there, the
+	// router's architecture and, with --remote-image, what doctor's
+	// credential check reads; upgrade runs no doctor and removes the old
+	// container before the router pulls, so the check and any note about
+	// registry-url are printed here, before the listing, the confirmation
+	// and anything removed.
+	st, opts, err := router.UpgradeRead(r, c.opts, func(s router.Shape) (router.Options, error) {
+		adoptErr := adoptShape(&c, s, "upgrade", os.Stdout)
+		return c.opts, adoptErr
+	}, os.Stdout)
 	if err != nil {
 		return err
 	}
+	c.opts = opts
 	if !st.Installed {
 		return errors.New("nothing to upgrade: run install first")
 	}
@@ -754,10 +774,11 @@ func upgrade(c cli) error {
 		return err
 	}
 	router.UpgradeListing(c.opts, len(img), os.Stdout)
+	router.MissingListing(c.opts, st.Missing, os.Stdout)
 	if !c.yes && !confirm() {
 		return errors.New("not confirmed; nothing written")
 	}
-	if upErr := router.Upgrade(r, c.opts, img, os.Stdout); upErr != nil {
+	if upErr := router.Upgrade(r, c.opts, st.Missing, img, os.Stdout); upErr != nil {
 		return upErr
 	}
 	return probe(c, r)

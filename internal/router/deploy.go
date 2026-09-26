@@ -228,6 +228,15 @@ func Uninstall(r Runner, o Options, w io.Writer) error {
 	return uninstallFrom(r, o, m, found, err, w)
 }
 
+// UninstallShape is Uninstall with the manifest the shape read already
+// brought (ReadShape, whose one connect finds it with the objects), so it
+// is not read a second time: one connect fewer. o is the options the shape
+// resolved.
+func UninstallShape(r Runner, o Options, s Shape, w io.Writer) error {
+	m, found, err := s.manifestAt(ManifestFile(o))
+	return uninstallFrom(r, o, m, found, err, w)
+}
+
 // uninstallFrom is Uninstall once the manifest has been read.
 func uninstallFrom(r Runner, o Options, m Manifest, found bool, readErr error, w io.Writer) error {
 	o, note, x := fromManifest(o, m, found, readErr)
@@ -322,6 +331,49 @@ func Verify(r Runner, o Options, w io.Writer) error {
 		return verify(r, resolved, x, w)
 	}
 	return verifyReport(resolved, x, got[1:], w)
+}
+
+// Status is `status`'s read of the router, in one connect when it can be:
+// the install's shape (ReadShape, the manifest with it) and Verify's counts
+// for the plan the options give. adopt turns a shape the router holds into
+// the options status goes on with (the CLI fills the flags that were not
+// given and refuses the ones that contradict it); only when that changes
+// what the plan asks does a second connect ask again, as UpgradeRead does.
+// It prints Verify's report and returns whether anything of the install is
+// on the router; the error is a read that failed, or adopt's.
+func Status(r Runner, o Options, adopt func(Shape) (Options, error), w io.Writer) (present bool, err error) {
+	qs := shapeQueries(o)
+	asked := verifyQueries(o, extra{})
+	for i, q := range asked {
+		qs = append(qs, query{key: "verify." + strconv.Itoa(i), text: q})
+	}
+	a, stray, err := readKeyed(r, qs)
+	if err != nil {
+		return false, fmt.Errorf("status: %w", err)
+	}
+	s := parseShape(a, o.Name)
+	if adopt != nil && s.Found {
+		if o, err = adopt(s); err != nil {
+			return false, err
+		}
+	}
+	m, found, mErr := s.manifestAt(ManifestFile(o))
+	resolved, note, x := fromManifest(o, m, found, mErr)
+	fmt.Fprintf(w, "  %s\n", note)
+	var got []string
+	if next := verifyQueries(resolved, x); slices.Equal(next, asked) {
+		got = make([]string, len(asked))
+		for i := range asked {
+			v, ok := a["verify."+strconv.Itoa(i)]
+			if !ok {
+				return false, fmt.Errorf("status: the router gave no answer to %q; it printed %q", asked[i], strings.Join(stray, " / "))
+			}
+			got[i] = v
+		}
+	} else if got, err = batch(r, next); err != nil {
+		return false, fmt.Errorf("status: %w", err)
+	}
+	return verifyReport(resolved, x, got, w) != nil, nil
 }
 
 // verify is Verify for options already resolved: one connect.
@@ -421,58 +473,6 @@ func Installed(r Runner, o Options) (bool, error) {
 		return false, err
 	}
 	return !slices.Contains(got, "0"), nil
-}
-
-// UpgradePreflight is what upgrade asks the router before it writes anything,
-// in one connect: whether every object step of this install is owned — the
-// question Installed answers — whether a file sits at the manifest's path
-// that is not this install's manifest, which upgrade would otherwise
-// overwrite, and, with --remote-image, the two /container/config answers
-// doctor's credential check reads. upgrade runs no doctor, and it removes the
-// old container before the router pulls the new image, so a pull that fails
-// leaves the router without an agent. When the install is there, this prints
-// that credential check and, when registry-url names a host other than the
-// one the pull goes to, a note with the reference that keeps that host
-// (registryURLNote), so the operator reads both before the confirmation. It
-// prints nothing for a tar upgrade or when the install is not there, and
-// writes nothing. An install without a manifest is installed: upgrade writes
-// it one.
-func UpgradePreflight(r Runner, o Options, w io.Writer) (bool, error) {
-	plan := Plan(o)
-	objects := plan[1:]
-	queries := make([]string, 0, len(plan)+3)
-	for _, s := range objects {
-		queries = append(queries, s.Owned)
-	}
-	queries = append(queries, plan[0].Check, plan[0].Owned)
-	if o.UsesRemoteImage() {
-		queries = append(queries, registryURLQuery, registryUserQuery)
-	}
-	lines, err := batch(r, queries)
-	if err != nil {
-		return false, err
-	}
-	n := len(objects)
-	if slices.Contains(lines[:n], "0") {
-		return false, nil
-	}
-	if lines[n] != "0" && lines[n+1] == "0" {
-		return false, fmt.Errorf("%s exists on the router and is not this install's manifest; upgrade would overwrite it: "+
-			"move it away, or remove it by hand if it is yours", ManifestFile(o))
-	}
-	if !o.UsesRemoteImage() {
-		return true, nil
-	}
-	registryURL, userSet := lines[n+2], isYes(lines[n+3])
-	var rep Report
-	addRegistryCredential(&rep, o, registryURL, userSet)
-	for _, it := range rep.Items {
-		it.print(w)
-	}
-	if note := registryURLNote(o, registryURL); note != "" {
-		fmt.Fprintf(w, "  %-7s %s\n", "note", note)
-	}
-	return true, nil
 }
 
 func firstLine(err error) string {

@@ -133,7 +133,7 @@ func TestUpgradeReplacesOnlyTheContainer(t *testing.T) {
 	o := defaults(t, nil)
 	f := &fakeRunner{present: map[string]bool{}}
 	var out bytes.Buffer
-	if err := Upgrade(f, o, []byte("new"), &out); err != nil {
+	if err := Upgrade(f, o, nil, []byte("new"), &out); err != nil {
 		t.Fatal(err)
 	}
 	// The manifest first — an install made before it existed gets one —
@@ -367,10 +367,12 @@ func TestDoctorWarnsOfAnExposedAgentWithoutAToken(t *testing.T) {
 			t.Fatalf("nat=%s token=%s: item %+v", tc.nat, tc.token, it)
 		case tc.want == "warn" && (it.OK || !it.Warn || !strings.Contains(it.Fix, "--token")):
 			t.Fatalf("exposed without token not warned: %+v", it)
-		case tc.want == "warn" && !strings.Contains(it.Fix, "uninstall --name mikroscope --expose --lan-address <router LAN IPv4> --yes"):
-			// The fix has to be a command that runs: uninstall --expose
-			// without --lan-address is refused by validateExpose, and
-			// without --yes it only lists. It needs no token (F5).
+		case tc.want == "warn" && (!strings.Contains(it.Fix, "`mikroscope uninstall --name mikroscope --yes`") ||
+			!strings.Contains(it.Fix, "`mikroscope upgrade --name mikroscope --token <secret>`")):
+			// The fix has to be a command that runs: uninstall and upgrade
+			// read the install's shape from the router, --expose and
+			// --lan-address among it, and without --yes uninstall only
+			// lists. uninstall needs no token (F5).
 			t.Fatalf("fix is not a complete uninstall command: %q", it.Fix)
 		case tc.want == "ok" && !it.OK:
 			t.Fatalf("exposed with token warned: %+v", it)
