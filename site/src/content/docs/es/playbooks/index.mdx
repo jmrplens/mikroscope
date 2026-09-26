@@ -1,89 +1,71 @@
 ---
-title: Cómo leer lo que muestra
-description: "Ocho lecturas de datos del kernel y de puertos de un MikroTik RB5009: dos fallos de producción, tres provocados, dos sin provocar y la base en reposo."
+title: Diagnosticar fallos
+description: "La firma de cada fallo que mikroscope ha leído en un router MikroTik, dónde se ve en los datos y las dos comprobaciones que hay que hacer antes de fiarse de una lectura."
+docType: how-to
 head:
   - tag: title
     content: "Leer fallos de MikroTik RouterOS en datos del kernel | mikroscope"
 ---
 
 import { Aside } from "@astrojs/starlight/components";
+import Anchor from "../../../../components/Anchor.astro";
 import Measured from "../../../../components/Measured.astro";
-import Provenance from "../../../../components/Provenance.astro";
 import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
 
-Esta sección responde a la pregunta que viene después de instalar el agente:
-_los números están llegando — ¿qué aspecto tiene un fallo en ellos?_ Cada página
-es una forma, leída en datos que el agente (o, para los errores de puerto, el
-tier de API) recogió en el router de referencia, con las órdenes que la
-produjeron para que puedas reproducirla en tu propio equipo.
+Compara lo que muestran los datos con las firmas de abajo y abre después el caso real para ver la
+lectura completa y las órdenes que la reproducen en tu propio equipo. Cada firma es un cambio frente
+a la forma en reposo: un log del kernel que normalmente calla y trae un flujo constante, un núcleo
+al máximo mientras el total del equipo sigue moderado, una línea de interrupción que se multiplica.
 
-**En resumen:** cada página de abajo lee un fallo como un cambio frente a la
-forma en reposo, como un log del kernel que normalmente calla y trae un flujo
-constante, un núcleo al máximo mientras el total del equipo sigue moderado, o una
-línea de interrupción que se multiplica. Tres de ellas llevan un gráfico sacado
-del almacén InfluxDB de referencia, cuyo historial empieza el 2026-09-19: la
-vuelta del bucle, la comprobación cruzada de conntrack y el puerto que pierde
-tramas. Las lecturas del 2026-09-12 son anteriores a ese almacén y son tablas.
+## Antes de probar {#antes-de-provocar-nada}
 
-Todos los números de estas páginas, salvo los de la página de errores de puerto,
-salen de una sola campaña en el router de referencia, un kernel aarch64 en una
-placa con 1 GB de RAM:
+Nada de lo que hacen los casos provocados puede romper el enlace de subida del router ni cortar el
+camino de un administrador hasta él. Conserva esa propiedad en tu equipo:
 
-<Provenance of="playbooks-2026-09-12" />
+1. Averigua por qué puerto estás conectado:
 
-[Un puerto perdiendo tramas](/mikroscope/es/playbooks/port-errors/) es una campaña
-aparte, una semana después, leída en los contadores de puerto del tier de API y
-no en el agente, y su procedencia está en esa página. Cuando otra página añade una
-cifra de otra fecha, lo dice junto a la cifra. Cuando un
-fallo se provocó a propósito, la página dice exactamente cómo.
+   ```text
+   /interface/bridge/host/print where mac-address="<la MAC de tu máquina>"
+   ```
 
-## Antes de provocar nada
+2. Deja en paz ese puerto, el puerto WAN y cualquiera que lleve un servicio.
 
-Los escenarios se eligieron de forma que nada de lo que hacen pueda romper el
-enlace de subida del router ni cortar el propio camino de un administrador hasta
-él. Conserva esa propiedad en tu equipo: averigua primero por qué puerto estás
-conectado,
+## Firmas de fallos {#las-ocho-lecturas}
 
-```text
-/interface/bridge/host/print where mac-address="<la MAC de tu máquina>"
-```
+Lee primero la forma en reposo. Sin ella, cualquier otra firma parece una anomalía.
 
-y deja en paz ese puerto, el puerto WAN y cualquiera que lleve un servicio.
+<ScrollTable label="Firmas de fallos y dónde se ve cada una">
 
-## Las ocho lecturas
-
-Lee primero la forma en reposo. Sin ella, cualquier otra página parece una
-anomalía.
-
-<ScrollTable label="Las ocho lecturas y sus firmas">
-
-| Página                                                                           | Cómo surgió                                                | Dónde se ve                                           | Firma                                                                                                                         |
-| -------------------------------------------------------------------------------- | ---------------------------------------------------------- | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| [La forma de un router en reposo](/mikroscope/es/playbooks/idle/)                | 60 s en reposo                                             | ocupación por núcleo, `time_squeeze`, `events`        | 6–8 % de ocupación en los cuatro núcleos, el squeeze nunca a cero, cero sucesos del kernel                                    |
-| [Un bucle que solo veía el kernel](/mikroscope/es/playbooks/loop/)               | real, encontrado por casualidad en el router de producción | `events` (la fuente `kmsg`)                           | `events` a <Measured id="loop.eventsBefore" />, separados <Measured id="loop.helloGap" />; el log de RouterOS y su monitor de puertos informaban de un equipo sano |
-| [Puertos de RouterOS y nombres del kernel](/mikroscope/es/reference/port-names/) | un puerto muerto apagado y vuelto a encender               | `events`                                              | el kernel escribe `eth5` donde RouterOS dice `ether6`                                                                         |
-| [Una carga limitada por CPU](/mikroscope/es/playbooks/cpu/)                      | un bucle de consola que termina solo                       | ocupación por núcleo, temperatura, frecuencia         | ~29 % en total, un núcleo al 99,8 %, ~20 s de migración antes de asentarse                                                    |
-| [Una inundación de paquetes](/mikroscope/es/playbooks/packet-flood/)             | `ping -f` a la propia dirección LAN del router, 10 s       | interrupciones de `switch0`, softirqs, `time_squeeze` | `switch0` de 5,5 k a 34 k por tramo de 5 s, todo en el único núcleo al que está fijada la IRQ                                 |
-| [Desgaste de la flash](/mikroscope/es/playbooks/flash-wear/)                     | nada provocado; el router escribe por su cuenta            | la fuente `yaffs`, contadores ECC de MTD              | 2 escrituras de página cada 30 s en reposo, rastreadas hasta el tema `dns` que registra en disco                              |
-| [Conntrack sin la API](/mikroscope/es/playbooks/conntrack/)                      | una comprobación cruzada contra la API, sin tormenta       | la caché slab `nf_conntrack`                          | el número real de conexiones del router donde el propio namespace del contenedor informa 0                                    |
-| [Un puerto perdiendo tramas](/mikroscope/es/playbooks/port-errors/)              | real, encontrado en el router de producción el 2026-09-19  | los contadores MAC por puerto de la capa de la API    | un puerto al 0,5 % de paquetes perdidos por microrráfagas, y luego ninguno                                                    |
+| Fallo                                                                                               | Dónde se ve                                         | Firma                                                                                                                                                   |
+| --------------------------------------------------------------------------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Línea base en reposo](/mikroscope/es/playbooks/idle/)                                                    | ocupación por núcleo, `time_squeeze`, `events`      | un suelo de ocupación bajo y estable en cada núcleo, un squeeze que nunca llega a cero, ningún suceso del kernel                                          |
+| [Bucle de capa 2](/mikroscope/es/playbooks/loop/)                                                   | `events` (la fuente `kmsg`)                         | un flujo constante de `events` en reposo, espaciado al intervalo de hello de STP, mientras el log de RouterOS y su monitor de puertos siguen limpios      |
+| [Nombres de puertos](/mikroscope/es/reference/port-names/)                                          | `events`                                            | el kernel nombra un puerto por su propio nombre de netdev, que puede no coincidir con el de RouterOS                                                     |
+| [Núcleo saturado](/mikroscope/es/playbooks/cpu/)                                                    | ocupación por núcleo, temperatura, frecuencia       | un núcleo cerca del 100 % mientras el total del equipo ronda el 100 % dividido entre el número de núcleos; la carga salta entre núcleos antes de asentarse |
+| [Tormenta de despertares](/mikroscope/es/playbooks/cpu/#cuando-los-núcleos-no-están-ocupados-pero-el-kernel-sí) | cambios de contexto, interrupciones del temporizador | una tasa de cambios de contexto varias veces su media del día anterior, interrupciones del temporizador en ráfagas en un núcleo cada vez, las columnas de ocupación planas |
+| [Inundación de paquetes](/mikroscope/es/playbooks/packet-flood/)                                    | interrupciones, softirqs, `time_squeeze`            | una línea de interrupción que se multiplica con un arranque y un final bruscos, y su coste en el único núcleo al que está fijada                          |
+| [Desgaste de la flash](/mikroscope/es/playbooks/flash-wear/)                                        | la fuente `yaffs`, contadores ECC de MTD            | deltas de `pw` y `er` en reposo que no has provocado tú (mira primero las acciones de logging puestas en `disk`); `corrected_bits` subiendo o cualquier `ecc_failures` |
+| [Conntrack sin la API](/mikroscope/es/playbooks/conntrack/)                                         | la caché slab `nf_conntrack`                        | el número real de conexiones del router, donde el propio namespace del contenedor informa 0                                                              |
+| [Puerto que pierde tramas](/mikroscope/es/playbooks/port-errors/)                                   | los contadores MAC por puerto de la capa de la API  | `rx overflow` en un puerto, en intervalos que llevan una fracción pequeña de la capacidad del enlace: una ráfaga, no una carga                            |
 
 </ScrollTable>
 
-La tormenta de despertares del 2026-09-23, un tercer fallo real en el router de
-referencia, aún no tiene lectura propia: su firma medida, y la regla que la
-vigila, están en `mikroscope-wakeup-storm`, en [Reglas de
+La tormenta de despertares no tiene caso propio: su lectura forma parte del caso del núcleo
+saturado, y la regla que la vigila es `mikroscope-wakeup-storm`, en [Reglas de
 alerta](/mikroscope/es/dashboards/alerts/).
 
-## Dos comprobaciones antes de fiarte de una lectura
+## Revisa antes los datos {#dos-comprobaciones-antes-de-fiarte-de-una-lectura}
 
-**Al muestreador no le faltó CPU.** `mikroscope_slipped_total` debería ser 0 en la
-ventana que estés leyendo. Un tick perdido es uno cuya lectura terminó después de
-que tocara el siguiente tick, y entonces la propia contabilidad del muestreador es
-lo primero de lo que hay que desconfiar.
-
-**El log del kernel se conservó entero.** `mikroscope_kmsg_dropped_total` cuenta episodios de pérdida, no registros: uno por cada tick que llegó al tope de 64 registros del agente, y uno por cada desbordamiento del búfer circular del kernel, que puede suponer muchos registros. Mientras no sea cero, los recuentos por nivel de `mikroscope_kmsg_records_total` son una cota inferior, y también lo es una tasa de sucesos sacada de ellos.
+- **Al muestreador no le faltó CPU.** `mikroscope_slipped_total` debería ser 0 en la ventana que
+  estés leyendo. Un tick perdido es uno cuya lectura terminó después de que tocara el siguiente
+  tick, y entonces la propia contabilidad del muestreador es lo primero de lo que hay que
+  desconfiar.
+- **El log del kernel se conservó entero.** `mikroscope_kmsg_dropped_total` cuenta episodios de
+  pérdida, no registros: uno por cada tick que llegó al tope de 64 registros del agente, y uno por
+  cada desbordamiento del búfer circular del kernel, que puede suponer muchos registros. Mientras no
+  sea cero, los recuentos por nivel de `mikroscope_kmsg_records_total` son una cota inferior, y
+  también lo es una tasa de sucesos sacada de ellos.
 
 <Aside type="note" title="Las órdenes de estas páginas no llevan token">
 	Los ejemplos con `curl` hablan con el agente en `http://172.30.10.2:9123` sin credenciales, que es
@@ -92,60 +74,24 @@ lo primero de lo que hay que desconfiar.
 	cabecera `Authorization: Bearer <token>`.
 </Aside>
 
-## Lo que cuesta el agente mientras haces esto
+<Anchor name="lo-que-cuesta-el-agente-mientras-haces-esto" />
 
-Mide al observador, y mídelo con honradez — incluida la parte en la que medir
-cambia la respuesta.
-
-Descargar un `/snapshot` de 60 segundos no sale gratis: el agente tiene que
-entregar ~600 líneas ya codificadas, unos 1,9 MB, y el `self.cpu_us` de esas
-muestras _incluye el coste de servirlas_. Leer el coste del agente en una
-instantánea grande lo exagera, por tanto, y hacerlo repetidamente lo exagera
-más.
-
-Usa el `/metrics` del colector en su lugar —el agente no sirve ninguno desde
-1.0.5, y esos contadores llegan al colector en cada muestra—. Es pequeño, sus
-contadores son acumulados y no depende de quién lo lea ni de cuándo: léelo dos
-veces y divide:
-
-```sh
-U=http://<equipo del colector>:9124/metrics
-get() { curl -s "$U" | awk -v k="$1" '$1==k{print $2}'; }
-c0=$(get mikroscope_self_cpu_usec_total); t0=$(date +%s)
-sleep 180
-c1=$(get mikroscope_self_cpu_usec_total); t1=$(date +%s)
-echo "$c0 $c1 $t0 $t1" | awk '{printf "%.2f %% of one core\n", 100*($2-$1)/1e6/($4-$3)}'
-```
-
-Dos cosas que cabe esperar:
-
-- **El coste y la memoria suben hasta que el anillo se llena.** Con el anillo por
-  defecto de 60 s a 10 Hz, el agente guarda 600 muestras ya codificadas; una
-  cifra tomada en el primer minuto tras la instalación se mide sobre un heap casi
-  vacío y saldrá optimista. Espera a que pase `BUFFER_S` antes de citar un número
-  de régimen estacionario.
-- **`mikroscope_slipped_total` es el número que de verdad importa.** Un
-  muestreador que cuesta algo más pero nunca pierde ticks te está diciendo la
-  verdad; uno que los pierde, no.
-
-Como referencia: con los valores por defecto de la instalación, el agente cuesta
-un <Measured id="run.10hz.cpu" /> de un núcleo y un <Measured id="run.10hz.rss" /> de RSS. Esa cifra
-se midió el 2026-09-15 con el conjunto completo de fuentes y tres destinos a la
-vez, no durante la campaña de la que vienen estas lecturas:
-
-<Provenance of="rates-2026-09-15" />
+Para medir lo que cuesta el agente mientras ejecutas un escenario, lee el `/metrics` del colector,
+no una instantánea: el procedimiento está en [Coste del
+agente](/mikroscope/es/cost/#medirlo-en-tu-propio-equipo).
 
 <SeeAlso>
 
 ## Véase también
 
-- [El coste del observador](/mikroscope/es/cost/): el presupuesto, el coste medido y el procedimiento
-  de arriba completo.
-- [El suelo de resolución es del kernel](/mikroscope/es/limits/): por qué el porcentaje de ocupación de
-  un núcleo en una muestra de 100 ms se mueve en escalones del <Measured id="tick.stepOneCore" />, y qué se lee por debajo de eso.
-- [Detecciones](/mikroscope/es/sinks/detections/): las reglas que el colector ejecuta sobre estas
-  mismas señales.
-- [Cinco minutos con un router](/mikroscope/es/start/walkthrough/): una grabación con marcadores, la
-  otra forma de leer un transitorio.
+- [Coste del agente](/mikroscope/es/cost/): el presupuesto, el coste medido y cómo medirlo en tu
+  router.
+- [Límites de resolución](/mikroscope/es/limits/): por qué el porcentaje de ocupación de un núcleo
+  en una muestra de 100 ms se mueve en escalones del <Measured id="tick.stepOneCore" />, y qué se
+  lee por debajo de eso.
+- [Reglas de detección](/mikroscope/es/sinks/detections/): las reglas que el colector ejecuta sobre
+  estas mismas señales.
+- [Primera grabación](/mikroscope/es/start/walkthrough/): una grabación con marcadores, la otra
+  forma de leer un transitorio.
 
 </SeeAlso>

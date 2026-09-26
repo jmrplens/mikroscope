@@ -1,44 +1,48 @@
 ---
 title: InfluxDB 3
 description: "MikroTik RouterOS kernel telemetry into InfluxDB 3 over /api/v3/write_lp: URL and token, delivery and drops, every measurement, and what Core refuses."
+docType: how-to
 head:
   - tag: title
     content: MikroTik RouterOS kernel telemetry in InfluxDB 3 | mikroscope
 ---
 
 import { Aside } from "@astrojs/starlight/components";
-import NotClaimed from "../../../components/NotClaimed.astro";
 import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
+import TestedOn from "../../../components/TestedOn.astro";
 
 `--influx` writes the merged timeline as InfluxDB [line
 protocol](https://docs.influxdata.com/influxdb3/core/reference/line-protocol/) to InfluxDB 3's
 [`/api/v3/write_lp`](https://docs.influxdata.com/influxdb3/core/write-data/http-api/v3-write-lp/).
-It is the sink that keeps every sample at the agent's rate, and the one the InfluxDB
-dashboard reads. This page answers how to point it at a database, what it does when the
-database is slow or refusing, and which measurements land there.
+It keeps every sample at the agent's rate, and it is the sink the InfluxDB dashboard
+reads.
 
-## The write URL and the token
+## URL and token {#the-write-url-and-the-token}
 
 ```sh
 export MIKROSCOPE_INFLUX_URL=http://host:8181
 export MIKROSCOPE_INFLUX_DB=mikroscope
 export MIKROSCOPE_INFLUX_TOKEN=…
-mikroscope forward --influx "$MIKROSCOPE_INFLUX_URL" --influx-db "$MIKROSCOPE_INFLUX_DB" --host-tag rb5009
+mikroscope forward --influx "$MIKROSCOPE_INFLUX_URL" --influx-db "$MIKROSCOPE_INFLUX_DB" --host-tag router1
 ```
 
-`--influx` names the server and `--influx-db` the database; the sink assembles the write
-URL from them, `http://host:8181/api/v3/write_lp?db=mikroscope&precision=nanosecond`. The
-flags read their defaults from `MIKROSCOPE_INFLUX_URL` and `MIKROSCOPE_INFLUX_DB`. A server
-with no database is refused at start: `--influx names a server but no database: pass
---influx-db (MIKROSCOPE_INFLUX_DB)`.
+<ScrollTable label="InfluxDB flags and variables">
 
-A `--influx` that carries a path is taken verbatim as the write URL, which is the form every
-1.0.x deployment has in its environment and the one to use for InfluxDB 2's
-`/api/v2/write`. `--influx-db` is then ignored, and the database `forward --grafana`
-describes is read back from the URL's `db=`. The token is read from
-`MIKROSCOPE_INFLUX_TOKEN` only, never from a flag, and sent as
-`Authorization: Bearer <token>`.
+| Flag          | Default                 | What it sets                                                                                                                |
+| ------------- | ----------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `--influx`    | `MIKROSCOPE_INFLUX_URL` | The server. The sink assembles the write URL, `http://host:8181/api/v3/write_lp?db=mikroscope&precision=nanosecond`.        |
+| `--influx-db` | `MIKROSCOPE_INFLUX_DB`  | The database.                                                                                                               |
+| none          | `MIKROSCOPE_INFLUX_TOKEN` | The token, sent as `Authorization: Bearer <token>`. It is read from the variable only, never from a flag.                 |
+
+</ScrollTable>
+
+- A server with no database is refused at start: `--influx names a server but no
+  database: pass --influx-db (MIKROSCOPE_INFLUX_DB)`.
+- A `--influx` that carries a path is taken verbatim as the write URL. Use that
+  form for InfluxDB 2's `/api/v2/write` (<TestedOn of="not-tested">not tested</TestedOn>).
+  `--influx-db` is then ignored, and the database `forward --grafana` describes
+  is read back from the URL's `db=`.
 
 <Aside type="caution" title="Quote the URL">
 	When a full write URL lives in a file you `source`, quote it: `&` is a shell operator, and an
@@ -56,17 +60,13 @@ describes is read back from the URL's `db=`. The token is read from
   per minute. A reply that is not 2xx is an error, with the first 512 bytes of the
   body in that line.
 - **No silent resend.** A request whose pooled connection turns out dead is reported as
-  an error and retried by the sink, rather than re-sent by the HTTP client on its own.
-  That automatic resend of a batch the server had already committed is the leading,
-  unverified explanation for the duplicate rows of the 2026-09-13 overnight run: a
-  50 Hz run that wrote duplicated sequence numbers into InfluxDB. Whether the sink's own
-  retry avoids them has not been measured.
+  an error and retried by the sink, rather than re-sent by the HTTP client on its own
+  (<TestedOn of="known-issues">why</TestedOn>).
 
-A 10 Hz kernel sample renders to about 1.2 KiB of line protocol, measured on the
-RB5009 (RouterOS 7.24.2, kernel 5.6.3, 2026-09-12). So one second of budget holds
-about 50 samples — about 5 s of a 10 Hz backlog — and the default 60 s holds about
-5 minutes. Not measured above 10 Hz, and not re-measured against the current source
-set.
+A 10 Hz kernel sample renders to about 1.2 KiB of line protocol
+(<TestedOn of="line-protocol-2026-09-12">measured</TestedOn>). So one second of budget holds about 50
+samples — about 5 s of a 10 Hz backlog — and the default 60 s holds about 5 minutes.
+Sizes above 10 Hz and with today's source set are <TestedOn of="not-tested">not measured</TestedOn>.
 
 Counters are in batches: `written` one batch InfluxDB accepted, `dropped` one batch
 evicted, `errors` one failed attempt.
@@ -75,10 +75,10 @@ evicted, `errors` one failed attempt.
 
 Every measurement is named `mikroscope_<subject>` and carries `host=<--host-tag>`.
 Kernel-tier rows are stamped with the agent's wall clock in nanoseconds; the table
-names the exceptions. Field lists are on [InfluxDB and SQL
-measurements](/mikroscope/reference/measurements/).
+names the exceptions. Field lists are on [Store
+schema](/mikroscope/reference/measurements/).
 
-### The kernel tier
+### Kernel tier {#the-kernel-tier}
 
 <ScrollTable label="Kernel-tier measurements in InfluxDB">
 
@@ -98,7 +98,7 @@ measurements](/mikroscope/reference/measurements/).
 | `mikroscope_vm_level` | —                                        | `/proc/vmstat` levels: `nr_free_pages`, `nr_dirty`, `nr_writeback`, slab pages                                                                             |
 | `mikroscope_buddy`    | `node`, `zone`                           | free blocks per order and `free_pages`, on the samples the free lists changed                                                                              |
 | `mikroscope_self`     | —                                        | the agent's own CPU, RSS, cgroup memory and `memory.max`; its cgroup events where cgroup2 was read; `resets`; `kmsg_dropped`                               |
-| `mikroscope_psi`      | —                                        | stall microseconds, only where the kernel has PSI — not on the RB5009                                                                                      |
+| `mikroscope_psi`      | —                                        | stall microseconds, only where the kernel has PSI                                                                                                         |
 | `mikroscope_thermal`  | `zone`                                   | `celsius`, with the zone's `critical_celsius` where it declares one                                                                                        |
 | `mikroscope_slab`     | `cache`                                  | active objects, with `limit` where the kernel publishes one (`nf_conntrack`)                                                                               |
 | `mikroscope_mtd`      | `device`, `partition`                    | flash ECC counters as read, with the partition's thresholds where published                                                                                |
@@ -115,8 +115,9 @@ reported. They are separate measurements where one source has both (`mikroscope_
 against `mikroscope_vm_level`), because a delta is an event rate and a level is a
 depth, and one measurement invites a dashboard to sum a level or rate a gauge.
 
-A source the deployment cannot read writes no row, never a zero row: PSI is absent on
-the reference kernel, and slab, kernel-log, MTD and PMU rows need `privileged=yes`. The
+A source the deployment cannot read writes no row, never a zero row: PSI rows exist
+only where the kernel has PSI, and slab, kernel-log, MTD and PMU rows need
+`privileged=yes`. The
 level sources the agent stores on change appear only on the samples that carry them;
 see [each source at its own floor](/mikroscope/limits/source-floors/).
 
@@ -131,7 +132,7 @@ signature — or `other`. A record that names no port keeps the tagless shape an
 `level` alone. A normal link-up is followed by `stp-blocking`, `stp-learning` and
 `stp-forwarding` on its bridge port: four records, not four faults.
 
-### The API tier, and what the collector adds
+### API tier and derived {#the-api-tier-and-what-the-collector-adds}
 
 <ScrollTable label="API-tier and collector measurements in InfluxDB">
 
@@ -184,18 +185,15 @@ interface hands the CPU: `fp-rx-byte` over `driver-rx-byte` on a switch port, wh
 `rx-byte` is the wire total, and over `rx-byte` on a software interface. It is not a
 share of the wire — frames the switch chip forwards in hardware are in neither number.
 `fp_tx_share` is withheld, and the `tx_bytes` denominator beside it written as 0, while
-the cumulative `fp-tx-byte` is 0, which it was on every interface of the reference
-RB5009 on 2026-09-16 after hundreds of GB transmitted.
+the cumulative `fp-tx-byte` is 0, as it can be on every interface of a router after
+hundreds of GB transmitted (<TestedOn of="fp-tx-zero">observed</TestedOn>).
 
-## InfluxDB 3 Core refuses things
-
-Learned the hard way, against InfluxDB 3 Core:
+## InfluxDB 3 Core limits {#influxdb-3-core-refuses-things}
 
 - **A node holds at most five databases**, the limit [InfluxData documents for
-  Core](https://docs.influxdata.com/influxdb3/core/admin/databases/). A sixth write fails with 422 — the
-  first real target, on 2026-09-12, answered `422: would exceed limit of 5 databases`. The sink
-  backs off and keeps trying, so the symptom is a rising `errors` count, not a failed
-  run. The measured runs used an InfluxDB 3 Core instance of their own.
+  Core](https://docs.influxdata.com/influxdb3/core/admin/databases/). A sixth write fails
+  with `422: would exceed limit of 5 databases`. The sink backs off and keeps trying, so
+  the symptom is a rising `errors` count, not a failed run.
 - **Every query must be time-bounded.**
 - **A column's type is immutable once written.**
 - **A column exists only once a row has carried it.** `mikroscope_kmsg` has no `kind`
@@ -207,35 +205,30 @@ Learned the hard way, against InfluxDB 3 Core:
   reads, exist only once the API tier has written port counters, and a typed-error column
   that the port-errors rule sums, such as `rx_jabber` or `tx_late_collision`, only if the
   router has ever reported that counter.
-- **A negated tag inside an OR can return nothing, silently.** On 2026-09-23,
-  `NOT (port='ether2' AND kind IN (…))` over `mikroscope_kmsg` returned 0 rows where 14
-  matched, and so did its De Morgan form and the explicit OR. It returned 14 once
-  `port='ether2'` was also filtered outside the OR. Filter positively, and check any empty
-  answer with a plain `count(*)`. The shipped panels and rules do not use the pattern.
+- **A negated tag inside an OR can return nothing, silently.**
+  `NOT (port='ether2' AND kind IN (…))` over `mikroscope_kmsg` can return 0 rows where
+  rows match, and so can its De Morgan form and the explicit OR; filtering
+  `port='ether2'` outside the OR as well returns them
+  (<TestedOn of="known-issues">observed</TestedOn>). Filter positively, and check any
+  empty answer with a plain `count(*)`. The shipped panels and rules do not use the
+  pattern.
 
 The Grafana datasource for InfluxDB 3 needs two secure fields, not one; see [import and
 check](/mikroscope/dashboards/import-and-check/).
 
-<NotClaimed>
-	No write to InfluxDB 2's `/api/v2/write` is recorded. InfluxDB 3 Enterprise is now measured, but
-	briefly: on 2026-09-19 the reference collector was moved onto Enterprise 3.11.4 and wrote 44 820
-	rows across 36 tables in the first 19 minutes, 0 dropped and 0 errors. Everything before that date
-	was measured against Core. The duplicate rows of 2026-09-13 have an explanation that is
-	leading and unverified, and disabling the HTTP client's own resend has not been measured against a
-	repeat of that run.
-</NotClaimed>
+The InfluxDB 3 editions and versions the sink has written to are under <TestedOn of="feature-status">Feature status</TestedOn>.
 
 <SeeAlso>
 
 ## See also
 
-- [InfluxDB and SQL measurements](/mikroscope/reference/measurements/): every field of every
+- [Store schema](/mikroscope/reference/measurements/): every field of every
   measurement, with its unit.
 - [Import and check](/mikroscope/dashboards/import-and-check/): the InfluxDB dashboard, its
   datasource and the store probe.
-- [The collector](/mikroscope/sinks/): the queue, the backoff and the counters every queued sink
+- [Run the collector](/mikroscope/sinks/): the queue, the backoff and the counters every queued sink
   shares.
-- [The device-info stream](/mikroscope/sinks/device-info/): what the four `mikroscope_device*`
+- [Device info](/mikroscope/sinks/device-info/): what the four `mikroscope_device*`
   measurements hold.
 
 </SeeAlso>

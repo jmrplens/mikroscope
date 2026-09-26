@@ -1,21 +1,21 @@
 ---
-title: El fichero y los demás destinos
-description: "El fichero JSONL, stdout, SQL y PostgreSQL, Loki, OTLP, Graphite, Elasticsearch y Telegraf: qué lleva cada destino, cómo entrega y qué no puede prometer."
+title: Otros destinos
+description: "El fichero JSONL, stdout, SQL y PostgreSQL, Loki, OTLP, Graphite, Elasticsearch y Telegraf: qué lleva cada destino, cómo entrega y qué no cabe en su protocolo."
+docType: how-to
 ---
 
 import { Aside } from "@astrojs/starlight/components";
 import Measured from "../../../../components/Measured.astro";
-import NotClaimed from "../../../../components/NotClaimed.astro";
 import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
+import TestedOn from "../../../../components/TestedOn.astro";
 
 Además de [Prometheus](/mikroscope/es/sinks/prometheus/) e [InfluxDB
-3](/mikroscope/es/sinks/influxdb/), `forward` escribe en nueve destinos más. Esta página
-responde, para cada uno, qué partes de la línea temporal recibe, cómo se le entregan y qué
-no te puede decir por culpa del protocolo del destino. La cola, la espera entre reintentos
-y los contadores que comparten están en [el colector](/mikroscope/es/sinks/).
+3](/mikroscope/es/sinks/influxdb/), `forward` escribe en nueve destinos más. La cola, la
+espera entre reintentos y los contadores que comparten están en [Ejecutar el
+colector](/mikroscope/es/sinks/).
 
-## Lo que recibe cada destino
+## Cobertura por destino {#lo-que-recibe-cada-destino}
 
 <ScrollTable label="Lo que recibe cada uno de los nueve destinos">
 
@@ -34,9 +34,9 @@ y los contadores que comparten están en [el colector](/mikroscope/es/sinks/).
 </ScrollTable>
 
 Los registros del log del kernel solo existen cuando el contenedor corre con
-`privileged=yes`; consulta [lo que aporta privileged](/mikroscope/es/limits/privileged/).
+`privileged=yes`; consulta [Modo privilegiado](/mikroscope/es/limits/privileged/).
 
-## El fichero
+## Fichero {#el-fichero}
 
 ```sh
 mikroscope forward --file timeline.jsonl
@@ -74,8 +74,8 @@ segundo, cada lote escrito en una sola llamada de líneas completas para que un 
 vea un registro a medias, 64 KiB × `--queue-seconds` de presupuesto, descartando primero lo
 más antiguo. Un lote que un lector atascado deja crecer por encima del presupuesto entero
 se cierra antes. Ese presupuesto se dimensionó para una muestra en protocolo de líneas de
-unos 1,2 KiB; **no** se ha medido para `json`, cuyas líneas llevan fuentes que el protocolo
-de líneas omite y son más grandes.
+unos 1,2 KiB. Para `json`, cuyas líneas llevan fuentes que el protocolo de líneas omite y
+son más grandes, <TestedOn of="not-tested">no se ha medido</TestedOn>.
 
 - Una tubería rota no llega a los contadores: Go deja `SIGPIPE` sin capturar en la salida
   estándar, así que el proceso termina.
@@ -85,7 +85,7 @@ de líneas omite y son más grandes.
   tubería hacia `telegraf` termina cada ejecución con líneas que el consumidor no puede
   interpretar.
 
-## SQL para PostgreSQL y TimescaleDB
+## Script SQL (`--sql`) {#sql-para-postgresql-y-timescaledb}
 
 ```sh
 mikroscope forward --sql out.sql --for 10m && psql -f out.sql
@@ -111,14 +111,14 @@ Cada `INSERT` termina en `ON CONFLICT DO NOTHING`, así que aplicar el mismo fic
 veces no hace nada en vez de abortar por clave duplicada. Una fila es un instante inmutable
 de un delta de contador, nunca un total acumulado que un fichero posterior corrija.
 
-### `--postgres`: las mismas sentencias, por una conexión
+### PostgreSQL (`--postgres`) {#--postgres-las-mismas-sentencias-por-una-conexión}
 
 ```sh
 mikroscope forward --postgres 'postgres://usuario@host/mikroscope?sslmode=require'
 ```
 
-Desde 1.1.0 el colector puede escribir en un PostgreSQL que **está en marcha**, en vez de
-en un fichero que alguien reproduce después. `--sql` y `--postgres` son el mismo destino
+`--postgres` escribe en un PostgreSQL que **está en marcha**, en vez de en un fichero que
+alguien reproduce después. `--sql` y `--postgres` son el mismo destino
 dos veces: el que conecta envía las sentencias que produce el de fichero, desde un único
 renderizador. No dos que hoy coinciden — los dashboards que este proyecto genera para el
 store postgres tienen que ser verdad en un despliegue que usara cualquiera de los dos, y
@@ -165,11 +165,9 @@ PostgreSQL. `MIKROSCOPE_POSTGRES_DSN` fija el valor por defecto.
   `MIKROSCOPE_POSTGRES_DSN` dentro de un fichero de entorno, y no en la opción.
 </Aside>
 
-**Verificado contra un servidor real**: la suite de extremo a extremo con docker ejecuta
-el barrido con los dos destinos a la vez, el script a una base de datos y la conexión a
-otra, y luego le pregunta a PostgreSQL si las dos tienen lo mismo. El 2026-09-20 fueron
-**34 tablas coincidiendo byte a byte** — cada columna de cada fila, con un hash por fila
-sumado — más un `information_schema.columns` idéntico para todo el esquema.
+La suite de extremo a extremo con docker ejecuta los dos destinos a la vez, el script a
+una base de datos y la conexión a otra, y comprueba que las dos guardan las mismas filas
+(<TestedOn of="test-suites">baterías de pruebas</TestedOn>).
 
 <ScrollTable label="Tablas que declara el destino SQL">
 
@@ -238,36 +236,38 @@ de un bucle de capa 2) u `other`. Ambas son NULL para un registro que no nombra 
 puerto.
 
 Una fuente que el despliegue no puede leer no emite ninguna fila. Un valor que no se midió
-es NULL, nunca 0: RouterOS 7.24.2 no devuelve ninguna clave de errores de interfaz, y un 0
-ahí afirmaría una medida que nunca se hizo. El texto se fuerza donde PostgreSQL lo
+es NULL, nunca 0: un router puede no devolver ninguna clave de errores de interfaz
+(<TestedOn of="monitor-traffic-keys">verificado</TestedOn>), y un 0 ahí afirmaría una medida que nunca
+se hizo. El texto se fuerza donde PostgreSQL lo
 rechazaría — un byte NUL se elimina, el UTF-8 inválido pasa a U+FFFD — y un float NaN o
 infinito pasa a NULL. `TIMESTAMPTZ` resuelve a 1 µs, así que dos muestras más cercanas que
 eso chocarían en la clave primaria; a 10 Hz están a 100 ms.
 
 Comparado con InfluxDB, al destino SQL le falta exactamente una cosa: la tabla de
-**recuentos** del log del kernel. Fue una lista larga hasta que 1.0.3 y 1.0.5 la cerraron:
-frecuencia de CPU, PMU, softirq, niveles y contadores de `/proc/vmstat`, interrupciones por
-CPU, `mikroscope_sample` y la `mikroscope_mem` completa ya tienen tabla. Lleva dos que
-InfluxDB no tiene: el **texto** del log del kernel en `mikroscope_event`, y los errores de
-la capa de la API.
+**recuentos** del log del kernel. Lleva dos que InfluxDB no tiene: el **texto** del log del
+kernel en `mikroscope_event`, y los errores de la capa de la API.
 
 <Aside type="caution" title="Una tubería hacia psql puede bloquear el colector">
 	El destino SQL es síncrono, sin cola. Con `--sql -` alimentando `psql`, un `psql` que se retrasa —
 	cada `INSERT` es su propia transacción y su propio commit — llena la tubería, y la siguiente
-	escritura bloquea el bucle de extracción del colector en vez de descartar. No medido. Escribe un
-	fichero y aplícalo después, o envuelve el fichero en `BEGIN`/`COMMIT` a mano.
+	escritura bloquea el bucle de extracción del colector en vez de descartar
+	(<TestedOn of="not-tested">sin medir</TestedOn>). Escribe un fichero y aplícalo después, o
+	envuelve el fichero en `BEGIN`/`COMMIT` a mano.
 </Aside>
 
-Tamaño, según el propio fixture de pruebas del destino el 2026-09-12 — dos núcleos, una
-cola softnet, una interrupción, sin fuentes privilegiadas — no según el equipo: un evento
-del kernel se renderiza en 1 375 B de SQL y un evento de la API en 1 138 B, así que 10 Hz
-más la capa de la API a 1 Hz son unos 14 KiB/s de fichero tras una cabecera de 5,6 KiB.
-Los mismos dos eventos en protocolo de líneas son 716 B y 608 B, unas 1,9× más pequeños,
-aunque parte de eso es contenido que las filas SQL llevan y el protocolo de líneas no. Con
-las fuentes privilegiadas presentes el evento del kernel crece hasta 2 749 B. Esa cabecera es la
-del fixture: la de las cuarenta y tres tablas que declara el destino, generada por el propio
-`header()` del destino el 2026-09-19, son 10 482 B, unos 10,2 KiB —13 966 B con las
-sentencias de hypertable de TimescaleDB.
+Tamaños según el fixture de pruebas del destino — dos núcleos, una cola softnet, una
+interrupción, sin fuentes privilegiadas —, no según un router:
+
+- Un evento del kernel se renderiza en 1 375 B de SQL y un evento de la API en 1 138 B,
+  así que 10 Hz más la capa de la API a 1 Hz son unos 14 KiB/s de fichero tras la
+  cabecera de 5,6 KiB del fixture.
+- Los mismos dos eventos en protocolo de líneas son 716 B y 608 B, unas 1,9× más
+  pequeños, aunque parte de eso es contenido que las filas SQL llevan y el protocolo de
+  líneas no.
+- Con las fuentes privilegiadas presentes el evento del kernel crece hasta 2 749 B.
+- La cabecera de las cuarenta y tres tablas que declara el destino, generada por el propio
+  `header()` del destino, son 10 482 B, unos 10,2 KiB —13 966 B con las sentencias de
+  hypertable de TimescaleDB.
 
 ## Loki
 
@@ -320,16 +320,15 @@ streams por un campo que LogQL extrae bajo demanda:
 Cada registro se marca con el reloj de pared de su tick, nunca con su propia marca desde
 el arranque, que lo fecharía en 1970 más el uptime y Loki lo rechazaría. Los registros de
 un mismo tick están separados 1 ns, en orden creciente, porque un stream de Loki se ordena
-solo por marca de tiempo y en el equipo de referencia una pareja «blocking state» y luego
-«learning state» llega dentro de un mismo tick de 100 ms con el mismo nivel: su orden es
-la señal. El desplazamiento es como mucho 63 ns, acotado por el límite del agente de 64
+solo por marca de tiempo y una pareja «blocking state» y luego «learning state» puede
+llegar dentro de un mismo tick de 100 ms con el mismo nivel: su orden es la señal. El desplazamiento es como mucho 63 ns, acotado por el límite del agente de 64
 registros por tick.
 
-Un push por segundo, 64 KiB × `--queue-seconds` de presupuesto. En el RB5009 (RouterOS
-7.24.2, kernel 5.6.3, 2026-09-12) el log del kernel iba a <Measured id="loop.eventsBefore" /> mientras el
-reflejo de capa 2 estaba activo y a <Measured id="loop.eventsAfter" /> después de arreglarlo, y una línea renderizada
-mide unos 150 B con su envoltorio JSON, así que un segundo de presupuesto guarda horas de
-ese tráfico. No medido durante una tormenta del log del kernel.
+Un push por segundo, 64 KiB × `--queue-seconds` de presupuesto. Una línea renderizada
+mide unos 150 B con su envoltorio JSON, así que a los <Measured id="loop.eventsBefore" /> de
+registros del log del kernel que produjo un bucle de capa 2 activo, un segundo de
+presupuesto guarda horas de ese tráfico. La entrega durante una tormenta del log del
+kernel <TestedOn of="not-tested">no se ha medido</TestedOn>.
 
 ## OTLP
 
@@ -343,9 +342,8 @@ protobuf es una decisión de dependencias: protobuf añadiría un generador de c
 runtime. La [especificación de OTLP](https://opentelemetry.io/docs/specs/otlp/) dice que
 un servidor SHOULD —debería, no está obligado a— aceptar cargas codificadas en JSON en el
 mismo puerto que el protobuf binario, así que un receptor que solo acepte protobuf la
-cumple al pie de la letra. El único receptor real contra el que se ha ejecutado este
-destino, el OpenTelemetry Collector de la batería de extremo a extremo con docker, acepta
-JSON. El recurso
+cumple al pie de la letra. El OpenTelemetry Collector acepta JSON
+(<TestedOn of="test-suites">probado</TestedOn>). El recurso
 lleva `host.name` (la etiqueta de host) y `service.name=mikroscope`; el scope lleva la
 versión del colector.
 
@@ -409,13 +407,13 @@ cliente. El rechazo es determinista (un receptor OTLP de
 Prometheus que rechaza un punto más antiguo que su ventana es el caso habitual), así que el
 mismo lote se rechazaría igual.
 
-Tamaño, según un fixture de pruebas de dos núcleos el 2026-09-12 y no según el equipo: una
-muestra del kernel se renderiza en 8 132 B de JSON OTLP frente a 716 B de protocolo de
-líneas, unas 11×, el precio de repetir las claves de los atributos y de poner entre
-comillas cada entero de 64 bits. Un segundo de muestras a 10 Hz más una muestra de la API
-son 68 868 B, así que el presupuesto de 64 KiB por segundo guarda aproximadamente un
-segundo de atraso por segundo y los 60 s por defecto unos 57 lotes. El RB5009 de cuatro
-núcleos, con su top-K real de interrupciones, renderiza más; no medido.
+Tamaños según un fixture de pruebas de dos núcleos, no según un router: una muestra del
+kernel se renderiza en 8 132 B de JSON OTLP frente a 716 B de protocolo de líneas, unas
+11×, el precio de repetir las claves de los atributos y de poner entre comillas cada entero
+de 64 bits. Un segundo de muestras a 10 Hz más una muestra de la API son 68 868 B, así que
+el presupuesto de 64 KiB por segundo guarda aproximadamente un segundo de atraso por
+segundo y los 60 s por defecto unos 57 lotes. Una placa con más núcleos y un top-K real de
+interrupciones renderiza más (<TestedOn of="not-tested">sin medir</TestedOn>).
 
 ## Graphite
 
@@ -454,8 +452,7 @@ valor vacío pasa a `none`, así que la profundidad de una ruta nunca cambia.
 
 </ScrollTable>
 
-Lo que el protocolo no puede prometer, dicho porque cada punto cambia lo que significa un
-panel de Graphite:
+Lo que el protocolo no puede prometer, y lo que cada límite cambia en un panel de Graphite:
 
 - **Marcas de tiempo en segundos enteros.** La retención más fina de Whisper es un
   segundo, así que a 10 Hz nueve de cada diez muestras caen en una casilla que ya tiene
@@ -478,9 +475,9 @@ panel de Graphite:
   governor no tienen forma en Graphite.
 
 El presupuesto de bytes es de 256 KiB por segundo en cola, cuatro veces el de los demás: un
-tick con forma de RB5009 de cuatro núcleos con todas las fuentes presentes se renderiza en
-6 411 B en 131 líneas en el fixture de pruebas del destino (máquina de desarrollo,
-2026-09-12, no el equipo), así que 10 Hz son unos 63 KiB/s. No medido por encima de 10 Hz.
+tick de cuatro núcleos con todas las fuentes presentes se renderiza en 6 411 B en 131
+líneas en el fixture de pruebas del destino, no en un router, así que 10 Hz son unos
+63 KiB/s. Por encima de 10 Hz <TestedOn of="not-tested">no se ha medido</TestedOn>.
 
 ## Elasticsearch y OpenSearch
 
@@ -532,10 +529,9 @@ registra el primer motivo una vez por minuto — por separado de los fallos de e
 porque un conflicto de mapeo y un clúster inalcanzable piden acciones distintas. Los lotes
 se cierran una vez por segundo o al llegar a 1 MiB, lo que ocurra primero.
 
-Tamaño, según el fixture de dos núcleos del destino el 2026-09-12 y no según el equipo:
-1 077 B de NDJSON para una muestra del kernel sin fuentes opcionales, 1 952 B repartidos en
-dos documentos con las fuentes opcionales y un registro del log del kernel. Una muestra de
-cuatro núcleos del RB5009 no se ha renderizado en este formato.
+Tamaños según el fixture de dos núcleos del destino, no según un router: 1 077 B de NDJSON
+para una muestra del kernel sin fuentes opcionales, 1 952 B repartidos en dos documentos con
+las fuentes opcionales y un registro del log del kernel. Una muestra de cuatro núcleos <TestedOn of="not-tested">no se ha renderizado</TestedOn> en este formato.
 
 ## Telegraf
 
@@ -567,37 +563,25 @@ El esquema del endpoint elige el transporte:
   o `tcp://` para cualquier cosa que importe.
 
 El presupuesto es el del destino de InfluxDB, 64 KiB por segundo en cola: a unos 1,2 KiB
-por muestra a 10 Hz (RB5009, 2026-09-12), unos 5 minutos de atraso con los 60 s por
-defecto. El codificador compartido escribe las lecturas de `/system/health` en el orden de
-un map de Go, así que los registros dentro de un lote no tienen un orden estable — 12
-renderizados de un map de 8 nombres dieron 7 órdenes (2026-09-12). Cada registro lleva su
-propia marca de tiempo, así que no se pierde ni se desfasa nada.
+por muestra a 10 Hz (<TestedOn of="line-protocol-2026-09-12">medido</TestedOn>), unos 5 minutos de atraso
+con los 60 s por defecto. El codificador compartido escribe las lecturas de
+`/system/health` en el orden de un map de Go, así que los registros dentro de un lote no
+tienen un orden estable — 12 renderizados de un map de 8 nombres dieron 7 órdenes. Cada
+registro lleva su propia marca de tiempo, así que no se pierde ni se desfasa nada.
 
 Cada destino de esta página se prueba contra un receptor local que comprueba los bytes que
-acepta su protocolo (máquina de desarrollo, amd64, desde el 2026-09-12). Desde el 2026-09-17
-la suite de extremo a extremo con docker además ejecuta el colector, contra un agente
-enlatado y con la capa de la API apagada, hacia los almacenes reales, y lee los datos de
-vuelta por la API de cada almacén: Loki 3, el OpenTelemetry Collector, graphite-statsd,
-Elasticsearch 9, Telegraf 1.39 por HTTP y PostgreSQL 18, tanto con `--sql` como con
-`--postgres`, con el destino de fichero como el oráculo contra el que se comparan los demás.
-
-<NotClaimed>
-	Salvo el destino de fichero, que fue uno de los tres destinos de las ejecuciones de cadencia del
-	2026-09-15, ninguno de estos destinos formó parte de las ejecuciones de cadencia medidas, y
-	ninguno se ha alimentado desde el RB5009 hacia un Loki, receptor OTLP, carbon, Elasticsearch,
-	OpenSearch, Telegraf, PostgreSQL o TimescaleDB en marcha en una ejecución registrada. OpenSearch,
-	las hypertables de TimescaleDB y la salida estándar nunca se han probado contra un almacén real:
-	solo los cubren las pruebas de contrato de bytes.
-</NotClaimed>
+acepta su protocolo. Las <TestedOn of="test-suites">baterías de pruebas</TestedOn> listan los
+almacenes reales contra los que corre además cada destino, y lo que no se ha ejecutado
+contra un almacén ni alimentado desde un router está en la lista de lo <TestedOn of="not-tested">no probado</TestedOn>.
 
 <SeeAlso>
 
 ## Véase también
 
-- [El colector](/mikroscope/es/sinks/): la cola, la espera entre reintentos y los contadores que
+- [Ejecutar el colector](/mikroscope/es/sinks/): la cola, la espera entre reintentos y los contadores que
   comparten estos destinos.
 - [InfluxDB 3](/mikroscope/es/sinks/influxdb/): las medidas que llevan `--stdout lp` y `--telegraf`.
-- [Detecciones](/mikroscope/es/sinks/detections/): lo que dicen las líneas, filas y documentos de
+- [Reglas de detección](/mikroscope/es/sinks/detections/): lo que dicen las líneas, filas y documentos de
   detección.
 - [Variables de entorno](/mikroscope/es/reference/environment/): cada `MIKROSCOPE_*` que lee un
   destino.

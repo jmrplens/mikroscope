@@ -1,25 +1,24 @@
 ---
-title: Grabar, marcar, dibujar
-description: Cómo traer a tu máquina una ventana de muestras a cadencia completa, marcar sus momentos, añadir el log del router y dibujarla como un SVG determinista.
+title: Grabar, marcar y dibujar
+description: Trae a tu máquina una ventana de muestras a cadencia completa, marca sus momentos, añade el propio log del router y dibújala como un SVG determinista.
+docType: how-to
 head:
   - tag: title
     content: Grabar, marcar y dibujar un router MikroTik | mikroscope
 ---
 
 import { Aside } from "@astrojs/starlight/components";
+import Anchor from "../../../../components/Anchor.astro";
 import Measured from "../../../../components/Measured.astro";
-import NotClaimed from "../../../../components/NotClaimed.astro";
-import Provenance from "../../../../components/Provenance.astro";
 import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
+import TestedOn from "../../../../components/TestedOn.astro";
 
-El colector mantiene un router vigilado; `record` es para la otra pregunta —
-_estoy a punto de cambiar algo, ¿qué hace de verdad?_ Esta página responde cómo
-tomar una grabación desde tu máquina, qué contienen los cuatro ficheros que
-escribe, cómo entran los marcadores y en qué reloj, cómo el log del router pasa
-a formar parte de ella y qué dibuja `plot`.
+Usa `record` cuando vayas a cambiar algo en el router y quieras ver qué hace el
+cambio. Trae las muestras del agente a tu máquina a cadencia completa; `mark`
+añade notas y el propio log del router; `plot` dibuja el resultado.
 
-## Tres verbos
+## Órdenes y opciones {#tres-verbos}
 
 ```sh
 mikroscope record --for 5m --out cap                  # cap.jsonl, cap.csv, cap.markers.csv, cap.meta.json; escribe líneas para marcar
@@ -28,8 +27,8 @@ mikroscope mark --out cap --log-markers               # las líneas del propio l
 mikroscope plot --in cap                              # cap.svg, determinista
 ```
 
-Los tres verbos comparten un mismo juego de opciones, así que cada uno acepta
-todas las opciones de abajo; las notas dicen sobre qué verbo actúa cada una.
+Las tres órdenes comparten un mismo juego de opciones: cada una acepta todas las
+de abajo, y la tabla dice sobre qué orden actúa cada una.
 
 <ScrollTable label="Opciones de record, mark y plot">
 
@@ -55,102 +54,92 @@ todas las opciones de abajo; las notas dicen sobre qué verbo actúa cada una.
 
 </ScrollTable>
 
-## Lo que se ha medido que entrega una grabación
+<Anchor name="lo-que-se-ha-medido-que-entrega-una-grabación" />
 
-<Provenance of="record-2026-09-12" />
+[Primera grabación](/mikroscope/es/start/walkthrough/) recorre las tres órdenes
+de principio a fin. Una grabación medida, con su número de muestras, sus huecos y
+su desfase de reloj, está en la <TestedOn of="record-2026-09-12">página de pruebas</TestedOn>.
+Las grabaciones por encima de 10 Hz y a través del relay no se
+han <TestedOn of="not-tested">medido</TestedOn>.
 
-Esa grabación dio exactamente 600 muestras, 0 huecos y un desfase de reloj de −7 ms.
-En ella, un bucle de RouterOS por script (`:for … 400 000`)
-se vio como la carga de un núcleo entero al 100 % de t = 21,0 a 25,8 s, con la muestra de 25,8 s marcando alrededor del 60 %, y el inicio y el final resueltos a 100 ms, y los marcadores del log del router explicaron una
-meseta de 2 s entre 15 y 17 s que nadie había provocado: el planificador
-`ensure-ipv6-nd-prefix`. [Cinco minutos con un
-router](/mikroscope/es/start/walkthrough/) recorre `record` y `plot` de
-principio a fin sobre otra captura: 70 s a 10 Hz con el router por lo demás en
-reposo, con tres notas escritas en el terminal de `record`.
+## Transportes {#cómo-llega-record-al-agente}
 
-<NotClaimed>
-	Una grabación por encima de 10 Hz. Las ejecuciones sin pérdidas a 20, 50 y 100 Hz del [techo de
-	muestreo](/mikroscope/es/cost/rate-ceiling/) fueron del colector, no de `record`. Ambos usan el
-	mismo tamaño de lote, pero una grabación a esas cadencias no se ha medido por separado. Tampoco
-	una grabación a través del relay, a ninguna cadencia.
-</NotClaimed>
+<ScrollTable label="Transportes de record">
 
-## Cómo llega `record` al agente
+| `--transport`         | Camino                                                                                                                 | Si falla                |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------- | ----------------------- |
+| `auto` (por defecto)  | `direct` si responde un `GET /healthz` a `http://<.2 de --subnet>:<--port>`, si no `relay`                              | un error, abajo         |
+| `direct`              | HTTP plano de tu máquina a la veth, con `--token` como token bearer                                                     | falla, sin alternativa  |
+| `relay`               | `/tool fetch output=user` en el router, por la API binaria; el usuario de la API necesita las políticas `read,api,test` | falla, sin alternativa  |
 
-`--transport auto` prueba primero el camino directo: un `GET /healthz` a
-`http://<.2 de --subnet>:<--port>`. Si no responde, abre la API de RouterOS y
-pide al router que haga él mismo la petición al agente. Si falta `--api` o
-`--api-user`, se detiene con un error que nombra `--api`, `--api-user` y
-`MIKROSCOPE_API_PASSWORD` y sugiere `install --expose`; si falta la contraseña,
-aparece en su lugar un error de inicio de sesión, `api <host:port>: …`. La
-sugerencia de `--expose` sirve a otros clientes HTTP, no a `record`: `record`
-siempre llama a la `.2` de `--subnet` y no tiene opción para la dirección LAN del
-router. `direct` y `relay` fuerzan un camino y fallan en vez de recurrir al
-otro.
+</ScrollTable>
 
-- **direct** es HTTP plano de tu máquina a la veth. Envía `--token` como token
-  bearer.
-- **relay** ejecuta `/tool fetch output=user` en el router por la API binaria,
-  así que el usuario de la API necesita las políticas `read,api,test`. Cada
-  llamada por relay tarda o unos 3 ms o alrededor de 1 s. Una respuesta está
-  limitada a <Measured id="relay.replyMaxBytes" />, así que una petición por relay pide como mucho <Measured id="relay.maxBatch" />
-  muestras, y una respuesta que llega al límite se rechaza en vez de analizarse
-  truncada. La petición desde el router no lleva cabecera: un agente instalado
-  con token solo se puede grabar por el camino directo.
+- Cuando `auto` tiene que recurrir al relay y falta `--api` o `--api-user`,
+  `record` se detiene con un error que nombra `--api`, `--api-user` y
+  `MIKROSCOPE_API_PASSWORD` y sugiere `install --expose`. Si falta la
+  contraseña, aparece en su lugar un error de inicio de sesión,
+  `api <host:port>: …`.
+- La sugerencia de `--expose` es para otros clientes HTTP. `record` siempre
+  llama a la `.2` de `--subnet` y no tiene opción para la dirección LAN del
+  router.
+- La petición desde el router no lleva cabecera, así que un agente instalado con
+  token solo se puede grabar por `direct`.
+- Cada llamada por relay tarda o unos 3 ms o alrededor de 1 s. Una respuesta
+  está limitada a <Measured id="relay.replyMaxBytes" />, así que una petición
+  por relay pide como mucho <Measured id="relay.maxBatch" /> muestras, y una
+  respuesta que llega al límite se rechaza en vez de analizarse truncada.
 
-<Aside type="caution" title="Una petición por relay llena aún puede llegar al límite">
-	Por aritmética, calculado a partir del código y no medido. El límite de <Measured id="relay.maxBatch" />
-	muestras sale del tope de <Measured id="relay.replyMaxBytes" /> de la petición, de una línea que se
-	cobra a <Measured id="ring.lineChargedBytes" /> y de un 134 % de margen; la línea se midió
-	en <Measured id="ring.lineBytes" /> en el RB5009 (RouterOS 7.24.2, 2026-09-17) y el presupuesto cobra
-	la clase de tamaño del asignador que hay por encima. Una petición llena de esas líneas son unos
-	45 kB. Una petición llena cuyas líneas promedien más de ese 134 % llegaría igualmente al tope y se
-	rechazaría, y no se ha medido cuánto miden las líneas con los suelos por fuente de hoy.
-	Una petición lleva como mucho <Measured id="relay.maxBatch" /> muestras, y una llena se repite en el
-	acto, así que lo que limita al relay es la ida y vuelta de `/tool fetch`, no el `--poll`. Por
-	aritmética y sin medir: con cerca de 1 s en la mitad de las llamadas y unos 3 ms en el resto, eso
-	da del orden de 26 muestras por segundo, menos cuando las llamadas lentas se agrupan. Por encima
-	de eso, usa la vía directa.
+<Aside type="caution" title="El relay llega a unas 26 muestras por segundo">
+	Por aritmética, a partir del código. El límite de <Measured id="relay.maxBatch" /> muestras sale
+	del tope de <Measured id="relay.replyMaxBytes" /> de la petición, de una línea que se cobra a
+	la clase de tamaño del asignador de <Measured id="ring.lineChargedBytes" /> (la línea medida
+	es de <Measured id="ring.lineBytes" />) y de un 134 % de margen, así que una petición llena de
+	líneas de ese tamaño son unos 45 kB y aún cabe con líneas de hasta el 134 % de él. Una petición
+	llena cuyas líneas promedien más que el tope de la petición dividido por el límite llega al tope
+	y se rechaza; el tamaño de las líneas con los suelos por fuente de serie no
+	se ha <TestedOn of="not-tested">medido</TestedOn>.
+	Una petición llena se repite en el acto, así que el rendimiento lo fija la ida y vuelta de
+	`/tool fetch`, no el `--poll`: con cerca de 1 s en la mitad de las llamadas y unos 3 ms en el
+	resto, eso da del orden de 26 muestras por segundo, menos cuando las llamadas lentas se agrupan.
+	Por encima de eso, usa `direct`.
 </Aside>
 
-[Llegar al agente](/mikroscope/es/install/reaching-the-agent/) explica qué
-camino permite una red. El usuario de la API se describe en [su propia
-página](/mikroscope/es/security/api-user/).
+[Acceso por red](/mikroscope/es/install/reaching-the-agent/) explica qué camino
+permite una red, y [Usuario de la API](/mikroscope/es/security/api-user/) el
+usuario de RouterOS que necesita el relay.
 
-Una vez conectado, `record` lee `/healthz`. El reloj de pared del agente menos
-el de tu máquina es el **desfase de reloj**, que se imprime por stderr junto con
-la versión del agente, la cadencia, el número de secuencia más reciente, el más
-antiguo que aún guarda el anillo y el transporte. La grabación empieza entonces
-en directo desde la muestra más reciente, o desde la más antigua que guarda el
-anillo con `--from-start`.
+### Bucle de peticiones
 
-Cada `--poll` pide `/snapshot?since=<last seq>&max=<batch>`. Mientras una
-petición vuelve llena, vuelve a pedir, hasta 100 veces por intervalo, así que un
-anillo que se ha adelantado se vacía en vez de seguirse a ritmo fijo. Una
-petición que falla se registra como `pull: …` y la grabación continúa; la
-siguiente pide desde el mismo número de secuencia. Cuando vence `--for` o pulsas
-Ctrl-C, una última petición recoge lo que llegó entretanto, y `record` imprime
-cuántas muestras conservó, su rango de secuencia, los huecos, los marcadores, el
-transporte y los ficheros.
+1. `record` lee `/healthz`. El reloj de pared del agente menos el de tu máquina
+   es el **desfase de reloj**. Lo imprime por stderr junto con la versión del
+   agente, la cadencia, el número de secuencia más reciente, el más antiguo que
+   aún guarda el anillo y el transporte.
+2. La grabación empieza en directo desde la muestra más reciente, o desde la más
+   antigua que guarda el anillo con `--from-start`.
+3. Cada `--poll`, pide `/snapshot?since=<last seq>&max=<batch>`. Mientras una
+   petición vuelve llena, vuelve a pedir, hasta 100 veces por intervalo, así que
+   un anillo que se ha adelantado se vacía en vez de seguirse a ritmo fijo.
+4. Una petición que falla se registra como `pull: …` y la grabación continúa; la
+   siguiente pide desde el mismo número de secuencia.
+5. Cuando vence `--for` o pulsas Ctrl-C, una última petición recoge lo que llegó
+   entretanto. `record` imprime cuántas muestras conservó, su rango de
+   secuencia, los huecos, los marcadores, el transporte y los ficheros.
 
-## Los cuatro ficheros
+## Ficheros de salida {#los-cuatro-ficheros}
 
-Cada fichero se crea con modo `0600`, y un fichero existente con el mismo
-prefijo se sobrescribe.
+Cada fichero se crea con modo `0600`. Un fichero existente con el mismo prefijo
+se sobrescribe.
 
-- **`<out>.jsonl`** — cada línea de muestra tal como la envió el agente: deltas
-  crudos de ticks y contadores, con todas las fuentes que tiene el agente. Esta
-  es la grabación; los demás ficheros son vistas de ella.
-- **`<out>.csv`** — una fila ancha por muestra, para una hoja de cálculo. El
-  conjunto de columnas se dimensiona a partir de la primera muestra: un grupo por
-  núcleo y uno por cola softnet.
-- **`<out>.markers.csv`** — `wall_ns,wall_utc,seq,kind,label`, una fila por
-  marcador.
-- **`<out>.meta.json`** — se escribe al principio, para que `mark` y `plot`
-  puedan ejecutarse después: `started_utc`, `skew_ns` (reloj de pared del agente
-  menos el del anfitrión), `agent` (su versión), `rate_hz`, `transport` y
-  `capabilities` — lo que el agente estableció sobre la placa — cuando el
-  transporte pudo obtenerlo.
+<ScrollTable label="Ficheros que escribe una grabación">
+
+| Fichero             | Contenido                                                                                                                                                                                                                                   |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `<out>.jsonl`       | Cada línea de muestra tal como la envió el agente: deltas crudos de ticks y contadores, con todas las fuentes que tiene el agente. Esta es la grabación; los demás ficheros son vistas de ella.                                              |
+| `<out>.csv`         | Una fila ancha por muestra, para una hoja de cálculo. El conjunto de columnas se dimensiona a partir de la primera muestra: un grupo por núcleo y uno por cola softnet.                                                                     |
+| `<out>.markers.csv` | `wall_ns,wall_utc,seq,kind,label`, una fila por marcador.                                                                                                                                                                                   |
+| `<out>.meta.json`   | Se escribe al principio, para que `mark` y `plot` puedan ejecutarse después: `started_utc`, `skew_ns` (reloj de pared del agente menos el del anfitrión), `agent` (su versión), `rate_hz`, `transport` y `capabilities` cuando el transporte pudo obtenerlas. |
+
+</ScrollTable>
 
 El CSV guarda un subconjunto fijo de cada muestra. Todo lo demás que lleva una
 muestra — eventos del log del kernel, contadores PMU, temperaturas,
@@ -172,49 +161,46 @@ interrupciones por línea y el resto — está solo en el `.jsonl`.
 
 </ScrollTable>
 
-La proporción de ocupación del CSV es el único número que calcula la CLI, y
-hereda el suelo del kernel: un tick dura <Measured id="tick.ms" />, así que en una
-muestra de 100 ms un núcleo se resuelve en escalones del <Measured id="tick.stepOneCore" />. [El suelo de
-resolución](/mikroscope/es/limits/) explica por qué, y por qué la proporción
-está limitada a 1.
+La proporción de ocupación es el único número que calcula la CLI, y hereda el
+suelo del kernel: un tick dura <Measured id="tick.ms" />, así que en una muestra
+de 100 ms un núcleo se resuelve en escalones del <Measured id="tick.stepOneCore" />.
+[Límites de resolución](/mikroscope/es/limits/) explica por qué, y por qué la
+proporción está limitada a 1.
 
-## Los marcadores, y en qué reloj están
+## Marcadores {#los-marcadores-y-en-qué-reloj-están}
 
-Un marcador es una fila de `<out>.markers.csv` de uno de tres tipos:
+Un marcador es una fila de `<out>.markers.csv`, de uno de tres tipos:
 
-- **`note`** — una línea de texto que añadiste tú. Mientras `record` corre en un
-  terminal imprime `type a line and press Enter to add a marker; Ctrl-C stops`,
-  y cada línea no vacía que escribes se convierte en una nota. Cuando la entrada
-  estándar no es un terminal, no se lee nada de ella.
-- **`gap`** — se escribe cuando el agente informa de que unas muestras ya no
-  estaban en su anillo, con la etiqueta `samples <from>..<to> lost`. Los mismos
-  huecos aparecen en el resumen que imprime `record` al final.
-- **`log`** — una línea del propio log del router, añadida con `--log-markers`
-  (abajo).
+<ScrollTable label="Tipos de marcador">
+
+| `kind` | Se escribe cuando                                                                                                                                                                                                                                     |
+| ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `note` | Escribes una línea no vacía mientras `record` corre en un terminal (imprime `type a line and press Enter to add a marker; Ctrl-C stops`), o ejecutas `mark --out <prefix> "text"`. No se lee nada cuando la entrada estándar no es un terminal.    |
+| `gap`  | El agente informa de que unas muestras ya no estaban en su anillo. La etiqueta es `samples <from>..<to> lost`, y el resumen que imprime `record` lista los mismos huecos.                                                                            |
+| `log`  | `--log-markers` añade una línea del propio log del router (abajo).                                                                                                                                                                                   |
+
+</ScrollTable>
 
 Las notas y los huecos llevan la hora de tu máquina más el desfase medido al
-principio, así que quedan sobre el eje de tiempo del agente, no del de tu
-máquina. `mark --out cap "text"` hace lo mismo con el desfase guardado en
-`cap.meta.json`: sella la hora actual en el reloj del agente, y ninguna opción
-fija otra. Sobre una grabación terminada, la nota cae por tanto después de la
-última muestra, y `plot` no la dibuja. `mark` necesita ese fichero y un
-`cap.markers.csv` existente, y su fila lleva `seq` 0.
+principio, así que quedan sobre el eje de tiempo del agente. `mark --out cap
+"text"` hace lo mismo con el desfase guardado en `cap.meta.json`: sella la hora
+actual en el reloj del agente, y ninguna opción fija otra. `mark` necesita ese
+fichero y un `cap.markers.csv` existente, y su fila lleva `seq` 0.
 
-<Aside type="caution" title="Marca mientras corre la grabación, no después">
+<Aside type="caution" title="Marca mientras corre la grabación">
 	`record` no mantiene abierto `<out>.markers.csv`: lo abre, añade y lo cierra con cada marcador,
-	que es exactamente lo que hace `mark --out <prefix> "text"` desde un segundo terminal. Así que un
-	marcador tecleado en una terminal y otro añadido desde otra caen en el fichero en el orden en que
-	se hicieron, igual en Linux, macOS y Windows.
-	Lo que un `mark` de texto no puede hacer es marcar un momento de una grabación ya detenida: sella
-	la hora actual, que cae después de la última muestra, y `plot` no dibuja nada ahí.
+	como hace `mark --out <prefix> "text"` desde un segundo terminal. Los marcadores tecleados en un
+	terminal y los añadidos desde otro caen en el fichero en el orden en que se hicieron, igual en
+	Linux, macOS y Windows. Un `mark` de texto sobre una grabación ya detenida sella la hora actual,
+	que cae después de la última muestra, así que `plot` no dibuja nada ahí.
 </Aside>
 
-## El propio log del router como marcadores
+## Marcadores del log del router {#el-propio-log-del-router-como-marcadores}
 
-El log explica a menudo un transitorio que no provocaste tú: ejecuciones del
-planificador, errores, eventos de interfaz. `--log-markers` convierte las líneas
-del log de la ventana de la grabación en marcadores `log`, con la etiqueta
-`<topics>: <message>`.
+`--log-markers` convierte las líneas del log del router de la ventana de la
+grabación en marcadores `log`, con la etiqueta `<topics>: <message>`. Úsalo
+cuando haya que explicar un transitorio que no provocaste tú: ejecuciones del
+planificador, errores, eventos de interfaz.
 
 ```sh
 export MIKROSCOPE_API_ADDR=192.168.88.1:8728 MIKROSCOPE_API_USER=mikroscope MIKROSCOPE_API_PASSWORD=…
@@ -229,32 +215,33 @@ mikroscope mark --out burst --log-markers --router-tz Europe/Madrid
   ejecutarlo dos veces vuelve a añadir las mismas líneas.
 - `record --log-markers` pide el log cuando la grabación se ha detenido, para la
   ventana desde su inicio hasta su final en el reloj del agente, y añade las
-  líneas por el mismo camino que usa `mark`, así que acaban en
-  `<out>.markers.csv` y el total de marcadores del resumen cuenta lo que
-  contiene el fichero. Si la propia petición del log falla, `record` imprime
-  `log markers: …` y conserva la grabación.
+  líneas por el mismo camino que usa `mark`, así que el total de marcadores del
+  resumen cuenta lo que contiene el fichero. Si la petición del log falla,
+  `record` imprime `log markers: …` y conserva la grabación.
 
 La CLI pide al router solo la ventana, con una consulta `?>time=` que empieza un
-segundo antes, y solo los campos `time`, `topics` y `message`: el RB5009 tenía
-66 217 filas de log, porque su tema `dns` registra a disco. Después conserva las
-líneas dentro de la ventana cuyos temas incluyen alguno de `--topics`.
+segundo antes, y solo los campos `time`, `topics` y `message`, porque un router
+que registra un tema con mucho tráfico en disco puede tener decenas de miles de
+filas. Después conserva las líneas dentro de la ventana cuyos temas incluyen
+alguno de `--topics`. Un evento registrado por varias acciones de registro sobre
+un mismo tema llega una vez por acción, precedido del nombre de la acción
+(`[INFO]: …`, `[SYSTEM]: …`); el prefijo se elimina y los duplicados se conservan
+una sola vez.
 
-Un router con varias acciones de registro sobre un mismo tema lleva cada evento
-una vez por acción, precedido del nombre de la acción (`[INFO]: …`,
-`[SYSTEM]: …`); el prefijo se elimina y los duplicados se conservan una sola
-vez.
+Las horas del log no llevan zona:
 
-Las horas del log de RouterOS no llevan zona. RouterOS 7.24.2 imprime la fecha
-completa por la API; el analizador acepta también las formas más cortas, sin año
-o sin fecha, y las completa a partir del final de la ventana. Se leen en
-`--router-tz` y se sellan como reloj de pared
-del agente — el propio reloj del router — así que no se les aplica desfase. El
-valor por defecto `Local` es la zona de tu máquina: si la del router es
-distinta, pásala, o cada marcador de log caerá desplazado en esa diferencia. Las
-horas del log tienen resolución de un segundo, así que un marcador de log sitúa
-su evento al segundo, no a la muestra.
+- Por la API, RouterOS imprime la fecha y la hora completas
+  (<TestedOn of="log-time-full-date">verificado</TestedOn>). El analizador acepta también
+  las formas más cortas, sin año o sin fecha, y las completa a partir del final
+  de la ventana.
+- Las horas se leen en `--router-tz` y se sellan como reloj de pared del agente,
+  que es el propio reloj del router, así que no se les aplica desfase. El valor
+  por defecto `Local` es la zona de tu máquina: si la del router es distinta,
+  pásala, o cada marcador de log caerá desplazado en esa diferencia.
+- Las horas del log tienen resolución de un segundo, así que un marcador de log
+  sitúa su evento al segundo, no a la muestra.
 
-## El gráfico
+## Gráfico {#el-gráfico}
 
 `plot --in cap` lee `cap.jsonl`, y `cap.markers.csv` cuando existe, y escribe
 `cap.svg` (o `--svg`). Imprime el nombre del fichero con sus recuentos de
@@ -273,29 +260,32 @@ paneles comparten un eje de tiempo, en segundos desde que empezó la grabación:
 3. **memory available, MiB** — `MemAvailable` por muestra, con el eje y ajustado
    a los datos.
 
-Cada marcador es una línea vertical discontinua que cruza los tres paneles, gris
-para notas y líneas de log y roja para huecos, con una etiqueta encima del primer
-panel. Las etiquetas se reparten en hasta seis filas para separarlas; una
-etiqueta de más de 40 caracteres se acorta. Cuando no cabe en ninguna fila, la etiqueta se sigue
-acortando hasta que cabe, y una que quedaría por debajo de 12 caracteres se descarta: su línea
-discontinua sigue marcando el instante, pero su texto no se dibuja. Los marcadores de log consecutivos, en
-orden de tiempo, que caen en el mismo segundo se pliegan en una sola etiqueta,
-`<count>× <topics>: <first message>`, para que un planificador parlanchín no
-entierre el gráfico; una nota o un hueco entre ellos corta el pliegue, y las
-notas y los huecos nunca se pliegan. Los marcadores fuera del intervalo de tiempo
-de la grabación no se dibujan. Con una sola muestra, el SVG dice
-`not enough samples to draw`; sin ninguna, `plot` se detiene con
-`record: no samples` y no escribe SVG.
+Marcadores en el gráfico:
 
-La paleta es propia del gráfico, validada para su fondo claro: ΔE entre pares
-adyacentes con deficiencia de visión del color 9,1, con visión normal 22,9. No
-hay variante oscura.
+- Cada marcador es una línea vertical discontinua que cruza los tres paneles,
+  gris para notas y líneas de log y roja para huecos, con una etiqueta encima del
+  primer panel.
+- Las etiquetas se reparten en hasta seis filas. Una etiqueta de más de 40
+  caracteres se acorta; cuando no cabe en ninguna fila se sigue acortando hasta
+  que cabe, y una que quedaría por debajo de 12 caracteres se descarta. Su línea
+  discontinua sigue marcando el instante.
+- Los marcadores de log consecutivos, en orden de tiempo, que caen en el mismo
+  segundo se pliegan en una sola etiqueta, `<count>× <topics>: <first message>`.
+  Una nota o un hueco entre ellos corta el pliegue, y las notas y los huecos
+  nunca se pliegan.
+- Los marcadores fuera del intervalo de tiempo de la grabación no se dibujan.
+
+Con una sola muestra, el SVG dice `not enough samples to draw`; sin ninguna,
+`plot` se detiene con `record: no samples` y no escribe SVG. La paleta es propia
+del gráfico, validada para su fondo claro: ΔE entre pares adyacentes con
+deficiencia de visión del color 9,1, con visión normal 22,9. No hay variante
+oscura.
 
 `plot` también lee una captura que el agente guardó por un disparo: guarda
 `GET /captures/<id>` en un fichero `.jsonl` y pásalo a `--in`. La línea de
 cabecera de la captura no lleva número de secuencia y se salta.
 
-## Disparadores durante una grabación
+## Líneas de disparo {#disparadores-durante-una-grabación}
 
 Cuando salta un disparador en el agente, una línea `{"trigger":{…}}` viaja en la
 misma petición que las muestras, justo antes de la muestra en la que saltó. El
@@ -316,14 +306,14 @@ traer la ventana a cadencia completa que el agente guardó a su alrededor.
 
 ## Véase también
 
-- [Cinco minutos con un router](/mikroscope/es/start/walkthrough/): una
-  grabación real del RB5009, sus marcadores y su gráfico, paso a paso.
+- [Primera grabación](/mikroscope/es/start/walkthrough/): grabar, marcar y
+  dibujar, paso a paso.
 - [Captura por disparo](/mikroscope/es/record/triggers/): las muestras alrededor
   de una condición, guardadas a cadencia completa por el agente sin ninguna
   grabación en marcha.
-- [Llegar al agente](/mikroscope/es/install/reaching-the-agent/): cuál de los
+- [Acceso por red](/mikroscope/es/install/reaching-the-agent/): cuál de los
   caminos directo y relay permite tu red.
-- [El usuario de la API](/mikroscope/es/security/api-user/): el usuario de
-  RouterOS que necesitan el relay y `--log-markers`.
+- [Usuario de la API](/mikroscope/es/security/api-user/): el usuario de RouterOS
+  que necesitan el relay y `--log-markers`.
 
 </SeeAlso>

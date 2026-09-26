@@ -1,23 +1,23 @@
 ---
 title: Prometheus
 description: "Métricas de kernel de MikroTik RouterOS en /metrics del colector: familias del agente recalculadas, la capa de la API, lo derivado y un trabajo de scrape."
+docType: how-to
 head:
   - tag: title
     content: Métricas de MikroTik RouterOS en Prometheus | mikroscope
 ---
 
 import { Aside } from "@astrojs/starlight/components";
-import NotClaimed from "../../../../components/NotClaimed.astro";
 import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
+import TestedOn from "../../../../components/TestedOn.astro";
 
 `--prom :9124` hace que el colector sirva el [formato de texto de
 Prometheus](https://prometheus.io/docs/instrumenting/exposition_formats/)
-(`text/plain; version=0.0.4`) en `GET /metrics` en esa dirección. Esta página responde a qué
-lleva esa exposición y qué no puede llevar a ningún destino. Solo hay una cosa a la que hacer
-scrape: el agente no sirve exposición desde 1.0.5.
+(`text/plain; version=0.0.4`) en `GET /metrics` en esa dirección. Haz scrape del
+colector: el agente no sirve exposición propia.
 
-## Recalculado a partir de las muestras
+## Familias del kernel {#recalculado-a-partir-de-las-muestras}
 
 Las familias de la capa del kernel en el colector las renderiza el mismo código que
 ejecuta el agente — sus contadores acumulados, su histograma de ticks ocupados y sus
@@ -32,18 +32,19 @@ de huecos, y las familias de datos del equipo que salen de las `/capabilities` d
 <Aside type="caution" title="Dimensionado para 10 Hz, vaya el agente a lo que vaya">
 	El colector dimensiona su histograma `mikroscope_cpu_busy_ticks` a partir de 10 Hz fijos, no del
 	agente conectado, para que la disposición de los buckets no cambie cuando se reconecta a un agente
-	configurado de otra forma. Leído del código, no medido, la misma constante fija más cosas, y
-	frente a un agente por encima de 10 Hz cada una se desvía en la razón de cadencias. El anillo que hay detrás de las ventanas móviles sí sigue al agente: el colector lee
-	la cadencia de su comprobación de salud y dimensiona el anillo a 60 s de ella, así que
-	`window="60s"` abarca un minuto a cualquier cadencia. La media móvil de softnet que hay detrás de
-	`mikroscope_softnet_burst_samples_total` no: su peso es 1/600, una memoria de 60 s a 10 Hz y menos
-	por encima, así que la referencia de ráfagas del colector se estrecha cuanto más rápido muestrea
-	el agente; el agente dimensiona la suya a partir de su cadencia real. Una línea de interrupción se
-	poda de las familias top-K tras 36 000 muestras fuera de todo top-K: una hora a 10 Hz, 12 min a 50
-	Hz, 6 min a 100 Hz.
+	configurado de otra forma. La misma constante fija más cosas
+	(<TestedOn of="not-tested">leído del código, no medido</TestedOn>), y frente a un agente por
+	encima de 10 Hz cada una se desvía en la razón de cadencias. El anillo que hay detrás de las
+	ventanas móviles sí sigue al agente: el colector lee la cadencia de su comprobación de salud y
+	dimensiona el anillo a 60 s de ella, así que `window="60s"` abarca un minuto a cualquier cadencia.
+	La media móvil de softnet que hay detrás de `mikroscope_softnet_burst_samples_total` no: su peso
+	es 1/600, una memoria de 60 s a 10 Hz y menos por encima, así que la referencia de ráfagas del
+	colector se estrecha cuanto más rápido muestrea el agente; el agente dimensiona la suya a partir
+	de su cadencia real. Una línea de interrupción se poda de las familias top-K tras 36 000 muestras
+	fuera de todo top-K: una hora a 10 Hz, 12 min a 50 Hz, 6 min a 100 Hz.
 </Aside>
 
-## Un trabajo de scrape
+## Trabajo de scrape {#un-trabajo-de-scrape}
 
 El del colector, y solo el del colector:
 
@@ -53,17 +54,14 @@ El del colector, y solo el del colector:
   static_configs: [{ targets: ["<equipo del colector>:9124"] }]
 ```
 
-Hasta 1.0.4 eran dos, porque algunas familias existían únicamente en el `/metrics` del
-propio agente. **Desde 1.0.5 el agente no sirve ninguna exposición.** Lo que solo un
-muestreador puede saber llega al colector como dato — el retraso de despertar y la
-duración de lectura de cada tick viajan en la propia muestra, y `GET /sampler` responde
-los contadores que no son por tick — así que este único trabajo lleva todas las familias
-que pide el dashboard. La suite de extremo a extremo comprueba justo eso: antes
-scrapeaba los dos y ahora contrasta solo contra el colector.
+Este único trabajo lleva todas las familias que pide el dashboard. Lo que solo un
+muestreador puede saber llega al colector como dato: el retraso de despertar y la
+duración de lectura de cada tick viajan en la propia muestra, y `GET /sampler`
+responde los contadores que no son por tick. No hay nada que contar dos veces ni
+lista de `keep` que mantener. Los intervalos de scrape y las versiones de
+Prometheus que se han usado están en el estado de las <TestedOn of="feature-status">funciones</TestedOn>.
 
-No queda nada que contar dos veces, ni lista de `keep` que mantener.
-
-### Lo que sabe el colector, y de dónde
+### Origen de cada familia {#lo-que-sabe-el-colector-y-de-dónde}
 
 <ScrollTable label="De dónde salen las familias del colector">
 
@@ -78,14 +76,14 @@ No queda nada que contar dos veces, ni lista de `keep` que mantener.
 
 </ScrollTable>
 
-Lo único que cambió de significado: estas cifras son ahora tan frescas como la cadencia
-de salud del colector, un minuto, en vez de tan frescas como el scrape. Para contadores
-de disparos y capturas retenidas esa es la resolución correcta; para cualquier cosa por
-tick no aplica, porque esas viajan en las muestras a ritmo completo.
+Las familias que se leen de `/sampler` son tan frescas como la cadencia de salud
+del colector, un minuto, no tan frescas como el scrape. Para contadores de
+disparos y capturas retenidas esa es la resolución correcta; todo lo que es por
+tick viaja en las muestras a ritmo completo.
 
-## Lo que añade el colector
+## Familias solo del colector {#lo-que-añade-el-colector}
 
-### Los contadores propios del colector
+### Contadores del colector {#los-contadores-propios-del-colector}
 
 <ScrollTable label="Familias de contadores del colector">
 
@@ -103,7 +101,7 @@ de un evento aunque se pierda un scrape, y cada regla se renderiza a 0 desde el 
 porque una familia que solo aparece tras su primer evento no se puede leer como «ninguno
 hasta ahora».
 
-### La etapa de derivación
+### Familias derivadas {#la-etapa-de-derivación}
 
 <ScrollTable label="Familias derivadas en el colector">
 
@@ -120,9 +118,9 @@ hasta ahora».
 
 Son los valores de la muestra más reciente, un nivel en el momento del scrape; la serie
 completa está en los almacenes que guardan cada muestra. Lo que significa cada uno, y
-cuándo se omite, está en [lo que deriva el colector](/mikroscope/es/sinks/derive/).
+cuándo se omite, está en [Valores derivados](/mikroscope/es/sinks/derive/).
 
-### La capa de la API
+### Familias de la API {#la-capa-de-la-api}
 
 Solo presentes cuando la capa de la API ha entregado una muestra; con `--api-mode off` o
 sin credenciales de la API no existe ninguna de estas familias.
@@ -144,15 +142,14 @@ sin credenciales de la API no existe ninguna de estas familias.
 
 </ScrollTable>
 
-`mikroscope_api_up` nunca se renderiza como 0: antes de la primera muestra de la API, y
-cuando la capa está apagada, la familia no existe.
+- `mikroscope_api_up` nunca se renderiza como 0: antes de la primera muestra de
+  la API, y cuando la capa está apagada, la familia no existe.
+- El número de conexiones, los contadores de puerto y las proporciones del fast
+  path llegan con cadencias más lentas que el scrape. El colector guarda el último
+  valor de cada uno entre lecturas, así que un scrape que cae entre dos lecturas
+  sigue viendo la familia en vez de una serie que aparece y desaparece.
 
-El número de conexiones, los contadores de puerto y las proporciones del fast path llegan
-con cadencias más lentas que el scrape. El colector guarda el último valor de cada uno
-entre lecturas, así que un scrape que cae entre dos lecturas sigue viendo la familia en
-vez de una serie que aparece y desaparece.
-
-### Qué es cada interfaz
+### Inventario de interfaces {#qué-es-cada-interfaz}
 
 La capa de la API lee qué es cada interfaz — su comentario, el tipo de RouterOS, sus
 listas de interfaces, el bridge del que es puerto, su nombre de fábrica y su MTU — con
@@ -168,26 +165,29 @@ uno de los sesenta y pico contadores de ese puerto en cada edición. Únelo en l
 mikroscope_api_interface_counter_total * on(interface) group_left(label, type, role) mikroscope_api_interface_info
 ```
 
-Toda interfaz del inventario tiene serie, tenga comentario o no. Un valor vacío de
-`label` es como Prometheus escribe «ninguno» —su [modelo de
-datos](https://prometheus.io/docs/concepts/data_model/) trata una etiqueta con valor vacío
-como una que no existe—, así que todas las series de la exposición llevan los mismos nombres
-de etiqueta. `type` dice qué significan los contadores de esa interfaz: un puerto `ether` de
-un bridge cuenta su cable, incluidas las tramas que el chip de switching reenvió por
-hardware, mientras que el `bridge` cuenta su lado de CPU. Ninguno es un subconjunto del
-otro — en el RB5009 de referencia (RouterOS 7.24.2, 2026-09-16) ether1 recibió 255,8 GB
-en el cable y entregó 29,7 GB a la CPU — así que no sumes un puerto y su bridge.
-
-`mikroscope_api_interface_counter_total` tiene una serie por puerto y contador que el
-router informa: 9 puertos × 45 contadores en el RB5009 de referencia, y 15 en cada interfaz
-bridge, VLAN, PPPoE, WireGuard, veth o loopback, contados en las propias filas
-`mikroscope_api_ifcounters` del colector el 2026-09-24; la versión de RouterOS no se leyó
-con ellas. Un contador que un puerto no informa no tiene serie, y una tasa de pérdidas que el router no devolvió no
-tiene `kind`. Las claves que se leen como enteros pero no cuentan nada — `mtu`,
-`actual-mtu`, `l2mtu`, `max-l2mtu`, `sfp-shutdown-temperature` — son tamaños y
-configuración y no tienen serie de contador; el MTU forma parte del inventario. En el
-RB5009 con RouterOS 7.24.2 (2026-09-15) `monitor-traffic` devuelve `rx-drops`,
-`tx-drops` y `tx-queue-drops` y ninguna clave de errores.
+- Toda interfaz del inventario tiene serie, tenga comentario o no. Un valor vacío
+  de `label` es como Prometheus escribe «ninguno» —su [modelo de
+  datos](https://prometheus.io/docs/concepts/data_model/) trata una etiqueta con
+  valor vacío como una que no existe—, así que todas las series de la exposición
+  llevan los mismos nombres de etiqueta.
+- `type` dice qué significan los contadores de esa interfaz: un puerto `ether` de
+  un bridge cuenta su cable, incluidas las tramas que el chip de switching
+  reenvió por hardware, mientras que el `bridge` cuenta su lado de CPU. Ninguno es
+  un subconjunto del otro — la mayor parte de lo que recibe un puerto puede
+  conmutarse por hardware sin llegar nunca a la CPU
+  (<TestedOn of="counters-2026-09-16">medido</TestedOn>) —, así que no sumes un puerto y su
+  bridge.
+- `mikroscope_api_interface_counter_total` tiene una serie por puerto y contador
+  que el router informa: un puerto Ethernet informa varias veces más contadores
+  que una interfaz bridge, VLAN, PPPoE, WireGuard, veth o loopback
+  (<TestedOn of="reference-hardware">contado</TestedOn>). Un contador que un puerto no
+  informa no tiene serie.
+- Una tasa de pérdidas que el router no devolvió no tiene `kind`, y
+  `monitor-traffic` puede devolver las tasas de descarte sin ninguna clave de
+  errores (<TestedOn of="monitor-traffic-keys">verificado</TestedOn>).
+- Las claves que se leen como enteros pero no cuentan nada — `mtu`,
+  `actual-mtu`, `l2mtu`, `max-l2mtu`, `sfp-shutdown-temperature` — son tamaños y
+  configuración y no tienen serie de contador; el MTU forma parte del inventario.
 
 ## Familias de datos del equipo
 
@@ -198,25 +198,19 @@ La exposición del colector lleva las familias de datos del equipo a partir de l
 `mikroscope_cpu_frequency_limit_hertz`, `mikroscope_cpu_frequency_step_hertz`,
 `mikroscope_cpu_frequency_governor_info`, `mikroscope_cpu_frequency_cluster`,
 `mikroscope_self_cgroup_memory_max_bytes`) y `mikroscope_source_cadence_hz{source,reason}`.
-Consulta [el flujo de datos del equipo](/mikroscope/es/sinks/device-info/).
-
-<NotClaimed>
-	Un Prometheus 3.14 ha hecho scrape de la exposición del colector cada 5 s con el RB5009
-	alimentando el colector, el 2026-09-12 y de nuevo el 2026-09-15. No consta ningún otro intervalo
-	de scrape ni ninguna otra versión de Prometheus.
-</NotClaimed>
+Consulta [Datos del equipo](/mikroscope/es/sinks/device-info/).
 
 <SeeAlso>
 
 ## Véase también
 
-- [Familias de métricas de Prometheus](/mikroscope/es/reference/metrics/): cada familia que
+- [Métricas de Prometheus](/mikroscope/es/reference/metrics/): cada familia que
   renderizan el agente y el colector, con sus etiquetas.
 - [Importar y comprobar](/mikroscope/es/dashboards/import-and-check/): los paneles que alimenta este
   trabajo de scrape, y cómo comprobarlos panel a panel.
-- [Lo que deriva el colector](/mikroscope/es/sinks/derive/): qué significan los gauges
+- [Valores derivados](/mikroscope/es/sinks/derive/): qué significan los gauges
   `mikroscope_derived_*` y cuándo faltan.
-- [El colector](/mikroscope/es/sinks/): lo que hace una ejecución de `forward` antes de que nada
+- [Ejecutar el colector](/mikroscope/es/sinks/): lo que hace una ejecución de `forward` antes de que nada
   llegue a `/metrics`.
 
 </SeeAlso>

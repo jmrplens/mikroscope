@@ -1,6 +1,7 @@
 ---
-title: La capa de la API de RouterOS
-description: En un RB5009, el cpu-load de RouterOS se ajustó a una media móvil de ~1 s de /proc/stat. Qué más pregunta el colector a la API y cómo preguntar menos.
+title: Capa de la API de RouterOS
+description: Qué pregunta el colector a la API binaria de RouterOS, los preajustes que preguntan menos, qué promedia cpu-load y qué significa un valor que falta.
+docType: how-to
 head:
   - tag: title
     content: La API de RouterOS y lo que promedia su cpu-load | mikroscope
@@ -8,19 +9,16 @@ head:
 
 import { Aside } from "@astrojs/starlight/components";
 import Measured from "../../../../components/Measured.astro";
-import Provenance from "../../../../components/Provenance.astro";
-import NotClaimed from "../../../../components/NotClaimed.astro";
 import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
+import TestedOn from "../../../../components/TestedOn.astro";
 
-Además de la capa del kernel que extrae del agente, `forward` puede mantener una sesión
-persistente con la [API binaria de
-RouterOS](https://help.mikrotik.com/docs/spaces/ROS/pages/47579160/API) para la capa de
-la API (una segunda cuando la propia capa del kernel llega por el relay) y leer lo que
-el contenedor no ve. Esta página responde a qué lee esa capa, qué parte ya cubre el
-agente, cómo elegir cuánto de ella ejecutar y qué significa un valor que falta.
+`forward` puede mantener una sesión persistente con la [API binaria de
+RouterOS](https://help.mikrotik.com/docs/spaces/ROS/pages/47579160/API) (una segunda
+cuando la propia capa del kernel llega por el relay) para leer lo que el contenedor no
+ve: el tráfico y los contadores por interfaz. Elige cuánto pregunta con `--api-mode`.
 
-## Lo que el agente ya lee, y lo que no puede
+## Agente frente a la API {#lo-que-el-agente-ya-lee-y-lo-que-no-puede}
 
 Casi todo lo que la capa de la API puede obtener lo lee el propio agente:
 
@@ -28,48 +26,24 @@ Casi todo lo que la capa de la API puede obtener lo lee el propio agente:
   RouterOS de los mismos jiffies de `/proc/stat` que el agente diferencia a 10 Hz.
 - La temperatura de `/system/health` es `/sys/class/thermal`, legible desde el contenedor.
 - El número de conexiones es la caché slab global `nf_conntrack`, que el agente lee con
-  `privileged=yes`; consulta [conntrack sin la API](/mikroscope/es/playbooks/conntrack/).
+  `privileged=yes`; consulta [Conntrack sin la API](/mikroscope/es/playbooks/conntrack/).
 
 Lo que queda son **los bytes y paquetes por interfaz**. Viven en el espacio de nombres de
 red del router y quedan fuera de alcance se le dé lo que se le dé al contenedor; consulta
-[la CPU del router, la red del contenedor](/mikroscope/es/limits/namespaces/).
+[Visibilidad del contenedor](/mikroscope/es/limits/namespaces/).
 
-## ¿Cuántos segundos promedia el `cpu-load` de RouterOS?
+## Ventana de cpu-load {#cuántos-segundos-promedia-el-cpu-load-de-routeros}
 
-El `cpu-load` de RouterOS promedia más o menos un segundo: en un MikroTik RB5009 con
-RouterOS 7.24.2 siguió una media móvil de **<Measured id="cpuLoad.window1" /> que llegó
-a la API con <Measured id="cpuLoad.delay1" /> de retardo** en una hora y **una media de <Measured id="cpuLoad.window2" />,
-con <Measured id="cpuLoad.delay2" /> de retardo**, en otra, cada una el mejor ajuste
-frente a la propia proporción de ocupación de `/proc/stat` del kernel leída a 10 Hz el
-2026-09-15 (r = <Measured id="cpuLoad.r1" /> sobre las <Measured id="cpuLoad.samples1" />
-muestras de la API de esa hora, y r = <Measured id="cpuLoad.r2" /> sobre las <Measured id="cpuLoad.samples2" />
-de la otra).
-
-La [documentación de
+El `cpu-load` de RouterOS es una media móvil de más o menos un segundo del tiempo
+ocupado de `/proc/stat` del kernel, y llega a la API con una fracción de segundo de
+retardo (<TestedOn of="cpu-load-window-2026-09-15">medido</TestedOn>). La
+[documentación de
 `/system/resource`](https://help.mikrotik.com/docs/spaces/ROS/pages/40992875/Resource)
-de MikroTik define `cpu-load` como el porcentaje de recursos de CPU usados, sumando
-todas las CPU, y no nombra ninguna ventana (leída el 2026-09-24). El resto de esta
-sección cuenta cómo se midió la ventana en lugar de suponerla.
+de MikroTik define `cpu-load` como el porcentaje de recursos de CPU usados, sumando todas
+las CPU, y no nombra ninguna ventana. No puede resolver nada más corto que su propio
+segundo, que es la razón por la que mikroscope lee el kernel.
 
-`/system/resource` publica `cpu-load` como un porcentaje entero. La serie de la API
-se correlacionó con la propia proporción de ocupación por núcleo del agente, que son
-los mismos jiffies de `/proc/stat`, para una serie de longitudes de ventana y
-retardos, y los ajustes de arriba son los mejores de cada hora. Ensanchar la ventana
-solo empeora el ajuste: 1,5 s da 0,955; 2 s da 0,919; 5 s da 0,822; y 8 s da 0,791.
-
-Una media de sesenta segundos queda descartada por partida doble. Su correlación es
-0,238, y la respuesta al escalón no tiene rampa: en el mayor salto de carga del día
-el kernel pasó de 5 % a 27 % en un segundo y `cpu-load` pasó de 5 a 26 en ese mismo
-segundo, y de 22 % a 6 % al bajar con la misma rapidez. Una media de un minuto
-habría necesitado un minuto para recorrer cualquiera de los dos caminos.
-
-<Provenance of="cpu-load-window-2026-09-15" />
-
-Así que el número es lo que dice ser. Lo que sigue sin poder hacer es resolver nada
-más corto que su propio segundo, que es justo la razón por la que este proyecto lee
-el kernel.
-
-## Elegir cuánto preguntar
+## Modos de la API {#elegir-cuánto-preguntar}
 
 `--api-mode` elige un preajuste. Es `full` salvo que digas otra cosa, y un `--api-every`,
 `--no-health` o `--conntrack-every` explícito sigue mandando sobre él.
@@ -80,14 +54,13 @@ el kernel.
 | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
 | `off`  | sin capa de la API: `--api-every 0`                                                                                                                                         | en producción, cuando el tráfico por interfaz ya viene de otro sitio |
 | `slow` | una ronda cada 10 s, sin `/system/health` y sin el número de conexiones; `/system/resource`, `monitor-traffic` y los contadores de puerto siguen ejecutándose en cada ronda | en producción, cuando también quieres las tasas de las interfaces    |
-| `full` | una ronda por segundo, con `/system/health`; contadores de puerto cada 10 s; el número de conexiones solo si `--conntrack-every` lo pide                                    | experimentos y ejecuciones cortas de `forward`                               |
+| `full` | una ronda por segundo, con `/system/health`; contadores de puerto cada 10 s; el número de conexiones solo si `--conntrack-every` lo pide                                    | experimentos y ejecuciones cortas de `forward`                       |
 
 </ScrollTable>
 
-`off` es el modo que renuncia al tráfico por interfaz; `slow` es el que lo conserva a bajo
-coste. Con `slow` hay dos paneles vacíos por configuración y no por el equipo —
-`/system/health` y el número de conexiones de RouterOS — y nombran la opción que los
-rellena.
+`off` renuncia al tráfico por interfaz; `slow` lo conserva a bajo coste. Con `slow` hay
+dos paneles vacíos por configuración y no por el equipo — `/system/health` y el número
+de conexiones de RouterOS — y nombran la opción que los rellena.
 
 <Aside type="note" title="El preajuste off para la capa de la API, no toda sesión de API">
 	El transporte por relay extrae el anillo del agente a través de `/tool fetch` sobre la misma API
@@ -96,7 +69,7 @@ rellena.
 	lo hace.
 </Aside>
 
-## Lo que pregunta una ronda
+## Órdenes por ronda {#lo-que-pregunta-una-ronda}
 
 Cada orden de la capa de la API se ejecuta en la única sesión de esa capa, de una en una, con un tiempo de espera de 15 s
 cada una. Las cadencias más lentas se comprueban en cada ronda, así que ninguna se ejecuta
@@ -104,8 +77,8 @@ más a menudo que `--api-every`.
 
 <ScrollTable label="Órdenes de RouterOS que ejecuta la capa de la API">
 
-| Orden                                                               | Pide                                                                             | Se ejecuta                                           | Apagada cuando                              |
-| ------------------------------------------------------------------- | -------------------------------------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------- |
+| Orden                                                                        | Pide                                                                                                      | Se ejecuta                                                                                    | Apagada cuando                              |
+| ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------- |
 | `/system/resource/print`                                                     | `cpu-load`, `free-memory`, `total-memory`, `free-hdd-space`, `uptime`, `version`                          | en cada ronda                                                                                 | la capa está apagada                        |
 | `/system/resource/cpu/print`                                                 | `cpu`, `load`, `irq`, `disk`                                                                              | en cada ronda                                                                                 | la capa está apagada                        |
 | `/system/health/print`                                                       | `name`, `value`                                                                                           | en cada ronda                                                                                 | `--no-health`, o `slow`                     |
@@ -118,47 +91,52 @@ más a menudo que `--api-every`.
 
 </ScrollTable>
 
-Una orden que falla deja vacía su parte de la muestra y registra por qué; el resto de la
-ronda sigue en pie. Los fallos se registran en la salida de error como `api tier: …`, se
-escriben como líneas en Loki y filas en SQL, y se cuentan en OTLP — nunca se convierten en
-un valor. Una lectura de `/interface` que falla conserva el inventario que ya tenía — un error
-transitorio no deja en blanco la etiqueta de todos los paneles — y se informa como
-`inventory: …`; las lecturas de listas y de bridges son de mejor esfuerzo, y sin ellas
-el inventario sigue llevando nombres, tipos y comentarios.
+- Una orden que falla deja vacía su parte de la muestra y registra por qué; el
+  resto de la ronda sigue en pie. Los fallos se registran en la salida de error
+  como `api tier: …`, se escriben como líneas en Loki y filas en SQL, y se cuentan
+  en OTLP — nunca se convierten en un valor.
+- Una lectura de `/interface` que falla conserva el inventario que ya tenía, así
+  que un error transitorio no deja en blanco la etiqueta de todos los paneles, y
+  se informa como `inventory: …`. Las lecturas de listas y de bridges son de mejor
+  esfuerzo; sin ellas el inventario sigue llevando nombres, tipos y comentarios.
+- La muestra de la capa de la API se marca con el reloj del colector más el
+  desfase medido frente al agente, así que cae en la línea temporal del agente.
 
-La muestra de la capa de la API se marca con el reloj del colector más el desfase medido
-frente al agente, así que cae en la línea temporal del agente.
+## Inventario de interfaces {#qué-es-cada-interfaz}
 
-## Qué es cada interfaz
+Las tres lecturas del inventario dicen a qué pertenecen los números. De cada interfaz
+dan:
 
-Las tres lecturas del inventario responden a lo que los contadores no pueden: a qué
-pertenecen los números. De cada interfaz dan su nombre actual, el nombre por defecto de
-la placa (el `ether5` de fábrica de un puerto físico, vacío en un bridge, una VLAN o un
-túnel), el tipo propio de RouterOS (`ether`, `bridge`, `vlan`, `pppoe-out`, `wg`,
-`veth`, `loopback`), el comentario, las listas de interfaces a las que pertenece —
-ordenadas y unidas por comas, `WAN` o `LAN,VPN` —, el bridge del que es puerto y el
-MTU. Un miembro de un bridge que no está en ninguna lista propia hereda las de su
-bridge, porque así es como lo empareja una regla de firewall de RouterOS, y un puerto de
-bridge que nombra una lista de interfaces en vez de una interfaz no se etiqueta.
+<ScrollTable label="Lo que lee el inventario de cada interfaz">
 
-En el RB5009 de referencia (RouterOS 7.24.2, 2026-09-16) las tres lecturas devuelven 17
-interfaces. `ether1` es un `ether` de la lista `LAN`, puerto de `bridge`, etiquetado
-«TrueNAS - High Performance Storage», MTU 9000; `ether5` es un `ether` de `WAN` que no
-está en ningún bridge, etiquetado «DIGI ONT»; `PPPoE_DIGI` es `pppoe-out`, `WAN`, MTU
-1480; `VLAN_DIGI` es `vlan`, `WAN`; `wg_devices` y `wg_trastero` son `wg` en `LAN,VPN`;
-`ether6` y `ether7` llevan el comentario «Unused».
+| Campo                | Origen                                        | Ejemplo                                                                                 |
+| -------------------- | --------------------------------------------- | --------------------------------------------------------------------------------------- |
+| nombre               | `/interface/print`                            | el nombre actual                                                                        |
+| nombre por defecto   | `/interface/print`                            | el `ether5` de fábrica de un puerto físico; vacío en un bridge, una VLAN o un túnel     |
+| tipo                 | `/interface/print`                            | `ether`, `bridge`, `vlan`, `pppoe-out`, `wg`, `veth`, `loopback`                        |
+| comentario           | `/interface/print`                            | la etiqueta que muestra un panel                                                        |
+| MTU                  | `/interface/print` (`actual-mtu`)             | `9000`                                                                                  |
+| rol                  | `/interface/list/member/print`                | las listas de interfaces, ordenadas y unidas por comas: `WAN`, `LAN,VPN`                |
+| bridge               | `/interface/bridge/port/print`                | el bridge del que es puerto                                                             |
 
-Esto es configuración, no telemetría, así que se lee una vez al arrancar — antes de la
-primera extracción del kernel, para que un registro del log del kernel lleve etiqueta
-desde la primera línea — y luego con la cadencia lenta de `--labels-every`, nunca en
-cada sondeo. Un comentario editado, o un puerto que cambia de lista, llega al dashboard
-en minutos y no en el siguiente reinicio del colector, y un comentario borrado en
-RouterOS desaparece también aquí: la lectura sustituye el inventario entero. Ninguna de
-las cinco propiedades que pide puede llevar un secreto.
+</ScrollTable>
 
-Cada fila de tasas de `monitor-traffic` y cada fila de contadores por puerto llevan
-entonces `label` (el comentario), `type`, `role` y `bridge`, para que un panel diga lo
-que hay enchufado en vez de un número de puerto, y diga qué números se pueden comparar.
+- Un miembro de un bridge que no está en ninguna lista propia hereda las de su
+  bridge, porque así es como lo empareja una regla de firewall de RouterOS. Un
+  puerto de bridge que nombra una lista de interfaces en vez de una interfaz no se
+  etiqueta.
+- Esto es configuración, no telemetría, así que se lee una vez al arrancar —
+  antes de la primera extracción del kernel, para que un registro del log del
+  kernel lleve etiqueta desde la primera línea — y luego con la cadencia lenta de
+  `--labels-every`, nunca en cada sondeo. Un comentario editado, o un puerto que
+  cambia de lista, llega al dashboard en minutos, y un comentario borrado en
+  RouterOS desaparece también aquí: la lectura sustituye el inventario entero.
+  Ninguna de las cinco propiedades que pide puede llevar un secreto.
+- Cada fila de tasas de `monitor-traffic` y cada fila de contadores por puerto
+  llevan `label` (el comentario), `type`, `role` y `bridge`, para que un panel
+  diga lo que hay enchufado en vez de un número de puerto, y qué números se pueden
+  comparar.
+
 Prometheus es la excepción a propósito: un comentario lo edita una persona, y una
 etiqueta que cambia crearía una serie nueva en cada edición, así que el `/metrics` del
 colector lleva una serie informativa por interfaz —
@@ -180,8 +158,8 @@ la placa y no recibe etiqueta.
 
 <ScrollTable label="Opciones de la capa de la API">
 
-| Opción              | Por defecto                    | Significado                                                                              |
-| ------------------- | ------------------------------ | ---------------------------------------------------------------------------------------- |
+| Opción              | Por defecto                    | Significado                                                                                                                  |
+| ------------------- | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
 | `--api host:port`   | `MIKROSCOPE_API_ADDR`          | la API binaria de RouterOS, p. ej. `192.168.88.1:8728`                                                                       |
 | `--api-user`        | `MIKROSCOPE_API_USER`          | el usuario de la API; su contraseña solo desde `MIKROSCOPE_API_PASSWORD`                                                     |
 | `--api-mode`        | `full`                         | `off`, `slow` o `full`, como arriba                                                                                          |
@@ -196,225 +174,148 @@ la placa y no recibe etiqueta.
 
 Sin `--api`, `--api-user` y `MIKROSCOPE_API_PASSWORD`, `forward` ejecuta solo la capa del
 kernel. Si se dan pero la sesión no se puede abrir en 10 s, registra `api tier: not connected
-yet, will keep trying: …` y engancha el lector igualmente: desde 1.0.9 una primera marcación
-fallida es un aviso, no una capa deshabilitada para toda la vida del proceso.
+yet, will keep trying: …` y engancha el lector igualmente: una primera marcación fallida es
+un aviso, no una capa deshabilitada para toda la vida del proceso.
 
-## El usuario que necesita
+## Usuario de la API {#el-usuario-que-necesita}
 
 En cualquier modo las órdenes de la capa de la API son lecturas: basta un usuario con las
 políticas `read` y `api`. `test` solo hace falta para `/tool fetch`, que usa el transporte
 por relay y nada más de la capa de la API. El grupo, la restricción de dirección y por qué
-la credencial nunca vive en el router están en [el usuario de la
+la credencial nunca vive en el router están en [Usuario de la
 API](/mikroscope/es/security/api-user/).
 
-## Un valor ausente está ausente
+## Valores ausentes {#un-valor-ausente-está-ausente}
 
 La capa de la API guarda exactamente lo que devolvió el router y no se inventa nada para
 lo que no devolvió.
 
-**Tasas de pérdidas.** `monitor-traffic` puede devolver `rx-drops`, `tx-drops`,
-`tx-queue-drops`, `rx-errors` y `tx-errors` por segundo, y un destino escribe cada una solo
-cuando volvió. En el RB5009 con RouterOS 7.24.2 (2026-09-15) devuelve las tres tasas de
-descartes y **ninguna clave de errores**.
+- **Tasas de pérdidas.** `monitor-traffic` puede devolver `rx-drops`, `tx-drops`,
+  `tx-queue-drops`, `rx-errors` y `tx-errors` por segundo, y un destino escribe cada
+  una solo cuando volvió. Un router puede devolver las tres tasas de descartes y
+  **ninguna clave de errores** (<TestedOn of="monitor-traffic-keys">verificado</TestedOn>).
+- **Contadores de puerto.** Los contadores por puerto son un mapa con los nombres de
+  campo del propio RouterOS, no un conjunto fijo de campos, y solo se conservan los
+  enteros sin signo simples que cuentan algo. `mtu`, `actual-mtu`, `l2mtu`,
+  `max-l2mtu` y `sfp-shutdown-temperature` se leen como enteros pero son tamaños y
+  configuración, y todo destino representa este mapa como una familia de
+  contadores, así que se descartan aquí en vez de dejar que cada consumidor lo sepa;
+  el MTU viaja en el inventario.
+- **Dos órdenes, fusionadas por interfaz.** `/interface/ethernet/print stats` aporta
+  los errores tipados de la MAC, la familia de colisiones, los intervalos de tamaño
+  de trama y los contadores del driver; `/interface/print stats-detail` aporta los
+  contadores `fp-*` del fast path, `link-downs`, `tx-queue-drop` y los totales del
+  lado del kernel. Una placa sin contadores de colisiones no produce entradas de
+  colisiones en vez de una fila de ceros que se lee como «sin colisiones».
+- **Errores que solo llevan los contadores.** Un puerto puede contar `rx-overflow`
+  mientras `monitor-traffic` no devuelve ninguna clave de errores para él, así que
+  esa cuenta solo llega a un consumidor por los contadores de puerto
+  (<TestedOn of="rx-overflow-port-counters">verificado</TestedOn>).
+- **Todas las interfaces.** Los contadores cubren todas las interfaces que lista el
+  router, no solo `--interfaces`: el puerto en el que vive una avería suele ser uno
+  que nadie pensó en vigilar.
+- **Acumulados.** Los contadores van desde el arranque o desde el último reinicio
+  del puerto, así que un consumidor los diferencia. Separan lo que un puerto de
+  switch recibió en el cable (`rx-bytes`) de lo que llegó a la CPU
+  (`driver-rx-byte`); el resto lo reenvió el chip de conmutación en hardware, y
+  ningún contador de dentro del contenedor tiene un número para eso. El colector
+  convierte los contadores del fast path que van al lado en [una proporción del
+  tráfico que cada interfaz entrega a la
+  CPU](/mikroscope/es/sinks/derive/#junto-a-cada-lectura-de-contadores).
+- **Un puerto de switch y un bridge cuentan cosas distintas**, y por eso el tipo
+  viaja con cada fila. Un `ether` dentro de un bridge cuenta su cable, incluidas las
+  tramas que el chip de conmutación reenvió sin la CPU; el `bridge` cuenta su
+  propio lado de CPU; una VLAN o un enlace PPPoE cuentan lo que la CPU envió y
+  recibió. Un puerto y su bridge son dos planos, ninguno subconjunto del otro:
+  dibujados uno al lado del otro sin su tipo parecen iguales, y sumados cuentan dos
+  veces. No los sumes nunca.
+- **Etiquetas de interfaz.** Con qué se etiqueta cada fila — el comentario, el tipo,
+  el rol y el bridge — es el inventario de arriba, y una interfaz que el inventario
+  no lista no lleva ninguna de ellas en vez de una identidad en blanco inventada.
 
-**Contadores de puerto.** Los contadores por puerto son un mapa con los nombres de campo
-del propio RouterOS, no un conjunto fijo de campos, y solo se conservan los enteros sin
-signo simples que cuentan algo. `mtu`, `actual-mtu`, `l2mtu`, `max-l2mtu` y
-`sfp-shutdown-temperature` se leen como enteros pero son tamaños y configuración, y todo
-destino representa este mapa como una familia de contadores, así que se descartan aquí
-en vez de dejar que cada consumidor lo sepa; el MTU que importa viaja en el inventario. Las dos órdenes se fusionan por interfaz: `/interface/ethernet/print stats`
-aporta los errores tipados de la MAC, la familia de colisiones, los intervalos de tamaño de
-trama y los contadores del driver; `/interface/print stats-detail` aporta los contadores
-`fp-*` del fast path, `link-downs`, `tx-queue-drop` y los totales del lado del kernel. Una
-placa sin contadores de colisiones no produce entradas de colisiones en vez de una fila de
-ceros que se lee como «sin colisiones».
+## rx-overflow {#qué-es-el-rx-overflow-del-puerto-del-nas}
 
-El motivo es una medida. El 2026-09-15 el `ether1` del router de referencia tenía 652 364
-eventos `rx-overflow`, en aumento, y `monitor-traffic` no devuelve ninguna clave de
-errores para ese puerto: esa cuenta solo llega a un consumidor por los contadores de
-puerto. Qué resultaron ser esos desbordamientos está [más
-abajo](#qué-es-el-rx-overflow-del-puerto-del-nas).
+La capa del kernel no puede ver el `rx-overflow` por construcción. Una trama que el
+chip de conmutación reenvía en hardware nunca llega a la CPU, así que ningún fichero
+de `/proc` del router tiene un número para ella; hacen falta los contadores por
+puerto, y solo la API los tiene. [Puerto que pierde
+tramas](/mikroscope/es/playbooks/port-errors/) recorre uno de esos puertos, desde el
+indicador del dashboard hasta el arreglo.
 
-Los contadores cubren **todas** las interfaces que lista el router, no solo
-`--interfaces`: el puerto en el que vive una avería suele ser uno que nadie pensó en
-vigilar, y el bucle de capa 2 del 2026-09-12 estaba en un puerto que no figuraba en la
-lista de `monitor-traffic`.
+## Coste para el router {#lo-que-le-cuesta-al-router}
 
-Son acumulados desde el arranque o desde el último reinicio del puerto, así que un
-consumidor los diferencia. La derivación que permiten, medida en `ether1` (2,5 GbE hacia
-un NAS, 2026-09-16, desde el último reinicio del contador del puerto): 255,8 GB de
-`rx-bytes` en el cable, de los cuales 29,7 GB de `driver-rx-byte` llegaron a la CPU — el
-resto lo reenvió el chip de conmutación en hardware, y ningún contador de dentro del
-contenedor tiene un número para eso. El colector convierte los contadores del fast path
-que van al lado en [una proporción del tráfico que cada interfaz entrega a la
-CPU](/mikroscope/es/sinks/derive/#junto-a-cada-lectura-de-contadores).
+El proceso de la API hace de intermediario de cada orden hacia el subsistema que la
+responde (`interface-mgmt`, `config-db`), y ahí es donde se ve su coste. Los perfiles
+y el A/B de una ronda por segundo están en [Coste del agente](/mikroscope/es/cost/#api-tier-cost).
 
-**Un puerto de switch y un bridge cuentan cosas distintas**, y por eso el tipo viaja con
-cada fila. Un `ether` dentro de un bridge cuenta su cable, incluidas las tramas que el
-chip de conmutación reenvió sin la CPU; el `bridge` cuenta su propio lado de CPU; una
-VLAN o un enlace PPPoE cuentan lo que la CPU envió y recibió. `ether1` y `bridge` son dos
-planos, ninguno subconjunto del otro: dibujados uno al lado del otro sin su tipo parecen
-iguales, y sumados cuentan dos veces. No los sumes nunca.
+La API sigue siendo el camino caro. Los datos por puerto salen del contenedor siempre
+que el contenedor pueda verlos, y la configuración se lee al arrancar y con la cadencia
+lenta de las etiquetas, nunca en cada sondeo.
 
-**Etiquetas de interfaz.** Con qué se etiqueta cada fila — el comentario, el tipo, el rol
-y el bridge — es el inventario de arriba, y una interfaz que el inventario no lista no
-lleva ninguna de ellas en vez de una identidad en blanco inventada.
+## Reconexión {#cuando-la-conexión-muere}
 
-## Qué es el `rx-overflow` del puerto del NAS
+La capa mantiene un solo socket, así que cualquier cosa que se lleve al router se la
+lleva a ella: un reinicio, una actualización de RouterOS, un operador reiniciando el
+servicio de API. La capa reabre la conexión ella sola.
 
-Los contadores de puerto son el único sitio donde aparecen los desbordamientos del
-`ether1` del router de referencia, y en quince horas dicen qué clase de suceso son.
-Medido el 2026-09-15 entre las 07:13 y las 22:20 UTC, sobre 4.471 lecturas consecutivas
-de los contadores cada 10 s en `ether1` (2,5 Gbps hacia un NAS, MTU 9000):
+<ScrollTable label="Qué fallos reabren la conexión con la API">
 
-- 126 443 sucesos `rx-overflow` en total, presentes en el 40 % de los intervalos; por
-  intervalo la mediana es 29, el p99 unos 1.036 y el mayor 3.747. En toda la tirada eso
-  es el 0,53 % de los paquetes que envió el NAS.
-- Correlación de rangos sobre los deltas de 10 s: 0,85 con la parte de lo que recibe el
-  NAS que el switch reenvió en hardware (`rx-bytes` menos `driver-rx-byte`), 0,00 con la
-  parte que mandó a la CPU (`driver-rx-byte`).
-- Hacia dónde iba: `ether8` (NGINX, 1 Gbps) se lleva casi todo el volumen y `ether4`
-  (Mastodon, 1 Gbps) es el destino más frecuente; la jaula SFP+, `ether2`, `ether3` y el
-  camino de la CPU no muestran nada.
-- Las tramas eran grandes: el intervalo de tamaño de trama de 1024 en adelante en
-  `ether1` tiene una mediana de 9.331 por intervalo con desbordamiento frente a 1.336
-  por intervalo sin él.
-- La carga no era alta: la mediana de lo que recibe el NAS en un intervalo con
-  desbordamiento son unos 9 Mbit/s de media en 10 s. Ráfagas, no carga sostenida.
-- Nada del lado de la CPU: softnet descartó 0, `time_squeeze` correlaciona 0,04 y las
-  interrupciones de `switch0` 0,05 con los desbordamientos, con los datos a 10 Hz del
-  agente agrupados en intervalos de 10 s. Ninguna trama de pausa en `ether1` en ningún
-  sentido.
-
-Leído en conjunto, encaja con ráfagas a la velocidad de línea de 2,5 Gbps conmutadas
-dentro del chip hacia puertos de 1 Gbps sin control de flujo en juego. Sin verificar: la
-semántica exacta de los contadores del chip de conmutación y la cuenta de
-retransmisiones del propio NAS — los contadores son del puerto, no de la conversación.
-
-La capa del kernel no puede ver nada de esto por construcción. Una trama que el chip de
-conmutación reenvía en hardware nunca llega a la CPU, así que ningún fichero de `/proc`
-del router tiene un número para ella; hacen falta los contadores por puerto, y solo la
-API los tiene.
-
-## Lo que le cuesta al router
-
-Medido en el RB5009 de referencia (RouterOS 7.24.2, 2026-09-16) con el propio
-[profiler](https://help.mikrotik.com/docs/spaces/ROS/pages/8323153/Profiler) de RouterOS,
-`/tool profile duration=60s cpu=total`, una vez con el colector parado y otra con él en
-marcha con `--interfaces bridge,ether1,PPPoE_DIGI --counters-every 10s --api-every 1s`. Las cinco
-primeras instantáneas de un segundo de cada perfil se descartan: llevan la conexión SSH
-que lo pidió.
-
-<ScrollTable label="CPU del router con y sin la capa de la API">
-
-| Fila del perfil  | Colector parado | Colector en marcha |
-| ---------------- | --------------- | ------------------ |
-| total            | 5,93 %          | 6,04 %             |
-| `interface-mgmt` | 0,40 %          | 0,87 %             |
-| `config-db`      | unos 0 %        | 0,15 %             |
+| Fallo                                                                                  | Reabre la conexión                                        | Por qué                                                                                                   |
+| -------------------------------------------------------------------------------------- | --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| error de transporte: EOF, una tubería rota, una conexión reiniciada, un tiempo de espera agotado | sí, y reintenta ese comando sobre la conexión nueva | el socket está acabado                                                                    |
+| `!trap`                                                                                | no                                                        | el router está vivo y rechaza el comando; repetirlo solo gastaría su CPU                                  |
+| `!fatal`                                                                               | sí                                                        | RouterOS lo envía al cerrar la sesión, como dice la [documentación de la API de MikroTik](https://help.mikrotik.com/docs/spaces/ROS/pages/47579160/API) |
 
 </ScrollTable>
 
-El total se mueve 0,11 puntos, que está dentro del ruido del tráfico de un minuto; las
-dos filas que responden a las preguntas de la capa se mueven juntas medio punto. En
-ninguno de los dos perfiles aparece una fila de proceso `api`: el proceso de la API hace
-de intermediario y el trabajo cae en el subsistema que responde. Así que una capa que
-hace una ronda por segundo le cuesta al router en torno al 0,5 % de su CPU total. Esa
-tabla es un único perfil de 60 s por condición, sin dispersión.
+- Los intentos van espaciados cinco segundos. Una ronda lanza cuatro o cinco
+  comandos, así que a un router caído se le marcaría si no varias veces por segundo,
+  y cada marcación lleva un inicio de sesión.
+- El inventario se descarta y se vuelve a leer tras una reconexión: una
+  actualización es justo cuando una interfaz puede cambiar de nombre, tipo o puente,
+  y etiquetas viejas sobre tasas nuevas serían peor que un hueco de un momento.
+- Un colector que arranca con el router caído es el mismo caso visto desde el otro
+  lado: conecta en la primera ronda que el router responda.
 
-Una configuración mayor se midió como A/B en el mismo router el 2026-09-19, el día de una
-actualización de RouterOS que lo ha dejado en 7.24.4 (no quedó registrado sobre qué
-versión corrió el A/B en sí): todas las interfaces salvo `lo` en `--interfaces` (16) y
-`--conntrack-every 10s`, 8 min sin ella frente a 14 min con ella. El `cpu-load` medio
-pasó de 7,12 % a 7,91 % y la ocupación media del kernel de 7,70 % a 8,46 %, unos +0,8
-puntos; es una cota inferior, porque el tráfico del bridge bajó de 48,0 a 38,9 Mbit/s
-entre las ventanas. El p50 de `cpu-load` se quedó en 6 y el p95 pasó de 16 a 18.
-
-Es poco, y aun así el proyecto sigue tratando la API como el camino caro. Los datos por
-puerto salen del contenedor siempre que el contenedor pueda verlos, y la configuración se
-lee al arrancar y con la cadencia lenta de las etiquetas, nunca en cada sondeo.
-
-## Cuando la conexión muere
-
-La capa mantiene un solo socket, así que cualquier cosa que se lleve al router
-se la lleva a ella: un reinicio, una actualización de RouterOS, un operador
-reiniciando el servicio de API. Desde 1.0.9 reabre la conexión ella sola.
-
-La regla va de quién falló, no de qué falló. Un error de **transporte** — EOF,
-una tubería rota, una conexión reiniciada, un tiempo de espera agotado —
-significa que el socket está acabado, así que la capa vuelve a marcar y
-reintenta ese comando sobre la conexión nueva. Un **`!trap`** no vuelve a
-marcar: el router está vivo y rechaza el comando, y repetirlo solo gastaría su
-CPU en la misma pregunta mala. Un **`!fatal`** sí, porque es la palabra que
-RouterOS envía al cerrar la sesión, como dice la [documentación de la API de
-MikroTik](https://help.mikrotik.com/docs/spaces/ROS/pages/47579160/API).
-
-Los intentos van espaciados cinco segundos. Una ronda lanza cuatro o cinco
-comandos, así que a un router caído se le marcaría si no varias veces por
-segundo, y cada marcación lleva un inicio de sesión. El inventario se descarta y
-se vuelve a leer tras una reconexión: una actualización es justo cuando una
-interfaz puede cambiar de nombre, tipo o puente, y etiquetas viejas sobre tasas
-nuevas serían peor que un hueco de un momento.
-
-Medido contra el RB5009 de referencia el 2026-09-19, tras la actualización de
-RouterOS de ese día, sin tocar el router: a un colector que ejecutaba
-`monitor-traffic` sobre 16 interfaces (todas salvo `lo`) a 1 Hz se le destruyó
-el socket de la API desde el host con `ss -K`, que es como se ve desde él el
-lado del router en un reinicio. La capa reabrió la conexión y reintentó dentro
-de la misma ronda: 0 comandos fallidos, 0 rondas perdidas, 16 interfaces en cada
-uno de los 108 segundos a ambos lados de la muerte del socket.
-
-Un colector que arranca con el router caído es el mismo caso visto desde el otro
-lado. Que la primera marcación falle es un aviso, no una capa deshabilitada:
-conecta en la primera ronda que el router responda.
-
-El colector lo dice, una vez por suceso y no una vez por comando fallido:
+Un socket destruido bajo un colector en marcha se reabre y el comando se reintenta
+dentro de la misma ronda (<TestedOn of="api-tier">probado</TestedOn>). El colector
+lo dice una vez por suceso y no una vez por comando fallido:
 
 ```text
 api tier: reconnected (1 since start)
 api tier: recovered after 137 failed round(s)
 ```
 
-y el informe por minuto lleva `api: N failed round(s), N reconnect(s)` mientras
-alguno no sea cero. Antes de 1.0.9 nada de esto existía, y la caída era
-invisible: `api` cuenta rondas _intentadas_, así que el informe seguía creciendo
-con una capa en la que fallaban todos los comandos. Lo que eso costó en el
-equipo de referencia está en
-[Resolución de problemas](/mikroscope/es/reference/troubleshooting/#los-paneles-de-api-están-vacíos-y-los-de-kernel-bien).
+y el informe por minuto lleva `api: N failed round(s), N reconnect(s)` mientras alguno
+no sea cero. `api` cuenta rondas _intentadas_, así que esas dos cuentas son lo que
+muestra una capa en la que fallan todos los comandos. [Resolución de
+problemas](/mikroscope/es/reference/troubleshooting/#los-paneles-de-api-están-vacíos-y-los-de-kernel-bien)
+cuenta cómo se ve eso en los dashboards.
 
-## El número de conexiones
+## Cuenta de conntrack {#el-número-de-conexiones}
 
 `--conntrack-every 10s` pregunta `/ip/firewall/connection/print count-only` con esa
-cadencia: <Measured id="api.conntrackMs" /> con <Measured id="conntrack.api" /> entradas en el RB5009 (el 2026-09-11, el día antes de las lecturas del slab; la hora no consta), una sola lectura sin dispersión. Está apagado por
-defecto porque es un recorrido de tabla sobre una sesión de API, y con `privileged=yes` la
-cuenta slab `nf_conntrack` del agente es la misma población leída de un fichero a la
-cadencia del muestreador. Las dos no coincidirán exactamente — se muestrean en instantes
-distintos, y el slab cuenta objetos que el asignador todavía retiene. Si se siguen no se ha
-medido: la API dijo <Measured id="conntrack.api" /> el día antes de que el slab del
-agente dijera <Measured id="conntrack.slab" />, lo que muestra el mismo orden de magnitud y nada más. Para
-compararlas en tu propio equipo, pide la cuenta y lee el slab en el mismo minuto.
+cadencia; una llamada tardó <Measured id="api.conntrackMs" /> con <Measured id="conntrack.api" />
+entradas. Está apagado por defecto porque es un recorrido de tabla sobre una sesión de
+API, y con `privileged=yes` la cuenta slab `nf_conntrack` del agente es la misma
+población leída de un fichero a la cadencia del muestreador. Las dos no coincidirán
+exactamente — se muestrean en instantes distintos, y el slab cuenta objetos que el
+asignador todavía retiene. Si se siguen <TestedOn of="not-tested">no se ha medido</TestedOn>:
+pide la cuenta y lee el slab en el mismo minuto en tu propio equipo para compararlas.
 
-<NotClaimed>
-	La capa de la API ha funcionado en una sola placa, el RB5009 de referencia. Las cifras de
-	inventario y de claves de pérdidas y el perfil de coste de 60 s de arriba se midieron sobre
-	RouterOS 7.24.2 (2026-09-15 y 16). La prueba de reconexión y el A/B con 16 interfaces se
-	hicieron el 2026-09-19, el día de una actualización de RouterOS; desde entonces la capa ha
-	funcionado sin parar sobre el router actualizado, hoy en 7.24.4, y ninguna de las cifras de
-	7.24.2 se ha vuelto a medir allí. Qué claves de pérdidas y qué contadores devuelve otra versión
-	u otra placa lo tiene que decir ese router; los destinos llevan lo que vuelva y nada más.
-	Tampoco dice la correlación de arriba si RouterOS calcula la ventana de un segundo de `cpu-load`
-	sobre un reloj de pared o sobre jiffies.
-</NotClaimed>
+Las placas y versiones de RouterOS en las que ha funcionado la capa están en <TestedOn of="devices-and-versions">Equipos y versiones</TestedOn>.
+Qué claves de pérdidas y qué contadores devuelve otra versión u otra placa lo tiene que
+decir ese router; los destinos llevan lo que vuelva y nada más.
 
 <SeeAlso>
 
 ## Véase también
 
-- [El usuario de la API](/mikroscope/es/security/api-user/): el grupo de RouterOS y la restricción
+- [Usuario de la API](/mikroscope/es/security/api-user/): el grupo de RouterOS y la restricción
   de dirección que necesita el usuario de la capa.
-- [El colector](/mikroscope/es/sinks/): dónde se une la muestra de la capa de la API a la línea
+- [Ejecutar el colector](/mikroscope/es/sinks/): dónde se une la muestra de la capa de la API a la línea
   temporal del kernel.
-- [Puertos de RouterOS y nombres del kernel](/mikroscope/es/reference/port-names/): cómo emparejar
+- [Nombres de puertos](/mikroscope/es/reference/port-names/): cómo emparejar
   el `ether2` de la API con el `eth1` del kernel.
 - [Conntrack sin la API](/mikroscope/es/playbooks/conntrack/): leer el número de conexiones del slab
   en su lugar.

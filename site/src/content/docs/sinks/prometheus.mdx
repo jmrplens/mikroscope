@@ -1,23 +1,23 @@
 ---
 title: Prometheus
 description: "MikroTik RouterOS kernel metrics on the collector's /metrics: every agent family recomputed from the samples, the API tier, derived values, one scrape job."
+docType: how-to
 head:
   - tag: title
     content: MikroTik RouterOS kernel metrics in Prometheus | mikroscope
 ---
 
 import { Aside } from "@astrojs/starlight/components";
-import NotClaimed from "../../../components/NotClaimed.astro";
 import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
+import TestedOn from "../../../components/TestedOn.astro";
 
 `--prom :9124` makes the collector serve the [Prometheus text
 format](https://prometheus.io/docs/instrumenting/exposition_formats/) (`text/plain; version=0.0.4`)
-on `GET /metrics` at that address. This page answers what that exposition carries and what
-no store can be given at all. There is only one thing to scrape: the agent has served no
-exposition since 1.0.5.
+on `GET /metrics` at that address. Scrape the collector: the agent serves no
+exposition of its own.
 
-## Recomputed from the samples
+## Kernel-tier families {#recomputed-from-the-samples}
 
 The kernel-tier families on the collector are rendered by the same code the agent
 runs — its cumulative counters, its busy-tick histogram and its trailing windows —
@@ -32,17 +32,18 @@ families from the agent's `/capabilities`.
 <Aside type="caution" title="Sized for 10 Hz, whatever the agent runs at">
 	The collector sizes its `mikroscope_cpu_busy_ticks` histogram from a constant 10 Hz, not from the
 	connected agent, so the bucket layout does not change when it reconnects to an agent configured
-	differently. Read from the code, not measured, the same constant sets more than that, and against
-	an agent above 10 Hz each is off by the ratio of the rates. The ring behind the trailing windows
-	does follow the agent: the collector reads the rate from its health check and sizes the ring to
-	60 s of it, so `window="60s"` spans a minute at any rate. The softnet trailing mean behind `mikroscope_softnet_burst_samples_total` does not — its
-	weight is 1/600, a 60 s memory at 10 Hz and shorter above it, so the collector's burst baseline
-	tightens as the agent samples faster; the agent sizes its own from its real rate. An interrupt
-	line is pruned from the top-K families after 36 000 samples out of every top-K: an hour at 10 Hz,
-	12 min at 50 Hz, 6 min at 100 Hz.
+	differently. The same constant sets more than that
+	(<TestedOn of="not-tested">read from the code, not measured</TestedOn>), and against an agent
+	above 10 Hz each is off by the ratio of the rates. The ring behind the trailing windows does
+	follow the agent: the collector reads the rate from its health check and sizes the ring to 60 s
+	of it, so `window="60s"` spans a minute at any rate. The softnet trailing mean behind
+	`mikroscope_softnet_burst_samples_total` does not: its weight is 1/600, a 60 s memory at 10 Hz and
+	shorter above it, so the collector's burst baseline tightens as the agent samples faster; the
+	agent sizes its own from its real rate. An interrupt line is pruned from the top-K families after
+	36 000 samples out of every top-K: an hour at 10 Hz, 12 min at 50 Hz, 6 min at 100 Hz.
 </Aside>
 
-## One scrape job
+## Scrape job {#one-scrape-job}
 
 The collector's, and only the collector's:
 
@@ -52,16 +53,14 @@ The collector's, and only the collector's:
   static_configs: [{ targets: ["<collector host>:9124"] }]
 ```
 
-Until 1.0.4 there were two, because some families existed only on the agent's own
-`/metrics`. **The agent serves no exposition since 1.0.5.** What only a sampler can
-know reaches the collector as data — the wake latency and read duration of every tick
-ride in the sample itself, and `GET /sampler` answers the counters that are not
-per-tick — so this one job carries every family the dashboard asks for. The end-to-end
-suite asserts exactly that: it used to scrape both and now checks the collector alone.
+This one job carries every family the dashboard asks for. What only a sampler
+can know reaches the collector as data: the wake latency and read duration of
+every tick ride in the sample itself, and `GET /sampler` answers the counters
+that are not per-tick. There is nothing to double-count and no keep list to
+maintain. The scrape intervals and Prometheus versions that have been run are
+under <TestedOn of="feature-status">Feature status</TestedOn>.
 
-There is nothing left to double-count, and no keep list to maintain.
-
-### What the collector knows, and how
+### Family sources {#what-the-collector-knows-and-how}
 
 <ScrollTable label="Where the collector's families come from">
 
@@ -76,14 +75,14 @@ There is nothing left to double-count, and no keep list to maintain.
 
 </ScrollTable>
 
-The one thing that changed meaning: these figures are now as fresh as the collector's
-health cadence, a minute, rather than as fresh as the scrape. For counters of fired
-triggers and held captures that is the right resolution; for anything per-tick it does
-not apply, because those travel in the samples at full rate.
+The families read from `/sampler` are as fresh as the collector's health cadence,
+a minute, not as fresh as the scrape. For counters of fired triggers and held
+captures that is the right resolution; anything per-tick travels in the samples
+at full rate.
 
-## What the collector adds
+## Collector-only families {#what-the-collector-adds}
 
-### The collector's own counters
+### Collector counters {#the-collectors-own-counters}
 
 <ScrollTable label="Collector counter families">
 
@@ -100,7 +99,7 @@ Detections and bursts are counters so a Prometheus-only user learns of an event
 despite a missed scrape, and every rule is rendered at 0 from the start because a
 family that appears only after its first event cannot be read as "none so far".
 
-### The derive stage
+### Derived families {#the-derive-stage}
 
 <ScrollTable label="Derived families on the collector">
 
@@ -117,9 +116,9 @@ family that appears only after its first event cannot be read as "none so far".
 
 These are the newest sample's values, a level at scrape time; the full series is in
 the stores that keep every sample. What each one means, and when it is withheld, is on
-[what the collector derives](/mikroscope/sinks/derive/).
+[Derived values](/mikroscope/sinks/derive/).
 
-### The API tier
+### API-tier families {#the-api-tier}
 
 Present only once the API tier has delivered a sample; with `--api-mode off` or
 without API credentials none of these families exists.
@@ -141,15 +140,14 @@ without API credentials none of these families exists.
 
 </ScrollTable>
 
-`mikroscope_api_up` is never rendered as 0: before the first API sample, and when the
-tier is off, the family is absent.
+- `mikroscope_api_up` is never rendered as 0: before the first API sample, and
+  when the tier is off, the family is absent.
+- The conntrack count, the port counters and the fast-path shares arrive on
+  slower cadences than the scrape. The collector holds the last value of each
+  between polls, so a scrape between two polls still sees the family instead of
+  a series that blinks in and out.
 
-The conntrack count, the port counters and the fast-path shares arrive on slower
-cadences than the scrape. The collector holds the last value of each between polls, so
-a scrape that lands between two polls still sees the family instead of a series that
-blinks in and out.
-
-### What each interface is
+### Interface inventory {#what-each-interface-is}
 
 The API tier reads what every interface is — its comment, RouterOS type, interface
 lists, the bridge it is a port of, its factory name and its MTU — from three
@@ -164,26 +162,28 @@ sixty-odd counters of that port on every edit. Join it in a query instead:
 mikroscope_api_interface_counter_total * on(interface) group_left(label, type, role) mikroscope_api_interface_info
 ```
 
-Every interface in the inventory gets a series, with or without a comment. An empty
-`label` value is how Prometheus spells "none" — its [data
-model](https://prometheus.io/docs/concepts/data_model/) treats a label with an empty value as one
-that does not exist — so every series in the exposition carries the same label names.
-`type` says what the counters of that interface mean: an `ether` port in a bridge counts
-its wire, including the frames the switch chip forwarded in hardware,
-while the `bridge` counts its CPU side. Neither is a subset of the other — on the
-reference RB5009 (RouterOS 7.24.2, 2026-09-16) ether1 received 255.8 GB on the wire
-and handed 29.7 GB to the CPU — so do not sum a port and its bridge.
-
-`mikroscope_api_interface_counter_total` has one series per port and counter the
-router reports: 9 ports × 45 counters on the reference RB5009, and 15 on each bridge, VLAN,
-PPPoE, WireGuard, veth or loopback interface, counted from the collector's own
-`mikroscope_api_ifcounters` rows on 2026-09-24; the RouterOS version was not read with
-them. A counter a port does not report has no series, and a loss rate the router did not return has no
-`kind`. Keys that parse as integers but count nothing — `mtu`, `actual-mtu`,
-`l2mtu`, `max-l2mtu`, `sfp-shutdown-temperature` — are sizes and configuration and
-get no counter series; the MTU is part of the inventory. On the RB5009 with RouterOS
-7.24.2 (2026-09-15) `monitor-traffic` returns `rx-drops`, `tx-drops` and
-`tx-queue-drops` and no error keys at all.
+- Every interface in the inventory gets a series, with or without a comment. An
+  empty `label` value is how Prometheus spells "none" — its [data
+  model](https://prometheus.io/docs/concepts/data_model/) treats a label with an
+  empty value as one that does not exist — so every series in the exposition
+  carries the same label names.
+- `type` says what the counters of that interface mean: an `ether` port in a
+  bridge counts its wire, including the frames the switch chip forwarded in
+  hardware, while the `bridge` counts its CPU side. Neither is a subset of the
+  other — most of what a port receives can be switched in hardware and never
+  reach the CPU (<TestedOn of="counters-2026-09-16">measured</TestedOn>) — so do not sum a
+  port and its bridge.
+- `mikroscope_api_interface_counter_total` has one series per port and counter
+  the router reports: an Ethernet port reports several times more counters than
+  a bridge, VLAN, PPPoE, WireGuard, veth or loopback interface
+  (<TestedOn of="reference-hardware">counted</TestedOn>). A counter a port does not report
+  has no series.
+- A loss rate the router did not return has no `kind`, and `monitor-traffic` can
+  return the drop rates with no error keys at all
+  (<TestedOn of="monitor-traffic-keys">verified</TestedOn>).
+- Keys that parse as integers but count nothing — `mtu`, `actual-mtu`, `l2mtu`,
+  `max-l2mtu`, `sfp-shutdown-temperature` — are sizes and configuration and get
+  no counter series; the MTU is part of the inventory.
 
 ## Device-info families
 
@@ -193,26 +193,20 @@ ceilings the board publishes (`mikroscope_thermal_critical_celsius`,
 `mikroscope_thermal_polling_seconds`, `mikroscope_cpu_frequency_limit_hertz`,
 `mikroscope_cpu_frequency_step_hertz`, `mikroscope_cpu_frequency_governor_info`,
 `mikroscope_cpu_frequency_cluster`, `mikroscope_self_cgroup_memory_max_bytes`) and
-`mikroscope_source_cadence_hz{source,reason}`. See [the device-info
-stream](/mikroscope/sinks/device-info/).
-
-<NotClaimed>
-	The collector's exposition has been scraped by a Prometheus 3.14 every 5 s with the RB5009 feeding
-	the collector, on 2026-09-12 and again on 2026-09-15. No other scrape interval and no other
-	Prometheus version is recorded.
-</NotClaimed>
+`mikroscope_source_cadence_hz{source,reason}`. See [Device
+info](/mikroscope/sinks/device-info/).
 
 <SeeAlso>
 
 ## See also
 
-- [Prometheus metric families](/mikroscope/reference/metrics/): every family the agent and the
+- [Prometheus metrics](/mikroscope/reference/metrics/): every family the agent and the
   collector render, with its labels.
 - [Import and check](/mikroscope/dashboards/import-and-check/): the dashboards this scrape job
   feeds, and how to check them panel by panel.
-- [What the collector derives](/mikroscope/sinks/derive/): what the `mikroscope_derived_*` gauges
+- [Derived values](/mikroscope/sinks/derive/): what the `mikroscope_derived_*` gauges
   mean and when they are absent.
-- [The collector](/mikroscope/sinks/): what one `forward` run does before anything reaches
+- [Run the collector](/mikroscope/sinks/): what one `forward` run does before anything reaches
   `/metrics`.
 
 </SeeAlso>
