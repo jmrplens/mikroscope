@@ -211,7 +211,8 @@ func TestSSHRunnerChecksItsOptionsBeforeRunning(t *testing.T) {
 // RouterOS's words come first, on the error's first line. Uninstall keeps
 // only that line, and it used to be `ssh "<script>": exit status 1`, with
 // `failure: cannot remove running container` on the lines after it (the
-// virtual lab, 2026-09-26). A long command is clipped.
+// virtual lab, 2026-09-26). A long command is clipped, and a secret in it
+// masked.
 func TestSSHRunnerKeepsRouterOSWordsOnTheFirstLine(t *testing.T) {
 	dir := t.TempDir()
 	script := "#!/bin/sh\nprintf 'failure: cannot remove running container\\r\\n\\r\\nsecond line\\r\\n'\nexit 1\n"
@@ -219,8 +220,8 @@ func TestSSHRunnerKeepsRouterOSWordsOnTheFirstLine(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	r := SSHRunner{Target: "lab"}
-	long := strings.Repeat(`/container/stop [find]; `, 20)
+	r := SSHRunner{Target: "lab", Secrets: []string{"s3cr3t-token"}}
+	long := `/container/envs/add list="mikroscope-env" key=TOKEN value="s3cr3t-token"; ` + strings.Repeat(`/container/stop [find]; `, 20)
 	_, err := r.Run(long)
 	if err == nil {
 		t.Fatal("ssh exited 1 and Run returned no error")
@@ -228,6 +229,9 @@ func TestSSHRunnerKeepsRouterOSWordsOnTheFirstLine(t *testing.T) {
 	first, _, _ := strings.Cut(err.Error(), "\n")
 	if !strings.HasPrefix(first, "failure: cannot remove running container / second line (ssh lab: exit status 1, running ") {
 		t.Errorf("first line = %q", first)
+	}
+	if strings.Contains(err.Error(), "s3cr3t-token") || !strings.Contains(err.Error(), "(secret)") {
+		t.Errorf("the secret is not masked: %q", err)
 	}
 	if !strings.Contains(err.Error(), "…") || len(err.Error()) > 400 {
 		t.Errorf("a long command is not clipped: %q", err)
@@ -238,5 +242,51 @@ func TestSSHRunnerKeepsRouterOSWordsOnTheFirstLine(t *testing.T) {
 	}
 	if _, err = r.Run(":put 1"); err == nil || err.Error() != `ssh lab: exit status 255, no output (running ":put 1")` {
 		t.Errorf("error with no output = %v", err)
+	}
+}
+
+// A command that carries a secret never reaches ssh's argv: it goes on
+// standard input, with -T and no remote command, and ends with a newline,
+// without which RouterOS does not run the last line (measured in the
+// virtual lab, CHR x86_64, RouterOS 7.24.4, 2026-09-26). Every other command
+// stays an argument.
+func TestSSHRunnerSendsASecretOnStandardInput(t *testing.T) {
+	dir := t.TempDir()
+	argv, stdin := filepath.Join(dir, "argv"), filepath.Join(dir, "stdin")
+	script := "#!/bin/sh\nfor a in \"$@\"; do printf '%s\\037' \"$a\" >> " + argv + "; done\nprintf '\\n' >> " + argv + "\ncat >> " + stdin + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "ssh"), []byte(script), 0o700); err != nil { // #nosec G306 -- it has to be executable
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	r := SSHRunner{Target: "admin@192.0.2.1", Secrets: []string{"", "0123456789abcdefghijABCDEFGHIJ01"}}
+	withToken := `/container/envs/add list="mikroscope-env" key=TOKEN value="0123456789abcdefghijABCDEFGHIJ01"`
+	if _, err := r.Run(withToken); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Run(":put 1"); err != nil {
+		t.Fatal(err)
+	}
+	a, err := os.ReadFile(argv) // #nosec G304 -- the test's own temp dir
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := strings.Split(strings.TrimSuffix(string(a), "\n"), "\n")
+	if len(calls) != 2 {
+		t.Fatalf("ssh ran %d times: %q", len(calls), calls)
+	}
+	secret := strings.Split(strings.TrimSuffix(calls[0], "\x1f"), "\x1f")
+	if strings.Contains(calls[0], "0123456789abcdefghijABCDEFGHIJ01") || secret[len(secret)-1] != "admin@192.0.2.1" || secret[len(secret)-2] != "-T" {
+		t.Errorf("the secret's argv = %q, want it to end -T admin@192.0.2.1 with no command", secret)
+	}
+	plain := strings.Split(strings.TrimSuffix(calls[1], "\x1f"), "\x1f")
+	if plain[len(plain)-1] != ":put 1" || slices.Contains(plain, "-T") {
+		t.Errorf("a command with no secret: argv %q", plain)
+	}
+	in, err := os.ReadFile(stdin) // #nosec G304 -- the test's own temp dir
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(in) != withToken+"\n" {
+		t.Errorf("ssh read %q on stdin, want the command and one newline", in)
 	}
 }

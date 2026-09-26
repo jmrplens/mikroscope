@@ -310,7 +310,15 @@ func (c cli) runner() (router.Runner, error) {
 	if c.router == "" {
 		return nil, errors.New("--router (or MIKROSCOPE_ROUTER) is required")
 	}
-	return router.SSHRunner{Target: c.router, Port: c.sshPort, Key: c.sshKey, Options: c.sshOptions.list, Timeout: c.sshTimeout()}, nil
+	// The token is a Secret: the container step's command, which writes it
+	// into the envlist, reaches ssh on its standard input rather than on its
+	// command line, where any process listing would show it for as long as
+	// the command runs.
+	var secrets []string
+	if c.opts.Token != "" {
+		secrets = []string{c.opts.Token}
+	}
+	return router.SSHRunner{Target: c.router, Port: c.sshPort, Key: c.sshKey, Options: c.sshOptions.list, Secrets: secrets, Timeout: c.sshTimeout()}, nil
 }
 
 // sshTimeout is how long one ssh command may run: 3 minutes, or the
