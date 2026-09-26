@@ -3,7 +3,6 @@
 package lab
 
 import (
-	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -63,45 +62,24 @@ func install(t *testing.T, l *Lab, dir string, flags ...string) Result {
 	return r
 }
 
-// 1.3.1's uninstall stops the container, waits a fixed `:delay 4s` and
-// removes it. When the container has not stopped by then, RouterOS refuses
-// the removal ("cannot remove running"), the steps after it may find the veth
-// in use, and uninstall exits 1 with the container the one object left. A
-// second run cleans up. It was measured in the lab on 2026-09-26: 5 of 15
-// first attempts on x86_64 before the lab's blackhole routes, and every
-// attempt while a client held /stream. The next pull request fixes it; S9
-// asserts it exactly, and the other scenarios tolerate it once.
+// uninstall runs `uninstall --yes` once and fails the test unless it
+// verifies the router clean at that first attempt.
 //
-// RouterOS's words reach the output only when its ssh session exits 0. When
-// it exits 1, the CLI's skip line keeps the first line of the error,
-// `ssh "<script>": exit status 1`, and they are lost. On 2026-09-26 that was
-// one of seven S9 first attempts on arm64, and the first attempt of the next
-// x86_64 run. What the race leaves is the same either
-// way, and knownRace reads that too: uninstall's own verify naming the
-// container among the steps still present.
-var knownRace = regexp.MustCompile(`cannot remove running|in use by container|` +
-	`uninstall left objects behind: \d+ step\(s\) present: (?:[^\n]*; )?container `)
-
-// routerSaid is the part of knownRace that is RouterOS's own words.
-var routerSaid = regexp.MustCompile(`cannot remove running|in use by container`)
-
-// uninstall runs `uninstall --yes` until it verifies the router clean,
-// tolerating 1.3.1's known stop/remove race on the first attempt only, and
-// returns how many attempts it took.
-func uninstall(t *testing.T, l *Lab, dir string, flags ...string) int {
+// 1.3.1's container removal stopped the container, waited a fixed
+// `:delay 4s` and removed it; RouterOS refused the removal of a container
+// that had not stopped by then ("cannot remove running"), and a second
+// uninstall cleaned up. The removal now waits for RouterOS to report the
+// container stopped, bounded at 30 s (spec B3 F1), so no scenario tolerates
+// a second attempt any more: S9 asserts the first one with a client holding
+// /stream, and every other scenario asserts it without one. When it fails,
+// the router's own container log is printed with the CLI's output.
+func uninstall(t *testing.T, l *Lab, dir string, flags ...string) {
 	t.Helper()
-	args := append([]string{"uninstall", "--yes"}, flags...)
-	r := l.CLI(t, dir, args...)
-	if r.Code == 0 {
-		assertVerified(t, r)
-		return 1
+	r := l.CLI(t, dir, append([]string{"uninstall", "--yes"}, flags...)...)
+	if r.Code != 0 {
+		t.Fatalf("uninstall failed at its first attempt:\n%s\n--- the router's container log\n%s", r, containerLog(t, l))
 	}
-	if !knownRace.MatchString(r.Output()) {
-		t.Fatalf("uninstall failed, and not with 1.3.1's known stop/remove race:\n%s\n--- the router's container log\n%s", r, containerLog(t, l))
-	}
-	t.Logf("uninstall's first attempt hit 1.3.1's known stop/remove race (fixed 4 s wait); running it again:\n%s", raceLines(l, r))
-	assertVerified(t, l.MustCLI(t, dir, args...))
-	return 2
+	assertVerified(t, r)
 }
 
 func assertVerified(t *testing.T, r Result) {
@@ -142,26 +120,24 @@ func lineDiff(a, b string) (onlyA, onlyB []string) {
 	return onlyA, onlyB
 }
 
-// knownDir is the empty directory 1.3.1's uninstall leaves in /file: the
-// parent of the container's root-dir, which uninstall does not remove (every
-// uninstall in the lab left it). The next pull request removes it.
-const knownDir = "mikroscope (directory)"
-
 // assertResidue fails the test unless the router's residue equals the
-// baseline's, apart from the files named in allowed, which may or may not be
-// there.
-func assertResidue(t *testing.T, l *Lab, base baseline, allowed ...string) Residue {
+// baseline's: the same counts, and the same /file entries, none added and
+// none gone. 1.3.1 left an empty `mikroscope` directory behind after every
+// uninstall; the owner's rule that uninstall removes everything mikroscope
+// created (spec F4) takes that tolerance away, so a path of mikroscope's
+// that the baseline did not have is named as such.
+func assertResidue(t *testing.T, l *Lab, base baseline) Residue {
 	t.Helper()
 	after := l.Residue(t)
 	if after.Counts != base.residue.Counts {
 		t.Errorf("residue counts differ\n before: %s\n  after: %s", base.residue.Counts, after.Counts)
 	}
 	for _, f := range NewFiles(base.residue, after) {
-		if !slices.Contains(allowed, f) {
-			t.Errorf("a file the baseline did not have: %s", f)
+		if isMikroscopePath(fileName(f)) {
+			t.Errorf("uninstall left a path of mikroscope's in /file: %s", f)
 			continue
 		}
-		t.Logf("residue: %s, as 1.3.1 leaves it", f)
+		t.Errorf("a file the baseline did not have: %s", f)
 	}
 	for _, f := range NewFiles(after, base.residue) {
 		t.Errorf("a file of the baseline is gone: %s", f)
@@ -182,26 +158,6 @@ func count(t *testing.T, l *Lab, tag string) string {
 		`" address-lists=" . [:len [/ip/firewall/address-list/find `+sel+`]] . `+
 		`" nat=" . [:len [/ip/firewall/nat/find `+sel+`]] . `+
 		`" filter=" . [:len [/ip/firewall/filter/find `+sel+`]])`))
-}
-
-// raceLines is what an uninstall that met the race said about the container:
-// its skip line, cut before the RouterOS script it quotes, and the verify
-// line naming what was left.
-func raceLines(l *Lab, r Result) string {
-	var kept []string
-	for line := range strings.SplitSeq(r.Output(), "\n") {
-		line = strings.TrimSpace(line)
-		switch {
-		case strings.HasPrefix(line, "skip  container "):
-			if i := strings.Index(line, ` (ssh "`); i >= 0 {
-				line = line[:i] + ` (ssh "<script>"` + line[strings.LastIndex(line, `":`):]
-			}
-			kept = append(kept, "  "+line)
-		case strings.Contains(line, "uninstall left objects behind"):
-			kept = append(kept, "  "+line)
-		}
-	}
-	return l.redact(strings.Join(kept, "\n"))
 }
 
 // containerLog is the router's log of its container subsystem, the last 30

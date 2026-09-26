@@ -42,8 +42,9 @@ func TestS06EphemeralThroughAPowerCut(t *testing.T) {
 
 	uninstall(t, l, dir, flags...)
 	assertExport(t, l, base)
-	// The directory 1.3.1 leaves behind was on the tmpfs disk, which the
-	// power cut emptied, so nothing at all is left.
+	// The power cut emptied the tmpfs disk, the manifest with it if it was
+	// kept there, so this uninstall finds what the install made by its tag
+	// and its known paths alone; nothing at all may be left (spec F4).
 	assertResidue(t, l, base)
 }
 
@@ -84,5 +85,5 @@ func TestS07StartOnBootAfterAPowerCut(t *testing.T) {
 
 	uninstall(t, l, dir, flags...)
 	assertExport(t, l, base)
-	assertResidue(t, l, base, knownDir)
+	assertResidue(t, l, base)
 }

@@ -8,62 +8,72 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 )
 
-// S9: uninstall while a client holds /stream. 1.3.1 stops the container,
-// waits a fixed 4 s and removes it; the agent's HTTP shutdown waits up to 5 s
-// for an open stream, so the removal is refused ("cannot remove running")
-// every time, and a second uninstall, with the client gone, cleans up. This
-// asserts the bug as known: when the first attempt succeeds, the fix has
-// landed and this scenario must be updated with it (the next pull request
-// makes the first attempt clean).
+// S9: uninstall while a client holds /stream, LAB_S9_REPEAT times (10 by
+// default, on either arch). The agent's HTTP shutdown waits up to 5 s for an
+// open stream. 1.3.1 stopped the container, waited a fixed 4 s and removed
+// it, so RouterOS refused the removal ("cannot remove running") every time a
+// client held the stream, and a second uninstall cleaned up. The removal now
+// waits for RouterOS to report the container stopped, bounded at 30 s (spec
+// B3 F1), so every first attempt must verify the router clean.
 func TestS09UninstallWhileAClientStreams(t *testing.T) {
 	l, dir, base := start(t, "doctor-lists")
 	flags := tarFlags(t, l)
+	n := repeatCount(t, "LAB_S9_REPEAT", 10)
+	var took []string
+	for i := 1; i <= n; i++ {
+		install(t, l, dir, flags...)
+		l.WaitHealthz(t, 60*time.Second)
 
-	install(t, l, dir, flags...)
-	l.WaitHealthz(t, 60*time.Second)
+		ctx, stop := context.WithCancel(t.Context())
+		streaming, receiving := make(chan error, 1), make(chan struct{})
+		go func() { streaming <- stream(ctx, l.AgentURL()+"/stream", receiving) }()
+		// The first bytes, so the client is known to hold the stream before
+		// uninstall starts.
+		select {
+		case <-receiving:
+		case err := <-streaming:
+			stop()
+			t.Fatalf("attempt %d: the /stream client ended before uninstall began: %v", i, err)
+		case <-time.After(15 * time.Second):
+			stop()
+			t.Fatalf("attempt %d: no bytes on /stream within 15 s", i)
+		}
 
-	ctx, stop := context.WithCancel(t.Context())
-	streaming, receiving := make(chan error, 1), make(chan struct{})
-	go func() { streaming <- stream(ctx, l.AgentURL()+"/stream", receiving) }()
-	// The first bytes, so the client is known to hold the stream before
-	// uninstall starts.
-	select {
-	case <-receiving:
-	case err := <-streaming:
+		r := l.CLI(t, dir, append([]string{"uninstall", "--yes"}, flags...)...)
 		stop()
-		t.Fatalf("the /stream client ended before uninstall began: %v", err)
-	case <-time.After(15 * time.Second):
-		stop()
-		t.Fatal("no bytes on /stream within 15 s")
+		<-streaming
+		if r.Code != 0 {
+			t.Fatalf("attempt %d of %d: uninstall with a client on /stream failed at its first attempt:\n%s\n--- the router's container log\n%s",
+				i, n, r, containerLog(t, l))
+		}
+		assertVerified(t, r)
+		took = append(took, r.Took.Round(100*time.Millisecond).String())
 	}
-
-	args := append([]string{"uninstall", "--yes"}, flags...)
-	first := l.CLI(t, dir, args...)
-	stop()
-	<-streaming
-	if first.Code == 0 {
-		t.Fatalf("uninstall succeeded at the first attempt with a client on /stream: 1.3.1's stop/remove race is fixed, so update S9\n%s", first)
-	}
-	if !knownRace.MatchString(first.Output()) {
-		t.Fatalf("uninstall failed, and not with the known \"cannot remove running\":\n%s\n--- the router's container log\n%s", first, containerLog(t, l))
-	}
-	if routerSaid.MatchString(first.Output()) {
-		t.Log("first uninstall, with a client on /stream: refused as 1.3.1 is known to (cannot remove running)")
-	} else {
-		t.Logf("first uninstall, with a client on /stream: the container left in place, as 1.3.1's race leaves it; "+
-			"RouterOS's words were lost with ssh's exit status 1:\n%s", raceLines(l, first))
-	}
-
-	second := l.MustCLI(t, dir, args...)
-	assertVerified(t, second)
+	t.Logf("%d uninstalls with a client on /stream, each clean at its first attempt; they took %s", n, strings.Join(took, ", "))
 	assertExport(t, l, base)
-	assertResidue(t, l, base, knownDir)
+	assertResidue(t, l, base)
+}
+
+// repeatCount is how many times a repeated scenario runs: the named variable
+// when it is set, else def.
+func repeatCount(t *testing.T, name string, def int) int {
+	t.Helper()
+	v := os.Getenv(name)
+	if v == "" {
+		return def
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 1 {
+		t.Fatalf("%s=%s: want a positive count", name, v)
+	}
+	return n
 }
 
 // stream reads the agent's /stream until the context ends or the agent
@@ -90,13 +100,15 @@ func stream(ctx context.Context, url string, receiving chan<- struct{}) error {
 	return err
 }
 
-// S12: two installs side by side, the second with its own name, veth, /30
-// and port. Removing the second must leave the first running and every object
-// of the second gone.
+// S12: two installs side by side, the second with its own name, veth, /30,
+// port and container name. Removing the second must leave the first running
+// with every object and file of its own, the root-dir under the shared
+// mikroscope directory included, and every object and path of the second
+// gone. Removing the first then leaves nothing (spec F4).
 func TestS12TwoInstallsSideBySide(t *testing.T) {
 	l, dir, base := start(t, "doctor-lists")
 	a := tarFlags(t, l)
-	b := append(tarFlags(t, l), "--name", "b", "--veth", "veth-b", "--subnet", "172.30.11.0/30", "--port", "9200")
+	b := append(tarFlags(t, l), "--name", "b", "--veth", "veth-b", "--subnet", "172.30.11.0/30", "--port", "9200", "--container-name", "b")
 
 	install(t, l, dir, a...)
 	l.WaitHealthz(t, 60*time.Second)
@@ -106,6 +118,9 @@ func TestS12TwoInstallsSideBySide(t *testing.T) {
 	if code := l.NSGet(t, "http://172.30.11.2:9200/healthz", ""); code != http.StatusOK {
 		t.Fatalf("the second agent answered %d on 172.30.11.2:9200", code)
 	}
+	if got := strings.TrimSpace(l.ROS(t, `:put [:len [/container/find name="b" comment="`+tagOf("b")+`"]]`)); got != "1" {
+		t.Errorf("containers named b with b's tag: %s, want 1 (--container-name)", got)
+	}
 
 	uninstall(t, l, dir, b...)
 	if got := count(t, l, tagOf("b")); got != "containers=0 veths=0 addresses=0 members=0 address-lists=0 nat=0 filter=0" {
@@ -114,35 +129,36 @@ func TestS12TwoInstallsSideBySide(t *testing.T) {
 	if got := count(t, l, defaultTag); got != "containers=1 veths=1 addresses=1 members=1 address-lists=1 nat=0 filter=0" {
 		t.Fatalf("objects of the first install after the second's removal: %s", got)
 	}
+	files := fileNames(l.Residue(t))
+	if !slices.Contains(files, "mikroscope/mikroscope") {
+		t.Errorf("removing b took a's root-dir mikroscope/mikroscope with it; /file: %q", files)
+	}
+	for _, f := range files {
+		if f == "mikroscope/b" || strings.HasPrefix(f, "mikroscope/b/") || f == "b.tar" {
+			t.Errorf("a path of b's is left after its uninstall: %s", f)
+		}
+	}
 	l.WaitHealthz(t, 10*time.Second)
 
 	uninstall(t, l, dir, a...)
 	assertExport(t, l, base)
-	assertResidue(t, l, base, knownDir)
+	assertResidue(t, l, base)
 }
 
-// The acceptance for the lab's first pull request: consecutive installs and
-// uninstalls on one boot, with no install failing. One 1.3.1 install in the
-// lab failed without explanation before the lab had its blackhole routes,
-// most likely to the probe loop they end (not examined); this settles it.
-// The count is LAB_INSTALL_REPEAT, 10 by default on x86_64 and 3 on emulated
-// arm64. Uninstall's known race is tolerated and counted, as a measurement of
-// how often 1.3.1 meets it here.
+// The acceptance for the lab's first pull request, kept: consecutive
+// installs and uninstalls on one boot, with no install failing and, now that
+// the container removal waits for the stop (spec B3 F1), no uninstall
+// needing a second attempt. The count is LAB_INSTALL_REPEAT, 10 by default
+// on x86_64 and 3 on emulated arm64.
 func TestRepeatedTarInstalls(t *testing.T) {
 	l, dir, base := start(t, "doctor-lists")
 	flags := tarFlags(t, l)
-	n := 10
+	def := 10
 	if l.Arch == "arm64" {
-		n = 3
+		def = 3
 	}
-	if v := os.Getenv("LAB_INSTALL_REPEAT"); v != "" {
-		parsed, err := strconv.Atoi(v)
-		if err != nil || parsed < 1 {
-			t.Fatalf("LAB_INSTALL_REPEAT=%s: want a positive count", v)
-		}
-		n = parsed
-	}
-	var installFailed, raced int
+	n := repeatCount(t, "LAB_INSTALL_REPEAT", def)
+	var installFailed int
 	var tookInstall, tookUninstall []string
 	for i := 1; i <= n; i++ {
 		r := l.CLI(t, dir, append([]string{"install", "--yes"}, flags...)...)
@@ -154,14 +170,12 @@ func TestRepeatedTarInstalls(t *testing.T) {
 		}
 		tookInstall = append(tookInstall, r.Took.Round(100*time.Millisecond).String())
 		began := time.Now()
-		if uninstall(t, l, dir, flags...) > 1 {
-			raced++
-		}
+		uninstall(t, l, dir, flags...)
 		tookUninstall = append(tookUninstall, time.Since(began).Round(100*time.Millisecond).String())
 	}
-	t.Logf("%d installs: %d failed; uninstall met the known race at its first attempt %d time(s)", n, installFailed, raced)
+	t.Logf("%d installs: %d failed; every uninstall clean at its first attempt", n, installFailed)
 	t.Logf("install took %s", strings.Join(tookInstall, ", "))
 	t.Logf("uninstall took %s", strings.Join(tookUninstall, ", "))
 	assertExport(t, l, base)
-	assertResidue(t, l, base, knownDir)
+	assertResidue(t, l, base)
 }
