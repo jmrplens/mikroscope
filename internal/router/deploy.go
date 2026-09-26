@@ -96,25 +96,29 @@ func mask(cmd, token string) string {
 }
 
 // Install walks the plan, creating what is missing and refusing what is
-// present but not ours. All the questions go out in one connect; only the
-// writes take one each. The container step uploads the image first. It
-// returns how many steps it created.
+// present but not ours — before anything is written. All the questions go
+// out in one connect; only the writes take one each. The container step
+// uploads the image first. It returns how many steps it created.
 func Install(r Runner, o Options, image []byte, w io.Writer) (int, error) {
 	plan := Plan(o)
 	st, err := states(r, plan)
 	if err != nil {
 		return 0, err
 	}
+	// Every collision is refused before the first write: the answers are
+	// all in, so an install that cannot finish writes nothing, where it used
+	// to create every step before the foreign one.
+	for i, s := range plan {
+		if st[i] == stateForeign {
+			return 0, fmt.Errorf("%s exists on the router and was not created by mikroscope (no ownership tag); "+
+				"pick another --name/--veth/--subnet, or remove it by hand if it is yours; nothing was written", s.Name)
+		}
+	}
 	created := 0
 	for i, s := range plan {
-		switch st[i] {
-		case stateOwned:
+		if st[i] == stateOwned {
 			fmt.Fprintf(w, "  ok    %s (already present)\n", s.Name)
 			continue
-		case stateForeign:
-			return created, fmt.Errorf("%s exists on the router and was not created by mikroscope (no ownership tag); "+
-				"pick another --name/--veth/--subnet, or remove it by hand if it is yours", s.Name)
-		case stateAbsent:
 		}
 		if createErr := createStep(r, o, s, image, w); createErr != nil {
 			return created, createErr

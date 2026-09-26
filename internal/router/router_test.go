@@ -112,10 +112,11 @@ func TestInstallRefusesWhatItDoesNotOwn(t *testing.T) {
 		if !strings.Contains(installErr.Error(), wantStep) || !strings.Contains(installErr.Error(), "not created by mikroscope") {
 			t.Fatalf("install with foreign %q: error does not name the collision: %v", frag, installErr)
 		}
-		for _, cmd := range f.ran {
-			if strings.Contains(cmd, frag) {
-				t.Fatalf("install wrote to the foreign object %q: %s", frag, cmd)
-			}
+		if len(f.ran) > 0 || len(f.uploads) > 0 {
+			t.Fatalf("install with foreign %q wrote before it refused: %v, uploaded %v", frag, f.ran, f.uploads)
+		}
+		if !strings.Contains(installErr.Error(), "nothing was written") {
+			t.Fatalf("install with foreign %q does not say nothing was written: %v", frag, installErr)
 		}
 	}
 }
