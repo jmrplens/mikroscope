@@ -1,0 +1,27 @@
+# mikroscope — install script for RouterOS. Container name: b
+# Every object it creates carries the comment "mikroscope:b (managed by mikroscope)", which is how
+# `mikroscope status` and `uninstall` recognize them later.
+#
+# The router pulls registry-1.docker.io/jmrplens/mikroscope-agent:1.3.1 itself.
+# The registry host is part of remote-image= (RouterOS 7.18 and later take it
+# there), so this script neither reads nor changes the device-wide registry-url.
+# A registry username set on the device for a registry other than registry-1.docker.io
+# can make the pull end in `auth error`; `mikroscope doctor` warns about it.
+
+# veth interface veth-b
+/interface/veth/add name="veth-b" address=172.30.11.2/30 gateway=172.30.11.1 comment="mikroscope:b (managed by mikroscope)"
+
+# router address 172.30.11.1
+/ip/address/add address=172.30.11.1/30 interface="veth-b" comment="mikroscope:b (managed by mikroscope)"
+
+# interface-list membership LAN
+/interface/list/member/add list="LAN" interface="veth-b" comment="mikroscope:b (managed by mikroscope)"
+
+# address-list membership LANs
+/ip/firewall/address-list/add list="LANs" address=172.30.11.0/30 comment="mikroscope:b (managed by mikroscope)"
+
+# container b
+:if ([:len [/container/envs/find list="b-env" key="MIKROSCOPE_TAG" value="mikroscope:b (managed by mikroscope)"]] > 0) do={ /container/envs/remove [find list="b-env"] }; /container/envs/add list="b-env" key=MIKROSCOPE_TAG value="mikroscope:b (managed by mikroscope)"; /container/envs/add list="b-env" key=RATE_HZ value="10"; /container/envs/add list="b-env" key=BUFFER_S value="60"; /container/envs/add list="b-env" key=PORT value="9200"; /container/envs/add list="b-env" key=ADDR value="172.30.11.2"; /container/envs/add list="b-env" key=MEM_LIMIT_MB value="16"; /container/envs/add list="b-env" key=CAPTURE_MB value="4"; /container/add remote-image="registry-1.docker.io/jmrplens/mikroscope-agent:1.3.1" interface="veth-b" root-dir=mikroscope/b envlist="b-env" logging=yes start-on-boot=yes restart-policy=on-failure restart-max-count=5 restart-interval=10s memory-max=64M privileged=yes ignore-remote-image-change=yes comment="mikroscope:b (managed by mikroscope)"; /container/start [find comment="mikroscope:b (managed by mikroscope)"]
+
+# When it is done: /container/print where name~"b"
+# The agent answers on http://172.30.11.2:9200/healthz from the router's LAN.
