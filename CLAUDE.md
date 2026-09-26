@@ -111,9 +111,9 @@ hardware; then:
 - Two shipped binaries (`cmd/mikroscope`, `cmd/mikroscope-agent`);
   `cmd/mikroscope-lab` drives the virtual lab (logic in `internal/lab`, its
   container side in `internal/lab/vm`; `test/lab/lab.sh` execs it), and
-  `cmd/gen_brand` is a build-time tool that writes `brand/`; neither tool is
-  shipped. The agent links only `procfs`, `sample`, `agent` and the standard
-  library.
+  `cmd/gen_brand` and `cmd/gen_rsc` are build-time tools that write `brand/`
+  and `site/src/data/rsc/`; none of the three is shipped. The agent links
+  only `procfs`, `sample`, `agent` and the standard library.
 - Voice, in code comments, CHANGELOG and docs: what was measured, on which
   device and version, on what date, and what was not. Numbers carry their
   spread. No claim without its evidence.

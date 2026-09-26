@@ -144,12 +144,16 @@ agent:
 # requests that touched it were labelled router by another file. test/lab and
 # test/e2e/lab, the virtual lab and its suite, and the lab's driver
 # (cmd/mikroscope-lab, internal/lab) are new with the lab and no earlier pull
-# request touched them.
+# request touched them. cmd/gen_rsc renders the same steps spec into the
+# site's script data, and site/src/data/rsc is its output, so a change to
+# either is a change to the commands a router receives.
 # Would have fired on 13 of the 61 pull requests (21 %).
 router:
   - changed-files:
       - any-glob-to-any-file:
           - internal/router/**
+          - cmd/gen_rsc/**
+          - site/src/data/rsc/**
           - internal/image/**
           - internal/health/**
           - cmd/mikroscope/health*.go
