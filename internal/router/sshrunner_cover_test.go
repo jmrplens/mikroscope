@@ -122,8 +122,8 @@ func TestSSHRunnerReportsAFailureWithItsOutput(t *testing.T) {
 	if err == nil {
 		t.Fatal("a failing ssh returned no error")
 	}
-	if !strings.Contains(err.Error(), "/export") || !strings.Contains(err.Error(), "permission denied") {
-		t.Errorf("error = %q, want the command and the router's own words", err)
+	if !strings.Contains(err.Error(), "/export") || !strings.HasPrefix(err.Error(), "permission denied (") {
+		t.Errorf("error = %q, want the router's own words first, then the command", err)
 	}
 	if !strings.Contains(out, "permission denied") {
 		t.Errorf("Run returned %q; the output is returned even on failure", out)
@@ -205,5 +205,38 @@ func TestSSHRunnerChecksItsOptionsBeforeRunning(t *testing.T) {
 	}
 	if _, err := os.Stat(argv); err == nil {
 		t.Errorf("ssh or scp was started: %q", argvLines(t, argv))
+	}
+}
+
+// RouterOS's words come first, on the error's first line. Uninstall keeps
+// only that line, and it used to be `ssh "<script>": exit status 1`, with
+// `failure: cannot remove running container` on the lines after it (the
+// virtual lab, 2026-09-26). A long command is clipped.
+func TestSSHRunnerKeepsRouterOSWordsOnTheFirstLine(t *testing.T) {
+	dir := t.TempDir()
+	script := "#!/bin/sh\nprintf 'failure: cannot remove running container\\r\\n\\r\\nsecond line\\r\\n'\nexit 1\n"
+	if err := os.WriteFile(filepath.Join(dir, "ssh"), []byte(script), 0o700); err != nil { // #nosec G306 -- it has to be executable
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	r := SSHRunner{Target: "lab"}
+	long := strings.Repeat(`/container/stop [find]; `, 20)
+	_, err := r.Run(long)
+	if err == nil {
+		t.Fatal("ssh exited 1 and Run returned no error")
+	}
+	first, _, _ := strings.Cut(err.Error(), "\n")
+	if !strings.HasPrefix(first, "failure: cannot remove running container / second line (ssh lab: exit status 1, running ") {
+		t.Errorf("first line = %q", first)
+	}
+	if !strings.Contains(err.Error(), "…") || len(err.Error()) > 400 {
+		t.Errorf("a long command is not clipped: %q", err)
+	}
+	// No output at all still says what ran.
+	if writeErr := os.WriteFile(filepath.Join(dir, "ssh"), []byte("#!/bin/sh\nexit 255\n"), 0o700); writeErr != nil { // #nosec G306 -- it has to be executable
+		t.Fatal(writeErr)
+	}
+	if _, err = r.Run(":put 1"); err == nil || err.Error() != `ssh lab: exit status 255, no output (running ":put 1")` {
+		t.Errorf("error with no output = %v", err)
 	}
 }

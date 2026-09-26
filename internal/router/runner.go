@@ -129,9 +129,44 @@ func (r SSHRunner) Run(command string) (string, error) {
 	// the operator already controls.
 	out, err := exec.CommandContext(ctx, "ssh", args...).CombinedOutput()
 	if err != nil {
-		return string(out), fmt.Errorf("ssh %q: %w\n%s", command, err, out)
+		return string(out), failed(r.Target, command, out, err)
 	}
 	return string(out), nil
+}
+
+// failed is the error of an ssh that exited non-zero. What RouterOS (or ssh
+// itself) printed comes first, on one line: callers such as uninstall keep
+// only an error's first line, and with the command first that line was
+// `ssh "<script>": exit status 1` — RouterOS's `failure: cannot remove
+// running container` was on the lines after it and was lost (the virtual lab,
+// 2026-09-26, on both architectures). The command follows, clipped.
+func failed(target, command string, out []byte, err error) error {
+	ran := clip(oneLine(command), 160)
+	said := oneLine(string(out))
+	if said == "" {
+		return fmt.Errorf("ssh %s: %w, no output (running %q)", target, err, ran)
+	}
+	return fmt.Errorf("%s (ssh %s: %w, running %q)", said, target, err, ran)
+}
+
+// oneLine joins the non-empty lines of s with " / ", each trimmed of the
+// carriage returns RouterOS ends its lines with.
+func oneLine(s string) string {
+	var parts []string
+	for line := range strings.SplitSeq(s, "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			parts = append(parts, line)
+		}
+	}
+	return strings.Join(parts, " / ")
+}
+
+// clip shortens s to at most n bytes, marking the cut.
+func clip(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
 }
 
 // Upload copies data to remoteName on the device with scp.
@@ -155,7 +190,10 @@ func (r SSHRunner) Upload(data []byte, remoteName string) error {
 	args := append(r.base("-P"), tmp.Name(), r.Target+":"+remoteName)
 	// #nosec G204 -- same reasoning as Run: scp is the transport.
 	if out, scpErr := exec.CommandContext(ctx, "scp", args...).CombinedOutput(); scpErr != nil {
-		return fmt.Errorf("scp %s: %w\n%s", remoteName, scpErr, out)
+		if said := oneLine(string(out)); said != "" {
+			return fmt.Errorf("scp %s: %s (%w)", remoteName, said, scpErr)
+		}
+		return fmt.Errorf("scp %s: %w, no output", remoteName, scpErr)
 	}
 	return nil
 }
