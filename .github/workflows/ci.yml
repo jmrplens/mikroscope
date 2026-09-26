@@ -263,7 +263,8 @@ jobs:
           exit "$status"
 
   # The one thing the jobs below it have in common: every package compiles,
-  # both binaries and cmd/gen_brand included. It is the parent of the
+  # both binaries and the build-time tools (cmd/gen_brand,
+  # cmd/mikroscope-lab) included. It is the parent of the
   # type-check matrix and of the end-to-end suite so that the graph shows them
   # as what they are, questions asked of the same build.
   compile:
@@ -284,9 +285,10 @@ jobs:
 
       - run: go mod download
 
-      # ./... rather than the two binaries: cmd/gen_brand and the fake agent
-      # under test/e2e are built by nothing else, so a break in either would
-      # otherwise surface the next time somebody ran it by hand.
+      # ./... rather than the two binaries: the build-time tools and the fake
+      # agent under test/e2e are built by nothing else here, so a break in
+      # any of them would otherwise surface the next time somebody ran it by
+      # hand.
       - name: Build every package
         run: go build ./...
 
@@ -362,10 +364,10 @@ jobs:
   # paths. The paths are the router code, the CLI, the image builder, the
   # agent and its startup, what builds the agent image and its tars, the
   # Makefile (it holds the build, agent-tars, lab and test-lab targets), the
-  # round trip, the lab and its suite, and the RouterOS scripts the site
-  # renders; plus lab.yml, so a change to the workflow runs it. Renames are
-  # not detected, so a file moved out of one of these paths counts by its old
-  # path as well as its new one. When the question cannot be answered
+  # round trip, the lab, its driver (cmd/mikroscope-lab, internal/lab) and
+  # its suite, and the RouterOS scripts the site renders; plus lab.yml, so a
+  # change to the workflow runs it. Renames are not detected, so a file moved
+  # out of one of these paths counts by its old path as well as its new one. When the question cannot be answered
   # (the base commit is not in the clone) the answer is yes. On a push to main
   # it is no, without a checkout: main runs the lab weekly.
   changes:
@@ -407,7 +409,7 @@ jobs:
               internal/router/* | cmd/mikroscope/* | cmd/mikroscope-agent/* | internal/image/* | \
                 internal/agent/* | Dockerfile.agent | Makefile | scripts/agent-tars.sh | \
                 scripts/roundtrip.sh | test/lab/* | test/e2e/lab/* | site/src/data/rsc/* | \
-                .github/workflows/lab.yml)
+                cmd/mikroscope-lab/* | internal/lab/* | .github/workflows/lab.yml)
                 hits+="  ${f}"$'\n'
                 ;;
             esac

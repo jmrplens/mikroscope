@@ -142,8 +142,9 @@ agent:
 # their flags, but also the usage text that lists every verb, so a sink that
 # adds its flag there (#35) would be labelled router. Nine of the ten pull
 # requests that touched it were labelled router by another file. test/lab and
-# test/e2e/lab, the virtual lab and its suite, are new with the lab and no
-# earlier pull request touched them.
+# test/e2e/lab, the virtual lab and its suite, and the lab's driver
+# (cmd/mikroscope-lab, internal/lab) are new with the lab and no earlier pull
+# request touched them.
 # Would have fired on 13 of the 61 pull requests (21 %).
 router:
   - changed-files:
@@ -159,6 +160,8 @@ router:
           - scripts/roundtrip.sh
           - test/lab/**
           - test/e2e/lab/**
+          - cmd/mikroscope-lab/**
+          - internal/lab/**
 
 # What runs on the operator's machine and pulls from the agent: forward,
 # record, mark and plot, the derive stage, and the RouterOS API tier, whose

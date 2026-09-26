@@ -3,9 +3,9 @@
 # developer runs (test/lab, and the suite in test/e2e/lab behind the build tag
 # labe2e). No real router is involved: the lab router is a VM inside a
 # container on the runner, published on the runner's loopback only, and every
-# deploy verb reaches it through `lab.sh cli`, from the lab's own LAN. The
+# deploy verb reaches it through `mikroscope-lab cli`, from the lab's own LAN. The
 # lab's namespace takes no connection from other containers and opens none to
-# a private address outside the lab (its entrypoint's nftables table).
+# a private address outside the lab (the nftables table its PID 1 loads).
 #
 # Two architectures, both on an x86_64 runner:
 #
@@ -31,14 +31,16 @@
 #
 #   downloads  The CHR image and the packages archive (56 MB for x86_64 and
 #              70 MB for arm64 at 7.24.4), per architecture and RouterOS
-#              version. lab.sh checks them against test/lab/SHA256SUMS, which
-#              pins the 7.24.4 files, whether they came from MikroTik or from
-#              the cache, and then against MikroTik's own .sha256.
+#              version. mikroscope-lab checks them against
+#              test/lab/SHA256SUMS, which pins the 7.24.4 files, whether they
+#              came from MikroTik or from the cache, and then against
+#              MikroTik's own .sha256.
 #   snapshot   base.qcow2 and clean.qcow2, per architecture, RouterOS
-#              version and the hash of the lab's scripts, image and pinned
-#              sums, so any change to how the router is provisioned
-#              provisions it again. The snapshot carries no credential: admin
-#              has the empty password CHR ships with and no key, and lab.sh up
+#              version and the hash of the lab's driver (cmd/mikroscope-lab
+#              and internal/lab, its tests left out), image and pinned sums,
+#              so any change to how the router is provisioned provisions it
+#              again. The snapshot carries no credential: admin has the
+#              empty password CHR ships with and no key, and `make lab-up`
 #              gives it this run's key and password at boot. test/lab/.env and
 #              test/lab/.cache/ssh never leave the runner. A hit skips the
 #              download and the provisioning (43 s on x86_64 and 100 s on
@@ -46,9 +48,10 @@
 #              runner).
 #
 # Both are saved once the lab has come up, so what is stored has passed
-# lab.sh's checks, and a failing suite does not lose it. A dispatch that
-# checks out another `ref` (a fork's merge SHA, say) runs on main's cache
-# scope with somebody else's lab.sh, so it restores but never saves.
+# mikroscope-lab's checks, and a failing suite does not lose it. A dispatch
+# that checks out another `ref` (a fork's merge SHA, say) runs on main's
+# cache scope with somebody else's lab driver, so it restores but never
+# saves.
 #
 # Duration. NOT MEASURED on a runner yet. The estimates behind the timeouts:
 # x86_64 12-18 min (setup 1-2, the lab image 1, downloads 0-1.5, provisioning
@@ -124,8 +127,8 @@ jobs:
       # CHR only. The RouterOS x86 installation-ISO lab (LAB_KIND=iso) is an
       # opt-in recipe for a developer's machine and never runs here.
       LAB_KIND: chr
-      # arm64 on an x86 host has no KVM to require: lab.sh refuses to start it
-      # when asked to, and gives it no /dev/kvm under auto.
+      # arm64 on an x86 host has no KVM to require: mikroscope-lab refuses to
+      # start it when asked to, and gives it no /dev/kvm under auto.
       LAB_KVM: ${{ matrix.arch == 'x86_64' && 'require' || 'auto' }}
       # Nothing else on this runner drives the lab, so a held lock is a leak:
       # fail after a minute and name the holder rather than wait out the job.
@@ -162,13 +165,12 @@ jobs:
 
       # Printed on every run, so the first dispatch records whether GitHub's
       # standard runners give this repository KVM, and every later run shows
-      # it still does. lab.sh also needs flock to keep drivers apart.
+      # it still does.
       - name: What the runner offers the lab
         run: |
           set -euo pipefail
           nproc
           free -m | sed -n 2p
-          command -v flock
           if [ -e /dev/kvm ]; then
             ls -l /dev/kvm
           else
@@ -180,7 +182,7 @@ jobs:
           fi
 
       # The version, read from the Makefile unless the dispatch named one, so
-      # the cache key, the download paths and lab.sh agree on it.
+      # the cache key, the download paths and mikroscope-lab agree on it.
       - name: Pick the RouterOS version
         id: ros
         env:
@@ -236,12 +238,13 @@ jobs:
           path: |
             test/lab/.cache/vm/${{ matrix.arch }}-${{ steps.ros.outputs.version }}/base.qcow2
             test/lab/.cache/vm/${{ matrix.arch }}-${{ steps.ros.outputs.version }}/clean.qcow2
-          key: lab-vm-${{ matrix.arch }}-${{ steps.ros.outputs.version }}-${{ hashFiles('test/lab/lab.sh', 'test/lab/vm/**', 'test/lab/Dockerfile', 'test/lab/SHA256SUMS') }}
+          key: lab-vm-${{ matrix.arch }}-${{ steps.ros.outputs.version }}-${{ hashFiles('cmd/mikroscope-lab/**', 'internal/lab/**', '!**/*_test.go', 'test/lab/Dockerfile', 'test/lab/SHA256SUMS') }}
 
-      # Built here rather than only as prerequisites of test-lab, so that a
-      # compile error is a named step and the log shows what each part cost.
-      - name: Build the CLI and the agent image tars
-        run: make build agent-tars
+      # Built here rather than only as prerequisites of lab-up and test-lab,
+      # so that a compile error is a named step and the log shows what each
+      # part cost.
+      - name: Build the CLI, the agent image tars and the lab's driver
+        run: make build agent-tars lab-tool
 
       # Builds the lab image, downloads what the cache did not have, checks
       # every download against MikroTik's .sha256, provisions the router
@@ -293,8 +296,8 @@ jobs:
 
       # What a failed or timed-out run leaves to read, gathered into one
       # directory of named files: the router's serial console, the
-      # container's own log, what lab.sh reports and what an install left on
-      # the router. Never test/lab/.env or test/lab/.cache/ssh. Each lab
+      # container's own log, what mikroscope-lab reports and what an install
+      # left on the router. Never test/lab/.env or test/lab/.cache/ssh. Each lab
       # credential is replaced by its name in every file before the upload,
       # in case a test printed one.
       - name: Collect the lab's state
@@ -354,7 +357,7 @@ jobs:
 
   # Whether GitHub's arm64 runners give this repository KVM. If they do, the
   # arm64 lab could run there under KVM instead of emulated on x86_64: the
-  # entrypoint already takes KVM on an aarch64 host. Nothing depends on the
+  # lab's PID 1 (mikroscope-lab vm-boot) already takes KVM on an aarch64 host. Nothing depends on the
   # answer yet, so the job only records it, and never fails the run.
   arm64-kvm:
     name: KVM on the arm64 runner (probe)
