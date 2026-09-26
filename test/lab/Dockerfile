@@ -3,7 +3,10 @@
 # architectures: qemu-system-x86 runs CHR x86_64 under KVM, qemu-system-arm
 # (plus the edk2 firmware from qemu-efi-aarch64) runs CHR arm64, which boots
 # only through UEFI. See test/lab/README.md.
-FROM debian:trixie-slim
+#
+# The base is a dated tag, as the compose files pin theirs: trixie-slim was
+# trixie-20260918-slim when the lab's timings were measured.
+FROM debian:trixie-20260918-slim
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \

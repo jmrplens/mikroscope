@@ -8,25 +8,38 @@
 #
 #   lab.sh up | down | reset | status | provision | fetch | image
 #   lab.sh residue              what an install could have left on the router
+#   lab.sh export [terse]       the router's /export without its # lines, to stdout
 #   lab.sh ssh [command]        the router's console, or one command
 #   lab.sh cli <verb> [flags]   the mikroscope CLI, from the lab's LAN side
 #   lab.sh put <file> [name]    upload a file to the router
 #   lab.sh import <file.rsc>    upload a RouterOS script, /import it, delete it
+#   lab.sh profile [name ...]   import routeros/<name>.rsc; no name lists them
+#   lab.sh lock <command ...>   run a command while holding this lab's lock
 #   lab.sh console              the serial console (Ctrl-] to leave)
 #   lab.sh power-cycle          pull the power and put it back
 #
 # Settings, from the environment (the Makefile passes them through):
 #   LAB_ARCH   x86_64 (default; KVM) or arm64 (UEFI, TCG on an x86 host)
 #   LAB_ROS    RouterOS version, default 7.24.4
+#   LAB_KVM    auto (default), require (fail without /dev/kvm) or off (TCG)
+#   LAB_STATE_DIR   where .cache/ and .env live; default this directory. Point
+#              it at another checkout's test/lab to drive the lab it runs.
+#   LAB_LOCK_WAIT   seconds to wait while another process drives the lab;
+#              unset waits as long as it takes, 0 fails at once
 #   LAB_MEM, LAB_CPUS, LAB_DISK_SIZE   the VM: 1024 MiB, 2 vCPU, 1G disk
 #   LAB_CPU    arm64's emulated CPU model, default cortex-a72 (the RB5009's)
 #   LAB_AGENT_ROUTES, LAB_AGENT_TARGET   see below; 172.30.0.0/16, 172.30.10.2:9123
-#   MIKROSCOPE_BIN   the CLI `lab.sh cli` runs, default the one on PATH
+#   MIKROSCOPE_BIN   the CLI `lab.sh cli` runs: default this checkout's
+#              bin/mikroscope (make build), else the one on PATH
+#   LAB_CLI_TOKEN   `lab` hands `lab.sh cli` the lab's agent token as
+#              MIKROSCOPE_TOKEN, for --expose without --token on a command line
 set -euo pipefail
 
 LAB_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+REPO=$(cd "$LAB_DIR/../.." && pwd)
 LAB_ARCH=${LAB_ARCH:-x86_64}
 LAB_ROS=${LAB_ROS:-7.24.4}
+LAB_KVM=${LAB_KVM:-auto}
 LAB_MEM=${LAB_MEM:-1024}
 LAB_CPUS=${LAB_CPUS:-2}
 LAB_DISK_SIZE=${LAB_DISK_SIZE:-1G}
@@ -39,18 +52,22 @@ LAB_DL=${LAB_DL:-https://download.mikrotik.com/routeros}
 LAB_AGENT_ROUTES=${LAB_AGENT_ROUTES:-172.30.0.0/16}
 LAB_AGENT_TARGET=${LAB_AGENT_TARGET:-172.30.10.2:9123}
 
+T0=$(date +%s)
+say() { printf '[lab %s +%4ss] %s\n' "${ID:-$LAB_ARCH}" "$(($(date +%s) - T0))" "$*" >&2; }
+die() {
+	say "error: $*"
+	exit 1
+}
+
+# ID names one lab: its lock, its disks and, through `short`, its container.
 case "$LAB_ARCH" in
 x86_64)
-	short=x86
-	img_zip="chr-$LAB_ROS.img.zip"
-	pkg_zip="all_packages-x86-$LAB_ROS.zip"
-	port_suffix=1
+	ID=x86_64 short=x86 port_suffix=1
+	downloads=("chr-$LAB_ROS.img.zip" "all_packages-x86-$LAB_ROS.zip")
 	;;
 arm64)
-	short=arm64
-	img_zip="chr-$LAB_ROS-arm64.img.zip"
-	pkg_zip="all_packages-arm64-$LAB_ROS.zip"
-	port_suffix=2
+	ID=arm64 short=arm64 port_suffix=2
+	downloads=("chr-$LAB_ROS-arm64.img.zip" "all_packages-arm64-$LAB_ROS.zip")
 	;;
 *)
 	echo "lab: LAB_ARCH must be x86_64 or arm64, got $LAB_ARCH" >&2
@@ -58,12 +75,23 @@ arm64)
 	;;
 esac
 
+# Where the lab keeps its state: downloads, disks, the ssh key and .env. Any
+# checkout of the repository drives the lab another checkout runs by pointing
+# LAB_STATE_DIR at that checkout's test/lab; unset, it is this directory.
+if [ -n "${LAB_STATE_DIR:-}" ]; then
+	[ -d "$LAB_STATE_DIR" ] || die "LAB_STATE_DIR=$LAB_STATE_DIR is not a directory"
+	LAB_STATE_DIR=$(cd "$LAB_STATE_DIR" && pwd)
+else
+	LAB_STATE_DIR=$LAB_DIR
+fi
 NAME=${LAB_NAME:-mikroscope-lab-$short}
-CACHE=$LAB_DIR/.cache
+CACHE=$LAB_STATE_DIR/.cache
 DL=$CACHE/downloads/$LAB_ROS
-VM=$CACHE/vm/$LAB_ARCH-$LAB_ROS
+VMREL=vm/$ID-$LAB_ROS
+VM=$CACHE/$VMREL
 SSHD=$CACHE/ssh
-ENV_FILE=$LAB_DIR/.env
+ENV_FILE=$LAB_STATE_DIR/.env
+LOCK=$CACHE/$ID.lock
 
 # Host ports, on 127.0.0.1 only: 220N ssh, 800N WebFig, 870N API, 910N agent,
 # with N = 1 for x86_64 and 2 for arm64, so both labs can run side by side.
@@ -71,13 +99,6 @@ P_SSH=220$port_suffix
 P_HTTP=800$port_suffix
 P_API=870$port_suffix
 P_AGENT=910$port_suffix
-
-T0=$(date +%s)
-say() { printf '[lab %s +%4ss] %s\n' "$LAB_ARCH" "$(($(date +%s) - T0))" "$*" >&2; }
-die() {
-	say "error: $*"
-	exit 1
-}
 
 # ─── Credentials ─────────────────────────────────────────────────────────────
 
@@ -114,15 +135,92 @@ ensure_key() {
 	fi
 }
 
+# ─── One driver at a time ────────────────────────────────────────────────────
+
+# take_lock keeps two drivers of one lab apart, across processes and
+# checkouts: an flock on $CACHE/<id>.lock, held until lab.sh exits. A process
+# that drives the lab for a whole session (`lab.sh lock go test …`, the WebFig
+# captures) exports LAB_LOCK_HELD, and every lab.sh it starts finds its own
+# lock there instead of waiting for itself. The file says who holds it: a
+# pid, a verb and a directory, never the arguments, which can carry the lab's
+# agent token.
+take_lock() {
+	case ":${LAB_LOCK_HELD:-}:" in *":$LOCK:"*) return 0 ;; esac
+	command -v flock >/dev/null 2>&1 || die "flock (util-linux) is not on PATH; the lab needs it to keep two drivers apart"
+	mkdir -p "$CACHE"
+	# Both checked: this runs inside `guard_state && take_lock && …`, where
+	# set -e does not stop anything, and a lock file this user cannot open
+	# would otherwise let the verb go on without the lock.
+	exec 9>>"$LOCK" || die "cannot open $LOCK, so $NAME cannot be locked: whoever drives the lab must be able to write its lock file"
+	if ! flock -n 9; then
+		say "$NAME is in use: $(cat "$LOCK" 2>/dev/null || echo 'holder unknown'); waiting${LAB_LOCK_WAIT:+ up to ${LAB_LOCK_WAIT}s}"
+		if [ -n "${LAB_LOCK_WAIT:-}" ]; then
+			flock -w "$LAB_LOCK_WAIT" 9 || die "$NAME was still in use after ${LAB_LOCK_WAIT}s"
+		else
+			flock 9 || die "could not lock $LOCK"
+		fi
+	fi
+	printf 'pid %s (%s), lab.sh %s%s, since %s, in %s\n' "$$" "$(id -un)" "$verb" \
+		"${1:+ $(basename "$1")}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$PWD" >"$LOCK"
+	export LAB_LOCK_HELD=${LAB_LOCK_HELD:+$LAB_LOCK_HELD:}$LOCK
+}
+
+lock_state() {
+	if [ ! -e "$LOCK" ] || ! command -v flock >/dev/null 2>&1; then
+		echo free
+	elif flock -n "$LOCK" true 2>/dev/null; then
+		echo free
+	else
+		echo "held by $(cat "$LOCK")"
+	fi
+}
+
+# state_elsewhere prints the LAB_STATE_DIR of an existing container when it
+# is not this one's.
+state_elsewhere() {
+	[ "$(state)" != absent ] || return 0
+	local src
+	src=$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/cache"}}{{.Source}}{{end}}{{end}}' "$NAME")
+	src=${src%/.cache}
+	if [ -n "$src" ] && [ -d "$src" ] && [ "$(cd "$src" && pwd)" != "$LAB_STATE_DIR" ]; then
+		echo "$src"
+	fi
+}
+
+# guard_state refuses to drive a container whose state lives in another
+# LAB_STATE_DIR: its key, password and disks are there, not here.
+guard_state() {
+	local src
+	src=$(state_elsewhere)
+	[ -z "$src" ] || die "$NAME keeps its state in $src, not in $LAB_STATE_DIR: export LAB_STATE_DIR=$src"
+}
+
+# guard_ros refuses to drive a container that runs another LAB_ROS: there is
+# one lab per arch at a time, and a test must not run against a version it
+# did not ask for.
+guard_ros() {
+	[ "$(state)" != absent ] || return 0
+	local ros
+	ros=$(docker inspect -f '{{index .Config.Labels "mikroscope.lab.ros"}}' "$NAME")
+	[ "$ros" = "$LAB_ROS" ] || die "$NAME runs RouterOS $ros, not LAB_ROS=$LAB_ROS: lab.sh down first; there is one lab per arch at a time"
+}
+
 # ─── Image, downloads, disk ──────────────────────────────────────────────────
+
+# The image is rebuilt whenever its Dockerfile or the scripts it carries
+# change, so no checkout runs a lab on an image another checkout built from
+# older files.
+image_hash() { cat "$LAB_DIR/Dockerfile" "$LAB_DIR"/vm/* | sha256sum | cut -c1-16; }
 
 cmd_image() {
 	say "building $LAB_IMAGE"
-	docker build -q -t "$LAB_IMAGE" "$LAB_DIR" >/dev/null
+	docker build -q --label "mikroscope.lab.hash=$(image_hash)" -t "$LAB_IMAGE" "$LAB_DIR" >/dev/null
 }
 
 ensure_image() {
-	docker image inspect "$LAB_IMAGE" >/dev/null 2>&1 || cmd_image
+	local have
+	have=$(docker image inspect -f '{{index .Config.Labels "mikroscope.lab.hash"}}' "$LAB_IMAGE" 2>/dev/null || true)
+	[ "$have" = "$(image_hash)" ] || cmd_image
 }
 
 # tool runs one command in a throwaway container with the cache mounted, as
@@ -135,22 +233,23 @@ tool() {
 # MikroTik publishes beside it on download.mikrotik.com. Both come from the
 # same server over HTTPS, so the check catches a damaged or truncated
 # download, not a compromised origin; RouterOS itself verifies the signature
-# of every .npk it installs.
+# of every .npk it installs. A cut connection is retried and resumes.
 cmd_fetch() {
 	ensure_image
 	mkdir -p "$DL"
-	local f
-	for f in "$img_zip" "$pkg_zip"; do
+	local f sums=()
+	for f in "${downloads[@]}"; do
+		sums+=("'$f.sha256'")
 		if [ -f "$DL/$f" ] && [ -f "$DL/$f.sha256" ]; then
 			continue
 		fi
 		say "downloading $LAB_DL/$LAB_ROS/$f"
 		tool "set -e; cd downloads/$LAB_ROS
-			curl -fsSL -o '$f.part' '$LAB_DL/$LAB_ROS/$f'
-			curl -fsSL -o '$f.sha256' '$LAB_DL/$LAB_ROS/$f.sha256'
+			curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 -C - -o '$f.part' '$LAB_DL/$LAB_ROS/$f'
+			curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 -o '$f.sha256' '$LAB_DL/$LAB_ROS/$f.sha256'
 			mv '$f.part' '$f'"
 	done
-	tool "set -e; cd downloads/$LAB_ROS; sha256sum -c '$img_zip.sha256' '$pkg_zip.sha256'" >&2 ||
+	tool "set -e; cd downloads/$LAB_ROS; sha256sum -c ${sums[*]}" >&2 ||
 		die "checksum mismatch: delete $DL and fetch again"
 }
 
@@ -159,18 +258,19 @@ cmd_fetch() {
 cmd_disk() {
 	cmd_fetch
 	mkdir -p "$VM"
+	local img_zip=${downloads[0]} pkg_zip=${downloads[1]}
 	if [ ! -f "$VM/base.qcow2" ]; then
 		say "converting $img_zip to base.qcow2 ($LAB_DISK_SIZE)"
 		tool "set -e; tmp=\$(mktemp -d)
 			unzip -q -o 'downloads/$LAB_ROS/$img_zip' -d \$tmp
-			qemu-img convert -O qcow2 \$tmp/*.img 'vm/$LAB_ARCH-$LAB_ROS/base.qcow2'
-			qemu-img resize -q 'vm/$LAB_ARCH-$LAB_ROS/base.qcow2' '$LAB_DISK_SIZE'
-			chmod a-w 'vm/$LAB_ARCH-$LAB_ROS/base.qcow2'
+			qemu-img convert -O qcow2 \$tmp/*.img '$VMREL/base.qcow2'
+			qemu-img resize -q '$VMREL/base.qcow2' '$LAB_DISK_SIZE'
+			chmod a-w '$VMREL/base.qcow2'
 			rm -rf \$tmp"
 	fi
 	if [ ! -f "$VM/container-$LAB_ROS.npk" ]; then
-		tool "set -e; unzip -q -o -j 'downloads/$LAB_ROS/$pkg_zip' 'container-$LAB_ROS*.npk' -d 'vm/$LAB_ARCH-$LAB_ROS'
-			cd 'vm/$LAB_ARCH-$LAB_ROS'; for f in container-*.npk; do [ \"\$f\" = container-$LAB_ROS.npk ] || mv \"\$f\" container-$LAB_ROS.npk; done"
+		tool "set -e; unzip -q -o -j 'downloads/$LAB_ROS/$pkg_zip' 'container-$LAB_ROS*.npk' -d '$VMREL'
+			cd '$VMREL'; for f in container-*.npk; do [ \"\$f\" = container-$LAB_ROS.npk ] || mv \"\$f\" container-$LAB_ROS.npk; done"
 		[ -f "$VM/container-$LAB_ROS.npk" ] || die "no container package in $pkg_zip"
 	fi
 }
@@ -178,14 +278,18 @@ cmd_disk() {
 # overlay makes $2 a copy-on-write layer over $1, by a relative backing path so
 # the chain reads the same inside the container and out.
 overlay() {
-	tool "set -e; cd 'vm/$LAB_ARCH-$LAB_ROS'; rm -f '$2'; qemu-img create -q -f qcow2 -b '$1' -F qcow2 '$2'"
+	tool "set -e; cd '$VMREL'; rm -f '$2'; qemu-img create -q -f qcow2 -b '$1' -F qcow2 '$2'"
 }
 
 # ─── The machine ─────────────────────────────────────────────────────────────
 
-state() { docker inspect -f '{{.State.Status}}' "$NAME" 2>/dev/null || echo absent; }
+# docker inspect prints an empty line for a container that does not exist.
+state() { docker inspect -f '{{.State.Status}}' "$NAME" 2>/dev/null | grep . || echo absent; }
 
-# start runs the container on the given disk, or powers an existing one back on.
+# start runs the container on the given disk, or powers an existing one back
+# on. The scripts the container runs are copied into the state directory
+# first, so the lab keeps powering on after the checkout that created it is
+# gone.
 start() {
 	local disk=$1
 	case "$(state)" in
@@ -195,17 +299,35 @@ start() {
 		return 0
 		;;
 	esac
-	local kvm=()
-	[ -e /dev/kvm ] && kvm=(--device /dev/kvm)
+	# KVM runs a guest of the host's own architecture only: x86_64 on an x86
+	# host, arm64 on an arm64 one. A lab that is emulated gets no /dev/kvm it
+	# could not use.
+	local kvm=() native=0
+	case "$LAB_ARCH:$(uname -m)" in x86_64:x86_64 | arm64:aarch64) native=1 ;; esac
+	case "$LAB_KVM" in
+	auto) [ "$native" = 1 ] && [ -e /dev/kvm ] && kvm=(--device /dev/kvm) ;;
+	require)
+		[ "$native" = 1 ] || die "LAB_KVM=require: the $LAB_ARCH lab gets KVM only on a $LAB_ARCH host, and this one is $(uname -m)"
+		[ -e /dev/kvm ] || die "LAB_KVM=require and this host has no /dev/kvm"
+		kvm=(--device /dev/kvm)
+		;;
+	off) ;;
+	*) die "LAB_KVM must be auto, require or off, got $LAB_KVM" ;;
+	esac
+	local stage=$CACHE/run/$NAME
+	rm -rf "$stage"
+	mkdir -p "$stage"
+	cp -R "$LAB_DIR/vm" "$stage/vm"
 	docker run -d --name "$NAME" --hostname "$NAME" \
 		--label org.opencontainers.image.source=https://github.com/jmrplens/mikroscope \
 		--label mikroscope.lab.arch="$LAB_ARCH" --label mikroscope.lab.ros="$LAB_ROS" \
 		--cap-add NET_ADMIN --device /dev/net/tun "${kvm[@]}" \
-		-e LAB_ARCH="$LAB_ARCH" -e LAB_MEM="$LAB_MEM" -e LAB_CPUS="$LAB_CPUS" -e LAB_CPU="${LAB_CPU:-}" \
+		-e LAB_ARCH="$LAB_ARCH" -e LAB_KVM="$LAB_KVM" \
+		-e LAB_MEM="$LAB_MEM" -e LAB_CPUS="$LAB_CPUS" -e LAB_CPU="${LAB_CPU:-}" \
 		-e LAB_AGENT_ROUTES="$LAB_AGENT_ROUTES" -e LAB_AGENT_TARGET="$LAB_AGENT_TARGET" \
-		-e LAB_DISK="/cache/vm/$LAB_ARCH-$LAB_ROS/$disk" \
-		-e LAB_CONSOLE_LOG="/cache/vm/$LAB_ARCH-$LAB_ROS/console.log" \
-		-v "$CACHE:/cache" -v "$LAB_DIR/vm:/lab/vm:ro" -v "$SSHD:/lab/ssh:ro" \
+		-e LAB_DISK="/cache/$VMREL/$disk" \
+		-e LAB_CONSOLE_LOG="/cache/$VMREL/console.log" \
+		-v "$CACHE:/cache" -v "$stage/vm:/lab/vm:ro" -v "$SSHD:/lab/ssh:ro" \
 		-p "127.0.0.1:$P_SSH:22" -p "127.0.0.1:$P_HTTP:80" \
 		-p "127.0.0.1:$P_API:8728" -p "127.0.0.1:$P_AGENT:9123" \
 		"$LAB_IMAGE" >/dev/null
@@ -253,7 +375,7 @@ cmd_provision() {
 		say "clean snapshot exists ($VM/clean.qcow2); FORCE=1 to rebuild it"
 		return 0
 	fi
-	cmd_image
+	ensure_image
 	load_env
 	ensure_key
 	cmd_disk
@@ -282,7 +404,7 @@ cmd_provision() {
 	say "ssh by key over ether2 (LAN) works; password set"
 
 	say "uploading container-$LAB_ROS.npk"
-	inlab scp -q "/cache/vm/$LAB_ARCH-$LAB_ROS/container-$LAB_ROS.npk" "lab:container-$LAB_ROS.npk"
+	inlab scp -q "/cache/$VMREL/container-$LAB_ROS.npk" "lab:container-$LAB_ROS.npk"
 	ros '/system/reboot' >/dev/null 2>&1 || true
 	sleep 5
 	wait_ssh lab 300
@@ -421,14 +543,19 @@ cmd_power_cycle() {
 }
 
 cmd_status() {
-	local st
+	local st accel
 	st=$(state)
 	echo "container: $NAME ($st), image $LAB_IMAGE, RouterOS $LAB_ROS $LAB_ARCH"
+	local elsewhere
+	elsewhere=$(state_elsewhere)
+	echo "state:     $LAB_STATE_DIR${elsewhere:+ (the running lab keeps its state in $elsewhere: export LAB_STATE_DIR=$elsewhere)}"
+	echo "lock:      $(lock_state)"
 	local disks="" d
 	for d in "$VM"/*.qcow2; do [ -f "$d" ] && disks+="$(basename "$d") "; done
 	echo "disks:     ${disks:-none}"
 	[ "$st" = running ] || return 0
-	echo "host:      ssh 127.0.0.1:$P_SSH  WebFig http://127.0.0.1:$P_HTTP  API 127.0.0.1:$P_API  agent 127.0.0.1:$P_AGENT"
+	accel=$(docker logs "$NAME" 2>&1 | grep -o 'accel=[a-z]*' | tail -1 || true)
+	echo "host:      ssh 127.0.0.1:$P_SSH  WebFig http://127.0.0.1:$P_HTTP  API 127.0.0.1:$P_API  agent 127.0.0.1:$P_AGENT${accel:+  $accel}"
 	# One connect for every reading, as on a real router.
 	ros ':put ("router:    " . [/system/identity/get name] . ", " . [/system/resource/get board-name] . ", RouterOS " . [/system/resource/get version] . ", " . [/system/resource/get architecture-name] . ", up " . [/system/resource/get uptime]); :put ("memory:    free " . ([/system/resource/get free-memory] / 1048576) . " MiB of " . ([/system/resource/get total-memory] / 1048576) . "; disk free " . ([/system/resource/get free-hdd-space] / 1048576) . " MiB of " . ([/system/resource/get total-hdd-space] / 1048576)); :put ("container: package " . [:len [/system/package/find name="container" disabled=no]] . ", device-mode container=" . [/system/device-mode/get container] . ", containers " . [:len [/container/find]] . ", veths " . [:len [/interface/veth/find]]); :put ("licence:   " . [/system/license/get level])' | tr -d '\r'
 }
@@ -441,6 +568,21 @@ cmd_residue() {
 	ros ':put ("containers " . [:len [/container/find]] . ", envs " . [:len [/container/envs/find]] . ", mounts " . [:len [/container/mounts/find]] . ", veths " . [:len [/interface/veth/find]] . ", ip-addresses " . [:len [/ip/address/find]] . ", list-members " . [:len [/interface/list/member/find]] . ", filter " . [:len [/ip/firewall/filter/find]] . ", nat " . [:len [/ip/firewall/nat/find]] . ", raw " . [:len [/ip/firewall/raw/find]] . ", address-lists " . [:len [/ip/firewall/address-list/find]] . ", disks " . [:len [/disk/find]]); :foreach f in=[/file/find] do={ :put ("file " . [/file/get $f name] . " (" . [/file/get $f type] . ")") }' | tr -d '\r'
 }
 
+# export prints the router's configuration without its comment lines, which
+# carry the date and the software id, for a test to compare in memory. It
+# goes to stdout only; nothing here writes it to a file. RouterOS 7 hides
+# sensitive values unless asked, and show-sensitive is refused.
+cmd_export() {
+	local a
+	for a in "$@"; do
+		case "$a" in
+		terse | verbose | compact) ;;
+		*) die "export takes terse, verbose or compact, got $a" ;;
+		esac
+	done
+	ros "/export $*" | tr -d '\r' | grep -v '^#'
+}
+
 cmd_ssh() {
 	if [ $# -eq 0 ]; then
 		docker exec -it "$NAME" ssh lab
@@ -449,22 +591,73 @@ cmd_ssh() {
 	fi
 }
 
+# cli_bin is the CLI `lab.sh cli` runs: MIKROSCOPE_BIN, else this checkout's
+# bin/mikroscope (`make build` builds it with CGO_ENABLED=0, so it runs in
+# the lab's Debian image), else the one on PATH. A test run exercises the
+# checkout, not whatever release the host has installed.
+cli_bin() {
+	local bin=${MIKROSCOPE_BIN:-}
+	if [ -z "$bin" ]; then
+		if [ -x "$REPO/bin/mikroscope" ]; then
+			bin=$REPO/bin/mikroscope
+		else
+			bin=$(command -v mikroscope || true)
+		fi
+	fi
+	[ -n "$bin" ] && [ -x "$bin" ] || die "no mikroscope binary: make build, put one on PATH, or set MIKROSCOPE_BIN"
+	echo "$(cd "$(dirname "$bin")" && pwd)/$(basename "$bin")"
+}
+
 # cli runs the mikroscope CLI from the lab's LAN side: a throwaway container in
 # the lab's network namespace, so `--router lab` is the lab router and the
 # agent's veth address is routed to it. Nothing from the host's environment
 # reaches it — no MIKROSCOPE_* variable set for a real router can leak in —
-# except MIKROSCOPE_ROUTER=lab. The current directory is mounted at /work, so
-# relative --out and --agent-tar paths work.
+# except MIKROSCOPE_ROUTER=lab and, with LAB_CLI_TOKEN=lab, the lab's own agent
+# token as MIKROSCOPE_TOKEN. The current directory is mounted read-write at
+# its own path and is the working directory, and the repository read-only at
+# its own path, so relative paths, and absolute paths inside either, mean in
+# the container what they mean on the host (--agent-tar
+# build/agent-images/…, --out x.rsc). An absolute path outside both would name
+# nothing there, so it is refused.
 cmd_cli() {
-	local bin=${MIKROSCOPE_BIN:-$(command -v mikroscope || true)}
-	[ -n "$bin" ] && [ -x "$bin" ] || die "no mikroscope binary: put one on PATH or set MIKROSCOPE_BIN"
-	bin=$(cd "$(dirname "$bin")" && pwd)/$(basename "$bin")
+	local bin ver here=$PWD a v
+	bin=$(cli_bin)
+	ver=$("$bin" version 2>/dev/null | head -1 || true)
+	echo "using $bin: ${ver:-no version line}" >&2
 	[ "$(state)" = running ] || die "$NAME is not running: lab.sh up"
+	case "$here" in
+	/ | /root | /lab | /usr | /etc | /run | /bin | /sbin | /lib | /lib64 | /var | /proc | /sys | /dev | /tmp)
+		die "run lab.sh cli from a project directory, not $here: it is mounted over the same path in the CLI's container"
+		;;
+	esac
+	for a in "$@"; do
+		v=$a
+		case "$a" in --*=*) v=${a#*=} ;; esac
+		case "$v" in
+		/*)
+			case "$v/" in
+			"$here"/* | "$REPO"/*) ;;
+			*) die "$v is outside $here and $REPO, the two directories lab.sh cli mounts: copy it into one of them" ;;
+			esac
+			;;
+		esac
+	done
+	local mounts=(-v "$here:$here")
+	[ "$here" = "$REPO" ] || mounts+=(-v "$REPO:$REPO:ro")
 	local tty=()
 	[ -t 0 ] && [ -t 1 ] && tty=(-t)
+	# The token travels in the environment: `-e NAME` with no value copies it
+	# from this process, so it is on no command line in the host's process
+	# table, where `--token <value>` would sit for as long as the CLI runs.
+	local envs=(-e MIKROSCOPE_ROUTER=lab)
+	if [ "${LAB_CLI_TOKEN:-}" = lab ]; then
+		load_env
+		export MIKROSCOPE_TOKEN=$LAB_AGENT_TOKEN
+		envs+=(-e MIKROSCOPE_TOKEN)
+	fi
 	docker run --rm -i "${tty[@]}" --network "container:$NAME" \
 		-v "$bin:/usr/local/bin/mikroscope:ro" -v "$LAB_DIR/vm:/lab/vm:ro" -v "$SSHD:/lab/ssh:ro" \
-		-v "$PWD:/work" -w /work -e MIKROSCOPE_ROUTER=lab \
+		"${mounts[@]}" -w "$here" "${envs[@]}" \
 		--entrypoint /lab/vm/cli.sh "$LAB_IMAGE" mikroscope "$@"
 }
 
@@ -479,12 +672,50 @@ cmd_put() {
 }
 
 # import uploads a RouterOS script, runs it with /import and removes it, so
-# the router keeps what the script did and not the file.
+# the router keeps what the script did and not the file. RouterOS's ssh exits
+# 0 whether the script failed or not, so success is read from its message.
 cmd_import() {
-	local src=$1 name
+	local src=$1 name out
 	name=lab-$(basename "$src")
 	cmd_put "$src" "$name"
-	ros "/import file-name=$name; /file/remove [find name=\"$name\"]"
+	out=$(ros "/import file-name=$name; /file/remove [find name=\"$name\"]" | tr -d '\r')
+	case "$out" in
+	*"executed successfully"*) say "imported $(basename "$src")" ;;
+	*)
+		ros "/file/remove [find name=\"$name\"]" >/dev/null 2>&1 || true
+		printf '%s\n' "$out" >&2
+		die "/import of $(basename "$src") failed"
+		;;
+	esac
+}
+
+# profile imports lab set-ups by name, routeros/<name>.rsc, in the order
+# given; with no name it lists them, with the first line of each.
+cmd_profile() {
+	local p f
+	if [ $# -eq 0 ]; then
+		for f in "$LAB_DIR"/routeros/*.rsc; do
+			printf '%-24s %s\n' "$(basename "$f" .rsc)" "$(sed -n '1s/^# *[a-z0-9-]*: *//p' "$f")"
+		done
+		return 0
+	fi
+	for p in "$@"; do
+		[ -f "$LAB_DIR/routeros/$p.rsc" ] || die "no profile $p: lab.sh profile lists them"
+	done
+	for p in "$@"; do
+		cmd_import "$LAB_DIR/routeros/$p.rsc"
+	done
+}
+
+# lock runs a command while holding this lab's lock: a session of lab.sh
+# calls no other driver may interleave with, such as a test suite. The command
+# does not inherit the lock's descriptor, so nothing it leaves running keeps
+# the lab locked once it returns.
+cmd_lock() {
+	[ $# -gt 0 ] || die "lock needs a command: lab.sh lock <command> [args]"
+	local rc=0
+	"$@" 9>&- || rc=$?
+	return "$rc"
 }
 
 cmd_console() {
@@ -500,12 +731,24 @@ cmd_env() {
 
 verb=${1:-status}
 [ $# -gt 0 ] && shift
+# Every verb that drives the VM takes the lab's lock first, then checks that
+# the container it would drive is this lab's. status, env, fetch and image do
+# not touch the VM, nor does profile with no name, which lists them; lock
+# takes the lock and leaves the rest to its command.
+case "$verb" in
+status | env | fetch | image | help | -h | --help) ;;
+lock) take_lock "${1:-}" ;;
+down) guard_state && take_lock ;;
+profile) [ $# -eq 0 ] || { guard_state && take_lock && guard_ros; } ;;
+*) guard_state && take_lock && guard_ros ;;
+esac
 case "$verb" in
 up) cmd_up ;;
 down) cmd_down ;;
 reset) cmd_reset ;;
 status) cmd_status ;;
 residue) cmd_residue ;;
+export) cmd_export "$@" ;;
 provision) cmd_provision ;;
 device-mode) cmd_device_mode ;;
 fetch) cmd_fetch ;;
@@ -515,6 +758,8 @@ ssh) cmd_ssh "$@" ;;
 cli) cmd_cli "$@" ;;
 put) cmd_put "$@" ;;
 import) cmd_import "$@" ;;
+profile) cmd_profile "$@" ;;
+lock) cmd_lock "$@" ;;
 console) cmd_console ;;
 power-cycle) cmd_power_cycle ;;
 env) cmd_env ;;

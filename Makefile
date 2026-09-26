@@ -20,7 +20,8 @@ SHELL := /bin/bash
 	mdlint mdlint-fix check-doc-links \
 	gen-dashboards check-dashboards gen-brand check-brand check-generated \
 	install-tools tools-versions release-check roundtrip \
-	lab-up lab-down lab-reset lab-status lab-ssh lab-cli lab-console lab-provision
+	lab-up lab-down lab-reset lab-status lab-ssh lab-cli lab-console lab-provision \
+	lab-profile lab-export lab-residue lab-power-cycle
 
 # ─── Variables ──────────────────────────────────────────────────────────────
 
@@ -527,9 +528,20 @@ release-check: ## Validate .goreleaser.yaml without releasing anything
 # clean snapshot (container package installed, device-mode container=yes
 # confirmed); every later one boots in seconds. Nothing here reaches any router
 # but the lab's own.
+#
+# Every target drives the lab through test/lab/lab.sh, which takes the lab's
+# lock first, so two checkouts or two agents never drive one lab at once.
+# LAB_STATE_DIR (environment or make line) points a checkout at the lab
+# another checkout runs: its test/lab, where .cache/ and .env live.
 LAB_ARCH ?= x86_64
 LAB_ROS  ?= 7.24.4
 LAB      := LAB_ARCH=$(LAB_ARCH) LAB_ROS=$(LAB_ROS) test/lab/lab.sh
+
+# The agent image a lab test pulls: the last release tag, not VERSION, which
+# runs ahead of what Docker Hub has during a release pull request. A clone
+# with no tags (a shallow CI checkout) falls back to `latest`, which Docker Hub
+# points at the last release too.
+LAB_REMOTE_IMAGE ?= jmrplens/mikroscope-agent:$(or $(shell git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//'),latest)
 
 lab-up: ## Start the lab router (LAB_ARCH=x86_64|arm64, LAB_ROS=7.24.4); the first run provisions it
 	@$(LAB) up
@@ -540,14 +552,28 @@ lab-down: ## Shut the lab router down and remove its container; the disk keeps i
 lab-reset: ## Put the lab router back to its clean snapshot, in seconds
 	@$(LAB) reset
 
-lab-status: ## Show the lab container and what the router reports
+lab-status: ## Show the lab container, who holds its lock and what the router reports
 	@$(LAB) status
 
 lab-ssh: ## A console on the lab router over ssh; CMD='/ip/address/print' runs one command
 	@$(LAB) ssh $${CMD:+"$$CMD"}
 
-lab-cli: ## Run the mikroscope CLI against the lab from its LAN side: ARGS='doctor --arch amd64'
-	@$(LAB) cli $$ARGS
+# ARGS is expanded by make, so ARGS='doctor --remote-image $(LAB_REMOTE_IMAGE)'
+# names the last release.
+lab-cli: build ## Run this checkout's CLI against the lab from its LAN side: ARGS='doctor --arch amd64'
+	@$(LAB) cli $(ARGS)
+
+lab-profile: ## Import lab set-ups from test/lab/routeros: PROFILE='doctor-lists tmpfs-disk'; none lists them
+	@$(LAB) profile $(PROFILE)
+
+lab-export: ## Print the lab router's /export without its comment lines (stdout only)
+	@$(LAB) export
+
+lab-residue: ## Count what an install could have left on the lab router
+	@$(LAB) residue
+
+lab-power-cycle: ## Pull the lab router's power and put it back (a cold reboot)
+	@$(LAB) power-cycle
 
 lab-console: ## Attach to the lab router's serial console
 	@$(LAB) console

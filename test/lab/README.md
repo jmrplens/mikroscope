@@ -10,7 +10,8 @@ and every tool the lab drives it with live in the lab's own image.
 ```sh
 make lab-up                 # the first run downloads RouterOS and provisions it
 make lab-status
-make lab-cli ARGS='doctor --arch amd64 --remote-image jmrplens/mikroscope-agent:1.3.1'
+make lab-cli ARGS='doctor --arch amd64 --remote-image $(LAB_REMOTE_IMAGE)'
+make lab-profile PROFILE=doctor-lists
 make lab-ssh CMD='/container/print'
 make lab-reset              # back to the clean snapshot
 make lab-down
@@ -19,12 +20,16 @@ make lab-down
 `LAB_ARCH=x86_64|arm64` picks the CHR (x86_64 is the default) and
 `LAB_ROS=7.24.4` the RouterOS version; both go on the `make` line or in the
 environment. `test/lab/lab.sh` is what the targets call and has more verbs
-(`lab.sh help`).
+(`lab.sh help`). `lab-cli` builds this checkout's CLI first and runs it, not
+whatever release the host has installed; `LAB_REMOTE_IMAGE` is the last
+release tag's agent image on Docker Hub (`git describe --tags`, so a release
+pull request, whose `VERSION` is ahead of Docker Hub, still names an image that
+exists), and `make` expands it inside `ARGS`.
 
 The two labs are separate containers, `mikroscope-lab-x86` and
 `mikroscope-lab-arm64`, and run side by side. x86_64 runs under KVM and is the
 fast one. arm64 is emulated instruction by instruction on an x86 host (QEMU's
-TCG) and boots from its snapshot in 26–27 s against x86_64's 7 s. It is there
+TCG) and boots from its snapshot in 26–28 s against x86_64's 7 s. It is there
 because the RB5009 the project is verified on runs the arm64 agent: the lab
 runs the same arm64 `container` package, the same agent image and the same CPU
 model as that router, far slower. [Emulated arm64](#emulated-arm64) says what
@@ -32,28 +37,87 @@ that costs and which of its numbers are the emulation's, not the router's.
 
 ```sh
 make lab-up LAB_ARCH=arm64
-make lab-cli LAB_ARCH=arm64 ARGS='doctor --remote-image jmrplens/mikroscope-agent:1.3.1'
+make lab-cli LAB_ARCH=arm64 ARGS='doctor --remote-image $(LAB_REMOTE_IMAGE)'
 ```
 
 ## What it needs
 
 - Docker (29.8 here) with permission to create a container with
   `--cap-add NET_ADMIN --device /dev/net/tun`, for the router's LAN tap.
-- `/dev/kvm` for x86_64. Without it the lab falls back to TCG, many times
-  slower; that fallback was not measured.
-- Nothing more for arm64, which never gets KVM on an x86 host. Measured
-  from the host: QEMU uses 9–10 % of one core and 360 MiB with the router
-  idle, and 15–18 % of one core and 465 MiB with the agent sampling at 10 Hz.
-- About 800 MB of disk for one architecture, 920 MB for both: the lab image is
-  697 MB, and one version and architecture of RouterOS takes 115 MB (x86_64)
-  or 105 MB (arm64) under `test/lab/.cache/`. For x86_64: 54 MB of downloads, 47 MB base disk, 4 MB
-  clean snapshot, then the live layer. For arm64: 66 MB of downloads, 26 MB
-  base disk, 4 MB clean snapshot, then the live layer.
+- `/dev/kvm` for x86_64. `LAB_KVM` decides what happens without it: `auto`
+  (the default) falls back to TCG, many times slower and not measured;
+  `require` stops the lab at once instead, which is what CI sets for x86_64;
+  `off` never uses KVM.
+- Nothing more for arm64, which never gets KVM on an x86 host (`LAB_KVM=require`
+  with `LAB_ARCH=arm64` stops there). Measured from the host: QEMU uses 9–10 %
+  of one core and 360 MiB with the router idle, and 15–18 % of one core and
+  465 MiB with the agent sampling at 10 Hz.
+- `flock`, from util-linux, on the host: it keeps two drivers of one lab
+  apart ([one driver at a time](#one-driver-at-a-time)).
+- About 815 MB of disk for one architecture, 920 MB for both: the lab image is
+  700 MB, and one version and architecture of RouterOS takes 115 MB (x86_64)
+  or 105 MB (arm64) under `test/lab/.cache/`. For x86_64: 54 MB of downloads,
+  47 MB base disk, 4 MB clean snapshot, then the live layer. For arm64: 66 MB
+  of downloads, 26 MB base disk, 4 MB clean snapshot, then the live layer.
 - Network access to `download.mikrotik.com` once, and to Docker Hub for
   whatever the router pulls.
-- For `lab-cli`: a `mikroscope` binary on `PATH`, or `MIKROSCOPE_BIN=path`. It
-  is mounted into a throwaway container, so it must be a static Linux binary
-  (the released one is).
+- For `lab-cli`: `make build`, which the target runs. `lab.sh cli` on its own
+  takes `MIKROSCOPE_BIN`, else this checkout's `bin/mikroscope`, else the
+  `mikroscope` on `PATH`, and prints which one and its version line to stderr.
+  The binary is mounted into a throwaway container, so it must be a static
+  Linux binary (`make build` and the release are).
+
+## Sharing one lab between checkouts
+
+A lab's state is its downloads, its disks, its ssh key and its `.env`, and it
+lives in the checkout that provisioned it: `test/lab/.cache/` and
+`test/lab/.env`. Another checkout of the repository, a second worktree for
+instance, drives that same running lab by pointing `LAB_STATE_DIR` at the
+first checkout's `test/lab`:
+
+```sh
+export LAB_STATE_DIR=/path/to/first-checkout/test/lab
+make lab-status             # the same containers, the same key and password
+make lab-cli ARGS='doctor --arch amd64'
+```
+
+Unset, `LAB_STATE_DIR` is the current checkout's `test/lab`. Every verb that
+drives a VM compares it with the state directory the running container was
+started with and stops, naming the right value, when they differ; `lab-status`
+says the same without stopping. The container names stay
+`mikroscope-lab-<arch>` whichever checkout drives them.
+
+What each checkout keeps as its own: its CLI (`lab-cli` runs the calling
+checkout's `bin/mikroscope`), its profiles, and the scripts a container runs,
+which are copied into `.cache/run/<container>/` when the container is created,
+so a lab keeps powering on after the checkout that created it is deleted. The
+lab image `mikroscope-lab:local` is one per host. It is labelled with a hash
+of the `Dockerfile` and `vm/` it was built from and rebuilt when the calling
+checkout's differ; a running container keeps the image it was created with.
+
+## One driver at a time
+
+Every verb that drives a VM (all of them but `status`, `env`, `fetch`,
+`image` and `profile` with no name) takes an `flock` on
+`.cache/<arch>.lock` in the state directory first and holds it until it
+exits: `x86_64.lock` or `arm64.lock`. A second driver waits, and
+says who it waits for; the lock file holds the holder's pid, user, verb,
+start time and directory, never its arguments, which can carry the lab's agent
+token. `LAB_LOCK_WAIT=<seconds>` bounds the wait, and `0` fails at once.
+
+One verb is one lock. A session of many (a test suite that resets, installs
+and checks) takes the lock once for all of them with `lab.sh lock`:
+
+```sh
+test/lab/lab.sh lock go test -tags labe2e ./test/e2e/lab/
+LAB_ARCH=arm64 test/lab/lab.sh lock ./my-script.sh
+```
+
+`lock` exports `LAB_LOCK_HELD`, the lock files it holds, and every `lab.sh`
+the command starts finds its own lock there instead of waiting for itself. A
+`lab.sh` for another lab takes that lab's lock as usual. The command does not
+inherit the lock's descriptor, so anything it leaves running does not keep
+the lab locked once it returns.
 
 ## How it is put together
 
@@ -81,15 +145,27 @@ host                      lab container (its own network namespace)
 - **The CLI runs from that LAN side.** `lab.sh cli` starts a container in the
   lab's namespace with the binary mounted in and `MIKROSCOPE_ROUTER=lab`, an
   ssh alias for 192.168.88.1 with the lab's key. No other `MIKROSCOPE_*`
-  variable from the host reaches it. This matters beyond convenience: the
-  agent's default address is 172.30.10.2, and on a host whose own gateway is a
-  router with a real agent on that address, a CLI run in the host's namespace
-  would send its doctor and install probes to that one. In the lab's namespace
-  the route above keeps them in the lab.
+  variable from the host reaches it; `LAB_CLI_TOKEN=lab` adds the lab's agent
+  token as `MIKROSCOPE_TOKEN`, through the container's environment, so an
+  `--expose` test needs no `--token` on a command line the host's process
+  table would show. This matters beyond convenience: the
+  agent's default address is 172.30.10.2, and on a host whose network already
+  has an agent on 172.30.10.2, a CLI run in the host's namespace would send
+  its doctor and install probes to that agent. In the lab's namespace the
+  route above keeps them in the lab. So the deploy verbs (`doctor`, `install`,
+  `upgrade`, `status`, `uninstall`) run through `lab.sh cli`, never from the
+  host's shell.
+- **The CLI sees the same paths as the host.** The current directory is
+  mounted read-write at its own path and is the working directory, and the
+  repository read-only at its own path, so
+  `--agent-tar build/agent-images/mikroscope-agent-amd64.tar` or
+  `--out x.rsc` mean what they mean on the host. An absolute path outside both
+  is refused before anything runs, with a message; so is a current directory
+  such as `/` or `/root`, which would be mounted over the container's own.
 - **The host** gets the router's ssh, WebFig and API, and the agent, on
   loopback ports: 220N, 800N, 870N and 910N, with N = 1 for x86_64 and 2 for
-  arm64, so both labs can run at once. `lab.sh env` prints the ssh line;
-  WebFig's and the API's password is in `test/lab/.env`.
+  arm64, so both labs can run at once. `lab.sh env`
+  prints the ssh line; WebFig's and the API's password is in `test/lab/.env`.
 - **The disks** are a qcow2 chain under `.cache/vm/<arch>-<version>/`:
   `base.qcow2` is MikroTik's image converted and grown to 1 GiB (CHR used the
   space on its own: 980 MiB total, 958 MiB free), `clean.qcow2` is the
@@ -109,10 +185,19 @@ host                      lab container (its own network namespace)
   socket every lap ([what that did](#emulated-arm64)). An installed agent's
   /30 is more specific and still wins. They are the one thing on the router
   beyond the snapshot, and they show in `/export`.
+- **The configuration is read in memory.** `lab.sh export` (`make lab-export`)
+  prints `/export` without its comment lines, which carry the date and the
+  software id, to stdout and nowhere else; a test compares two of them in
+  memory. It takes `terse`, `verbose` or `compact`, and nothing that would
+  show sensitive values.
 - **The container is the power.** QEMU is its main process: the guest powering
   off ends the container, `lab.sh power-cycle` quits QEMU and starts the
   container again, and there is no restart policy, so the lab does not come
   back by itself after the host reboots (`make lab-up` does).
+- **One version per arch at a time.** A container runs the `LAB_ROS` it was
+  created with (label `mikroscope.lab.ros`). A verb asked for another version
+  stops with "lab.sh down first" rather than drive a router of a version the
+  caller did not ask for.
 
 ## Provisioning, and what was learned doing it
 
@@ -129,9 +214,10 @@ KVM and arm64 under TCG; where the two differed, both are given.
    `wifi-qcom`, for hardware CHR does not have — so its `container` package is
    the one an arm64 RouterBOARD installs. MikroTik publishes a SHA-256 beside
    every file as `<file>.sha256` on the same server; `lab.sh fetch` checks
-   both archives against them. Both come from the same origin over HTTPS, so
+   every download against them. Both come from the same origin over HTTPS, so
    the check catches a damaged download, not a compromised server; RouterOS
-   verifies the signature of each `.npk` it installs.
+   verifies the signature of each `.npk` it installs. A cut connection is
+   retried and resumed.
 2. **First login.** CHR's `admin` has no password, and a non-interactive ssh
    command with it is not asked to change it (the session authenticated with
    `none`). One connect sets the identity, 192.168.88.1/24 on ether2, the lab's
@@ -159,8 +245,8 @@ KVM and arm64 under TCG; where the two differed, both are given.
    built-in ones, no address list, no firewall rule, which is what CHR ships
    (every boot adds the blackhole routes described above).
    A test that needs more sets it up itself: `routeros/doctor-lists.rsc` is the
-   one mikroscope's doctor asks for (below), applied with
-   `lab.sh import test/lab/routeros/doctor-lists.rsc`.
+   one mikroscope's doctor asks for, applied with
+   `make lab-profile PROFILE=doctor-lists`.
 6. **arm64 boots through UEFI.** `chr-<v>-arm64.img` is a 128 MiB GPT disk (a
    hybrid MBR beside it) whose first partition, `RouterOS-Boot`, is an EFI
    system partition. QEMU's `virt` machine with the edk2 firmware from
@@ -183,23 +269,24 @@ KVM and arm64 under TCG; where the two differed, both are given.
 Measured on 2026-09-26 on the machine the lab was built on: x86_64, 12 cores,
 27 GB RAM, Docker 29.8, QEMU 10.0.13; x86_64 under KVM, arm64 under TCG with
 2 vCPU and 1 GiB. One run where one figure is given, each run where more are;
-the two provisions of each architecture were each from scratch.
+the first two provisions of each architecture were each from scratch, the
+third x86_64 one from the cached downloads.
 
-| Step                                                    | x86_64 (KVM)                | arm64 (TCG)                           |
-| ------------------------------------------------------- | --------------------------- | ------------------------------------- |
-| `docker build` of the lab image (697 MB, both arches)   | 19 s                        | the same image                        |
-| Download and check both archives                        | 95 s (45.3 + 10.5 MB)       | 152 s (19.2 + 50.6 MB)                |
-| Convert to qcow2, grow to 1 GiB, extract the package    | 3 s                         | 2 s                                   |
-| Provision, end to end                                   | 41 and 43 s                 | 97 and 105 s                          |
-| … first boot until ssh answers                          | 19 and 20 s                 | 33 and 39 s                           |
-| … access (address, key, password)                       | 1 and 2 s                   | 2 and 1 s                             |
-| … package upload, reboot, check                         | 7 s                         | 27 and 30 s                           |
-| … device-mode update, power cut, boot, check            | 9 and 10 s                  | 29 and 28 s                           |
-| … shutdown for the snapshot                             | 2 and 3 s                   | 3 and 3 s                             |
-| `make lab-up` with the downloads cached and no disk yet | 53 s                        | not run as one command                |
-| `make lab-up` from the snapshot, until ssh answers      | 7 s (6.9 and 7.2)           | 26 to 27 s (25.7, 26.6, 27.0)         |
-| `make lab-reset`                                        | 9 to 21 s (8.8, 8.9, 21.3)  | 21 to 29 s over seven resets          |
-| `make lab-down`                                         | 1.6 s                       | 2.2 s                                 |
+| Step                                                    | x86_64 (KVM)                     | arm64 (TCG)                           |
+| ------------------------------------------------------- | -------------------------------- | ------------------------------------- |
+| `docker build` of the lab image (both arches)           | 19 s (697 MB); 17 s pinned base (700 MB) | the same image                |
+| Download and check both archives                        | 95 s (45.3 + 10.5 MB)            | 152 s (19.2 + 50.6 MB)                |
+| Convert to qcow2, grow to 1 GiB, extract the package    | 3 s                              | 2 s                                   |
+| Provision, end to end                                   | 41, 43 and 45 s                  | 97 and 105 s                          |
+| … first boot until ssh answers                          | 19 and 20 s                      | 33 and 39 s                           |
+| … access (address, key, password)                       | 1 and 2 s                        | 2 and 1 s                             |
+| … package upload, reboot, check                         | 7 s                              | 27 and 30 s                           |
+| … device-mode update, power cut, boot, check            | 9 and 10 s                       | 29 and 28 s                           |
+| … shutdown for the snapshot                             | 2 and 3 s                        | 3 and 3 s                             |
+| `make lab-up` with the downloads cached and no disk yet | 53 s                             | not run as one command                |
+| `make lab-up` from the snapshot, until ssh answers      | 7 s (6.9, 7.2, 7.4, 7.4)         | 26 to 28 s (25.7, 26.6, 27.0, 27.5)   |
+| `make lab-reset`                                        | 9 to 21 s (8.8, 8.9, 21.3, 9.3)  | 21 to 30 s over nine resets           |
+| `make lab-down`                                         | 1.6 and 1.7 s                    | 2.2 and 2.6 s                         |
 
 The downloads measure this connection, not the architecture: the arm64 CHR
 image came in 2 s and its package archive in 150 s. The first `lab-up` on a
@@ -229,6 +316,14 @@ not run as one command.
   100 Hz over it on the lab's LAN, so rate tests above 10 Hz measure the
   licence, not the agent. Neither was measured. A 60-day trial of the paid
   levels needs a MikroTik account and was not used.
+- **Docker Hub counts the pulls.** Docker's usage page (read 2026-09-26) allows
+  unauthenticated clients 100 pulls per 6 hours per IPv4 address or IPv6 /64,
+  and a pull of a multi-architecture image counts once per architecture
+  pulled. The router pulls anonymously, from the host's address; on a CI
+  runner that address is shared with whatever else ran from it. So a suite
+  installs from the branch's own tar (`make agent-tars`, `--agent-tar
+  build/agent-images/mikroscope-agent-<arch>.tar`), which also tests the
+  branch's agent, and only the scenarios that test the pull itself pull.
 - **arm64 is emulated.** It is the RB5009's architecture, kernel version and
   CPU model, at a speed that belongs to this host and its load, not to any
   router: see [Emulated arm64](#emulated-arm64).
@@ -248,7 +343,7 @@ doctor's reading of the router, RouterOS choosing and pulling the arm64 image,
 the container's start and stop, the agent's capability detection on an arm64
 kernel, its sample format and its ring.
 
-**How slow it is.** Booting from the snapshot takes 26–27 s against x86_64's
+**How slow it is.** Booting from the snapshot takes 26–28 s against x86_64's
 7 s, and a provision 97–105 s against 41–43 s. The agent keeps up at 10 Hz
 from its first tick: over five minutes 3,003 ticks in 300.1 s with 1 slipped,
 and over two minutes from a first start 1,202 ticks in 120.1 s with none. In
@@ -310,61 +405,7 @@ measurement of the RB5009 either.
 
 ## What mikroscope 1.3.1 met on it
 
-The published CLI and the published agent image, against the lab started from
-its clean snapshot, on 2026-09-26: x86_64 first, then arm64, which repeated
-doctor, plan, the three install routes and uninstall. Every one of these is
-something a user of a router that is not the reference RB5009 meets too.
-
-- `doctor` with its defaults failed three checks: `--arch` defaults to arm64
-  (fix: `--arch amd64`, as it says); interface list `LAN` does not exist on
-  CHR (its fix, `/interface/list/add name=LAN`, works); address list `LANs`
-  "has entries" fails on an empty or missing list, although its own fix says
-  "an empty list is fine only if no such rule exists". A router without that
-  rule can pass only by giving the list an entry or with `--no-doctor`, which
-  skips every other check. `routeros/doctor-lists.rsc` is the entry.
-- A built-in interface list (`static`, `all`, `dynamic`) passes doctor's
-  existence check, and RouterOS refuses to add a member to it.
-- `--ephemeral` needs a tmpfs disk; CHR lists no disk at all. Doctor's fix
-  `/disk/add type=tmpfs tmpfs-max-size=64M slot=tmpfs` worked, and the install
-  went to `tmpfs/mikroscope/mikroscope` with `start-on-boot=no`.
-- `install --remote-image jmrplens/mikroscope-agent:1.3.1`: CHR's factory
-  `/container/config` has no registry-url or username (`assumed-registry-url:
-  docker.io`), Docker Hub served the amd64 image anonymously, and the whole
-  install took 9.6 s. `plan --rsc` uploaded and run with `/import` answered
-  `/healthz` 14 s after the upload started. `--agent-tar` with the release's
-  `mikroscope-agent-amd64.tar` took 6 s. `--expose --lan-address 192.168.88.1`
-  answered 200 on `/healthz`, 401 on `/capabilities` without the token and 200
-  with it.
-- `uninstall` failed in 5 of 15 first attempts with `failure: cannot remove
-  running`: it stops the container, waits a fixed 4 s and removes it, and the
-  agent took 0 s to stop six times, 4 s four times and 5 s once (RouterOS log,
-  1 s resolution). With a client on `/stream` it fails every time: the agent's
-  HTTP shutdown waits up to 5 s for it. The steps after it still run — once the
-  veth was removed from under the stopped container, once its removal failed
-  `in use by container` — and a second `uninstall` cleaned up every time.
-- After every uninstall an empty `mikroscope` directory stays in `/file`: the
-  parent of the container's root-dir, which the ownership count does not
-  include.
-- On arm64, `doctor` with its defaults failed the same two list checks and
-  passed the architecture (arm64 is the default); after
-  `routeros/doctor-lists.rsc` all nine checks passed. Docker Hub served the
-  arm64 image anonymously (one 2,799,631-byte layer), and RouterOS's log put
-  2 to 9 s between the layer's line and `download/extract done`. With the
-  blackhole routes, `install` took 10.3 and 10.2 s and its probe answered;
-  before them it took 38.4, 11.8 and 34.1 s and the first and third exited 1,
-  for the reason [above](#emulated-arm64). The script `plan --rsc` wrote was
-  byte for byte the x86_64 one — with `--remote-image` the router picks the
-  architecture — and `/healthz` answered 9.1 and 9.5 s after its upload
-  began. `--agent-tar` with the release's `mikroscope-agent-arm64.tar`
-  (SHA-256 as in `checksums.txt`) took 9.6 and 9.2 s. `uninstall` cleaned up
-  at the first attempt eight times out of eight, and with a client on
-  `/stream` failed as on x86_64 — the stop took 5 s against the 4 s wait, the
-  veth went from under the stopped container — and a second run cleaned up.
-- When `install`'s probe fails, it asks the router whether the container runs
-  with `:put [:len [/container/find comment="…" status="running"]]`
-  (`cmd/mikroscope/main.go:414`), and on RouterOS 7.24.4 that reads 0 for a
-  running container: `status` is not a property of `/container` there
-  (`/container/find status=running` answers `bad parameter status`), and the
-  flag `running` reads 1. So the CLI said "the container is not running on the
-  router" both times, with the agent running and about to answer. Seen on
-  arm64; the x86_64 lab never failed a probe.
+Moved: what the published 1.3.1 CLI and agent met on the lab becomes the
+tests and changelog entries of the pull request that fixes it, and the facts
+go to the site's Tested on page, under Virtual lab. Until that page has them,
+this file's history holds the full account (`git log -p -- test/lab/README.md`).

@@ -22,11 +22,12 @@
 # LAB_AGENT_ROUTES go to the router over lan0. They are what keeps an agent
 # address such as the default 172.30.10.2 inside the lab: without them the
 # namespace's default route leads to the host and on to whatever the host's
-# gateway routes that address to — on the machine this lab was built on, a
-# production router whose own agent answers on 172.30.10.2.
+# gateway routes that address to — on a host whose network already has an
+# agent on 172.30.10.2, to that agent.
 set -euo pipefail
 
 : "${LAB_ARCH:?}" "${LAB_DISK:?}"
+LAB_KVM=${LAB_KVM:-auto}
 LAB_MEM=${LAB_MEM:-1024}
 LAB_CPUS=${LAB_CPUS:-2}
 LAB_LAN_ROUTER=${LAB_LAN_ROUTER:-192.168.88.1}
@@ -72,15 +73,33 @@ common=(
 	-device virtio-net-pci,netdev=lan,mac=52:54:00:4d:53:02
 )
 
+# LAB_KVM: auto uses /dev/kvm when the container can write it and falls back
+# to TCG, require stops here without it (CI's x86_64 lab, whose timings and
+# timeouts assume KVM), off never uses it.
+kvm_or_tcg() {
+	case "$LAB_KVM" in
+	off) echo tcg ;;
+	*)
+		if [ -w /dev/kvm ]; then
+			echo kvm
+		elif [ "$LAB_KVM" = require ]; then
+			log "LAB_KVM=require and /dev/kvm is not writable in the container" >&2
+			exit 3
+		else
+			log "no /dev/kvm: falling back to TCG, expect a boot many times slower" >&2
+			echo tcg
+		fi
+		;;
+	esac
+}
+
 case "$LAB_ARCH" in
 x86_64)
-	accel=(-machine q35,accel=kvm -cpu host)
-	if [ ! -w /dev/kvm ]; then
-		log "no /dev/kvm: falling back to TCG, expect a boot many times slower"
-		accel=(-machine q35,accel=tcg -cpu max)
-	fi
-	qemu=(qemu-system-x86_64 "${accel[@]}" "${common[@]}"
-		-drive "file=$LAB_DISK,if=virtio,format=qcow2,cache=writeback")
+	accel=$(kvm_or_tcg)
+	cpu=host
+	[ "$accel" = kvm ] || cpu=max
+	qemu=(qemu-system-x86_64 -machine "q35,accel=$accel" -cpu "$cpu" "${common[@]}")
+	qemu+=(-drive "file=$LAB_DISK,if=virtio,format=qcow2,cache=writeback")
 	;;
 arm64)
 	# CHR arm64 boots through UEFI only (its image is GPT with an EFI system
@@ -100,11 +119,16 @@ arm64)
 	# disk first in UEFI's boot order, although it sits on PCI after the two
 	# NICs (every boot logged Boot0001 from Pci(0x3,0x0), the disk; not run
 	# without it).
-	accel=(-machine virt -cpu "${LAB_CPU:-cortex-a72}")
-	if [ "$(uname -m)" = aarch64 ] && [ -w /dev/kvm ]; then
-		accel=(-machine virt,accel=kvm -cpu host)
+	accel=tcg
+	machine=(-machine virt -cpu "${LAB_CPU:-cortex-a72}")
+	if [ "$(uname -m)" = aarch64 ] && [ "$LAB_KVM" != off ] && [ -w /dev/kvm ]; then
+		accel=kvm
+		machine=(-machine virt,accel=kvm -cpu host)
+	elif [ "$LAB_KVM" = require ]; then
+		log "LAB_KVM=require: arm64 gets KVM only on an arm64 host with /dev/kvm, and this is $(uname -m)"
+		exit 3
 	fi
-	qemu=(qemu-system-aarch64 "${accel[@]}" "${common[@]}"
+	qemu=(qemu-system-aarch64 "${machine[@]}" "${common[@]}"
 		-bios /usr/share/qemu-efi-aarch64/QEMU_EFI.fd
 		-drive "file=$LAB_DISK,if=none,id=hd0,format=qcow2,cache=writeback"
 		-device virtio-blk-pci,drive=hd0,bootindex=0)
@@ -115,7 +139,7 @@ arm64)
 	;;
 esac
 
-log "starting ${qemu[0]} (${LAB_CPUS} vCPU, ${LAB_MEM} MiB, disk $(basename "$LAB_DISK"))"
+log "starting ${qemu[0]} (accel=$accel, ${LAB_CPUS} vCPU, ${LAB_MEM} MiB, disk $(basename "$LAB_DISK"))"
 "${qemu[@]}" &
 qemu_pid=$!
 # docker stop is a power cut, not a shutdown: lab.sh down asks the guest to
