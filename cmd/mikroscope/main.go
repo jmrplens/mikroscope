@@ -27,7 +27,8 @@ const usageText = `mikroscope — sub-second kernel telemetry for container-capa
 usage: mikroscope <verb> [flags]
 
 verbs
-  doctor     read-only preflight: package, device-mode, architecture, space, lists; names the fix
+  doctor     read-only preflight: RouterOS version, package, device-mode, architecture, memory,
+             space, name and route collisions, lists and firewall; names the fix
   plan       print every object install would create, and stop (nothing is written);
              --rsc writes it as a RouterOS script to run on the router itself
   install    doctor, get the agent image, deploy it, then probe the agent; --dry-run = plan
@@ -444,7 +445,7 @@ func doctor(c cli) error {
 	if err != nil {
 		return err
 	}
-	rep, err := router.Doctor(r, c.opts, doctorImageBytes(c))
+	rep, err := router.Doctor(r, c.opts, router.DoctorImage{Bytes: doctorImageBytes(c)})
 	if err != nil {
 		return err
 	}
@@ -486,7 +487,7 @@ func install(c cli) error {
 		return err
 	}
 	if !c.noDoctor {
-		rep, docErr := router.Doctor(r, c.opts, len(img))
+		rep, docErr := router.Doctor(r, c.opts, router.DoctorImage{Bytes: len(img)})
 		if docErr != nil {
 			return docErr
 		}

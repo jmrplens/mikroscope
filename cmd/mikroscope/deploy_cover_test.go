@@ -28,14 +28,17 @@ import (
 func stubRouter(t *testing.T, answer string) {
 	t.Helper()
 	dir := t.TempDir()
-	script := "#!/bin/sh\nfor last; do :; done\nprintf '%s\\n' \"$last\" | while IFS= read -r line; do " +
-		"k=$(printf '%s' \"$line\" | sed -n 's/.*(\"@@\\([^\"=]*\\)=\" \\. .*/\\1/p'); " +
-		"if [ -n \"$k\" ]; then echo \"@@$k=" + answer + "\"; else echo '" + answer + "'; fi; done\n"
+	script := "#!/bin/sh\nfor last; do :; done\nprintf '%s\\n' \"$last\" | while IFS= read -r line; do v='" + answer + "'; " + keyedEcho + "; done\n"
 	if err := os.WriteFile(filepath.Join(dir, "ssh"), []byte(script), 0o700); err != nil { // #nosec G306 -- it has to be executable
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 }
+
+// keyedEcho is the stubs' answer to one line: $v under every key the line
+// prints (`:put ("@@<key>=" . …)`), or $v alone for a line that prints none.
+const keyedEcho = `ks=$(printf '%s' "$line" | grep -o '("@@[^"=]*=" \. ' | sed 's/("@@\([^"=]*\)=" \. /\1/'); ` +
+	`if [ -n "$ks" ]; then for k in $ks; do echo "@@$k=$v"; done; else echo "$v"; fi`
 
 func deployCLI(t *testing.T) cli {
 	t.Helper()

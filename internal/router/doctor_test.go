@@ -10,36 +10,20 @@ import (
 	"time"
 )
 
-// scriptedRunner answers a batch with fixed lines, in order.
-type scriptedRunner struct {
-	lines []string
-	ran   []string
-}
-
-func (s *scriptedRunner) Run(command string) (string, error) {
-	s.ran = append(s.ran, command)
-	qs := strings.Split(command, "\n")
-	out := make([]string, len(s.lines))
-	for i, l := range s.lines {
-		out[i] = l
-		if i < len(qs) {
-			out[i] = answerLine(qs[i], l)
-		}
-	}
-	return strings.Join(out, "\n") + "\n", nil
-}
-
-func (s *scriptedRunner) Upload([]byte, string) error { return nil }
-
 func TestDoctorReportsEveryMissingPrerequisiteWithItsFix(t *testing.T) {
-	o := defaults(t, nil) // flash install, arm64
-	healthy := &scriptedRunner{lines: []string{"7.24.2", "RB5009UG+S+", "arm64", "823000000", "902000000", "1", "yes", "1", "6", "0", "0", "0"}}
-	rep, err := Doctor(healthy, o, 6<<20)
+	o := defaults(t, nil) // flash install, --arch arm64 given
+	healthy := healthyAnswers()
+	rep, err := Doctor(healthy, o, DoctorImage{Bytes: 6 << 20})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(rep.Failed()) != 0 || !strings.Contains(rep.Device, "RB5009UG+S+") {
+	if len(rep.Failed()) != 0 || !strings.Contains(rep.Device, "RB5009UG+S+") || rep.Arch != "arm64" {
 		t.Fatalf("healthy device reported failures: %+v", rep)
+	}
+	for _, it := range rep.Items {
+		if !it.OK {
+			t.Errorf("healthy device: %+v", it)
+		}
 	}
 	if len(healthy.ran) != 1 {
 		t.Fatalf("doctor used %d connects, want 1", len(healthy.ran))
@@ -47,24 +31,32 @@ func TestDoctorReportsEveryMissingPrerequisiteWithItsFix(t *testing.T) {
 	assertSickDeviceFlagged(t, o)
 	// Ephemeral asks for the tmpfs disk instead of flash space.
 	eph := defaults(t, func(o *Options) { o.Ephemeral = true })
-	noDisk := &scriptedRunner{lines: []string{"7.24.2", "RB5009UG+S+", "arm64", "823000000", "1000", "1", "yes", "1", "6", "0", "0", "0", "0"}}
-	rep, err = Doctor(noDisk, eph, 6<<20)
+	rep, err = Doctor(healthyAnswers([2]string{"/disk/find", "0"}), eph, DoctorImage{Bytes: 6 << 20})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if f := rep.Failed(); len(f) != 1 || !strings.Contains(f[0].Name, "disk tmpfs") || !strings.Contains(f[0].Fix, "/disk/add type=tmpfs") {
+	if f := rep.Failed(); len(f) != 1 || !strings.Contains(f[0].Name, "disk tmpfs") || !strings.Contains(f[0].Fix, "/disk/add type=tmpfs") ||
+		!strings.Contains(f[0].Fix, "--ephemeral") {
 		t.Fatalf("ephemeral without a tmpfs disk: %+v", f)
 	}
 }
 
-// assertSickDeviceFlagged runs the doctor against a hEX-class device without
-// the package, device-mode off, wrong arch, no free flash, no LAN list and
-// empty LANs, and checks every one is reported with a fix that names the
-// step to take.
+// assertSickDeviceFlagged runs the doctor against a hEX-class device on an
+// old RouterOS without the package, device-mode off, wrong arch, no free
+// flash and no LAN list, and checks every one is reported with a fix that
+// names the step to take.
 func assertSickDeviceFlagged(t *testing.T, o Options) {
 	t.Helper()
-	sick := &scriptedRunner{lines: []string{"7.24.2", "hEX S", "arm", "300000000", "1000000", "0", "no", "0", "0", "0", "0", "0"}}
-	rep, err := Doctor(sick, o, 6<<20)
+	sick := &answeringRunner{answers: [][2]string{
+		{"get version", "7.23.2 (stable)"},
+		{"board-name", "hEX S"},
+		{"architecture-name", "arm"},
+		{"free-memory", "300000000"},
+		{"free-hdd-space", "1000000"},
+		{"device-mode", "no"},
+		{"@@overlap=", ""},
+	}}
+	rep, err := Doctor(sick, o, DoctorImage{Bytes: 6 << 20})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,17 +69,25 @@ func assertSickDeviceFlagged(t *testing.T, o Options) {
 		}
 	}
 	joined := strings.Join(names, "|")
-	for _, want := range []string{"container package", "device-mode", "architecture matches --arch arm64", "free flash", "interface list LAN", "address list LANs"} {
+	for _, want := range []string{"RouterOS 7.24 or later", "container package", "device-mode", "architecture matches --arch arm64", "free flash", "interface list LAN"} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("doctor did not flag %q: %v", want, names)
 		}
+	}
+	if strings.Contains(joined, "address list") {
+		t.Errorf("an empty address list failed doctor: %v", names)
 	}
 	for _, f := range failed {
 		if strings.Contains(f.Name, "architecture") && !strings.Contains(f.Fix, "--arch arm`") {
 			t.Fatalf("architecture fix does not name the right GOARCH: %s", f.Fix)
 		}
-		if strings.Contains(f.Name, "device-mode") && !strings.Contains(f.Fix, "reset button or power-cycle") {
-			t.Fatalf("device-mode fix does not say the physical step: %s", f.Fix)
+		if strings.Contains(f.Name, "device-mode") && (!strings.Contains(f.Fix, "press the reset or mode button") ||
+			!strings.Contains(f.Fix, "update: please activate by turning power off or pressing reset or mode button") ||
+			!strings.Contains(f.Fix, "update: turn off power in 5m to activate changes")) {
+			t.Fatalf("device-mode fix does not quote both prompts: %s", f.Fix)
+		}
+		if strings.Contains(f.Name, "container package") && strings.Contains(f.Fix, "/system/package/enable") {
+			t.Fatalf("the package is not there, and the fix enables it: %s", f.Fix)
 		}
 	}
 	var buf bytes.Buffer
@@ -171,6 +171,12 @@ func (a *answeringRunner) Run(command string) (string, error) {
 				break
 			}
 		}
+		if strings.HasPrefix(ans, keyPrefix) || strings.HasPrefix(ans, "!") {
+			// Already keyed (a loop that prints a line per rule), or not
+			// an answer at all ("!" and RouterOS's error text): as it is.
+			out = append(out, strings.TrimPrefix(ans, "!"))
+			continue
+		}
 		out = append(out, answerLine(q, ans))
 	}
 	return strings.Join(out, "\n") + "\n", nil
@@ -178,17 +184,23 @@ func (a *answeringRunner) Run(command string) (string, error) {
 
 func (a *answeringRunner) Upload([]byte, string) error { return nil }
 
+// healthyAnswers is a router ready for the default install: RouterOS 7.24.4,
+// arm64, the package enabled, device-mode on, room, the LAN list and six
+// entries in LANs, no route in the way and no firewall rule. extra answers
+// come first, so a test states only what differs.
 func healthyAnswers(extra ...[2]string) *answeringRunner {
 	base := [][2]string{
-		{"get version", "7.24.2"},
+		{"get version", "7.24.4 (stable)"},
 		{"board-name", "RB5009UG+S+"},
 		{"architecture-name", "arm64"},
 		{"free-memory", "823000000"},
 		{"free-hdd-space", "902000000"},
 		{`name="container"`, "1"},
 		{"device-mode", "yes"},
-		{"/interface/list/find", "1"},
-		{"address-list", "6"},
+		{"/interface/list/find name=", "1"},
+		{`/ip/firewall/address-list/find list="`, "6"},
+		{"@@overlap=", ""},
+		{"@@uplink-if=", "@@uplink-if=ether1\n@@uplink-lists=WAN,"},
 	}
 	return &answeringRunner{answers: append(extra, base...)}
 }
@@ -211,7 +223,7 @@ func TestDoctorDiskAndRegistryAnswersDoNotShareALine(t *testing.T) {
 		o.RemoteImage = "ghcr.io/jmrplens/mikroscope-agent:1.1.0"
 	})
 	r := healthyAnswers([2]string{"/disk/find", "0"}, [2]string{"registry-url", "https://ghcr.io"}, [2]string{"get username", "true"})
-	rep, err := Doctor(r, o, 6<<20)
+	rep, err := Doctor(r, o, DoctorImage{Bytes: 6 << 20})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -241,7 +253,7 @@ func TestDoctorNoLongerRequiresRegistryURL(t *testing.T) {
 		for _, url := range []string{"", "https://registry-1.docker.io", "https://lscr.io", "https://ghcr.io/", "https://docker.1ms.run"} {
 			o := defaults(t, func(o *Options) { o.RemoteImage = image })
 			r := healthyAnswers([2]string{"registry-url", url}, [2]string{"get username", "false"})
-			rep, err := Doctor(r, o, 0)
+			rep, err := Doctor(r, o, DoctorImage{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -295,7 +307,7 @@ func TestDoctorWarnsOfACredentialForAnotherRegistry(t *testing.T) {
 		})
 	}
 	// A tar install pulls nothing and is not asked about.
-	rep, err := Doctor(healthyAnswers(), defaults(t, nil), 6<<20)
+	rep, err := Doctor(healthyAnswers(), defaults(t, nil), DoctorImage{Bytes: 6 << 20})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -312,7 +324,7 @@ func assertCredentialWarning(t *testing.T, image, url, user string, want bool) {
 	t.Helper()
 	o := defaults(t, func(o *Options) { o.RemoteImage = image })
 	r := healthyAnswers([2]string{"registry-url", url}, [2]string{"get username", user})
-	rep, err := Doctor(r, o, 6<<20)
+	rep, err := Doctor(r, o, DoctorImage{Bytes: 6 << 20})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -345,7 +357,7 @@ func TestDoctorWarnsOfAnExposedAgentWithoutAToken(t *testing.T) {
 		{"0", "0", ""}, {"1", "1", "ok"}, {"1", "0", "warn"},
 	} {
 		r := healthyAnswers([2]string{"action=dst-nat", tc.nat}, [2]string{`key="TOKEN"`, tc.token})
-		rep, err := Doctor(r, o, 6<<20)
+		rep, err := Doctor(r, o, DoctorImage{Bytes: 6 << 20})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -375,6 +387,35 @@ func TestDoctorWarnsOfAnExposedAgentWithoutAToken(t *testing.T) {
 		}
 		if !strings.Contains(r.ran[0], `comment="mikroscope:mikroscope (managed by mikroscope)"`) {
 			t.Fatalf("exposure query does not carry the install's tag: %s", r.ran[0])
+		}
+	}
+}
+
+// A pull uploads no tar, and the root the router extracts the image into
+// still lands on the flash or the --disk: doctor sizes that root, about
+// 7 MiB, plus the 4 MiB of headroom, where it used to ask for the headroom
+// alone. A tar install asks for the tar and its root.
+func TestDoctorSizesThePulledRoot(t *testing.T) {
+	for name, tc := range map[string]struct {
+		remote, disk, free, want string
+		img                      int
+		ok                       bool
+	}{
+		"pull, room":        {"jmrplens/mikroscope-agent:1.3.1", "", "12000000", "free flash ≥ 11.0 MiB (extracted root)", 0, true},
+		"pull, no room":     {"jmrplens/mikroscope-agent:1.3.1", "", "8000000", "free flash ≥ 11.0 MiB (extracted root)", 0, false},
+		"pull on a disk":    {"jmrplens/mikroscope-agent:1.3.1", "tmpfs", "8000000", "disk tmpfs has ≥ 11.0 MiB free (extracted root)", 0, false},
+		"tar, no room":      {"", "", "12000000", "free flash ≥ 18.0 MiB (image tar + extracted root)", 7 << 20, false},
+		"tar on a disk too": {"", "tmpfs", "20000000", "disk tmpfs has ≥ 18.0 MiB free (image tar + extracted root)", 7 << 20, true},
+	} {
+		o := defaults(t, func(o *Options) { o.RemoteImage, o.Disk = tc.remote, tc.disk })
+		r := healthyAnswers([2]string{"free-hdd-space", tc.free}, [2]string{`/disk/find slot="tmpfs"]]`, "1"},
+			[2]string{`find slot="tmpfs"] free`, tc.free}, [2]string{`find slot="tmpfs"] type`, "tmpfs"})
+		rep, err := Doctor(r, o, DoctorImage{Bytes: tc.img})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if it := item(rep, tc.want); it == nil || it.OK != tc.ok {
+			t.Errorf("%s: %q = %+v in %+v", name, tc.want, it, rep.Items)
 		}
 	}
 }
