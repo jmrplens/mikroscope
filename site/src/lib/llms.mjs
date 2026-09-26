@@ -1,9 +1,12 @@
 // The site's index for language models, and the bundles it lists.
 //
-// The llms.txt convention is that a site's /llms.txt maps that site. This one
-// serves documentation, so its index lists documentation pages: one entry per
-// page, in the order the sidebar presents them, carrying that page's own
-// description. Publishing the repository's README or a hand-kept summary here
+// The llms.txt convention (https://llmstxt.org/, v2) is that an llms.txt maps
+// the pages under its path. This one serves documentation, so its index lists
+// documentation pages: one entry per page, in the order the sidebar presents
+// them, carrying that page's own description, then a link to the page's
+// markdown twin. The specification asks an index to point at LLM-friendly
+// content, and jmrp.io's index does it the same way: the page first, because
+// that is its canonical address, and the markdown beside it. Publishing the repository's README or a hand-kept summary here
 // would hand a model a project blurb where it asked for a table of contents,
 // and the Spanish half of the site would be invisible through this channel,
 // which is why each locale gets its own index.
@@ -21,12 +24,13 @@
 //     Spanish in the build of 2026-09-24, about 220 000 tokens by the estimate
 //     below, which is more than many tools read in one go (GEO audit,
 //     2026-09-24). So it is no longer the only cut.
-//   - llms-core.txt, the pages that answer what the project is, what it
-//     costs, what a router needs, what it cannot see and where it stands:
-//     CORE below. The index prints its size beside the whole's.
+//   - llms-core.txt, the pages that answer what the project is, how to
+//     install it, what a router needs, what it cannot see, what it costs and
+//     where it was tested: CORE below. The index prints its size beside the
+//     whole's.
 //   - llms/<section>.txt, one per sidebar group, named after the group's
-//     English label (llms/collector-and-sinks.txt), so a model after the sinks
-//     or the reference tables fetches those and nothing else.
+//     English label (llms/use.txt, llms/reference.txt), so a model after the
+//     sinks or the reference tables fetches those and nothing else.
 //
 // Every bundle opens with the same facts the index does, and every link in
 // every one of them is absolute (page-markdown.mjs, absoluteTargets), on the
@@ -47,6 +51,7 @@ import {
 	localeOf,
 	pageUrl,
 	routeOf,
+	twinUrl,
 	withoutLocale,
 } from "./site.mjs";
 
@@ -88,8 +93,9 @@ const TEXT = {
 		sectionsIntro:
 			"One file per section of the sidebar, its pages in the same order as above:",
 		section: (n) => `the ${n === 1 ? "page" : `${n} pages`} of this section`,
+		markdown: "markdown",
 		twinNote:
-			"Every page listed above is also served as markdown at its own path with `index.md` appended, which is the cheapest way to read one page as text.",
+			"The markdown link beside each page above is that page as markdown, at its own path with `index.md` appended, which is the cheapest way to read one page as text.",
 		bundleTitle: {
 			core: "mikroscope documentation: the core",
 			full: "mikroscope documentation: every page",
@@ -124,8 +130,9 @@ const TEXT = {
 			n === 1
 				? "la página de esta sección"
 				: `las ${n} páginas de esta sección`,
+		markdown: "markdown",
 		twinNote:
-			"Cada página de la lista se sirve también como markdown en su propia ruta con `index.md` al final, que es la forma más barata de leer una página como texto.",
+			"El enlace markdown junto a cada página de arriba es esa página en markdown, en su propia ruta con `index.md` al final, que es la forma más barata de leer una página como texto.",
 		bundleTitle: {
 			core: "Documentación de mikroscope: lo esencial",
 			full: "Documentación de mikroscope: todas las páginas",
@@ -144,33 +151,34 @@ const REPO = "https://github.com/jmrplens/mikroscope";
  * `pages`, in sidebar order after the home page.
  *
  * The section /start/ opens ("Start here") is taken whole, so a page added
- * there is in the core without an edit here; so is the one /cost/ opens,
- * the question every other page defers to. The five pages beside them answer
- * what a router needs, why the floor is the kernel's, how a fault reads and
- * the one found in production, and where the project stands. What is left
- * out is reference: flags, variables, metric families, dashboards, each sink
- * in turn, which the section files carry. Sections are named by a page they
- * hold rather than by label, so relabelling one does not empty the core.
+ * there is in the core without an edit here. The pages beside it answer how to
+ * install, what a router needs, why the floor is the kernel's, what the agent
+ * costs and where each claim was tested. What is left out is the rest of each
+ * group: flags, variables, metric families, dashboards, each sink in turn,
+ * the case studies, which the section files carry. Sections are named by a
+ * page they hold rather than by label, so relabelling one does not empty the
+ * core.
  */
 const CORE = {
-	sectionsHolding: ["start", "cost"],
+	sectionsHolding: ["start"],
 	pages: [
+		"install/routes",
 		"install/prerequisites",
 		"limits",
-		"playbooks",
-		"playbooks/loop",
 		"about/status",
+		"cost",
 	],
 };
 
 /**
  * The sidebar as a flat list of sections, with the labels of one locale.
  *
- * Each section is keyed by its English label as a slug ("What it costs" is
- * `what-it-costs`, published as llms/what-it-costs.txt in both locales). The
- * first path segment of its pages would be shorter and is not unique: "For
- * contributors" opens with reference/testing, under the Reference group's
- * path.
+ * Each section is keyed by its English label as a slug ("Start here" is
+ * `start-here`, published as llms/start-here.txt in both locales). The first
+ * path segment of its pages would be shorter and is not unique: "Configure"
+ * opens with install/reaching-the-agent, under the Install group's path, and
+ * "Evidence" holds about/status, cost/ and playbooks/ pages. A nested group
+ * ("Case studies") is part of its parent's file.
  *
  * @param {"en" | "es"} locale
  * @returns {{ key: string, label: string, slugs: string[] }[]} sections in sidebar order
@@ -436,7 +444,7 @@ export async function renderIndex(locale) {
 
 	push(text.intro(REPO));
 	push(
-		`${text.home}: [${home.title}](${pageUrl(home.route)}): ${home.description}`,
+		`${text.home}: [${home.title}](${pageUrl(home.route)}): ${home.description} ([${text.markdown}](${twinUrl(home.route)}))`,
 	);
 
 	for (const section of table) {
@@ -444,7 +452,7 @@ export async function renderIndex(locale) {
 		lines.push(
 			...section.slugs.map((slug) => {
 				const page = pages.get(slug);
-				return `- [${page.title}](${pageUrl(page.route)}): ${page.description}`;
+				return `- [${page.title}](${pageUrl(page.route)}): ${page.description} ([${text.markdown}](${twinUrl(page.route)}))`;
 			}),
 			"",
 		);

@@ -400,7 +400,11 @@ export default defineConfig({
 			// 845 px at a 390 px viewport (measured 2026-09-15). The `<Code>`
 			// component path was unaffected.
 			expressiveCode: { emitExternalStylesheet: true },
-			// The information architecture, in reading order.
+			// The information architecture, in reading order: start, install,
+			// configure, use, then reference, explanation, the evidence and the
+			// project. A reader who came to do something finds it in the first
+			// four groups; the last four are for looking something up or checking
+			// a claim, so three of them start collapsed.
 			//
 			// A page is listed by its slug alone, and Starlight labels it with
 			// that page's own title in each language: the English title here,
@@ -414,11 +418,13 @@ export default defineConfig({
 			//
 			// A label is written only where the sidebar deliberately says less
 			// than the title. The group labels have no page to take a title
-			// from, so each keeps its Spanish translation beside it.
+			// from, so each keeps its Spanish translation beside it. The English
+			// group label also names the group's llms/<label>.txt file
+			// (src/lib/llms.mjs), so renaming a group renames that file.
 			sidebar: [
 				{
 					label: "Start here",
-					translations: { es: "Empezar aquí" },
+					translations: { es: "Empezar" },
 					items: [
 						{ slug: "start" },
 						{ slug: "start/walkthrough" },
@@ -427,19 +433,11 @@ export default defineConfig({
 					],
 				},
 				{
-					label: "What it costs",
-					translations: { es: "Lo que cuesta" },
-					items: [
-						{ slug: "cost" },
-						{ slug: "cost/rate-ceiling" },
-						{ slug: "cost/limits" },
-					],
-				},
-				{
 					label: "Install",
 					translations: { es: "Instalar" },
 					items: [
-						{ slug: "install" },
+						{ slug: "install/routes" },
+						{ slug: "install/prerequisites" },
 						{
 							// Shorter than the title, "Getting the CLI onto your
 							// machine", as the sidebar had it before labels came
@@ -448,76 +446,35 @@ export default defineConfig({
 							translations: { es: "Tener la CLI" },
 							slug: "install/cli",
 						},
-						{ slug: "install/prerequisites" },
-						{ slug: "install/routes" },
-						{ slug: "install/firewall" },
-						{ slug: "install/layout" },
-						{ slug: "install/reaching-the-agent" },
+						{ slug: "install" },
 					],
 				},
 				{
-					label: "Record and capture",
-					translations: { es: "Grabar y capturar" },
-					items: [{ slug: "record" }, { slug: "record/triggers" }],
+					label: "Configure",
+					translations: { es: "Configurar" },
+					items: [
+						{ slug: "install/reaching-the-agent" },
+						{ slug: "install/firewall" },
+						{ slug: "install/layout" },
+						{ slug: "security/api-user" },
+						{ slug: "security/expose" },
+					],
 				},
 				{
-					label: "Collector and sinks",
-					translations: { es: "Colector y destinos" },
+					label: "Use",
+					translations: { es: "Uso" },
 					items: [
+						{ slug: "record" },
+						{ slug: "record/triggers" },
 						{ slug: "sinks" },
 						{ slug: "sinks/prometheus" },
 						{ slug: "sinks/influxdb" },
 						{ slug: "sinks/other" },
 						{ slug: "sinks/api-tier" },
-						{ slug: "sinks/derive" },
-						{ slug: "sinks/detections" },
-						{ slug: "sinks/device-info" },
-					],
-				},
-				{
-					label: "Dashboards",
-					// "Dashboards" in Spanish too: the Spanish pages say
-					// "dashboard" for a Grafana dashboard and keep "panel" for one
-					// of its panels, and "Paneles" named the wrong one.
-					translations: { es: "Dashboards" },
-					items: [
 						{ slug: "dashboards" },
 						{ slug: "dashboards/import-and-check" },
 						{ slug: "dashboards/alerts" },
-					],
-				},
-				{
-					label: "Reading the data",
-					translations: { es: "Leer los datos" },
-					items: [
 						{ slug: "playbooks" },
-						{ slug: "playbooks/idle" },
-						{ slug: "playbooks/loop" },
-						{ slug: "playbooks/cpu" },
-						{ slug: "playbooks/packet-flood" },
-						{ slug: "playbooks/flash-wear" },
-						{ slug: "playbooks/port-errors" },
-						{ slug: "playbooks/conntrack" },
-					],
-				},
-				{
-					label: "Limits",
-					translations: { es: "Límites" },
-					items: [
-						{ slug: "limits" },
-						{ slug: "limits/namespaces" },
-						{ slug: "limits/privileged" },
-						{ slug: "limits/source-floors" },
-					],
-				},
-				{
-					label: "Security",
-					translations: { es: "Seguridad" },
-					items: [
-						{ slug: "security" },
-						{ slug: "security/api-user" },
-						{ slug: "security/expose" },
-						{ slug: "security/installer" },
 					],
 				},
 				{
@@ -530,9 +487,58 @@ export default defineConfig({
 						{ slug: "reference/http" },
 						{ slug: "reference/metrics" },
 						{ slug: "reference/measurements" },
+						{ slug: "sinks/derive" },
+						{ slug: "sinks/detections" },
+						{ slug: "sinks/device-info" },
 						{ slug: "reference/port-names" },
 						{ slug: "reference/troubleshooting" },
 						{ slug: "reference/glossary" },
+					],
+				},
+				{
+					label: "Explanation",
+					translations: { es: "Conceptos" },
+					items: [
+						{ slug: "limits" },
+						{ slug: "limits/namespaces" },
+						{ slug: "limits/privileged" },
+						{ slug: "limits/source-floors" },
+						{ slug: "security" },
+						{ slug: "security/installer" },
+					],
+				},
+				// The pages that keep provenance (src/lib/voice.mjs
+				// EVIDENCE_SLUGS): the device, the RouterOS version, the date and
+				// the conditions behind what the other groups state.
+				{
+					label: "Evidence",
+					translations: { es: "Pruebas y mediciones" },
+					collapsed: true,
+					items: [
+						{ slug: "about/status" },
+						{ slug: "cost" },
+						{ slug: "cost/rate-ceiling" },
+						{ slug: "cost/limits" },
+						{
+							label: "Case studies",
+							translations: { es: "Casos reales" },
+							items: [
+								{ slug: "playbooks/idle" },
+								{ slug: "playbooks/loop" },
+								{ slug: "playbooks/cpu" },
+								{ slug: "playbooks/packet-flood" },
+								{ slug: "playbooks/flash-wear" },
+								{ slug: "playbooks/port-errors" },
+								{ slug: "playbooks/conntrack" },
+							],
+						},
+						{
+							// Shorter than the title, "How the project tests
+							// itself", and the name Tested on gives the suites.
+							label: "Test suites",
+							translations: { es: "Baterías de pruebas" },
+							slug: "reference/testing",
+						},
 					],
 				},
 				{
@@ -540,28 +546,8 @@ export default defineConfig({
 					translations: { es: "Acerca de" },
 					collapsed: true,
 					items: [
-						{ slug: "about/status" },
 						{ slug: "about/changelog" },
 						{ slug: "about/lineage" },
-					],
-				},
-				// Last, and its own group: everything above answers "how do I
-				// use this", and these two answer "how do I change it". Mixed
-				// into Reference and About they read as things a user has to
-				// get through to reach what they came for.
-				{
-					label: "For contributors",
-					translations: { es: "Para quien contribuye" },
-					collapsed: true,
-					items: [
-						{
-							// The Spanish label is shorter than the Spanish
-							// title, which adds "a sí mismo", as the sidebar had
-							// it before labels came from titles.
-							label: "How the project tests itself",
-							translations: { es: "Cómo se prueba el proyecto" },
-							slug: "reference/testing",
-						},
 						{ slug: "about/brand" },
 						{
 							label: "Contributing (GitHub)",

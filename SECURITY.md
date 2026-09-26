@@ -75,5 +75,5 @@ order of interest:
   vulnerability. A way to reach it without an explicit upgrade is worth
   reporting.
 - The cost of observing: the agent uses CPU and memory on the router, measured
-  and published in [docs/limits.md](docs/limits.md), and a rate or buffer set
+  and published in [docs/evidence.md](docs/evidence.md), and a rate or buffer set
   higher than a board can afford is a configuration, not an attack.

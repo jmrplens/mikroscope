@@ -110,10 +110,13 @@ draw a different story.
 - **Markdown twins.** Every page also builds as `index.md` beside its HTML,
   through the same `page-markdown.mjs` reduction as `docs/`, with every link
   made absolute so a twin read on its own still resolves.
-- **`llms.txt`**, per language, indexes the bundles with their size and an
-  estimated token count: `llms-full.txt` (every page), `llms-core.txt` (the
-  pages a first answer needs) and `llms/<section>.txt`, one per sidebar group,
-  named after the group's English label. `pnpm llms:check` walks all of them.
+- **`llms.txt`**, per language, in the [llms.txt](https://llmstxt.org/) v2
+  shape: every page with its description and a link to its markdown twin, then
+  the bundles with their size and an estimated token count: `llms-full.txt`
+  (every page), `llms-core.txt` (the pages a first answer needs) and
+  `llms/<section>.txt`, one per sidebar group, named after the group's English
+  label. Every page's head points at its index with `rel="describedby"`.
+  `pnpm llms:check` walks all of them.
 - **One JSON-LD graph per page**, written by `src/components/overrides/Head.astro`
   and checked by `pnpm schema:check`. A page's `datePublished` is the commit
   that first added its file, so the build and the check need the full git
@@ -179,6 +182,38 @@ Then claim the page in `MANIFEST` or `NOT_IN_DOCS` in `scripts/gen-docs.mjs`.
 `pnpm i18n:check` will tell you if you forgot the twin, `pnpm docs:check` if the
 page is unclaimed, and the build if the sidebar names a slug that does not
 exist or a page is in no sidebar group (`src/lib/llms.mjs` refuses one).
+
+Give both twins the same `docType` in their frontmatter: `tutorial`, `how-to`,
+`reference`, `explanation`, `evidence` or `about`. A page is evidence only if
+`EVIDENCE_SLUGS` in `src/lib/voice.mjs` lists it (Tested on, the cost pages,
+the case studies, the test suites); `docType: evidence` on any other page is
+reported, not obeyed.
+
+Every other page is tool documentation, and `pnpm voice:check [page]`
+(`scripts/check-voice.mjs`, part of `pnpm lint`) holds it to that:
+
+- **No provenance on a guide.** No date, no RouterOS version but the minimum
+  ("RouterOS 7.24 or later"), no device model, no "reference router", no
+  release history ("Since 1.2.2"). State the fact and link the proof with
+  `<TestedOn of="…">text</TestedOn>`, where `of` is a campaign of
+  `src/data/measurements.ts`, a fact of `src/data/verifications.ts` or a
+  section key of `TESTED_ON_SECTIONS`. A board-to-architecture table goes in
+  `<BoardTable label="…">`, which the gate does not read.
+- **Evidence-only components.** `<Provenance>`, `<Verified>`, `<NotClaimed>`,
+  `<RunsTable>` (the landing too), `<RunFlags>`, `<CampaignRegister>`,
+  `<VerifiedRegister>` and `<FaultSignature>` with `date` or `origin` warn on
+  any other page while `DEFAULT_MODE` is `"warn"`, and fail the build once it
+  is `"error"`. `<Measured id="…"/>` works anywhere: on a guide a device
+  reading links its campaign on Tested on by itself.
+- **Headings are labels**, on every page: six words at most, no comma except
+  in a list, no question, no opening What/Why/How (or Qué/Por qué/Cómo). A
+  page opens with the task or the result, never "This page…". Exemptions are
+  `EXEMPT` in the script, each with its reason.
+- **Keep every published id.** Relabel with `## New label {#old-id}` (the
+  Spanish twin keeps its own id from `scripts/anchors.txt`). When a section
+  merges, moves or is repurposed, put `<Anchor name="old-id" />` on its own
+  line before the nearest heading. `pnpm anchors:check` fails on a lost id;
+  `pnpm anchors` adds new ones after a build and never removes one.
 
 Adding a whole locale is two edits: the `locales` map in `astro.config.mjs`, and
 `LOCALES` at the top of `scripts/check-i18n-parity.mjs`.

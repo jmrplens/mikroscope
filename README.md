@@ -39,7 +39,7 @@ inside the project's ≤ 16 MiB memory budget and above its ≤ 2 % CPU one. The
 2.85 % and 31.3 MiB that 1.0.0 published were measured with a 300 s ring,
 which 1.0.6 cut to 60 s: the memory fell with the ring, and 2.85 % against
 2.69 % is the noise between two windows. None of it transfers to a board that
-is not this one: [What it costs](https://jmrp.io/docs/mikroscope/cost/) says how
+is not this one: [Agent cost](https://jmrp.io/docs/mikroscope/cost/) says how
 the figure is taken and how to take it on your own device, and
 [the rate ceiling](https://jmrp.io/docs/mikroscope/cost/rate-ceiling/) has all
 six runs, from 10 to 100 Hz.
@@ -185,7 +185,7 @@ section, with a capture of each.
 
 Everything else the project builds for — 32-bit ARM and x86 RouterOS — is
 cross-compiled and CI-checked and has never run on hardware.
-[Where it stands](https://jmrp.io/docs/mikroscope/about/status/) is the
+[Tested on](https://jmrp.io/docs/mikroscope/about/status/) is the
 measurement behind each claim. If you run mikroscope on another board,
 `mikroscope status` names it, and that plus what you measured is everything a
 pull request needs to add a row, or a
@@ -200,22 +200,23 @@ All of it is at <https://jmrp.io/docs/mikroscope/>, in English and Spanish.
 
 - [Five minutes with a router](https://jmrp.io/docs/mikroscope/start/walkthrough/) — what it is, and the whole path once
 - [Install](https://jmrp.io/docs/mikroscope/install/) — prerequisites, the four routes, the two firewall traps, reaching the agent
-- [Record and plot](https://jmrp.io/docs/mikroscope/record/) — recording, markers, charts, triggered capture
-- [The collector and its sinks](https://jmrp.io/docs/mikroscope/sinks/) — the eleven sinks, the RouterOS API tier, the derive stage
+- [Record, mark and plot](https://jmrp.io/docs/mikroscope/record/) — recording, markers, charts, triggered capture
+- [Run the collector](https://jmrp.io/docs/mikroscope/sinks/) — the eleven sinks, the RouterOS API tier, the derive stage
 - [Dashboards](https://jmrp.io/docs/mikroscope/dashboards/) — the five dashboards, publishing them, alert rules
-- [Reading what it shows](https://jmrp.io/docs/mikroscope/playbooks/) — an idle router first, then the faults read against it
+- [Diagnose faults](https://jmrp.io/docs/mikroscope/playbooks/) — the signature of each fault, and the checks to make before trusting a reading
 - [When something does not work](https://jmrp.io/docs/mikroscope/reference/troubleshooting/) — the symptoms this produces, in the words you actually see
 
 ### Knowing what to trust
 
-- [What it costs](https://jmrp.io/docs/mikroscope/cost/) — the observer's own CPU and memory, the rate ceiling, the tick floor
-- [What it cannot see](https://jmrp.io/docs/mikroscope/limits/) — namespaces, privileged, the per-source floors
-- [Security](https://jmrp.io/docs/mikroscope/security/) — what runs where, the API user, what `--expose` opens, what the installer refuses
-- [Where it stands](https://jmrp.io/docs/mikroscope/about/status/) — what has run on hardware, what has only run against fakes, what is open
+- [Agent cost](https://jmrp.io/docs/mikroscope/cost/) — the observer's own CPU and memory, the rate ceiling, the tick floor
+- [Resolution limits](https://jmrp.io/docs/mikroscope/limits/) — namespaces, privileged, the per-source floors
+- [Security model](https://jmrp.io/docs/mikroscope/security/) — what runs where, the API user, what `--expose` opens, what the installer refuses
+- [Tested on](https://jmrp.io/docs/mikroscope/about/status/) — the devices, RouterOS versions and dates behind each claim, what has not been tested, and the known issues
+- [Case studies](https://jmrp.io/docs/mikroscope/playbooks/idle/) — an idle router first, then six faults read against it on the router they were measured on
 
 ### Reference
 
-- [Commands and flags](https://jmrp.io/docs/mikroscope/reference/cli/) · [environment](https://jmrp.io/docs/mikroscope/reference/environment/) · [HTTP endpoints](https://jmrp.io/docs/mikroscope/reference/http/) · [metric families](https://jmrp.io/docs/mikroscope/reference/metrics/) · [every measurement](https://jmrp.io/docs/mikroscope/reference/measurements/)
+- [Commands and flags](https://jmrp.io/docs/mikroscope/reference/cli/) · [environment](https://jmrp.io/docs/mikroscope/reference/environment/) · [HTTP endpoints](https://jmrp.io/docs/mikroscope/reference/http/) · [metric families](https://jmrp.io/docs/mikroscope/reference/metrics/) · [store schema](https://jmrp.io/docs/mikroscope/reference/measurements/)
 
 ## Contributing
 

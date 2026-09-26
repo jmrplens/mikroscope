@@ -246,6 +246,53 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   reference the router pulls; the upgrade listing names the steps it keeps;
   and the script's closing comment selects the container by its tag rather
   than by a name RouterOS may have picked (a pull is named after its image).
+- **The documentation reads as a tool's documentation, and its proof lives on
+  the evidence pages.** 40 pages and their Spanish twins were rewritten: the
+  use, reference, explanation and configure pages open with the task or the
+  result instead of "This page answers…", their headings are table-of-contents
+  labels, options and error strings are tables, and they name no device, no
+  RouterOS version other than the 7.24 minimum, no date and no release
+  history. Each fact that left a guide went, in substance and in both
+  languages, to Tested on, a cost page, a case study or this changelog, and
+  the guide links it with `<TestedOn>`: of 226 moved passages, five the plan
+  marked for deletion were dropped (two of them the brand page's decision
+  dates). Four statements were corrected against the code on the way: the
+  relay's fetch limit is reached above about 144 % of the charged line size,
+  not 134 % (`internal/transport/transport.go`); the CPU clusters come from
+  `related_cpus` alone (`internal/procfs/limits.go`); after an agent restart
+  `forward` logs `resuming from` the oldest sequence the new ring holds, not
+  always 1 (`internal/forward/forward.go`); and the collector page no longer
+  derives a relay ceiling from one fetch per poll, because `forward` drains up
+  to 100 fetches a poll while the replies come back full.
+- **Tested on (`about/status`) is the single evidence page.** It holds the
+  reference hardware once, the virtual lab (CHR x86_64 and arm64, RouterOS
+  7.24.4, 2026-09-26), the devices and versions, the feature status, the
+  install routes tested, the agent's cost, the 26 measurement campaigns and 18
+  verified RouterOS facts as registers with stable ids (`#campaign-<id>`,
+  `#verified-<id>`, the same in both languages), everything not tested, the
+  known issues and the uncollected sources. The cost pages gained SSH cost and
+  API tier cost; the case studies keep their provenance; the landing's figures
+  link their campaign.
+- **The sidebar follows the reader's task**: Start here, Install, Configure,
+  Use, Reference, Explanation, Evidence and About. No page changed address and
+  every published heading id still resolves: `site/scripts/anchors.txt` gained
+  140 ids and lost none. `docs/` follows the groups: new `configure.md` and
+  `evidence.md`; `sinks/derive`, `sinks/detections` and `sinks/device-info`
+  moved to `reference.md`, the cost pages to `evidence.md`, Diagnose faults to
+  `dashboards.md`, and `playbooks.md` holds the case studies.
+- **The llms files follow the groups and llms.txt v2.** Each index entry now
+  carries a link to the page's markdown twin, every page points at its index
+  with `rel="describedby"`, and `llms-core.txt` is Start here plus the install
+  routes, the router's requirements, the resolution limits, Tested on and the
+  agent's cost. The section files are renamed after the new groups;
+  `llms/start-here.txt` keeps its name.
+- **`pnpm run voice:check`** (`site/scripts/check-voice.mjs`, part of
+  `pnpm lint`) reports provenance on a guide, an evidence-only component off
+  the evidence pages, a heading that is not a label, and a `<TestedOn>` link
+  to an entry Tested on does not have. It warns for now: the 817 findings left
+  are on the install, start, CLI, environment, troubleshooting, test-suite and
+  installer pages, which the installer work is rewriting, plus one
+  "since 1.0.6" printed from `src/data/envlist.ts`.
 
 ### Fixed
 

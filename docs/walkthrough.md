@@ -374,7 +374,7 @@ them. Most flags have no variable at all —
 
 ### What the chart shows
 
-[![RB5009UG+S+, 70 s at 10 Hz: 700 samples over 69.9 s on four cores, with three dashed markers — “baseline, router idle” at 12 s, “dashboards check started” at 30 s and “check finished” at 50 s. Per-core busy stays low with single-sample excursions to 100 %; the softnet panel shows time squeezes and a flat zero for dropped; memory available stays between 662 and 671 MiB.](../site/src/assets/walkthrough/rb5009-walkthrough.svg)](../../../assets/walkthrough/rb5009-walkthrough.svg)
+[![RB5009UG+S+, 70 s at 10 Hz: 700 samples over 69.9 s on four cores, with three dashed markers — “baseline, router idle” at 12 s, “dashboards check started” at 30 s and “check finished” at 50 s. Per-core busy stays low with single-sample excursions to 100 %; the softnet panel shows time squeezes and a flat zero for dropped; memory available stays between 662 and 671 MiB.](../site/src/assets/walkthrough/rb5009-walkthrough.svg)](../site/src/assets/walkthrough/rb5009-walkthrough.svg)
 
 [Open the chart at full size](../site/src/assets/walkthrough/rb5009-walkthrough.svg) (SVG, 1200 × 754) to read its labels on
 a phone.
