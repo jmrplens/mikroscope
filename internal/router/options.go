@@ -551,8 +551,12 @@ func (o *Options) String() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "name=%s veth=%s subnet=%s (router %s, agent %s) lists=%s/%s arch=%s port=%d rate=%dHz buffer=%ds",
 		o.Name, o.Veth, o.Subnet, o.GatewayIP, o.ContainerIP, o.IfaceList, o.AddrList, o.Arch, o.Port, o.RateHz, o.BufferS)
+	image := o.ImageFile()
+	if o.UsesRemoteImage() {
+		image = o.RemoteRef()
+	}
 	fmt.Fprintf(&b, " root=%s image=%s start-on-boot=%s memory-max=%s mem-limit=%dMiB",
-		o.RootDir(), o.ImageFile(), o.StartOnBoot(), o.MemoryMax, o.MemLimitMB)
+		o.RootDir(), image, o.StartOnBoot(), o.MemoryMax, o.MemLimitMB)
 	if o.Expose {
 		fmt.Fprintf(&b, " expose=%s:%d", o.LANAddress, o.Port)
 	}

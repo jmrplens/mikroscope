@@ -12,29 +12,36 @@ import (
 // exact RouterOS command — the `--dry-run` output and the text the operator
 // confirms before a real install. imageSize is the tar the upload step will
 // send. The token never appears: the envlist line is printed with it masked.
+// Each step has one number; where the image comes from is a line of the
+// container step, because the upload, or the pull, is part of it.
 func Listing(o Options, imageSize int, w io.Writer) {
 	fmt.Fprintf(w, "mikroscope install plan for %s\n", o.Name)
 	fmt.Fprintf(w, "  options: %s\n", o.String())
 	fmt.Fprintf(w, "  tag:     %q on every object; removals select by tag + identity\n", o.Tag())
 	for i, s := range Plan(o) {
-		if strings.HasPrefix(s.Name, "container ") {
-			switch {
-			case o.UsesRemoteImage():
-				fmt.Fprintf(w, "  %2d. the router pulls %s (nothing is uploaded)\n", i+1, o.RemoteRef())
-			default:
-				fmt.Fprintf(w, "  %2d. upload %s (%d KiB) with scp\n", i+1, o.ImageFile(), imageSize/1024)
-			}
+		fmt.Fprintf(w, "  %2d. %s\n", i+1, s.Name)
+		if s.id == "container" {
+			imageLine(o, imageSize, w)
 		}
-		fmt.Fprintf(w, "  %2d. %s\n      %s\n", i+1, s.Name, mask(s.Create, o.Token))
+		fmt.Fprintf(w, "      %s\n", mask(s.Create, o.Token))
 	}
 	fmt.Fprintln(w, "nothing above has been written yet")
 }
 
+// imageLine says where the container step's image comes from.
+func imageLine(o Options, imageSize int, w io.Writer) {
+	if o.UsesRemoteImage() {
+		fmt.Fprintf(w, "      the router pulls %s (nothing is uploaded)\n", o.RemoteRef())
+		return
+	}
+	fmt.Fprintf(w, "      upload %s (%d KiB) with scp\n", o.ImageFile(), imageSize/1024)
+}
+
 // UpgradeListing prints the writes `upgrade` performs, and only those: it
-// replaces the container and leaves the veth, the router address and the two
-// list memberships alone. Install's Listing is the wrong text here — it names
-// four objects upgrade will not touch, which invites an operator to expect
-// writes that never come.
+// replaces the container and leaves every other object of the plan alone,
+// and says which. Install's Listing is the wrong text here — it names objects
+// upgrade will not touch, which invites an operator to expect writes that
+// never come.
 //
 // It exists because until 1.1.0 `upgrade --dry-run` printed NOTHING and then
 // asked for confirmation: the flag documented as "print the plan and write
@@ -43,16 +50,17 @@ func Listing(o Options, imageSize int, w io.Writer) {
 func UpgradeListing(o Options, imageSize int, w io.Writer) {
 	plan := Plan(o)
 	c := plan[len(plan)-1]
+	var kept []string
+	for _, s := range plan[:len(plan)-1] {
+		kept = append(kept, s.Name)
+	}
 	fmt.Fprintf(w, "mikroscope upgrade plan for %s\n", o.Name)
 	fmt.Fprintf(w, "  options: %s\n", o.String())
-	fmt.Fprintf(w, "  keeps:   the veth, the router address and the list memberships are not touched\n")
+	fmt.Fprintf(w, "  keeps:   %s: not touched\n", strings.Join(kept, ", "))
 	fmt.Fprintf(w, "   1. remove %s\n      %s\n", c.Name, c.Remove)
-	if o.UsesRemoteImage() {
-		fmt.Fprintf(w, "   2. the router pulls %s (nothing is uploaded)\n", o.RemoteRef())
-	} else {
-		fmt.Fprintf(w, "   2. upload %s (%d KiB) with scp\n", o.ImageFile(), imageSize/1024)
-	}
-	fmt.Fprintf(w, "   3. %s\n      %s\n", c.Name, mask(c.Create, o.Token))
+	fmt.Fprintf(w, "   2. %s\n", c.Name)
+	imageLine(o, imageSize, w)
+	fmt.Fprintf(w, "      %s\n", mask(c.Create, o.Token))
 	fmt.Fprintln(w, "nothing above has been written yet")
 }
 
