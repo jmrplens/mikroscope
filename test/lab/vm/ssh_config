@@ -1,8 +1,9 @@
 # The lab router, as seen from inside the lab's network namespace: the lab
 # container itself and every `lab.sh cli` run, which share it. Host keys are
-# not pinned: the router lives on a tap inside a namespace nothing else can
-# reach, it is re-provisioned from scratch at will, and a stale known_hosts
-# entry would be the lab's most common failure and never a real one.
+# not pinned: the router lives on a tap inside that namespace, which takes no
+# connection from other containers (the entrypoint's firewall), it is
+# re-provisioned from scratch at will, and a stale known_hosts entry would be
+# the lab's most common failure and never a real one.
 Host lab
 	HostName 192.168.88.1
 	User admin
@@ -25,3 +26,11 @@ Host lab-wan
 	UserKnownHostsFile /dev/null
 	LogLevel ERROR
 	ConnectTimeout 10
+
+# Any other host is refused before a connection is made. Nothing that runs in
+# the lab's namespace (lab.sh, `lab.sh cli`) has a reason to open ssh to
+# anything but the lab router, so a --router or a MIKROSCOPE_ROUTER that named
+# another router stops here, and never asks for a password.
+Host * !lab !lab-wan
+	BatchMode yes
+	ProxyCommand sh -c 'echo "lab: ssh from the lab reaches the lab router only (Host lab and lab-wan)" >&2; exit 1'

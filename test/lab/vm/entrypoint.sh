@@ -55,6 +55,45 @@ for net in $LAB_AGENT_ROUTES; do
 	ip route add "$net" via "$LAB_LAN_ROUTER" dev lan0 onlink
 done
 
+# The namespace's firewall, set before anything in it opens a socket. The lab
+# router's WAN is QEMU's user networking, which makes the router's
+# connections as sockets of this namespace, and `lab.sh cli` runs the CLI in
+# it too; both leave by the default route, through the host, onto the host's
+# network. What they need outside is the internet (MikroTik, Docker Hub) and
+# the resolver. So a new connection to a private, shared or link-local
+# address leaves by lan0 (the lab's LAN, and LAB_AGENT_ROUTES) or is refused.
+# Inbound, the only new connections eth0 takes are from the Docker bridge's
+# gateway, which is where Docker delivers the ports it publishes on the
+# host's loopback (from docker-proxy, or masqueraded when the userland proxy
+# is off): another container on the bridge reaches nothing here. Without nft
+# the lab does not start.
+gateway=$(ip -4 route show default | awk '{ print $3; exit }')
+resolvers4=$(awk '$1 == "nameserver" && $2 ~ /^[0-9.]+$/ { printf "%s%s", sep, $2; sep = ", " }' /etc/resolv.conf)
+resolvers6=$(awk '$1 == "nameserver" && $2 ~ /:/ { printf "%s%s", sep, $2; sep = ", " }' /etc/resolv.conf)
+dns="" from_gateway=""
+[ -z "$resolvers4" ] || dns+="ip daddr { $resolvers4 } meta l4proto { tcp, udp } th dport 53 accept"$'\n'
+[ -z "$resolvers6" ] || dns+="ip6 daddr { $resolvers6 } meta l4proto { tcp, udp } th dport 53 accept"$'\n'
+[ -z "$gateway" ] || from_gateway="iifname \"eth0\" ip saddr $gateway accept"
+nft -f - <<EOF
+table inet lab {
+	chain egress {
+		type filter hook output priority filter; policy accept;
+		ct state established,related accept
+		oifname { "lo", "lan0" } accept
+		$dns
+		ip daddr { 10.0.0.0/8, 100.64.0.0/10, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16 } counter reject
+		ip6 daddr { fc00::/7, fe80::/10 } counter reject
+	}
+	chain ingress {
+		type filter hook input priority filter; policy accept;
+		ct state established,related accept
+		iifname { "lo", "lan0" } accept
+		$from_gateway
+		ct state new counter drop
+	}
+}
+EOF
+
 # The router's services and the agent, on this container's ports, for Docker
 # to publish on the host's loopback. socat connects from lan0's address, so
 # the router sees every one of them as a LAN client.

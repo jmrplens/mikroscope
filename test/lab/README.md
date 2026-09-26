@@ -50,7 +50,9 @@ that CHR does not, which is little, and where its licence stops it.
 ## What it needs
 
 - Docker (29.8 here) with permission to create a container with
-  `--cap-add NET_ADMIN --device /dev/net/tun`, for the router's LAN tap.
+  `--cap-add NET_ADMIN --device /dev/net/tun`, for the router's LAN tap and
+  the namespace's firewall (nftables, so the host's kernel needs `nf_tables`,
+  which Docker's own firewalling already loads on most hosts).
 - `/dev/kvm` for x86_64. `LAB_KVM` decides what happens without it: `auto`
   (the default) falls back to TCG, many times slower and not measured;
   `require` stops the lab at once instead, which is what CI sets for x86_64;
@@ -344,7 +346,27 @@ host                      lab container (its own network namespace)
   its doctor and install probes to that agent. In the lab's namespace the
   route above keeps them in the lab. So the deploy verbs (`doctor`, `install`,
   `upgrade`, `status`, `uninstall`) run through `lab.sh cli`, never from the
-  host's shell.
+  host's shell. `lab.sh cli` refuses `--router` in any spelling, and a
+  `--subnet` outside the routes the lab's namespace sends to the router,
+  before anything runs; and the ssh configuration in the lab refuses any host
+  but the lab router (`lab`, `lab-wan`) without trying it.
+- **The namespace is closed to the host's network.** The router's WAN
+  traffic is made by QEMU's user networking as sockets of the lab's
+  namespace, and the CLI runs there too; both leave through the host. The
+  entrypoint's nftables table `inet lab` lets them reach the internet and the
+  resolver in `/etc/resolv.conf` (port 53), and refuses, on the spot, every
+  new connection to a private (RFC 1918), shared (100.64.0.0/10) or link-local
+  address that does not go out `lan0`, the lab's own LAN: the host's network
+  and every other container are out of reach. Inbound, `eth0` takes new
+  connections only from the Docker bridge's gateway, which is where the ports
+  published on the host's loopback arrive from, so another container on the
+  same bridge reaches none of the router's services. Checked on 2026-09-26 in
+  a container with the same rules: a public HTTPS download worked, a
+  connection to 10.255.255.1 and one to the bridge's gateway were refused in
+  about 10 ms, the port published on the host's loopback answered, and a
+  connection from another container on the bridge got no answer (one without
+  the rules did). `docker exec mikroscope-lab-x86 nft list table inet lab`
+  shows the counters.
 - **The CLI sees the same paths as the host.** The current directory is
   mounted read-write at its own path and is the working directory, and the
   repository read-only at its own path, so
@@ -364,8 +386,8 @@ host                      lab container (its own network namespace)
 - **Credentials** are generated on first use into `test/lab/.env` (mode 0600,
   gitignored): the admin password and a bearer token for `--expose` tests. The
   ssh key is `.cache/ssh/id_ed25519`. Nothing prints them. Host keys are not
-  pinned: the router lives on a tap nothing else can reach and is
-  re-provisioned at will.
+  pinned: the router lives on a tap in a namespace no other container can
+  open a connection into, and is re-provisioned at will.
 - **Agent addresses end at the router.** Every `up` gives the router a
   blackhole route for each of `LAB_AGENT_ROUTES`, commented
   `lab: LAB_AGENT_ROUTES end here`, so a connection to an agent address with

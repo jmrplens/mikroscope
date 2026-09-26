@@ -771,6 +771,35 @@ cli_bin() {
 	echo "$(cd "$(dirname "$bin")" && pwd)/$(basename "$bin")"
 }
 
+# ip4 prints a dotted quad as one number, or fails on anything else.
+ip4() {
+	[[ "$1" =~ ^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$ ]] || return 1
+	local o n=0
+	for o in "${BASH_REMATCH[@]:1}"; do
+		[ "$((10#$o))" -le 255 ] || return 1
+		n=$(((n << 8) | 10#$o))
+	done
+	echo "$n"
+}
+
+# in_agent_routes says whether the IPv4 network $1 (a.b.c.d/n) lies inside
+# one of the routes the running lab's namespace sends to the router: the
+# LAB_AGENT_ROUTES it was created with, which can differ from this shell's.
+in_agent_routes() {
+	local len=${1#*/} n r rn rl mask routes
+	[[ "$1" == */* && "$len" =~ ^[0-9]{1,2}$ ]] && [ "$len" -le 32 ] || return 1
+	n=$(ip4 "${1%/*}") || return 1
+	routes=$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$NAME" | sed -n 's/^LAB_AGENT_ROUTES=//p')
+	for r in ${routes:-$LAB_AGENT_ROUTES}; do
+		rn=$(ip4 "${r%/*}") || continue
+		rl=${r#*/}
+		[[ "$r" == */* && "$rl" =~ ^[0-9]{1,2}$ ]] && [ "$rl" -le "$len" ] || continue
+		mask=$(((0xFFFFFFFF << (32 - rl)) & 0xFFFFFFFF))
+		[ $((n & mask)) -eq $((rn & mask)) ] && return 0
+	done
+	return 1
+}
+
 # cli runs the mikroscope CLI from the lab's LAN side: a throwaway container in
 # the lab's network namespace, so `--router lab` is the lab router and the
 # agent's veth address is routed to it. Nothing from the host's environment
@@ -782,8 +811,15 @@ cli_bin() {
 # the container what they mean on the host (--agent-tar
 # build/agent-images/…, --out x.rsc). An absolute path outside both would name
 # nothing there, so it is refused.
+#
+# It drives the lab router and nothing else, so two flags are refused before
+# anything runs: --router in any spelling, which would point the CLI at
+# another router (the lab's ssh_config refuses any host but the lab's too),
+# and a --subnet outside the routes the lab's namespace sends to the router,
+# whose probe would leave by the namespace's default route, towards the host's
+# network (the entrypoint's firewall refuses private addresses there too).
 cmd_cli() {
-	local bin ver here=$PWD a v
+	local bin ver here=$PWD a v next=""
 	bin=$(cli_bin)
 	ver=$("$bin" version 2>/dev/null | head -1 || true)
 	echo "using $bin: ${ver:-no version line}" >&2
@@ -794,8 +830,22 @@ cmd_cli() {
 		;;
 	esac
 	for a in "$@"; do
+		if [ "$next" = subnet ]; then
+			next=""
+			in_agent_routes "$a" || die "--subnet $a is not inside the routes the lab's namespace sends to its router; widen LAB_AGENT_ROUTES and recreate the lab (lab.sh down, then up)"
+			continue
+		fi
+		case "$a" in
+		-router | --router | -router=* | --router=*)
+			die "lab.sh cli drives the lab router only (MIKROSCOPE_ROUTER=lab): drop $a"
+			;;
+		-subnet | --subnet) next=subnet ;;
+		-subnet=* | --subnet=*)
+			in_agent_routes "${a#*=}" || die "$a is not inside the routes the lab's namespace sends to its router; widen LAB_AGENT_ROUTES and recreate the lab (lab.sh down, then up)"
+			;;
+		esac
 		v=$a
-		case "$a" in --*=*) v=${a#*=} ;; esac
+		case "$a" in -*=*) v=${a#*=} ;; esac
 		case "$v" in
 		/*)
 			case "$v/" in
