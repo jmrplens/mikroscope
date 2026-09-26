@@ -119,6 +119,47 @@ the command starts finds its own lock there instead of waiting for itself. A
 inherit the lock's descriptor, so anything it leaves running does not keep
 the lab locked once it returns.
 
+## Profiles
+
+A clean lab has what RouterOS ships and nothing else. A test that needs more
+imports one of the set-ups in `routeros/`, by name, in the order given:
+
+```sh
+make lab-profile PROFILE='doctor-lists tmpfs-disk'
+test/lab/lab.sh profile                     # lists them
+test/lab/lab.sh import some-other.rsc       # any script, the same way
+```
+
+Each is idempotent: importing it twice leaves what importing it once left. A
+list or disk it needs is created only when missing, and its firewall rules are
+replaced. What a profile creates carries a comment that starts with
+`lab: <profile>`. `import` uploads the script, runs `/import`, deletes the file
+and fails, printing RouterOS's error, unless RouterOS answers that the script
+ran.
+
+| Profile                   | What it sets up                                                                                                                                                                                                                              |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `doctor-lists`            | The interface list `LAN` (ether2) and the address list `LANs` (192.168.88.0/24) that 1.3.1's `doctor` demands before it lets `install` proceed.                                                                                               |
+| `tmpfs-disk`              | A 64 MiB tmpfs disk in slot `tmpfs`, which `--ephemeral` installs into and CHR does not have.                                                                                                                                                |
+| `defconf-firewall`        | `LAN` (ether2) and `WAN` (ether1), and the IPv4 filter rules of RouterOS 7's default home configuration. It closes the router's input from ether1, so the in-container `ssh lab-wan` stops working; ether2 stays open.                        |
+| `advanced-firewall`       | The raw rules of MikroTik's "Building Advanced Firewall" that decide an agent's replies, with the guide's LAN range written as the address list `LANs`: a veth outside `LAN`, or a /30 outside `LANs`, is dropped. List membership fixes it. |
+| `advanced-firewall-range` | The same with the guide's own `src-address=!192.168.88.0/24`: no list membership fixes it. It replaces `advanced-firewall`'s rules rather than stacking on them, and the other way round.                                                   |
+
+What each did in the x86_64 lab on 2026-09-26, with the 1.3.1 CLI built from
+this branch and its agent:
+
+- With `doctor-lists` and `advanced-firewall`, `install --remote-image`
+  pulled the agent from Docker Hub through the raw rules (881 packets accepted
+  by the WAN rule, none dropped), and the agent answered `/healthz`: the veth
+  in `LAN` and the /30 in `LANs` let it through.
+- With `doctor-lists` and `advanced-firewall-range`, a tar install ended with
+  the agent unreachable and the container running; the range rule had dropped
+  64 packets.
+- With `doctor-lists` and `defconf-firewall`, the agent answered, and still
+  answered after its veth was taken out of `LAN` and its /30 out of `LANs`.
+- `doctor-lists` and `tmpfs-disk` imported twice left one list, one member,
+  one address-list entry and one disk.
+
 ## How it is put together
 
 ```text
@@ -244,9 +285,7 @@ KVM and arm64 under TCG; where the two differed, both are given.
    `clean.qcow2`. Nothing else is configured: no interface list beyond the
    built-in ones, no address list, no firewall rule, which is what CHR ships
    (every boot adds the blackhole routes described above).
-   A test that needs more sets it up itself: `routeros/doctor-lists.rsc` is the
-   one mikroscope's doctor asks for, applied with
-   `make lab-profile PROFILE=doctor-lists`.
+   A test that needs more sets it up itself, from a [profile](#profiles).
 6. **arm64 boots through UEFI.** `chr-<v>-arm64.img` is a 128 MiB GPT disk (a
    hybrid MBR beside it) whose first partition, `RouterOS-Boot`, is an EFI
    system partition. QEMU's `virt` machine with the edk2 firmware from
@@ -287,6 +326,7 @@ third x86_64 one from the cached downloads.
 | `make lab-up` from the snapshot, until ssh answers      | 7 s (6.9, 7.2, 7.4, 7.4)         | 26 to 28 s (25.7, 26.6, 27.0, 27.5)   |
 | `make lab-reset`                                        | 9 to 21 s (8.8, 8.9, 21.3, 9.3)  | 21 to 30 s over nine resets           |
 | `make lab-down`                                         | 1.6 and 1.7 s                    | 2.2 and 2.6 s                         |
+| Importing a profile (`lab.sh profile …`)                | 0.6 to 0.7 s; 1.2 s for two      | 2.2 s for two                         |
 
 The downloads measure this connection, not the architecture: the arm64 CHR
 image came in 2 s and its package archive in 150 s. The first `lab-up` on a
