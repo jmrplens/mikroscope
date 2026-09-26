@@ -191,9 +191,10 @@ schema, is neither listed nor removed.
 
 ### The test suites
 
-**Two suites need no router: one runs in CI on Linux, macOS and Windows against
-fakes, and one runs against nine real stores in docker compose, first in full on
-2026-09-16.** The end-to-end suite builds both binaries and drives them against a
+**Three suites need no router: one runs in CI on Linux, macOS and Windows
+against fakes, one runs against nine real stores in docker compose, first in
+full on 2026-09-16, and one runs the CLI and the agent against a virtual
+RouterOS, first green on 2026-09-26.** The end-to-end suite builds both binaries and drives them against a
 captured `/proc` tree of the reference device and against a fake agent, with one
 receiver per sink protocol asserting the bytes. It needs no router, no Grafana
 and no network, and runs in CI on macOS and Windows as well as Linux, which is
@@ -216,6 +217,14 @@ two databases and asks the server whether they hold the same thing — 34 tables
 matching byte for byte on 2026-09-20 — publishes all five datasources and checks
 their dashboards against them, and empties the stores again with
 `uninstall --targets data`.
+
+The third, the [virtual RouterOS lab](/mikroscope/reference/testing/#the-virtual-routeros-lab)
+(`make test-lab`), runs the CLI's deploy verbs and the agent against
+MikroTik's Cloud Hosted Router 7.24.4 in QEMU, x86_64 and emulated arm64:
+install by both image routes, upgrade, uninstall, `--ephemeral` and
+start-on-boot through a power cut, each scenario ending with the router's
+`/export` compared with its start. It tests the installer's correctness; it
+is not a board, and no cost or rate on this page comes from it.
 
 ## What the agent costs today
 
@@ -267,7 +276,8 @@ what each one costs — not what the number was at some earlier point.
 ## One device, two RouterOS versions
 
 Every on-device figure in this documentation comes from one RB5009UG+S+, the
-owner's production router. There is no lab device. Most figures were measured on
+owner's production router. The virtual RouterOS lab (`test/lab`) tests the
+installer's correctness; no figure on this page comes from it. Most figures were measured on
 RouterOS 7.24.2 and each says so; the port-errors campaign (2026-09-19), the
 `/stream` timings (2026-09-21) and the three charts from the reference store
 (2026-09-19 to 2026-09-24) are from 7.24.4. The device has moved to 7.24.4, and

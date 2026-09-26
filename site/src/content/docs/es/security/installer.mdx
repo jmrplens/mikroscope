@@ -241,7 +241,7 @@ El paso del contenedor es el lento, y el orden dentro de él es lo que mantiene 
 Si la eliminación del fichero no surte efecto, la marca se queda, la cuenta sigue incluyendo la
 envlist y el fichero, y `uninstall` lo dice en vez de informar de que está limpio.
 
-Un recorrido doctor → install → status → upgrade → uninstall (`make roundtrip`) dejó el `/export` del router idéntico byte a byte, comparado por hash (verificado en <Verified of="export-identical" />).
+Un recorrido doctor → install → status → upgrade → uninstall (el guion del ciclo, entonces `make roundtrip`; contra un router real ahora es `make roundtrip-device`) dejó el `/export` del RB5009 idéntico byte a byte, comparado por hash (verificado en <Verified of="export-identical" />). `make roundtrip` ejecuta ahora el mismo guion en el [laboratorio virtual de RouterOS](/mikroscope/es/reference/testing/#el-laboratorio-virtual-de-routeros).
 
 <NotClaimed variant="device-specific">
 	El `/export` idéntico byte a byte tras ese único recorrido, y cada comportamiento de RouterOS

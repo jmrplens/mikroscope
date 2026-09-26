@@ -616,7 +616,12 @@
 /es/reference/testing/#capa-2--los-almacenes
 /es/reference/testing/#capa-3--los-paneles
 /es/reference/testing/#cómo-ejecutarlo
+/es/reference/testing/#cómo-usar-el-laboratorio
+/es/reference/testing/#dónde-deja-de-ser-un-router
+/es/reference/testing/#el-laboratorio-en-la-ci
+/es/reference/testing/#el-laboratorio-virtual-de-routeros
 /es/reference/testing/#lo-que-las-tres-capas-siguen-dejando-a-una-persona
+/es/reference/testing/#qué-ejecuta-la-batería-del-laboratorio
 /es/reference/testing/#starlight__on-this-page
 /es/reference/testing/#véase-también
 /es/reference/troubleshooting/#--influx-is-a-write-url-this-cannot-take-apart
@@ -1144,9 +1149,14 @@
 /reference/testing/#layer-2--the-stores
 /reference/testing/#layer-3--the-dashboards
 /reference/testing/#running-it
+/reference/testing/#running-the-lab
 /reference/testing/#see-also
 /reference/testing/#starlight__on-this-page
+/reference/testing/#the-lab-in-ci
+/reference/testing/#the-virtual-routeros-lab
+/reference/testing/#what-the-lab-suite-runs
 /reference/testing/#what-the-three-layers-still-leave-to-a-human
+/reference/testing/#where-the-lab-stops-being-a-router
 /reference/troubleshooting/#--influx-is-a-write-url-this-cannot-take-apart
 /reference/troubleshooting/#--targets-dashboard-left-the-datasource-behind
 /reference/troubleshooting/#_top

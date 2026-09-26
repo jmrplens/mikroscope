@@ -1,6 +1,6 @@
 ---
 title: Cómo se prueba el proyecto a sí mismo
-description: "Tres capas de pruebas: los bytes de cada destino, si un almacén real los acepta, si responden los paneles; qué prueba cada una y qué no prueba ninguna."
+description: "Tres capas de pruebas para los destinos (los bytes de cada uno, si un almacén real los acepta, si responden los paneles) y un laboratorio virtual de RouterOS para el instalador; qué prueba cada una y qué no prueba ninguna."
 ---
 
 import { Aside } from "@astrojs/starlight/components";
@@ -32,6 +32,10 @@ un agente simulado que sirve muestras enlatadas, y la capa 1 ejecuta además el
 binario real del agente contra <Src path="testdata/proc/rb5009/" />, un árbol `/proc` y
 `/sys` capturado del equipo de referencia. Eso es lo que hace que una ejecución
 sea reproducible en cualquier máquina, y lo que deja al router fuera del bucle.
+
+Las órdenes que escriben en un router —`install`, `upgrade`, `uninstall` y el
+resto— se prueban aparte, contra un RouterOS real que no es el router de
+nadie: el [laboratorio virtual de RouterOS](#el-laboratorio-virtual-de-routeros).
 
 ## Capa 1 — el contrato
 
@@ -144,6 +148,187 @@ desde cero.
 	defecto descarta. Los otros siete servicios son contenedores normales de red
 	puente.
 </Aside>
+
+## El laboratorio virtual de RouterOS
+
+`doctor`, `plan`, `install`, `upgrade`, `status` y `uninstall` necesitan un
+router para poder probarse, y el laboratorio es uno que no pertenece a nadie:
+el Cloud Hosted Router (CHR) 7.24.4 de MikroTik bajo QEMU, dentro de un
+contenedor Docker, aprovisionado una vez en una instantánea limpia (con el
+paquete `container` instalado y `device-mode container=yes` confirmado) y
+devuelto a esa instantánea en segundos. Ninguna prueba necesita un router
+real. <Src path="test/lab/README.md" /> lo cuenta entero: cómo está montado,
+cuánto tardó cada paso y qué le enseñó CHR al instalador.
+
+<ScrollTable label="Los dos laboratorios, cómo se ejecuta cada uno y para qué sirve">
+
+| Laboratorio | Se ejecuta como        | De la instantánea a ssh | Para qué sirve                                                                                                       |
+| ----------- | ---------------------- | ----------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| x86_64      | CHR bajo KVM           | 7 s                     | todos los escenarios, rápido; el que ejecuta la CI en los pull requests y antes de una publicación                   |
+| arm64       | CHR emulado (QEMU TCG) | 26–28 s                 | la arquitectura, la versión del kernel y el núcleo del RB5009 (Cortex-A72): el paquete `container` y la imagen arm64 |
+
+</ScrollTable>
+
+Los tiempos de arranque se midieron el 2026-09-26 en la máquina de desarrollo
+(x86_64, 12 núcleos); el de arm64 es de la emulación, no de un router.
+
+La CLI se ejecuta dentro de la LAN del laboratorio. `lab.sh cli` la arranca en
+el espacio de nombres de red del contenedor del laboratorio, donde
+172.30.0.0/16 va al router del laboratorio, así que la dirección por defecto
+del agente, 172.30.10.2, llega al agente del laboratorio y a nada más. Desde
+la shell de una máquina de desarrollo, la misma dirección sale por su ruta por
+defecto, hacia la red que sea. Toda orden de despliegue, a mano
+(`make lab-cli`) o en la batería, pasa por `lab.sh cli`, que rechaza
+`--router` y un `--subnet` fuera de las rutas del laboratorio. El espacio de
+nombres del laboratorio tiene su propio cortafuegos: no abre ninguna conexión
+nueva hacia una dirección privada fuera del laboratorio, ni acepta ninguna de
+otro contenedor.
+
+### Qué ejecuta la batería del laboratorio
+
+`make test-lab` compila la CLI y los tar de la imagen del agente, y luego
+ejecuta la batería de <Src path="test/e2e/lab/" /> (etiqueta de compilación `labe2e`) contra
+el laboratorio en marcha, con el cerrojo del laboratorio tomado durante toda
+la ejecución. Cada escenario empieza con un reinicio a la instantánea y la
+preparación que nombra, toma ahí el `/export` del router como línea base, y
+termina comparando los dos.
+
+<ScrollTable label="Los escenarios de la batería del laboratorio y qué comprueba cada uno">
+
+| Escenario  | Qué hace                                                                       | Qué comprueba                                                                                                      |
+| ---------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| S1         | `doctor` con sus valores por defecto en un CHR de fábrica                      | exactamente las comprobaciones que se sabe que el código de la rama falla ahí                                      |
+| S2         | instalar descargando la imagen de Docker Hub, `status`, `upgrade`, `uninstall` | el agente responde a `/healthz` y `/capabilities`; el export vuelve a su línea base                                |
+| S3         | instalar y actualizar desde el tar de la imagen de la propia rama              | el agente informa de la versión, el commit y la fecha de la compilación de la rama                                 |
+| S4         | `plan --rsc` para las dos vías de imagen, ejecutado con `/import`              | `status` reconoce los objetos del guion; `uninstall` deja la línea base                                            |
+| S6         | `--ephemeral` en un disco tmpfs, y luego un corte de corriente                 | el contenedor queda parado y sin su raíz; `uninstall --ephemeral` no deja nada en absoluto                         |
+| S7         | una instalación persistente, 45 s para que llegue al disco, y luego un corte de corriente | el agente vuelve a responder en menos de 90 s: `start-on-boot` funciona                                            |
+| S8         | `--expose` con un token                                                        | `/capabilities` responde 401 sin el token y 200 con él; las dos reglas de cortafuegos se van con la desinstalación |
+| S9         | `uninstall` mientras un cliente lee `/stream`                                  | el rechazo conocido, y después un router limpio                                                                    |
+| S12        | dos instalaciones una al lado de otra                                          | quitar una deja la otra en marcha e intacta                                                                        |
+| repetición | 10 instalaciones y desinstalaciones desde el tar en x86_64, 3 en arm64         | ninguna instalación falla                                                                                          |
+
+</ScrollTable>
+
+Los escenarios codifican lo que hace el código de la rama, con sus fallos
+conocidos incluidos, así que una prueba falla cuando uno de esos fallos
+desaparece sin que su escenario cambie con él. Solo S2 y un caso de S4
+descargan de Docker Hub, tres descargas por ejecución; el resto instala el tar
+de la propia rama, lo que además prueba el agente de la rama. La batería quita
+toda variable `MIKROSCOPE_*` antes de ejecutar nada, así que una shell
+preparada para un router real no puede dirigirla.
+
+S7 espera 45 s entre la instalación y el corte. En el laboratorio arm64, tres
+de cuatro cortes hechos en cuanto el agente respondió no devolvieron ningún
+agente en 90 s, y los dos que se miraron tenían un contenedor que no podía
+arrancar (`Exec format error`, `Segmentation fault`), muy probablemente
+porque RouterOS aún no había escrito la instalación en su disco; eso no se
+examinó. Un corte de corriente tan cerca de una instalación es otra pregunta,
+y S7 solo pregunta si `start-on-boot` funciona.
+
+Medido el 2026-09-26 con CHR 7.24.4 y el código de 1.3.1: la batería tardó
+de 7 min 21 s a 9 min 49 s en x86_64 en seis ejecuciones, y de 12 min 12 s a
+16 min 48 s en arm64 en tres, las más lentas de cada una con las dos baterías
+en paralelo en un anfitrión ocupado, y ninguna instalación falló.
+`make roundtrip` —`doctor`, `install`, `status`, `upgrade` y `uninstall`, cada
+una con `--ephemeral`, y el `/export` del router resumido con un hash antes y
+después— tardó de 28 a 34 s en x86_64 en tres ejecuciones y de 40 a 45 s en
+arm64 en cuatro, y dejó el export
+idéntico byte a byte todas las veces.
+
+### Cómo usar el laboratorio
+
+```sh
+make lab-up                     # la primera vez descarga RouterOS y lo aprovisiona
+make test-lab                   # la batería, x86_64
+make test-lab LAB_RUN='S09'     # un escenario, por un patrón de -run
+make lab-cli ARGS='doctor --arch amd64'
+make lab-reset                  # de vuelta a la instantánea limpia
+make lab-down
+make lab-up LAB_ARCH=arm64      # el emulado; luego los mismos objetivos con LAB_ARCH=arm64
+```
+
+Necesita Linux, Docker, `flock`, Go para la CLI y el agente que se prueban,
+unos 910 MB de disco para las dos arquitecturas y `/dev/kvm` para x86_64: sin
+él, el valor por defecto `LAB_KVM=auto` cae a la emulación, muchas veces más
+lenta y sin medir, y `LAB_KVM=require` se detiene en su lugar. Sin un laboratorio en
+marcha, cada prueba de la batería se omite, y `MIKROSCOPE_LAB_REQUIRED=1`
+convierte eso en un fallo. Un solo conductor cada vez: cada verbo toma un
+cerrojo por arquitectura, así que dos copias del repositorio nunca manejan un
+laboratorio entre los pasos de la otra, y `LAB_STATE_DIR` apunta una segunda
+copia al laboratorio que ejecuta la primera. La contraseña de administración
+del laboratorio y el token del agente se generan en `test/lab/.env` la primera
+vez, están en `.gitignore` y nunca se imprimen.
+
+Un tercer laboratorio, RouterOS x86 instalado desde la ISO de MikroTik
+(`make lab-up LAB_KIND=iso`), es una receta opcional que la CI nunca ejecuta.
+Añade la vía de instalación de un PC, un nombre de placa `x86` y la licencia
+de x86 —una prueba de 24 horas, y después un registro de nivel 1 o una
+licencia de pago por equipo— y nada que el agente lea y CHR x86_64 no tenga.
+
+### El laboratorio en la CI
+
+<ScrollTable label="Cuándo ejecuta la CI el laboratorio, por arquitectura">
+
+| Laboratorio | Pull request                         | Publicación                    | Semanal | A petición |
+| ----------- | ------------------------------------ | ------------------------------ | ------- | ---------- |
+| x86_64      | cuando toca lo que instala el agente | una puerta antes de GoReleaser | sí      | sí         |
+| arm64       | no                                   | no                             | sí      | sí         |
+
+</ScrollTable>
+
+El flujo, <Src path=".github/workflows/lab.yml" />, ejecuta los mismos
+`make lab-up` y `make test-lab`, con `MIKROSCOPE_LAB_REQUIRED=1`. Qué cuenta como «lo que
+instala el agente» es una lista de rutas en el trabajo `changes` de `ci.yml`:
+`internal/router`, `internal/image`, `internal/agent`, `cmd/mikroscope`,
+`cmd/mikroscope-agent`, `Dockerfile.agent`, el `Makefile`, los guiones del tar
+del agente y del viaje de ida y vuelta, el laboratorio y su batería, y el
+propio `lab.yml`. arm64 no es una puerta: bajo emulación
+tarda entre 25 y 35 minutos según una estimación, y depende de que el
+servidor de descargas de MikroTik y Docker Hub estén disponibles. En una
+publicación, los escenarios de descarga descargan la versión anterior, porque
+la imagen del agente de la nueva etiqueta solo se publica cuando las puertas
+han pasado.
+
+La caché de Actions guarda las descargas de MikroTik por arquitectura y
+versión de RouterOS, comprobadas contra las sumas SHA-256 que el repositorio
+fija en <Src path="test/lab/SHA256SUMS" />, y el router aprovisionado. La
+instantánea no lleva ninguna credencial: admin tiene la contraseña vacía de
+CHR y ninguna clave hasta que el `make lab-up` de la ejecución le da las
+suyas, así que el `.env` y la clave ssh nunca salen del runner. Una ejecución
+fallida o que agota su tiempo sube el registro de la consola, el registro del
+contenedor, el estado del laboratorio, lo que una instalación dejó en el
+router y el registro de las pruebas, con cada credencial sustituida por su
+nombre, y nunca el `.env` ni la clave ssh.
+
+### Dónde deja de ser un router
+
+- **Virtual, no hardware.** Sin RouterBOARD, sin flash, sin sensores, sin chip
+  de switch, sin árbol de dispositivos. Medido con `/capabilities` del agente
+  el 2026-09-26: `cpufreq`, `mtd`, `psi`, `schedstat` y `thermal` faltan en los
+  dos laboratorios, y `status` no puede traducir los nombres de puerto del
+  kernel a los de RouterOS. Todo lo que dependa de una placa sigue necesitando
+  una real.
+- **La licencia gratuita de CHR limita lo que envía el router** a 1 Mbit/s por
+  interfaz: copiar 2 MiB desde el router del laboratorio por su LAN tardó
+  15,6 s. El `/stream` del agente midió ahí 0,21 Mbit/s a 10 Hz, así que por
+  aritmética 50 Hz queda en el límite y 100 Hz por encima, y una prueba de tasa
+  por encima de 10 Hz en el laboratorio mide la licencia y no el agente.
+- **Las cifras del arm64 emulado no son costes.** Bajo emulación el reloj del
+  invitado sigue al del anfitrión, así que toda duración, toda cifra de CPU
+  (`cpu-load`, `self.cpu_us`, `read_ns`, `wake_ns`, la dispersión de `dt_ns`,
+  `slipped`), toda tasa de interrupciones, softirqs y cambios de contexto y
+  todo contador de la PMU del laboratorio arm64 mide la emulación del
+  anfitrión, no un Cortex-A72.
+
+<NotClaimed title="Lo que el laboratorio no ha demostrado">
+	Cuánto tardan los trabajos del laboratorio en los runners de GitHub, y si
+	esos runners le dan `/dev/kvm` a este repositorio: el flujo todavía no se ha
+	ejecutado allí, y la primera ejecución a petición es la medida. MikroTik
+	publica CHR solo para x86_64 y arm64, así que el agente arm de 32 bits
+	(armv5, armv7) solo se encuentra con RouterOS en hardware: `make agent-smoke`
+	arranca su imagen bajo QEMU en modo usuario, que no es RouterOS.
+</NotClaimed>
 
 ## Lo que las tres capas siguen dejando a una persona
 

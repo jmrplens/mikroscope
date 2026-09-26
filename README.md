@@ -219,8 +219,9 @@ All of it is at <https://jmrp.io/docs/mikroscope/>, in English and Spanish.
 
 ## Contributing
 
-[`CONTRIBUTING.md`](CONTRIBUTING.md) has the layout, the two test suites and
-which one to run for which change. Questions go to
+[`CONTRIBUTING.md`](CONTRIBUTING.md) has the layout, the test suites, the
+virtual RouterOS lab they test the deployment in, and which one to run for
+which change. Questions go to
 [Discussions](https://github.com/jmrplens/mikroscope/discussions); a bug, a
 board report, a feature request and a documentation defect each have an
 [issue form](https://github.com/jmrplens/mikroscope/issues/new/choose). The

@@ -4,8 +4,10 @@ A RouterOS router that is nobody's production: MikroTik's Cloud Hosted Router
 (CHR) under QEMU, in a Docker container, provisioned once into a clean snapshot
 with the `container` package installed and `device-mode container=yes`
 confirmed, and put back to that snapshot in seconds. Every RouterOS test
-mikroscope runs goes here. It needs Docker and nothing else on the host: QEMU
-and every tool the lab drives it with live in the lab's own image.
+mikroscope runs goes here. The lab itself needs Docker and `flock` on the
+host: QEMU and every tool the lab drives it with live in the lab's own image.
+The CLI and the agent it tests are built with the host's Go (`make build`,
+`make agent-tars`).
 
 ```sh
 make lab-up                 # the first run downloads RouterOS and provisions it
@@ -29,7 +31,8 @@ pull request, whose `VERSION` is ahead of Docker Hub, still names an image that
 exists), and `make` expands it inside `ARGS`.
 
 The two labs are separate containers, `mikroscope-lab-x86` and
-`mikroscope-lab-arm64`, and run side by side. x86_64 runs under KVM and is the
+`mikroscope-lab-arm64`, and run side by side ([both suites at
+once](#both-suites-at-once) says how to test on both from one checkout). x86_64 runs under KVM and is the
 fast one. arm64 is emulated instruction by instruction on an x86 host (QEMU's
 TCG) and boots from its snapshot in 26–28 s against x86_64's 7 s. It is there
 because the RB5009 the project is verified on runs the arm64 agent: the lab
@@ -63,14 +66,20 @@ that CHR does not, which is little, and where its licence stops it.
   465 MiB with the agent sampling at 10 Hz.
 - `flock`, from util-linux, on the host: it keeps two drivers of one lab
   apart ([one driver at a time](#one-driver-at-a-time)).
-- About 815 MB of disk for one architecture, 920 MB for both: the lab image is
-  700 MB, and one version and architecture of RouterOS takes 115 MB (x86_64)
-  or 105 MB (arm64) under `test/lab/.cache/`. For x86_64: 54 MB of downloads,
-  47 MB base disk, 4 MB clean snapshot, then the live layer. For arm64: 66 MB
-  of downloads, 26 MB base disk, 4 MB clean snapshot, then the live layer. The
-  ISO lab adds 71 MB of download, a 53 MB base disk and a 2 MB snapshot.
-- Network access to `download.mikrotik.com` once, and to Docker Hub for
-  whatever the router pulls.
+- About 810 MB of disk for one architecture, 910 MB for both (MB here are
+  10^6 bytes): the lab image is 701 MB, and one version and architecture of
+  RouterOS takes about 110 MB (x86_64) or 100 MB (arm64) under
+  `test/lab/.cache/` before the live layer grows. For x86_64: 56 MB of
+  downloads (45.3 + 10.5), a 47 MB base disk, a 4 MB clean snapshot and the
+  1 MB container package. For arm64: 70 MB of downloads (19.2 + 50.6), a
+  27 MB base disk, a 4 MB clean snapshot and the 1 MB package. The ISO lab
+  adds a 71.5 MB download, a 53 MB base disk and a 2 MB snapshot.
+- Network access: to Docker Hub and Debian's mirrors the first time the lab
+  image is built (`debian:trixie-20260918-slim` and its packages), to
+  `download.mikrotik.com` once per version, and to Docker Hub for whatever
+  the router pulls.
+- Free ports on the host's loopback: 220N, 800N, 870N and 910N, with N = 1 for
+  x86_64, 2 for arm64 and 3 for the ISO lab.
 - For `lab-cli`: `make build`, which the target runs. `lab.sh cli` on its own
   takes `MIKROSCOPE_BIN`, else this checkout's `bin/mikroscope`, else the
   `mikroscope` on `PATH`, and prints which one and its version line to stderr.
@@ -119,9 +128,14 @@ One verb is one lock. A session of many (a test suite that resets, installs
 and checks) takes the lock once for all of them with `lab.sh lock`:
 
 ```sh
-test/lab/lab.sh lock go test -tags labe2e ./test/e2e/lab/
+make build agent-tars
+test/lab/lab.sh lock go test -tags labe2e -count=1 -timeout 75m ./test/e2e/lab/
 LAB_ARCH=arm64 test/lab/lab.sh lock ./my-script.sh
 ```
+
+The suite takes longer than `go test`'s default ten-minute timeout (up to
+10 min on x86_64 and 17 min on arm64 here), which is why the line above, like
+`make test-lab`, sets 75 minutes.
 
 `lock` exports `LAB_LOCK_HELD`, the lock files it holds, and every `lab.sh`
 the command starts finds its own lock there instead of waiting for itself. A
@@ -203,12 +217,17 @@ make test-lab LAB_RUN='S09'                 # one scenario, by a -run pattern
   upgrade) and S4's pull case pull from Docker Hub: three pulls per run, of
   `LAB_REMOTE_IMAGE`.
 - **Secrets.** S8 uses the agent token from `.env`, and puts it on no command
-  line: the CLI gets it as `MIKROSCOPE_TOKEN` through `LAB_CLI_TOKEN=lab`, and
-  `curl` reads its header from stdin. The suite also replaces every value of
-  `.env` with `<lab secret>` in each line it logs.
-- **The CLI's working directory** is `build/lab-e2e/<test>`, inside the
-  repository and so inside one of the two directories `lab.sh cli` mounts, and
-  removed when the test ends. The CLI writes nothing there: `plan --rsc`
+  line of its own (`lab.sh`, `docker`, `mikroscope`): the CLI gets it as
+  `MIKROSCOPE_TOKEN` through `LAB_CLI_TOKEN=lab`, and `curl` reads its header
+  from stdin. The 1.3.1 CLI still hands the RouterOS script, token included,
+  to `ssh` as an argument, so the token shows in the host's process table
+  while that `ssh` runs; that is the CLI's to fix, in a later pull request.
+  The suite also replaces every value of `.env` with `<lab secret>` in each
+  line it logs.
+- **The CLI's working directory** is `build/lab-e2e/<lab>/<test>`, inside
+  the repository and so inside one of the two directories `lab.sh cli`
+  mounts, per lab so that the x86_64 and arm64 suites do not clear each
+  other's, and removed when the test ends. The CLI writes nothing there: `plan --rsc`
   prints the script and the test writes the file.
 - **One export line is left out.** RouterOS 7.24.4 added
   `/system keymat-provider add disabled=yes … name=default …` to `/export` and
@@ -217,12 +236,13 @@ make test-lab LAB_RUN='S09'                 # one scenario, by a -run pattern
   11 s; absent for a whole 80-second boot; present at 17 s and gone at 3 min
   of the same boot. mikroscope never touches `/system keymat-provider`, so the
   suite and `make roundtrip` compare exports without that exact line.
-- **S7 waits before it cuts the power.** RouterOS had not written an install
-  to its disk within seconds: on the arm64 lab (2026-09-26), three of four
-  power cuts made as soon as the agent answered brought back no agent within
-  90 s, and the two looked at had a container that could not start
-  (`Exec format error`, `Segmentation fault`), while a cut 45 s later brought
-  the agent back 29 s after it. On x86_64 the three immediate cuts that day
+- **S7 waits before it cuts the power.** A power cut right after an install
+  lost it: on the arm64 lab (2026-09-26), three of four power cuts made as
+  soon as the agent answered brought back no agent within 90 s, and the two
+  looked at had a container that could not start (`Exec format error`,
+  `Segmentation fault`), while a cut 45 s later brought the agent back 29 s
+  after it. Most likely RouterOS had not yet written the install to its
+  disk; that was not examined. On x86_64 the three immediate cuts that day
   came back. So S7 waits 45 s between the install and the cut: it tests
   start-on-boot, not a power loss right after an install.
 
@@ -235,7 +255,14 @@ without the scenario changing with it:
   arm64).
 - S9: with a client on `/stream`, the first `uninstall` is refused with
   `cannot remove running` (its fixed 4 s wait against the agent's 5 s
-  shutdown), and a second one cleans up.
+  shutdown), and a second one cleans up. RouterOS's words reach the CLI's
+  output only when its ssh session exits 0; when it exits 1, the CLI's skip
+  line keeps only `ssh "<script>": exit status 1`, which happened on both
+  architectures on 2026-09-26 (one of seven first attempts on arm64, then
+  the next x86_64 run's). The suite then reads the race
+  from what it leaves, the same either way: uninstall's own verify naming
+  the container among the steps still present. When a failure matches
+  neither, the test prints the router's container log.
 - Every other uninstall may meet the same race without a client, since the
   wait is fixed; the suite allows one retry for it and says so in the log.
 - The empty `mikroscope` directory an uninstall leaves in `/file` is allowed
@@ -283,11 +310,41 @@ on a host busy with other work, took 9 min 49 s on x86_64 and 16 min 48 s on
 arm64 (`lab.sh lock go test`, the builds done before); S7 took 88.3 s and
 143.5 s, and the agent answered 18.2 s and 30 s after the cut.
 
+With the changes review asked for (the snapshot without credentials, the
+namespace's firewall, the checked lock, the CLI's refusals), the same day,
+both suites side by side again: 8 min 30 s on x86_64 and 13 min 47 s on
+arm64, every test passing. S7's agent answered 18.5 s and 26.9 s after the
+cut; the resets, the key and password included, took 9.9 to 21.3 s and 24.3
+to 43.9 s; the repeated installs took 5.9 to 7.4 s and 9.2 to 12 s, and
+their uninstalls 5.5 to 5.9 s and 6.7 to 6.9 s.
+
 No install failed, and no uninstall without a client on `/stream` met the
-stop/remove race at its first attempt: 19 on x86_64 and 12 on arm64 in these
-two runs, and 19 more on x86_64 while the suite was written. Before the
+stop/remove race at its first attempt: 19 on x86_64 and 12 on arm64 in the
+two earlier runs, 19 and 12 more in the later ones, and 19 more on x86_64
+while the suite was written. Before the
 [blackhole routes](#how-it-is-put-together), 5 of 15 first attempts on x86_64
 had failed; whether the routes are why was not examined.
+
+### Both suites at once
+
+The x86_64 and arm64 labs run side by side, and so can their suites, but not
+as two `make test-lab` in one checkout: each first runs `make build
+agent-tars`, which rewrites `build/agent-images/*.tar` in place, so one suite
+can read a tar the other is halfway through writing. Build once and start
+each suite under its own lab's lock, as `make test-lab` does after its
+build:
+
+```sh
+make build agent-tars
+LAB_ARCH=x86_64 test/lab/lab.sh lock go test -tags labe2e -count=1 -timeout 75m -v ./test/e2e/lab/ &
+LAB_ARCH=arm64 test/lab/lab.sh lock go test -tags labe2e -count=1 -timeout 75m -v ./test/e2e/lab/
+```
+
+The suite finds the pull scenarios' image itself (the last release tag, as
+`make` does).
+
+Or use two checkouts, each with its own `bin/` and `build/`, both pointing
+`LAB_STATE_DIR` at the one that runs the labs.
 
 ## The round trip
 
@@ -304,12 +361,17 @@ make roundtrip LAB_ARCH=arm64
 
 The same script runs against a real router with
 `make roundtrip-device ROUTER=<ssh target> CONFIRM_WRITES=yes`. That writes
-to the router, so it refuses to start unless both are given on the command
-line: `ROUTER` has no default and is not read from the environment. It imports
-nothing into the router (which needs its own tmpfs disk for `--ephemeral`),
-and builds the agent with the host's Go for `ROUTER_ARCH` (arm64 unless
-given). Nothing needs it for a test; it is there for a measurement the owner
-asks for on hardware.
+to the router, so it refuses to start, before it builds anything, unless both
+are on the `make` command line: neither is read from the environment, and
+`ROUTER` has no default and must be one ssh target (not empty, no space or
+quote). Checked on 2026-09-26 with no network and a stand-in `ssh`: each of
+nine incomplete command lines exited 2 in under 0.1 s without building, among
+them `CONFIRM_WRITES=yes` exported in the environment and an empty
+`ROUTER=`. It imports nothing into the router (which needs its own tmpfs
+disk for `--ephemeral`), and builds the agent with the host's Go for
+`ROUTER_ARCH` (arm64 unless given). Nothing needs it for a test; it is there
+for a measurement on real hardware, with the router owner's consent
+(CONTRIBUTING.md, "On a real router").
 
 ## How it is put together
 
@@ -509,7 +571,7 @@ third x86_64 one from the cached downloads.
 
 | Step                                                    | x86_64 (KVM)                     | arm64 (TCG)                           |
 | ------------------------------------------------------- | -------------------------------- | ------------------------------------- |
-| `docker build` of the lab image (both arches)           | 19 s (697 MB); 17 s pinned base (700 MB) | the same image                |
+| `docker build` of the lab image (both arches)           | 19 s (697 MB); 17 s pinned base (700 MB); 18.5 s with nftables (701 MB) | the same image |
 | Download and check both archives                        | 95 s (45.3 + 10.5 MB)            | 152 s (19.2 + 50.6 MB)                |
 | Convert to qcow2, grow to 1 GiB, extract the package    | 3 s                              | 2 s                                   |
 | Provision, end to end                                   | 41, 43 and 45 s                  | 97 and 105 s                          |
@@ -530,6 +592,16 @@ machine with nothing adds the image build and the download to the provision:
 about two and a half minutes for x86_64 and four and a half for arm64 on this
 connection,
 not run as one command.
+
+With the snapshot kept free of credentials (later on 2026-09-26, the same
+machine): provisioning took 43 s on x86_64 and 100 s on arm64, of which the
+first boot to ssh took 20 and 35 s and the key's removal and the shutdown 2
+and 3 s. Every boot of the snapshot then spends 1 to 2 s on x86_64 and 2 s on
+arm64 giving admin the key and password. `lab.sh up` from a snapshot copied
+into a new state directory, with a new `.env` and key, as CI's cache hands
+it over, took 9.5 s on x86_64; the first `up` of the arm64 lab after its
+provisioning took 20.3 s. The opt-in ISO lab provisioned in 35 s from its
+installed disk and came up in 8.1 s.
 
 ## Where it stops being a router
 
@@ -729,9 +801,9 @@ trial behaves in the lab:
   23:19:56 after), which fits a remaining time saved in 10-minute steps; that
   reading is an inference, not something MikroTik states.
 
-So a lab reset at least once a day never reaches the end of the trial; one
-left running for about 23 hours would, and every power cycle in a test costs
-up to 10 minutes of it.
+Past the trial, the page quoted above asks for a Level 1 registration (a
+MikroTik account) or a paid licence. The recipe does nothing about the
+licence: a lab used beyond the trial needs one of them.
 
 **What it covers beyond CHR x86_64**, for mikroscope: the install path of
 RouterOS on a PC (the ISO, its package menu, a SATA disk), a board name that

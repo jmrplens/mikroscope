@@ -2188,7 +2188,7 @@ The port table all of this rests on carries its own limit.
 
 ## How the project tests itself
 
-Three test layers: the bytes each sink sends, whether a real store takes them, whether the dashboards' queries answer; what each proves and what none does.
+Three test layers for the sinks (the bytes each sends, whether a real store takes them, whether the dashboards' queries answer) and a virtual RouterOS lab for the installer; what each proves and what none does.
 
 Source: <https://jmrp.io/docs/mikroscope/reference/testing/>
 
@@ -2210,6 +2210,10 @@ a fake agent that serves canned samples, and layer 1 also drives the real agent
 binary against [`testdata/proc/rb5009/`](https://github.com/jmrplens/mikroscope/tree/main/testdata/proc/rb5009), a captured `/proc` and `/sys` tree of
 the reference device. That is what makes a run reproducible on any machine, and
 what keeps the router out of the loop.
+
+The verbs that write to a router — `install`, `upgrade`, `uninstall` and the
+rest — are tested apart, against a real RouterOS that is nobody's router: the
+[virtual RouterOS lab](https://jmrp.io/docs/mikroscope/reference/testing/#the-virtual-routeros-lab).
 
 ### Layer 1 — the contract
 
@@ -2312,6 +2316,163 @@ nothing.
 > host through the bridge's gateway, and that path goes through the host's
 > INPUT chain, which a default-deny firewall drops. The other seven services
 > are ordinary bridge-network containers.
+
+### The virtual RouterOS lab
+
+`doctor`, `plan`, `install`, `upgrade`, `status` and `uninstall` need a router
+to be tested at all, and the lab is one that belongs to nobody: MikroTik's
+Cloud Hosted Router (CHR) 7.24.4 under QEMU, in a Docker container, provisioned
+once into a clean snapshot (the `container` package installed,
+`device-mode container=yes` confirmed) and put back to that snapshot in
+seconds. No test needs a real router. [`test/lab/README.md`](https://github.com/jmrplens/mikroscope/blob/main/test/lab/README.md) is the
+full account: how it is wired, what each step took, and what CHR taught the
+installer.
+
+| Lab    | Runs as                 | Snapshot to ssh | What it is for                                                                                                 |
+| ------ | ----------------------- | --------------- | -------------------------------------------------------------------------------------------------------------- |
+| x86_64 | CHR under KVM           | 7 s             | every scenario, fast; the one CI runs on pull requests and before a release                                    |
+| arm64  | CHR emulated (QEMU TCG) | 26–28 s         | the RB5009's architecture, kernel version and core (Cortex-A72): the arm64 `container` package and agent image |
+
+The boot times were measured on 2026-09-26 on the development machine
+(x86_64, 12 cores); the arm64 one is the emulation's, not a router's.
+
+The CLI runs inside the lab's LAN. `lab.sh cli` starts it in the lab
+container's network namespace, where 172.30.0.0/16 routes to the lab router,
+so the agent's default address, 172.30.10.2, reaches the lab's agent and
+nothing else. From a developer machine's own shell the same address leaves by
+its default route, toward whatever network that is. Every deploy verb, by hand
+(`make lab-cli`) or in the suite, goes through `lab.sh cli`, which refuses
+`--router` and a `--subnet` outside the lab's routes. The lab's namespace has
+its own firewall: it opens no new connection to a private address outside the
+lab, and takes none from another container.
+
+#### What the lab suite runs
+
+`make test-lab` builds the CLI and the agent image tars, then runs the suite
+in [`test/e2e/lab/`](https://github.com/jmrplens/mikroscope/tree/main/test/e2e/lab) (build tag `labe2e`) against the running lab,
+holding the lab's lock for the whole run. Every scenario starts from a reset
+and the set-up it names, takes the router's `/export` there as its baseline,
+and ends by comparing the two.
+
+| Scenario | What it does                                                                   | What it asserts                                                                                      |
+| -------- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
+| S1       | `doctor` with its defaults on a stock CHR                                      | exactly the checks the code on the branch is known to miss there                                     |
+| S2       | install by pulling the image from Docker Hub, `status`, `upgrade`, `uninstall` | the agent answers `/healthz` and `/capabilities`; the export is back to its baseline                 |
+| S3       | install and upgrade from the branch's own image tar                            | the agent reports the branch build's version, commit and date                                        |
+| S4       | `plan --rsc` for both image routes, run with `/import`                         | `status` recognises the script's objects; `uninstall` leaves the baseline                            |
+| S6       | `--ephemeral` on a tmpfs disk, then a power cut                                | the container is left stopped with its root gone; `uninstall --ephemeral` leaves nothing at all      |
+| S7       | a persistent install, 45 s for it to reach the disk, then a power cut          | the agent answers again within 90 s: start-on-boot works                                             |
+| S8       | `--expose` with a token                                                        | `/capabilities` answers 401 without the token and 200 with it; both firewall rules go with uninstall |
+| S9       | `uninstall` while a client reads `/stream`                                     | the known refusal, then a clean router                                                               |
+| S12      | two installs side by side                                                      | removing one leaves the other running and untouched                                                  |
+| repeat   | 10 tar installs and uninstalls on x86_64, 3 on arm64                           | no install fails                                                                                     |
+
+The scenarios encode what the code on the branch does, its known bugs
+included, so a test fails when one of those bugs goes away without its
+scenario changing with it. Only S2 and one case of S4 pull from Docker Hub,
+three pulls a run; the rest install the branch's own tar, which also tests the
+branch's agent. The suite drops every `MIKROSCOPE_*` variable before it runs
+anything, so a shell set up for a real router cannot steer it.
+
+S7 waits 45 s between the install and the cut. In the arm64 lab, three of
+four cuts made as soon as the agent answered brought back no agent within
+90 s, and the two looked at had a container that could not start
+(`Exec format error`, `Segmentation fault`), most likely because RouterOS had
+not yet written the install to its disk; that was not examined. A power loss that
+close to an install is its own question, and S7 asks only whether
+start-on-boot works.
+
+Measured on 2026-09-26 with CHR 7.24.4 and the 1.3.1 code: the suite took
+7 min 21 s to 9 min 49 s on x86_64 over six runs and 12 min 12 s to
+16 min 48 s on arm64 over three, the slowest of each with both suites running
+side by side on a busy host, and no install failed. `make roundtrip` —
+`doctor`, `install`, `status`, `upgrade` and `uninstall`, every one with
+`--ephemeral`, and the router's `/export` hashed before and after — took 28 to
+34 s on x86_64 over three runs and 40 to 45 s on arm64 over four, and left the
+export byte-identical every time.
+
+#### Running the lab
+
+```sh
+make lab-up                     # the first run downloads RouterOS and provisions it
+make test-lab                   # the suite, x86_64
+make test-lab LAB_RUN='S09'     # one scenario, by a -run pattern
+make lab-cli ARGS='doctor --arch amd64'
+make lab-reset                  # back to the clean snapshot
+make lab-down
+make lab-up LAB_ARCH=arm64      # the emulated one, then the same targets with LAB_ARCH=arm64
+```
+
+It needs Linux, Docker, `flock`, Go for the CLI and agent under test, about
+910 MB of disk for both architectures, and `/dev/kvm` for x86_64: without it
+the default `LAB_KVM=auto` falls back to emulation, many times slower and not
+measured, and `LAB_KVM=require` stops instead. Without a running lab every
+test of the suite skips, and `MIKROSCOPE_LAB_REQUIRED=1` makes that a failure.
+Only one driver at a time: every verb takes a lock per architecture, so two
+checkouts never drive one lab between each other's steps, and `LAB_STATE_DIR`
+points a second checkout at the lab a first one runs. The lab's admin password
+and agent token are generated into `test/lab/.env` on first use, gitignored
+and never printed.
+
+A third lab, RouterOS x86 installed from MikroTik's ISO
+(`make lab-up LAB_KIND=iso`), is an opt-in recipe that CI never runs. It adds
+the PC install path, an `x86` board name and the x86 licence — a 24-hour trial,
+then a Level 1 registration or a paid licence per device — and nothing the
+agent reads that CHR x86_64 does not.
+
+#### The lab in CI
+
+| Lab    | Pull request                            | Release                  | Weekly | On dispatch |
+| ------ | --------------------------------------- | ------------------------ | ------ | ----------- |
+| x86_64 | when it touches what installs the agent | a gate before GoReleaser | yes    | yes         |
+| arm64  | no                                      | no                       | yes    | yes         |
+
+The workflow, [`.github/workflows/lab.yml`](https://github.com/jmrplens/mikroscope/blob/main/.github/workflows/lab.yml), runs the same
+`make lab-up` and `make test-lab`, with `MIKROSCOPE_LAB_REQUIRED=1`. What counts as "what
+installs the agent" is a list of paths in the `changes` job of `ci.yml`:
+`internal/router`, `internal/image`, `internal/agent`, `cmd/mikroscope`,
+`cmd/mikroscope-agent`, `Dockerfile.agent`, the `Makefile`, the agent tar and
+round-trip scripts, the lab and its suite, and `lab.yml` itself. arm64 is not a gate: under emulation it takes an estimated 25 to 35
+minutes, and it depends on MikroTik's download server and on Docker Hub being
+up. On a release the pull scenarios pull the release before it, because the
+new tag's agent image is pushed only after the gates pass.
+
+The Actions cache keeps MikroTik's downloads per architecture and RouterOS
+version, checked against the SHA-256 sums the repository pins in
+the file [`test/lab/SHA256SUMS`](https://github.com/jmrplens/mikroscope/blob/main/test/lab/SHA256SUMS), and the provisioned router. The
+snapshot carries no credential: admin has CHR's empty password and no key
+until the run's `make lab-up` gives it that run's own, so the `.env` and the
+ssh key never leave the runner. A failed or timed-out run uploads the console
+log, the container log, the lab's status, what an install left on the router,
+and the test log, each credential replaced by its name, and never the `.env`
+or the ssh key.
+
+#### Where the lab stops being a router
+
+- **Virtual, not hardware.** No RouterBOARD, no flash, no sensors, no switch
+  chip, no device tree. Measured through the agent's `/capabilities` on
+  2026-09-26: `cpufreq`, `mtd`, `psi`, `schedstat` and `thermal` absent on both
+  labs, and `status` cannot map kernel port names to RouterOS ones. Anything
+  about a board still needs a real one.
+- **The free CHR licence caps what the router sends** at 1 Mbit/s per
+  interface: 2 MiB copied off the lab router over its LAN took 15.6 s. The
+  agent's `/stream` measured 0.21 Mbit/s at 10 Hz there, so by arithmetic
+  50 Hz sits at the cap and 100 Hz above it, and a rate test above 10 Hz in the
+  lab measures the licence rather than the agent.
+- **Emulated arm64 figures are not costs.** Under emulation the guest's clock
+  follows the host's, so every duration, every CPU figure (`cpu-load`,
+  `self.cpu_us`, `read_ns`, `wake_ns`, the `dt_ns` spread, `slipped`), every
+  interrupt, softirq and context-switch rate and every PMU count from the arm64
+  lab measures the host's emulation, not a Cortex-A72.
+
+> **What the lab has not shown**
+>
+> How long the lab jobs take on GitHub's runners, and whether those runners
+> give this repository `/dev/kvm`: the workflow has not run there yet, and the
+> first dispatch is the measurement. MikroTik publishes CHR for x86_64 and
+> arm64 only, so the 32-bit arm agent (armv5, armv7) meets RouterOS on
+> hardware only: `make agent-smoke` starts its image under QEMU user-mode,
+> which is not RouterOS.
 
 ### What the three layers still leave to a human
 

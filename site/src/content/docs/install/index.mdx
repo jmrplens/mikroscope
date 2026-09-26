@@ -20,12 +20,15 @@ and how you get the router back. `install` puts the agent image in a container o
 published 1.2.1 image for arm64 is <Measured id="image.size" />, almost all of it the agent binary); `uninstall` removes it again.
 On <Verified of="export-identical" />, a scripted
 doctor → install → status → upgrade → uninstall round trip
-(`make roundtrip`, which passes `--ephemeral` to doctor, install and upgrade) left
+(the round trip script, then `make roundtrip`, which passed `--ephemeral` to doctor,
+install and upgrade; on a real router it is now `make roundtrip-device`) left
 the router's `/export` byte-identical, its `#` header lines aside. That run
 predates 1.1.0, from which `uninstall` removes only with `--yes`, and <Src path="scripts/roundtrip.sh" />
 now passes `--yes` to its uninstall step (through 1.2.0 it did
-not, so it only listed there and its export check failed); the script in that form has
-not yet been run against the router. Every object
+not, so it only listed there and its export check failed) and `--ephemeral` to every verb; the
+script in that form has not yet been run against the RB5009. `make roundtrip` now runs it in the
+[virtual RouterOS lab](/mikroscope/reference/testing/#the-virtual-routeros-lab), where it left
+the lab router's `/export` byte-identical on CHR 7.24.4, x86_64 and arm64, on 2026-09-26. Every object
 install creates carries the comment `mikroscope:<name> (managed by mikroscope)`,
 except the envlist and the image file, which cannot; the envlist carries the
 tag as its `MIKROSCOPE_TAG` entry. Nothing is written before it is listed;
@@ -272,9 +275,11 @@ That reading predates the agent and was taken on RouterOS 7.24.1; on 7.24.2, on 
 cost showed in `/tool profile` as 17–33 % in one or two snapshots, not a measured window.
 
 <NotClaimed variant="untested">
-	Reboot survival of a persistent install: the reference router is production and is not rebooted
-	for tests. The byte-identical round trip on any device other than the RB5009, on any RouterOS
-	other than 7.24.2 — install, status and uninstall have since run on 7.24.4, but the round trip
+	Reboot survival of a persistent install on a board: the reference router is production and is
+	not rebooted for tests (the virtual lab shows start-on-boot through a power cut on CHR, after a
+	45 s wait). The byte-identical round trip on any real device other than the RB5009, on any
+	RouterOS other than 7.24.2 (the virtual lab's CHR 7.24.4 aside) — install, status and uninstall
+	have since run on 7.24.4, but the round trip
 	itself has not been repeated there — or with install and upgrade run without `--ephemeral` (the
 	scripted run passed it to doctor, install and upgrade, not to status or uninstall). The round
 	trip has not been run against the current container settings: `privileged=yes`,
