@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"time"
 
@@ -208,6 +209,11 @@ func parseWith(verb string, args []string, fs *flag.FlagSet) (cli, error) {
 	if err := c.sshOptions.check(); err != nil {
 		return c, err
 	}
+	// Go takes GOARM 5, 6 and 7 on linux/arm; anything else would fail the
+	// build after the listing, or name an asset that does not exist.
+	if !slices.Contains([]string{"5", "6", "7"}, c.goarm) {
+		return c, fmt.Errorf("goarm must be 5, 6 or 7, got %q", c.goarm)
+	}
 	if err := c.opts.Finish(); err != nil {
 		return c, err
 	}
@@ -335,11 +341,11 @@ func buildImage(c cli) ([]byte, error) {
 		return nil, nil
 	}
 	if c.agentTar != "" {
-		return loadAgentTar(c.agentTar, c.opts.Arch)
+		return loadAgentTar(c.agentTar, c.opts.Arch, c.goarm)
 	}
 	if _, err := exec.LookPath("go"); err != nil {
-		return nil, fmt.Errorf("no Go toolchain on PATH, so the agent cannot be built here. Either pass --agent-tar with the mikroscope-agent-%s.tar from the release, or --remote-image jmrplens/mikroscope-agent:%s to let the router pull it from Docker Hub, or install Go %s and run this from a checkout of the repository",
-			c.opts.Arch, version.Version, goVersionWanted)
+		return nil, fmt.Errorf("no Go toolchain on PATH, so the agent cannot be built here. Either pass --agent-tar with the %s from the release, or --remote-image jmrplens/mikroscope-agent:%s to let the router pull it from Docker Hub, or install Go %s and run this from a checkout of the repository",
+			agentAsset(c.opts.Arch, c.goarm), version.Version, goVersionWanted)
 	}
 	fmt.Fprintf(os.Stderr, "building %s for linux/%s\n", image.BinaryName, c.opts.Arch)
 	binary, err := image.BuildAgent(c.opts.Arch, c.goarm, image.Stamp{Version: version.Version, Commit: version.Commit, BuildDate: version.BuildDate})
@@ -354,9 +360,24 @@ func buildImage(c cli) ([]byte, error) {
 // binary does not carry.
 const goVersionWanted = "1.27"
 
+// agentAsset is the name of the release's image tar for a GOARCH and, for
+// arm, a GOARM level: the release publishes mikroscope-agent-armv5.tar and
+// -armv7.tar and no mikroscope-agent-arm.tar, so a fix text that named the
+// GOARCH alone sent the reader after an asset that does not exist. GOARM 6
+// has no asset of its own; the v5 one runs on every 32-bit ARM MikroTik ships.
+func agentAsset(arch, goarm string) string {
+	if arch != "arm" {
+		return image.BinaryName + "-" + arch + ".tar"
+	}
+	if goarm == "7" {
+		return image.BinaryName + "-armv7.tar"
+	}
+	return image.BinaryName + "-armv5.tar"
+}
+
 // loadAgentTar reads an image tar and refuses one that is not this agent, or
 // not for this architecture.
-func loadAgentTar(path, arch string) ([]byte, error) {
+func loadAgentTar(path, arch, goarm string) ([]byte, error) {
 	data, err := os.ReadFile(path) // #nosec G304 -- the operator's own --agent-tar path
 	if err != nil {
 		return nil, fmt.Errorf("--agent-tar: %w", err)
@@ -366,7 +387,7 @@ func loadAgentTar(path, arch string) ([]byte, error) {
 		return nil, fmt.Errorf("--agent-tar %s: %w", path, err)
 	}
 	if info.Arch != arch {
-		return nil, fmt.Errorf("--agent-tar %s is a linux/%s image and --arch says %s: download the mikroscope-agent-%s.tar asset instead", path, info.Arch, arch, arch)
+		return nil, fmt.Errorf("--agent-tar %s is a linux/%s image and --arch says %s: download the %s asset instead", path, info.Arch, arch, agentAsset(arch, goarm))
 	}
 	fmt.Fprintf(os.Stderr, "using %s: linux/%s%s, agent %d KiB\n", path, info.Arch, info.Variant, info.Size/1024)
 	if note := image.VariantNote(info); note != "" {

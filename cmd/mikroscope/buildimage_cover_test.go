@@ -93,9 +93,16 @@ func TestBuildImageNamesBothRoutesWithNoToolchain(t *testing.T) {
 	if err == nil {
 		t.Fatal("buildImage found a toolchain on an empty PATH")
 	}
-	for _, want := range []string{"--agent-tar", "--remote-image"} {
+	for _, want := range []string{"--agent-tar", "--remote-image", "mikroscope-agent-arm64.tar"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error = %q, missing %q", err, want)
+		}
+	}
+	// For arm the asset is the v5 or v7 tar, by --goarm.
+	for goarm, want := range map[string]string{"5": "mikroscope-agent-armv5.tar", "7": "mikroscope-agent-armv7.tar"} {
+		c.opts.Arch, c.goarm = "arm", goarm
+		if _, err = buildImage(c); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("--arch arm --goarm %s: %v, want %s named", goarm, err, want)
 		}
 	}
 }

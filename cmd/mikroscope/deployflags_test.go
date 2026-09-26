@@ -57,6 +57,8 @@ func TestParseTakesTheInstallShapeFlags(t *testing.T) {
 		{"--extract-timeout", "1h"},
 		{"--restart-max-count", "101"},
 		{"--restart-interval", "soon"},
+		{"--goarm", "8"},
+		{"--goarm", ""},
 	} {
 		if _, parseErr := parse("plan", args); parseErr == nil {
 			t.Errorf("%q parsed", args)
