@@ -124,59 +124,18 @@ func loadGoldenCases(t *testing.T) []goldenCase {
 }
 
 // caseOptions resolves a case's arguments the way `mikroscope plan` does:
-// Defaults, then the flags, then Finish. The flags are the CLI's deployment
-// flags under the CLI's names and defaults (parseWith in cmd/mikroscope),
-// with no MIKROSCOPE_* environment. TestGoldenCasesThroughTheCLI renders
-// every case from the CLI's own parse against the same goldens, so this copy
-// cannot drift from it unnoticed: a flag added there and not here fails
-// here as "flag provided but not defined".
+// Defaults, then the flags (ParseCaseArgs, the CLI's deployment flags under
+// the CLI's names and defaults, with no MIKROSCOPE_* environment), then
+// Finish. TestGoldenCasesThroughTheCLI renders every case from the CLI's own
+// parse against the same goldens, so ParseCaseArgs cannot drift from it
+// unnoticed.
 func caseOptions(args []string) (Options, error) {
-	o := Defaults()
-	fs := flag.NewFlagSet("golden", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	fs.StringVar(&o.Name, "name", o.Name, "")
-	fs.StringVar(&o.Veth, "veth", o.Veth, "")
-	fs.StringVar(&o.Subnet, "subnet", o.Subnet, "")
-	fs.StringVar(&o.IfaceList, "iface-list", o.IfaceList, "")
-	fs.StringVar(&o.AddrList, "addr-list", o.AddrList, "")
-	fs.StringVar(&o.Disk, "disk", o.Disk, "")
-	fs.BoolVar(&o.Ephemeral, "ephemeral", o.Ephemeral, "")
-	fs.StringVar(&o.Arch, "arch", ArchAuto, "")
-	fs.StringVar(&o.RemoteImage, "remote-image", o.RemoteImage, "")
-	fs.IntVar(&o.Port, "port", o.Port, "")
-	fs.IntVar(&o.RateHz, "rate", o.RateHz, "")
-	fs.IntVar(&o.BufferS, "buffer", o.BufferS, "")
-	fs.StringVar(&o.Token, "token", o.Token, "")
-	fs.BoolVar(&o.Expose, "expose", o.Expose, "")
-	fs.StringVar(&o.MemoryMax, "memory-max", o.MemoryMax, "")
-	fs.IntVar(&o.MemLimitMB, "mem-limit-mb", o.MemLimitMB, "")
-	fs.IntVar(&o.CaptureMB, "capture-mb", o.CaptureMB, "")
-	fs.StringVar(&o.Triggers, "triggers", o.Triggers, "")
-	fs.IntVar(&o.FloorHz, "floor-hz", o.FloorHz, "")
-	fs.BoolVar(&o.Privileged, "privileged", o.Privileged, "")
-	fs.StringVar(&o.LANAddress, "lan-address", o.LANAddress, "")
-	fs.IntVar(&o.RestartMaxCount, "restart-max-count", o.RestartMaxCount, "")
-	fs.StringVar(&o.RestartInterval, "restart-interval", o.RestartInterval, "")
-	fs.StringVar(&o.StartOnBootMode, "start-on-boot", o.StartOnBootMode, "")
-	fs.StringVar(&o.ContainerName, "container-name", o.ContainerName, "")
-	fs.StringVar(&o.ExtractTimeout, "extract-timeout", o.ExtractTimeout, "")
-	// Which tar a tar install uploads, a build or a release asset at some
-	// ARM level, is the CLI's business: no command the router receives
-	// changes with it. Nor does how ssh reaches the router, but an
-	// --ssh-option the CLI would refuse is refused here too.
-	fs.String("agent-tar", "", "")
-	fs.String("goarm", "5", "")
-	fs.Func("ssh-option", "", func(kv string) error {
-		_, err := ParseSSHOption(kv)
-		return err
-	})
-	if err := fs.Parse(args); err != nil {
-		return o, err
+	g, err := ParseCaseArgs(args)
+	if err != nil {
+		return Options{}, err
 	}
-	if fs.NArg() > 0 {
-		return o, fmt.Errorf("arguments after the flags: %q", fs.Args())
-	}
-	if err := o.Finish(); err != nil {
+	o := g.Options()
+	if err = o.Finish(); err != nil {
 		return o, err
 	}
 	if o.Token != "" && o.Token != goldenToken {
