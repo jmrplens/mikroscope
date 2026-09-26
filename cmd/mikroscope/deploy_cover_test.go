@@ -20,15 +20,17 @@ import (
 // exec is real, the plan is real, the batching is real, and only the far end
 // is not.
 //
-// Every read-only query prints exactly one line and they are sent one per
-// line in a single connect, so the stub answers one line per line it is
-// given — which is also, incidentally, an assertion that the batching holds:
-// a batch that sent its queries any other way would get the wrong number of
-// answers back and the verb would fail.
+// Every read-only query prints one keyed line, `@@<key>=<value>`, and they
+// are sent one per line in a single connect, so the stub answers each line it
+// is given under that line's key — which is also, incidentally, an assertion
+// that the batching holds: a batch that sent its queries any other way would
+// get answers under the wrong keys, or none, and the verb would fail.
 func stubRouter(t *testing.T, answer string) {
 	t.Helper()
 	dir := t.TempDir()
-	script := "#!/bin/sh\nfor last; do :; done\nprintf '%s\\n' \"$last\" | while IFS= read -r line; do echo '" + answer + "'; done\n"
+	script := "#!/bin/sh\nfor last; do :; done\nprintf '%s\\n' \"$last\" | while IFS= read -r line; do " +
+		"k=$(printf '%s' \"$line\" | sed -n 's/.*(\"@@\\([^\"=]*\\)=\" \\. .*/\\1/p'); " +
+		"if [ -n \"$k\" ]; then echo \"@@$k=" + answer + "\"; else echo '" + answer + "'; fi; done\n"
 	if err := os.WriteFile(filepath.Join(dir, "ssh"), []byte(script), 0o700); err != nil { // #nosec G306 -- it has to be executable
 		t.Fatal(err)
 	}

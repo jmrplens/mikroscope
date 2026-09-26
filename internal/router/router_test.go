@@ -42,11 +42,14 @@ func (f *fakeRunner) Run(command string) (string, error) {
 		}
 		return out.String(), nil
 	}
+	if command == endLine { // the line every batch ends with
+		return keyPrefix + batchEnd + "=1\n", nil
+	}
 	if strings.Contains(command, "to=base64") {
 		if f.manifest == "" {
-			return "-\n", nil
+			return answerLine(command, "-") + "\n", nil
 		}
-		return "m:" + base64.StdEncoding.EncodeToString([]byte(f.manifest)) + "\n", nil
+		return answerLine(command, "m:"+base64.StdEncoding.EncodeToString([]byte(f.manifest))) + "\n", nil
 	}
 	if !strings.Contains(command, ":put") || strings.Contains(command, sweepPrefix) { // a write: nothing printed on success
 		f.ran = append(f.ran, command)
@@ -56,12 +59,31 @@ func (f *fakeRunner) Run(command string) (string, error) {
 	if f.owned != nil && strings.Contains(command, "(managed by mikroscope)") {
 		table = f.owned
 	}
+	plain := unkeyed(command)
 	for frag, ok := range table {
-		if ok && strings.Contains(command, frag) {
-			return "1\n", nil
+		if ok && strings.Contains(plain, frag) {
+			return answerLine(command, "1") + "\n", nil
 		}
 	}
-	return "0\n", nil
+	return answerLine(command, "0") + "\n", nil
+}
+
+// unkeyed undoes keyed: every `("@@<key>=" . <expr>)` becomes <expr>, so a
+// test can name a query by the text the plan wrote.
+func unkeyed(q string) string {
+	for {
+		i := strings.Index(q, `("`+keyPrefix)
+		if i < 0 {
+			return q
+		}
+		end := exprEnd(q, i)
+		inner := q[i:end]
+		j := strings.Index(inner, `" . `)
+		if j < 0 || !strings.HasSuffix(inner, ")") {
+			return q
+		}
+		q = q[:i] + inner[j+len(`" . `):len(inner)-1] + q[end:]
+	}
 }
 
 func (f *fakeRunner) Upload(_ []byte, remoteName string) error {
@@ -618,7 +640,7 @@ type countingRunner struct {
 }
 
 func (c *countingRunner) Run(command string) (string, error) {
-	if strings.Contains(command, ":put") {
+	if strings.Contains(command, ":put") && !strings.Contains(command, sweepPrefix) {
 		c.reads++
 	} else {
 		c.writes++

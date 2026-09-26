@@ -267,22 +267,24 @@ const sweepPrefix = "@@swept="
 // mikroscope listed, what a 1.3.x install left that the flags given to
 // uninstall do not describe. The tag is exact, never a pattern, and it is
 // this install's alone, so nothing another install or the operator made is
-// selected.
+// selected. Like a keyed batch it ends with a line that cannot fail, so a
+// menu that failed (one this RouterOS does not have) costs its own line and
+// not the ones after it.
 func sweep(r Runner, o Options, extraMenus []string, w io.Writer) {
 	v := values(&o, "")
 	menus := append(slices.Clone(sweepMenus), extraMenus...)
-	cmds := make([]string, 0, len(menus))
+	cmds := make([]string, 0, len(menus)+1)
 	for _, m := range menus {
 		cmds = append(cmds, sweepFor(sweepRemove, m, v))
 	}
-	out, err := r.Run(strings.Join(cmds, "\n"))
-	if err != nil {
+	out, err := r.Run(strings.Join(append(cmds, endLine), "\n"))
+	if err != nil && !strings.Contains(out, keyPrefix+batchEnd+"=") {
 		fmt.Fprintf(w, "  skip  tag sweep (%s)\n", firstLine(err))
 		return
 	}
 	for line := range strings.SplitSeq(strings.ReplaceAll(out, "\r", ""), "\n") {
 		line = strings.TrimSpace(line)
-		if line == "" {
+		if line == "" || strings.HasPrefix(line, keyPrefix+batchEnd+"=") {
 			continue
 		}
 		rest, ok := strings.CutPrefix(line, sweepPrefix)

@@ -18,7 +18,15 @@ type scriptedRunner struct {
 
 func (s *scriptedRunner) Run(command string) (string, error) {
 	s.ran = append(s.ran, command)
-	return strings.Join(s.lines, "\n") + "\n", nil
+	qs := strings.Split(command, "\n")
+	out := make([]string, len(s.lines))
+	for i, l := range s.lines {
+		out[i] = l
+		if i < len(qs) {
+			out[i] = answerLine(qs[i], l)
+		}
+	}
+	return strings.Join(out, "\n") + "\n", nil
 }
 
 func (s *scriptedRunner) Upload([]byte, string) error { return nil }
@@ -163,7 +171,7 @@ func (a *answeringRunner) Run(command string) (string, error) {
 				break
 			}
 		}
-		out = append(out, ans)
+		out = append(out, answerLine(q, ans))
 	}
 	return strings.Join(out, "\n") + "\n", nil
 }

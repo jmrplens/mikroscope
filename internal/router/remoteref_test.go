@@ -194,13 +194,13 @@ func (u *upgradeRouter) Run(command string) (string, error) {
 	for _, q := range lines {
 		switch {
 		case strings.Contains(q, "get registry-url"):
-			out = append(out, u.registryURL)
+			out = append(out, answerLine(q, u.registryURL))
 		case strings.Contains(q, "get username"):
-			out = append(out, u.userSet)
+			out = append(out, answerLine(q, u.userSet))
 		case u.absent:
-			out = append(out, "0")
+			out = append(out, answerLine(q, "0"))
 		default:
-			out = append(out, "1")
+			out = append(out, answerLine(q, "1"))
 		}
 	}
 	return strings.Join(out, "\n") + "\n", nil
