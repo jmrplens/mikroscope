@@ -19,7 +19,7 @@ SHELL := /bin/bash
 	fmt fmt-check vet tidy lint golangci-lint govulncheck actionlint shellcheck analyze analyze-fix sonar \
 	mdlint mdlint-fix check-doc-links \
 	gen-dashboards check-dashboards gen-brand check-brand check-generated \
-	install-tools tools-versions release-check roundtrip \
+	install-tools tools-versions release-check roundtrip roundtrip-device \
 	lab-up lab-down lab-reset lab-status lab-ssh lab-cli lab-console lab-provision \
 	lab-profile lab-export lab-residue lab-power-cycle test-lab e2e-lab-build
 
@@ -590,6 +590,9 @@ lab-console: ## Attach to the lab router's serial console
 lab-provision: ## Rebuild the lab's clean snapshot from MikroTik's image (FORCE=1 redoes an existing one)
 	@$(LAB) provision
 
+# The Go architecture of LAB_ARCH: --arch, and the agent tar a lab test installs.
+LAB_GOARCH = $(if $(filter arm64,$(LAB_ARCH)),arm64,amd64)
+
 # The end-to-end suite against the lab router (test/e2e/lab, build tag labe2e),
 # holding the lab's lock for the whole run so no other checkout or agent
 # drives the lab between two of its steps. It needs a running lab (make
@@ -601,12 +604,35 @@ test-lab: build agent-tars ## Run the end-to-end suite against the lab router (m
 	LAB_REMOTE_IMAGE='$(LAB_REMOTE_IMAGE)' MIKROSCOPE_LAB_REQUIRED='$(MIKROSCOPE_LAB_REQUIRED)' \
 	  $(LAB) lock go test -tags labe2e -count=1 -timeout 75m -v $(if $(LAB_RUN),-run '$(LAB_RUN)') ./test/e2e/lab/
 
+# doctor → install → status → upgrade → uninstall, every verb with
+# --ephemeral, in the lab: scripts/roundtrip.sh with the lab's defaults, the
+# tmpfs disk and the lists imported first, the branch's agent tar, and the
+# lab's lock held throughout. It ends by comparing /export with the one taken
+# before, and nothing it does reaches any router but the lab's.
+roundtrip: build agent-tars ## The deployment round trip in the lab (LAB_ARCH): install → status → upgrade → uninstall, then diff /export
+	FLAGS='--arch $(LAB_GOARCH) --agent-tar build/agent-images/mikroscope-agent-$(LAB_GOARCH).tar' \
+	  $(LAB) lock ./scripts/roundtrip.sh
+
 ##@ Reference device
 
-# A full install → status → upgrade → uninstall against a real router, which
-# ends by comparing the device's /export with the one taken before it started.
-# It WRITES to the device it is pointed at, so it is not part of any other
-# target: MIKROSCOPE_ROUTER decides what it touches, and the script asks before
-# it writes.
-roundtrip: build ## Install → status → upgrade → uninstall on $MIKROSCOPE_ROUTER, then diff /export (writes to the device)
-	./scripts/roundtrip.sh
+# The round trip of `make roundtrip` against a real router, over ssh from this
+# host: it WRITES to the device and removes what it wrote. Nothing names that
+# device but the make command line: ROUTER=<ssh target> has no default, and
+# neither it nor CONFIRM_WRITES=yes, which says the writes are meant, is read
+# from the environment. Both are checked before anything is built, and an
+# empty ROUTER, or one with a space or a quote in it, is refused too. The
+# device needs the tmpfs disk --ephemeral installs into; nothing is imported
+# into it. The CLI builds the agent itself (Go on this host), for ROUTER_ARCH
+# (default arm64); FLAGS adds flags to every verb.
+ROUTER_ARCH ?= arm64
+
+roundtrip-device: ## WRITES TO A REAL ROUTER: the round trip on ROUTER=<ssh target>, only with CONFIRM_WRITES=yes, both on the command line
+	@if [ "$(origin ROUTER)" != "command line" ]; then \
+	  echo "make roundtrip-device: name the router on the command line, ROUTER=<ssh target>; there is no default and the environment is not read"; exit 2; fi
+	@case '$(subst ','"'"',$(ROUTER))' in ''|*[[:space:]\'\"]*) \
+	  echo "make roundtrip-device: ROUTER must be one ssh target (user@host or an ssh config alias), not empty and without spaces or quotes"; exit 2;; esac
+	@if [ "$(origin CONFIRM_WRITES)" != "command line" ] || [ "$(CONFIRM_WRITES)" != yes ]; then \
+	  echo "make roundtrip-device: this installs on $(ROUTER), upgrades, and uninstalls again; add CONFIRM_WRITES=yes to the command line to go ahead (the environment is not read)"; exit 2; fi
+	@$(MAKE) --no-print-directory build
+	MIKROSCOPE_ROUTER='$(ROUTER)' CLI=bin/mikroscope ROS="ssh $(ROUTER)" SETUP= \
+	  FLAGS='--arch $(ROUTER_ARCH) $(FLAGS)' ./scripts/roundtrip.sh

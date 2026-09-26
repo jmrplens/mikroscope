@@ -27,10 +27,13 @@ is not.
       what this release changed, and the sentence naming the release its
       claims were last checked at says this one. `<Version />` beside it
       updates on its own; that sentence does not.
-- [ ] The install round trip was run on a device with this commit, with the
-      owner's consent for that run: `make roundtrip` leaves the router's export
-      byte-identical. The agent on a new architecture (arm on the hEX S) says
-      so in the changelog if it has not been run on that board.
+- [ ] The install round trip passed with this commit in the virtual lab, on
+      both architectures: `make roundtrip` and `make roundtrip LAB_ARCH=arm64`
+      leave the lab router's export byte-identical. On a real device it is
+      `make roundtrip-device ROUTER=… CONFIRM_WRITES=yes`, run only when the
+      owner asks for it, with their consent for that run. The agent on a new
+      architecture (arm on the hEX S) says so in the changelog if it has not
+      been run on that board.
 
 ## The tag
 

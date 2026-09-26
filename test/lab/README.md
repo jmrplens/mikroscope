@@ -15,6 +15,7 @@ make lab-profile PROFILE=doctor-lists
 make lab-ssh CMD='/container/print'
 make lab-reset              # back to the clean snapshot
 make test-lab               # the end-to-end suite against it
+make roundtrip              # install → status → upgrade → uninstall, /export compared
 make lab-down
 ```
 
@@ -213,15 +214,15 @@ make test-lab LAB_RUN='S09'                 # one scenario, by a -run pattern
   (2026-09-26, both arches): absent at 5 s of uptime and present at 6 s or
   11 s; absent for a whole 80-second boot; present at 17 s and gone at 3 min
   of the same boot. mikroscope never touches `/system keymat-provider`, so the
-  suite compares exports without that exact line.
+  suite and `make roundtrip` compare exports without that exact line.
 - **S7 waits before it cuts the power.** RouterOS had not written an install
   to its disk within seconds: on the arm64 lab (2026-09-26), three of four
   power cuts made as soon as the agent answered brought back no agent within
   90 s, and the two looked at had a container that could not start
   (`Exec format error`, `Segmentation fault`), while a cut 45 s later brought
   the agent back 29 s after it. On x86_64 the three immediate cuts that day
-  came back. So S7 waits 45 s between the install and
-  the cut: it tests start-on-boot, not a power loss right after an install.
+  came back. So S7 waits 45 s between the install and the cut: it tests
+  start-on-boot, not a power loss right after an install.
 
 **What 1.3.1 does, asserted as known.** The suite encodes the behaviour of
 the code on the branch, bugs included, and fails when one of them changes
@@ -285,6 +286,28 @@ stop/remove race at its first attempt: 19 on x86_64 and 12 on arm64 in these
 two runs, and 19 more on x86_64 while the suite was written. Before the
 [blackhole routes](#how-it-is-put-together), 5 of 15 first attempts on x86_64
 had failed; whether the routes are why was not examined.
+
+## The round trip
+
+`make roundtrip` is `scripts/roundtrip.sh` in the lab: the tmpfs disk and the
+lists imported, then `doctor`, `install`, `status`, `upgrade` and `uninstall`,
+every one with `--ephemeral` and the branch's tar, and the router's `/export`
+hashed before and after, in memory. It holds the lab's lock throughout, and
+ends with `round trip ok: export byte-identical` or fails.
+
+```sh
+make roundtrip                              # x86_64
+make roundtrip LAB_ARCH=arm64
+```
+
+The same script runs against a real router with
+`make roundtrip-device ROUTER=<ssh target> CONFIRM_WRITES=yes`. That writes
+to the router, so it refuses to start unless both are given on the command
+line: `ROUTER` has no default and is not read from the environment. It imports
+nothing into the router (which needs its own tmpfs disk for `--ephemeral`),
+and builds the agent with the host's Go for `ROUTER_ARCH` (arm64 unless
+given). Nothing needs it for a test; it is there for a measurement the owner
+asks for on hardware.
 
 ## How it is put together
 
