@@ -19,6 +19,7 @@
 #   LAB_ARCH   x86_64 (default; KVM) or arm64 (UEFI, TCG on an x86 host)
 #   LAB_ROS    RouterOS version, default 7.24.4
 #   LAB_MEM, LAB_CPUS, LAB_DISK_SIZE   the VM: 1024 MiB, 2 vCPU, 1G disk
+#   LAB_CPU    arm64's emulated CPU model, default cortex-a72 (the RB5009's)
 #   LAB_AGENT_ROUTES, LAB_AGENT_TARGET   see below; 172.30.0.0/16, 172.30.10.2:9123
 #   MIKROSCOPE_BIN   the CLI `lab.sh cli` runs, default the one on PATH
 set -euo pipefail
@@ -200,7 +201,7 @@ start() {
 		--label org.opencontainers.image.source=https://github.com/jmrplens/mikroscope \
 		--label mikroscope.lab.arch="$LAB_ARCH" --label mikroscope.lab.ros="$LAB_ROS" \
 		--cap-add NET_ADMIN --device /dev/net/tun "${kvm[@]}" \
-		-e LAB_ARCH="$LAB_ARCH" -e LAB_MEM="$LAB_MEM" -e LAB_CPUS="$LAB_CPUS" \
+		-e LAB_ARCH="$LAB_ARCH" -e LAB_MEM="$LAB_MEM" -e LAB_CPUS="$LAB_CPUS" -e LAB_CPU="${LAB_CPU:-}" \
 		-e LAB_AGENT_ROUTES="$LAB_AGENT_ROUTES" -e LAB_AGENT_TARGET="$LAB_AGENT_TARGET" \
 		-e LAB_DISK="/cache/vm/$LAB_ARCH-$LAB_ROS/$disk" \
 		-e LAB_CONSOLE_LOG="/cache/vm/$LAB_ARCH-$LAB_ROS/console.log" \

@@ -83,16 +83,31 @@ x86_64)
 		-drive "file=$LAB_DISK,if=virtio,format=qcow2,cache=writeback")
 	;;
 arm64)
-	# CHR arm64 boots through UEFI only. On an x86 host there is no KVM for
-	# it, so this is TCG: correct, and slow.
-	accel=(-machine virt -cpu max)
+	# CHR arm64 boots through UEFI only (its image is GPT with an EFI system
+	# partition). On an x86 host there is no KVM for it, so this is TCG:
+	# multi-threaded, one host thread per vCPU, correct and slow.
+	#
+	# The CPU model is Cortex-A72, the core of the RB5009 the project is
+	# verified on. Measured on 2026-09-26, QEMU 10.0.13, CHR 7.24.4, first
+	# boot of a fresh disk to ssh: cortex-a72 41.7 s and 28.2 s, neoverse-n1
+	# 33.1 s, and `-cpu max` never got past the EFI stub's "Exiting boot
+	# services": no kernel line on the console in 10 min, QEMU idle at 0 %
+	# CPU. LAB_CPU overrides it.
+	#
+	# The machine is `virt` with ACPI (the default with UEFI firmware): the
+	# EFI stub says "Generating empty DTB", so the guest has no device tree —
+	# the agent's board model is empty, as on x86_64. bootindex=0 puts the
+	# disk first in UEFI's boot order, although it sits on PCI after the two
+	# NICs (every boot logged Boot0001 from Pci(0x3,0x0), the disk; not run
+	# without it).
+	accel=(-machine virt -cpu "${LAB_CPU:-cortex-a72}")
 	if [ "$(uname -m)" = aarch64 ] && [ -w /dev/kvm ]; then
 		accel=(-machine virt,accel=kvm -cpu host)
 	fi
 	qemu=(qemu-system-aarch64 "${accel[@]}" "${common[@]}"
 		-bios /usr/share/qemu-efi-aarch64/QEMU_EFI.fd
 		-drive "file=$LAB_DISK,if=none,id=hd0,format=qcow2,cache=writeback"
-		-device virtio-blk-pci,drive=hd0)
+		-device virtio-blk-pci,drive=hd0,bootindex=0)
 	;;
 *)
 	log "LAB_ARCH must be x86_64 or arm64, got $LAB_ARCH"
