@@ -509,7 +509,7 @@ func probe(c cli, r router.Runner) error {
 		return nil
 	}
 	fmt.Printf("  direct transport failed: %v\n", err)
-	running, runErr := r.Run(`:put [:len [/container/find comment="` + c.opts.Tag() + `" status="running"]]`)
+	running, runErr := r.Run(runningQuery(c.opts))
 	switch {
 	case runErr != nil:
 		fmt.Printf("  could not ask the router whether the container runs: %v\n", runErr)
@@ -519,6 +519,17 @@ func probe(c cli, r router.Runner) error {
 		fmt.Printf("  the container runs; this host cannot reach %s. Options: run the collector on a host the router routes to the veth from, or `install --expose --lan-address <router LAN IP> --token …`\n", c.opts.ContainerIP)
 	}
 	return errors.New("agent installed but not reachable from this host")
+}
+
+// runningQuery counts this install's containers that run. `running` is a
+// flag of /container, read as a selector: a container has no `status`
+// property to compare, and the `status="running"` this used to send matched
+// nothing, so a running container read as not running. The flag selector was
+// measured in the virtual lab (CHR x86_64, RouterOS 7.24.4, 2026-09-26): 1
+// for a started container, 0 once it was stopped, and `stopped` the other
+// way round.
+func runningQuery(o router.Options) string {
+	return `:put [:len [/container/find comment="` + o.Tag() + `" running]]`
 }
 
 func status(c cli) error {
