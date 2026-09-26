@@ -2,6 +2,7 @@ package router
 
 import (
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -27,18 +28,21 @@ type fragment struct {
 }
 
 // stepSpec is one install step as data. The command fields concatenate their
-// fragments into one RouterOS line. Menu is the RouterOS menu of the tagged
-// object the step creates.
+// fragments into one RouterOS line; Manifest holds one manifest line per
+// fragment. Menu is the RouterOS menu of the tagged object the step creates,
+// which is what the tag sweep compares its counts with; the manifest step
+// creates a file and has none.
 type stepSpec struct {
-	ID      string     `json:"id"`
-	When    string     `json:"when,omitempty"`
-	Menu    string     `json:"menu,omitempty"`
-	Name    []fragment `json:"name"`
-	Check   []fragment `json:"check"`
-	Create  []fragment `json:"create"`
-	Owned   []fragment `json:"owned"`
-	Remove  []fragment `json:"remove"`
-	Present []fragment `json:"present,omitempty"`
+	ID       string     `json:"id"`
+	When     string     `json:"when,omitempty"`
+	Menu     string     `json:"menu,omitempty"`
+	Name     []fragment `json:"name"`
+	Check    []fragment `json:"check"`
+	Create   []fragment `json:"create"`
+	Owned    []fragment `json:"owned"`
+	Remove   []fragment `json:"remove"`
+	Present  []fragment `json:"present,omitempty"`
+	Manifest []fragment `json:"manifest"`
 }
 
 // t is a fragment that is always kept; w one kept when the predicate holds.
@@ -64,10 +68,22 @@ var predicates = map[string]func(o *Options) bool{
 	"disk":          func(o *Options) bool { return o.Disk != "" },
 }
 
+// manifestDir is the directory the install's manifest and its container root
+// share: `mikroscope` on the chosen disk, the parent of RootDir.
+func manifestDir(o *Options) string { return o.onDisk("mikroscope") }
+
+// ManifestFile is where the install manifest lives on the router, beside the
+// container root. It is derived from --name and --disk, which uninstall takes
+// too, so finding it needs nothing the operator does not already pass.
+func ManifestFile(o Options) string { return o.onDisk("mikroscope/" + o.Name + ".manifest.txt") }
+
+// manifestFormat is the manifest's first line. A reader refuses any other.
+const manifestFormat = "mikroscope-manifest=1"
+
 // derivedTemplates are the derived values that are a plain template of other
 // values, exported so that the site computes them from the same text. The
 // rest (the /30 ends, the memory limit, the registry reference, start-on-boot,
-// the extraction timeout in seconds) take arithmetic or parsing
+// the extraction timeout in seconds, the manifest) take arithmetic or parsing
 // and are described in SpecJSON's derive section.
 var derivedTemplates = []struct {
 	Key  string     `json:"key"`
@@ -77,35 +93,166 @@ var derivedTemplates = []struct {
 	{"envList", ts("{{name}}-env")},
 	{"imageFile", []fragment{w("disk", "{{disk}}/"), t("{{name}}.tar")}},
 	{"rootDir", []fragment{w("disk", "{{disk}}/"), t("mikroscope/{{name}}")}},
+	{"manifestDir", []fragment{w("disk", "{{disk}}/"), t("mikroscope")}},
+	{"manifestFile", []fragment{w("disk", "{{disk}}/"), t("mikroscope/{{name}}.manifest.txt")}},
 }
 
 // markerFind selects the envlist's marker entry: the one entry that says the
 // envlist, and the image beside it, are this install's (MarkerName).
 const markerFind = `[/container/envs/find list="{{envList}}" key="` + MarkerName + `" value="{{tag}}"]`
 
-// stepSpecs is the plan: every object in creation order.
+// manifestIsOurs is the RouterOS condition that the file at manifestFile is
+// this install's manifest: it holds this install's tag line. A file has no
+// comment, so its content is what carries the ownership.
+const manifestIsOurs = `[:typeof [:find [/file/get [find name="{{manifestFile}}"] contents] "\ntag={{tag}}\n"]] = "num"`
+
+// manifestHeader is the start of the manifest: the format, the install's
+// identity, and its shape — the options every object below was created from,
+// under the CLI's flag names, so that uninstall, status and upgrade can
+// rebuild the plan from the router instead of from flags. Nothing secret
+// goes in it: a `read` user can read files. token= says only whether one is
+// set.
+var manifestHeader = []fragment{
+	t(manifestFormat),
+	t("name={{name}}"),
+	t("tag={{tag}}"),
+	t("disk={{disk}}"),
+	t("veth={{veth}}"),
+	t("subnet={{subnet}}"),
+	t("port={{port}}"),
+	t("iface-list={{ifaceList}}"),
+	t("addr-list={{addrList}}"),
+	w("expose", "expose={{lanAddress}}"),
+	w("!expose", "expose="),
+	t("container-name={{containerName}}"),
+	w("remote", "remote-image={{remoteRef}}"),
+	w("tar", "remote-image="),
+	w("token", "token=yes"),
+	w("!token", "token=no"),
+}
+
+// sweepMenus are the menus whose every entry carries a comment, in the order
+// the sweep removes what it finds there: whatever refers to an interface or
+// an address first, the veth after, lists and disks last. /container is
+// counted and not swept: its removal needs the stop and the waits of the
+// container step, whose selector is the tag alone anyway.
+var sweepMenus = []string{
+	"/ip/firewall/address-list", "/interface/list/member", "/ip/firewall/nat", "/ip/firewall/filter",
+	"/ip/firewall/raw", "/ip/firewall/mangle", "/ip/route", "/container/mounts", "/ip/address",
+	"/interface/veth", "/interface/list", "/disk",
+}
+
+// sweepCount and sweepRemove are the sweep's two commands for one menu, with
+// {{menu}} standing for it. The removal prints how many it took, keyed, so
+// that uninstall can say so.
+const (
+	sweepCount  = `:put [:len [{{menu}}/find comment="{{tag}}"]]`
+	sweepRemove = `:local n [:len [{{menu}}/find comment="{{tag}}"]]; :if ($n > 0) do={ {{menu}}/remove [find comment="{{tag}}"]; :put ("@@swept={{menu}} " . $n) }`
+)
+
+// taggedCount is the RouterOS expression that counts every object the
+// install's tag or marker still selects: the sweep menus, the container and
+// the envlist marker. The manifest step's removal refuses while it is not 0.
+func taggedCount() string {
+	var b strings.Builder
+	b.WriteString("(")
+	for _, m := range append(slices.Clone(sweepMenus), "/container") {
+		b.WriteString(`[:len [` + m + `/find comment="{{tag}}"]] + `)
+	}
+	b.WriteString(`[:len ` + markerFind + `])`)
+	return b.String()
+}
+
+// rootUnheld is the RouterOS condition that no container holds the
+// container root. RouterOS stores root-dir with a leading slash the plan
+// never wrote (/mikroscope/mikroscope, read in the virtual lab), so both
+// spellings are asked.
+const rootUnheld = `([:len [/container/find root-dir="/{{rootDir}}"]] + [:len [/container/find root-dir="{{rootDir}}"]]) = 0`
+
+// dirEmpty is the RouterOS condition that nothing is under the directory the
+// manifest and the container root share. It asks /file for names under it by
+// a pattern rather than walking every file on the router, which on a router
+// with other containers is every file of their roots too; the disk name and
+// `mikroscope` hold no pattern character (validDisk). Measured in the
+// virtual lab (CHR x86_64, RouterOS 7.24.4, 2026-09-27): with
+// mikroscope/a.txt, mikroscope/sub/b.txt and mikroscopex/c.txt on the
+// router, `find name~"^mikroscope/"` counted 3, the directory sub among them,
+// and not mikroscopex's file.
+const dirEmpty = `[:len [/file/find name~"^{{manifestDir}}/"]] = 0`
+
+// rootCleanup removes the container root when it is on /file and no
+// container holds it: RouterOS deletes it with the container, a moment after
+// the container is gone, and this is for when it did not; guarded, since
+// RouterOS may take it in between. /file/remove on a directory takes its
+// whole content.
+const rootCleanup = `:if ([:len [/file/find name="{{rootDir}}"]] > 0 && ` + rootUnheld + `) do={ :do { /file/remove [find name="{{rootDir}}"] } on-error={} }`
+
+// manifestStep is the first step: it writes the manifest before any object it
+// lists exists, so that an install which stops half-way still leaves the
+// record of everything it meant to create, and uninstall, which runs the
+// steps backwards, deletes it last.
+//
+// Present reads the file back and compares it with what this plan would
+// write, so a repeat install with the same options leaves it alone and one
+// with other options rewrites it. Owned is the tag line. Check is the path:
+// a file there that is not this install's manifest stops the install.
+//
+// Its removal refuses while anything the tag or the marker selects remains,
+// so a removal that failed half-way keeps the record for the next attempt.
+// Then, when the manifest is this install's, it removes the container root
+// it lists if no container holds it — the container step takes the root with
+// the container, and this is for a root an earlier attempt left — and then
+// the manifest, so an attempt cut short between the two still has the
+// record of the root. Last it removes the directory the two share when
+// nothing else is in it. A file and a directory carry no comment, so these
+// are selected by their exact paths, which --name and --disk derive, and the
+// root goes only on the manifest's word (or, in the container step, the
+// tagged container's); /file/remove on a directory takes its whole content,
+// which is why the directory goes only when it is empty (measured in the
+// virtual lab, CHR x86_64, RouterOS 7.24.4: /file/add creates the missing
+// parent directory, and /file/remove of a directory removed the file inside
+// it). That directory is removed when empty even if it was there before the
+// install: it carries nothing that says whose it is, and an empty one holds
+// nothing of anybody's.
+var manifestStep = stepSpec{
+	ID:      "manifest",
+	Name:    ts("install manifest {{manifestFile}}"),
+	Check:   ts(`:put [:len [/file/find name="{{manifestFile}}"]]`),
+	Create:  ts(`:local m "{{manifest}}"; :if ([:len [/file/find name="{{manifestFile}}"]] > 0) do={ /file/set [find name="{{manifestFile}}"] contents=$m } else={ /file/add name="{{manifestFile}}" contents=$m }`),
+	Owned:   ts(`:if ([:len [/file/find name="{{manifestFile}}"]] > 0) do={ :if (` + manifestIsOurs + `) do={ :put 1 } else={ :put 0 } } else={ :put 0 }`),
+	Present: ts(`:if ([:len [/file/find name="{{manifestFile}}"]] > 0) do={ :if ([/file/get [find name="{{manifestFile}}"] contents] = "{{manifest}}") do={ :put 1 } else={ :put 0 } } else={ :put 0 }`),
+	Remove: ts(`:if (` + taggedCount() + ` > 0) do={ :error "mikroscope: objects tagged {{tag}} remain, so {{manifestFile}} stays" }; ` +
+		`:if ([:len [/file/find name="{{manifestFile}}"]] > 0) do={ :if (` + manifestIsOurs + `) do={ ` + rootCleanup + `; /file/remove [find name="{{manifestFile}}"] } }; ` +
+		`:if (` + dirEmpty + `) do={ /file/remove [find name="{{manifestDir}}" type="directory"] }`),
+	Manifest: []fragment{t("dir={{manifestDir}}"), t("file={{manifestFile}}")},
+}
+
+// stepSpecs is the plan: the manifest, then every object in creation order.
 // Every object carries {{tag}} in its comment, verbatim, and every Remove
 // selects by that exact comment together with the identity its Check used.
 // Step's comment in steps.go says what each command field is for, and why
 // every find quotes its address and port attributes.
 var stepSpecs = []stepSpec{
+	manifestStep,
 	{
-		ID:     "veth",
-		Menu:   "/interface/veth",
-		Name:   ts("veth interface {{veth}}"),
-		Check:  ts(`:put [:len [/interface/veth/find name="{{veth}}"]]`),
-		Create: ts(`/interface/veth/add name="{{veth}}" address={{containerIP}}/30 gateway={{gatewayIP}} comment="{{tag}}"`),
-		Owned:  ts(`:put [:len [/interface/veth/find name="{{veth}}" comment="{{tag}}"]]`),
-		Remove: ts(`/interface/veth/remove [find name="{{veth}}" comment="{{tag}}"]`),
+		ID:       "veth",
+		Menu:     "/interface/veth",
+		Name:     ts("veth interface {{veth}}"),
+		Check:    ts(`:put [:len [/interface/veth/find name="{{veth}}"]]`),
+		Create:   ts(`/interface/veth/add name="{{veth}}" address={{containerIP}}/30 gateway={{gatewayIP}} comment="{{tag}}"`),
+		Owned:    ts(`:put [:len [/interface/veth/find name="{{veth}}" comment="{{tag}}"]]`),
+		Remove:   ts(`/interface/veth/remove [find name="{{veth}}" comment="{{tag}}"]`),
+		Manifest: ts("object=/interface/veth name={{veth}}"),
 	},
 	{
-		ID:     "address",
-		Menu:   "/ip/address",
-		Name:   ts("router address {{gatewayIP}}"),
-		Check:  ts(`:put [:len [/ip/address/find interface="{{veth}}"]]`),
-		Create: ts(`/ip/address/add address={{gatewayIP}}/30 interface="{{veth}}" comment="{{tag}}"`),
-		Owned:  ts(`:put [:len [/ip/address/find interface="{{veth}}" comment="{{tag}}"]]`),
-		Remove: ts(`/ip/address/remove [find interface="{{veth}}" comment="{{tag}}"]`),
+		ID:       "address",
+		Menu:     "/ip/address",
+		Name:     ts("router address {{gatewayIP}}"),
+		Check:    ts(`:put [:len [/ip/address/find interface="{{veth}}"]]`),
+		Create:   ts(`/ip/address/add address={{gatewayIP}}/30 interface="{{veth}}" comment="{{tag}}"`),
+		Owned:    ts(`:put [:len [/ip/address/find interface="{{veth}}" comment="{{tag}}"]]`),
+		Remove:   ts(`/ip/address/remove [find interface="{{veth}}" comment="{{tag}}"]`),
+		Manifest: ts("object=/ip/address interface={{veth}}"),
 	},
 	// The two list memberships exist for the firewall traps. A router whose
 	// firewall drops nothing by list needs neither, and ListNone
@@ -117,28 +264,30 @@ var stepSpecs = []stepSpec{
 	// rule not to match it (measured on the reference RB5009, 2026-08-26, and
 	// still the shape of the raw chain in the 2026-09-11 inventory).
 	{
-		ID:     "iface-member",
-		When:   "ifaceList",
-		Menu:   "/interface/list/member",
-		Name:   ts("interface-list membership {{ifaceList}}"),
-		Check:  ts(`:put [:len [/interface/list/member/find interface="{{veth}}" list="{{ifaceList}}"]]`),
-		Create: ts(`/interface/list/member/add list="{{ifaceList}}" interface="{{veth}}" comment="{{tag}}"`),
-		Owned:  ts(`:put [:len [/interface/list/member/find interface="{{veth}}" list="{{ifaceList}}" comment="{{tag}}"]]`),
-		Remove: ts(`/interface/list/member/remove [find interface="{{veth}}" list="{{ifaceList}}" comment="{{tag}}"]`),
+		ID:       "iface-member",
+		When:     "ifaceList",
+		Menu:     "/interface/list/member",
+		Name:     ts("interface-list membership {{ifaceList}}"),
+		Check:    ts(`:put [:len [/interface/list/member/find interface="{{veth}}" list="{{ifaceList}}"]]`),
+		Create:   ts(`/interface/list/member/add list="{{ifaceList}}" interface="{{veth}}" comment="{{tag}}"`),
+		Owned:    ts(`:put [:len [/interface/list/member/find interface="{{veth}}" list="{{ifaceList}}" comment="{{tag}}"]]`),
+		Remove:   ts(`/interface/list/member/remove [find interface="{{veth}}" list="{{ifaceList}}" comment="{{tag}}"]`),
+		Manifest: ts("object=/interface/list/member interface={{veth}} list={{ifaceList}}"),
 	},
 	// The sibling trap: the defconf raw rule `drop local if not from default
 	// IP range` (in-interface-list=LAN, src-address-list=!LANs) matches any
 	// source outside the LANs address list, so the /30 has to join it
 	// (measured on the reference RB5009, 2026-08-26).
 	{
-		ID:     "addr-member",
-		When:   "addrList",
-		Menu:   "/ip/firewall/address-list",
-		Name:   ts("address-list membership {{addrList}}"),
-		Check:  ts(`:put [:len [/ip/firewall/address-list/find list="{{addrList}}" address="{{subnet}}"]]`),
-		Create: ts(`/ip/firewall/address-list/add list="{{addrList}}" address={{subnet}} comment="{{tag}}"`),
-		Owned:  ts(`:put [:len [/ip/firewall/address-list/find list="{{addrList}}" address="{{subnet}}" comment="{{tag}}"]]`),
-		Remove: ts(`/ip/firewall/address-list/remove [find list="{{addrList}}" address="{{subnet}}" comment="{{tag}}"]`),
+		ID:       "addr-member",
+		When:     "addrList",
+		Menu:     "/ip/firewall/address-list",
+		Name:     ts("address-list membership {{addrList}}"),
+		Check:    ts(`:put [:len [/ip/firewall/address-list/find list="{{addrList}}" address="{{subnet}}"]]`),
+		Create:   ts(`/ip/firewall/address-list/add list="{{addrList}}" address={{subnet}} comment="{{tag}}"`),
+		Owned:    ts(`:put [:len [/ip/firewall/address-list/find list="{{addrList}}" address="{{subnet}}" comment="{{tag}}"]]`),
+		Remove:   ts(`/ip/firewall/address-list/remove [find list="{{addrList}}" address="{{subnet}}" comment="{{tag}}"]`),
+		Manifest: ts("object=/ip/firewall/address-list list={{addrList}} address={{subnet}}"),
 	},
 	// protocol="tcp", QUOTED. In a RouterOS `find`, a bare word is read as a
 	// variable name and an unset variable is the empty value, so
@@ -159,14 +308,15 @@ var stepSpecs = []stepSpec{
 	// address — HTTP 200 in 1.3 ms, body intact — and the token becomes
 	// mandatory because the veth is no longer link-local only.
 	{
-		ID:     "expose-nat",
-		When:   "expose",
-		Menu:   "/ip/firewall/nat",
-		Name:   ts("expose dst-nat {{lanAddress}}:{{port}}"),
-		Check:  ts(`:put [:len [/ip/firewall/nat/find chain=dstnat dst-address="{{lanAddress}}" dst-port="{{port}}" protocol="tcp"]]`),
-		Create: ts(`/ip/firewall/nat/add chain=dstnat dst-address={{lanAddress}} protocol=tcp dst-port={{port}} action=dst-nat to-addresses={{containerIP}} to-ports={{port}} comment="{{tag}}"`),
-		Owned:  ts(`:put [:len [/ip/firewall/nat/find chain=dstnat dst-address="{{lanAddress}}" dst-port="{{port}}" protocol="tcp" comment="{{tag}}"]]`),
-		Remove: ts(`/ip/firewall/nat/remove [find chain=dstnat dst-address="{{lanAddress}}" dst-port="{{port}}" protocol="tcp" comment="{{tag}}"]`),
+		ID:       "expose-nat",
+		When:     "expose",
+		Menu:     "/ip/firewall/nat",
+		Name:     ts("expose dst-nat {{lanAddress}}:{{port}}"),
+		Check:    ts(`:put [:len [/ip/firewall/nat/find chain=dstnat dst-address="{{lanAddress}}" dst-port="{{port}}" protocol="tcp"]]`),
+		Create:   ts(`/ip/firewall/nat/add chain=dstnat dst-address={{lanAddress}} protocol=tcp dst-port={{port}} action=dst-nat to-addresses={{containerIP}} to-ports={{port}} comment="{{tag}}"`),
+		Owned:    ts(`:put [:len [/ip/firewall/nat/find chain=dstnat dst-address="{{lanAddress}}" dst-port="{{port}}" protocol="tcp" comment="{{tag}}"]]`),
+		Remove:   ts(`/ip/firewall/nat/remove [find chain=dstnat dst-address="{{lanAddress}}" dst-port="{{port}}" protocol="tcp" comment="{{tag}}"]`),
+		Manifest: ts("object=/ip/firewall/nat chain=dstnat dst-address={{lanAddress}} dst-port={{port}} protocol=tcp"),
 	},
 	// The accept must land before the first forward drop; on a router whose
 	// forward chain has no drop it is appended. The :local shares the line
@@ -180,8 +330,9 @@ var stepSpecs = []stepSpec{
 		Create: ts(`:local d [/ip/firewall/filter/find chain=forward action=drop]; ` +
 			`:if ([:len $d] > 0) do={ /ip/firewall/filter/add chain=forward dst-address={{containerIP}} protocol=tcp dst-port={{port}} connection-nat-state=dstnat action=accept comment="{{tag}}" place-before=($d->0) } ` +
 			`else={ /ip/firewall/filter/add chain=forward dst-address={{containerIP}} protocol=tcp dst-port={{port}} connection-nat-state=dstnat action=accept comment="{{tag}}" }`),
-		Owned:  ts(`:put [:len [/ip/firewall/filter/find chain=forward dst-address="{{containerIP}}" dst-port="{{port}}" protocol="tcp" comment="{{tag}}"]]`),
-		Remove: ts(`/ip/firewall/filter/remove [find chain=forward dst-address="{{containerIP}}" dst-port="{{port}}" protocol="tcp" comment="{{tag}}"]`),
+		Owned:    ts(`:put [:len [/ip/firewall/filter/find chain=forward dst-address="{{containerIP}}" dst-port="{{port}}" protocol="tcp" comment="{{tag}}"]]`),
+		Remove:   ts(`/ip/firewall/filter/remove [find chain=forward dst-address="{{containerIP}}" dst-port="{{port}}" protocol="tcp" comment="{{tag}}"]`),
+		Manifest: ts("object=/ip/firewall/filter chain=forward dst-address={{containerIP}} dst-port={{port}} protocol=tcp"),
 	},
 	containerStepSpec,
 }
@@ -228,17 +379,31 @@ var containerStepSpec = stepSpec{
 		t(`) } else={ :put [:len [/container/find comment="{{tag}}"]] }`),
 	},
 	Present: ts(`:put [:len [/container/find comment="{{tag}}"]]`),
+	// The removal stops the container and waits for it to stop (F1), removes
+	// it and waits for it to go; then, when it removed one, it waits up to
+	// 10 s for RouterOS to delete the container root and removes what is
+	// left (rootCleanup): the tagged container is what says the root is this
+	// install's. Last, when the marker says the envlist is ours, the tar and
+	// the envlist.
 	Remove: []fragment{
-		t(`:do { /container/stop [find comment="{{tag}}"] } on-error={}; ` +
+		t(`:local had [:len [/container/find comment="{{tag}}"]]; ` +
+			`:do { /container/stop [find comment="{{tag}}"] } on-error={}; ` +
 			`:local s 0; :while (([:len [/container/find comment="{{tag}}" running]] + [:len [/container/find comment="{{tag}}" stopping]]) > 0 && $s < 30) do={ :delay 1s; :set s ($s + 1) }; ` +
 			`/container/remove [find comment="{{tag}}"]; ` +
 			`:local i 0; :while ([:len [/container/find comment="{{tag}}"]] > 0 && $i < 20) do={ :delay 1s; :set i ($i + 1) }; ` +
+			`:if ($had > 0) do={ :local r 0; :while ([:len [/file/find name="{{rootDir}}"]] > 0 && ` + rootUnheld + ` && $r < 10) do={ :delay 1s; :set r ($r + 1) }; ` + rootCleanup + ` }; ` +
 			`:if ([:len ` + markerFind + `] > 0) do={ `),
 		w("tar", `:local j 0; :while ([:len [/file/find name="{{imageFile}}"]] > 0 && $j < 15) do={ /file/remove [find name="{{imageFile}}"]; :delay 1s; :set j ($j + 1) }; `+
 			`:if ([:len [/file/find name="{{imageFile}}"]] = 0) do={ `),
 		t(`/container/envs/remove [find list="{{envList}}" key!="` + MarkerName + `"]; /container/envs/remove ` + markerFind),
 		w("tar", ` }`),
 		t(` }`),
+	},
+	Manifest: []fragment{
+		w("tar", "file={{imageFile}}"),
+		t("object=/container/envs list={{envList}}"),
+		t("object=/container interface={{veth}}"),
+		t("dir={{rootDir}}"),
 	},
 }
 
@@ -258,7 +423,8 @@ var (
 	scriptHeader = []fragment{
 		t("# mikroscope {{version}}: install script for RouterOS 7.24 or later. Container name: {{name}}"),
 		t(`# Every object it creates carries the comment "{{tag}}", which is how`),
-		t("# `mikroscope status` and `uninstall` recognize them later."),
+		t("# `mikroscope status` and `uninstall` recognize them later. It lists them in"),
+		t("# {{manifestFile}} on the router, which `mikroscope uninstall` reads and deletes last."),
 		t("#"),
 		w("remote", "# The router pulls {{remoteRef}} itself."),
 		w("remote", "# The registry host is part of remote-image= (RouterOS 7.18 and later take it"),
@@ -285,9 +451,17 @@ var (
 		t(`:if ([:len [/system/package/find name="container" disabled=no]] = 0) do={ :error "mikroscope: the container package is not installed" }`),
 		t(`:local dm [:tostr [/system/device-mode/get container]]; :if ($dm != "yes" && $dm != "true") do={ :error "mikroscope: device-mode container is not enabled" }`),
 		t(`:if ([:len [/interface/veth/find name="{{veth}}"]] > 0 && [:len [/interface/veth/find name="{{veth}}" comment="{{tag}}"]] = 0) do={ :error "mikroscope: veth {{veth}} exists and is not mikroscope's" }`),
+		// An envlist of the same name without the marker is somebody
+		// else's: the container step would add the marker and the agent's
+		// entries to it, and uninstall, finding the marker, would then
+		// remove the owner's entries with them. The CLI refuses it at the
+		// container step's Check; this is the script's refusal.
+		t(`:if ([:len [/container/envs/find list="{{envList}}"]] > 0 && [:len ` + markerFind + `] = 0) do={ :error "mikroscope: envlist {{envList}} exists and is not mikroscope's" }`),
+		w("containerName", `:if ([:len [/container/find name="{{containerName}}"]] > 0 && [:len [/container/find name="{{containerName}}" comment="{{tag}}"]] = 0) do={ :error "mikroscope: a container named {{containerName}} exists and is not mikroscope's" }`),
 		w("ifaceList", `:if ([:len [/interface/list/find name="{{ifaceList}}"]] = 0) do={ :error "mikroscope: interface list {{ifaceList}} does not exist" }`),
 		w("disk", `:if ([:len [/disk/find slot="{{disk}}"]] = 0) do={ :error "mikroscope: disk {{disk}} does not exist" }`),
 		w("tar", `:if ([:len [/file/find name="{{imageFile}}"]] = 0) do={ :error "mikroscope: upload {{imageFile}} first" }`),
+		t(`:if ([:len [/file/find name="{{manifestFile}}"]] > 0) do={ :if (!(` + manifestIsOurs + `)) do={ :error "mikroscope: {{manifestFile}} exists and is not this install's manifest" } }`),
 	}
 	scriptFooter = []fragment{
 		t(`:local k 0; :while ([:len [/container/find comment="{{tag}}" running]] = 0 && $k < 120) do={ :delay 1s; :set k ($k + 1) }`),
@@ -380,7 +554,8 @@ func predicateValues(o *Options) map[string]bool {
 }
 
 // values is every placeholder the spec may name, for o: the options as
-// Finish left them and what derives from them.
+// Finish left them and what derives from them. manifest comes last because
+// it is rendered from the others.
 func values(o *Options, version string) map[string]string {
 	v := map[string]string{
 		"name":            o.Name,
@@ -410,6 +585,8 @@ func values(o *Options, version string) map[string]string {
 		"envList":         o.EnvList(),
 		"imageFile":       o.ImageFile(),
 		"rootDir":         o.RootDir(),
+		"manifestDir":     manifestDir(o),
+		"manifestFile":    ManifestFile(*o),
 		"startOnBoot":     o.StartOnBoot(),
 		"privileged":      yesNo(o.Privileged),
 		"remoteRef":       o.RemoteRef(),
@@ -419,7 +596,22 @@ func values(o *Options, version string) map[string]string {
 	if o.UsesRemoteImage() {
 		v["source"] = "remote"
 	}
+	v["manifest"] = strings.Join(manifestLines(v, predicateValues(o)), `\n`) + `\n`
 	return v
+}
+
+// manifestLines is the manifest: the header, then each kept step's lines in
+// plan order. It is written with `\n` between lines inside a RouterOS
+// string, which RouterOS stores as newlines (/file/get … contents gives
+// them back as written).
+func manifestLines(v map[string]string, p map[string]bool) []string {
+	lines := renderLines(manifestHeader, v, p)
+	for _, s := range stepSpecs {
+		if holds(s.When, p) {
+			lines = append(lines, renderLines(s.Manifest, v, p)...)
+		}
+	}
+	return lines
 }
 
 // render turns one step spec into a Step for these values.
@@ -434,4 +626,9 @@ func (s stepSpec) render(v map[string]string, p map[string]bool) Step {
 		Remove:  renderText(s.Remove, v, p),
 		Present: renderText(s.Present, v, p),
 	}
+}
+
+// sweepFor renders one of the sweep's commands for one menu.
+func sweepFor(cmd, menu string, v map[string]string) string {
+	return substitute(strings.ReplaceAll(cmd, "{{menu}}", menu), v)
 }

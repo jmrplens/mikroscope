@@ -89,8 +89,8 @@ func TestScriptIsOneGuardedBlock(t *testing.T) {
 	}
 	firstWrite := -1
 	for i, l := range lines[open+1 : closing] {
-		if strings.HasPrefix(l, "/") || strings.HasPrefix(l, ":if ([:len [/container/envs/find") {
-			firstWrite = open + 1 + i
+		if strings.HasPrefix(l, "# ") { // the first step's name, its Create on the next line
+			firstWrite = open + 2 + i
 			break
 		}
 	}

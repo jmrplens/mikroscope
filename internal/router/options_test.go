@@ -132,7 +132,7 @@ func TestListNoneLeavesTheMembershipOut(t *testing.T) {
 	} {
 		o := defaults(t, func(o *Options) { o.IfaceList, o.AddrList = tc.iface, tc.addr })
 		var names []string
-		for _, s := range Plan(o) {
+		for _, s := range Plan(o)[1:] { // after the install manifest
 			names = append(names, s.Name)
 			for _, cmd := range []string{s.Check, s.Create, s.Owned, s.Remove, s.Present} {
 				if strings.Contains(cmd, `list="none"`) {

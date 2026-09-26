@@ -1,15 +1,17 @@
 mikroscope install plan for mikroscope
   options: name=mikroscope veth=veth-mikroscope subnet=172.30.10.0/30 (router 172.30.10.1, agent 172.30.10.2) lists=LAN/LANs arch=arm64 port=9123 rate=10Hz buffer=60s root=mikroscope/mikroscope image=mikroscope.tar start-on-boot=yes memory-max=64M mem-limit=16MiB privileged=yes
   tag:     "mikroscope:mikroscope (managed by mikroscope)" on every object; removals select by tag + identity
-   1. veth interface veth-mikroscope
+   1. install manifest mikroscope/mikroscope.manifest.txt
+      :local m "mikroscope-manifest=1\nname=mikroscope\ntag=mikroscope:mikroscope (managed by mikroscope)\ndisk=\nveth=veth-mikroscope\nsubnet=172.30.10.0/30\nport=9123\niface-list=LAN\naddr-list=LANs\nexpose=\ncontainer-name=\nremote-image=\ntoken=no\ndir=mikroscope\nfile=mikroscope/mikroscope.manifest.txt\nobject=/interface/veth name=veth-mikroscope\nobject=/ip/address interface=veth-mikroscope\nobject=/interface/list/member interface=veth-mikroscope list=LAN\nobject=/ip/firewall/address-list list=LANs address=172.30.10.0/30\nfile=mikroscope.tar\nobject=/container/envs list=mikroscope-env\nobject=/container interface=veth-mikroscope\ndir=mikroscope/mikroscope\n"; :if ([:len [/file/find name="mikroscope/mikroscope.manifest.txt"]] > 0) do={ /file/set [find name="mikroscope/mikroscope.manifest.txt"] contents=$m } else={ /file/add name="mikroscope/mikroscope.manifest.txt" contents=$m }
+   2. veth interface veth-mikroscope
       /interface/veth/add name="veth-mikroscope" address=172.30.10.2/30 gateway=172.30.10.1 comment="mikroscope:mikroscope (managed by mikroscope)"
-   2. router address 172.30.10.1
+   3. router address 172.30.10.1
       /ip/address/add address=172.30.10.1/30 interface="veth-mikroscope" comment="mikroscope:mikroscope (managed by mikroscope)"
-   3. interface-list membership LAN
+   4. interface-list membership LAN
       /interface/list/member/add list="LAN" interface="veth-mikroscope" comment="mikroscope:mikroscope (managed by mikroscope)"
-   4. address-list membership LANs
+   5. address-list membership LANs
       /ip/firewall/address-list/add list="LANs" address=172.30.10.0/30 comment="mikroscope:mikroscope (managed by mikroscope)"
-   5. container mikroscope
+   6. container mikroscope
       upload mikroscope.tar (7168 KiB) with scp
       :if ([:len [/container/envs/find list="mikroscope-env" key="MIKROSCOPE_TAG" value="mikroscope:mikroscope (managed by mikroscope)"]] > 0) do={ /container/envs/remove [find list="mikroscope-env"] }; /container/envs/add list="mikroscope-env" key=MIKROSCOPE_TAG value="mikroscope:mikroscope (managed by mikroscope)"; /container/envs/add list="mikroscope-env" key=RATE_HZ value="10"; /container/envs/add list="mikroscope-env" key=BUFFER_S value="60"; /container/envs/add list="mikroscope-env" key=PORT value="9123"; /container/envs/add list="mikroscope-env" key=ADDR value="172.30.10.2"; /container/envs/add list="mikroscope-env" key=MEM_LIMIT_MB value="16"; /container/envs/add list="mikroscope-env" key=CAPTURE_MB value="4"; /container/add file=mikroscope.tar interface="veth-mikroscope" root-dir=mikroscope/mikroscope envlist="mikroscope-env" logging=yes start-on-boot=yes restart-policy=on-failure restart-max-count=5 restart-interval=10s memory-max=64M privileged=yes ignore-remote-image-change=yes comment="mikroscope:mikroscope (managed by mikroscope)"; :local w 0; :while ([:len [/container/find comment="mikroscope:mikroscope (managed by mikroscope)" stopped]] = 0 && $w < 120) do={ :delay 1s; :set w ($w + 1) }; :if ([:len [/container/find comment="mikroscope:mikroscope (managed by mikroscope)" stopped]] = 0) do={ :error "mikroscope: the image was not extracted within 120 s; mikroscope.tar stays" }; /file/remove [find name="mikroscope.tar"]; /container/start [find comment="mikroscope:mikroscope (managed by mikroscope)"]
 nothing above has been written yet

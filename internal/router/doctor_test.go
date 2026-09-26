@@ -128,13 +128,16 @@ func TestUpgradeReplacesOnlyTheContainer(t *testing.T) {
 	if err := Upgrade(f, o, []byte("new"), &out); err != nil {
 		t.Fatal(err)
 	}
-	if len(f.ran) != 2 || !strings.Contains(f.ran[0], "/container/remove") || !strings.Contains(f.ran[1], "/container/add") {
+	// The manifest first — an install made before it existed gets one —
+	// then the container, and nothing else.
+	if len(f.ran) != 3 || !strings.Contains(f.ran[0], "/file/add name=\""+ManifestFile(o)+"\"") ||
+		!strings.Contains(f.ran[1], "/container/remove") || !strings.Contains(f.ran[2], "/container/add") {
 		t.Fatalf("upgrade ran %v", f.ran)
 	}
 	if len(f.uploads) != 1 {
 		t.Fatalf("upgrade uploaded %d images", len(f.uploads))
 	}
-	for _, cmd := range f.ran {
+	for _, cmd := range f.ran[1:] {
 		if strings.Contains(cmd, "/interface/veth") || strings.Contains(cmd, "/ip/address") {
 			t.Fatalf("upgrade touched the network objects: %s", cmd)
 		}

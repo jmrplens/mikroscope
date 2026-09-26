@@ -132,7 +132,7 @@ func TestUpgradePullsTheSameFullReference(t *testing.T) {
 	if err := Upgrade(f, o, nil, &out); err != nil {
 		t.Fatal(err)
 	}
-	if len(f.ran) != 2 || !strings.Contains(f.ran[1], want) {
+	if len(f.ran) != 3 || !strings.Contains(f.ran[2], want) {
 		t.Fatalf("upgrade ran %q, want the create to carry %s", f.ran, want)
 	}
 	if len(f.uploads) != 0 {

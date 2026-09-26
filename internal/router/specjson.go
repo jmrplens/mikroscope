@@ -305,6 +305,18 @@ func SpecJSON() ([]byte, error) {
 		"placeholders": placeholderNames(),
 		"derived":      derivedTemplates,
 		"steps":        stepSpecs,
+		"manifest": map[string]any{
+			"format": manifestFormat,
+			"header": manifestHeader,
+			"rule":   "the value manifest is each line of manifest.header, then of the manifest field of each step whose when holds, in step order, joined with the two characters \\n, and a final \\n; RouterOS stores each \\n inside the quoted string as a newline",
+			"read":   "on the router: :put [/file/get [find name=\"<manifestFile>\"] contents]",
+		},
+		"sweep": map[string]any{
+			"menus":  sweepMenus,
+			"count":  sweepCount,
+			"remove": sweepRemove,
+			"rule":   "{{menu}} is each of menus in turn; uninstall sends every remove line after the steps' removals and before the manifest step's",
+		},
 		"scriptHeader": scriptHeader,
 		"scriptGuards": scriptGuards,
 		"scriptFooter": scriptFooter,
@@ -328,6 +340,7 @@ var deriveRules = map[string]string{
 	"privileged":      "yes or no",
 	"extractTimeoutS": "extractTimeout in seconds: digits then s, m (x60) or h (x3600)",
 	"source":          "remote with remoteImage, else tar",
+	"manifest":        "see manifest.rule",
 }
 
 // placeholderNames are the {{keys}} a renderer must provide: every value

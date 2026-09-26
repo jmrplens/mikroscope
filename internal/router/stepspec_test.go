@@ -19,9 +19,12 @@ type jsonSpec struct {
 	Placeholders []string         `json:"placeholders"`
 	Derived      []jsonDerived    `json:"derived"`
 	Steps        []map[string]any `json:"steps"`
-	ScriptHeader []jsonFragment   `json:"scriptHeader"`
-	ScriptGuards []jsonFragment   `json:"scriptGuards"`
-	ScriptFooter []jsonFragment   `json:"scriptFooter"`
+	Manifest     struct {
+		Header []jsonFragment `json:"header"`
+	} `json:"manifest"`
+	ScriptHeader []jsonFragment `json:"scriptHeader"`
+	ScriptGuards []jsonFragment `json:"scriptGuards"`
+	ScriptFooter []jsonFragment `json:"scriptFooter"`
 }
 
 type jsonDerived struct {
@@ -139,6 +142,9 @@ func TestSpecRendersLikePlan(t *testing.T) {
 					t.Errorf("derived %s renders %q, Go computes %q", d.Key, got, v[d.Key])
 				}
 			}
+			if got := jsonManifest(t, spec, v, p); got != v["manifest"] {
+				t.Errorf("the manifest rendered from the JSON differs:\n JSON %s\n Go   %s", got, v["manifest"])
+			}
 			steps := jsonSteps(t, spec, v, p)
 			compareSteps(t, steps, Plan(o))
 			var want strings.Builder
@@ -148,6 +154,30 @@ func TestSpecRendersLikePlan(t *testing.T) {
 			}
 		})
 	}
+}
+
+// jsonManifest follows the JSON's manifest rule: the header's lines, then
+// each kept step's manifest lines, joined with \n and ended with one.
+func jsonManifest(t *testing.T, spec jsonSpec, v map[string]string, p map[string]bool) string {
+	t.Helper()
+	var lines []string
+	keep := func(frags []jsonFragment) {
+		for _, f := range frags {
+			if f.When != "" && jsonRender(t, []jsonFragment{{When: f.When, Text: "x"}}, v, p) == "" {
+				continue
+			}
+			lines = append(lines, jsonRender(t, []jsonFragment{{Text: f.Text}}, v, p))
+		}
+	}
+	keep(spec.Manifest.Header)
+	for _, st := range spec.Steps {
+		when, _ := st["when"].(string)
+		if when != "" && jsonRender(t, []jsonFragment{{When: when, Text: "x"}}, v, p) == "" {
+			continue
+		}
+		keep(fragments(t, st, "manifest"))
+	}
+	return strings.Join(lines, `\n`) + `\n`
 }
 
 // jsonScript lays the script out as the JSON's "script" rule says: the
@@ -218,6 +248,9 @@ func TestSpecNamesOnlyWhatItDefines(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, m := range jsonPlaceholder.FindAllStringSubmatch(string(raw), -1) {
+		if m[1] == "menu" { // the sweep's own, one menu at a time (sweep.rule)
+			continue
+		}
 		if !slices.Contains(spec.Placeholders, m[1]) {
 			t.Errorf("the spec names {{%s}}, which is not a placeholder", m[1])
 		}

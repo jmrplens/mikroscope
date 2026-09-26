@@ -2,6 +2,7 @@ package router
 
 import (
 	"bytes"
+	"encoding/base64"
 	"regexp"
 	"slices"
 	"strings"
@@ -25,6 +26,11 @@ type fakeRunner struct {
 	owned   map[string]bool
 	ran     []string
 	uploads []string
+	// manifest is the text of the install manifest the router holds; the
+	// manifest query answers "-" (no file) while it is empty. A sweep line
+	// (it prints "@@swept=" only when it removes something) is a write that
+	// removes nothing.
+	manifest string
 }
 
 func (f *fakeRunner) Run(command string) (string, error) {
@@ -36,7 +42,13 @@ func (f *fakeRunner) Run(command string) (string, error) {
 		}
 		return out.String(), nil
 	}
-	if !strings.Contains(command, ":put") { // a write: nothing printed on success
+	if strings.Contains(command, "to=base64") {
+		if f.manifest == "" {
+			return "-\n", nil
+		}
+		return "m:" + base64.StdEncoding.EncodeToString([]byte(f.manifest)) + "\n", nil
+	}
+	if !strings.Contains(command, ":put") || strings.Contains(command, sweepPrefix) { // a write: nothing printed on success
 		f.ran = append(f.ran, command)
 		return "", nil
 	}
@@ -159,7 +171,35 @@ func TestUninstallGuardsDerivedResourcesByMarker(t *testing.T) {
 func TestUninstallSelectsOnlyWhatInstallTagged(t *testing.T) {
 	o := defaults(t, func(o *Options) { o.Name = "bouncer"; o.Expose = true; o.LANAddress = "192.168.88.1"; o.Token = "t0k" })
 	tag := `comment="` + o.Tag() + `"`
-	for _, s := range Plan(o) {
+	plan := Plan(o)
+	// The manifest is a file, which carries no comment: it is selected by
+	// its exact path and is ours only when it holds the exact tag line, and
+	// its removal refuses while any object carries the tag.
+	m := plan[0]
+	path := `name="` + ManifestFile(o) + `"`
+	tagLine := `"\ntag=` + o.Tag() + `\n"`
+	// The one pattern is the count of what is under the directory, which
+	// decides whether the empty directory goes; nothing is selected for a
+	// removal by it.
+	dirCount := `[:len [/file/find name~"^` + manifestDir(&o) + `/"]]`
+	for what, cmd := range map[string]string{"remove": strings.ReplaceAll(m.Remove, dirCount, ""), "owned": m.Owned} {
+		if !strings.Contains(cmd, path) || !strings.Contains(cmd, tagLine) || strings.Contains(cmd, "~") {
+			t.Fatalf("%s of the manifest does not select by the exact path and tag line: %s", what, cmd)
+		}
+	}
+	// The container root it lists goes on the manifest's word alone, and
+	// before the manifest itself, so an attempt cut short between the two
+	// still has the record.
+	ours := strings.Index(m.Remove, `= "num") do={ `)
+	root := strings.Index(m.Remove, `/file/remove [find name="`+o.RootDir()+`"]`)
+	gone := strings.Index(m.Remove, `/file/remove [find `+path+`]`)
+	if ours < 0 || root < ours || gone < root {
+		t.Fatalf("the manifest's removal does not remove the root inside the manifest's own branch, before the manifest: %s", m.Remove)
+	}
+	if !strings.HasPrefix(m.Remove, `:if (([:len [/ip/firewall/address-list/find `+tag+`]] + `) {
+		t.Fatalf("the manifest's removal does not first count what the tag still selects: %s", m.Remove)
+	}
+	for _, s := range plan[1:] {
 		for what, cmd := range map[string]string{"remove": s.Remove, "owned": s.Owned} {
 			if strings.Contains(cmd, "comment~") {
 				t.Fatalf("%s of %q matches by pattern: %s", what, s.Name, cmd)
@@ -172,7 +212,7 @@ func TestUninstallSelectsOnlyWhatInstallTagged(t *testing.T) {
 			t.Fatalf("create of %q does not write the tag: %s", s.Name, s.Create)
 		}
 	}
-	addr := Plan(o)[3]
+	addr := Plan(o)[4]
 	want := `/ip/firewall/address-list/remove [find list="` + o.AddrList + `" address="` + o.Subnet + `" ` + tag + `]`
 	if addr.Remove != want {
 		t.Fatalf("address-list removal:\n got %s\nwant %s", addr.Remove, want)
@@ -246,8 +286,10 @@ func TestUninstallVerifiesAndFailsOnLeftovers(t *testing.T) {
 			t.Fatalf("error does not name %q: %v", s.Name, err)
 		}
 	}
-	if len(dirty.ran) != len(Plan(o)) {
-		t.Fatalf("verification changed the number of removals run: %d, want %d", len(dirty.ran), len(Plan(o)))
+	// One removal per step, one sweep line per sweep menu, and nothing
+	// more: verification writes nothing.
+	if len(dirty.ran) != len(Plan(o))+len(sweepMenus) {
+		t.Fatalf("verification changed the number of removals run: %d, want %d", len(dirty.ran), len(Plan(o))+len(sweepMenus))
 	}
 	if !strings.Contains(err.Error(), "left objects behind") {
 		t.Fatalf("uninstall error does not say so: %v", err)
@@ -506,10 +548,17 @@ func TestContainerStopIsGuarded(t *testing.T) {
 	plan := Plan(o)
 	rm := plan[len(plan)-1].Remove
 	tag := `comment="` + o.Tag() + `"`
+	had := `:local had [:len [/container/find ` + tag + `]]; `
 	stop := `:do { /container/stop [find ` + tag + `] } on-error={}; `
 	wait := `:local s 0; :while (([:len [/container/find ` + tag + ` running]] + [:len [/container/find ` + tag + ` stopping]]) > 0 && $s < 30) do={ :delay 1s; :set s ($s + 1) }; `
-	if !strings.HasPrefix(rm, stop+wait+`/container/remove [find `+tag+`]; `) {
-		t.Fatalf("container removal does not guard the stop, then wait while running or stopping, then remove: %s", rm)
+	if !strings.HasPrefix(rm, had+stop+wait+`/container/remove [find `+tag+`]; `) {
+		t.Fatalf("container removal does not count, guard the stop, then wait while running or stopping, then remove: %s", rm)
+	}
+	// The root goes only when the removal took a tagged container, after
+	// that container is gone, and before the envlist.
+	rootAt, goneAt := strings.Index(rm, `:if ($had > 0) do={ `), strings.Index(rm, `:local i 0; :while ([:len [/container/find `+tag+`]] > 0`)
+	if rootAt < goneAt || !strings.Contains(rm[rootAt:], `/file/remove [find name="`+o.RootDir()+`"]`) || strings.Index(rm, `/file/remove [find name="`+o.RootDir()+`"]`) < rootAt {
+		t.Fatalf("the container root is not removed under the tagged container's count, after it is gone: %s", rm)
 	}
 	if strings.Contains(rm, ":delay 4s") {
 		t.Fatalf("the fixed delay is back: %s", rm)
@@ -603,7 +652,9 @@ func TestRemoteImageInstallTouchesNoFile(t *testing.T) {
 		t.Errorf("create does not pull the image: %s", container.Create)
 	}
 	for what, cmd := range map[string]string{"create": container.Create, "check": container.Check, "owned": container.Owned, "remove": container.Remove} {
-		if strings.Contains(cmd, o.ImageFile()) || strings.Contains(cmd, "/file/") {
+		// The removal touches /file for the container root, which a pull
+		// has too, and never for a tar.
+		if strings.Contains(cmd, o.ImageFile()) || (what != "remove" && strings.Contains(cmd, "/file/")) {
 			t.Errorf("%s still accounts for a tar that is never uploaded: %s", what, cmd)
 		}
 	}

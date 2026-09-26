@@ -76,13 +76,24 @@ func WaitReachable(ctx context.Context, host string, port int, deadline time.Dur
 	}
 }
 
-// Upgrade replaces the container with a new image: the container step is
-// removed (waiting for the asynchronous removal) and created again; the
-// network objects stay. It returns nothing until the new agent answers.
+// Upgrade replaces the container with a new image: the install manifest is
+// written first, which gives an install made before it existed one, then the
+// container step is removed (waiting for the asynchronous removal) and
+// created again; the network objects stay. UpgradePreflight has already
+// refused a file at the manifest's path that is not this install's. It
+// returns nothing until the new agent answers.
 func Upgrade(r Runner, o Options, image []byte, w io.Writer) error {
 	plan := Plan(o)
-	c := plan[len(plan)-1]
-	out, err := r.Run(c.Remove)
+	m, c := plan[0], plan[len(plan)-1]
+	out, err := r.Run(m.Create)
+	if err == nil && trimSpace(out) != "" {
+		err = fmt.Errorf("router said %q", trimSpace(out))
+	}
+	if err != nil {
+		return fmt.Errorf("write %s: %w", m.Name, err)
+	}
+	fmt.Fprintf(w, "  wrote %s\n", m.Name)
+	out, err = r.Run(c.Remove)
 	if err != nil {
 		return fmt.Errorf("remove old container: %w", err)
 	}
