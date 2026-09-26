@@ -1,0 +1,70 @@
+---
+/**
+ * Every RouterOS fact in src/data/verifications.ts, one entry each, for
+ * Tested on.
+ *
+ * Each entry is a heading with the id `verified-<id>` and one sentence: the
+ * fact, then where and when it was checked, as <Verified> prints it. The id
+ * is what <TestedOn of="<fact>"> on a guide links to, so the register renders
+ * every fact unless `only` narrows it, and a fact added to the data has its
+ * entry, and its link target, in the same commit.
+ *
+ * The sentence is the fact's `statement` in the page's language. A fact that
+ * has none yet shows its `fact`, the reviewer's English note, marked
+ * `lang="en"` on a Spanish page so a screen reader switches voice.
+ *
+ * Evidence pages only (src/lib/voice.mjs). Put it under the page's own
+ * "Verified RouterOS behaviour" heading; `level` is the entries' heading
+ * level, 3 by default.
+ */
+import { isVerificationId, verifications, type Verification, type VerificationId } from "../data/verifications";
+import { langOf } from "../lib/lang";
+import { evidenceOnly, verifiedAnchor } from "../lib/voice.mjs";
+import CodeText from "./CodeText.astro";
+import RegisterHeading from "./RegisterHeading.astro";
+import Verified from "./Verified.astro";
+
+interface Props {
+	only?: string[];
+	level?: 3 | 4;
+}
+
+const { only, level = 3 } = Astro.props;
+evidenceOnly("<VerifiedRegister>", Astro.locals.starlightRoute);
+for (const id of only ?? []) {
+	if (!isVerificationId(id)) {
+		throw new Error(`VerifiedRegister: unknown fact "${id}"; facts live in src/data/verifications.ts`);
+	}
+}
+if (level !== 3 && level !== 4) {
+	throw new Error(`VerifiedRegister: level is 3 or 4, got ${String(level)}`);
+}
+const lang = langOf(Astro.locals.starlightRoute);
+const ids = (Object.keys(verifications) as VerificationId[]).filter((id) => only === undefined || only.includes(id));
+const entries = ids.map((id) => {
+	const v: Verification = verifications[id];
+	return { id, title: v.title?.[lang], statement: v.statement?.[lang], fact: v.fact };
+});
+---
+
+<div class="ms-register" data-register="verified">
+	{
+		entries.map(({ id, title, statement, fact }) => (
+			<Fragment>
+				<RegisterHeading id={verifiedAnchor(id)} level={level} text={title ?? id}>
+					{title ?? <code>{id}</code>}
+				</RegisterHeading>
+				<p class="ms-register-fact">
+					{statement === undefined ? (
+						<span lang={lang === "en" ? undefined : "en"}>
+							<CodeText text={fact} />
+						</span>
+					) : (
+						<CodeText text={statement} />
+					)}{" "}
+					(<Verified of={id} />).
+				</p>
+			</Fragment>
+		))
+	}
+</div>

@@ -16,6 +16,12 @@
 	white-space: nowrap;
 }
 
+/* A reading quoted on a guide links to its campaign on Tested on
+ * (Measured.astro); the figure keeps its one line inside the link. */
+.ms-measured-link {
+	white-space: nowrap;
+}
+
 /* ------------------------------------------------------------ Provenance */
 
 .sl-markdown-content .ms-provenance {
@@ -459,6 +465,56 @@ a > .ms-code-unit {
 
 .ms-verified-fact {
 	white-space: nowrap;
+}
+
+/* ------------------------------------------------ Anchor, TestedOn, registers */
+
+/* An <Anchor> alias is a span, which Starlight's content-gap selector skips
+ * on both sides, so the block after it would lose its gap. This gives it back
+ * to everything but a heading, whose own rule already sees the span as "not a
+ * heading" and spaces it as before. */
+.sl-markdown-content
+	[data-anchor-alias]:not(:first-child)
+	+ :not(
+		a,
+		strong,
+		em,
+		del,
+		span,
+		input,
+		code,
+		br,
+		h1,
+		h2,
+		h3,
+		h4,
+		h5,
+		h6,
+		.sl-heading-wrapper,
+		:where(.not-content *)
+	) {
+	margin-top: var(--sl-content-gap-y);
+}
+
+/* The readings a campaign's entry lists: each an id and its figure, kept
+ * together, flowing on as many lines as the column needs. */
+.sl-markdown-content .ms-register-figures {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.25rem 1rem;
+	padding-inline-start: 0;
+	list-style: none;
+	font-size: var(--sl-text-sm);
+}
+
+.sl-markdown-content .ms-register-figures li {
+	margin-top: 0;
+	white-space: nowrap;
+}
+
+.sl-markdown-content .ms-register-build {
+	color: var(--ms-muted);
+	font-size: var(--sl-text-sm);
 }
 
 /* ------------------------------------------------------- DashboardPanels */

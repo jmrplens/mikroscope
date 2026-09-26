@@ -3,8 +3,21 @@ import { z } from "astro/zod";
 import { docsLoader, i18nLoader } from "@astrojs/starlight/loaders";
 import { docsSchema, i18nSchema } from "@astrojs/starlight/schema";
 
+import { DOC_TYPES } from "./lib/voice.mjs";
+
 export const collections = {
-	docs: defineCollection({ loader: docsLoader(), schema: docsSchema() }),
+	// `docType` says what a page is: a tutorial, a how-to, reference,
+	// explanation, evidence or about. Optional while the pages are given
+	// theirs; src/lib/voice.mjs decides which pages are evidence, and
+	// scripts/check-voice.mjs reports a docType that disagrees with it.
+	docs: defineCollection({
+		loader: docsLoader(),
+		schema: docsSchema({
+			extend: z.object({
+				docType: z.enum(DOC_TYPES).optional(),
+			}),
+		}),
+	}),
 	// Starlight's own UI strings, plus the handful this project adds. Extending
 	// the schema rather than inventing a second dictionary keeps one lookup
 	// (`Astro.locals.t`) for every string a component shows.

@@ -12,7 +12,15 @@
  * (aria-labelledby): a screen reader reading continuously often does not
  * announce landmark names, and "not claimed" is the one meaning this block
  * exists to carry, so it cannot live in an aria-label alone.
+ *
+ * Evidence pages only (src/lib/voice.mjs): what has not been measured or
+ * tried is part of the proof, and Tested on › Not tested is where it lives.
+ * A guide that has to keep a qualifier links there with
+ * <TestedOn of="not-tested">. Anywhere else this warns, or fails the build
+ * once MS_VOICE is "error".
  */
+import { evidenceOnly } from "../lib/voice.mjs";
+
 const VARIANTS = {
 	"not-measured": "ms.claim.notMeasured",
 	untested: "ms.claim.untested",
@@ -28,6 +36,7 @@ interface Props {
 }
 
 const { variant = "not-measured", title } = Astro.props;
+evidenceOnly("<NotClaimed>", Astro.locals.starlightRoute);
 if (!Object.hasOwn(VARIANTS, variant)) {
 	throw new Error(
 		`NotClaimed: unknown variant "${variant}"; use ${Object.keys(VARIANTS)

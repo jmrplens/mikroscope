@@ -221,6 +221,7 @@ function structuralAttributes(text) {
 const INLINE_COMPONENTS = [
 	"Measured",
 	"RunFlags",
+	"TestedOn",
 	"Verified",
 	"PrivilegedOnly",
 	"DashboardCount",

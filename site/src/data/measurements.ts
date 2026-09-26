@@ -33,6 +33,11 @@ export type Unit =
 	| "";
 
 export interface Campaign {
+	/**
+	 * The campaign's heading in <CampaignRegister> on Tested on, a label of a
+	 * few words in each language. Without one the entry is headed by its id.
+	 */
+	title?: Record<Lang, string>;
 	device: "RB5009UG+S+";
 	cpu: { cores: 4; ghz: 1.4; core: "Cortex-A72" };
 	routeros: string;

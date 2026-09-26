@@ -1,0 +1,56 @@
+---
+/**
+ * A link from a guide to the proof on Tested on, in the guide's own words.
+ *
+ * A guide states what the tool does and leaves the device, the RouterOS
+ * release and the date to the evidence pages (src/lib/voice.mjs). Where a
+ * reader may want the proof, the sentence links it:
+ *
+ *   It truncates larger bodies silently (<TestedOn of="relay-fetch">measured</TestedOn>).
+ *   A read user can list every envlist (<TestedOn of="read-user-envlist">verified</TestedOn>).
+ *   The Grafana versions are on <TestedOn of="feature-status">Tested on</TestedOn>.
+ *
+ * `of` names one of:
+ *
+ * - a campaign in src/data/measurements.ts, which links its
+ *   <CampaignRegister> entry, `#campaign-<id>`;
+ * - a fact in src/data/verifications.ts, which links its <VerifiedRegister>
+ *   entry, `#verified-<id>`;
+ * - a section of Tested on, by the keys of TESTED_ON_SECTIONS in
+ *   src/lib/voice.mjs (`not-tested`, `known-issues`, `virtual-lab`, …);
+ * - nothing, which links the top of the page.
+ *
+ * The id is checked against the data here, so a typo fails the build. The
+ * link text is the page's own, in its language, so the parity gate compares
+ * `of` between twins and the words are translated like any other. The target
+ * is written by the component rather than as a Markdown link, so a guide can
+ * link an entry before Tested on has it: scripts/check-voice.mjs reports every
+ * such link whose target the built page does not have yet.
+ */
+import { isCampaignId } from "../data/measurements";
+import { isVerificationId } from "../data/verifications";
+import { langOf } from "../lib/lang";
+import { TESTED_ON_SECTIONS, testedOnFragment, testedOnHref } from "../lib/voice.mjs";
+
+interface Props {
+	of?: string;
+}
+
+const { of = "" } = Astro.props;
+const lang = langOf(Astro.locals.starlightRoute);
+const fragment = testedOnFragment(of, lang, {
+	isCampaign: isCampaignId,
+	isVerified: isVerificationId,
+});
+if (fragment === undefined) {
+	throw new Error(
+		`TestedOn: "${of}" is not a campaign (src/data/measurements.ts), a verified fact (src/data/verifications.ts) or a section of Tested on (${Object.keys(TESTED_ON_SECTIONS).join(", ")})`,
+	);
+}
+if (!Astro.slots.has("default")) {
+	throw new Error(`TestedOn of="${of}": give the link its text, in the page's language`);
+}
+const kind = fragment === null ? "page" : isCampaignId(of) ? "campaign" : isVerificationId(of) ? "verified" : "section";
+---
+
+<a class="ms-tested-on" href={testedOnHref(lang, fragment ?? undefined)} data-evidence={kind}><slot /></a>

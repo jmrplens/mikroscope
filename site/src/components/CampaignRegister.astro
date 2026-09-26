@@ -1,0 +1,99 @@
+---
+/**
+ * Every measurement campaign in src/data/measurements.ts, one entry each, for
+ * Tested on.
+ *
+ * Each entry is a heading with the id `campaign-<id>`, the campaign's
+ * provenance line (the same <Provenance> the evidence pages print beside a
+ * figure) and the readings the site quotes from it. The id is what
+ * <Measured> on a guide and <TestedOn of="<campaign>"> link to, so the
+ * register renders every campaign unless `only` narrows it, and a campaign
+ * added to the data has its entry, and its link target, in the same commit.
+ *
+ * The image campaigns are a build artefact rather than a run on a device, so
+ * their entry gives the date and what was measured and no device line, which
+ * is what <Provenance> refuses them for.
+ *
+ * Evidence pages only (src/lib/voice.mjs). Put it under the page's own
+ * "Campaigns" heading; `level` is the entries' heading level, 3 by default.
+ */
+import {
+	campaigns,
+	isCampaignId,
+	measurements,
+	type Campaign,
+	type CampaignId,
+	type Measurement,
+} from "../data/measurements";
+import { formatQuantity } from "../lib/format";
+import { langOf } from "../lib/lang";
+import { campaignAnchor, evidenceOnly } from "../lib/voice.mjs";
+import CodeText from "./CodeText.astro";
+import Provenance from "./Provenance.astro";
+import RegisterHeading from "./RegisterHeading.astro";
+
+interface Props {
+	only?: string[];
+	level?: 3 | 4;
+}
+
+const { only, level = 3 } = Astro.props;
+evidenceOnly("<CampaignRegister>", Astro.locals.starlightRoute);
+for (const id of only ?? []) {
+	if (!isCampaignId(id)) {
+		throw new Error(`CampaignRegister: unknown campaign "${id}"; campaigns live in src/data/measurements.ts`);
+	}
+}
+if (level !== 3 && level !== 4) {
+	throw new Error(`CampaignRegister: level is 3 or 4, got ${String(level)}`);
+}
+const lang = langOf(Astro.locals.starlightRoute);
+// Data order, whatever order `only` lists them in, as RunsTable does.
+const ids = (Object.keys(campaigns) as CampaignId[]).filter((id) => only === undefined || only.includes(id));
+const BUILD = new Set<string>(["image", "image-v100"]);
+const all = measurements as Record<string, Measurement>;
+const entries = ids.map((id) => {
+	const c: Campaign = campaigns[id];
+	return {
+		id,
+		c,
+		title: c.title?.[lang],
+		readings: Object.keys(all)
+			.filter((key) => {
+				const m = all[key];
+				return m.kind === "reading" && m.campaign === id;
+			})
+			.map((key) => ({ key, text: formatQuantity(all[key], lang) })),
+	};
+});
+---
+
+<div class="ms-register" data-register="campaigns">
+	{
+		entries.map(({ id, c, title, readings }) => (
+			<Fragment>
+				<RegisterHeading id={campaignAnchor(id)} level={level} text={title ?? id}>
+					{title ?? <code>{id}</code>}
+				</RegisterHeading>
+				{BUILD.has(id) ? (
+					<p class="ms-register-build">
+						{c.date === null ? Astro.locals.t("ms.provenance.undated") : <time datetime={c.date}>{c.date}</time>}
+						{" · "}
+						<CodeText text={c.conditions[lang]} />
+					</p>
+				) : (
+					<Provenance of={id} />
+				)}
+				{readings.length > 0 && (
+					<ul class="ms-register-figures">
+						{readings.map((r) => (
+							<li>
+								<code>{r.key}</code> <data class="ms-measured">{r.text}</data>
+							</li>
+						))}
+					</ul>
+				)}
+			</Fragment>
+		))
+	}
+</div>

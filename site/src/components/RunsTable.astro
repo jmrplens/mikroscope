@@ -6,11 +6,15 @@
  * same array, so the "2.85 %" on one page is the "2.85 %" on the other by
  * construction. Every number goes through src/lib/format.ts, which is what
  * gives the Spanish twin "2,85 %" and "2 856" without a second table.
+ *
+ * Evidence pages and the landing only (src/lib/voice.mjs); anywhere else it
+ * warns, or fails the build once MS_VOICE is "error".
  */
 import { isRunKey, runs, type Run, type RunKey } from "../data/measurements";
 import { formatNumber, formatQuantity } from "../lib/format";
 import { langOf } from "../lib/lang";
 import { nextId } from "../lib/ids";
+import { evidenceOnly } from "../lib/voice.mjs";
 import ScrollTable from "./ScrollTable.astro";
 
 interface Props {
@@ -18,6 +22,9 @@ interface Props {
 }
 
 const { only } = Astro.props;
+evidenceOnly("<RunsTable>", Astro.locals.starlightRoute, {
+	allow: (slug) => slug === "",
+});
 for (const key of only ?? []) {
 	if (!isRunKey(key)) {
 		throw new Error(

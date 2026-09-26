@@ -11,9 +11,19 @@
  * `fact` and `source` are for the reviewer and never rendered: the sentence
  * around the component says what was verified, in the page's language.
  */
-import { RB5009, RB5009_NOW } from "./measurements";
+import { RB5009, RB5009_NOW, type Lang } from "./measurements";
 
 export interface Verification {
+	/**
+	 * The fact's heading in <VerifiedRegister> on Tested on, a label of a few
+	 * words in each language. Without one the entry is headed by its id.
+	 */
+	title?: Record<Lang, string>;
+	/**
+	 * The fact as the register states it, one sentence in each language.
+	 * Without one the register shows `fact`, which is English, marked as such.
+	 */
+	statement?: Record<Lang, string>;
 	device: string;
 	routeros: string;
 	/** ISO date the source gives. */
