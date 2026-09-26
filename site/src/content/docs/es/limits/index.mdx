@@ -1,22 +1,22 @@
 ---
-title: El suelo de resolución es del kernel
-description: Por qué la CPU de un router MikroTik no se lee más fina que el tick de 10 ms del kernel, la única fuente que baja de él y cuánto recuerda el agente.
+title: Límites de resolución
+description: El tick de 10 ms del kernel como suelo de toda lectura de CPU en un router MikroTik, los contadores de la PMU que leen por debajo de él y hasta dónde llega el anillo del agente.
+docType: explanation
 head:
   - tag: title
     content: "Por qué la CPU de RouterOS no baja del tick | mikroscope"
 ---
 
 import Measured from "../../../../components/Measured.astro";
-import NotClaimed from "../../../../components/NotClaimed.astro";
-import Provenance from "../../../../components/Provenance.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
+import TestedOn from "../../../../components/TestedOn.astro";
 
-Esta página responde a la pregunta que decide cómo leer cada número de CPU que produce
-mikroscope: cuál es el cambio más pequeño que puede mostrar, y por qué ese límite lo pone el
-kernel y no el agente. También dice qué fuente sí ve por debajo de ese límite, qué no tiene el
-kernel de referencia y cuánto sobrevive una muestra en el agente antes de desaparecer.
+Cada número de CPU que produce mikroscope se cuenta en ticks del kernel, así que el cambio más
+pequeño que puede mostrar lo pone el kernel, no el agente. Una fuente lee por debajo del tick, los
+contadores de la propia CPU, y el anillo del agente fija hasta dónde llega cualquier lectura hacia
+atrás.
 
-## Ticks, no tiempo
+## Resolución del tick {#ticks-no-tiempo}
 
 Un tick dura <Measured id="tick.ms" />. [`/proc/stat`](https://man7.org/linux/man-pages/man5/proc_stat.5.html) no cuenta tiempo, cuenta ticks de
 `USER_HZ`, 100 por segundo. Una muestra de 100 ms puede contener por tanto 10 ticks por núcleo, así que la
@@ -24,113 +24,74 @@ fracción de ocupación de un núcleo se resuelve en escalones del <Measured id=
 y la media de cuatro núcleos en escalones del <Measured id="tick.stepFourCores" />. Sobre 1 s, la resolución de un núcleo es del <Measured id="tick.stepOneSecond" />.
 
 Eso es aritmética del tick, no una propiedad del agente, y ninguna cadencia ni ajuste lo cambia.
-Lo que el agente hace al respecto es negarse a esconderlo: envía los ticks en bruto y el
-intervalo real de cada muestra (`dt_ns`), nunca un porcentaje, de modo que la ventana sobre la
-que divides la eliges tú.
+El agente envía los ticks en bruto y el intervalo real de cada muestra (`dt_ns`), nunca un
+porcentaje, de modo que la ventana sobre la que divides la eliges tú.
 
-La contabilidad de ticks también está cuantizada en los bordes. Un intervalo de 100,3 ms puede
-llevar 11 ticks (visto en el equipo de desarrollo amd64, 2026-09-11/12), lo que
-daría una fracción de ocupación por encima de 1. La fracción que deriva el agente está limitada a
-1; los ticks en sí siguen en bruto.
+La contabilidad de ticks también está cuantizada en los bordes: un intervalo de 100,3 ms puede
+llevar 11 ticks, lo que daría una fracción de ocupación por encima de 1. La fracción de ocupación
+derivada está limitada a 1; los ticks en sí siguen en bruto.
 
 Muestrear más rápido no afina esto. A 100 Hz una muestra contiene 0 o 1 tick ocupado, así que la
 fracción de ocupación por muestra tiene dos valores posibles; por encima de unos 20 Hz los
 contadores de ticks son un indicador de ocupación más que un porcentaje. Lo que sí compra una
-cadencia mayor está en [el techo de muestreo](/mikroscope/es/cost/rate-ceiling/).
+cadencia mayor está en [Techo de muestreo](/mikroscope/es/cost/rate-ceiling/).
 
-## La única fuente por debajo: los contadores de la propia CPU
+## Contadores de la PMU {#la-única-fuente-por-debajo-los-contadores-de-la-propia-cpu}
 
 Una fuente lee por debajo del tick: la unidad de monitorización del rendimiento de la CPU (PMU),
 a través de [`perf_event_open`](https://man7.org/linux/man-pages/man2/perf_event_open.2.html), que el agente recoge como la fuente `perf` cuando el contenedor
 es privilegiado. Es la única fuente de mikroscope que no viene de un fichero.
 
-Medido en el RB5009 y registrado el 2026-09-12: en una muestra de 100,4 ms en la que `/proc/stat`
-informó de **cero ticks ocupados en los cuatro núcleos**, la PMU contó entre 2,2 y 4,6 millones
-de ciclos y entre 0,8 y 2,1 millones de instrucciones ejecutadas, con una tasa de fallos de caché
-del 3,8–5,7 %. El jiffie redondea ese trabajo hasta hacerlo desaparecer; el contador no.
+Una muestra en la que `/proc/stat` no marca ningún tick ocupado en ningún núcleo puede contener aun
+así millones de ciclos e instrucciones ejecutadas (<TestedOn of="reference-hardware">medido</TestedOn>).
+El tick redondea ese trabajo hasta hacerlo desaparecer; el contador no.
 
-El número que merece la pena vigilar es el de instrucciones por ciclo, y el agente no lo calcula:
-envía las cuentas en bruto y la división la haces tú. La división compensa porque
-distingue un núcleo que trabaja de un núcleo parado esperando a la memoria, algo que ningún
-contador de ticks puede expresar. Medido durante 2 s en el mismo equipo y el mismo día, fue de
-0,381 en cpu0 a 0,992 en cpu1.
-
-Qué es la fuente en el equipo de referencia (RB5009, RouterOS 7.24.2, kernel 5.6.3, Cortex-A72
-r0p1, 2026-09-12, desde dentro de un contenedor privilegiado):
+El número que merece la pena vigilar es el de instrucciones por ciclo (IPC), y el agente no lo
+calcula: envía las cuentas en bruto y la división la haces tú. El IPC distingue un núcleo que
+trabaja de un núcleo parado esperando a la memoria, algo que ningún contador de ticks puede
+expresar. Compáralo núcleo a núcleo: el IPC en reposo de dos núcleos de una misma placa puede
+diferir en más del doble (<TestedOn of="reference-hardware">medido</TestedOn>).
 
 - El agente pide siete contadores: `cycles`, `instructions`, `cache-references`,
-  `cache-misses`, `branch-instructions`, `branch-misses` y `bus-cycles`. La prueba del
-  2026-09-12 abrió `cycles`, `instructions`, `cache-misses`, `branch-misses` y `bus-cycles` a
-  nivel de sistema en 4 de 4 CPU. En los datos del propio agente de las 24 h que terminaron el
-  2026-09-12, seis informaron en 4 de 4 núcleos, `cache-references` entre ellos, y
-  `branch-instructions` no produjo ninguna fila.
-- Los eventos genéricos `stalled-frontend` y `stalled-backend` devuelven `ENOENT` en el A72.
-  Harían falta códigos de evento de PMU en bruto, así que el agente no los pide.
-- Un contador que no se puede abrir está ausente, nunca a cero. Qué contadores se abren depende
-  de la CPU, así que lee la etiqueta `counter` de `mikroscope_perf_events_total{counter,cpu}`
-  en vez de dar por hecho un conjunto.
+  `cache-misses`, `branch-instructions`, `branch-misses` y `bus-cycles`.
+- Cuáles se abren depende de la CPU. Un contador que no se puede abrir está ausente, nunca a
+  cero, así que lee la etiqueta `counter` de `mikroscope_perf_events_total{counter,cpu}` en vez
+  de dar por hecho un conjunto (<TestedOn of="not-tested">CPU sin probar</TestedOn>).
+- Los eventos genéricos `stalled-frontend` y `stalled-backend` no se piden. Devuelven `ENOENT`
+  donde se probaron y harían falta códigos de evento en bruto, propios de cada CPU.
+- Cada cuenta lleva `enabled_ns` y `running_ns`. En una CPU que multiplexa sus contadores, la
+  cuenta en bruto cubre solo la parte del intervalo en que funcionó el contador, no el intervalo.
 - Sin `privileged=yes` falta la familia entera: los contadores se abren a nivel de sistema, y
   eso un contenedor sin privilegios no puede hacerlo. Consulta
-  [lo que aporta privileged](/mikroscope/es/limits/privileged/).
+  [Modo privilegiado](/mikroscope/es/limits/privileged/).
 
 El colector usa esos mismos dos contadores para una de sus detecciones, `ipc-collapse`: por
 núcleo, una vez que hay al menos 20 s de historia, que las instrucciones por ciclo de un segundo caigan por debajo de la mitad de su mediana de los 60 s
 anteriores mientras la tasa de ciclos está por encima de su propia mediana. Se describe junto
-con las demás reglas en [detecciones](/mikroscope/es/sinks/detections/).
+con las demás reglas en [Reglas de detección](/mikroscope/es/sinks/detections/).
 
-## Ningún reloj más fino desde el kernel
+## PSI, schedstat y trazado {#ningún-reloj-más-fino-desde-el-kernel}
 
 No esperes un reloj más fino de [PSI](https://docs.kernel.org/accounting/psi.html), cuyos totales de espera van en microsegundos, ni
-de [`schedstat`](https://docs.kernel.org/scheduler/sched-stats.html), cuyos tiempos de ejecución y espera van en nanosegundos. El kernel de RouterOS 7.24.2 del RB5009
-(Linux 5.6.3) no tiene ni `/proc/pressure` ni `/proc/schedstat`, y la columna `irq` de su
-`/proc/stat` vale siempre 0, así que el tiempo de IRQ hardware se cuenta dentro de `system`:
+de [`schedstat`](https://docs.kernel.org/scheduler/sched-stats.html), cuyos tiempos de ejecución y espera van en nanosegundos. El kernel de
+RouterOS medido hasta ahora no tiene ni `/proc/pressure` ni `/proc/schedstat` (<TestedOn of="kernel-2026-09-11">medido</TestedOn>).
+El agente lee ambos donde el kernel los tiene (<TestedOn of="not-tested">aún no en un router</TestedOn>).
 
-<Provenance of="kernel-2026-09-11" />
+En un kernel cuya columna `irq` de `/proc/stat` se queda en 0, como en el medido, el tiempo de IRQ
+hardware se cuenta dentro de `system`.
 
-Tampoco hay un camino de trazado. Un contenedor privilegiado de descubrimiento en el mismo equipo,
-el 2026-09-12, no encontró ni eBPF, ni kprobes, ni ftrace: ni BTF, ni debugfs, ni tracefs, y los
-puntos de montaje no existen. Una nueva comprobación, el 2026-09-14, encontró `/sys/fs/bpf`
-presente y vacío, y `/proc/modules` con 238 módulos cargados, pero ni `/lib/modules`, ni
-cabeceras del kernel, ni compilador en el equipo: una función del kernel que falta no se puede
-añadir desde un contenedor.
+Tampoco hay un camino de trazado. El kernel medido no tiene ni eBPF, ni kprobes, ni ftrace, y el
+router no tiene directorio de módulos del kernel, ni cabeceras, ni compilador con que añadirlos (<TestedOn of="reference-hardware">comprobado</TestedOn>).
+Una función del kernel que falta no se puede añadir desde un contenedor.
 
 El agente detecta al arrancar lo que tiene el kernel y lo publica en `/capabilities`: el mapa
 `sources` dice qué fuentes lee realmente este despliegue. Los campos de una fuente ausente faltan
-en cada muestra y en cada destino, nunca valen cero. El agente sí lee PSI y `schedstat` donde el
-kernel los tiene.
+en cada muestra y en cada destino, nunca valen cero.
 
-Los dos analizadores leen ya el kernel que ejecuta la batería de pruebas en vez
-de una captura: `TestParsePressureReadsTheRunningKernel` y
-`TestParseSchedstatReadsTheRunningKernel` analizan el
-`/proc/pressure/{cpu,memory,io}` y el `/proc/schedstat` del propio equipo y
-comparan el resultado con una segunda lectura independiente de esos mismos
-bytes, y se saltan la prueba donde los ficheros no están —que es justo el caso
-del RB5009—. En el equipo de desarrollo amd64 (kernel 6.12.107) pasan, y el
-`/proc/pressure/cpu` de ese kernel lleva línea `full`, toda a cero al volver a
-leerla el 2026-09-24: la documentación de PSI del kernel dice que el `full` de
-CPU no está definido para el sistema entero y que se publica desde la 5.13 a
-cero, así que un kernel más antiguo no tiene esa línea y el analizador acepta
-las dos formas.
-
-El conjunto de contadores de la PMU de ese equipo se registró el 2026-09-21:
-seis contadores —`cycles`, `instructions`, `cache-references`, `cache-misses`,
-`branch-instructions` y `branch-misses`— y van multiplexados, cada uno
-funcionando en torno al 84 % del tiempo que estuvo habilitado. Esa es la razón
-de que el agente mande `enabled_ns` y `running_ns` junto a cada cuenta en vez
-de la cuenta a secas: en una CPU que multiplexa, el número crudo es una muestra
-del intervalo, no el intervalo.
-
-<NotClaimed variant="untested">
-	Los caminos de PSI y `schedstat` nunca se han ejecutado en el RB5009, porque su kernel carece de
-	ambos, así que nunca se han ejecutado en un router. En ninguna CPU salvo el Cortex-A72 del RB5009
-	y este equipo amd64 se conoce el conjunto de contadores de la PMU. El hEX S, una compilación de
-	RouterOS de 32 bits sobre un chip ARM64, no se ha medido en absoluto.
-</NotClaimed>
-
-## Hasta dónde recuerda el agente
+## Profundidad del anillo {#hasta-dónde-recuerda-el-agente}
 
 El otro límite duro es la profundidad, no la resolución. El agente guarda sus muestras en un
-anillo de `--buffer` segundos, 60 s por defecto y entre 10 y 3600 s permitidos, que contiene
+anillo de `--buffer` segundos, 60 s por defecto y entre 10 y 3600 s permitidos, que contiene
 cadencia × búfer muestras. Nada más antiguo existe en ningún sitio del router.
 
 Esa profundidad es también toda la ventana de la sección `health` de `doctor`, que lee el anillo
@@ -147,27 +108,26 @@ que aún conserva; `record` lo escribe como un marcador que dice `samples N..M l
 lo cuenta en `mikroscope_collector_gaps_total` y se lo pasa a cada destino.
 
 Un anillo más largo cuesta memoria en el agente, y el agente rechaza uno que no quepa. Al arrancar
-estima el anillo a <Measured id="ring.lineChargedBytes" /> por línea —la línea media se midió
-en <Measured id="ring.lineBytes" /> en el RB5009 el 2026-09-17 con todas las fuentes activas, y
-el presupuesto cobra la clase de tamaño del asignador de la que se sirve, no la línea en sí, porque
-es lo que paga el heap; una placa con más núcleos o líneas de interrupción cuesta más, y una sin PMU
-un 35 % menos— suma el
-presupuesto de la captura por disparo, y sale con un error si el total supera el `memory.max` del
-contenedor. Si el total es más de la mitad del límite blando de memoria de Go, arranca pero
-registra un aviso, porque un heap tan justo mantiene al recolector de basura trabajando sin parar.
-Cómo dimensionar ambos límites está en [el coste del observador](/mikroscope/es/cost/).
+cobra cada línea a <Measured id="ring.lineChargedBytes" />: la clase de tamaño del asignador de la
+que se sirve una línea con todas las fuentes activas (<Measured id="ring.lineBytes" />), porque es
+lo que paga el heap. Una placa con más núcleos o líneas de interrupción cuesta más por línea, y
+una sin PMU, menos. El agente suma el presupuesto de la captura por disparo y sale con un error si
+el total supera el `memory.max` del contenedor. Si el total es más de la mitad del límite blando
+de memoria de Go, arranca pero registra un aviso, porque un heap tan justo mantiene al recolector
+de basura trabajando sin parar. Cómo dimensionar ambos límites está en
+[Coste del agente](/mikroscope/es/cost/).
 
 <SeeAlso>
 
 ## Véase también
 
-- [Cada fuente a su propio suelo](/mikroscope/es/limits/source-floors/): las fuentes que no se
+- [Cadencias de las fuentes](/mikroscope/es/limits/source-floors/): las fuentes que no se
   leen en cada tick, y el motivo con nombre de cada una.
-- [Lo que aporta privileged](/mikroscope/es/limits/privileged/): la PMU, el log del kernel y las
+- [Modo privilegiado](/mikroscope/es/limits/privileged/): la PMU, el log del kernel y las
   cachés slab, y lo que el contenedor sigue sin ver.
-- [El techo de muestreo](/mikroscope/es/cost/rate-ceiling/): lo que compra muestrear más rápido
+- [Techo de muestreo](/mikroscope/es/cost/rate-ceiling/): lo que compra muestrear más rápido
   cuando el tick ya ha dejado de ser un porcentaje.
-- [Lo que los números no dicen](/mikroscope/es/cost/limits/): lo que `/metrics` puede y no puede
+- [Límites de la evidencia](/mikroscope/es/cost/limits/): lo que `/metrics` puede y no puede
   recuperar de estas muestras.
 
 </SeeAlso>

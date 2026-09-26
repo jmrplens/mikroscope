@@ -1505,7 +1505,9 @@ as data, through the collector, to whichever sinks the operator configured.
   trigger and capture counters. The end-to-end suite used to scrape the agent
   and the collector; it now asserts against the collector alone, which is a
   stronger statement. There is no keep list to maintain and nothing left to
-  double-count.
+  double-count. `mikroscope_slipped_total` is no longer withheld: the collector
+  used to leave it out rather than write a 0 about a sampler it never ran, and
+  now reports the number the agent gives it on `/sampler`.
 
 - **The agent's memory limit is derived from its ring**, not fixed at 40 MiB:
   rate × buffer × the line size, times 2.5, floored at 16 MiB and capped at

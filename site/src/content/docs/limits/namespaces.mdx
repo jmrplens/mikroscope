@@ -1,28 +1,26 @@
 ---
-title: The router’s CPU, the container’s network
-description: Which files in a RouterOS container are the router’s and which its own, why privileged does not change that, and the conntrack count that gets through.
+title: Container visibility
+description: Which kernel files inside a RouterOS container describe the router and which only the container, and what that means for traffic, connection counts and host mounts.
+docType: explanation
 head:
   - tag: title
     content: "What a RouterOS container can see of the kernel | mikroscope"
 ---
 
-import Measured from "../../../components/Measured.astro";
-import NotClaimed from "../../../components/NotClaimed.astro";
-import Provenance from "../../../components/Provenance.astro";
 import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
+import TestedOn from "../../../components/TestedOn.astro";
 
-A RouterOS container shares the router's kernel, but not all of the kernel's view. This
-page answers which files inside the container describe the router and which describe only
-the container itself, what that means for per-interface traffic and connection counts, and
-why no container setting mikroscope could choose moves the line.
+A RouterOS container shares the router's kernel, but not all of the kernel's view: some files
+inside it describe the router, others only the container. The kernel's namespaces draw that
+line, and no container setting mikroscope could choose moves it. Which files fall on which side
+is a property of the kernel and of how RouterOS builds its containers (<TestedOn of="not-tested">other boards and versions not checked</TestedOn>).
 
-## CPU and memory are the router's
+## Host-wide files {#cpu-and-memory-are-the-routers}
 
 The CPU, interrupt, memory and block-device files are global: inside the container they
 are the router's own, and they are read on every tick (a block device's row is stored only
-when it did something). Established on the RB5009 (RouterOS 7.24.2, kernel 5.6.3,
-2026-09-11):
+when it did something):
 
 - [`/proc/stat`](https://man7.org/linux/man-pages/man5/proc_stat.5.html), per core
 - `/proc/interrupts` and `/proc/softirqs`
@@ -31,43 +29,39 @@ when it did something). Established on the RB5009 (RouterOS 7.24.2, kernel 5.6.3
 - `/proc/meminfo`, `/proc/vmstat` and `/proc/loadavg`
 - `/proc/diskstats`
 
-An ordinary container also reads these files as the router's, read on 2026-09-12: the two
-thermal zones under `/sys/class/thermal`, `scaling_cur_freq` per core,
-the NAND wear counters in `/proc/yaffs`, and the page allocator's free lists in
-`/proc/buddyinfo`. The device tree's `model`
-string (`RB5009`) is not namespaced either, and it is how the agent identifies the board
-without the RouterOS API.
+An ordinary, unprivileged container also reads these as the router's: the thermal zones under
+`/sys/class/thermal`, `scaling_cur_freq` per core, the NAND wear counters in `/proc/yaffs`, and
+the page allocator's free lists in `/proc/buddyinfo`. The device tree's `model` string is not
+namespaced either, and it is how the agent identifies the board without the RouterOS API.
 
-## The network is the container's own
+## Namespaced network files {#the-network-is-the-containers-own}
 
 `/proc/net/dev`, `/proc/net/snmp`, `/proc/net/netstat` and `nf_conntrack_count` are per
-[network namespace](https://man7.org/linux/man-pages/man7/network_namespaces.7.html). Inside the container they describe the container's own veth: 4 packets
-while the router forwarded millions. The agent does not read them as router data, and
+[network namespace](https://man7.org/linux/man-pages/man7/network_namespaces.7.html). Inside the container they describe the container's own veth: a few packets
+while the router forwards millions. The agent does not read them as router data, and
 `/capabilities` lists them under `namespaced` so a consumer can see they were left out on
 purpose rather than missed.
 
 **`privileged=yes` does not change this.** It drops the container's _user_ namespace, not
-its network namespace:
-
-<Provenance of="netns-2026-09-12" />
+its network namespace (<TestedOn of="netns-2026-09-12">verified</TestedOn>).
 
 So per-interface bytes and packets come from the RouterOS API instead, and the collector
 merges them with the kernel tier on the agent's clock. They are not interpolated from
-anything the container can see. How that tier is polled, and how little of it is left, is
-on [the RouterOS API tier](/mikroscope/sinks/api-tier/).
+anything the container can see. How that tier is polled is on
+[RouterOS API tier](/mikroscope/sinks/api-tier/).
 
-The same boundary shows up in other places, each measured on the RB5009:
+The same boundary shows up in other places:
 
-<ScrollTable label="Network-namespace files as the container sees them on the RB5009">
+<ScrollTable label="Network-namespace files as the container sees them">
 
-| What                                                                          | What the container sees                                                                 | Measured   |
-| ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | ---------- |
-| `/sys/class/net`                                                              | only `lo` and the veth; no device for any front-panel port, privileged or not           | 2026-09-14 |
-| `/sys/class/mdio_bus`, `/sys/class/phy`                                       | `mdio_bus` holds only `fixed-0`; `phy` is empty                                         | 2026-09-14 |
-| `netdev_budget`, `netdev_max_backlog` and the other global `net.core` entries | absent; per-namespace entries such as `somaxconn` are present                           | 2026-09-14 |
-| `/proc/net/*` files created by modules                                        | the container's own: `fib_trie` shows only the veth's `/30`, `snmp6` counts its packets | 2026-09-15 |
-| `nf_conntrack_max`                                                            | the router's real ceiling, 966 656, the same as RouterOS reports as `max-entries`       | 2026-09-14 |
-| conntrack timeouts                                                            | Linux defaults (`tcp_timeout_established` 432 000 s against RouterOS's `1d`)            | 2026-09-14 |
+| What                                                                          | What the container sees                                                                  |
+| ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `/sys/class/net`                                                              | only `lo` and the veth; no device for any front-panel port, privileged or not            |
+| `/sys/class/mdio_bus`, `/sys/class/phy`                                       | `mdio_bus` holds only `fixed-0`; `phy` is empty                                          |
+| `netdev_budget`, `netdev_max_backlog` and the other global `net.core` entries | absent; per-namespace entries such as `somaxconn` are present                            |
+| `/proc/net/*` files created by modules                                        | the container's own: `fib_trie` shows only the veth's `/30`, `snmp6` counts its packets  |
+| `nf_conntrack_max`                                                            | the router's real ceiling, the same value RouterOS reports as `max-entries`              |
+| conntrack timeouts                                                            | Linux defaults (`tcp_timeout_established` 432 000 s against RouterOS's `1d`)             |
 
 </ScrollTable>
 
@@ -78,13 +72,13 @@ timeouts are never presented as the router's configuration, because they are not
 The absent `netdev_budget` is also why the squeeze panels have no budget denominator: that
 is the namespace's doing, not the agent's.
 
-## Conntrack: the count that gets through
+## Conntrack count {#conntrack-the-count-that-gets-through}
 
 The connection count is the exception. Under `privileged=yes` the agent reads
 [`/proc/slabinfo`](https://man7.org/linux/man-pages/man5/slabinfo.5.html), and the slab allocator is global: the `nf_conntrack` cache's active-object
-count is the router's real conntrack population. On the RB5009 on 2026-09-12 it
-read <Measured id="conntrack.slabDiscovery" /> in the discovery container and <Measured id="conntrack.slab" /> from the agent the same day, while the
-container's own namespace reported 0; the RouterOS API had counted <Measured id="conntrack.api" /> the day before.
+count is the router's real conntrack population, while the container's own namespace reports 0.
+[Conntrack without the API](/mikroscope/playbooks/conntrack/) has the readings, and how to
+cross-check the count once against the API.
 
 That replaces an API table scan with a file read, and it is why the collector never polls
 the conntrack count unless `--conntrack-every` is set (off by default in every
@@ -94,15 +88,12 @@ the connection table" is answerable from the container alone.
 What it cannot tell you is what the connections are. `/proc/slabinfo` counts objects in a
 cache and nothing else: no protocol, no address, no state. A conntrack flood and a
 legitimate burst of many connections (a torrent, say) look the same in it. Without `privileged=yes` the file is unreadable and
-the count is gone; see [what privileged buys](/mikroscope/limits/privileged/). How to
-cross-check it once against the API is on
-[conntrack without the API](/mikroscope/playbooks/conntrack/).
+the count is gone; see [Privileged mode](/mikroscope/limits/privileged/).
 
-## Mounting the host's paths does not cross the boundary
+## Host mounts {#mounting-the-hosts-paths-does-not-cross-the-boundary}
 
-Whether bind-mounting the router's own paths into the container gets past the namespaces
-was tested directly on the RB5009 on 2026-09-15, with the owner's consent: a privileged
-container with host `/proc`, `/sys` and `/` mounted.
+Bind-mounting the router's own paths into a privileged container does not get past the
+namespaces (<TestedOn of="host-mounts">tested</TestedOn>):
 
 - Host `/proc` mounts but reads **zero PIDs**. RouterOS renders a fresh procfs at the mount
   point, so the PID namespace holds and per-process CPU for RouterOS's own processes stays
@@ -116,23 +107,17 @@ container with host `/proc`, `/sys` and `/` mounted.
 
 Namespaces are kernel boundaries, and a filesystem mount does not cross them.
 
-<NotClaimed variant="device-specific">
-	Every row on this page was read on one RB5009 running RouterOS 7.24.2. Which files are namespaced
-	is a property of the kernel and of how RouterOS builds its containers, and it has not been checked
-	on another RouterOS version or another board.
-</NotClaimed>
-
 <SeeAlso>
 
 ## See also
 
-- [The RouterOS API tier](/mikroscope/sinks/api-tier/): where per-interface traffic comes from,
+- [RouterOS API tier](/mikroscope/sinks/api-tier/): where per-interface traffic comes from,
   since the container cannot see it.
-- [What privileged buys](/mikroscope/limits/privileged/): the user namespace it drops, and the
+- [Privileged mode](/mikroscope/limits/privileged/): the user namespace it drops, and the
   two it leaves in place.
 - [Conntrack without the API](/mikroscope/playbooks/conntrack/): reading the slab count and
   checking it against RouterOS once.
-- [RouterOS ports and kernel names](/mikroscope/reference/port-names/): naming a port the
+- [Port names](/mikroscope/reference/port-names/): naming a port the
   container cannot see as a device.
 
 </SeeAlso>

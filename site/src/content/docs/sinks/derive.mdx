@@ -1,19 +1,24 @@
 ---
-title: What the collector derives
+title: Derived values
 description: "What the collector computes beside the raw samples: memory pressure, per-packet PMU cost, packets per interrupt, the burst flag, and when each is withheld."
+docType: reference
+head:
+  - tag: title
+    content: What the collector derives | mikroscope
 ---
 
 import Measured from "../../../components/Measured.astro";
-import NotClaimed from "../../../components/NotClaimed.astro";
 import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
 import Src from "../../../components/Src.astro";
+import TestedOn from "../../../components/TestedOn.astro";
 
-The collector has a derive stage. This page answers what it computes, from which inputs,
-when a value is withheld rather than written, and where each sink puts it. The discrete
-events the same stage raises are on [detections](/mikroscope/sinks/detections/).
+The collector's derive stage computes values beside the raw samples. For each: its
+inputs, when it is withheld rather than written, and where each sink puts it. The
+discrete events the same stage raises are on [Detection
+rules](/mikroscope/sinks/detections/).
 
-## Why the collector, and not the agent or the dashboard
+## Where values are derived {#why-the-collector-and-not-the-agent-or-the-dashboard}
 
 The derive stage exists for the derivations that need state across samples, that join
 the kernel tier to the API tier, or that must be computed once so every sink that carries
@@ -29,7 +34,7 @@ Two rules govern it:
 - **A detection is a discrete event** on the timeline, a "look here" — never a continuous
   series and never a verdict.
 
-## Beside every kernel sample
+## Per kernel sample {#beside-every-kernel-sample}
 
 ### `mem_pressure`
 
@@ -49,13 +54,15 @@ says how bad it got. The highest rung reached in the sample's `/proc/vmstat` del
 
 </ScrollTable>
 
-### The per-packet PMU ratios
+### Per-packet PMU ratios {#the-per-packet-pmu-ratios}
 
 `cycles_per_packet`, `instructions_per_packet` and `cache_misses_per_packet`: PMU counts
 summed over cores, divided by the packets softnet processed in the sample,
 summed over cores: the forwarding cost of the router in the one unit that lets two
 configurations be compared. A ruleset change that halves cycles per packet is a real
-win; one that halves busy time while traffic also halved is not.
+win; one that halves busy time while traffic also halved is not. No such comparison
+between two configurations is recorded yet
+(<TestedOn of="not-tested">not tested</TestedOn>).
 
 Absent without a PMU, in a sample with no packets, and in a sample with a counter reset
 (`suspect`), where a delta is a lower bound and not a measurement.
@@ -83,9 +90,12 @@ The trailing baselines span ten seconds of wall clock at any rate: 100 samples a
 500 at 50 Hz, 1 000 at 100 Hz, bounded between 10 and 2 000 samples. No sample is flagged
 until its CPU has at least ten samples of history.
 
-Why a percentile and not "any squeeze", measured on the reference RB5009 over 3 738 704
-per-CPU samples in 24 h: about <Measured id="squeeze.backgroundOne" /> of samples carry one squeeze as background
-and <Measured id="squeeze.backgroundTwo" /> carry exactly two. "Any squeeze" would flag the device's norm several times a minute.
+Why a percentile and not "any squeeze": squeezes can be a router's background. On the
+router measured, about <Measured id="squeeze.backgroundOne" /> of per-CPU samples carry one squeeze
+and <Measured id="squeeze.backgroundTwo" /> exactly two, so "any squeeze" would flag the device's
+norm several times a minute. The baseline is the device's own: on another board or
+traffic mix its percentile is that device's, and whether ten seconds is the right span
+there is not measured (<TestedOn of="not-tested">Tested on</TestedOn>).
 
 Three flagged samples on one CPU within 60 s is what raises the `microburst`
 [detection](/mikroscope/sinks/detections/#microburst); one flagged sample stays a data
@@ -97,7 +107,7 @@ True when the agent reported a counter reset in the sample: a counter that went 
 without a 32-bit wrap. The raw row is kept; the per-packet values above — the three PMU
 ratios and `packets_per_irq` — are withheld.
 
-## Beside every counter poll
+## Per counter poll {#beside-every-counter-poll}
 
 On each API round that carried the per-port counters, the collector computes, over the
 deltas since the previous poll, the fast-path share of the traffic each interface hands
@@ -116,7 +126,7 @@ first counter present in both polls wins:
 </ScrollTable>
 
 `fp_tx_share` is the same quotient in the other direction — Δ`fp-tx-byte` over
-Δ`driver-tx-byte`, Δ`tx-byte` or Δ`tx-bytes` — and is withheld on the reference device, below.
+Δ`driver-tx-byte`, Δ`tx-byte` or Δ`tx-bytes` — and is withheld while `fp-tx-byte` has never counted, below.
 Each share is capped at 1, with the four byte deltas written on the same row; `rx_bytes`
 and `tx_bytes` there are the share's denominators, not the wire totals.
 
@@ -126,19 +136,19 @@ neither number: it never reached the CPU. The CPU's share of a port's wire bytes
 port's receive bytes went" dashboard panel answers it from the raw counters; the derive
 stage does not compute it.
 
-Measured on the reference RB5009 (RouterOS 7.24.2, 2026-09-16) from the counters
-accumulated since boot: every switch port reads about 100 %, because `fp-rx-byte` there
-equals `driver-rx-byte` to within a few kB — every byte a port hands the CPU is counted at
-the fast-path-capable driver, so a port's line says little. The software interfaces are
-the lines the share informs on: `bridge` fast-pathed 211.9 GB of 663.0 GB (32 %),
-`PPPoE_DIGI` 99.97 %.
+A switch port whose `fp-rx-byte` equals its `driver-rx-byte` reads about 100 %: every
+byte the port hands the CPU is counted at the fast-path-capable driver, so the port's line
+says little. The share informs on software interfaces, such as a bridge or a PPPoE
+client (<TestedOn of="counters-2026-09-16">measured</TestedOn>).
 
-**The tx share is withheld while `fp-tx-byte` has never counted.** On that router
-`fp-tx-byte` stands at 0 on every interface after hundreds of GB transmitted, which reads
-as a counter RouterOS does not maintain here rather than as a fast path that forwarded
-nothing; a share computed from it would be a fabricated 0 %. While an interface's
+**The tx share is withheld while `fp-tx-byte` has never counted.** A router can leave
+`fp-tx-byte` at 0 on every interface after hundreds of GB transmitted: that reads as a
+counter RouterOS does not maintain there rather than as a fast path that forwarded
+nothing, and a share computed from it would be a fabricated 0 %. While an interface's
 cumulative `fp-tx-byte` is 0, the collector writes no `fp_tx_share` for it, and its
-`tx_bytes` and `fp_tx_bytes` are 0.
+`tx_bytes` and `fp_tx_bytes` are 0. No tx share has been produced from live counters
+yet, and why RouterOS leaves the counter at 0 is not established
+(<TestedOn of="not-tested">not tested</TestedOn>).
 
 A share is also absent for a direction that moved no bytes, whose counter went backwards,
 or whose fast-path counter the port does not report, and the whole row is absent when
@@ -148,17 +158,19 @@ seeds and writes nothing.
 A delta that could not be computed — its counter absent, gone backwards, or withheld with
 the tx share — is written as 0 beside the absent share: the InfluxDB and SQL rows and the
 Elasticsearch `fastpath` object carry `rx_bytes`, `fp_rx_bytes`, `tx_bytes` and
-`fp_tx_bytes` unconditionally. Read from the code (<Src path="internal/derive/derive.go" />), not
-observed. In that case read the share, not the delta.
+`fp_tx_bytes` unconditionally. This is read from the code
+(<Src path="internal/derive/derive.go" />) and not observed
+(<TestedOn of="not-tested">Tested on</TestedOn>). In that case read the share, not the
+delta.
 
-The share is per poll, and on an interface moving a few packets it swings: the dashboard
-walk of 2026-09-15 saw it go 0–100 % between polls on such interfaces, so the panel
+The share is per poll, and on an interface moving a few packets it swings between 0 and
+100 % from one poll to the next, so the panel
 "Fast-path share of the traffic each interface hands the CPU" weights it by bytes per bin
 — the bin's fast-path bytes over the bin's bytes — rather than plotting the per-poll
 value. The Prometheus form of that panel is the collector's per-poll gauge and keeps the
 noise.
 
-## Where each sink puts it
+## Storage per sink {#where-each-sink-puts-it}
 
 <ScrollTable label="Where the derived values land in each sink">
 
@@ -188,26 +200,17 @@ and `mikroscope.derived.packets_per_irq`. Graphite writes `derived.mem_pressure`
 carries `burst` or `suspect`. In all three, a ratio that could not be computed is left out
 rather than written as 0.
 
-<NotClaimed>
-	No comparison of the per-packet PMU cost across two router configurations on the reference device
-	is recorded, and that comparison is the use it exists for. The burst baseline is tuned against one
-	RB5009 on one day; on another board or another traffic mix its percentile will be that device's
-	own, and whether ten seconds is the right span there has not been measured. No interface of that
-	router counts `fp-tx-byte`, so no tx share has ever been produced from live counters, and why
-	RouterOS leaves that counter at 0 there is not established.
-</NotClaimed>
-
 <SeeAlso>
 
 ## See also
 
-- [Detections](/mikroscope/sinks/detections/): the eleven rules the same stage runs, and what each
+- [Detection rules](/mikroscope/sinks/detections/): the eleven rules the same stage runs, and what each
   one may not claim.
-- [The RouterOS API tier](/mikroscope/sinks/api-tier/): the port counters the fast-path share is
+- [RouterOS API tier](/mikroscope/sinks/api-tier/): the port counters the fast-path share is
   computed from.
-- [The resolution floor is the kernel's](/mikroscope/limits/): why the PMU is the resolution below
+- [Resolution limits](/mikroscope/limits/): why the PMU is the resolution below
   the jiffie.
-- [A packet flood](/mikroscope/playbooks/packet-flood/): softnet drops and squeezes on a real
+- [Packet flood](/mikroscope/playbooks/packet-flood/): softnet drops and squeezes on a real
   router.
 
 </SeeAlso>

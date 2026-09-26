@@ -1,6 +1,10 @@
 ---
-title: Los endpoints HTTP del agente
+title: Endpoints HTTP
 description: Cada ruta que sirve el agente en la veth, sus parámetros, lo que devuelve, cómo la protege el token y los formatos de línea de /snapshot y /stream.
+docType: reference
+head:
+  - tag: title
+    content: Los endpoints HTTP del agente | mikroscope
 ---
 
 import { Aside } from "@astrojs/starlight/components";
@@ -11,19 +15,18 @@ import SeeAlso from "../../../../components/SeeAlso.astro";
 import Src from "../../../../components/Src.astro";
 
 El agente es un servidor HTTP y nada más: no abre ninguna conexión saliente.
-Esta página responde qué devuelve cada ruta, qué parámetros de consulta admite,
-con qué códigos de estado responde y qué aspecto tiene una línea de su NDJSON.
-Está leída de <Src path="internal/agent/http.go" />, <Src path="internal/agent/capture.go" />, <Src path="internal/agent/source.go" />
+Cada ruta, parámetro, código de estado y formato de línea de abajo está leído
+de <Src path="internal/agent/http.go" />, <Src path="internal/agent/capture.go" />, <Src path="internal/agent/source.go" />
 y <Src path="internal/sample/sample.go" />.
 
-## Dónde escucha
+## Dirección de escucha {#dónde-escucha}
 
 El agente escucha en `ADDR:PORT`. `install` escribe la dirección de la propia
 veth del agente en `ADDR` y `9123` en `PORT`, así que por defecto es
 `http://172.30.10.2:9123`. Un agente arrancado sin `ADDR` escucha en `:PORT`,
 todas las direcciones dentro del espacio de nombres de red de su contenedor.
 Cómo llega un equipo a esa dirección, directamente, por el relay o mediante
-`--expose`, está en [llegar al agente](/mikroscope/es/install/reaching-the-agent/).
+`--expose`, está en [Acceso por red](/mikroscope/es/install/reaching-the-agent/).
 
 El servidor le da a un cliente 5 s para enviar las cabeceras de su petición y
 30 s para recibir una respuesta (`ReadHeaderTimeout` y `WriteTimeout` en el
@@ -50,10 +53,10 @@ token.
 El transporte por relay no puede presentar un token. `/tool fetch` se ejecuta en
 el router y no envía cabecera `Authorization`
 (<Src path="internal/transport/transport.go" />), así que en un agente con token el relay
-llega a `/healthz` y a nada más. `--expose` hace obligatorio el token; [lo que
-abre `--expose`](/mikroscope/es/security/expose/) cuenta por qué.
+llega a `/healthz` y a nada más. `--expose` hace obligatorio el token; [Exponer
+en la LAN](/mikroscope/es/security/expose/) cuenta por qué.
 
-## Las rutas
+## Endpoints {#las-rutas}
 
 <ScrollTable label="Todas las rutas que sirve el agente">
 
@@ -90,27 +93,35 @@ enrutador de Go con `405`.
 | `slipped`           | entero | ticks cuya lectura terminó después de que tocara el siguiente tick                       |
 | `capabilities_hash` | cadena | ocho dígitos hexadecimales sobre el kernel, el número de núcleos y las fuentes activas   |
 | `version`           | cadena | la identidad de compilación del agente                                                   |
-| `board`             | cadena | el modelo del device tree, por ejemplo `RB5009`; se omite cuando la placa no tiene       |
+| `board`             | cadena | la cadena del modelo del device tree; se omite cuando la placa no tiene                  |
 
 </ScrollTable>
 
-La CLI usa `wall_ns` frente a su propio reloj para medir el desfase, `seq` y
-`oldest_seq` para planificar un relleno, y `capabilities_hash` para darse cuenta
-de que ha cambiado el kernel o el conjunto de fuentes que tiene debajo;
-`doctor` lee `board` para clasificar los registros del log del kernel y
-`seq` con `oldest_seq` para leer el anillo entero, o sus 10 000 muestras más
-recientes cuando guarda más. Ningún código de la CLI lee
-`mono_ns`. El sondeo que sigue a `install` imprime esta
-respuesta como
-`direct transport ok: agent <version>, <rate> Hz, seq <n>, <n> slipped, <rtt> round trip`,
-donde `<version>` es la versión de la propia CLI, que esta graba en el agente
-que compila (`dev` cuando la CLI se compiló sin ella). La prueba de ida y vuelta registrada en el RB5009 el 2026-09-12 tiene dos sondeos, 7 ms tras `install` y 5 ms tras `upgrade`; el primero imprimió `direct transport ok: agent 4857d0a-dirty, 10 Hz, seq 29, 0 slipped, 7ms round trip`.
+Lo que lee de ella la CLI:
+
+- `wall_ns`, frente a su propio reloj, para medir el desfase;
+- `seq` y `oldest_seq`, para planificar un relleno;
+- `capabilities_hash`, para darse cuenta de que ha cambiado el kernel o el
+  conjunto de fuentes que tiene debajo;
+- en `doctor`, `board` para clasificar los registros del log del kernel, y
+  `seq` con `oldest_seq` para leer el anillo entero, o sus 10 000 muestras más
+  recientes cuando guarda más.
+
+Ningún código de la CLI lee `mono_ns`. El sondeo que sigue a `install` imprime
+esta respuesta así:
+
+```text
+direct transport ok: agent <version>, <rate> Hz, seq <n>, <n> slipped, <rtt> round trip
+```
+
+`<version>` es la versión de la propia CLI, que esta graba en el agente que
+compila (`dev` cuando la CLI se compiló sin ella).
 
 ## `GET /capabilities`
 
 Lo que el agente estableció al arrancar sobre el kernel y la placa, sin la API
-de RouterOS. [El flujo de datos del equipo](/mikroscope/es/sinks/device-info/)
-es este objeto tal como el colector se lo entrega a cada destino.
+de RouterOS. [Datos del equipo](/mikroscope/es/sinks/device-info/) es este
+objeto tal como el colector se lo entrega a cada destino.
 
 <ScrollTable label="Campos del cuerpo de /capabilities">
 
@@ -146,8 +157,8 @@ muestreador), `declared` (el equipo publica su propia cadencia de refresco),
 moverse sin una escritura), `budget` (un coste de análisis medido), `change` (se
 lee en cada tick y se guarda al cambiar) u `override` (`FLOOR_HZ`). Los
 contadores nunca aparecen aquí, porque a los contadores nunca se les pone
-suelo. [Cada fuente a su propio suelo](/mikroscope/es/limits/source-floors/)
-tiene las medidas que hay detrás de los suelos.
+suelo. [Cadencias de las fuentes](/mikroscope/es/limits/source-floors/)
+explica cada suelo.
 
 ## `GET /snapshot`
 
@@ -171,15 +182,15 @@ la que `doctor` lee el anillo (`since` uno por debajo de `oldest_seq`, o
 dos tipos de línea que la forma `seconds` no tiene: primero una línea de hueco
 cuando `since` es más antiguo que el anillo, y una línea de disparo antes de
 cada muestra en la que saltó una condición de captura. `max` existe por el
-relay, porque `/tool fetch output=user` devuelve como mucho <Measured id="relay.replyMaxBytes" /> en
-RouterOS 7.24.2 y trunca el resto sin avisar; el relay pide como
+relay, porque `/tool fetch output=user` devuelve como mucho <Measured id="relay.replyMaxBytes" /> y
+trunca el resto sin avisar; el relay pide como
 mucho <Measured id="relay.maxBatch" />
 líneas.
 
 <Aside type="caution" title="Un /snapshot grande no es una forma gratuita de leer el coste">
 	Un `/snapshot` de 60 s a 10 Hz hace que el agente entregue unas 600 líneas, alrededor de 1,9 MB, y
 	el `self.cpu_us` de esas muestras incluye el coste de servirlas. Lee el coste del agente en
-	el `/metrics` del colector: [el coste del observador](/mikroscope/es/cost/) tiene el procedimiento.
+	el `/metrics` del colector: [Coste del agente](/mikroscope/es/cost/) tiene el procedimiento.
 </Aside>
 
 ## `GET /stream`
@@ -205,14 +216,12 @@ Un `since` que no es un número es `400`.
 El `WriteTimeout` de 30 s del servidor se aplica a todas las respuestas, y el
 servidor HTTP de Go no lo levanta para un manejador que sigue escribiendo, así
 que una conexión a `/stream` termina unos 30 s después de abrirse por mucho que
-le quede por decir. Medido en el RB5009 de referencia (RouterOS 7.24.4, agente
-1.0.9 a 10 Hz) el 2026-09-21: tres conexiones duraron <Measured id="stream.lifetime" />
-y llevaron <Measured id="stream.lines" /> líneas cada una. **Quien consuma
-`/stream` tiene que reconectar**, con el último `seq` que vio como `since` para
-que se rellene el hueco. La CLI no depende de `/stream`: `record` y `forward`
-tiran de `/snapshot?since=`.
+le quede por decir: una conexión dura <Measured id="stream.lifetime" /> y lleva <Measured id="stream.lines" />
+líneas a 10 Hz. **Quien consuma `/stream` tiene que reconectar**, con el último
+`seq` que vio como `since` para que se rellene el hueco. La CLI no depende de `/stream`: `record` y `forward` tiran de
+`/snapshot?since=`.
 
-## Los tipos de línea
+## Tipos de línea {#los-tipos-de-línea}
 
 Aparte del comentario de latido de `/stream`, cada línea que escriben
 `/snapshot`, `/stream` y `/captures/{id}` es un objeto JSON y un salto de
@@ -232,7 +241,7 @@ línea. Existen cuatro tipos, que se distinguen por su primera clave:
 Un consumidor que no conoce un tipo se lo salta, así que un tipo de línea que
 no ha visto nunca no le cuesta nada.
 
-### Una línea de muestra
+### Línea de muestra {#una-línea-de-muestra}
 
 Cada campo numérico es un **delta desde la muestra anterior** salvo que la
 tabla diga que es un nivel. Una fuente que el kernel no tiene, o que el
@@ -301,16 +310,14 @@ suceso se lee como un hueco en la serie, no como un router tranquilo.
 
 El colector lo lee al arrancar y luego en la misma cadencia de un minuto en la
 que vuelve a medir el desfase de reloj, y se lo entrega a todos los destinos.
-Eso es lo que hace que estas cifras sean alcanzables: no son por tick, así que
-no pueden viajar en una muestra, y hasta 1.0.5 la única forma de verlas era
-scrapear al agente.
+Estas cifras no son por tick, así que no pueden viajar en una muestra.
 
-**El agente no sirve `/metrics`.** Lo hizo hasta 1.0.4, y un despliegue con
-Prometheus estaba documentado como scrapeando al agente además de al colector.
-Ya no: la exposición es la del colector, construida desde las muestras y desde
-este endpoint, y lleva todas las familias que piden los dashboards. El agente
-es un muestreador y un anillo — renderizar no es su trabajo, y no plegar cada
-muestra en contadores e histogramas es memoria que no gasta.
+**El agente no sirve `/metrics`.** La exposición de Prometheus es la del
+colector, construida desde las muestras y desde este endpoint, y lleva todas
+las familias que piden los dashboards: [Métricas de
+Prometheus](/mikroscope/es/reference/metrics/). El agente es un muestreador y
+un anillo; no pliega ninguna muestra en contadores ni histogramas, y esa es
+memoria que no gasta.
 
 ## Capturas
 
@@ -381,17 +388,17 @@ curl -X POST "http://172.30.10.2:9123/capture?reason=queue-tree-applied"
 Si otra captura sigue recogiendo su ventana, o si una captura manual saltó
 dentro de la ventana refractaria, la respuesta es `409` y no se arma nada. Las
 condiciones, el presupuesto y lo que una captura no puede mostrar están en
-[captura por disparo](/mikroscope/es/record/triggers/).
+[Captura por disparo](/mikroscope/es/record/triggers/).
 
 <SeeAlso>
 
 ## Véase también
 
-- [Llegar al agente](/mikroscope/es/install/reaching-the-agent/): las tres formas en que un equipo
+- [Acceso por red](/mikroscope/es/install/reaching-the-agent/): las tres formas en que un equipo
   llega a estas rutas.
-- [Familias de métricas de Prometheus](/mikroscope/es/reference/metrics/): lo que lleva el `/metrics` del colector.
+- [Métricas de Prometheus](/mikroscope/es/reference/metrics/): lo que lleva el `/metrics` del colector.
 - [Captura por disparo](/mikroscope/es/record/triggers/): las condiciones que hay detrás de
   `/captures`.
-- [Lo que abre `--expose`](/mikroscope/es/security/expose/): cuándo el token pasa a ser obligatorio.
+- [Exponer en la LAN](/mikroscope/es/security/expose/): cuándo el token pasa a ser obligatorio.
 
 </SeeAlso>
