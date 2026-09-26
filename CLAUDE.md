@@ -51,26 +51,30 @@ seconds. Writes, reboots, device-mode and power cuts need no consent there.
   `lab-console`, `lab-provision`; then `make test-lab` (`LAB_RUN=` narrows it)
   and `make roundtrip`. Inside `ARGS`, `$(LAB_REMOTE_IMAGE)` names the last
   release's agent image.
-- **Deploy verbs run only through `lab.sh cli`** (`make lab-cli`, and the suite
-  does the same), which runs the CLI in the lab's LAN namespace. Never run
-  `doctor`, `install`, `upgrade`, `status` or `uninstall` from the host shell:
-  from a developer machine the agent's default 172.30.10.2 routes out by the
-  default route, toward whatever network that is, and may reach a real agent.
+- **Deploy verbs run only through `mikroscope-lab cli`** (`make lab-cli`, and
+  the suite does the same), which runs the CLI in the lab's LAN namespace.
+  Never run `doctor`, `install`, `upgrade`, `status` or `uninstall` from the
+  host shell: from a developer machine the agent's default 172.30.10.2 routes
+  out by the default route, toward whatever network that is, and may reach a
+  real agent.
   The one exception is `make roundtrip-device`, which runs `bin/mikroscope`
   from the host against the router it names, and only when the owner asks
-  for a measurement on hardware (below). `lab.sh cli` refuses `--router` and
-  a `--subnet` outside the lab's routes, and the lab's namespace refuses new
-  connections to private addresses outside the lab.
+  for a measurement on hardware (below). `mikroscope-lab cli` refuses
+  `--router` and a `--subnet` outside the lab's routes, and the lab's
+  namespace refuses new connections to private addresses outside the lab.
 - **One driver per lab.** Every verb that drives a VM takes an `flock` on
-  `test/lab/.cache/<arch>.lock`; a session of many holds it with
-  `test/lab/lab.sh lock <command>` (`make test-lab` and `make roundtrip` do).
-  Another worktree drives the same lab with
+  `.cache/<id>.lock` in the state directory (`x86_64`, `arm64`, `x86_64-iso`,
+  `<instance>-` in front for an instance); a session of many holds it with
+  `bin/mikroscope-lab lock <command>` (`make test-lab` and `make roundtrip`
+  do). `LAB_INSTANCE=<name>` is a second lab of an architecture, with its own
+  container, ports, lock and disks, for work that must not touch the lab
+  another session drives. Another worktree drives the same lab with
   `LAB_STATE_DIR=<the first checkout>/test/lab`; a verb run against the wrong
   state stops and names the value to export.
 - **Lab secrets.** `test/lab/.env` (the admin password and the agent token)
   and `test/lab/.cache/ssh` are never printed, committed, uploaded or put in a
-  screenshot. `lab.sh export` prints `/export` to stdout only; compare it in
-  memory.
+  screenshot. `mikroscope-lab export` prints `/export` to stdout only;
+  compare it in memory.
 - **Its limits.** No board, flash, sensors or switch chip; the free CHR licence
   caps what the router sends at 1 Mbit/s per interface. Arm64 lab timings and
   CPU figures are emulation, never costs.
@@ -105,7 +109,9 @@ hardware; then:
 ## Conventions
 
 - Two shipped binaries (`cmd/mikroscope`, `cmd/mikroscope-agent`);
-  `cmd/gen_brand` is a build-time tool that writes `brand/` and is never
+  `cmd/mikroscope-lab` drives the virtual lab (logic in `internal/lab`, its
+  container side in `internal/lab/vm`; `test/lab/lab.sh` execs it), and
+  `cmd/gen_brand` is a build-time tool that writes `brand/`; neither tool is
   shipped. The agent links only `procfs`, `sample`, `agent` and the standard
   library.
 - Voice, in code comments, CHANGELOG and docs: what was measured, on which

@@ -2336,13 +2336,13 @@ installer.
 The boot times were measured on 2026-09-26 on the development machine
 (x86_64, 12 cores); the arm64 one is the emulation's, not a router's.
 
-The CLI runs inside the lab's LAN. `lab.sh cli` starts it in the lab
+The CLI runs inside the lab's LAN. `mikroscope-lab cli` starts it in the lab
 container's network namespace, where 172.30.0.0/16 routes to the lab router,
 so the agent's default address, 172.30.10.2, reaches the lab's agent and
 nothing else. From a developer machine's own shell the same address leaves by
-its default route, toward whatever network that is. Every deploy verb, by hand
-(`make lab-cli`) or in the suite, goes through `lab.sh cli`, which refuses
-`--router` and a `--subnet` outside the lab's routes. The lab's namespace has
+its default route, toward whatever network that is. Every deploy verb, by
+hand (`make lab-cli`) or in the suite, goes through `mikroscope-lab cli`,
+which refuses `--router` and a `--subnet` outside the lab's routes. The lab's namespace has
 its own firewall: it opens no new connection to a private address outside the
 lab, and takes none from another container.
 
@@ -2403,16 +2403,31 @@ make lab-down
 make lab-up LAB_ARCH=arm64      # the emulated one, then the same targets with LAB_ARCH=arm64
 ```
 
-It needs Linux, Docker, `flock`, Go for the CLI and agent under test, about
-910 MB of disk for both architectures, and `/dev/kvm` for x86_64: without it
-the default `LAB_KVM=auto` falls back to emulation, many times slower and not
-measured, and `LAB_KVM=require` stops instead. Without a running lab every
-test of the suite skips, and `MIKROSCOPE_LAB_REQUIRED=1` makes that a failure.
-Only one driver at a time: every verb takes a lock per architecture, so two
-checkouts never drive one lab between each other's steps, and `LAB_STATE_DIR`
-points a second checkout at the lab a first one runs. The lab's admin password
-and agent token are generated into `test/lab/.env` on first use, gitignored
-and never printed.
+It needs Linux, Docker, Go for the lab's driver and for the CLI and agent
+under test, about 910 MB of disk for both architectures, and `/dev/kvm` for
+x86_64: without it the default `LAB_KVM=auto` falls back to emulation, many
+times slower and not measured, and `LAB_KVM=require` stops instead. Without a
+running lab every test of the suite skips, and `MIKROSCOPE_LAB_REQUIRED=1`
+makes that a failure. Only one driver at a time: every verb takes a lock per
+lab, so two checkouts never drive one lab between each other's steps, and `LAB_STATE_DIR`
+points a second checkout at the lab a first one runs; `LAB_INSTANCE=<name>`
+runs a second lab of an architecture beside the first, with its own
+container, ports, lock and disks. The lab's admin password and agent token
+are generated into `test/lab/.env` on first use, gitignored and never
+printed.
+
+Every target runs the lab's driver, `bin/mikroscope-lab`: a build-time tool
+in Go, like the one that draws the brand, which `make lab-tool` builds
+from [`cmd/mikroscope-lab/`](https://github.com/jmrplens/mikroscope/tree/main/cmd/mikroscope-lab) and [`internal/lab/`](https://github.com/jmrplens/mikroscope/tree/main/internal/lab),
+and nothing ships. The same static binary is the lab container's first process,
+which sets up its network and runs QEMU until the guest powers off, and the
+suite calls the driver in its own process rather than as a command.
+`test/lab/lab.sh`, the shell script the driver replaced on 2026-09-27, now
+only builds and starts it. The driver's unit tests stand a fake Docker and a
+fake router in for the real ones, so provisioning, the lock, the downloads and
+their checksums, the snapshot chain, the firewall rules, QEMU's command line
+and the CLI's refusals are tested in `go test`; what only a real RouterOS
+shows, the lab suite shows.
 
 A third lab, RouterOS x86 installed from MikroTik's ISO
 (`make lab-up LAB_KIND=iso`), is an opt-in recipe that CI never runs. It adds
@@ -2432,9 +2447,10 @@ The workflow, [`.github/workflows/lab.yml`](https://github.com/jmrplens/mikrosco
 installs the agent" is a list of paths in the `changes` job of `ci.yml`:
 `internal/router`, `internal/image`, `internal/agent`, `cmd/mikroscope`,
 `cmd/mikroscope-agent`, `Dockerfile.agent`, the `Makefile`, the agent tar and
-round-trip scripts, the lab and its suite, and `lab.yml` itself. arm64 is not a gate: under emulation it takes an estimated 25 to 35
-minutes, and it depends on MikroTik's download server and on Docker Hub being
-up. On a release the pull scenarios pull the release before it, because the
+round-trip scripts, the lab, its driver (`cmd/mikroscope-lab`,
+`internal/lab`) and its suite, and `lab.yml` itself. arm64 is not a gate:
+under emulation it takes an estimated 25 to 35 minutes, and it depends on
+MikroTik's download server and on Docker Hub being up. On a release the pull scenarios pull the release before it, because the
 new tag's agent image is pushed only after the gates pass.
 
 The Actions cache keeps MikroTik's downloads per architecture and RouterOS

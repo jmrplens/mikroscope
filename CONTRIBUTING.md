@@ -27,6 +27,7 @@ tick deltas, never percentages; the window is the reader's choice.
 cmd/mikroscope          the CLI and collector: install, record, plot, forward, dashboards
 cmd/mikroscope-agent    the agent that runs on the router
 cmd/gen_brand           build-time tool that writes brand/; never shipped
+cmd/mikroscope-lab      build-time tool that drives the virtual RouterOS lab; never shipped
 internal/procfs         parsers for the /proc and /sys files the agent reads
 internal/sample         one tick's raw values and the deltas between two
 internal/agent          the sampler, the ring, triggered captures, the HTTP server
@@ -43,6 +44,7 @@ internal/teardown       uninstall --targets data: what a collector left in a sto
 internal/record         recordings and markers; internal/chart draws them
 internal/dashboards     the Grafana dashboards and alert rules, generated
 internal/version        the build identity both binaries report; version.go at the root embeds VERSION
+internal/lab            the lab's driver, cmd/mikroscope-lab's logic; internal/lab/vm its container side
 test/e2e                both binaries against fake agents and fake sinks, no network
 test/e2e/docker         the collector against real stores in docker compose (build tag dockere2e)
 test/e2e/lab            the CLI and the agent against the virtual RouterOS lab (build tag labe2e)
@@ -105,7 +107,7 @@ go build ./... && go test ./...
   x86_64 for a pull request that touches those paths.
 - `make shellcheck` is inside `make analyze` and runs over `install.sh`,
   every script under `scripts/` and `.github/scripts/`, and the lab's
-  (`test/lab/*.sh`, `test/lab/vm/*.sh`). actionlint runs
+  wrapper (`test/lab/lab.sh`). actionlint runs
   shellcheck too, but only over the `run:` blocks of the workflows — the
   scripts those blocks call are a different set of files, and the installer is
   the first command the README gives.
@@ -214,9 +216,10 @@ how it is wired, what each step took, and where it stops being a router.
 
 **What it needs.** Linux, Docker with permission to add `NET_ADMIN` and
 `/dev/net/tun` to a container (the router's LAN tap and the lab's
-firewall), `flock` (util-linux), Go for the CLI and agent under test, about
+firewall), Go for the lab's driver and the CLI and agent under test, about
 910 MB of disk for both architectures (810 MB for one), the loopback ports
-220N, 800N, 870N and 910N free (N = 1 for x86_64, 2 for arm64), and network
+220N, 800N, 870N and 910N free (N = 1 for x86_64, 2 for arm64, plus an
+instance's offset), and network
 access: Docker Hub and Debian's mirrors for the lab image the first time,
 `download.mikrotik.com` once per RouterOS version, and Docker Hub for what
 the router pulls. x86_64 wants `/dev/kvm`; without it `LAB_KVM=auto` (the
@@ -240,7 +243,15 @@ make lab-down                 # the disks keep their state
 `LAB_ROS=7.24.4` the RouterOS version, on the `make` line or in the
 environment. `lab-ssh CMD='…'`, `lab-residue`, `lab-power-cycle` (a cold
 reboot), `lab-console` and `lab-provision` (`FORCE=1` redoes the snapshot)
-are the rest; `test/lab/lab.sh help` lists what the targets call.
+are the rest. Every target runs `bin/mikroscope-lab`, the lab's driver, which
+`make lab-tool` builds from `cmd/mikroscope-lab` and `internal/lab` (a
+build-time tool, never shipped); `bin/mikroscope-lab help` lists its verbs,
+and `test/lab/lab.sh` execs it for a command written for the old script.
+`LAB_INSTANCE=<name>` runs a second lab of an architecture beside the first,
+with its own container, ports, lock and disks. A change to the driver runs
+`go test ./internal/lab/... ./cmd/mikroscope-lab/`, whose fake Docker and
+fake router cover provisioning, the lock, the downloads and the CLI's
+refusals, and then the lab suite on a real lab.
 
 The two labs are separate containers and run side by side, and so can their
 suites, but not as two `make test-lab` in one checkout: each rebuilds the
@@ -248,16 +259,16 @@ agent tars, and one can read a tar the other is halfway through writing.
 Build once and start each under its own lab's lock, or use two checkouts:
 
 ```sh
-make build agent-tars
-LAB_ARCH=x86_64 test/lab/lab.sh lock go test -tags labe2e -count=1 -timeout 75m ./test/e2e/lab/ &
-LAB_ARCH=arm64 test/lab/lab.sh lock go test -tags labe2e -count=1 -timeout 75m ./test/e2e/lab/
+make build agent-tars lab-tool
+LAB_ARCH=x86_64 bin/mikroscope-lab lock go test -tags labe2e -count=1 -timeout 75m ./test/e2e/lab/ &
+LAB_ARCH=arm64 bin/mikroscope-lab lock go test -tags labe2e -count=1 -timeout 75m ./test/e2e/lab/
 ```
 
 - **Deploy verbs run through the lab.** `make lab-cli` builds this checkout's
   CLI and runs it in the lab's LAN namespace, where the agent's default
   172.30.10.2 routes to the lab router. Run from your own shell, the same
   address leaves by your default route and can reach a real agent on your
-  network. `lab.sh cli` refuses `--router` and a `--subnet` outside the
+  network. `mikroscope-lab cli` refuses `--router` and a `--subnet` outside the
   lab's routes, and the lab's namespace refuses new connections to private
   addresses outside the lab, so nothing it runs reaches your network.
   `$(LAB_REMOTE_IMAGE)` is the last release's agent image, which make
@@ -280,8 +291,9 @@ LAB_ARCH=arm64 test/lab/lab.sh lock go test -tags labe2e -count=1 -timeout 75m .
   `advanced-firewall-range`. Each is idempotent, and what it creates carries a
   comment that starts with `lab: <profile>`.
 - **One driver at a time.** Every verb that drives a lab takes an `flock` on
-  `test/lab/.cache/<arch>.lock`, and a second driver waits and names the
-  holder (`LAB_LOCK_WAIT=<s>` bounds the wait). `test/lab/lab.sh lock
+  `.cache/<id>.lock` in the state directory (`x86_64`, `arm64` or
+  `x86_64-iso`, with `<instance>-` in front for an instance), and a second
+  driver waits and names the holder (`LAB_LOCK_WAIT=<s>` bounds the wait). `bin/mikroscope-lab lock
   <command>` holds it for a whole session; `make test-lab` and
   `make roundtrip` do.
 - **Shared state.** A lab's downloads, disks, ssh key and `.env` live in the
@@ -297,8 +309,9 @@ LAB_ARCH=arm64 test/lab/lab.sh lock go test -tags labe2e -count=1 -timeout 75m .
 `make test-lab`. x86_64, under KVM, runs on a pull request that touches the
 installer's paths (`internal/router`, `internal/image`, `internal/agent`,
 `cmd/mikroscope`, `cmd/mikroscope-agent`, `Dockerfile.agent`, the
-`Makefile`, the agent tars, the round trip, the lab and its suite, and
-`lab.yml` itself; `ci.yml`'s `changes` job holds the list), as a gate before
+`Makefile`, the agent tars, the round trip, the lab, its driver
+(`cmd/mikroscope-lab`, `internal/lab`) and its suite, and `lab.yml` itself;
+`ci.yml`'s `changes` job holds the list), as a gate before
 every release, weekly and on dispatch. arm64 runs weekly and on dispatch
 only: under emulation it takes an estimated 25 to 35 minutes, which the
 first dispatch will measure, and a release does not wait on it. The Actions

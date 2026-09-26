@@ -172,13 +172,13 @@ cuánto tardó cada paso y qué le enseñó CHR al instalador.
 Los tiempos de arranque se midieron el 2026-09-26 en la máquina de desarrollo
 (x86_64, 12 núcleos); el de arm64 es de la emulación, no de un router.
 
-La CLI se ejecuta dentro de la LAN del laboratorio. `lab.sh cli` la arranca en
-el espacio de nombres de red del contenedor del laboratorio, donde
+La CLI se ejecuta dentro de la LAN del laboratorio. `mikroscope-lab cli` la
+arranca en el espacio de nombres de red del contenedor del laboratorio, donde
 172.30.0.0/16 va al router del laboratorio, así que la dirección por defecto
 del agente, 172.30.10.2, llega al agente del laboratorio y a nada más. Desde
 la shell de una máquina de desarrollo, la misma dirección sale por su ruta por
 defecto, hacia la red que sea. Toda orden de despliegue, a mano
-(`make lab-cli`) o en la batería, pasa por `lab.sh cli`, que rechaza
+(`make lab-cli`) o en la batería, pasa por `mikroscope-lab cli`, que rechaza
 `--router` y un `--subnet` fuera de las rutas del laboratorio. El espacio de
 nombres del laboratorio tiene su propio cortafuegos: no abre ninguna conexión
 nueva hacia una dirección privada fuera del laboratorio, ni acepta ninguna de
@@ -248,17 +248,34 @@ make lab-down
 make lab-up LAB_ARCH=arm64      # el emulado; luego los mismos objetivos con LAB_ARCH=arm64
 ```
 
-Necesita Linux, Docker, `flock`, Go para la CLI y el agente que se prueban,
-unos 910 MB de disco para las dos arquitecturas y `/dev/kvm` para x86_64: sin
-él, el valor por defecto `LAB_KVM=auto` cae a la emulación, muchas veces más
-lenta y sin medir, y `LAB_KVM=require` se detiene en su lugar. Sin un laboratorio en
-marcha, cada prueba de la batería se omite, y `MIKROSCOPE_LAB_REQUIRED=1`
-convierte eso en un fallo. Un solo conductor cada vez: cada verbo toma un
-cerrojo por arquitectura, así que dos copias del repositorio nunca manejan un
-laboratorio entre los pasos de la otra, y `LAB_STATE_DIR` apunta una segunda
-copia al laboratorio que ejecuta la primera. La contraseña de administración
-del laboratorio y el token del agente se generan en `test/lab/.env` la primera
+Necesita Linux, Docker, Go para el conductor del laboratorio y para la CLI y
+el agente que se prueban, unos 910 MB de disco para las dos arquitecturas y
+`/dev/kvm` para x86_64: sin él, el valor por defecto `LAB_KVM=auto` cae a la
+emulación, muchas veces más lenta y sin medir, y `LAB_KVM=require` se detiene
+en su lugar. Sin un laboratorio en marcha, cada prueba de la batería se omite,
+y `MIKROSCOPE_LAB_REQUIRED=1` convierte eso en un fallo. Un solo conductor
+cada vez: cada verbo toma un cerrojo por laboratorio, así que dos copias del
+repositorio nunca manejan un laboratorio entre los pasos de la otra, y `LAB_STATE_DIR` apunta una segunda
+copia al laboratorio que ejecuta la primera; `LAB_INSTANCE=<nombre>` levanta
+un segundo laboratorio de una arquitectura junto al primero, con su propio
+contenedor, puertos, cerrojo y discos. La contraseña de administración del
+laboratorio y el token del agente se generan en `test/lab/.env` la primera
 vez, están en `.gitignore` y nunca se imprimen.
+
+Cada objetivo ejecuta el conductor del laboratorio, `bin/mikroscope-lab`: una
+herramienta de compilación en Go, como la que dibuja la marca, que
+`make lab-tool` compila desde <Src path="cmd/mikroscope-lab/" />
+e <Src path="internal/lab/" />, y que nada distribuye. El mismo binario
+estático es el primer proceso del contenedor del laboratorio, que prepara su
+red y ejecuta QEMU hasta que el invitado se apaga, y la batería llama al
+conductor en su propio proceso en lugar de como una orden. `test/lab/lab.sh`,
+el script de shell al que el conductor sustituyó el 2026-09-27, ahora solo lo
+compila y lo arranca. Las pruebas unitarias del conductor ponen un Docker
+falso y un router falso en lugar de los reales, así que el aprovisionamiento, el cerrojo, las
+descargas y sus sumas de comprobación, la cadena de instantáneas, las reglas
+del cortafuegos, la línea de órdenes de QEMU y los rechazos de la CLI se
+prueban en `go test`; lo que solo un RouterOS real muestra, lo muestra la
+batería del laboratorio.
 
 Un tercer laboratorio, RouterOS x86 instalado desde la ISO de MikroTik
 (`make lab-up LAB_KIND=iso`), es una receta opcional que la CI nunca ejecuta.
@@ -282,9 +299,10 @@ El flujo, <Src path=".github/workflows/lab.yml" />, ejecuta los mismos
 instala el agente» es una lista de rutas en el trabajo `changes` de `ci.yml`:
 `internal/router`, `internal/image`, `internal/agent`, `cmd/mikroscope`,
 `cmd/mikroscope-agent`, `Dockerfile.agent`, el `Makefile`, los guiones del tar
-del agente y del viaje de ida y vuelta, el laboratorio y su batería, y el
-propio `lab.yml`. arm64 no es una puerta: bajo emulación
-tarda entre 25 y 35 minutos según una estimación, y depende de que el
+del agente y del viaje de ida y vuelta, el laboratorio, su conductor
+(`cmd/mikroscope-lab`, `internal/lab`) y su batería, y el propio `lab.yml`.
+arm64 no es una puerta: bajo emulación tarda entre 25 y 35 minutos según una
+estimación, y depende de que el
 servidor de descargas de MikroTik y Docker Hub estén disponibles. En una
 publicación, los escenarios de descarga descargan la versión anterior, porque
 la imagen del agente de la nueva etiqueta solo se publica cuando las puertas
