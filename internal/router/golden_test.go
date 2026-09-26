@@ -141,7 +141,7 @@ func caseOptions(args []string) (Options, error) {
 	fs.StringVar(&o.AddrList, "addr-list", o.AddrList, "")
 	fs.StringVar(&o.Disk, "disk", o.Disk, "")
 	fs.BoolVar(&o.Ephemeral, "ephemeral", o.Ephemeral, "")
-	fs.StringVar(&o.Arch, "arch", o.Arch, "")
+	fs.StringVar(&o.Arch, "arch", ArchAuto, "")
 	fs.StringVar(&o.RemoteImage, "remote-image", o.RemoteImage, "")
 	fs.IntVar(&o.Port, "port", o.Port, "")
 	fs.IntVar(&o.RateHz, "rate", o.RateHz, "")
@@ -155,11 +155,21 @@ func caseOptions(args []string) (Options, error) {
 	fs.IntVar(&o.FloorHz, "floor-hz", o.FloorHz, "")
 	fs.BoolVar(&o.Privileged, "privileged", o.Privileged, "")
 	fs.StringVar(&o.LANAddress, "lan-address", o.LANAddress, "")
+	fs.IntVar(&o.RestartMaxCount, "restart-max-count", o.RestartMaxCount, "")
+	fs.StringVar(&o.RestartInterval, "restart-interval", o.RestartInterval, "")
+	fs.StringVar(&o.StartOnBootMode, "start-on-boot", o.StartOnBootMode, "")
+	fs.StringVar(&o.ContainerName, "container-name", o.ContainerName, "")
+	fs.StringVar(&o.ExtractTimeout, "extract-timeout", o.ExtractTimeout, "")
 	// Which tar a tar install uploads, a build or a release asset at some
 	// ARM level, is the CLI's business: no command the router receives
-	// changes with it.
+	// changes with it. Nor does how ssh reaches the router, but an
+	// --ssh-option the CLI would refuse is refused here too.
 	fs.String("agent-tar", "", "")
 	fs.String("goarm", "5", "")
+	fs.Func("ssh-option", "", func(kv string) error {
+		_, err := ParseSSHOption(kv)
+		return err
+	})
 	if err := fs.Parse(args); err != nil {
 		return o, err
 	}
@@ -335,6 +345,11 @@ func TestGoldenCaseOptionsRefuseWhatTheCLIRefuses(t *testing.T) {
 		{"--expose", "--remote-image", "jmrplens/mikroscope-agent:1.3.1"},
 		{"--token", "not-the-fixed-fake-token"},
 		{"--remote-image", "jmrplens/mikroscope-agent:1.3.1", "extra"},
+		{"--iface-list", "static"},
+		{"--start-on-boot", "maybe"},
+		{"--extract-timeout", "5s"},
+		{"--container-name", "a b"},
+		{"--ssh-option", "ProxyCommand=nc"},
 	} {
 		if _, err := caseOptions(args); err == nil {
 			t.Errorf("%q resolved without an error", args)

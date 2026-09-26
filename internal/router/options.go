@@ -11,6 +11,8 @@ import (
 	"fmt"
 	"net"
 	"regexp"
+	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/jmrplens/mikroscope/internal/agent"
@@ -27,10 +29,46 @@ var (
 	validName       = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,31}$`)
 	validObjectName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`)
 	validDisk       = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$`)
-	validArch       = regexp.MustCompile(`^[a-z0-9]{1,16}$`)
 	validMemory     = regexp.MustCompile(`^\d{1,6}[KMG]?$`)
 	validToken      = regexp.MustCompile(`^[A-Za-z0-9_.-]{0,128}$`)
 	validDuration   = regexp.MustCompile(`^\d{1,4}[smh]$`)
+)
+
+// ArchAuto is the --arch value that leaves the architecture to the router:
+// Finish records it in DetectArch and puts the offline fallback, arm64, in
+// Arch, which is what plan, --dry-run and image use.
+const ArchAuto = "auto"
+
+// arches are the GOARCH values an agent image is built for, one per
+// architecture MikroTik publishes the container package for.
+var arches = []string{"arm64", "arm", "amd64"}
+
+// ListNone is the --iface-list and --addr-list value that joins no list: the
+// membership step is left out of the plan. For an interface list it is also
+// the name of RouterOS's own built-in empty list, which takes no member.
+const ListNone = "none"
+
+// builtinIfaceLists are RouterOS's built-in interface lists that ListNone
+// does not stand for. RouterOS refuses a member on each of them with
+// `failure: cannot add to builtin list`, so a plan that named one could only
+// fail at its third write. Names are case-sensitive: `ALL` is an ordinary
+// list name. Both measured in the virtual lab (CHR x86_64, RouterOS 7.24.4,
+// 2026-09-26), where `none` gave the same refusal and `ALL`, `None` and
+// `Static` gave `input does not match any value of list`.
+var builtinIfaceLists = []string{"all", "dynamic", "static"}
+
+// The --start-on-boot values. StartOnBootAuto is the one that follows
+// --ephemeral.
+const (
+	StartOnBootAuto = "auto"
+	StartOnBootYes  = "yes"
+	StartOnBootNo   = "no"
+)
+
+// The bounds of --extract-timeout, in seconds.
+const (
+	minExtractTimeoutS = 10
+	maxExtractTimeoutS = 600
 )
 
 // Options is everything a deployment needs. Zero values are not usable;
@@ -39,19 +77,29 @@ type Options struct {
 	Name      string // container name; tags every object created
 	Veth      string // veth interface name on the router
 	Subnet    string // point-to-point /30 for the container, network address
-	IfaceList string // interface list the veth must join (raw "drop the rest" trap)
-	AddrList  string // address list the /30 must join (raw "drop local" trap)
+	IfaceList string // interface list the veth must join (raw "drop the rest" trap); ListNone joins none
+	AddrList  string // address list the /30 must join (raw "drop local" trap); ListNone joins none
+
+	// ContainerName is the RouterOS `name=` of the container. Empty writes
+	// no name= and RouterOS names the container itself. The tag, not this
+	// name, is what every removal selects by.
+	ContainerName string
 
 	// Disk is the RouterOS disk that holds the image tar and the container
 	// root: "" for the internal flash, "tmpfs" for the RAM disk when the
 	// device has one (zero flash writes: on the reference RB5009, RouterOS
 	// 7.24.2, 2026-09-11, `write-sect-since-reboot` stayed at 58 279 across
 	// install, run and removal with tar and root on the tmpfs disk), "disk1",
-	// "usb1", … Ephemeral forces "tmpfs" and start-on-boot=no.
+	// "usb1", … Ephemeral forces "tmpfs", and start-on-boot=no unless
+	// StartOnBootMode says yes.
 	Disk      string
 	Ephemeral bool
 
-	Arch      string // GOARCH the image manifest declares: arm64, arm, amd64
+	Arch string // GOARCH the image manifest declares: arm64, arm, amd64; ArchAuto before Finish
+	// DetectArch is set by Finish when Arch was ArchAuto: the architecture
+	// is the router's to tell, and Arch holds arm64 until it is read.
+	DetectArch bool
+
 	Port      int    // agent HTTP port on the veth
 	RateHz    int    // sampler rate, 1–100 (validateLimits); 10, 50 and 100 Hz measured lossless on the RB5009, 2026-09-15
 	BufferS   int    // ring buffer seconds, 10–3600
@@ -106,6 +154,16 @@ type Options struct {
 	RestartMaxCount int    // bounded auto-restart: on-failure retries this many times, then stops for good
 	RestartInterval string // RouterOS duration, e.g. 10s
 
+	// StartOnBootMode is --start-on-boot: StartOnBootAuto (no with
+	// Ephemeral, yes otherwise), StartOnBootYes or StartOnBootNo. Empty
+	// reads as auto. StartOnBoot resolves it.
+	StartOnBootMode string
+
+	// ExtractTimeout bounds, as a RouterOS-style duration (120s, 2m), how
+	// long a tar install waits for RouterOS to finish extracting the image
+	// before the tar is deleted. ExtractTimeoutS gives it in seconds.
+	ExtractTimeout string
+
 	// Derived by Finish from Subnet: .1 router side, .2 container side.
 	GatewayIP   string
 	ContainerIP string
@@ -131,6 +189,8 @@ func Defaults() Options {
 		CaptureMB:       4,
 		RestartMaxCount: 5,
 		RestartInterval: "10s",
+		StartOnBootMode: StartOnBootAuto,
+		ExtractTimeout:  "120s",
 		Privileged:      true,
 	}
 }
@@ -143,6 +203,9 @@ func (o *Options) Finish() error {
 		return err
 	}
 	if err := o.validateLimits(); err != nil {
+		return err
+	}
+	if err := o.validateContainerSettings(); err != nil {
 		return err
 	}
 	if err := o.validateExpose(); err != nil {
@@ -290,14 +353,24 @@ func (o *Options) validateNames() error {
 			return fmt.Errorf("%s must match %s, got %q", what, validObjectName, value)
 		}
 	}
+	if slices.Contains(builtinIfaceLists, o.IfaceList) {
+		return fmt.Errorf("iface-list %q is a RouterOS built-in list, which takes no member: "+
+			"name the list your firewall's in-interface-list=!… drop rule uses, or %s to join no list", o.IfaceList, ListNone)
+	}
+	if o.ContainerName != "" && !validName.MatchString(o.ContainerName) {
+		return fmt.Errorf("container-name must match %s, got %q", validName, o.ContainerName)
+	}
 	if o.Ephemeral {
 		o.Disk = "tmpfs"
 	}
 	if o.Disk != "" && !validDisk.MatchString(o.Disk) {
 		return fmt.Errorf("disk must be a RouterOS disk name matching %s, got %q", validDisk, o.Disk)
 	}
-	if !validArch.MatchString(o.Arch) {
-		return fmt.Errorf("arch must match %s, got %q", validArch, o.Arch)
+	if o.Arch == ArchAuto {
+		o.Arch, o.DetectArch = Defaults().Arch, true
+	}
+	if !slices.Contains(arches, o.Arch) {
+		return fmt.Errorf("arch must be %s or %s, got %q", strings.Join(arches, ", "), ArchAuto, o.Arch)
 	}
 	if !validToken.MatchString(o.Token) {
 		return fmt.Errorf("token must match %s", validToken)
@@ -337,13 +410,50 @@ func (o *Options) validateLimits() error {
 			return fmt.Errorf("triggers: %w", err)
 		}
 	}
+	return nil
+}
+
+// validateContainerSettings bounds what the container step writes besides
+// the envlist: the restart policy, start-on-boot, and the extraction wait.
+func (o *Options) validateContainerSettings() error {
 	if o.RestartMaxCount < 0 || o.RestartMaxCount > 100 {
 		return fmt.Errorf("restart-max-count must be 0-100, got %d", o.RestartMaxCount)
 	}
 	if !validDuration.MatchString(o.RestartInterval) {
 		return fmt.Errorf("restart-interval must match %s, got %q", validDuration, o.RestartInterval)
 	}
+	switch o.StartOnBootMode {
+	case "", StartOnBootAuto, StartOnBootYes, StartOnBootNo:
+	default:
+		return fmt.Errorf("start-on-boot must be %s, %s or %s, got %q", StartOnBootAuto, StartOnBootYes, StartOnBootNo, o.StartOnBootMode)
+	}
+	if !validDuration.MatchString(o.ExtractTimeout) {
+		return fmt.Errorf("extract-timeout must match %s, got %q", validDuration, o.ExtractTimeout)
+	}
+	if s := o.ExtractTimeoutS(); s < minExtractTimeoutS || s > maxExtractTimeoutS {
+		return fmt.Errorf("extract-timeout must be %d-%d s, got %q", minExtractTimeoutS, maxExtractTimeoutS, o.ExtractTimeout)
+	}
 	return nil
+}
+
+// ExtractTimeoutS is ExtractTimeout in seconds, once Finish has accepted it.
+func (o *Options) ExtractTimeoutS() int { return durationSeconds(o.ExtractTimeout) }
+
+// durationSeconds reads a value validDuration accepts (digits and one unit,
+// s, m or h) as seconds; anything else is 0.
+func durationSeconds(d string) int {
+	if !validDuration.MatchString(d) {
+		return 0
+	}
+	n, _ := strconv.Atoi(d[:len(d)-1])
+	switch d[len(d)-1] {
+	case 'm':
+		return n * 60
+	case 'h':
+		return n * 3600
+	default:
+		return n
+	}
 }
 
 func (o *Options) validateExpose() error {
@@ -412,16 +522,29 @@ func yesNo(b bool) string {
 	return "no"
 }
 
-// StartOnBoot is yes for a persistent root and no for an ephemeral one,
-// whose tmpfs root does not survive a reboot. What RouterOS does with a
+// StartOnBoot is what --start-on-boot asks for, and under auto (the
+// default) yes for a persistent root and no for an ephemeral one, whose
+// tmpfs root does not survive a reboot. What RouterOS does with a
 // start-on-boot container whose root has vanished is untested: the reference
 // RB5009 is a production router and no reboot has been scheduled for it.
 func (o *Options) StartOnBoot() string {
-	if o.Ephemeral {
+	switch {
+	case o.StartOnBootMode == StartOnBootYes || o.StartOnBootMode == StartOnBootNo:
+		return o.StartOnBootMode
+	case o.Ephemeral:
 		return "no"
+	default:
+		return "yes"
 	}
-	return "yes"
 }
+
+// JoinsIfaceList says whether the plan adds the veth to an interface list:
+// every value but ListNone.
+func (o *Options) JoinsIfaceList() bool { return o.IfaceList != ListNone }
+
+// JoinsAddrList says whether the plan adds the /30 to an address list: every
+// value but ListNone.
+func (o *Options) JoinsAddrList() bool { return o.AddrList != ListNone }
 
 // String renders the options for a listing, never the token.
 func (o *Options) String() string {

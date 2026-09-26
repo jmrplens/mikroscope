@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
+	"slices"
+	"strings"
 	"time"
 )
 
@@ -30,10 +33,72 @@ type SSHRunner struct {
 	Port    string
 	Key     string
 	Timeout time.Duration
+	// Options are extra `-o Key=value` for ssh and scp, each one as
+	// ParseSSHOption returns it (--ssh-option, MIKROSCOPE_SSH_OPTIONS).
+	Options []string
 }
 
+// sshOptionKeys are the ssh_config keywords --ssh-option may set, spelled as
+// ssh_config(5) spells them. None of them runs a command, reads a file as
+// configuration or forwards anything: ProxyCommand, LocalCommand, Include and
+// their kind are left out on purpose, so a value in an env file can never
+// become a command this CLI executes.
+var sshOptionKeys = []string{
+	"StrictHostKeyChecking", "UserKnownHostsFile", "ConnectTimeout", "HostKeyAlgorithms",
+	"PubkeyAcceptedAlgorithms", "IdentitiesOnly", "ServerAliveInterval",
+}
+
+// SSHOptionKeys are the keywords --ssh-option takes, for the usage text.
+func SSHOptionKeys() []string { return slices.Clone(sshOptionKeys) }
+
+// validSSHOptionValue bounds an --ssh-option value: no space, quote, comma,
+// `%` token or `$`, so it is one word to ssh and one item in the
+// comma-separated MIKROSCOPE_SSH_OPTIONS.
+var validSSHOptionValue = regexp.MustCompile(`^[A-Za-z0-9_./~+:-]{1,256}$`)
+
+// ParseSSHOption checks one --ssh-option, `Key=value`, and returns it with
+// the key spelled as ssh_config(5) spells it. ssh reads keywords without
+// regard to case, so the check does too.
+func ParseSSHOption(kv string) (string, error) {
+	key, value, found := strings.Cut(kv, "=")
+	if !found {
+		return "", fmt.Errorf("ssh-option %q must be Key=value", kv)
+	}
+	i := slices.IndexFunc(sshOptionKeys, func(k string) bool { return strings.EqualFold(k, key) })
+	if i < 0 {
+		return "", fmt.Errorf("ssh-option %q: %q is not one of %s", kv, key, strings.Join(sshOptionKeys, ", "))
+	}
+	if !validSSHOptionValue.MatchString(value) {
+		return "", fmt.Errorf("ssh-option %q: the value must match %s", kv, validSSHOptionValue)
+	}
+	return sshOptionKeys[i] + "=" + value, nil
+}
+
+// checkOptions refuses Options that ParseSSHOption would not have returned,
+// before anything is executed.
+func (r SSHRunner) checkOptions() error {
+	for _, kv := range r.Options {
+		canonical, err := ParseSSHOption(kv)
+		if err != nil {
+			return err
+		}
+		if canonical != kv {
+			return fmt.Errorf("ssh-option %q must be spelled %q", kv, canonical)
+		}
+	}
+	return nil
+}
+
+// base is the arguments ssh and scp share. The operator's Options come
+// first: for each keyword ssh keeps the first value it reads, so
+// ConnectTimeout=30 after the default ConnectTimeout=15 would be ignored
+// (OpenSSH 10.0, `ssh -G`, 2026-09-26).
 func (r SSHRunner) base(portFlag string) []string {
-	args := []string{"-o", "BatchMode=yes", "-o", "ConnectTimeout=15"}
+	args := make([]string, 0, 2*len(r.Options)+8)
+	for _, kv := range r.Options {
+		args = append(args, "-o", kv)
+	}
+	args = append(args, "-o", "BatchMode=yes", "-o", "ConnectTimeout=15")
 	if r.Port != "" {
 		args = append(args, portFlag, r.Port)
 	}
@@ -53,6 +118,9 @@ func (r SSHRunner) ctx() (context.Context, context.CancelFunc) {
 
 // Run executes command on the device and returns its combined output.
 func (r SSHRunner) Run(command string) (string, error) {
+	if err := r.checkOptions(); err != nil {
+		return "", err
+	}
 	ctx, cancel := r.ctx()
 	defer cancel()
 	args := append(r.base("-p"), r.Target, command)
@@ -68,6 +136,9 @@ func (r SSHRunner) Run(command string) (string, error) {
 
 // Upload copies data to remoteName on the device with scp.
 func (r SSHRunner) Upload(data []byte, remoteName string) error {
+	if err := r.checkOptions(); err != nil {
+		return err
+	}
 	tmp, err := os.CreateTemp("", "mikroscope-upload-*")
 	if err != nil {
 		return err

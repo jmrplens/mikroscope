@@ -65,7 +65,12 @@ func Plan(o Options) []Step {
 			Owned:  `:put [:len [/ip/address/find interface="` + o.Veth + `"` + byTag + `]]`,
 			Remove: `/ip/address/remove [find interface="` + o.Veth + `"` + byTag + `]`,
 		},
-		{
+	}
+	// The two list memberships exist for the firewall traps below. A router
+	// whose firewall drops nothing by list needs neither, and ListNone
+	// (--iface-list none, --addr-list none) leaves each one out.
+	if o.JoinsIfaceList() {
+		steps = append(steps, Step{
 			// Without this, the defconf raw rule `drop the rest
 			// (in-interface-list=!LAN)` silently eats every packet the
 			// container sends: the veth has to be a member of the LAN
@@ -77,8 +82,10 @@ func Plan(o Options) []Step {
 			Create: `/interface/list/member/add list="` + o.IfaceList + `" interface="` + o.Veth + `"` + byTag,
 			Owned:  `:put [:len [/interface/list/member/find interface="` + o.Veth + `" list="` + o.IfaceList + `"` + byTag + `]]`,
 			Remove: `/interface/list/member/remove [find interface="` + o.Veth + `" list="` + o.IfaceList + `"` + byTag + `]`,
-		},
-		{
+		})
+	}
+	if o.JoinsAddrList() {
+		steps = append(steps, Step{
 			// The sibling trap: the defconf raw rule `drop local if not
 			// from default IP range` (in-interface-list=LAN,
 			// src-address-list=!LANs) matches any source outside the LANs
@@ -89,7 +96,7 @@ func Plan(o Options) []Step {
 			Create: `/ip/firewall/address-list/add list="` + o.AddrList + `" address=` + o.Subnet + byTag,
 			Owned:  `:put [:len [/ip/firewall/address-list/find list="` + o.AddrList + `" address="` + o.Subnet + `"` + byTag + `]]`,
 			Remove: `/ip/firewall/address-list/remove [find list="` + o.AddrList + `" address="` + o.Subnet + `"` + byTag + `]`,
-		},
+		})
 	}
 	if o.Expose {
 		// protocol="tcp", QUOTED. In a RouterOS `find`, a bare word is read as
@@ -191,7 +198,7 @@ func containerStep(o *Options, tag, byTag string) Step {
 	if o.UsesRemoteImage() {
 		source = `remote-image="` + o.RemoteRef() + `"`
 	}
-	create += `/container/add ` + source + ` interface="` + o.Veth + `" root-dir=` + o.RootDir() +
+	create += `/container/add ` + containerNameArg(o) + source + ` interface="` + o.Veth + `" root-dir=` + o.RootDir() +
 		` envlist="` + envList + `" logging=yes start-on-boot=` + o.StartOnBoot() +
 		` restart-policy=on-failure restart-max-count=` + strconv.Itoa(o.RestartMaxCount) +
 		` restart-interval=` + o.RestartInterval + ` memory-max=` + o.MemoryMax +
@@ -223,7 +230,7 @@ func containerStep(o *Options, tag, byTag string) Step {
 		Name:    "container " + o.Name,
 		Present: `:put [:len [/container/find` + byTag + `]]`,
 		Check: `:put ([:len [/container/find` + containerBySource(o, imageFile) + `]] + ` +
-			`[:len [/container/envs/find list="` + envList + `"]]` + plusImageFile(o, imageFile) + `)`,
+			`[:len [/container/envs/find list="` + envList + `"]]` + plusImageFile(o, imageFile) + plusContainerName(o) + `)`,
 		Create: create,
 		Owned: `:if ([:len ` + marker + `] > 0) do={ ` +
 			`:put ([:len [/container/find` + byTag + `]] + ` +
@@ -288,6 +295,28 @@ func plusImageFile(o *Options, imageFile string) string {
 		return ""
 	}
 	return ` + [:len [/file/find name="` + imageFile + `"]]`
+}
+
+// containerNameArg is the `name=` of --container-name, and nothing without
+// it: RouterOS then names the container itself, as every install before the
+// flag did. /container/add takes `name` on RouterOS 7.24.4 (its argument
+// list, read in the virtual lab on CHR x86_64, 2026-09-26).
+func containerNameArg(o *Options) string {
+	if o.ContainerName == "" {
+		return ""
+	}
+	return `name="` + o.ContainerName + `" `
+}
+
+// plusContainerName adds to the Check count a container that already holds
+// the --container-name, so that install refuses to write a second container
+// under a name something else is using, as it refuses a veth that is not its
+// own. Whether RouterOS itself would refuse the duplicate was not measured.
+func plusContainerName(o *Options) string {
+	if o.ContainerName == "" {
+		return ""
+	}
+	return ` + [:len [/container/find name="` + o.ContainerName + `"]]`
 }
 
 // removeTarThenEnvs drops the envlist once the tar is gone — or immediately,

@@ -51,12 +51,15 @@ pulls it itself and nothing is uploaded). plan --rsc writes the whole install
 as a RouterOS script for a router you reach only through WinBox or WebFig.
 
 Some flags read their default from a MIKROSCOPE_* environment variable: --router,
---ssh-port, --ssh-key, --name, --veth, --subnet, --iface-list, --addr-list, --disk,
---arch, --token, --lan-address, --agent-tar, --remote-image, and the collector's
-sink URLs (see .env.example).
+--ssh-port, --ssh-key, --ssh-option (MIKROSCOPE_SSH_OPTIONS, comma-separated),
+--name, --veth, --subnet, --iface-list, --addr-list, --disk, --arch, --token,
+--lan-address, --agent-tar, --remote-image, and the collector's sink URLs (see
+.env.example).
 The rest — among them --rate, --buffer, --port, --memory-max, --mem-limit-mb,
---capture-mb, --triggers, --floor-hz, --privileged, --ephemeral and --expose —
-take their default from the code and must be passed on each invocation.
+--capture-mb, --triggers, --floor-hz, --privileged, --ephemeral, --expose,
+--restart-max-count, --restart-interval, --start-on-boot, --container-name and
+--extract-timeout — take their default from the code and must be passed on each
+invocation.
 Nothing is written to the device without being listed first.
 `
 
@@ -69,17 +72,68 @@ func env(key, fallback string) string {
 }
 
 type cli struct {
-	router   string
-	sshPort  string
-	sshKey   string
-	dryRun   bool
-	yes      bool
-	noDoctor bool
-	out      string
-	goarm    string
-	agentTar string
-	rsc      bool
-	opts     router.Options
+	router     string
+	sshPort    string
+	sshKey     string
+	sshOptions sshOptions
+	dryRun     bool
+	yes        bool
+	noDoctor   bool
+	out        string
+	goarm      string
+	agentTar   string
+	rsc        bool
+	opts       router.Options
+}
+
+// sshOptions is --ssh-option: repeatable, each one checked by
+// router.ParseSSHOption as it is given. MIKROSCOPE_SSH_OPTIONS, a
+// comma-separated list, is the default, and the first --ssh-option replaces
+// all of it, as a flag replaces the environment everywhere else.
+type sshOptions struct {
+	list    []string
+	fromEnv bool
+}
+
+func (s *sshOptions) String() string { return strings.Join(s.list, ",") }
+
+func (s *sshOptions) Set(v string) error {
+	kv, err := router.ParseSSHOption(v)
+	if err != nil {
+		return err
+	}
+	if s.fromEnv {
+		s.list, s.fromEnv = nil, false
+	}
+	s.list = append(s.list, kv)
+	return nil
+}
+
+// fromEnvironment takes MIKROSCOPE_SSH_OPTIONS as the default, unchecked
+// until check: a value no flag replaces is checked after the flags are read.
+func (s *sshOptions) fromEnvironment() {
+	for item := range strings.SplitSeq(env("SSH_OPTIONS", ""), ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			s.list = append(s.list, item)
+		}
+	}
+	s.fromEnv = len(s.list) > 0
+}
+
+// check refuses an environment default that ParseSSHOption would, and
+// spells the keys the way ssh_config(5) does.
+func (s *sshOptions) check() error {
+	if !s.fromEnv {
+		return nil
+	}
+	for i, item := range s.list {
+		kv, err := router.ParseSSHOption(item)
+		if err != nil {
+			return fmt.Errorf("MIKROSCOPE_SSH_OPTIONS: %w", err)
+		}
+		s.list[i] = kv
+	}
+	return nil
 }
 
 func parse(verb string, args []string) (cli, error) {
@@ -98,14 +152,18 @@ func parseWith(verb string, args []string, fs *flag.FlagSet) (cli, error) {
 	fs.StringVar(&c.router, "router", env("ROUTER", ""), "ssh target: user@host or an ssh config alias (MIKROSCOPE_ROUTER)")
 	fs.StringVar(&c.sshPort, "ssh-port", env("SSH_PORT", ""), "ssh port; empty = ssh config (MIKROSCOPE_SSH_PORT)")
 	fs.StringVar(&c.sshKey, "ssh-key", env("SSH_KEY", ""), "ssh identity file; empty = agent / config (MIKROSCOPE_SSH_KEY)")
+	c.sshOptions.fromEnvironment()
+	fs.Var(&c.sshOptions, "ssh-option", "extra ssh and scp option `Key=value`, repeatable; the keys are "+
+		strings.Join(router.SSHOptionKeys(), ", ")+" (MIKROSCOPE_SSH_OPTIONS, comma-separated)")
 	fs.StringVar(&c.opts.Name, "name", env("NAME", c.opts.Name), "container name; tags every object created")
 	fs.StringVar(&c.opts.Veth, "veth", env("VETH", c.opts.Veth), "veth interface name on the router")
 	fs.StringVar(&c.opts.Subnet, "subnet", env("SUBNET", c.opts.Subnet), "point-to-point /30 for the container")
-	fs.StringVar(&c.opts.IfaceList, "iface-list", env("IFACE_LIST", c.opts.IfaceList), "interface list the veth joins")
-	fs.StringVar(&c.opts.AddrList, "addr-list", env("ADDR_LIST", c.opts.AddrList), "address list the /30 joins")
+	fs.StringVar(&c.opts.IfaceList, "iface-list", env("IFACE_LIST", c.opts.IfaceList), "interface list the veth joins; "+router.ListNone+" joins no list")
+	fs.StringVar(&c.opts.AddrList, "addr-list", env("ADDR_LIST", c.opts.AddrList), "address list the /30 joins; "+router.ListNone+" joins no list")
 	fs.StringVar(&c.opts.Disk, "disk", env("DISK", ""), "RouterOS disk for image and root: empty = internal flash, tmpfs, disk1, usb1 …")
-	fs.BoolVar(&c.opts.Ephemeral, "ephemeral", false, "root on the tmpfs disk, start-on-boot=no: nothing written to flash, nothing survives a reboot")
-	fs.StringVar(&c.opts.Arch, "arch", env("ARCH", c.opts.Arch), "device architecture: arm64, arm, amd64")
+	fs.BoolVar(&c.opts.Ephemeral, "ephemeral", false, "root on the tmpfs disk, start-on-boot=no unless --start-on-boot yes: nothing written to flash, nothing survives a reboot")
+	fs.StringVar(&c.opts.Arch, "arch", env("ARCH", router.ArchAuto), "device architecture: arm64, arm, amd64 or "+router.ArchAuto+
+		"; "+router.ArchAuto+", the default when neither this flag nor MIKROSCOPE_ARCH is set, is "+c.opts.Arch+" for plan, --dry-run and image (MIKROSCOPE_ARCH)")
 	// 5, not the toolchain's 7. MikroTik's container documentation says the
 	// package exists for arm, arm64 and x86 only, and that "for devices with
 	// EN7562CT CPU like the hEX Refresh, only arm32v5 container images are
@@ -129,6 +187,12 @@ func parseWith(verb string, args []string, fs *flag.FlagSet) (cli, error) {
 	fs.IntVar(&c.opts.FloorHz, "floor-hz", router.Defaults().FloorHz, "override every per-source sampling floor with one rate in Hz (0 = the measured per-source floors); set it to --rate to read and emit every source every tick, for re-measuring the floors")
 	fs.BoolVar(&c.opts.Privileged, "privileged", true, "run the container privileged: drops its user namespace so the kernel log, slabinfo and MTD ECC counters are readable (-privileged=false to opt out)")
 	fs.StringVar(&c.opts.LANAddress, "lan-address", env("LAN_ADDRESS", ""), "router LAN address for --expose")
+	fs.IntVar(&c.opts.RestartMaxCount, "restart-max-count", c.opts.RestartMaxCount, "how many times RouterOS restarts the container after it exits with an error before it stops trying, 0-100")
+	fs.StringVar(&c.opts.RestartInterval, "restart-interval", c.opts.RestartInterval, "the wait between those restarts, a RouterOS duration such as 10s or 1m")
+	fs.StringVar(&c.opts.StartOnBootMode, "start-on-boot", c.opts.StartOnBootMode, "start the container when the router boots: "+
+		router.StartOnBootAuto+" (no with --ephemeral, yes otherwise), "+router.StartOnBootYes+" or "+router.StartOnBootNo)
+	fs.StringVar(&c.opts.ContainerName, "container-name", "", "the container's RouterOS name (name=); empty lets RouterOS name it. Removals select by the comment tag, not by this name")
+	fs.StringVar(&c.opts.ExtractTimeout, "extract-timeout", c.opts.ExtractTimeout, "tar installs: how long to wait for RouterOS to extract the image before the tar is deleted, 10s-600s (120s, 2m)")
 	fs.BoolVar(&c.dryRun, "dry-run", false, "print the plan and write nothing")
 	fs.BoolVar(&c.yes, "yes", false, "do not ask for confirmation before writing")
 	fs.BoolVar(&c.noDoctor, "no-doctor", false, "install: skip the preflight checks")
@@ -139,6 +203,9 @@ func parseWith(verb string, args []string, fs *flag.FlagSet) (cli, error) {
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
+		return c, err
+	}
+	if err := c.sshOptions.check(); err != nil {
 		return c, err
 	}
 	if err := c.opts.Finish(); err != nil {
@@ -237,7 +304,7 @@ func (c cli) runner() (router.Runner, error) {
 	if c.router == "" {
 		return nil, errors.New("--router (or MIKROSCOPE_ROUTER) is required")
 	}
-	return router.SSHRunner{Target: c.router, Port: c.sshPort, Key: c.sshKey, Timeout: 3 * time.Minute}, nil
+	return router.SSHRunner{Target: c.router, Port: c.sshPort, Key: c.sshKey, Options: c.sshOptions.list, Timeout: 3 * time.Minute}, nil
 }
 
 // buildImage produces the image the container step needs, by whichever of

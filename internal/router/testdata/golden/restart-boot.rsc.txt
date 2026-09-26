@@ -1,0 +1,27 @@
+# mikroscope — install script for RouterOS. Container name: mikroscope
+# Every object it creates carries the comment "mikroscope:mikroscope (managed by mikroscope)", which is how
+# `mikroscope status` and `uninstall` recognize them later.
+#
+# The router pulls registry-1.docker.io/jmrplens/mikroscope-agent:1.3.1 itself.
+# The registry host is part of remote-image= (RouterOS 7.18 and later take it
+# there), so this script neither reads nor changes the device-wide registry-url.
+# A registry username set on the device for a registry other than registry-1.docker.io
+# can make the pull end in `auth error`; `mikroscope doctor` warns about it.
+
+# veth interface veth-mikroscope
+/interface/veth/add name="veth-mikroscope" address=172.30.10.2/30 gateway=172.30.10.1 comment="mikroscope:mikroscope (managed by mikroscope)"
+
+# router address 172.30.10.1
+/ip/address/add address=172.30.10.1/30 interface="veth-mikroscope" comment="mikroscope:mikroscope (managed by mikroscope)"
+
+# interface-list membership LAN
+/interface/list/member/add list="LAN" interface="veth-mikroscope" comment="mikroscope:mikroscope (managed by mikroscope)"
+
+# address-list membership LANs
+/ip/firewall/address-list/add list="LANs" address=172.30.10.0/30 comment="mikroscope:mikroscope (managed by mikroscope)"
+
+# container mikroscope
+:if ([:len [/container/envs/find list="mikroscope-env" key="MIKROSCOPE_TAG" value="mikroscope:mikroscope (managed by mikroscope)"]] > 0) do={ /container/envs/remove [find list="mikroscope-env"] }; /container/envs/add list="mikroscope-env" key=MIKROSCOPE_TAG value="mikroscope:mikroscope (managed by mikroscope)"; /container/envs/add list="mikroscope-env" key=RATE_HZ value="10"; /container/envs/add list="mikroscope-env" key=BUFFER_S value="60"; /container/envs/add list="mikroscope-env" key=PORT value="9123"; /container/envs/add list="mikroscope-env" key=ADDR value="172.30.10.2"; /container/envs/add list="mikroscope-env" key=MEM_LIMIT_MB value="16"; /container/envs/add list="mikroscope-env" key=CAPTURE_MB value="4"; /container/add remote-image="registry-1.docker.io/jmrplens/mikroscope-agent:1.3.1" interface="veth-mikroscope" root-dir=mikroscope/mikroscope envlist="mikroscope-env" logging=yes start-on-boot=no restart-policy=on-failure restart-max-count=3 restart-interval=5s memory-max=64M privileged=yes ignore-remote-image-change=yes comment="mikroscope:mikroscope (managed by mikroscope)"; /container/start [find comment="mikroscope:mikroscope (managed by mikroscope)"]
+
+# When it is done: /container/print where name~"mikroscope"
+# The agent answers on http://172.30.10.2:9123/healthz from the router's LAN.

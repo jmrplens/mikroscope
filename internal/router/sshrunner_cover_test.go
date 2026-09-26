@@ -5,6 +5,7 @@ package router
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -159,5 +160,50 @@ func TestSSHRunnerAlwaysBoundsItself(t *testing.T) {
 	if got := (SSHRunner{}).base("-p"); strings.Contains(strings.Join(got, " "), "-i") ||
 		strings.Contains(strings.Join(got, " "), "-p") {
 		t.Errorf("base with no port and no key = %v", got)
+	}
+}
+
+// The operator's --ssh-option values go before the CLI's own: ssh keeps the
+// first value it reads for a keyword, so a ConnectTimeout given after the
+// default ConnectTimeout=15 would be ignored without a word. Checked with
+// `ssh -G` on OpenSSH 10.0 (2026-09-26).
+func TestSSHRunnerPutsTheOperatorsOptionsFirst(t *testing.T) {
+	argv := stubSSH(t)
+	r := SSHRunner{Target: "admin@192.0.2.1", Options: []string{"ConnectTimeout=30", "StrictHostKeyChecking=accept-new"}}
+	if _, err := r.Run(":put 1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Upload([]byte("x"), "f.tar"); err != nil {
+		t.Fatal(err)
+	}
+	for _, got := range argvLines(t, argv) {
+		mine, theirs := slices.Index(got, "ConnectTimeout=30"), slices.Index(got, "ConnectTimeout=15")
+		accept := slices.Index(got, "StrictHostKeyChecking=accept-new")
+		if mine < 1 || accept < 1 || theirs < 1 || mine > theirs || accept > theirs {
+			t.Errorf("%s argv %q: the operator's options must come before ConnectTimeout=15", got[0], got)
+			continue
+		}
+		if got[mine-1] != "-o" || got[accept-1] != "-o" {
+			t.Errorf("%s argv %q: each option must follow its own -o", got[0], got)
+		}
+	}
+}
+
+// The runner does not trust its caller to have used ParseSSHOption: an
+// option it would refuse, or would respell, stops Run and Upload before ssh
+// or scp is started.
+func TestSSHRunnerChecksItsOptionsBeforeRunning(t *testing.T) {
+	argv := stubSSH(t)
+	for _, opts := range [][]string{{"ProxyCommand=nc"}, {"connecttimeout=5"}, {"ConnectTimeout=5", "UserKnownHostsFile=a b"}} {
+		r := SSHRunner{Target: "admin@192.0.2.1", Options: opts}
+		if _, err := r.Run(":put 1"); err == nil || !strings.Contains(err.Error(), "ssh-option") {
+			t.Errorf("Run with %q: %v", opts, err)
+		}
+		if err := r.Upload([]byte("x"), "f.tar"); err == nil || !strings.Contains(err.Error(), "ssh-option") {
+			t.Errorf("Upload with %q: %v", opts, err)
+		}
+	}
+	if _, err := os.Stat(argv); err == nil {
+		t.Errorf("ssh or scp was started: %q", argvLines(t, argv))
 	}
 }
