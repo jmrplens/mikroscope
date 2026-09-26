@@ -533,9 +533,12 @@ release-check: ## Validate .goreleaser.yaml without releasing anything
 # lock first, so two checkouts or two agents never drive one lab at once.
 # LAB_STATE_DIR (environment or make line) points a checkout at the lab
 # another checkout runs: its test/lab, where .cache/ and .env live.
+# LAB_KIND=iso is RouterOS x86 from MikroTik's installation ISO, x86_64 only:
+# an opt-in recipe, never run by CI (README: "RouterOS x86 from the ISO").
 LAB_ARCH ?= x86_64
 LAB_ROS  ?= 7.24.4
-LAB      := LAB_ARCH=$(LAB_ARCH) LAB_ROS=$(LAB_ROS) test/lab/lab.sh
+LAB_KIND ?= chr
+LAB      := LAB_ARCH=$(LAB_ARCH) LAB_ROS=$(LAB_ROS) LAB_KIND=$(LAB_KIND) test/lab/lab.sh
 
 # The agent image a lab test pulls: the last release tag, not VERSION, which
 # runs ahead of what Docker Hub has during a release pull request. A clone
@@ -543,7 +546,7 @@ LAB      := LAB_ARCH=$(LAB_ARCH) LAB_ROS=$(LAB_ROS) test/lab/lab.sh
 # points at the last release too.
 LAB_REMOTE_IMAGE ?= jmrplens/mikroscope-agent:$(or $(shell git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//'),latest)
 
-lab-up: ## Start the lab router (LAB_ARCH=x86_64|arm64, LAB_ROS=7.24.4); the first run provisions it
+lab-up: ## Start the lab router (LAB_ARCH=x86_64|arm64, LAB_ROS=7.24.4, LAB_KIND=chr|iso); the first run provisions it
 	@$(LAB) up
 
 lab-down: ## Shut the lab router down and remove its container; the disk keeps its state

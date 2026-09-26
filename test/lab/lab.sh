@@ -21,6 +21,8 @@
 # Settings, from the environment (the Makefile passes them through):
 #   LAB_ARCH   x86_64 (default; KVM) or arm64 (UEFI, TCG on an x86 host)
 #   LAB_ROS    RouterOS version, default 7.24.4
+#   LAB_KIND   chr (default), or iso: RouterOS x86 installed from MikroTik's
+#              installation ISO, x86_64 only, opt-in and never in CI
 #   LAB_KVM    auto (default), require (fail without /dev/kvm) or off (TCG)
 #   LAB_STATE_DIR   where .cache/ and .env live; default this directory. Point
 #              it at another checkout's test/lab to drive the lab it runs.
@@ -39,6 +41,7 @@ LAB_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 REPO=$(cd "$LAB_DIR/../.." && pwd)
 LAB_ARCH=${LAB_ARCH:-x86_64}
 LAB_ROS=${LAB_ROS:-7.24.4}
+LAB_KIND=${LAB_KIND:-chr}
 LAB_KVM=${LAB_KVM:-auto}
 LAB_MEM=${LAB_MEM:-1024}
 LAB_CPUS=${LAB_CPUS:-2}
@@ -60,17 +63,24 @@ die() {
 }
 
 # ID names one lab: its lock, its disks and, through `short`, its container.
-case "$LAB_ARCH" in
-x86_64)
+case "$LAB_KIND:$LAB_ARCH" in
+chr:x86_64)
 	ID=x86_64 short=x86 port_suffix=1
 	downloads=("chr-$LAB_ROS.img.zip" "all_packages-x86-$LAB_ROS.zip")
 	;;
-arm64)
+chr:arm64)
 	ID=arm64 short=arm64 port_suffix=2
 	downloads=("chr-$LAB_ROS-arm64.img.zip" "all_packages-arm64-$LAB_ROS.zip")
 	;;
+iso:x86_64)
+	ID=x86_64-iso short=x86-iso port_suffix=3
+	downloads=("mikrotik-$LAB_ROS.iso")
+	;;
+iso:arm64)
+	die "LAB_KIND=iso is wired for x86_64 only (MikroTik also publishes mikrotik-<v>-arm64.iso; nothing here installs it)"
+	;;
 *)
-	echo "lab: LAB_ARCH must be x86_64 or arm64, got $LAB_ARCH" >&2
+	echo "lab: LAB_KIND must be chr or iso and LAB_ARCH x86_64 or arm64, got $LAB_KIND and $LAB_ARCH" >&2
 	exit 2
 	;;
 esac
@@ -94,7 +104,8 @@ ENV_FILE=$LAB_STATE_DIR/.env
 LOCK=$CACHE/$ID.lock
 
 # Host ports, on 127.0.0.1 only: 220N ssh, 800N WebFig, 870N API, 910N agent,
-# with N = 1 for x86_64 and 2 for arm64, so both labs can run side by side.
+# with N = 1 for x86_64, 2 for arm64 and 3 for the ISO lab, so they can all
+# run side by side.
 P_SSH=220$port_suffix
 P_HTTP=800$port_suffix
 P_API=870$port_suffix
@@ -233,7 +244,8 @@ tool() {
 # MikroTik publishes beside it on download.mikrotik.com. Both come from the
 # same server over HTTPS, so the check catches a damaged or truncated
 # download, not a compromised origin; RouterOS itself verifies the signature
-# of every .npk it installs. A cut connection is retried and resumes.
+# of every .npk it installs. A cut connection is retried and resumes: one
+# download of the ISO was reset at 62 of its 71 MB on 2026-09-26.
 cmd_fetch() {
 	ensure_image
 	mkdir -p "$DL"
@@ -253,11 +265,18 @@ cmd_fetch() {
 		die "checksum mismatch: delete $DL and fetch again"
 }
 
-# disk turns MikroTik's raw image into base.qcow2, grown to LAB_DISK_SIZE, and
-# pulls container-<v>.npk out of the extra-packages archive.
+# disk makes base.qcow2 and the container package. For CHR, base.qcow2 is
+# MikroTik's raw image converted and grown to LAB_DISK_SIZE, and
+# container-<v>.npk comes out of the extra-packages archive. For the ISO lab
+# it is MikroTik's installer run onto an empty disk, with the container
+# package picked in its menu.
 cmd_disk() {
 	cmd_fetch
 	mkdir -p "$VM"
+	if [ "$LAB_KIND" = iso ]; then
+		iso_install
+		return 0
+	fi
 	local img_zip=${downloads[0]} pkg_zip=${downloads[1]}
 	if [ ! -f "$VM/base.qcow2" ]; then
 		say "converting $img_zip to base.qcow2 ($LAB_DISK_SIZE)"
@@ -321,11 +340,12 @@ start() {
 	docker run -d --name "$NAME" --hostname "$NAME" \
 		--label org.opencontainers.image.source=https://github.com/jmrplens/mikroscope \
 		--label mikroscope.lab.arch="$LAB_ARCH" --label mikroscope.lab.ros="$LAB_ROS" \
+		--label mikroscope.lab.kind="$LAB_KIND" \
 		--cap-add NET_ADMIN --device /dev/net/tun "${kvm[@]}" \
-		-e LAB_ARCH="$LAB_ARCH" -e LAB_KVM="$LAB_KVM" \
+		-e LAB_ARCH="$LAB_ARCH" -e LAB_KIND="$LAB_KIND" -e LAB_KVM="$LAB_KVM" \
 		-e LAB_MEM="$LAB_MEM" -e LAB_CPUS="$LAB_CPUS" -e LAB_CPU="${LAB_CPU:-}" \
 		-e LAB_AGENT_ROUTES="$LAB_AGENT_ROUTES" -e LAB_AGENT_TARGET="$LAB_AGENT_TARGET" \
-		-e LAB_DISK="/cache/$VMREL/$disk" \
+		-e LAB_DISK="/cache/$VMREL/$disk" -e LAB_INSTALLER="${LAB_INSTALLER:-}" \
 		-e LAB_CONSOLE_LOG="/cache/$VMREL/console.log" \
 		-v "$CACHE:/cache" -v "$stage/vm:/lab/vm:ro" -v "$SSHD:/lab/ssh:ro" \
 		-p "127.0.0.1:$P_SSH:22" -p "127.0.0.1:$P_HTTP:80" \
@@ -362,14 +382,148 @@ wait_down() {
 
 monitor() { inlab bash -c "printf '%s\n' '$1' | socat - UNIX-CONNECT:/run/lab/monitor.sock" >/dev/null 2>&1 || true; }
 
+# ─── The serial console, driven ──────────────────────────────────────────────
+
+# The ISO lab has no ssh until a console session gives ether1 an address, and
+# MikroTik's installer is a menu on the same console. These read the log QEMU
+# writes of the console and type into its socket. The mark is a byte offset
+# in the log: con_text prints what came after it, without the terminal's
+# escape sequences.
+CON_MARK=0
+con_log() { echo "$VM/console.log"; }
+con_size() { stat -c %s "$(con_log)" 2>/dev/null || echo 0; }
+con_mark() { CON_MARK=$(con_size); }
+con_text() {
+	local end=${1:-$(con_size)}
+	tail -c +"$((CON_MARK + 1))" "$(con_log)" 2>/dev/null | head -c "$((end - CON_MARK))" |
+		sed 's/\x1b\[[0-9;?]*[A-Za-z]//g; s/\x1b[78cZ]//g' | tr -d '\r'
+}
+# con_wait waits for an extended regular expression after the mark.
+con_wait() {
+	local re=$1 limit=${2:-60} i=0
+	until con_text | grep -qE -- "$re"; do
+		[ "$(state)" = running ] || die "the lab container stopped while waiting for '$re' on the console: $(con_log)"
+		i=$((i + 1))
+		[ $i -lt $((limit * 2)) ] || die "no '$re' on the console after ${limit}s: $(con_log)"
+		sleep 0.5
+	done
+}
+# con_type types slowly: RouterOS's serial console drops characters that
+# arrive back to back. Typed at once, `admin+cte` arrived as `admin+ct` and
+# commands lost characters mid-word; 30 ms apart, nothing was lost.
+con_type() {
+	docker exec -i -e S="$1" "$NAME" bash -c \
+		'for ((i = 0; i < ${#S}; i++)); do printf "%s" "${S:i:1}"; sleep 0.03; done | socat -u - UNIX-CONNECT:/run/lab/console.sock'
+}
+
+# ─── RouterOS x86 from the installation ISO (LAB_KIND=iso) ───────────────────
+
+# iso_install runs MikroTik's installer onto an empty disk, which becomes
+# base.qcow2. The entrypoint boots the ISO's own kernel with the ISO's own
+# command line plus console=ttyS0, which puts the installer's menu on the
+# serial console instead of the VGA screen, and makes the disk SATA: on
+# virtio-blk the installer answered "getHardwareID: could not get disk
+# /dev/vda info" and "no valid harddrives found", with and without a serial
+# number on the disk (7.24.4, 2026-09-26). The menu starts on `system`, which
+# is always installed; `n` walks down until the description line names
+# `container`, space selects it (without redrawing anything), `i` installs
+# and `y` agrees that the disk is erased.
+iso_install() {
+	[ ! -f "$VM/base.qcow2" ] || return 0
+	say "installing RouterOS $LAB_ROS from ${downloads[0]} onto an empty $LAB_DISK_SIZE disk"
+	tool "set -e; rm -f '$VMREL/install.qcow2'; qemu-img create -q -f qcow2 '$VMREL/install.qcow2' '$LAB_DISK_SIZE'"
+	[ "$(state)" = absent ] || docker rm -f "$NAME" >/dev/null
+	: >"$(con_log)"
+	CON_MARK=0
+	LAB_INSTALLER=/cache/downloads/$LAB_ROS/${downloads[0]} start install.qcow2
+	con_wait 'to install locally' 120
+	local i found=0
+	for i in $(seq 1 30); do
+		con_mark
+		con_type n
+		con_wait '\(depends on' 10
+		if con_text | grep -qE '(^|[^a-z-])container \(depends on'; then
+			found=1
+			break
+		fi
+	done
+	[ "$found" = 1 ] || die "no container package in the installer's menu after $i steps: $(con_log)"
+	# Space toggles the package without redrawing the menu; `i` redraws it
+	# with the selection before it asks to go on.
+	con_mark
+	con_type ' '
+	sleep 0.5
+	con_type i
+	con_wait 'Continue\? \[y/n\]|keep old configuration' 30
+	con_text | grep -q '\[X\] container' || die "the container package is not selected in the installer's menu: $(con_log)"
+	if con_text | grep -q 'keep old configuration'; then
+		con_mark
+		con_type n
+		con_wait 'Continue\? \[y/n\]' 30
+	fi
+	con_mark
+	con_type y
+	con_wait 'Software installed' 300
+	local pkgs
+	pkgs=$(con_text | grep -o 'installing [a-z0-9.-]*' | sort -u | sed 's/^installing //' | tr '\n' ' ')
+	say "installed: $pkgs"
+	case "$pkgs" in *container-*) ;; *) die "the installer did not install the container package: $(con_log)" ;; esac
+	# The installer asks for Enter to reboot, and the reboot would start its
+	# kernel again: the power is pulled instead.
+	monitor quit
+	wait_down 30 || die "QEMU did not quit after the install"
+	docker rm "$NAME" >/dev/null
+	tool "set -e; cd '$VMREL'; mv install.qcow2 base.qcow2; chmod a-w base.qcow2"
+}
+
+# iso_first_login gives a freshly installed RouterOS x86 what CHR ships with,
+# a DHCP client on ether1, so the lab's first-boot path (ssh as admin with the
+# empty password through QEMU's forward) works from there on as it does for
+# CHR. After the install no interface has an address and the console is the
+# only way in. The login name `admin+ct` turns off colours and the terminal
+# probe; then, on 7.24.4, the licence question, the no-key notice ("You have
+# 23h49m to configure the router to be remotely accessible") and the password
+# change come in turn. Ctrl-C skips the password change: the password is set
+# over ssh, as for CHR, so it never crosses the console log.
+iso_first_login() {
+	con_wait 'Login: *$' 300
+	con_mark
+	con_type 'admin+ct'$'\r'
+	con_wait 'Password: *$' 30
+	con_mark
+	con_type $'\r'
+	local out end n=0 notice=""
+	while :; do
+		sleep 1
+		end=$(con_size)
+		out=$(con_text "$end")
+		case "$out" in
+		*'software license? [Y/n]'*) CON_MARK=$end && con_type n ;;
+		*'Please press "Enter" to continue'*)
+			notice=$(printf '%s\n' "$out" | grep -m1 -o 'You have [0-9hm]* to configure the router' || true)
+			CON_MARK=$end && con_type $'\r'
+			;;
+		*'new password>'*) CON_MARK=$end && con_type $'\003' ;;
+		*'] >'*) break ;;
+		esac
+		n=$((n + 1))
+		[ $n -lt 90 ] || die "no RouterOS prompt on the console after the login: $(con_log)"
+	done
+	say "RouterOS x86 with no key: ${notice:-no notice seen}"
+	con_mark
+	con_type '/ip/dhcp-client/add interface=ether1 comment="lab: what CHR ships"'$'\r'
+	con_wait '\] >' 30
+	con_type '/quit'$'\r'
+}
+
 # ─── Provisioning ────────────────────────────────────────────────────────────
 
-# provision builds clean.qcow2: a fresh CHR with the lab's access (password,
-# key, LAN address on ether2), the container package installed and
+# provision builds clean.qcow2: a fresh router with the lab's access
+# (password, key, LAN address on ether2), the container package installed and
 # device-mode container=yes confirmed by a cold reboot. Nothing else is
-# configured: interface lists, address lists and firewall stay as CHR ships
-# them, so what a test needs beyond that it sets up itself — or finds out, as a
-# user would, from `mikroscope doctor`.
+# configured: interface lists, address lists and firewall stay as RouterOS
+# ships them, so what a test needs beyond that it sets up itself — or finds
+# out, as a user would, from `mikroscope doctor`.
 cmd_provision() {
 	if [ -f "$VM/clean.qcow2" ] && [ "${FORCE:-0}" != 1 ]; then
 		say "clean snapshot exists ($VM/clean.qcow2); FORCE=1 to rebuild it"
@@ -381,10 +535,12 @@ cmd_provision() {
 	cmd_disk
 	[ "$(state)" = absent ] || docker rm -f "$NAME" >/dev/null
 	overlay base.qcow2 provision.qcow2
-	: >"$VM/console.log"
+	: >"$(con_log)"
+	CON_MARK=0
 
-	say "first boot of CHR $LAB_ROS ($LAB_ARCH)"
+	say "first boot of RouterOS $LAB_ROS ($LAB_KIND $LAB_ARCH)"
 	start provision.qcow2
+	[ "$LAB_KIND" != iso ] || iso_first_login
 	local i=0
 	while ! inlab sshpass -p '' ssh -o ConnectTimeout=3 -o PubkeyAuthentication=no lab-wan ':put ok' >/dev/null 2>&1; do
 		[ "$(state)" = running ] || die "the lab container stopped during first boot: docker logs $NAME"
@@ -392,7 +548,7 @@ cmd_provision() {
 		[ $i -lt 600 ] || die "no ssh from the router on ether1 after 600s"
 		sleep 3
 	done
-	say "router up; ssh as admin with CHR's empty password over ether1"
+	say "router up; ssh as admin with the empty password over ether1"
 
 	local pub
 	pub=$(cat "$SSHD/id_ed25519.pub")
@@ -403,15 +559,20 @@ cmd_provision() {
 	wait_ssh lab 60
 	say "ssh by key over ether2 (LAN) works; password set"
 
-	say "uploading container-$LAB_ROS.npk"
-	inlab scp -q "/cache/$VMREL/container-$LAB_ROS.npk" "lab:container-$LAB_ROS.npk"
-	ros '/system/reboot' >/dev/null 2>&1 || true
-	sleep 5
-	wait_ssh lab 300
 	local pkg
 	pkg=$(ros ':put [:len [/system/package/find name="container" disabled=no]]' | tr -d '\r')
-	[ "$pkg" = 1 ] || die "the container package is not installed after the reboot (found=$pkg)"
-	say "container package installed"
+	if [ "$pkg" = 1 ]; then
+		say "container package already installed"
+	else
+		say "uploading container-$LAB_ROS.npk"
+		inlab scp -q "/cache/$VMREL/container-$LAB_ROS.npk" "lab:container-$LAB_ROS.npk"
+		ros '/system/reboot' >/dev/null 2>&1 || true
+		sleep 5
+		wait_ssh lab 300
+		pkg=$(ros ':put [:len [/system/package/find name="container" disabled=no]]' | tr -d '\r')
+		[ "$pkg" = 1 ] || die "the container package is not installed after the reboot (found=$pkg)"
+		say "container package installed"
+	fi
 
 	cmd_device_mode
 	say "device-mode container=yes confirmed"
@@ -545,7 +706,7 @@ cmd_power_cycle() {
 cmd_status() {
 	local st accel
 	st=$(state)
-	echo "container: $NAME ($st), image $LAB_IMAGE, RouterOS $LAB_ROS $LAB_ARCH"
+	echo "container: $NAME ($st), image $LAB_IMAGE, RouterOS $LAB_ROS $LAB_KIND $LAB_ARCH"
 	local elsewhere
 	elsewhere=$(state_elsewhere)
 	echo "state:     $LAB_STATE_DIR${elsewhere:+ (the running lab keeps its state in $elsewhere: export LAB_STATE_DIR=$elsewhere)}"
@@ -556,8 +717,10 @@ cmd_status() {
 	[ "$st" = running ] || return 0
 	accel=$(docker logs "$NAME" 2>&1 | grep -o 'accel=[a-z]*' | tail -1 || true)
 	echo "host:      ssh 127.0.0.1:$P_SSH  WebFig http://127.0.0.1:$P_HTTP  API 127.0.0.1:$P_API  agent 127.0.0.1:$P_AGENT${accel:+  $accel}"
-	# One connect for every reading, as on a real router.
-	ros ':put ("router:    " . [/system/identity/get name] . ", " . [/system/resource/get board-name] . ", RouterOS " . [/system/resource/get version] . ", " . [/system/resource/get architecture-name] . ", up " . [/system/resource/get uptime]); :put ("memory:    free " . ([/system/resource/get free-memory] / 1048576) . " MiB of " . ([/system/resource/get total-memory] / 1048576) . "; disk free " . ([/system/resource/get free-hdd-space] / 1048576) . " MiB of " . ([/system/resource/get total-hdd-space] / 1048576)); :put ("container: package " . [:len [/system/package/find name="container" disabled=no]] . ", device-mode container=" . [/system/device-mode/get container] . ", containers " . [:len [/container/find]] . ", veths " . [:len [/interface/veth/find]]); :put ("licence:   " . [/system/license/get level])' | tr -d '\r'
+	# One connect for every reading, as on a real router. CHR reports a
+	# licence level; RouterOS x86 with no key reports the time it has left.
+	# shellcheck disable=SC2016 # $l is RouterOS's variable, not the shell's
+	ros ':put ("router:    " . [/system/identity/get name] . ", " . [/system/resource/get board-name] . ", RouterOS " . [/system/resource/get version] . ", " . [/system/resource/get architecture-name] . ", up " . [/system/resource/get uptime]); :put ("memory:    free " . ([/system/resource/get free-memory] / 1048576) . " MiB of " . ([/system/resource/get total-memory] / 1048576) . "; disk free " . ([/system/resource/get free-hdd-space] / 1048576) . " MiB of " . ([/system/resource/get total-hdd-space] / 1048576)); :put ("container: package " . [:len [/system/package/find name="container" disabled=no]] . ", device-mode container=" . [/system/device-mode/get container] . ", containers " . [:len [/container/find]] . ", veths " . [:len [/interface/veth/find]]); :local l [/system/license/get]; :if ([:typeof ($l->"level")] != "nothing") do={ :put ("licence:   " . ($l->"level")) } else={ :put ("licence:   no key, expires in " . ($l->"expires-in")) }' | tr -d '\r'
 }
 
 # residue counts, in one connect, everything an install can leave behind:

@@ -40,6 +40,11 @@ make lab-up LAB_ARCH=arm64
 make lab-cli LAB_ARCH=arm64 ARGS='doctor --remote-image $(LAB_REMOTE_IMAGE)'
 ```
 
+A third, opt-in lab is RouterOS x86 installed from MikroTik's installation
+ISO (`LAB_KIND=iso`, x86_64 only); CI never runs it.
+[RouterOS x86 from the ISO](#routeros-x86-from-the-iso) says what it covers
+that CHR does not, which is little, and where its licence stops it.
+
 ## What it needs
 
 - Docker (29.8 here) with permission to create a container with
@@ -58,7 +63,8 @@ make lab-cli LAB_ARCH=arm64 ARGS='doctor --remote-image $(LAB_REMOTE_IMAGE)'
   700 MB, and one version and architecture of RouterOS takes 115 MB (x86_64)
   or 105 MB (arm64) under `test/lab/.cache/`. For x86_64: 54 MB of downloads,
   47 MB base disk, 4 MB clean snapshot, then the live layer. For arm64: 66 MB
-  of downloads, 26 MB base disk, 4 MB clean snapshot, then the live layer.
+  of downloads, 26 MB base disk, 4 MB clean snapshot, then the live layer. The
+  ISO lab adds 71 MB of download, a 53 MB base disk and a 2 MB snapshot.
 - Network access to `download.mikrotik.com` once, and to Docker Hub for
   whatever the router pulls.
 - For `lab-cli`: `make build`, which the target runs. `lab.sh cli` on its own
@@ -99,8 +105,8 @@ checkout's differ; a running container keeps the image it was created with.
 
 Every verb that drives a VM (all of them but `status`, `env`, `fetch`,
 `image` and `profile` with no name) takes an `flock` on
-`.cache/<arch>.lock` in the state directory first and holds it until it
-exits: `x86_64.lock` or `arm64.lock`. A second driver waits, and
+`.cache/<id>.lock` in the state directory first and holds it until it exits:
+`x86_64.lock`, `arm64.lock` or `x86_64-iso.lock`. A second driver waits, and
 says who it waits for; the lock file holds the holder's pid, user, verb,
 start time and directory, never its arguments, which can carry the lab's agent
 token. `LAB_LOCK_WAIT=<seconds>` bounds the wait, and `0` fails at once.
@@ -204,8 +210,8 @@ host                      lab container (its own network namespace)
   is refused before anything runs, with a message; so is a current directory
   such as `/` or `/root`, which would be mounted over the container's own.
 - **The host** gets the router's ssh, WebFig and API, and the agent, on
-  loopback ports: 220N, 800N, 870N and 910N, with N = 1 for x86_64 and 2 for
-  arm64, so both labs can run at once. `lab.sh env`
+  loopback ports: 220N, 800N, 870N and 910N, with N = 1 for x86_64, 2 for
+  arm64 and 3 for the ISO lab, so they can all run at once. `lab.sh env`
   prints the ssh line; WebFig's and the API's password is in `test/lab/.env`.
 - **The disks** are a qcow2 chain under `.cache/vm/<arch>-<version>/`:
   `base.qcow2` is MikroTik's image converted and grown to 1 GiB (CHR used the
@@ -258,7 +264,7 @@ KVM and arm64 under TCG; where the two differed, both are given.
    every download against them. Both come from the same origin over HTTPS, so
    the check catches a damaged download, not a compromised server; RouterOS
    verifies the signature of each `.npk` it installs. A cut connection is
-   retried and resumed.
+   retried and resumed: one download of the ISO was reset at 62 of its 71 MB.
 2. **First login.** CHR's `admin` has no password, and a non-interactive ssh
    command with it is not asked to change it (the session authenticated with
    `none`). One connect sets the identity, 192.168.88.1/24 on ether2, the lab's
@@ -442,6 +448,116 @@ whichever guest task was running.
 The agent's resident size (14–16 MiB here, 32 MiB charged to its cgroup) is the
 same binary on the same kernel version and a fair indication, but it is not a
 measurement of the RB5009 either.
+
+## RouterOS x86 from the ISO
+
+An opt-in recipe for RouterOS x86 as it is installed on a PC: MikroTik's
+installation ISO run onto an empty disk, then provisioned as the CHR labs
+are. x86_64 only, under KVM, and never run by CI.
+
+```sh
+make lab-up LAB_KIND=iso                  # downloads, installs, provisions, starts
+make lab-cli LAB_KIND=iso ARGS='doctor --arch amd64'
+make lab-reset LAB_KIND=iso
+make lab-down LAB_KIND=iso
+```
+
+`LAB_KIND=iso` goes on every `make` line or in the environment. The lab is
+its own container, `mikroscope-lab-x86-iso`, with its own ports (2203 ssh,
+8003 WebFig, 8703 API, 9103 agent), lock (`x86_64-iso.lock`) and disks
+(`.cache/vm/x86_64-iso-<v>/`), so it runs beside the CHR labs; every verb and
+profile works on it as on them.
+
+**What the recipe does**, as it ran on RouterOS 7.24.4 on 2026-09-26:
+
+1. **Download** `mikrotik-<v>.iso` (71,471,104 bytes for 7.24.4) and its
+   `.sha256` from `download.mikrotik.com`, and check it: 108 s on this
+   connection.
+2. **Install.** The ISO boots ISOLINUX, whose configuration has no prompt and
+   starts the installer on the VGA screen. The lab boots the ISO's kernel
+   (`isolinux/linux`) directly instead, with the ISO's own command line
+   (`load_ramdisk=1 root=/dev/ram0 -install -cdrom`) and `console=ttyS0,115200`
+   added, which puts the installer on the serial console, where `lab.sh` reads
+   it and types into it. The disk is SATA: on virtio-blk the installer printed
+   `getHardwareID: could not get disk /dev/vda info` and `no valid harddrives
+   found`, with and without a serial number on the disk. Its menu on 7.24.4
+   lists `system`, `calea`, `container`, `dude`, `gps`, `iot`, `openflow`,
+   `rose-storage`, `tr069-client`, `ups`, `user-manager` and `wireless`; the
+   lab moves down with `n` until the description line names `container`,
+   selects it with space (which redraws nothing; `i` redraws the menu, and the
+   lab checks `[X] container` there), installs with `i` and confirms
+   `Warning: all data on the disk '/dev/sda' will be erased! Continue? [y/n]`
+   with `y`. `system` and `container` were installed 11 s after the container
+   started. The installer then asks for Enter to reboot, which would start its
+   kernel again, so the lab pulls the power instead.
+3. **First boot.** No interface has an address, so the console is the only way
+   in. The lab logs in as `admin+ct` (the suffix turns off colours and the
+   terminal probe: typed plainly, the probe's escape sequences and the
+   console's line editing lost characters), with the empty password, and
+   answers what 7.24.4 asks in turn: the licence text (`n`), a notice
+   ("ROUTER HAS NO SOFTWARE KEY … You have 23h49m to configure the router to be
+   remotely accessible, and to enter the key by pasting it in a Telnet window
+   or in Winbox. Turn off the device to stop the timer."), and a password
+   change, skipped with Ctrl-C so that the password is set over ssh and never
+   crosses the console log. RouterOS's serial console dropped characters sent
+   back to back, so the lab types one every 30 ms. It adds what CHR ships
+   with, a DHCP client on ether1 (commented `lab: what CHR ships`), and logs
+   out; from there provisioning is the CHR one: access over ether1, the
+   container package found already installed, device-mode (the same
+   `update: turn off power in 5m to activate changes`, the same power cut,
+   `container=true`), snapshot.
+4. **Timing.** With the ISO downloaded, `make lab-up LAB_KIND=iso` took 55 s
+   from nothing to a running lab: 11 s to install, 33 s from the first boot to
+   the snapshot, 7 s to boot from it. A reset took 9 s, twice, a power cycle
+   9 s and `lab-down` 1.8 s.
+
+**What the router reports.** Board `x86 QEMU Standard PC (Q35 + ICH9, 2009)`
+(CHR x86_64: `CHR QEMU Standard PC (Q35 + ICH9, 2009)`), architecture
+`x86_64`, 966 MiB of disk, `device-mode` `mode=advanced` with `container=false`
+until the update. `/system/license` has no level: it reads
+`expires-in=23:29:50` and a `software-id`. The 1.3.1 CLI and the branch's agent
+behaved as on CHR x86_64: `doctor` missed the same two lists, a tar install
+after `doctor-lists` answered at once (`direct transport ok … 0 slipped`),
+`status` recognised every object and `uninstall` verified the router clean,
+leaving the same empty `mikroscope` directory. The agent's `/capabilities`
+were CHR x86_64's: kernel `5.6.3-64`, 2 cores, the same sources present and
+absent.
+
+**The licence.** MikroTik's "RouterOS license keys" page: "After installation
+RouterOS runs in trial mode. You have 24 hours to register for Level 1 (Free
+demo) or purchase a Level 4,5 or 6 license and paste a valid key." Level 1
+needs a MikroTik account, and "demo license does not allow ROS version upgrade
+(started from 7.8)"; an x86 licence cannot become a CHR one. What the router
+does when the trial runs out was not observed. What was measured is how the
+trial behaves in the lab:
+
+- It counts while the router runs: 60 s of uptime took 60 s off it.
+- It is kept on the disk, so the snapshot keeps it too: the clean snapshot
+  holds about 23 h 30 min, and each of two resets came back with 23:29:55 and
+  23:29:56 left.
+- A power cycle took 8 min 46 s off it in a 9 s cycle (23:28:42 before,
+  23:19:56 after), which fits a remaining time saved in 10-minute steps; that
+  reading is an inference, not something MikroTik states.
+
+So a lab reset at least once a day never reaches the end of the trial; one
+left running for about 23 hours would, and every power cycle in a test costs
+up to 10 minutes of it.
+
+**What it covers beyond CHR x86_64**, for mikroscope: the install path of
+RouterOS on a PC (the ISO, its package menu, a SATA disk), a board name that
+starts with `x86` rather than `CHR`, and the x86 licence model (a 24-hour
+trial, then levels) instead of CHR's (free, with the 1 Mbit/s upload cap, then
+paid tiers); whether the trial caps upload was not measured. It runs the same
+kernel, the same packages and the same agent capabilities as CHR x86_64, so it
+adds nothing to what the agent reads. It is here for the day something depends
+on the board name or the x86 licence, not as a second CI target.
+
+**Where it stops.** x86_64 only: MikroTik also publishes
+`mikrotik-<v>-arm64.iso` (74,801,152 bytes for 7.24.4), which nothing here
+installs. Under TCG it was not tried. The automation reads the installer's and
+the console's text as 7.24.4 prints it; if a version changes a prompt, the
+recipe stops at that step and names the console log
+(`.cache/vm/x86_64-iso-<v>/console.log`).
 
 ## What mikroscope 1.3.1 met on it
 

@@ -24,10 +24,15 @@
 # namespace's default route leads to the host and on to whatever the host's
 # gateway routes that address to — on a host whose network already has an
 # agent on 172.30.10.2, to that agent.
+#
+# LAB_KIND=iso is RouterOS x86 installed from MikroTik's ISO: its disk is SATA,
+# and with LAB_INSTALLER set to the ISO the machine boots the installer.
 set -euo pipefail
 
 : "${LAB_ARCH:?}" "${LAB_DISK:?}"
+LAB_KIND=${LAB_KIND:-chr}
 LAB_KVM=${LAB_KVM:-auto}
+LAB_INSTALLER=${LAB_INSTALLER:-}
 LAB_MEM=${LAB_MEM:-1024}
 LAB_CPUS=${LAB_CPUS:-2}
 LAB_LAN_ROUTER=${LAB_LAN_ROUTER:-192.168.88.1}
@@ -99,7 +104,27 @@ x86_64)
 	cpu=host
 	[ "$accel" = kvm ] || cpu=max
 	qemu=(qemu-system-x86_64 -machine "q35,accel=$accel" -cpu "$cpu" "${common[@]}")
-	qemu+=(-drive "file=$LAB_DISK,if=virtio,format=qcow2,cache=writeback")
+	if [ "$LAB_KIND" = iso ]; then
+		# RouterOS x86 wants an ATA disk: on virtio-blk its installer found
+		# no disk it could take a Hardware-ID from (7.24.4, 2026-09-26). The
+		# serial number is fixed, so the software ID RouterOS derives stays
+		# the same from one install to the next.
+		qemu+=(-drive "file=$LAB_DISK,if=none,id=hd0,format=qcow2,cache=writeback"
+			-device ide-hd,drive=hd0,bus=ide.0,serial=MIKROSCOPE-LAB)
+		if [ -n "$LAB_INSTALLER" ]; then
+			# The ISO boots ISOLINUX, which starts the installer on the VGA
+			# screen with no prompt to change that. Booting its kernel directly,
+			# with its own command line plus a serial console, puts the
+			# installer on the console lab.sh reads and types into.
+			bsdtar -xOf "$LAB_INSTALLER" isolinux/linux >"$RUN/installer-kernel"
+			append=$(bsdtar -xOf "$LAB_INSTALLER" isolinux/isolinux.cfg | sed -n 's/^[[:space:]]*append[[:space:]]*//p' | head -1)
+			qemu+=(-drive "file=$LAB_INSTALLER,if=none,id=cd0,media=cdrom,readonly=on"
+				-device ide-cd,drive=cd0,bus=ide.1
+				-kernel "$RUN/installer-kernel" -append "$append console=ttyS0,115200")
+		fi
+	else
+		qemu+=(-drive "file=$LAB_DISK,if=virtio,format=qcow2,cache=writeback")
+	fi
 	;;
 arm64)
 	# CHR arm64 boots through UEFI only (its image is GPT with an EFI system
@@ -139,7 +164,7 @@ arm64)
 	;;
 esac
 
-log "starting ${qemu[0]} (accel=$accel, ${LAB_CPUS} vCPU, ${LAB_MEM} MiB, disk $(basename "$LAB_DISK"))"
+log "starting ${qemu[0]} (accel=$accel, ${LAB_CPUS} vCPU, ${LAB_MEM} MiB, disk $(basename "$LAB_DISK")${LAB_INSTALLER:+, installer $(basename "$LAB_INSTALLER")})"
 "${qemu[@]}" &
 qemu_pid=$!
 # docker stop is a power cut, not a shutdown: lab.sh down asks the guest to
