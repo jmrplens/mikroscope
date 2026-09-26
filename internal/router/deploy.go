@@ -147,8 +147,11 @@ const (
 
 // createStep uploads the image for the container step, runs Create and
 // treats anything the router printed as a failure: a RouterOS write prints
-// nothing on success and reports errors as text with exit status 0 over
-// ssh, and the rest of a `;`-joined line does not run after the error.
+// nothing on success and reports an error as text, and the rest of a
+// `;`-joined line does not run after the error. Over ssh the session then
+// exits 0 or 1 — about half each way over 20 runs in the virtual lab (CHR
+// x86_64, RouterOS 7.24.4, 2026-09-26) — so the words, not the status, are
+// what says a step failed.
 func createStep(r Runner, o Options, s Step, image []byte, w io.Writer) error {
 	isContainer := strings.HasPrefix(s.Name, "container ")
 	uploads := isContainer && !o.UsesRemoteImage()
@@ -169,13 +172,30 @@ func createStep(r Runner, o Options, s Step, image []byte, w io.Writer) error {
 		return nil
 	}
 	if uploads {
-		// The tar went up before the marker was written, so it would
-		// otherwise count as foreign forever; take it back.
-		if _, rmErr := r.Run(`/file/remove [find name="` + o.ImageFile() + `"]`); rmErr == nil {
-			fmt.Fprintf(w, "  undo  removed the uploaded %s\n", o.ImageFile())
-		}
+		undoUpload(r, o, w)
 	}
 	return fmt.Errorf("create %s: %w", s.Name, err)
+}
+
+// undoUpload takes back a tar the container step uploaded and could not use:
+// it went up before the marker was written, so it would otherwise count as
+// foreign forever. It stays while a container of this install exists, which
+// is when the step stopped at the extraction wait: RouterOS may still be
+// extracting that tar, the step's own error says it stays, and the
+// container step's removal takes it with the container.
+func undoUpload(r Runner, o Options, w io.Writer) {
+	out, err := r.Run(`:if ([:len [/container/find comment="` + o.Tag() + `"]] = 0) do={ /file/remove [find name="` + o.ImageFile() + `"]; :put "removed" } else={ :put "kept" }`)
+	switch strings.TrimSpace(out) {
+	case "removed":
+		fmt.Fprintf(w, "  undo  removed the uploaded %s\n", o.ImageFile())
+	case "kept":
+		fmt.Fprintf(w, "  keep  %s: this install's container holds it; uninstall removes both\n", o.ImageFile())
+	default:
+		if err == nil {
+			err = fmt.Errorf("router said %q", strings.TrimSpace(out))
+		}
+		fmt.Fprintf(w, "  skip  removing the uploaded %s (%s)\n", o.ImageFile(), firstLine(err))
+	}
 }
 
 // Uninstall removes everything install created, newest first, ignoring what

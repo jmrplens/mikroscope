@@ -217,7 +217,8 @@ var containerStepSpec = stepSpec{
 		t(` interface="{{veth}}" root-dir={{rootDir}} envlist="{{envList}}" logging=yes start-on-boot={{startOnBoot}}` +
 			` restart-policy=on-failure restart-max-count={{restartMaxCount}} restart-interval={{restartInterval}} memory-max={{memoryMax}}` +
 			` privileged={{privileged}} ignore-remote-image-change=yes comment="{{tag}}"; `),
-		w("tar", `:local w 0; :while ([:len [/container/find file="{{imageFile}}"]] = 0 && $w < 15) do={ :delay 1s; :set w ($w + 1) }; :delay 3s; `+
+		w("tar", `:local w 0; :while ([:len [/container/find comment="{{tag}}" stopped]] = 0 && $w < {{extractTimeoutS}}) do={ :delay 1s; :set w ($w + 1) }; `+
+			`:if ([:len [/container/find comment="{{tag}}" stopped]] = 0) do={ :error "mikroscope: the image was not extracted within {{extractTimeoutS}} s; {{imageFile}} stays" }; `+
 			`/file/remove [find name="{{imageFile}}"]; `),
 		t(`/container/start [find comment="{{tag}}"]`),
 	},

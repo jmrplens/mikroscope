@@ -304,7 +304,17 @@ func (c cli) runner() (router.Runner, error) {
 	if c.router == "" {
 		return nil, errors.New("--router (or MIKROSCOPE_ROUTER) is required")
 	}
-	return router.SSHRunner{Target: c.router, Port: c.sshPort, Key: c.sshKey, Options: c.sshOptions.list, Timeout: 3 * time.Minute}, nil
+	return router.SSHRunner{Target: c.router, Port: c.sshPort, Key: c.sshKey, Options: c.sshOptions.list, Timeout: c.sshTimeout()}, nil
+}
+
+// sshTimeout is how long one ssh command may run: 3 minutes, or the
+// --extract-timeout and one minute more when that is longer. A tar
+// install's container step waits for the extraction inside its one command,
+// and an ssh killed at its own deadline first would print `signal: killed`
+// in place of the step's "not extracted within N s", with RouterOS still
+// extracting the tar.
+func (c cli) sshTimeout() time.Duration {
+	return max(3*time.Minute, time.Duration(c.opts.ExtractTimeoutS())*time.Second+time.Minute)
 }
 
 // buildImage produces the image the container step needs, by whichever of

@@ -109,13 +109,21 @@ func Plan(o Options) []Step {
 // removed the container on its own, and repulled and started it about 4 min
 // later.
 //
-// RouterOS extracts the image at add time (same device and date: a 1.8 MiB
-// tar goes from `extracting tar archived image` to `download/extract done`
-// within the same second), so once the container exists the tar has no
-// further use. A tar left on the device is what uninstall would later have to
-// find in a /file index that lags: after a 30 min container was removed,
-// `/file/find` did not list the tar at all and it reappeared minutes later.
-// So the tar goes right here, before start.
+// The tar is deleted once the image is extracted, before start: a tar left on
+// the device is what uninstall would later have to find in a /file index that
+// lags (after a 30 min container was removed, `/file/find` did not list the
+// tar at all and it reappeared minutes later; RB5009, 7.24.2, 2026-09-11).
+// Extraction is over when the container carries the `stopped` flag, and the
+// step waits for that, up to --extract-timeout (120 s by default), instead of
+// guessing with a fixed delay. Measured in the virtual lab (CHR x86_64,
+// RouterOS 7.24.4): a tar /container/add returned with the container already
+// `stopped` (`extracting tar archived image` and `download/extract done` in
+// the same second of the log), and a remote-image add carried the flag
+// `downloading/extracting` for 2 s and then `stopped`. A container that is
+// not `stopped` by the deadline stops the step with :error before the tar is
+// deleted and before the start. The CLI's install reports the error and takes
+// its upload back (createStep); a script run leaves the tar, which the
+// marker makes uninstall's to remove.
 //
 // The stop is guarded, because stop errors on a container that is not
 // running and RouterOS abandons the rest of a `;`-joined line at the first

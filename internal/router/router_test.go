@@ -254,8 +254,8 @@ func TestUninstallVerifiesAndFailsOnLeftovers(t *testing.T) {
 }
 
 // TestImageTarIsRemovedAfterExtraction pins that the tar is deleted by the
-// container step itself, after the container exists and before it starts, so
-// a normal uninstall has no file left to find.
+// container step itself, after the container is extracted and before it
+// starts, so a normal uninstall has no file left to find.
 func TestImageTarIsRemovedAfterExtraction(t *testing.T) {
 	o := defaults(t, nil)
 	c := Plan(o)[len(Plan(o))-1].Create
@@ -263,8 +263,8 @@ func TestImageTarIsRemovedAfterExtraction(t *testing.T) {
 	if add < 0 || rm < add || start < rm {
 		t.Fatalf("tar removal is not between add and start: %s", c)
 	}
-	if !strings.Contains(c[add:rm], `:while ([:len [/container/find file="`+o.ImageFile()+`"]] = 0`) {
-		t.Fatalf("tar removal does not wait for the container to exist: %s", c)
+	if !strings.Contains(c[add:rm], `:while ([:len [/container/find comment="`+o.Tag()+`" stopped]] = 0`) {
+		t.Fatalf("tar removal does not wait for the container to be extracted: %s", c)
 	}
 }
 
@@ -471,9 +471,20 @@ func TestWritesThatPrintAreFailures(t *testing.T) {
 	if _, installErr := Install(failing, o, []byte("img"), &bytes.Buffer{}); installErr == nil {
 		t.Fatal("install succeeded past a failing container step")
 	}
-	undo := `/file/remove [find name="` + o.ImageFile() + `"]`
+	// The undo removes the tar only while no container of this install
+	// holds it (a container extracting it is the extraction wait's
+	// failure, whose error says the tar stays).
+	undo := `:if ([:len [/container/find comment="` + o.Tag() + `"]] = 0) do={ /file/remove [find name="` + o.ImageFile() + `"]; :put "removed" } else={ :put "kept" }`
 	if !slices.Contains(quiet.ran, undo) {
 		t.Fatalf("uploaded image not taken back after a failed container step: %v", quiet.ran)
+	}
+	var said bytes.Buffer
+	for _, answer := range []string{"kept", "bad command name"} {
+		undoUpload(&failAtRunner{fakeRunner: &fakeRunner{present: map[string]bool{}}, failOn: `:put "kept"`, say: answer}, o, &said)
+	}
+	if !strings.Contains(said.String(), "keep  "+o.ImageFile()+": this install's container holds it") ||
+		!strings.Contains(said.String(), "skip  removing the uploaded "+o.ImageFile()+` (router said "bad command name")`) {
+		t.Errorf("the undo said:\n%s", said.String())
 	}
 	var out bytes.Buffer
 	if unErr := Uninstall(r, o, &out); unErr != nil {
@@ -521,6 +532,10 @@ func (f *failAtRunner) Run(command string) (string, error) {
 	if strings.Contains(command, f.failOn) && !strings.Contains(command, "\n") {
 		f.ran = append(f.ran, command)
 		return f.say + "\n", nil
+	}
+	if strings.Contains(command, `:put "removed"`) { // the undo of an upload, which says what it did
+		f.ran = append(f.ran, command)
+		return "removed\n", nil
 	}
 	return f.fakeRunner.Run(command)
 }
@@ -777,5 +792,28 @@ func TestFindSelectorsQuoteEveryValue(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// TestTarWaitsForExtraction pins F6: the tar is deleted only once the
+// container is `stopped`, which is when RouterOS has extracted it, waiting up
+// to --extract-timeout; past it the step stops with :error and keeps the tar.
+func TestTarWaitsForExtraction(t *testing.T) {
+	o := defaults(t, func(o *Options) { o.ExtractTimeout = "3m" })
+	plan := Plan(o)
+	create := plan[len(plan)-1].Create
+	tag := `comment="` + o.Tag() + `"`
+	wait := `:local w 0; :while ([:len [/container/find ` + tag + ` stopped]] = 0 && $w < 180) do={ :delay 1s; :set w ($w + 1) }; `
+	stop := `:if ([:len [/container/find ` + tag + ` stopped]] = 0) do={ :error "mikroscope: the image was not extracted within 180 s; ` + o.ImageFile() + ` stays" }; `
+	drop := `/file/remove [find name="` + o.ImageFile() + `"]; /container/start [find ` + tag + `]`
+	if !strings.Contains(create, wait+stop+drop) {
+		t.Fatalf("the tar is not deleted after a bounded wait for extraction: %s", create)
+	}
+	if strings.Contains(create, ":delay 3s") {
+		t.Fatalf("the fixed delay is back: %s", create)
+	}
+	pull := Plan(defaults(t, func(o *Options) { o.RemoteImage = "jmrplens/mikroscope-agent:1.3.1" }))
+	if c := pull[len(pull)-1].Create; strings.Contains(c, "stopped]]") || strings.Contains(c, "/file/remove") {
+		t.Fatalf("a pull waits for or deletes a tar it never uploaded: %s", c)
 	}
 }

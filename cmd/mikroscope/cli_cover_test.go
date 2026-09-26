@@ -156,6 +156,18 @@ func TestRunnerNeedsARouterAndOtherwiseCarriesTheSSHSettings(t *testing.T) {
 	if ssh.Timeout <= 0 {
 		t.Errorf("runner timeout = %v, an unbounded ssh can hang a script forever", ssh.Timeout)
 	}
+	// The container step waits for the extraction inside one ssh command,
+	// so ssh's own deadline outlasts the longest --extract-timeout.
+	for extract, want := range map[string]time.Duration{"": 3 * time.Minute, "120s": 3 * time.Minute, "5m": 6 * time.Minute, "600s": 11 * time.Minute} {
+		x := cli{router: "lab"}
+		x.opts.ExtractTimeout = extract
+		if r, err = x.runner(); err != nil {
+			t.Fatal(err)
+		}
+		if got := r.(router.SSHRunner).Timeout; got != want {
+			t.Errorf("--extract-timeout %q: ssh timeout %v, want %v", extract, got, want)
+		}
+	}
 }
 
 // parse is what every deployment verb is configured through, and an
