@@ -483,8 +483,9 @@ iso_install() {
 # only way in. The login name `admin+ct` turns off colours and the terminal
 # probe; then, on 7.24.4, the licence question, the no-key notice ("You have
 # 23h49m to configure the router to be remotely accessible") and the password
-# change come in turn. Ctrl-C skips the password change: the password is set
-# over ssh, as for CHR, so it never crosses the console log.
+# change come in turn. Ctrl-C skips the password change: the snapshot keeps
+# the empty password, as CHR's does, and each lab sets its own over ssh when it
+# boots (grant_access), so no password crosses the console log.
 iso_first_login() {
 	con_wait 'Login: *$' 300
 	con_mark
@@ -518,12 +519,19 @@ iso_first_login() {
 
 # ─── Provisioning ────────────────────────────────────────────────────────────
 
-# provision builds clean.qcow2: a fresh router with the lab's access
-# (password, key, LAN address on ether2), the container package installed and
-# device-mode container=yes confirmed by a cold reboot. Nothing else is
-# configured: interface lists, address lists and firewall stay as RouterOS
-# ships them, so what a test needs beyond that it sets up itself — or finds
-# out, as a user would, from `mikroscope doctor`.
+# provision builds clean.qcow2: a fresh router with its identity and its LAN
+# address on ether2, the container package installed and device-mode
+# container=yes confirmed by a cold reboot. Nothing else is configured:
+# interface lists, address lists and firewall stay as RouterOS ships them, so
+# what a test needs beyond that it sets up itself — or finds out, as a user
+# would, from `mikroscope doctor`.
+#
+# The snapshot carries no credential. admin keeps the empty password CHR
+# ships with, and the lab's key, which provisioning logs in with, is removed
+# before the shutdown; the password is never set here. So clean.qcow2 (and
+# base.qcow2) can be cached and handed to another lab, as CI's cache does,
+# without the .env and the key that go with them: each lab gives the router
+# its own at every boot of the snapshot (grant_access).
 cmd_provision() {
 	if [ -f "$VM/clean.qcow2" ] && [ "${FORCE:-0}" != 1 ]; then
 		say "clean snapshot exists ($VM/clean.qcow2); FORCE=1 to rebuild it"
@@ -552,12 +560,13 @@ cmd_provision() {
 
 	local pub
 	pub=$(cat "$SSHD/id_ed25519.pub")
-	# One connect: the LAN address, the identity, the key, then the password,
-	# which ends the empty-password login this session is using.
+	# One connect: the identity, the LAN address and the lab's key, which the
+	# rest of provisioning logs in with. A public key is no secret; the
+	# password is not set at all (see above).
 	inlab sshpass -p '' ssh -o PubkeyAuthentication=no lab-wan \
-		"/system/identity/set name=mikroscope-lab-$short; /ip/address/add address=192.168.88.1/24 interface=ether2 comment=\"lab LAN\"; /user/ssh-keys/add user=admin key=\"$pub\"; /user/set [find name=admin] password=\"$LAB_ADMIN_PASSWORD\"" >/dev/null
+		"/system/identity/set name=mikroscope-lab-$short; /ip/address/add address=192.168.88.1/24 interface=ether2 comment=\"lab LAN\"; /user/ssh-keys/add user=admin key=\"$pub\"" >/dev/null
 	wait_ssh lab 60
-	say "ssh by key over ether2 (LAN) works; password set"
+	say "ssh by key over ether2 (LAN) works"
 
 	local pkg
 	pkg=$(ros ':put [:len [/system/package/find name="container" disabled=no]]' | tr -d '\r')
@@ -577,9 +586,15 @@ cmd_provision() {
 	cmd_device_mode
 	say "device-mode container=yes confirmed"
 
-	say "shutting the router down for the snapshot"
-	ros '/system/shutdown' >/dev/null 2>&1 || true
-	wait_down 120 || die "the router did not power off within 120s"
+	# The key goes before the snapshot is taken. The shutdown then logs in
+	# with the empty password over ether1, which is what every boot of the
+	# snapshot starts with: a router that refuses it here never becomes one.
+	local keys
+	keys=$(ros '/user/ssh-keys/remove [find]; :put [:len [/user/ssh-keys/find]]' | tr -d '\r')
+	[ "$keys" = 0 ] || die "the router still has $keys ssh key(s) after removing the lab's"
+	say "the lab's key removed; shutting the router down for the snapshot (empty password, over ether1)"
+	inlab sshpass -p '' ssh -o PubkeyAuthentication=no lab-wan '/system/shutdown' >/dev/null 2>&1 || true
+	wait_down 120 || die "the router did not power off within 120s: did the empty-password login over ether1 fail?"
 	docker rm "$NAME" >/dev/null
 	mv -f "$VM/provision.qcow2" "$VM/clean.qcow2"
 	chmod a-w "$VM/clean.qcow2"
@@ -641,9 +656,50 @@ cmd_up() {
 		say "starting $NAME"
 		start run.qcow2
 	fi
-	wait_ssh lab 300
+	grant_access
 	agent_routes_end_here
 	say "up: ssh 127.0.0.1:$P_SSH, WebFig http://127.0.0.1:$P_HTTP, API 127.0.0.1:$P_API, agent 127.0.0.1:$P_AGENT (-> $LAB_AGENT_TARGET)"
+}
+
+# grant_access waits for the router's ssh and, on a boot of the snapshot,
+# gives admin this lab's key and password (from .cache/ssh and .env), which
+# the snapshot does not carry (cmd_provision). The snapshot's admin has the
+# empty password, which RouterOS accepts as ssh's `none` authentication, so
+# the same `ssh lab` gets in before and after; whether admin has a key says
+# which of the two it is. A router that already has one — a power cycle, an
+# up after a down — is left as it is.
+#
+# The password travels in a file, not on a command line: this script's
+# printf, a shell builtin, writes it to docker exec's stdin, which stores it
+# in the lab container (mode 0600); scp copies it to the router, /import runs
+# it and the file is removed on both. No process table, the host's or the
+# container's, shows it.
+grant_access() {
+	local limit=300 i=0 out keys
+	until keys=$(inlab ssh -o ConnectTimeout=2 -o BatchMode=yes lab ':put [:len [/user/ssh-keys/find user=admin]]' 2>/dev/null | tr -d '\r') && [ -n "$keys" ]; do
+		[ "$(state)" = running ] || die "the lab container stopped: docker logs $NAME; tail $VM/console.log"
+		i=$((i + 3))
+		[ $i -lt "$limit" ] || die "no ssh from the router after ${limit}s, neither by this lab's key nor with the snapshot's empty password: a live layer from another .env or key? lab.sh reset"
+		sleep 1
+	done
+	[ "$keys" = 0 ] || return 0
+	say "a boot of the snapshot: giving admin this lab's key and password"
+	printf '/user/ssh-keys/add user=admin key="%s"\n/user/set [find name=admin] password="%s"\n' \
+		"$(cat "$SSHD/id_ed25519.pub")" "$LAB_ADMIN_PASSWORD" |
+		inlab sh -c 'umask 077; cat >/run/lab/access.rsc'
+	out=$(inlab sh -c "scp -q /run/lab/access.rsc lab:lab-access.rsc &&
+		ssh lab '/import file-name=lab-access.rsc; /file/remove [find name=\"lab-access.rsc\"]'; rm -f /run/lab/access.rsc" 2>&1 | tr -d '\r')
+	case "$out" in
+	*"executed successfully"*) ;;
+	*)
+		ros '/file/remove [find name="lab-access.rsc"]' >/dev/null 2>&1 || true
+		printf '%s\n' "${out//"$LAB_ADMIN_PASSWORD"/<LAB_ADMIN_PASSWORD>}" >&2
+		die "giving the router the lab's key and password failed"
+		;;
+	esac
+	keys=$(ros ':put [:len [/user/ssh-keys/find user=admin]]' | tr -d '\r')
+	[ "$keys" = 1 ] || die "admin has $keys ssh key(s) after the lab's was added"
+	say "admin has this lab's key and password"
 }
 
 # agent_routes_end_here gives the router a blackhole route for each of

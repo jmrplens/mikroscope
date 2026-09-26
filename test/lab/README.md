@@ -385,7 +385,10 @@ host                      lab container (its own network namespace)
   replaces `run.qcow2` with an empty layer over `clean.qcow2`.
 - **Credentials** are generated on first use into `test/lab/.env` (mode 0600,
   gitignored): the admin password and a bearer token for `--expose` tests. The
-  ssh key is `.cache/ssh/id_ed25519`. Nothing prints them. Host keys are not
+  ssh key is `.cache/ssh/id_ed25519`. Nothing prints them, and the disks
+  under `.cache/vm/` carry neither until a boot gives the live layer the key
+  and the password ([provisioning](#provisioning-and-what-was-learned-doing-it),
+  step 6). Host keys are not
   pinned: the router lives on a tap in a namespace no other container can
   open a connection into, and is re-provisioned at will.
 - **Agent addresses end at the router.** Every `up` gives the router a
@@ -432,10 +435,11 @@ KVM and arm64 under TCG; where the two differed, both are given.
    retried and resumed: one download of the ISO was reset at 62 of its 71 MB.
 2. **First login.** CHR's `admin` has no password, and a non-interactive ssh
    command with it is not asked to change it (the session authenticated with
-   `none`). One connect sets the identity, 192.168.88.1/24 on ether2, the lab's
-   key (`/user/ssh-keys/add user=admin key="ssh-ed25519 …"`: accepted, although
-   the server advertises `server-sig-algs=<rsa-sha2-256,ssh-rsa>`) and the
-   password.
+   `none`). One connect sets the identity, 192.168.88.1/24 on ether2 and the
+   lab's key (`/user/ssh-keys/add user=admin key="ssh-ed25519 …"`: accepted,
+   although the server advertises `server-sig-algs=<rsa-sha2-256,ssh-rsa>`),
+   which the rest of provisioning logs in with. The password is not set here
+   (step 5).
 3. **The container package** is not in CHR's image. Uploaded to the root with
    scp and followed by `/system/reboot` (which over ssh asks nothing), it came
    back installed and enabled; the `/system/package/enable container` that
@@ -452,12 +456,26 @@ KVM and arm64 under TCG; where the two differed, both are given.
    writes that a confirmed change reboots the device by itself; the console
    showed no boot after the one the power cut caused. arm64 behaved the same,
    message included (`… in 4m59s …` the second time).
-5. **Snapshot.** `/system/shutdown`, then `provision.qcow2` becomes
-   `clean.qcow2`. Nothing else is configured: no interface list beyond the
-   built-in ones, no address list, no firewall rule, which is what CHR ships
-   (every boot adds the blackhole routes described above).
-   A test that needs more sets it up itself, from a [profile](#profiles).
-6. **arm64 boots through UEFI.** `chr-<v>-arm64.img` is a 128 MiB GPT disk (a
+5. **Snapshot.** The lab's key is removed, `/system/shutdown` is sent over
+   ether1 with the empty password, which proves the way into the snapshot
+   works, and `provision.qcow2` becomes `clean.qcow2`. Nothing else is
+   configured: no interface list beyond the built-in ones, no address list,
+   no firewall rule, which is what CHR ships (every boot adds the blackhole
+   routes described above). A test that needs more sets it up itself, from a
+   [profile](#profiles).
+6. **No credential in the snapshot.** `clean.qcow2` has admin with the empty
+   password CHR ships with and no key, so it can be cached and booted by a
+   lab with other credentials, which is what CI's cache does. At every boot of
+   the snapshot (`up` on a fresh live layer, `reset`), `lab.sh` finds that
+   admin has no key and gives it this lab's key and password: the password in
+   a file written from `lab.sh`'s stdin into the container, copied with `scp`,
+   run with `/import` and removed on both, so no process table shows it.
+   From the boot until then, a few seconds, the router takes the empty
+   password, on the ports published on the host's loopback and inside the
+   lab's namespace. With a key present, RouterOS refuses a password over ssh;
+   WebFig and the API take the password (`/rest` answered 200 with it and 401
+   with the empty one, 2026-09-26).
+7. **arm64 boots through UEFI.** `chr-<v>-arm64.img` is a 128 MiB GPT disk (a
    hybrid MBR beside it) whose first partition, `RouterOS-Boot`, is an EFI
    system partition. QEMU's `virt` machine with the edk2 firmware from
    `qemu-efi-aarch64` (`-bios QEMU_EFI.fd`, no variable store) boots it; the
