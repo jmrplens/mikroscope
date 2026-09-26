@@ -242,6 +242,62 @@ var containerStepSpec = stepSpec{
 	},
 }
 
+// The script's own text, around the steps' Create lines (Script): the
+// header comments and the opening of the block, the guards, and the wait for
+// the agent, the end of the block and the closing comments. Each fragment is
+// a line.
+//
+// The block runs as one script, pasted into a terminal or /imported: a guard
+// stops it with :error before the first write, and a failure at any step
+// stops the rest instead of leaving the steps before it behind with the
+// rest missing. Measured in the virtual lab (CHR x86_64, RouterOS 7.24.4):
+// an /import of a `{ … }` block whose :error fires before a write ends with
+// `Script Error: <message>` and writes nothing, a `#` line inside the block
+// is a comment, and declaring a :local twice in one block is accepted.
+var (
+	scriptHeader = []fragment{
+		t("# mikroscope {{version}}: install script for RouterOS 7.24 or later. Container name: {{name}}"),
+		t(`# Every object it creates carries the comment "{{tag}}", which is how`),
+		t("# `mikroscope status` and `uninstall` recognize them later."),
+		t("#"),
+		w("remote", "# The router pulls {{remoteRef}} itself."),
+		w("remote", "# The registry host is part of remote-image= (RouterOS 7.18 and later take it"),
+		w("remote", "# there), so this script neither reads nor changes the device-wide registry-url."),
+		w("remote", "# A registry username set on the device for a registry other than {{registryHost}}"),
+		w("remote", "# can make the pull end in `auth error`; `mikroscope doctor` warns about it."),
+		w("tar", "# BEFORE RUNNING: put the agent image tar on the device as {{imageFile}}"),
+		w("tar", "# (upload it over WinBox/WebFig Files, or /tool/fetch it), or regenerate this"),
+		w("tar", "# script with --remote-image so the router pulls the image instead."),
+		w("token", "#"),
+		w("token", "# The agent's bearer token is in clear below: treat this file as a credential."),
+		t("#"),
+		t("# It runs as one block: a check that fails stops it before anything is written,"),
+		t("# and a step that fails stops the steps after it."),
+		t(""),
+		t("{"),
+	}
+	scriptGuards = []fragment{
+		// 7.24 or later, as a pattern on the version string: 7.24.4 (stable),
+		// 7.24 (stable), which has no second dot, 7.25rc1 (testing), 7.100,
+		// 8.0. Measured in the lab against those strings, and against
+		// 7.23.1, 7.20.1, 7.3, 7.2 and 6.49.10, which it refuses.
+		t(`:if (!([/system/resource/get version] ~ "^(7[.](2[4-9]|[3-9][0-9]|[1-9][0-9][0-9])|([89]|[1-9][0-9]+)[.])")) do={ :error "mikroscope: needs RouterOS 7.24 or later" }`),
+		t(`:if ([:len [/system/package/find name="container" disabled=no]] = 0) do={ :error "mikroscope: the container package is not installed" }`),
+		t(`:local dm [:tostr [/system/device-mode/get container]]; :if ($dm != "yes" && $dm != "true") do={ :error "mikroscope: device-mode container is not enabled" }`),
+		t(`:if ([:len [/interface/veth/find name="{{veth}}"]] > 0 && [:len [/interface/veth/find name="{{veth}}" comment="{{tag}}"]] = 0) do={ :error "mikroscope: veth {{veth}} exists and is not mikroscope's" }`),
+		w("ifaceList", `:if ([:len [/interface/list/find name="{{ifaceList}}"]] = 0) do={ :error "mikroscope: interface list {{ifaceList}} does not exist" }`),
+		w("disk", `:if ([:len [/disk/find slot="{{disk}}"]] = 0) do={ :error "mikroscope: disk {{disk}} does not exist" }`),
+		w("tar", `:if ([:len [/file/find name="{{imageFile}}"]] = 0) do={ :error "mikroscope: upload {{imageFile}} first" }`),
+	}
+	scriptFooter = []fragment{
+		t(`:local k 0; :while ([:len [/container/find comment="{{tag}}" running]] = 0 && $k < 120) do={ :delay 1s; :set k ($k + 1) }`),
+		t(`:if ([:len [/container/find comment="{{tag}}" running]] > 0) do={ :put "mikroscope: agent running, http://{{containerIP}}:{{port}}/healthz" } else={ :put "mikroscope: not running yet; see /log/print where topics~\"container\"" }`),
+		t("}"),
+		t(`# When it is done: /container/print where comment="{{tag}}"`),
+		t("# The agent answers on http://{{containerIP}}:{{port}}/healthz from the router's LAN."),
+	}
+)
+
 // holds says whether a fragment or a step is kept for these predicate values.
 func holds(when string, p map[string]bool) bool {
 	if when == "" {
@@ -285,6 +341,33 @@ func renderText(frags []fragment, v map[string]string, p map[string]bool) string
 		}
 	}
 	return b.String()
+}
+
+// renderLines is the fragments that hold, one line each.
+func renderLines(frags []fragment, v map[string]string, p map[string]bool) []string {
+	var out []string
+	for _, f := range frags {
+		if holds(f.When, p) {
+			out = append(out, substitute(f.Text, v))
+		}
+	}
+	return out
+}
+
+// renderScript is the `plan --rsc` script: the header, the guards, each
+// step's name as a comment and its Create, the footer, one line each.
+func renderScript(o *Options, version string) string {
+	v, p := values(o, version), predicateValues(o)
+	lines := renderLines(scriptHeader, v, p)
+	lines = append(lines, renderLines(scriptGuards, v, p)...)
+	for _, s := range stepSpecs {
+		if holds(s.When, p) {
+			r := s.render(v, p)
+			lines = append(lines, "# "+r.Name, r.Create)
+		}
+	}
+	lines = append(lines, renderLines(scriptFooter, v, p)...)
+	return strings.Join(lines, "\n") + "\n"
 }
 
 // predicateValues evaluates every predicate for o.

@@ -19,6 +19,9 @@ type jsonSpec struct {
 	Placeholders []string         `json:"placeholders"`
 	Derived      []jsonDerived    `json:"derived"`
 	Steps        []map[string]any `json:"steps"`
+	ScriptHeader []jsonFragment   `json:"scriptHeader"`
+	ScriptGuards []jsonFragment   `json:"scriptGuards"`
+	ScriptFooter []jsonFragment   `json:"scriptFooter"`
 }
 
 type jsonDerived struct {
@@ -136,9 +139,38 @@ func TestSpecRendersLikePlan(t *testing.T) {
 					t.Errorf("derived %s renders %q, Go computes %q", d.Key, got, v[d.Key])
 				}
 			}
-			compareSteps(t, jsonSteps(t, spec, v, p), Plan(o))
+			steps := jsonSteps(t, spec, v, p)
+			compareSteps(t, steps, Plan(o))
+			var want strings.Builder
+			Script(o, &want)
+			if got := jsonScript(t, spec, steps, v, p); got != want.String() {
+				t.Errorf("the script rendered from the JSON differs from Script:\n%s", firstDifference(want.String(), got))
+			}
 		})
 	}
+}
+
+// jsonScript lays the script out as the JSON's "script" rule says: the
+// header, the guards, "# name" and create for each step, the footer, a line
+// each.
+func jsonScript(t *testing.T, spec jsonSpec, steps []map[string]string, v map[string]string, p map[string]bool) string {
+	t.Helper()
+	var b strings.Builder
+	lines := func(frags []jsonFragment) {
+		for _, f := range frags {
+			if f.When != "" && jsonRender(t, []jsonFragment{{When: f.When, Text: "x"}}, v, p) == "" {
+				continue
+			}
+			b.WriteString(jsonRender(t, []jsonFragment{{Text: f.Text}}, v, p) + "\n")
+		}
+	}
+	lines(spec.ScriptHeader)
+	lines(spec.ScriptGuards)
+	for _, s := range steps {
+		b.WriteString("# " + s["name"] + "\n" + s["create"] + "\n")
+	}
+	lines(spec.ScriptFooter)
+	return b.String()
 }
 
 // jsonSteps renders the JSON steps whose predicate holds, each as the six

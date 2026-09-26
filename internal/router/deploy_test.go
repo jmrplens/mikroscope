@@ -2,6 +2,7 @@ package router
 
 import (
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -70,5 +71,43 @@ func TestListingNumbersEachStepOnce(t *testing.T) {
 				t.Fatalf("%s listing, remote %q: the options do not name %s:\n%s", name, remote, image, out)
 			}
 		}
+	}
+}
+
+// TestScriptIsOneGuardedBlock pins Script v2's shape: one `{ … }` block,
+// every guard before the first write, each guard an :error, each step's
+// Create exactly as Plan renders it, and the closing comment selecting by the
+// tag rather than by a container name RouterOS may have picked itself.
+func TestScriptIsOneGuardedBlock(t *testing.T) {
+	o := defaults(t, nil)
+	var b strings.Builder
+	Script(o, &b)
+	lines := strings.Split(strings.TrimSuffix(b.String(), "\n"), "\n")
+	open, closing := slices.Index(lines, "{"), slices.Index(lines, "}")
+	if open < 0 || closing < open || strings.Count(b.String(), "\n{\n") != 1 {
+		t.Fatalf("the script is not one block:\n%s", b.String())
+	}
+	firstWrite := -1
+	for i, l := range lines[open+1 : closing] {
+		if strings.HasPrefix(l, "/") || strings.HasPrefix(l, ":if ([:len [/container/envs/find") {
+			firstWrite = open + 1 + i
+			break
+		}
+	}
+	for i, l := range lines[open+1 : firstWrite] {
+		if !strings.HasPrefix(l, ":if (") && !strings.HasPrefix(l, ":local dm ") && !strings.HasPrefix(l, "# ") {
+			t.Errorf("line %d before the first write is not a guard: %s", open+2+i, l)
+		}
+		if strings.HasPrefix(l, ":if (") && !strings.Contains(l, ":error \"mikroscope: ") {
+			t.Errorf("guard %q does not stop with :error", l)
+		}
+	}
+	for _, s := range Plan(o) {
+		if !slices.Contains(lines, s.Create) || !slices.Contains(lines, "# "+s.Name) {
+			t.Errorf("the script does not carry step %q as Plan renders it", s.Name)
+		}
+	}
+	if !strings.Contains(b.String(), `# When it is done: /container/print where comment="`+o.Tag()+`"`) {
+		t.Errorf("the closing comment does not select by the tag:\n%s", b.String())
 	}
 }

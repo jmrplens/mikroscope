@@ -6,6 +6,8 @@ import (
 	"io"
 	"slices"
 	"strings"
+
+	"github.com/jmrplens/mikroscope/internal/version"
 )
 
 // Listing prints every write install would perform, in order, with the
@@ -68,44 +70,22 @@ func UpgradeListing(o Options, imageSize int, w io.Writer) {
 // router — the path that needs neither this CLI nor ssh from another machine:
 // paste it into a terminal, or upload it and `/import`.
 //
-// It is the same Create commands Install runs, in the same order, so the two
-// paths cannot drift. Two things differ, and both are stated in the script
-// itself rather than left to be discovered:
+// It is the same Create commands Install runs, in the same order, inside one
+// `{ … }` block behind guards that stop it before the first write on a
+// router that cannot take it (renderScript, from the steps spec). Two things
+// differ from Install, and both are stated in the script itself rather than
+// left to be discovered:
 //
 //   - The image. A script on the router cannot upload a tar, so it needs
 //     either --remote-image (the router pulls it) or a tar already on the
-//     device under the name the container step expects. A pull names its
-//     registry inside `remote-image=` (RemoteRef), so the script neither
-//     reads nor writes /container/config.
+//     device under the name the container step expects, which a guard
+//     checks. A pull names its registry inside `remote-image=` (RemoteRef),
+//     so the script neither reads nor writes /container/config.
 //   - The token. The envlist line carries it in clear, because the router
 //     needs it; anyone who can read the script can read the token.
 func Script(o Options, w io.Writer) {
-	fmt.Fprintf(w, "# mikroscope — install script for RouterOS. Container name: %s\n", o.Name)
-	fmt.Fprintf(w, "# Every object it creates carries the comment %q, which is how\n", o.Tag())
-	fmt.Fprintln(w, "# `mikroscope status` and `uninstall` recognize them later.")
-	fmt.Fprintln(w, "#")
-	switch {
-	case o.UsesRemoteImage():
-		fmt.Fprintf(w, "# The router pulls %s itself.\n", o.RemoteRef())
-		fmt.Fprintln(w, "# The registry host is part of remote-image= (RouterOS 7.18 and later take it")
-		fmt.Fprintln(w, "# there), so this script neither reads nor changes the device-wide registry-url.")
-		fmt.Fprintf(w, "# A registry username set on the device for a registry other than %s\n", o.RegistryHost())
-		fmt.Fprintln(w, "# can make the pull end in `auth error`; `mikroscope doctor` warns about it.")
-	default:
-		fmt.Fprintf(w, "# BEFORE RUNNING: put the agent image tar on the device as %s\n", o.ImageFile())
-		fmt.Fprintln(w, "# (upload it over WinBox/WebFig Files, or /tool/fetch it), or regenerate this")
-		fmt.Fprintln(w, "# script with --remote-image so the router pulls the image instead.")
-	}
-	if o.Token != "" {
-		fmt.Fprintln(w, "#")
-		fmt.Fprintln(w, "# The agent's bearer token is in clear below: treat this file as a credential.")
-	}
-	fmt.Fprintln(w, "")
-	for _, s := range Plan(o) {
-		fmt.Fprintf(w, "# %s\n%s\n\n", s.Name, s.Create)
-	}
-	fmt.Fprintf(w, "# When it is done: /container/print where name~\"%s\"\n", o.Name)
-	fmt.Fprintf(w, "# The agent answers on http://%s:%d/healthz from the router's LAN.\n", o.ContainerIP, o.Port)
+	o.mustBeFinished()
+	_, _ = io.WriteString(w, renderScript(&o, version.Version))
 }
 
 func mask(cmd, token string) string {

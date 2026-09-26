@@ -305,6 +305,10 @@ func SpecJSON() ([]byte, error) {
 		"placeholders": placeholderNames(),
 		"derived":      derivedTemplates,
 		"steps":        stepSpecs,
+		"scriptHeader": scriptHeader,
+		"scriptGuards": scriptGuards,
+		"scriptFooter": scriptFooter,
+		"script":       "each line of scriptHeader, then of scriptGuards, then for each step whose when holds the line \"# \" + name and the line create, then each line of scriptFooter; every line ends with a newline",
 	}
 	return json.MarshalIndent(spec, "", "  ")
 }
