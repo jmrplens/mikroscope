@@ -7,8 +7,9 @@
 # router with no rule that reads it. Measured on the lab, CHR 7.24.4,
 # 2026-09-26.
 #
-# Apply with `test/lab/lab.sh profile doctor-lists`. Idempotent: a list or
-# entry that exists already, from this profile or another, is kept as it is.
+# Apply with `make lab-profile PROFILE=doctor-lists`. Idempotent: a list
+# or entry that exists already, from this profile or another, is kept as it
+# is.
 # What this profile adds carries the comment "lab: doctor-lists".
 :if ([:len [/interface/list/find name="LAN"]] = 0) do={ /interface/list/add name=LAN comment="lab: doctor-lists" }
 :if ([:len [/interface/list/member/find list="LAN" interface="ether2"]] = 0) do={ /interface/list/member/add list=LAN interface=ether2 comment="lab: doctor-lists" }

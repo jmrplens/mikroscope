@@ -10,10 +10,10 @@
 #
 # The input rule drops anything that does not come in on a LAN interface, so
 # after this profile the lab's way in over ether1 (`ssh lab-wan` inside the
-# lab container) is closed; ether2, where every lab.sh verb connects, stays
-# open.
+# lab container) is closed; ether2, where every mikroscope-lab verb connects,
+# stays open.
 #
-# Apply with `test/lab/lab.sh profile defconf-firewall`. Idempotent: the
+# Apply with `make lab-profile PROFILE=defconf-firewall`. Idempotent: the
 # lists are kept when they exist (doctor-lists makes LAN too), and the rules
 # are replaced. What this profile adds carries a comment that starts with
 # "lab: defconf-firewall".

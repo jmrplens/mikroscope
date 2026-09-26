@@ -1,8 +1,9 @@
 # Makefile for mikroscope. Running `make` with no arguments lists the targets.
 #
-# Two binaries and one build-time tool: the CLI and collector (cmd/mikroscope),
-# the agent that runs in a scratch container on the router
-# (cmd/mikroscope-agent), and cmd/gen_brand, which writes brand/ and is never
+# Two binaries and two build-time tools: the CLI and collector
+# (cmd/mikroscope), the agent that runs in a scratch container on the router
+# (cmd/mikroscope-agent), cmd/gen_brand, which writes brand/, and
+# cmd/mikroscope-lab, which drives the virtual RouterOS lab. Neither tool is
 # shipped. Every check CI runs has a target here, and the workflows call the
 # target rather than restating the command, so `make analyze` on a laptop asks
 # the questions a pull request is asked.
@@ -20,7 +21,7 @@ SHELL := /bin/bash
 	mdlint mdlint-fix check-doc-links \
 	gen-dashboards check-dashboards gen-brand check-brand check-generated \
 	install-tools tools-versions release-check roundtrip roundtrip-device \
-	lab-up lab-down lab-reset lab-status lab-ssh lab-cli lab-console lab-provision \
+	lab-tool lab-up lab-down lab-reset lab-status lab-ssh lab-cli lab-console lab-provision \
 	lab-profile lab-export lab-residue lab-power-cycle test-lab e2e-lab-build
 
 # ─── Variables ──────────────────────────────────────────────────────────────
@@ -74,10 +75,10 @@ AGENT_ARCHES    := arm64 arm amd64
 PLATFORM ?= linux/arm64
 
 # Coverage is one profile that instruments every package under cmd/ and
-# internal/, cmd/gen_brand included. ./test/... is left out because its suite
-# drives the built binaries as separate processes, which the profile of the
-# test binary cannot see: adding it changes the total by little and the run
-# time by a lot. SonarCloud reads the same coverage.out, so the number it
+# internal/, cmd/gen_brand and cmd/mikroscope-lab included. ./test/... is
+# left out because its suite drives the built binaries as separate
+# processes, which the profile of the test binary cannot see: adding it
+# changes the total by little and the run time by a lot. SonarCloud reads the same coverage.out, so the number it
 # reports and the floor below are one measurement.
 #
 # The floor sits under what was measured when it was set: 92.0% over
@@ -353,7 +354,7 @@ actionlint: ## Lint the GitHub workflows (shellcheck is used when it is on PATH,
 # most readers will execute.
 shellcheck: ## Lint the installer and every shell script the repository ships
 	@echo "=== shellcheck ==="
-	shellcheck install.sh scripts/*.sh .github/scripts/*.sh test/lab/*.sh test/lab/vm/*.sh
+	shellcheck install.sh scripts/*.sh .github/scripts/*.sh test/lab/*.sh
 
 # Scoped to FMT_PATHS for the reason given where it is defined, and because the
 # formatter is the one command that rewrites files: with no path argument
@@ -535,16 +536,20 @@ release-check: ## Validate .goreleaser.yaml without releasing anything
 # confirmed); every later one boots in seconds. Nothing here reaches any router
 # but the lab's own.
 #
-# Every target drives the lab through test/lab/lab.sh, which takes the lab's
-# lock first, so two checkouts or two agents never drive one lab at once.
-# LAB_STATE_DIR (environment or make line) points a checkout at the lab
-# another checkout runs: its test/lab, where .cache/ and .env live.
+# Every target drives the lab through bin/mikroscope-lab (cmd/mikroscope-lab,
+# built by lab-tool first), which takes the lab's lock first, so two checkouts
+# or two agents never drive one lab at once; test/lab/lab.sh execs the same
+# binary for whoever calls the script. LAB_STATE_DIR (environment or make
+# line) points a checkout at the lab another checkout runs: its test/lab,
+# where .cache/ and .env live. LAB_INSTANCE=<name> is a lab beside the
+# default one, with its own container, ports, lock and disks.
 # LAB_KIND=iso is RouterOS x86 from MikroTik's installation ISO, x86_64 only:
 # an opt-in recipe, never run by CI (README: "RouterOS x86 from the ISO").
 LAB_ARCH ?= x86_64
 LAB_ROS  ?= 7.24.4
 LAB_KIND ?= chr
-LAB      := LAB_ARCH=$(LAB_ARCH) LAB_ROS=$(LAB_ROS) LAB_KIND=$(LAB_KIND) test/lab/lab.sh
+LAB_TOOL := $(BIN_DIR)/mikroscope-lab
+LAB      := LAB_ARCH=$(LAB_ARCH) LAB_ROS=$(LAB_ROS) LAB_KIND=$(LAB_KIND) $(LAB_TOOL)
 
 # The agent image a lab test pulls: the last release tag, not VERSION, which
 # runs ahead of what Docker Hub has during a release pull request. A clone
@@ -552,42 +557,49 @@ LAB      := LAB_ARCH=$(LAB_ARCH) LAB_ROS=$(LAB_ROS) LAB_KIND=$(LAB_KIND) test/la
 # points at the last release too.
 LAB_REMOTE_IMAGE ?= jmrplens/mikroscope-agent:$(or $(shell git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//'),latest)
 
-lab-up: ## Start the lab router (LAB_ARCH=x86_64|arm64, LAB_ROS=7.24.4, LAB_KIND=chr|iso); the first run provisions it
+# Static, because the same binary is the lab container's PID 1 and the entry
+# point of every `lab-cli` container, which run it inside the lab's Debian
+# image. go build writes nothing when the binary is up to date.
+lab-tool: ## Build the lab's driver, cmd/mikroscope-lab, into bin/ (a build-time tool, never shipped)
+	@mkdir -p $(BIN_DIR)
+	@CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o $(LAB_TOOL) ./cmd/mikroscope-lab
+
+lab-up: lab-tool ## Start the lab router (LAB_ARCH=x86_64|arm64, LAB_ROS=7.24.4, LAB_KIND=chr|iso); the first run provisions it
 	@$(LAB) up
 
-lab-down: ## Shut the lab router down and remove its container; the disk keeps its state
+lab-down: lab-tool ## Shut the lab router down and remove its container; the disk keeps its state
 	@$(LAB) down
 
-lab-reset: ## Put the lab router back to its clean snapshot, in seconds
+lab-reset: lab-tool ## Put the lab router back to its clean snapshot, in seconds
 	@$(LAB) reset
 
-lab-status: ## Show the lab container, who holds its lock and what the router reports
+lab-status: lab-tool ## Show the lab container, who holds its lock and what the router reports
 	@$(LAB) status
 
-lab-ssh: ## A console on the lab router over ssh; CMD='/ip/address/print' runs one command
+lab-ssh: lab-tool ## A console on the lab router over ssh; CMD='/ip/address/print' runs one command
 	@$(LAB) ssh $${CMD:+"$$CMD"}
 
 # ARGS is expanded by make, so ARGS='doctor --remote-image $(LAB_REMOTE_IMAGE)'
 # names the last release.
-lab-cli: build ## Run this checkout's CLI against the lab from its LAN side: ARGS='doctor --arch amd64'
+lab-cli: build lab-tool ## Run this checkout's CLI against the lab from its LAN side: ARGS='doctor --arch amd64'
 	@$(LAB) cli $(ARGS)
 
-lab-profile: ## Import lab set-ups from test/lab/routeros: PROFILE='doctor-lists tmpfs-disk'; none lists them
+lab-profile: lab-tool ## Import lab set-ups from test/lab/routeros: PROFILE='doctor-lists tmpfs-disk'; none lists them
 	@$(LAB) profile $(PROFILE)
 
-lab-export: ## Print the lab router's /export without its comment lines (stdout only)
+lab-export: lab-tool ## Print the lab router's /export without its comment lines (stdout only)
 	@$(LAB) export
 
-lab-residue: ## Count what an install could have left on the lab router
+lab-residue: lab-tool ## Count what an install could have left on the lab router
 	@$(LAB) residue
 
-lab-power-cycle: ## Pull the lab router's power and put it back (a cold reboot)
+lab-power-cycle: lab-tool ## Pull the lab router's power and put it back (a cold reboot)
 	@$(LAB) power-cycle
 
-lab-console: ## Attach to the lab router's serial console
+lab-console: lab-tool ## Attach to the lab router's serial console
 	@$(LAB) console
 
-lab-provision: ## Rebuild the lab's clean snapshot from MikroTik's image (FORCE=1 redoes an existing one)
+lab-provision: lab-tool ## Rebuild the lab's clean snapshot from MikroTik's image (FORCE=1 redoes an existing one)
 	@$(LAB) provision
 
 # The Go architecture of LAB_ARCH: --arch, and the agent tar a lab test installs.
@@ -600,7 +612,7 @@ LAB_GOARCH = $(if $(filter arm64,$(LAB_ARCH)),arm64,amd64)
 # MIKROSCOPE_LAB_REQUIRED=1, which is what CI sets. LAB_RUN narrows it to the
 # tests a -run pattern matches; LAB_INSTALL_REPEAT sets how many installs the
 # repeat test makes (10 on x86_64, 3 on arm64).
-test-lab: build agent-tars ## Run the end-to-end suite against the lab router (make lab-up first; LAB_ARCH, LAB_RUN='S0[1-4]')
+test-lab: build agent-tars lab-tool ## Run the end-to-end suite against the lab router (make lab-up first; LAB_ARCH, LAB_RUN='S0[1-4]')
 	LAB_REMOTE_IMAGE='$(LAB_REMOTE_IMAGE)' MIKROSCOPE_LAB_REQUIRED='$(MIKROSCOPE_LAB_REQUIRED)' \
 	  $(LAB) lock go test -tags labe2e -count=1 -timeout 75m -v $(if $(LAB_RUN),-run '$(LAB_RUN)') ./test/e2e/lab/
 
@@ -609,7 +621,7 @@ test-lab: build agent-tars ## Run the end-to-end suite against the lab router (m
 # tmpfs disk and the lists imported first, the branch's agent tar, and the
 # lab's lock held throughout. It ends by comparing /export with the one taken
 # before, and nothing it does reaches any router but the lab's.
-roundtrip: build agent-tars ## The deployment round trip in the lab (LAB_ARCH): install → status → upgrade → uninstall, then diff /export
+roundtrip: build agent-tars lab-tool ## The deployment round trip in the lab (LAB_ARCH): install → status → upgrade → uninstall, then diff /export
 	FLAGS='--arch $(LAB_GOARCH) --agent-tar build/agent-images/mikroscope-agent-$(LAB_GOARCH).tar' \
 	  $(LAB) lock ./scripts/roundtrip.sh
 

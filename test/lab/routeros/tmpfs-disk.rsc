@@ -5,7 +5,7 @@
 # lab's clean snapshot). This is the disk doctor's fix line adds, with the
 # size it suggests.
 #
-# Apply with `test/lab/lab.sh profile tmpfs-disk`. Idempotent: a disk in slot
-# tmpfs that exists already is kept. What this profile adds carries the
+# Apply with `make lab-profile PROFILE=tmpfs-disk`. Idempotent: a disk in
+# slot tmpfs that exists already is kept. What this profile adds carries the
 # comment "lab: tmpfs-disk".
 :if ([:len [/disk/find slot="tmpfs"]] = 0) do={ /disk/add type=tmpfs tmpfs-max-size=64M slot=tmpfs comment="lab: tmpfs-disk" }

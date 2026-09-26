@@ -3,6 +3,7 @@
 /mikroscope
 /mikroscope-agent
 /gen_brand
+/mikroscope-lab
 *.exe
 *.test
 

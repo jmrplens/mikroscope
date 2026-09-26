@@ -6,18 +6,19 @@
 # container's cmd=).
 #
 # `make roundtrip` runs it in the virtual lab, which is what the defaults
-# below are: the CLI through `lab.sh cli`, from the lab's LAN side, RouterOS
-# through `lab.sh ssh`, and first the lab profiles that give CHR the tmpfs
-# disk --ephemeral installs into and the lists 1.3.1's doctor demands.
+# below are: the CLI through `mikroscope-lab cli`, from the lab's LAN side,
+# RouterOS through `mikroscope-lab ssh`, and first the lab profiles that give
+# CHR the tmpfs disk --ephemeral installs into and the lists 1.3.1's doctor
+# demands. bin/mikroscope-lab is the lab's driver (make lab-tool builds it).
 # `make roundtrip-device ROUTER=<ssh target> CONFIRM_WRITES=yes` runs the same
 # steps against a real router over ssh and imports nothing into it.
 #
 #   CLI    the command a verb and its flags are appended to
-#          (default: test/lab/lab.sh cli)
+#          (default: bin/mikroscope-lab cli)
 #   ROS    the command one RouterOS command is appended to
-#          (default: test/lab/lab.sh ssh)
+#          (default: bin/mikroscope-lab ssh)
 #   SETUP  run once before the first export; empty runs nothing
-#          (default: test/lab/lab.sh profile tmpfs-disk doctor-lists)
+#          (default: bin/mikroscope-lab profile tmpfs-disk doctor-lists)
 #   FLAGS  flags every verb gets besides --ephemeral, e.g.
 #          --arch amd64 --agent-tar build/agent-images/mikroscope-agent-amd64.tar
 #
@@ -27,11 +28,11 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-read -r -a cli <<<"${CLI:-test/lab/lab.sh cli}"
-read -r -a ros <<<"${ROS:-test/lab/lab.sh ssh}"
+read -r -a cli <<<"${CLI:-bin/mikroscope-lab cli}"
+read -r -a ros <<<"${ROS:-bin/mikroscope-lab ssh}"
 read -r -a flags <<<"${FLAGS:-}"
 flags=(--ephemeral "${flags[@]}")
-SETUP=${SETUP-test/lab/lab.sh profile tmpfs-disk doctor-lists}
+SETUP=${SETUP-bin/mikroscope-lab profile tmpfs-disk doctor-lists}
 
 # RouterOS 7.24.4 adds this disabled default entry to /export and drops it
 # again on its own, with nothing but reads going to the router (measured on

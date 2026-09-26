@@ -7,8 +7,8 @@
 # dropped by the first rule, a veth in no list by the last. The agent answers
 # only once the rule itself changes.
 #
-# Apply with `test/lab/lab.sh profile advanced-firewall-range`. Idempotent: the
-# lists are kept when they exist, and the raw rules of this profile and of
+# Apply with `make lab-profile PROFILE=advanced-firewall-range`. Idempotent:
+# the lists are kept when they exist, and the raw rules of this profile and of
 # advanced-firewall are replaced, so the two never stack. What this profile
 # adds carries a comment that starts with "lab: advanced-firewall-range".
 :if ([:len [/interface/list/find name="LAN"]] = 0) do={ /interface/list/add name=LAN comment="lab: advanced-firewall-range" }

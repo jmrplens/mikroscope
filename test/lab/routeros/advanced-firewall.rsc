@@ -18,7 +18,7 @@
 # bogon, TCP-flag and ICMP rules decide nothing about the agent and are left
 # out.
 #
-# Apply with `test/lab/lab.sh profile advanced-firewall`. Idempotent: the
+# Apply with `make lab-profile PROFILE=advanced-firewall`. Idempotent: the
 # lists are kept when they exist, and the raw rules of this profile and of
 # advanced-firewall-range are replaced, so the two never stack. What this
 # profile adds carries a comment that starts with "lab: advanced-firewall".
