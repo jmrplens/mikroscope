@@ -240,18 +240,32 @@ tool() {
 	docker run --rm --user "$(id -u):$(id -g)" -v "$CACHE:/cache" -w /cache --entrypoint bash "$LAB_IMAGE" -c "$1"
 }
 
-# fetch downloads from MikroTik and checks each file against the .sha256 that
-# MikroTik publishes beside it on download.mikrotik.com. Both come from the
-# same server over HTTPS, so the check catches a damaged or truncated
-# download, not a compromised origin; RouterOS itself verifies the signature
-# of every .npk it installs. A cut connection is retried and resumes: one
-# download of the ISO was reset at 62 of its 71 MB on 2026-09-26.
+# fetch downloads from MikroTik and checks each file twice. First against
+# test/lab/SHA256SUMS, committed with the lab, for the versions it names:
+# what a file is may not change after the lab was verified with it, whether
+# it comes from MikroTik or from a cache (CI keeps the downloads in the
+# Actions cache). Then against the .sha256 MikroTik publishes beside it on
+# download.mikrotik.com, which comes from the same server over HTTPS and so
+# catches a damaged or truncated download, not a compromised origin; it is
+# the only check for a version SHA256SUMS does not name. RouterOS itself
+# verifies the signature of every .npk it installs.
+#
+# curl retries a cut connection five times, and a retry starts the file
+# again from its first byte: on 2026-09-26 a download reset at 41 of its
+# 45 MB began again from zero and completed. A later `lab.sh fetch` resumes
+# from the .part file a failed one left.
 cmd_fetch() {
 	ensure_image
 	mkdir -p "$DL"
-	local f sums=()
+	local f want sums=() pinned="" unpinned=""
 	for f in "${downloads[@]}"; do
 		sums+=("'$f.sha256'")
+		want=$(awk -v name="$LAB_ROS/$f" '$2 == name { print $1 }' "$LAB_DIR/SHA256SUMS")
+		if [[ "$want" =~ ^[0-9a-f]{64}$ ]]; then
+			pinned+="$want  $f"$'\n'
+		else
+			unpinned+=" $f"
+		fi
 		if [ -f "$DL/$f" ] && [ -f "$DL/$f.sha256" ]; then
 			continue
 		fi
@@ -261,6 +275,11 @@ cmd_fetch() {
 			curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 -o '$f.sha256' '$LAB_DL/$LAB_ROS/$f.sha256'
 			mv '$f.part' '$f'"
 	done
+	if [ -n "$pinned" ]; then
+		tool "set -e; cd downloads/$LAB_ROS; printf '%s' '$pinned' | sha256sum -c -" >&2 ||
+			die "a download is not the file test/lab/SHA256SUMS pins for RouterOS $LAB_ROS: delete $DL and fetch again; if it still differs, MikroTik changed the file"
+	fi
+	[ -z "$unpinned" ] || say "test/lab/SHA256SUMS pins nothing for$unpinned: checked against MikroTik's .sha256 only"
 	tool "set -e; cd downloads/$LAB_ROS; sha256sum -c ${sums[*]}" >&2 ||
 		die "checksum mismatch: delete $DL and fetch again"
 }

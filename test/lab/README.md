@@ -427,12 +427,19 @@ KVM and arm64 under TCG; where the two differed, both are given.
    stores both under the first name). The arm64 archive is the one MikroTik
    publishes for the whole architecture — it also carries `switch-marvell` and
    `wifi-qcom`, for hardware CHR does not have — so its `container` package is
-   the one an arm64 RouterBOARD installs. MikroTik publishes a SHA-256 beside
-   every file as `<file>.sha256` on the same server; `lab.sh fetch` checks
-   every download against them. Both come from the same origin over HTTPS, so
-   the check catches a damaged download, not a compromised server; RouterOS
-   verifies the signature of each `.npk` it installs. A cut connection is
-   retried and resumed: one download of the ISO was reset at 62 of its 71 MB.
+   the one an arm64 RouterBOARD installs. `lab.sh fetch` checks every
+   download twice. First against `test/lab/SHA256SUMS`, committed with the
+   lab, which pins the five 7.24.4 files the lab was verified with: a file
+   that is not that one, from MikroTik or from a cache, stops the lab. Then
+   against the SHA-256 MikroTik publishes beside every file as
+   `<file>.sha256` on the same server, which catches a damaged download but
+   not a compromised server, since both come from the same origin over
+   HTTPS; for a version `SHA256SUMS` does not name it is the only check, and
+   `lab.sh` says so. RouterOS verifies the signature of each `.npk` it
+   installs. curl retries a cut connection, from the file's first byte: a
+   download reset at 41 of its 45 MB began again from zero and completed
+   (2026-09-26); a later `lab.sh fetch` resumes from the `.part` file a
+   failed one leaves.
 2. **First login.** CHR's `admin` has no password, and a non-interactive ssh
    command with it is not asked to change it (the session authenticated with
    `none`). One connect sets the identity, 192.168.88.1/24 on ether2 and the
