@@ -842,7 +842,9 @@ cli_bin() {
 			bin=$(command -v mikroscope || true)
 		fi
 	fi
-	[ -n "$bin" ] && [ -x "$bin" ] || die "no mikroscope binary: make build, put one on PATH, or set MIKROSCOPE_BIN"
+	if [ -z "$bin" ] || [ ! -x "$bin" ]; then
+		die "no mikroscope binary: make build, put one on PATH, or set MIKROSCOPE_BIN"
+	fi
 	echo "$(cd "$(dirname "$bin")" && pwd)/$(basename "$bin")"
 }
 
@@ -868,7 +870,9 @@ in_agent_routes() {
 	for r in ${routes:-$LAB_AGENT_ROUTES}; do
 		rn=$(ip4 "${r%/*}") || continue
 		rl=${r#*/}
-		[[ "$r" == */* && "$rl" =~ ^[0-9]{1,2}$ ]] && [ "$rl" -le "$len" ] || continue
+		if ! [[ "$r" == */* && "$rl" =~ ^[0-9]{1,2}$ ]] || [ "$rl" -gt "$len" ]; then
+			continue
+		fi
 		mask=$(((0xFFFFFFFF << (32 - rl)) & 0xFFFFFFFF))
 		[ $((n & mask)) -eq $((rn & mask)) ] && return 0
 	done
