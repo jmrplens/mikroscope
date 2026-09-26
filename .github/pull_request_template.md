@@ -20,7 +20,8 @@ issue it closes (`Closes #…`) or the discussion it came from.
 Which of these ran, and what they said. A behaviour change wants a test that
 fails before it and passes after it: name the test. A number in the change
 (a cost, a rate, a size) says what device, which RouterOS version and what
-date it was measured on, and its spread.
+date it was measured on, and its spread, and goes to the evidence page (a
+campaign in `site/src/data/measurements.ts`), never inline in a guide.
 -->
 
 - [ ] `make analyze` (golangci-lint, govulncheck, actionlint, shellcheck, markdownlint, links, generated artifacts)
@@ -49,7 +50,7 @@ No addresses, tokens, `.env` lines, or `/container/print detail`,
 <!-- Delete the lines that do not apply. CONTRIBUTING.md, "What a change owes", has the full list. -->
 
 - [ ] A new flag or environment variable is in `.env.example` and on the CLI reference page; a value that reaches a RouterOS command is bounded in `internal/router` and has its row on the installer security page, in both languages.
-- [ ] A new source has its fixture under `testdata/`, its `/metrics` family, the sinks that carry it, a dashboard panel, and its cost: what one read takes, on which board and RouterOS version, on what date.
+- [ ] A new source has its fixture under `testdata/`, its `/metrics` family, the sinks that carry it, a dashboard panel, and its cost: what one read takes, on which board and RouterOS version, on what date, as a campaign on the evidence pages.
 - [ ] A new sink has a test of its exact wire format, an end-to-end test against a fake receiver, and its page with the Spanish twin.
 - [ ] A new alert rule has its `alertFiresWhen` entry in `site/src/data/dashboards.ts` in both languages and a backtest that states the window, the device and how often it would have fired.
 - [ ] A new doctor check has its row in `site/src/data/doctor-checks.ts` in both languages and its troubleshooting entry with the Spanish twin.

@@ -9,7 +9,7 @@ body:
         [Where it has been verified](https://github.com/jmrplens/mikroscope#where-it-has-been-verified)
         lists the boards mikroscope has run on. Everything else it builds for
         is cross-compiled and checked in CI, and nothing more
-        ([Where it stands](https://jmrp.io/docs/mikroscope/about/status/)).
+        ([Tested on](https://jmrp.io/docs/mikroscope/about/status/)).
         A report from your board is what changes that, and a partial one
         counts: an `exec format error` on a named board is a result.
 

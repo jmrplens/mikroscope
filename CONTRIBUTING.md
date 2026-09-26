@@ -385,11 +385,10 @@ the same way:
   Anything that writes (a container, a veth, a firewall object, a user) is a
   decision you make for that run, not one a script makes for you.
 - **One ssh connection, many commands.** Each ssh connect costs a small
-  RouterOS device a large share of a core for its duration (20 to 27 % on the
-  reference RB5009, measured on RouterOS 7.24.1 on 2026-08-26; see
-  [what ssh costs the router](https://jmrp.io/docs/mikroscope/install/#what-ssh-costs-the-router)).
-  Batch commands into one connection; never loop over connects, and never use
-  ssh as a data path.
+  RouterOS device a large share of a core for its duration
+  ([SSH cost](https://jmrp.io/docs/mikroscope/cost/#ssh-cost)). Batch commands
+  into one connection; never loop over connects, and never use ssh as a data
+  path.
 - **Exact tags only.** Everything `install` creates carries the comment
   `mikroscope:<name> (managed by mikroscope)`, and every selector that removes
   or changes something matches that tag exactly, plus identity. A change that
@@ -413,7 +412,8 @@ fixture under `testdata/` and a test, the field in `internal/sample`, the read
 in `internal/agent` at a stated cadence, its `/metrics` family, the sinks that
 carry it, a dashboard panel, and a row on the reference page. It also owes its
 cost: what one read takes, on which board and RouterOS version, measured on
-what date.
+what date, recorded as a campaign in `site/src/data/measurements.ts` and shown
+on the evidence pages, not in the guide that documents the source.
 
 **A new sink** means: a file in `internal/sinks` with a test of its exact wire
 format, its flag in `cmd/mikroscope`, its variable in `.env.example`, an
@@ -451,16 +451,25 @@ belongs to, so its pull requests are labelled with it.
 **A board report** becomes a row in the README's table of verified devices,
 with what was measured and on what date; an entry in `internal/procfs/ports.go`
 when it carries port pairs, with its `Evidence` and the pairs it `Measured`;
-and the status page, in both languages.
+and the Tested on page, in both languages.
 
 **A behaviour change** means a test that fails before it and passes after it,
 and a `CHANGELOG.md` entry.
 
 ## House rules
 
-- Comments, the changelog and the documentation say what was measured, on
-  which device and RouterOS version, on what date, and what was not. A number
-  carries its spread. A claim without its evidence is not written.
+- Comments, the changelog, the test READMEs and the evidence pages (Tested
+  on, the cost pages, the case studies, the test suites) say what was
+  measured, on which device and RouterOS version, on what date, and what was
+  not. A number carries its spread. A claim without its evidence is not
+  written.
+- Guides, reference and explanation pages are tool documentation: short,
+  imperative, task-first, with headings that are table-of-contents labels. They
+  carry no dates, no RouterOS version except a minimum requirement ("RouterOS
+  7.24 or later") and no device model; the guide states the fact and links
+  the evidence page that holds the proof (`<TestedOn>`). `pnpm run
+  voice:check` in `site/` enforces it, and `site/README.md` ("Adding a page")
+  has the rules and the components.
 - Comments explain why, not what. A comment that restates the code is worse
   than no comment.
 - Everything under version control is in English, except the Spanish pages
