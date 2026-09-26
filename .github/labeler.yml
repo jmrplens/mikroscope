@@ -136,12 +136,14 @@ agent:
 
 # What reads and writes a RouterOS device over ssh: doctor, plan, install,
 # status, upgrade, uninstall, and the image they upload. The review question is
-# the one CONTRIBUTING.md's "Working against a real router" asks: exact tags,
-# --dry-run first, one connection. cmd/mikroscope/main.go is left out on
-# purpose: it holds the first five and their flags, but also the usage text
-# that lists every verb, so a sink that adds its flag there (#35) would be
-# labelled router. Nine of the ten pull requests that touched it were
-# labelled router by another file.
+# the one CONTRIBUTING.md's "Testing against RouterOS" asks: `make test-lab`
+# green, and on a real device exact tags, --dry-run first, one connection.
+# cmd/mikroscope/main.go is left out on purpose: it holds the first five and
+# their flags, but also the usage text that lists every verb, so a sink that
+# adds its flag there (#35) would be labelled router. Nine of the ten pull
+# requests that touched it were labelled router by another file. test/lab and
+# test/e2e/lab, the virtual lab and its suite, are new with the lab and no
+# earlier pull request touched them.
 # Would have fired on 13 of the 61 pull requests (21 %).
 router:
   - changed-files:
@@ -155,6 +157,8 @@ router:
           - cmd/mikroscope/buildimage_cover_test.go
           - cmd/mikroscope/deploy_cover_test.go
           - scripts/roundtrip.sh
+          - test/lab/**
+          - test/e2e/lab/**
 
 # What runs on the operator's machine and pulls from the agent: forward,
 # record, mark and plot, the derive stage, and the RouterOS API tier, whose

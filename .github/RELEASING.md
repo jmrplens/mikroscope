@@ -9,8 +9,9 @@ is not.
       the tag otherwise, and it is the first thing it checks.
 - [ ] CI is green on the commit being tagged, and `make analyze` and
       `make test-race` are green locally. The release runs the end-to-end
-      suite (with and without a network) and the race detector again as gates,
-      but a red gate after the tag costs a patch number.
+      suite (with and without a network), the race detector and the virtual
+      RouterOS lab on x86_64 (`make test-lab`) again as gates, but a red gate
+      after the tag costs a patch number.
 - [ ] `make release-check` passes: `goreleaser check` on `.goreleaser.yaml`.
 - [ ] `make check-generated` writes nothing: the dashboards, the alert rules
       and the mark match their generators.
@@ -42,7 +43,9 @@ git tag -a v1.0.0 -m "v1.0.0" && git push origin v1.0.0
 ```
 
 Only a three-part `vX.Y.Z` tag starts `.github/workflows/release.yml`. It runs
-the end-to-end and race suites, then GoReleaser, which:
+the end-to-end and race suites and the x86_64 lab (`lab.yml`, CHR under KVM;
+its pull scenarios pull the previous release's agent image, because this
+tag's image is pushed only after the gates), then GoReleaser, which:
 
 - builds the CLI for linux, darwin, windows and freebsd (arm at GOARM=7), and
   the agent for linux on amd64, arm64 and arm at both GOARM=5 and GOARM=7, all

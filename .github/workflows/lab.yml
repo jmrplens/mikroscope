@@ -1,0 +1,375 @@
+# The virtual RouterOS lab in CI: the CLI and the agent against MikroTik's
+# Cloud Hosted Router (CHR) in QEMU, through the same `make test-lab` a
+# developer runs (test/lab, and the suite in test/e2e/lab behind the build tag
+# labe2e). No real router is involved: the lab router is a VM inside a
+# container on the runner, published on the runner's loopback only, and every
+# deploy verb reaches it through `lab.sh cli`, from the lab's own LAN. The
+# lab's namespace takes no connection from other containers and opens none to
+# a private address outside the lab (its entrypoint's nftables table).
+#
+# Two architectures, both on an x86_64 runner:
+#
+#   x86_64  CHR under KVM. LAB_KVM=require, so a runner without /dev/kvm fails
+#           the job at once instead of falling back to emulation, which the
+#           timeouts below do not allow for.
+#   arm64   CHR under TCG, full emulation: the RB5009's architecture and core
+#           (Cortex-A72), correct and slow. Its timings are emulation and are
+#           never quoted as costs.
+#
+# When, as the maintainer decided on 2026-09-26:
+#
+#   x86_64  on a pull request that touches what installs the agent (ci.yml's
+#           `changes` job holds the list of paths), as a release gate
+#           (release.yml), weekly and on dispatch.
+#   arm64   weekly and on dispatch only: not on pull requests and not a
+#           release gate. It adds about half an hour of emulation [estimate]
+#           and depends on MikroTik's download server and on Docker Hub being
+#           up, and a release should not wait on either.
+#
+# The cache, as the maintainer decided on 2026-09-26: MikroTik's downloads
+# and the provisioned router.
+#
+#   downloads  The CHR image and the packages archive (56 MB for x86_64 and
+#              70 MB for arm64 at 7.24.4), per architecture and RouterOS
+#              version. lab.sh checks them against test/lab/SHA256SUMS, which
+#              pins the 7.24.4 files, whether they came from MikroTik or from
+#              the cache, and then against MikroTik's own .sha256.
+#   snapshot   base.qcow2 and clean.qcow2, per architecture, RouterOS
+#              version and the hash of the lab's scripts, image and pinned
+#              sums, so any change to how the router is provisioned
+#              provisions it again. The snapshot carries no credential: admin
+#              has the empty password CHR ships with and no key, and lab.sh up
+#              gives it this run's key and password at boot. test/lab/.env and
+#              test/lab/.cache/ssh never leave the runner. A hit skips the
+#              download and the provisioning (43 s on x86_64 and 100 s on
+#              arm64 on the development machine, 2026-09-26; unmeasured on a
+#              runner).
+#
+# Both are saved once the lab has come up, so what is stored has passed
+# lab.sh's checks, and a failing suite does not lose it. A dispatch that
+# checks out another `ref` (a fork's merge SHA, say) runs on main's cache
+# scope with somebody else's lab.sh, so it restores but never saves.
+#
+# Duration. NOT MEASURED on a runner yet. The estimates behind the timeouts:
+# x86_64 12-18 min (setup 1-2, the lab image 1, downloads 0-1.5, provisioning
+# 1, builds 1-2, scenarios 8-10); arm64 25-35 min. The first dispatch with
+# `arch: both` is the measurement, and its numbers replace these, with the
+# date, as e2e.yml records its own.
+#
+# Three ways in, as e2e.yml: called by ci.yml and release.yml with
+# `arch: x86_64`; by hand from the dispatch menu; and weekly on main, which is
+# also the run that fills the cache pull requests read (a cache saved on a
+# pull request's ref is visible to that pull request only).
+
+name: RouterOS Lab
+
+on:
+  schedule:
+    # Mondays, 05:03 UTC: between e2e.yml (04:41) and race.yml (06:23), off
+    # the hour because GitHub delays runs that pile up on round times.
+    - cron: "3 5 * * 1"
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref to check out (branch, tag, or a fork pull request's merge SHA)"
+        default: ""
+        type: string
+      arch:
+        description: "Which lab to run"
+        default: both
+        type: choice
+        options: [both, x86_64, arm64]
+      ros:
+        description: "RouterOS version; empty means the Makefile's LAB_ROS"
+        default: ""
+        type: string
+  workflow_call:
+    inputs:
+      ref:
+        description: "Git ref to check out; empty means the calling workflow's ref"
+        default: ""
+        type: string
+      arch:
+        description: "x86_64, arm64 or both; ci.yml and release.yml pass x86_64"
+        default: x86_64
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  lab:
+    name: CHR ${{ matrix.arch }}
+    runs-on: ubuntu-latest
+    # Above the sum of the step timeouts below (20 + 45 + 5 for arm64,
+    # 10 + 22 + 5 for x86_64) plus the builds, so a hung step times out as a
+    # failed step and the failure artifacts are still collected; a job that
+    # calls this workflow cannot set its own.
+    timeout-minutes: ${{ matrix.arch == 'arm64' && 90 || 50 }}
+    strategy:
+      # One architecture failing says nothing about the other, and stopping
+      # it would hide a second, different failure.
+      fail-fast: false
+      matrix:
+        # The weekly run has no inputs, and runs both.
+        arch: ${{ fromJSON((!inputs.arch || inputs.arch == 'both') && '["x86_64","arm64"]' || format('["{0}"]', inputs.arch)) }}
+    # A newer run for the same ref and architecture makes this one obsolete.
+    # Nothing outlives a cancelled run: the lab is a container on a runner
+    # that is thrown away with it.
+    concurrency:
+      group: lab-${{ inputs.ref || github.ref }}-${{ matrix.arch }}
+      cancel-in-progress: true
+    env:
+      LAB_ARCH: ${{ matrix.arch }}
+      # CHR only. The RouterOS x86 installation-ISO lab (LAB_KIND=iso) is an
+      # opt-in recipe for a developer's machine and never runs here.
+      LAB_KIND: chr
+      # arm64 on an x86 host has no KVM to require: lab.sh refuses to start it
+      # when asked to, and gives it no /dev/kvm under auto.
+      LAB_KVM: ${{ matrix.arch == 'x86_64' && 'require' || 'auto' }}
+      # Nothing else on this runner drives the lab, so a held lock is a leak:
+      # fail after a minute and name the holder rather than wait out the job.
+      LAB_LOCK_WAIT: "60"
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          # The tags: the Makefile's LAB_REMOTE_IMAGE is the last release tag,
+          # and falls back to `latest` in a clone without them.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - run: go mod download
+
+      # Docker, which runs the lab, is root and opens /dev/kvm whatever its
+      # mode. The rule is the one GitHub gives for its runners, so that
+      # anything that opens the device as the runner user can too.
+      - name: Open /dev/kvm to the runner user
+        if: matrix.arch == 'x86_64'
+        run: |
+          set -euo pipefail
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' |
+            sudo tee /etc/udev/rules.d/99-kvm4all.rules >/dev/null
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      # Printed on every run, so the first dispatch records whether GitHub's
+      # standard runners give this repository KVM, and every later run shows
+      # it still does. lab.sh also needs flock to keep drivers apart.
+      - name: What the runner offers the lab
+        run: |
+          set -euo pipefail
+          nproc
+          free -m | sed -n 2p
+          command -v flock
+          if [ -e /dev/kvm ]; then
+            ls -l /dev/kvm
+          else
+            echo "no /dev/kvm on this runner"
+            if [ "$LAB_KVM" = require ]; then
+              echo "::error::LAB_KVM=require and this runner has no /dev/kvm: the x86_64 lab would run under emulation, which its timeouts do not allow for"
+              exit 1
+            fi
+          fi
+
+      # The version, read from the Makefile unless the dispatch named one, so
+      # the cache key, the download paths and lab.sh agree on it.
+      - name: Pick the RouterOS version
+        id: ros
+        env:
+          ROS_INPUT: ${{ inputs.ros }}
+        run: |
+          set -euo pipefail
+          ros="${ROS_INPUT:-$(sed -n 's/^LAB_ROS *?= *//p' Makefile)}"
+          # The whole string, so no second line can reach $GITHUB_ENV.
+          if ! [[ "$ros" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?((beta|rc)[0-9]+)?$ ]]; then
+            echo "::error::'${ros}' is not a RouterOS version (the ros input, else LAB_ROS in the Makefile)"
+            exit 1
+          fi
+          echo "LAB_ROS=${ros}" >> "$GITHUB_ENV"
+          echo "version=${ros}" >> "$GITHUB_OUTPUT"
+          echo "RouterOS ${ros}, CHR ${LAB_ARCH}"
+
+      # On the release gate the checkout IS the tag being released, and the
+      # Makefile's default, the newest tag reachable from HEAD, would name an
+      # agent image GoReleaser pushes only after this gate has passed. The
+      # pull scenarios take the release before it instead; the branch's own
+      # agent is what the tar scenarios test.
+      - name: Pick the agent image the pull scenarios pull
+        if: github.ref_type == 'tag' && !inputs.ref
+        run: |
+          set -euo pipefail
+          repo=$(sed -n 's/^LAB_REMOTE_IMAGE *?= *\([^:]*\):.*/\1/p' Makefile)
+          if [ -z "$repo" ]; then
+            echo "::error::LAB_REMOTE_IMAGE is not defined in the Makefile"
+            exit 1
+          fi
+          if prev=$(git describe --tags --abbrev=0 'HEAD^' 2>/dev/null); then
+            image="${repo}:${prev#v}"
+          else
+            echo "::warning::no release tag before this one; the pull scenarios pull ${repo}:latest"
+            image="${repo}:latest"
+          fi
+          echo "LAB_REMOTE_IMAGE=${image}" >> "$GITHUB_ENV"
+          echo "pull scenarios: ${image}"
+
+      - name: Restore MikroTik's downloads
+        id: downloads
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: test/lab/.cache/downloads/${{ steps.ros.outputs.version }}
+          key: lab-dl-${{ matrix.arch }}-${{ steps.ros.outputs.version }}
+
+      # With it, lab-up skips the download and the provisioning and boots the
+      # snapshot, which gets this run's credentials at boot.
+      - name: Restore the provisioned router
+        id: snapshot
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: |
+            test/lab/.cache/vm/${{ matrix.arch }}-${{ steps.ros.outputs.version }}/base.qcow2
+            test/lab/.cache/vm/${{ matrix.arch }}-${{ steps.ros.outputs.version }}/clean.qcow2
+          key: lab-vm-${{ matrix.arch }}-${{ steps.ros.outputs.version }}-${{ hashFiles('test/lab/lab.sh', 'test/lab/vm/**', 'test/lab/Dockerfile', 'test/lab/SHA256SUMS') }}
+
+      # Built here rather than only as prerequisites of test-lab, so that a
+      # compile error is a named step and the log shows what each part cost.
+      - name: Build the CLI and the agent image tars
+        run: make build agent-tars
+
+      # Builds the lab image, downloads what the cache did not have, checks
+      # every download against MikroTik's .sha256, provisions the router
+      # (container package, device-mode container=yes by a cold reboot) and
+      # boots it.
+      - name: Start the lab router
+        timeout-minutes: ${{ matrix.arch == 'arm64' && 20 || 10 }}
+        run: make lab-up
+
+      # Only when this run downloaded them: a snapshot hit downloads nothing.
+      - name: Save MikroTik's downloads
+        if: steps.downloads.outputs.cache-hit != 'true' && steps.snapshot.outputs.cache-hit != 'true' && !inputs.ref
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: test/lab/.cache/downloads/${{ steps.ros.outputs.version }}
+          key: ${{ steps.downloads.outputs.cache-primary-key }}
+
+      - name: Save the provisioned router
+        if: steps.snapshot.outputs.cache-hit != 'true' && !inputs.ref
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: |
+            test/lab/.cache/vm/${{ matrix.arch }}-${{ steps.ros.outputs.version }}/base.qcow2
+            test/lab/.cache/vm/${{ matrix.arch }}-${{ steps.ros.outputs.version }}/clean.qcow2
+          key: ${{ steps.snapshot.outputs.cache-primary-key }}
+
+      # lab-up wrote test/lab/.env: the lab's admin password and agent token.
+      # Nothing prints them; masked, the log hides them even if something
+      # did. The values are read without being echoed.
+      - name: Mask the lab's credentials
+        if: always()
+        run: |
+          set -euo pipefail
+          [ -f test/lab/.env ] || exit 0
+          for key in LAB_ADMIN_PASSWORD LAB_AGENT_TOKEN; do
+            value=$(sed -n "s/^${key}=//p" test/lab/.env)
+            if [ -n "$value" ]; then echo "::add-mask::${value}"; fi
+          done
+
+      # MIKROSCOPE_LAB_REQUIRED turns the suite's skip-without-a-lab into a
+      # failure: here, a lab that is not running is a broken run, not a
+      # machine without Docker.
+      - name: Run the lab suite
+        timeout-minutes: ${{ matrix.arch == 'arm64' && 45 || 22 }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/lab-report"
+          make test-lab MIKROSCOPE_LAB_REQUIRED=1 2>&1 | tee "$RUNNER_TEMP/lab-report/test.log"
+
+      # What a failed or timed-out run leaves to read, gathered into one
+      # directory of named files: the router's serial console, the
+      # container's own log, what lab.sh reports and what an install left on
+      # the router. Never test/lab/.env or test/lab/.cache/ssh. Each lab
+      # credential is replaced by its name in every file before the upload,
+      # in case a test printed one.
+      - name: Collect the lab's state
+        if: failure() || cancelled()
+        env:
+          OUT: ${{ runner.temp }}/lab-report
+        run: |
+          set -uo pipefail
+          mkdir -p "$OUT"
+          cp "test/lab/.cache/vm/${LAB_ARCH}-${LAB_ROS}/console.log" "$OUT/console.log" 2>/dev/null ||
+            echo "no console log: the router never started" > "$OUT/console.log"
+          container=$(docker ps -aq --filter "label=mikroscope.lab.arch=${LAB_ARCH}" --filter "label=mikroscope.lab.kind=chr" | head -1)
+          if [ -n "$container" ]; then
+            docker logs "$container" > "$OUT/container.log" 2>&1
+          else
+            echo "no lab container" > "$OUT/container.log"
+          fi
+          timeout 120 make lab-status > "$OUT/status.txt" 2>&1
+          timeout 120 make lab-residue > "$OUT/residue.txt" 2>&1
+          [ -f "$OUT/test.log" ] || echo "the suite did not run" > "$OUT/test.log"
+          for key in LAB_ADMIN_PASSWORD LAB_AGENT_TOKEN; do
+            value=$(sed -n "s/^${key}=//p" test/lab/.env 2>/dev/null)
+            case "$value" in
+              "") ;;
+              *[!A-Za-z0-9]*)
+                echo "::warning::${key} is not alphanumeric, so it cannot be redacted safely: nothing is uploaded"
+                rm -f "$OUT"/*
+                break
+                ;;
+              *) sed -i "s/${value}/<${key}>/g" "$OUT"/* ;;
+            esac
+          done
+          ls -l "$OUT"
+
+      # Kept a week, not a day: the weekly run fails on a Monday morning, and
+      # nobody may look before the middle of the week.
+      - name: Upload the lab's state
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: lab-${{ matrix.arch }}-attempt-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/lab-report/test.log
+            ${{ runner.temp }}/lab-report/console.log
+            ${{ runner.temp }}/lab-report/container.log
+            ${{ runner.temp }}/lab-report/status.txt
+            ${{ runner.temp }}/lab-report/residue.txt
+          if-no-files-found: warn
+          retention-days: 7
+
+      # The runner is thrown away anyway; a clean shutdown is what makes a
+      # hang in it show here rather than never.
+      - name: Shut the lab router down
+        if: always()
+        timeout-minutes: 5
+        run: make lab-down
+
+  # Whether GitHub's arm64 runners give this repository KVM. If they do, the
+  # arm64 lab could run there under KVM instead of emulated on x86_64: the
+  # entrypoint already takes KVM on an aarch64 host. Nothing depends on the
+  # answer yet, so the job only records it, and never fails the run.
+  arm64-kvm:
+    name: KVM on the arm64 runner (probe)
+    if: ${{ !inputs.arch || inputs.arch == 'both' || inputs.arch == 'arm64' }}
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 5
+    continue-on-error: true
+    steps:
+      - name: Look for /dev/kvm
+        run: |
+          set -euo pipefail
+          if [ -e /dev/kvm ]; then
+            answer="present: $(ls -l /dev/kvm)"
+          else
+            answer="absent"
+          fi
+          echo "$(uname -m), $(nproc) CPUs: /dev/kvm ${answer}"
+          echo "arm64 runner ($(uname -m), $(nproc) CPUs): /dev/kvm ${answer}" >> "$GITHUB_STEP_SUMMARY"
