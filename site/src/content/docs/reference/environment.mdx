@@ -193,8 +193,9 @@ A run that publishes more than one store and sets `MIKROSCOPE_GRAFANA_DATASOURCE
 Publish the store that needs one on its own with `dashboards publish` ([Grafana
 publishing](/mikroscope/reference/cli/#publishing-to-grafana)).
 
-Publishing refuses to run without `GRAFANA_TOKEN`: some Grafanas accept an anonymous request, and
-one that did would write as whoever the server thinks is asking.
+Publishing refuses to write without `GRAFANA_TOKEN`: some Grafanas accept an anonymous request, and
+one that did would write as whoever the server thinks is asking. `--grafana-dry-run` writes nothing
+and sends no request, so it runs without the token.
 
 ## Agent envlist {#the-agents-envlist}
 

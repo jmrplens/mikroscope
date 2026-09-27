@@ -184,8 +184,8 @@ from the flags alone. `--targets` widens it past the router:
 The `dashboard` and `data` targets take the [sink](#sinks) and [Grafana](#publishing-to-grafana)
 flags of `forward`, to find the stores. Of the Grafana flags, `uninstall` reads `--grafana` and
 `--grafana-datasource-uid`, ignores the others, and refuses `--grafana-dry-run`: its dry run is
-leaving out `--yes`. `dashboard` also needs `--grafana` (or `MIKROSCOPE_GRAFANA_URL`, then
-`GRAFANA_URL`) and `GRAFANA_TOKEN`, and stops with `--targets dashboard needs --grafana …` without
+leaving out `--yes`. When a sink flag names a store, `dashboard` also needs `--grafana` (or
+`MIKROSCOPE_GRAFANA_URL`, then `GRAFANA_URL`) and `GRAFANA_TOKEN`, and stops with `--targets dashboard needs --grafana …` without
 a Grafana and `--targets dashboard needs GRAFANA_TOKEN` without the token. Given no sink flag,
 `--targets dashboard` or `data` finds no store and prints `nothing of this is here to remove`; `all`
 then acts on the router objects alone.

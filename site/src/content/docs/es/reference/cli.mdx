@@ -192,7 +192,8 @@ partir de las opciones. `--targets` lo amplía más allá del router:
 Los objetivos `dashboard` y `data` toman las opciones de [destino](#destinos) y de
 [Grafana](#publicar-en-grafana) de `forward`, para encontrar los almacenes. De las de Grafana, `uninstall`
 lee `--grafana` y `--grafana-datasource-uid`, ignora las demás y rechaza `--grafana-dry-run`: su
-ejecución de prueba es dejar fuera `--yes`. `dashboard` necesita además `--grafana` (o
+ejecución de prueba es dejar fuera `--yes`. Cuando una opción de destino nombra un almacén,
+`dashboard` necesita además `--grafana` (o
 `MIKROSCOPE_GRAFANA_URL`, y después `GRAFANA_URL`) y `GRAFANA_TOKEN`, y se detiene con
 `--targets dashboard needs --grafana …` sin un Grafana y con
 `--targets dashboard needs GRAFANA_TOKEN` sin el token. Sin ninguna opción de destino,

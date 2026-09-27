@@ -514,3 +514,23 @@ func TestUninstallAllStopsBeforeTheRouterWhenTheDashboardHalfCannotList(t *testi
 		})
 	}
 }
+
+// With no sink flag there is no store whose dashboard could have been
+// published, so the dashboard half asks nothing, needs no Grafana, and does
+// not stop `--targets all` from reaching the router.
+func TestTheDashboardHalfWithNoSinkNeedsNoGrafana(t *testing.T) {
+	t.Setenv("MIKROSCOPE_GRAFANA_URL", "")
+	t.Setenv("GRAFANA_URL", "")
+	t.Setenv("GRAFANA_TOKEN", "")
+	found, err := dashboardRemovals(context.Background(), &sinkFlags{}, &publishFlags{})
+	if err != nil || len(found) != 0 {
+		t.Fatalf("dashboardRemovals with no sink = %v, %v; want nothing and no error", found, err)
+	}
+	var out strings.Builder
+	if err = uninstall([]string{"--targets", "dashboard"}, &out); err != nil {
+		t.Fatalf("uninstall --targets dashboard with no sink = %v, want no error", err)
+	}
+	if !strings.Contains(out.String(), "nothing of this is here to remove") {
+		t.Errorf("said %q, want nothing of this is here to remove", out.String())
+	}
+}

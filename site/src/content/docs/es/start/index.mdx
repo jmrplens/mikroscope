@@ -132,7 +132,7 @@ indiques. Con un InfluxDB 3 y un Grafana ya en marcha, arráncalo y déjalo func
 
 ```sh
 export MIKROSCOPE_INFLUX_TOKEN=…   # el token del almacén; omítelo si el almacén no pide autenticación
-mikroscope forward --influx http://influx:8181 --influx-db mikroscope
+mikroscope forward --influx http://localhost:8181 --influx-db mikroscope
 ```
 
 Cuando hayan llegado muestras, ejecuta `dashboards publish` desde otra terminal con el mismo
@@ -141,23 +141,24 @@ datos del almacén, publica su dashboard y termina:
 
 ```sh
 export GRAFANA_TOKEN=…   # un token de cuenta de servicio de Grafana con el rol Admin
-mikroscope dashboards publish --influx http://influx:8181 --influx-db mikroscope --grafana http://grafana:3000
+mikroscope dashboards publish --influx http://localhost:8181 --influx-db mikroscope --grafana http://localhost:3000
 ```
 
 ```text
 folder "mikroscope" (<uid>) created
 influxdb: datasource mikroscope-influxdb (influxdb) created
-influxdb: dashboard http://grafana:3000/d/mikroscope-influxdb/…
+influxdb: dashboard http://localhost:3000/d/mikroscope-influxdb/…
 ```
 
 - **Demasiado pronto.** Si se ejecuta antes de que el almacén tenga una muestra, publica los
   valores compilados por defecto e imprime `could not ask the datasource which measurements it
   holds`. Vuelve a ejecutarlo cuando hayan llegado datos y sustituye el dashboard.
-- **Desde el colector.** Añade `--grafana http://grafana:3000` a `forward`, con `GRAFANA_TOKEN` en
+- **Desde el colector.** Añade `--grafana http://localhost:3000` a `forward`, con `GRAFANA_TOKEN` en
   su entorno, y publica de la misma forma en cada arranque, antes de recoger.
 - **Otra dirección.** Cuando Grafana llega a InfluxDB por una dirección distinta de la del
-  colector, con Grafana en un contenedor por ejemplo, pasa esa dirección en
-  `--grafana-datasource-url`.
+  colector, pasa esa dirección en `--grafana-datasource-url`. Con Grafana en un contenedor,
+  `localhost` es el propio contenedor: usa el nombre de InfluxDB en la red de Docker, como
+  `http://influxdb:8181`, o la dirección del host en la LAN.
 - Los paneles de interfaces necesitan además la
   [capa de la API de RouterOS](/mikroscope/es/sinks/api-tier/).
 

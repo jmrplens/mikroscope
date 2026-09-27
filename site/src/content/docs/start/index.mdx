@@ -131,7 +131,7 @@ sinks you name. With an InfluxDB 3 and a Grafana already running, start it and l
 
 ```sh
 export MIKROSCOPE_INFLUX_TOKEN=…   # the store's token; leave it out for a store without auth
-mikroscope forward --influx http://influx:8181 --influx-db mikroscope
+mikroscope forward --influx http://localhost:8181 --influx-db mikroscope
 ```
 
 Once samples have arrived, run `dashboards publish` from another shell with the same
@@ -140,22 +140,24 @@ datasource, publishes its dashboard and exits:
 
 ```sh
 export GRAFANA_TOKEN=…   # a Grafana service-account token with the Admin role
-mikroscope dashboards publish --influx http://influx:8181 --influx-db mikroscope --grafana http://grafana:3000
+mikroscope dashboards publish --influx http://localhost:8181 --influx-db mikroscope --grafana http://localhost:3000
 ```
 
 ```text
 folder "mikroscope" (<uid>) created
 influxdb: datasource mikroscope-influxdb (influxdb) created
-influxdb: dashboard http://grafana:3000/d/mikroscope-influxdb/…
+influxdb: dashboard http://localhost:3000/d/mikroscope-influxdb/…
 ```
 
 - **Too early.** Run before the store holds a sample, it publishes the compiled defaults and prints
   `could not ask the datasource which measurements it holds`. Run it again once data has arrived
   and it replaces the dashboard.
-- **From the collector.** Add `--grafana http://grafana:3000` to `forward`, with `GRAFANA_TOKEN` in
+- **From the collector.** Add `--grafana http://localhost:3000` to `forward`, with `GRAFANA_TOKEN` in
   its environment, and it publishes the same way at every start, before collecting.
 - **Another address.** When Grafana reaches InfluxDB by another address than the collector does,
-  Grafana in a container for instance, pass that address in `--grafana-datasource-url`.
+  pass that address in `--grafana-datasource-url`. With Grafana in a container, `localhost` is the
+  container itself: use InfluxDB's name on the Docker network, such as `http://influxdb:8181`, or
+  the host's LAN address.
 - The interface panels also need the [RouterOS API tier](/mikroscope/sinks/api-tier/).
 
 [Set up in Grafana](/mikroscope/dashboards/import-and-check/) covers Prometheus and the other

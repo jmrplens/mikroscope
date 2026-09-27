@@ -213,6 +213,14 @@ func parseTargets(list string) (map[string]bool, error) {
 // dashboardRemovals is the dashboard and the datasource per store this
 // collector writes to, for the ones that are actually there.
 func dashboardRemovals(ctx context.Context, sf *sinkFlags, pf *publishFlags) ([]removal, error) {
+	// NO STORE, NO DASHBOARD TO LOOK FOR. Without a sink flag there is no
+	// store whose dashboard this could have published, so there is nothing to
+	// ask Grafana about, and asking for one first made `--targets all` refuse
+	// to take the router objects away on a machine that never ran a collector.
+	stores := storesToPublish(sf)
+	if len(stores) == 0 {
+		return nil, nil
+	}
 	if pf.url == "" {
 		return nil, errors.New("--targets dashboard needs --grafana (or MIKROSCOPE_GRAFANA_URL or GRAFANA_URL), " +
 			"and GRAFANA_TOKEN: without them there is nothing this could have published")
@@ -223,7 +231,7 @@ func dashboardRemovals(ctx context.Context, sf *sinkFlags, pf *publishFlags) ([]
 	}
 	g := &dashboards.Grafana{URL: strings.TrimRight(pf.url, "/"), Token: token}
 	var found []removal
-	for _, store := range storesToPublish(sf) {
+	for _, store := range stores {
 		uid := "mikroscope-" + string(store)
 		item, there, err := existing(ctx, g, "dashboard", "/api/dashboards/uid/"+uid, uid)
 		if err != nil {

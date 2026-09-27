@@ -198,8 +198,9 @@ Una ejecución que publica más de un almacén y fija `MIKROSCOPE_GRAFANA_DATASO
 sola fuente de datos. Publica aparte, con `dashboards publish`, el almacén que la necesita ([Publicación en
 Grafana](/mikroscope/es/reference/cli/#publicar-en-grafana)).
 
-La publicación se niega a ejecutarse sin `GRAFANA_TOKEN`: hay Grafanas que aceptan una petición
+La publicación se niega a escribir sin `GRAFANA_TOKEN`: hay Grafanas que aceptan una petición
 anónima, y uno que lo hiciera escribiría como aquel por quien el servidor tome a quien pregunta.
+`--grafana-dry-run` no escribe nada ni envía ninguna petición, así que funciona sin el token.
 
 ## Envlist del agente {#la-envlist-del-agente}
 

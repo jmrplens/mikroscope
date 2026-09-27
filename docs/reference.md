@@ -196,8 +196,8 @@ from the flags alone. `--targets` widens it past the router:
 The `dashboard` and `data` targets take the [sink](https://jmrp.io/docs/mikroscope/reference/cli/#sinks) and [Grafana](https://jmrp.io/docs/mikroscope/reference/cli/#publishing-to-grafana)
 flags of `forward`, to find the stores. Of the Grafana flags, `uninstall` reads `--grafana` and
 `--grafana-datasource-uid`, ignores the others, and refuses `--grafana-dry-run`: its dry run is
-leaving out `--yes`. `dashboard` also needs `--grafana` (or `MIKROSCOPE_GRAFANA_URL`, then
-`GRAFANA_URL`) and `GRAFANA_TOKEN`, and stops with `--targets dashboard needs --grafana …` without
+leaving out `--yes`. When a sink flag names a store, `dashboard` also needs `--grafana` (or
+`MIKROSCOPE_GRAFANA_URL`, then `GRAFANA_URL`) and `GRAFANA_TOKEN`, and stops with `--targets dashboard needs --grafana …` without
 a Grafana and `--targets dashboard needs GRAFANA_TOKEN` without the token. Given no sink flag,
 `--targets dashboard` or `data` finds no store and prints `nothing of this is here to remove`; `all`
 then acts on the router objects alone.
@@ -816,8 +816,9 @@ A run that publishes more than one store and sets `MIKROSCOPE_GRAFANA_DATASOURCE
 Publish the store that needs one on its own with `dashboards publish` ([Grafana
 publishing](https://jmrp.io/docs/mikroscope/reference/cli/#publishing-to-grafana)).
 
-Publishing refuses to run without `GRAFANA_TOKEN`: some Grafanas accept an anonymous request, and
-one that did would write as whoever the server thinks is asking.
+Publishing refuses to write without `GRAFANA_TOKEN`: some Grafanas accept an anonymous request, and
+one that did would write as whoever the server thinks is asking. `--grafana-dry-run` writes nothing
+and sends no request, so it runs without the token.
 
 ### Agent envlist
 
