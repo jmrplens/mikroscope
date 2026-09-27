@@ -50,8 +50,8 @@
 // "owner" and "reference …", which name things in code (`owner/name:1.0.0`).
 // EXEMPT below lists the rest, each with its reason.
 //
-// Whether a finding fails is src/lib/voice.mjs's DEFAULT_MODE, "warn" while the
-// pages are rewritten; MS_VOICE=error or MS_VOICE=off overrides it for a run.
+// Whether a finding fails is src/lib/voice.mjs's DEFAULT_MODE, "error";
+// MS_VOICE=warn or MS_VOICE=off overrides it for a run.
 //
 // Usage:
 //   node scripts/check-voice.mjs                     every page, source and build

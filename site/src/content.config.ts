@@ -7,14 +7,14 @@ import { DOC_TYPES } from "./lib/voice.mjs";
 
 export const collections = {
 	// `docType` says what a page is: a tutorial, a how-to, reference,
-	// explanation, evidence or about. Optional while the pages are given
-	// theirs; src/lib/voice.mjs decides which pages are evidence, and
+	// explanation, evidence or about. Every page has one, and the build fails
+	// without it; src/lib/voice.mjs decides which pages are evidence, and
 	// scripts/check-voice.mjs reports a docType that disagrees with it.
 	docs: defineCollection({
 		loader: docsLoader(),
 		schema: docsSchema({
 			extend: z.object({
-				docType: z.enum(DOC_TYPES).optional(),
+				docType: z.enum(DOC_TYPES),
 			}),
 		}),
 	}),

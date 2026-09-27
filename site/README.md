@@ -201,9 +201,9 @@ Every other page is tool documentation, and `pnpm voice:check [page]`
   `<BoardTable label="…">`, which the gate does not read.
 - **Evidence-only components.** `<Provenance>`, `<Verified>`, `<NotClaimed>`,
   `<RunsTable>` (the landing too), `<RunFlags>`, `<CampaignRegister>`,
-  `<VerifiedRegister>` and `<FaultSignature>` with `date` or `origin` warn on
-  any other page while `DEFAULT_MODE` is `"warn"`, and fail the build once it
-  is `"error"`. `<Measured id="…"/>` works anywhere: on a guide a device
+  `<VerifiedRegister>` and `<FaultSignature>` with `date` or `origin` fail the
+  build on any other page (`DEFAULT_MODE` is `"error"`; `MS_VOICE=warn`
+  reports them all without stopping). `<Measured id="…"/>` works anywhere: on a guide a device
   reading links its campaign on Tested on by itself.
 - **Headings are labels**, on every page: six words at most, no comma except
   in a list, no question, no opening What/Why/How (or Qué/Por qué/Cómo). A

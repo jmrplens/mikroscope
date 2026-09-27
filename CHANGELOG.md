@@ -319,10 +319,11 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`pnpm run voice:check`** (`site/scripts/check-voice.mjs`, part of
   `pnpm lint`) reports provenance on a guide, an evidence-only component off
   the evidence pages, a heading that is not a label, and a `<TestedOn>` link
-  to an entry Tested on does not have. It warns for now: the 817 findings left
-  are on the install, start, CLI, environment, troubleshooting, test-suite and
-  installer pages, which the installer work is rewriting, plus one
-  "since 1.0.6" printed from `src/data/envlist.ts`.
+  to an entry Tested on does not have. It fails the build: every page passes,
+  in both languages, source and build, so a new finding stops `pnpm lint`, and
+  an evidence-only component on a guide stops `pnpm build`. `docType` is
+  required in every page's frontmatter. `MS_VOICE=warn` lists every finding
+  in one run instead of stopping at the first.
 
 ### Fixed
 

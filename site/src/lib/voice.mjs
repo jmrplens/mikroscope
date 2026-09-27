@@ -74,11 +74,12 @@ export const ROUTEROS_MINIMUM = "7.24";
 export const TESTED_ON_SLUG = "about/status";
 
 /**
- * What a failed rule does while PR3 is being written: "warn" prints and goes
- * on, "error" fails the build and scripts/check-voice.mjs, "off" says
- * nothing. MS_VOICE in the environment overrides it for one run.
+ * What a failed rule does: "error" fails the build and
+ * scripts/check-voice.mjs, "warn" prints and goes on, "off" says nothing.
+ * Every page passes, so a new finding fails; MS_VOICE=warn in the
+ * environment lists them all in one run instead of stopping at the first.
  */
-export const DEFAULT_MODE = "warn";
+export const DEFAULT_MODE = "error";
 
 /** @returns {"warn" | "error" | "off"} */
 export function voiceMode() {
