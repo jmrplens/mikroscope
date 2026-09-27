@@ -7,7 +7,7 @@ body:
     attributes:
       value: |
         Three pages answer most of what lands here:
-        [When something does not work](https://jmrp.io/docs/mikroscope/reference/troubleshooting/)
+        [Troubleshooting](https://jmrp.io/docs/mikroscope/reference/troubleshooting/)
         lists the symptoms in the words you actually see,
         [Known issues](https://jmrp.io/docs/mikroscope/about/status/#found-and-not-fixed)
         lists what is already known, and

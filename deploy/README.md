@@ -13,7 +13,7 @@ release tag (`:1.2.0`, say) for a deployment you want to be able to reproduce,
 as for the agent.
 
 Both need an agent already installed on a router —
-[Install the agent](https://jmrp.io/docs/mikroscope/install/) — and a `.env`
+[Install with the CLI](https://jmrp.io/docs/mikroscope/install/) — and a `.env`
 beside the compose file naming the `/30` that install was given:
 
 ```sh

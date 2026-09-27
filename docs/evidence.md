@@ -104,6 +104,9 @@ There is no second physical device. The only other RouterOS the project runs is 
   by an order of magnitude.
 - The router log held 66 217 rows when `record` read it, because its `dns` topic logs to disk (date
   not recorded).
+- It has a tmpfs disk, which `--ephemeral` uses. Its raw firewall carries MikroTik's two `defconf:`
+  drop rules in their list form, `in-interface-list=!LAN` and `src-address-list=!LANs`
+  ([Firewall lists](https://jmrp.io/docs/mikroscope/install/firewall/)).
 
 #### Ports and interfaces
 
@@ -147,6 +150,13 @@ with the `container` package and `device-mode container=yes`. Measured on 2026-0
 container's start and stop, the agent's capability detection, its sample format and its ring. The
 install routes that ran there are under [Install routes tested](https://jmrp.io/docs/mikroscope/about/status/#install-routes-tested).
 
+**How the lab reaches its agents**: through a static route. The lab's LAN side, `192.168.88.10/24`
+inside the lab's container, has its default route through Docker's bridge, not through the router,
+and reaches every agent through `172.30.0.0/16 via 192.168.88.1`, the default of
+`LAB_AGENT_ROUTES`: the wider prefix of [Static route](https://jmrp.io/docs/mikroscope/install/reaching-the-agent/#static-route).
+On 2026-09-27 the default `172.30.10.0/30` and a `172.30.11.0/30` install both answered `/healthz`
+through it.
+
 **What it cannot show**:
 
 - A board. There is no switch chip, flash, sensor or device-tree model, so no port map. The agent's
@@ -168,6 +178,66 @@ probed an agent address with no veth behind it: before the fix, arm64 `install` 
 34.1 s, and the first and third exited 1 on a complete install. The arm64 figures here are from after
 the fix; the x86_64 ones were taken before it. What 1.3.1 met there is under [Known issues](https://jmrp.io/docs/mikroscope/about/status/#found-in-the-virtual-lab).
 
+#### Lab timings
+
+On the machine above, from the clean snapshot. How each suite is run is on
+[Test suites](https://jmrp.io/docs/mikroscope/reference/testing/#the-virtual-routeros-lab).
+
+- **A boot from the snapshot until ssh answers**, 2026-09-26: 7 s on x86_64 (6.9, 7.2, 7.4 and
+  7.4 s) and 26 to 28 s on arm64 (25.7, 26.6, 27.0 and 27.5 s).
+- **`make roundtrip`**, 2026-09-26: `doctor`, `install`, `status`, `upgrade` and `uninstall`, every
+  verb with `--ephemeral`, and the router's `/export` hashed before and after. 28 to 34 s on x86_64
+  over three runs and 40 to 45 s on arm64 over four, the export byte-identical every time.
+- **`make test-lab` with the scenarios of 1.3.1**, 2026-09-26: 7 min 21 s to 9 min 49 s on x86_64
+  over six runs and 12 min 12 s to 16 min 48 s on arm64 over three, the slowest of each with both
+  suites running side by side on a busy host. No install failed.
+- **`make test-lab` with the install options' scenarios**, with the code after 1.3.1, 2026-09-27:
+  28 min 32 s on x86_64 alone, then 28 min 17 s on x86_64 and 57 min 29 s on arm64 side by side.
+  After the fixes the review asked for, 29 min 2 s and 57 min 13 s side by side, every test
+  passing; S9's twenty uninstalls with a client on `/stream`, ten per architecture, were each clean
+  at the first attempt, in 8.0 to 12.6 s. The same day S17 ran on a CHR x86_64 lab with RouterOS
+  7.23.7: `doctor` was MISSING `RouterOS 7.24 or later` and read every other check.
+- **RouterOS 7.24.4 changes its own `/export`**: it adds and drops a
+  `/system keymat-provider … name=default` line by itself, so the suite's comparison leaves that
+  line out (2026-09-26).
+
+#### Power cut after install
+
+On 2026-09-26, a power cut made as soon as a fresh install answered brought back no agent within
+90 s in three of four tries on the arm64 lab. The two containers looked at could not start
+(`Exec format error`, `Segmentation fault`), most likely because RouterOS had not yet written the
+install to its disk; that was not examined. On x86_64 three of three came back. The start-on-boot
+scenario, S7, waits 45 s between the install and its cut, and asks only whether start-on-boot works.
+S6 cuts the power under an `--ephemeral` install on the lab's tmpfs disk: afterwards the container
+is configured and stopped, its root, its image and the manifest are gone with the disk's contents,
+the disk is there and empty, and nothing answers; `uninstall --ephemeral` then leaves nothing at
+all. It passed on both architectures in the runs of 2026-09-27.
+
+#### RouterOS x86 from the ISO
+
+The opt-in lab that installs RouterOS x86 from MikroTik's ISO ran on 2026-09-26 with RouterOS
+7.24.4. The router reported the board `x86 QEMU Standard PC (Q35 + ICH9, 2009)` and a trial licence
+with no level and 24 hours to run. The 1.3.1 CLI and the agent of the lab's branch behaved as on
+CHR x86_64: `doctor` missed the same two lists, a tar install answered at once, `status` recognised
+every object and `uninstall` verified the router clean, leaving the same empty `mikroscope`
+directory. The agent's `/capabilities` were CHR x86_64's.
+
+#### Lab runs in CI
+
+The workflow first ran on GitHub's runners on 2026-09-27. The first two runs had an empty cache,
+so `make lab-up` downloaded RouterOS and provisioned it; the third took the downloads from the cache
+and provisioned a new snapshot.
+
+| Run                       | Commit                            | Runner                                                    | `make lab-up`                                            | Suite                                                                     | Job           |
+| ------------------------- | --------------------------------- | --------------------------------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------- | ------------- |
+| arm64, a dispatch on main | `e7efbbe`, the lab as merged      | `ubuntu-latest`: 4 CPUs, 15 989 MB, `/dev/kvm` present    | 4 min 29 s: provisioning 83 s, a boot of the snapshot 24 s | 638.6 s, the ten tests of that commit passing                              | 16 min 24 s   |
+| x86_64, pull request #70  | `3c34d9a`, the install options    | `ubuntu-latest`: 4 CPUs, 15 989 MB, `/dev/kvm` used by KVM | 4 min 28 s: provisioning 46 s, a boot of the snapshot 8 s  | 1 591.4 s (26 min 31 s), every test passing; S17 skipped, as it needs a RouterOS below 7.24 | 32 min 42 s   |
+| x86_64, pull request #70  | `1826aa5`, with the registry credential | `ubuntu-latest`, `/dev/kvm` used by KVM                   | 1 min 25 s: the downloads from the cache, provisioning 76 s | 1 633.1 s (27 min 13 s), every test passing; S17 skipped. The router pulled as the repository's Docker Hub account, S2 included; S1, S18 and S5's Docker Hub and GHCR scripts booted without it | 29 min 52 s   |
+
+In the first two runs one download from MikroTik was cut (`connection reset by peer`) and resumed at the
+first retry. The probe for KVM on GitHub's arm64 runner found `ubuntu-24.04-arm` with 4 CPUs and no
+`/dev/kvm`, so the arm64 lab stays emulated on an x86_64 runner.
+
 ### Devices and versions
 
 | Device                    | Kind                            | RouterOS | When                                        | What ran there                                                                                                                                  |
@@ -175,8 +245,10 @@ the fix; the x86_64 ones were taken before it. What 1.3.1 met there is under [Kn
 | RB5009UG+S+               | hardware, arm64                 | 7.24.1   | until the upgrade of 2026-09-10             | the SSH connect cost, 2026-08-26                                                                                                                |
 | RB5009UG+S+               | hardware, arm64                 | 7.24.2   | 2026-09-10 to about 2026-09-18 22:43 UTC    | most campaigns, 2026-09-11 to 2026-09-18                                                                                                        |
 | RB5009UG+S+               | hardware, arm64                 | 7.24.4   | from about 2026-09-18 22:43 UTC             | the port-errors campaign, the `/stream` timings, the charts from the reference store, and the deployment commands from 2026-09-21 on            |
-| CHR x86_64, virtual lab   | virtual (KVM), amd64            | 7.24.4   | 2026-09-26                                  | `doctor`, `plan`, three install routes, `--expose`, `uninstall`                                                                                 |
-| CHR arm64, virtual lab    | emulated (TCG), arm64           | 7.24.4   | 2026-09-26                                  | `doctor`, `plan`, three install routes, `uninstall`                                                                                             |
+| CHR x86_64, virtual lab   | virtual (KVM), amd64            | 7.24.4   | 2026-09-26 and 2026-09-27                   | `doctor`, `plan`, three install routes, `--expose`, `uninstall` with 1.3.1; the whole lab suite with the code after it                          |
+| CHR arm64, virtual lab    | emulated (TCG), arm64           | 7.24.4   | 2026-09-26 and 2026-09-27                   | `doctor`, `plan`, three install routes, `uninstall` with 1.3.1; the whole lab suite with the code after it                                      |
+| CHR x86_64, virtual lab   | virtual (KVM), amd64            | 7.23.7   | 2026-09-27                                  | `doctor`, which refuses a RouterOS below 7.24 (S17)                                                                                             |
+| RouterOS x86 from the ISO, virtual lab | virtual (KVM), amd64 | 7.24.4   | 2026-09-26                                  | `doctor`, a tar install, `status` and `uninstall` with 1.3.1                                                                                    |
 
 **When the RB5009 moved to 7.24.4.** The upgrade itself was not written down, but it is bounded:
 7.24.4's build time is 2026-09-16 11:32:21; on 2026-09-24 the router reported 7.24.4 with an uptime
@@ -240,7 +312,13 @@ verified by ownership counts.
   router's `/export` byte-identical ([verified](https://jmrp.io/docs/mikroscope/about/status/#verified-export-identical)). The agent answered 3 s
   after install, at a 5–7 ms round trip: two probes, 7 ms after `install` and 5 ms after `upgrade`,
   the first printing
-  `direct transport ok: agent 4857d0a-dirty, 10 Hz, seq 29, 0 slipped, 7ms round trip`.
+  `direct transport ok: agent 4857d0a-dirty, 10 Hz, seq 29, 0 slipped, 7ms round trip`. That is one
+  install on one network, not a figure for another. The run passed `--ephemeral` to `doctor`,
+  `install` and `upgrade`, and it predates 1.1.0, from which `uninstall` removes only with `--yes`.
+  `scripts/roundtrip.sh` now passes `--yes` to its uninstall (through 1.2.0 it did not, so there it
+  only listed and its export check failed) and `--ephemeral` to every verb. In that form it runs in
+  the lab as `make roundtrip` ([Lab timings](https://jmrp.io/docs/mikroscope/about/status/#lab-timings)), and it has not been run against the
+  RB5009, where it is `make roundtrip-device`.
 - **Install routes**: four routes end to end on 2026-09-17, and the lab's on 2026-09-26, under
   [Install routes tested](https://jmrp.io/docs/mikroscope/about/status/#install-routes-tested).
 - **Standalone `doctor`** also pulls the running agent's ring once and names four faults RouterOS's
@@ -248,6 +326,10 @@ verified by ownership counts.
   agent that does not answer within 3 s and skips it, and its findings never change the exit
   status. On 2026-09-23 it read 600 samples and found nothing; the four faults are covered by tests
   that replay the real record text and the 2.0 s cadence of the RB5009's loop, not by a live fault.
+  Its STP-churn finding rests on how a healthy link-up looks: on the RB5009's ether7, five link-ups
+  on 2026-09-21 each logged three moves to learning at once and reached forwarding 2.1 to 2.8 s
+  later, and across 30 days of that router's store every healthy link-up left learning minus
+  forwarding at 0.
 - **Its two `WARN` checks**, which change neither the exit status nor whether `install` proceeds:
   with `--remote-image`, a `/container/config` username set while `registry-url` is empty or names
   a host other than the one the image is pulled from; and an install of the same `--name`
@@ -255,12 +337,30 @@ verified by ownership counts.
   how many `TOKEN` entries exist, never a value. The 1.2.x form of the registry warning was
   reproduced read-only on 7.24.4 on 2026-09-23; the host comparison that replaced it has run only
   against fake router answers in the tests.
+- **Tar extraction**, 7.24.2, 2026-09-11: a 1.8 MiB tar, a build of that date from before 1.0.0,
+  was extracted within the same second as its `/container/add`. The CLI of that time deleted the
+  tar after a fixed wait; the code after 1.3.1 waits for the container to read `stopped`, bounded by
+  `--extract-timeout`.
+- **An exposed install upgraded without its token**, 7.24.4, 2026-09-21: the upgrade passed its
+  check, left both rules in place and wrote an envlist with no `TOKEN`, and `/snapshot` through the
+  router's LAN address went from `401` to `200`. From 1.2.0 `doctor` reports that state, and the
+  code after 1.3.1 refuses such an `upgrade` (lab, 2026-09-27).
+- **A plain `uninstall` of an exposed install**, 7.24.4, 2026-09-21: it removed everything else,
+  printed `verified: nothing mikroscope created remains on the router`, and left the dst-nat
+  pointing at an address that no longer existed. The code after 1.3.1 reads the install's shape
+  from the router, and a plain `uninstall` removed both rules in the lab (2026-09-27).
 
 #### `record`, `mark` and `plot`
 
 **`record`, `mark` and `plot` work end to end, shown by a recording made on the RB5009 on
 2026-09-12:** 60 s at 10 Hz, exactly 600 samples, 0 gaps and −7 ms of clock skew. What it showed is
 under [its campaign](https://jmrp.io/docs/mikroscope/about/status/#campaign-record-2026-09-12).
+
+In the lab on 2026-09-27 (CHR x86_64, RouterOS 7.24.4, the published 1.3.1 agent image),
+`record --for 60s` wrote 600 samples, `seq` 11 to 610, with 0 gaps. Three `mark` notes from a second
+shell landed in the same `.markers.csv` while `record` ran, and `record`'s summary said
+`0 marker(s)`: it counts only the notes typed into it. `mark --log-markers` over the lab's API added
+7 markers from the router's log in the window, and `plot` drew the 600 samples and 10 markers.
 
 #### `forward`
 
@@ -307,6 +407,10 @@ and reads it back through its own API ([Test suites](https://jmrp.io/docs/mikros
   after it: on 2026-09-17 the last device row in the reference deployment was 26 hours old and those
   panels had been empty as long. Repeated every five minutes, it costs twelve rows an emission on
   the RB5009.
+- **Delivery over 24 hours**, 2026-09-17, in the reference deployment: the largest interruption was
+  114.5 s, and it was self-inflicted, a container swap plus the minute the collector takes to notice
+  a restarted agent. In ordinary running the collector never fell behind. That is why the ring holds
+  60 s by default: it covers a restart of either side on a LAN.
 
 #### RouterOS API tier
 
@@ -499,9 +603,11 @@ this project did not write, in the same database and schema, is neither listed n
 
 #### Test suites
 
-**Three suites need no router: one runs in CI on Linux, macOS and Windows against fakes, one runs
-against nine real stores in docker compose, first in full on 2026-09-16, and one runs the CLI and the
-agent against a virtual RouterOS, first green on 2026-09-26.**
+**Four suites need no router: the unit and end-to-end suites run in CI on Linux, macOS and Windows
+against captured trees and fakes, one runs against nine real stores in docker compose, first in full
+on 2026-09-16, and one runs the CLI and the agent against a virtual RouterOS, first green on
+2026-09-26 and first run on GitHub's runners on 2026-09-27.** What each proves and how to run it is on
+[Test suites](https://jmrp.io/docs/mikroscope/reference/testing/).
 
 - **End to end**: both binaries against a captured `/proc` tree of the RB5009 and a fake agent, with
   one receiver per sink protocol asserting the bytes. It needs no router, no Grafana and no network,
@@ -519,8 +625,17 @@ agent against a virtual RouterOS, first green on 2026-09-26.**
   datasources and checks their dashboards against them, and empties the stores again with
   `uninstall --targets data`. It needs Docker and no router: the samples are canned, so the run is
   reproducible anywhere. The first full run, on 2026-09-16, found a panel that named two columns the
-  store has only when the API tier ran; the sink pages record the collector running into these
-  stores since 2026-09-17. The
+  store has only when the API tier ran: the port-event table names `label` and `role`, which the sink
+  writes onto a kernel-log row only from the API tier's inventory, and on InfluxDB 3 a column that is
+  not in the table failed the query with `Schema error: No field named label`, so the panel could not
+  render at all. The sink pages record the collector running into these stores since 2026-09-17. On
+  the development machine on 2026-09-16 the stack came up in 55 to 81 s with the images already
+  pulled, and the whole suite took 75 to 100 s from nothing. The suite joined the pull-request path
+  on 2026-09-18. Until then it ran weekly, on dispatch and before a release, and that is how 1.0.5
+  reached `main` with two tests in it still reading the agent's `/metrics`, which that release had
+  removed: every pull-request check was green, and the release gate found it. On the release run
+  that failed it took 2 min 37 s from job start to result, containers included; on pull request #70,
+  on 2026-09-27, 4 min 9 s. The
   OpenTelemetry Collector, which takes JSON, is the only real OTLP receiver the sink has run
   against. On 2026-09-20 the SQL and PostgreSQL sinks, run side by side into two databases, held 34
   tables matching byte for byte, every column of every row hashed per row and summed, plus
@@ -530,8 +645,9 @@ agent against a virtual RouterOS, first green on 2026-09-26.**
   routes, upgrade, uninstall, `--ephemeral` and start-on-boot through a power cut, each scenario
   ending with the router's `/export` compared with its start. It tests the installer's correctness;
   it is not a board, and no figure under [Agent cost](https://jmrp.io/docs/mikroscope/about/status/#what-the-agent-costs-today) or
-  [Campaigns](https://jmrp.io/docs/mikroscope/about/status/#campaigns) comes from it. The lab is under [Virtual lab](https://jmrp.io/docs/mikroscope/about/status/#virtual-lab), its scenarios
-  on [Test suites](https://jmrp.io/docs/mikroscope/reference/testing/#the-virtual-routeros-lab).
+  [Campaigns](https://jmrp.io/docs/mikroscope/about/status/#campaigns) comes from it. The lab, its timings and its first runs on GitHub's runners
+  are under [Virtual lab](https://jmrp.io/docs/mikroscope/about/status/#virtual-lab), its scenarios on
+  [Test suites](https://jmrp.io/docs/mikroscope/reference/testing/#the-virtual-routeros-lab).
 - **Sink fixtures**, not a router: the SQL, OTLP, Graphite, Elasticsearch and Telegraf sizes on
   [Other sinks](https://jmrp.io/docs/mikroscope/sinks/other/) come from two-core test fixtures of 2026-09-12. The SQL
   header for all forty-three tables, rendered by the sink's own `header()` on 2026-09-19, is
@@ -552,6 +668,15 @@ agent against a virtual RouterOS, first green on 2026-09-26.**
   comment on `ProcSource.ReArm` in [`internal/agent/source.go`](https://github.com/jmrplens/mikroscope/blob/main/internal/agent/source.go) records the same check as
   four scrapes from t+5 s, 0 before the fix and 4 of 4 after; which run each count is from is not
   recorded.
+- **The script generator**, 2026-09-27: `pnpm run rsc:check` renders the 20 golden cases of the
+  steps spec in JavaScript and matches each script, each step's commands, the removal order, the
+  values and the command line with the Go output byte for byte; a one-line change to the renderer
+  made it report 72 failures. `pnpm test:generator` made 168 checks in headless Chromium
+  (Playwright 1.63) against the built site: the 20 cases set through the form's own controls, the
+  errors, the token, copy, keyboard-only use, no network request, and the `.rsc` downloads, which
+  work under the site's meta CSP. A one-off comparison with the Go code over 304 option sets agreed
+  on 301; the other three are inputs the page refuses and Go accepts (a `/030` prefix, a
+  `busy>=.5` threshold and an IPv4-mapped IPv6 address).
 - **The site**, 2026-09-25: headless Chromium 153 requested only `favicon.svg`, and resolved a
   manifest `id` of `./` to the origin's root; in headless Chromium and WebKit, in both schemes, after
   a pick, a stored pick and a reload, the phone's toggle and with JavaScript off, the `theme-color`
@@ -562,14 +687,67 @@ agent against a virtual RouterOS, first green on 2026-09-26.**
 
 | Route                                  | RB5009UG+S+                                                                                                                                                                                                                  | CHR x86_64, lab                                                                         | CHR arm64, lab                                                                             |
 | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| Docker Hub pull, `--remote-image`      | 2026-09-17, 7.24.2: `/healthz` at 2 ms; the 1.0.1 image, sent without its host and pulled through `registry-url`. 2026-09-24, 7.24.4: the reference with its host, by a hand-written `/container/add`, never started; no whole `install` | 2026-09-26: `install` in 9.6 s, pulled anonymously with the factory `/container/config` | 2026-09-26: `install` in 10.3 and 10.2 s, pulled anonymously                               |
-| GHCR pull, `--remote-image`            | 2026-09-21, 7.24.4: **failed**, `auth error`                                                                                                                                                                               | not run                                                                                 | not run                                                                                    |
-| `plan --rsc`, `/import`ed              | 2026-09-17, 7.24.2: `/healthz` at 15 ms on its first samples, no CLI in the install                                                                                                                                          | 2026-09-26: `/healthz` 14 s after the upload began                                      | 2026-09-26: `/healthz` 9.1 and 9.5 s after the upload began; the script was the x86_64 one |
-| Image tar, `--agent-tar`               | 2026-09-17, 7.24.2: the published arm64 tar, `/healthz` at 2 ms                                                                                                                                                              | 2026-09-26: the release's amd64 tar, 6 s                                                | 2026-09-26: the release's arm64 tar, checksum as published, 9.6 and 9.2 s                  |
+| Docker Hub pull, `--remote-image`      | 2026-09-17, 7.24.2: `/healthz` at 2 ms; the 1.0.1 image, sent without its host and pulled through `registry-url`. 2026-09-24, 7.24.4: the reference with its host, by a hand-written `/container/add`, never started; no whole `install` | 2026-09-26: `install` in 9.6 s, pulled anonymously with the factory `/container/config`; 2026-09-27: S2, S4 and S5 | 2026-09-26: `install` in 10.3 and 10.2 s, pulled anonymously; 2026-09-27: S2, S4 and S5 |
+| GHCR pull, `--remote-image`            | 2026-09-21, 7.24.4: **failed**, `auth error`                                                                                                                                                                               | 2026-09-26: pulled with no registry credential and the host in `remote-image=`, `/healthz` 5 s after install began; 2026-09-27: S18 and S5 | 2026-09-27: S18 and S5 |
+| `plan --rsc`, `/import`ed              | 2026-09-17, 7.24.2: `/healthz` at 15 ms on its first samples, no CLI in the install                                                                                                                                          | 2026-09-26: `/healthz` 14 s after the upload began; 2026-09-27: S4, and the fifteen golden scripts the lab can run (S5); the default script pasted at the `] >` prompt, and a tar script without its tar, which stopped before any write | 2026-09-26: `/healthz` 9.1 and 9.5 s after the upload began; the script was the x86_64 one; 2026-09-27: S4 and S5 |
+| Image tar, `--agent-tar`               | 2026-09-17, 7.24.2: the published arm64 tar, `/healthz` at 2 ms                                                                                                                                                              | 2026-09-26: the release's amd64 tar, 6 s; 2026-09-27: the branch's tar, S3 and ten installs in a row; the release's amd64 tar checked with `sha256sum` and `cosign verify-blob`, then installed and upgraded | 2026-09-26: the release's arm64 tar, checksum as published, 9.6 and 9.2 s; 2026-09-27: the branch's tar, S3 and three installs in a row |
+| Script generator                       | not run | 2026-09-27: the page's default script, equal to `plan --rsc`'s, and a tar script with other settings, each downloaded from the built page and pasted at the `] >` prompt; the agent answered each time, and the CLI's `uninstall` and the page's uninstall script each left `/export` as it was | not run |
+| Manual install, terminal               | not run | 2026-09-27: the page's commands one at a time, registry pull and tar; `/healthz` answered, `status` recognised the install from its manifest, and the page's removal left nothing; again with `--expose`'s two rules, and with both memberships skipped | not run |
+| Manual install, WebFig                 | not run | 2026-09-27: both image routes, every form submitted; `/healthz` 200 each time; the pull removed through WebFig, the tar by `uninstall` reading the manifest WebFig wrote; `/export` as it was after each | not run |
 | From a checkout                        | 2026-09-17, 7.24.2: `/healthz` at 2 ms; the round trip of 2026-09-12                                                                                                                                                         | not run                                                                                 | not run                                                                                    |
-| `--expose`                             | 2026-09-11: the two rules [verified](https://jmrp.io/docs/mikroscope/about/status/#verified-expose-rules); 2026-09-23, 7.24.4: a throwaway exposed install, upgraded without a token and removed                                                                          | 2026-09-26: `/healthz` 200, `/capabilities` 401 without the token and 200 with it       | not run                                                                                    |
-| `uninstall`                            | 2026-09-17: verified by ownership count after each route; `/export` after all four byte-identical to the one before                                                                                                          | 2026-09-26: 5 of 15 first attempts failed; a second run cleaned up every time           | 2026-09-26: 8 of 8 first attempts cleaned up; with a client on `/stream` it failed          |
+| `--expose`                             | 2026-09-11: the two rules [verified](https://jmrp.io/docs/mikroscope/about/status/#verified-expose-rules); 2026-09-23, 7.24.4: a throwaway exposed install, upgraded without a token and removed                                                                          | 2026-09-26: `/healthz` 200, `/capabilities` 401 without the token and 200 with it; 2026-09-27: S8 and S14 | 2026-09-27: S8 and S14 |
+| `uninstall`                            | 2026-09-17: verified by ownership count after each route; `/export` after all four byte-identical to the one before                                                                                                          | 2026-09-26, 1.3.1: 5 of 15 first attempts failed; a second run cleaned up every time. 2026-09-27: every first attempt clean, after every route (F4) | 2026-09-26, 1.3.1: 8 of 8 first attempts cleaned up; with a client on `/stream` it failed. 2026-09-27: every first attempt clean, after every route (F4) |
 
+- **In the lab on 2026-09-27**, with the code after 1.3.1 (the changelog's Unreleased section): the
+  whole lab suite on both architectures, every test passing ([Lab timings](https://jmrp.io/docs/mikroscope/about/status/#lab-timings)). After
+  every route, the CLI's pull and tar routes, a tar install then an upgrade, an imported
+  `plan --rsc` script, every golden script the lab can run and installs made by the released 1.3.1
+  CLI, `uninstall` left `/export` equal to the one taken before the install and no mikroscope path
+  on `/file`. The GHCR pull of 2026-09-26 logged `registry=ghcr.io`, one 3 093 207-byte layer and
+  `download/extract done` 2 s later, with `/container/config` holding no `registry-url` and no
+  username.
+- **The install pages' runs**, 2026-09-27, on the x86_64 lab, with the code after 1.3.1 and the
+  published 1.3.1 agent image and tar:
+  - The generator's default script answered 8.8 s after the paste began. Its tar script (name
+    `gen2`, `172.30.11.0/30`, port 9200, both lists `none`, rate 20, triggers `busy>=0.9,oom`, a
+    token generated in the page, `--expose` on 192.168.88.1, `--restart-max-count 3`,
+    `--start-on-boot no`) was byte-identical to `plan --rsc` for the page's command line, answered
+    on `172.30.11.2:9200` and deleted its tar after extraction.
+  - `plan --rsc`'s default script, byte-identical to `pull-dockerhub.rsc`, installed a running
+    agent both pasted and uploaded then `/import`ed (`Script file loaded and executed
+    successfully`). The tar script without the tar stopped with
+    `mikroscope: upload mikroscope.tar first` and wrote nothing.
+  - The manual terminal page's commands, each sent on its own: both routes answered, the tar
+    route's wait deleted the tar after extraction, and a manual tar install was also removed by
+    `uninstall --yes` alone. A find-and-replace of the placeholders that also rewrote the envlist's
+    keys made the removal leave the whole envlist behind, silently, which is why the page says to
+    replace values only.
+  - The same page again, once it wrote a manifest per image source and gave `--expose` a section:
+    a registry pull exposed on `192.168.88.1` with a token, a tar install, and a registry pull with
+    both memberships skipped. Each manifest its commands wrote was byte-identical to the CLI's for
+    the same settings (`pull-dockerhub`, `expose-token`, `default-tar`, `lists-none`); `status` read
+    each from its manifest, the exposed one with its two rules as the install's; `/capabilities`
+    answered 401 without the token and 200 with it; and the page's removal, the two rules first, left
+    the leftover count at 0 and `/export`, the residue and `/file` equal to the baseline.
+  - A WebFig install left an `/export` equal to the one the golden script's `/import` left, on
+    both routes, apart from the veth's two MAC addresses, which RouterOS draws at random; `status`
+    listed every object of it as the install's.
+  - The offline page's checks on the published 1.3.1 files: `sha256sum --ignore-missing -c
+    checksums.txt` OK and `cosign verify-blob` (cosign v3.1.3) `Verified OK`. Then `install` and
+    `upgrade --agent-tar` with the amd64 tar, 7 053 KiB uploaded, and a clean `uninstall`.
+  - Installs made by the released 1.3.1 CLI: `status` read their shape from the tags,
+    `upgrade --remote-image` wrote a manifest, and `uninstall --yes` removed everything, 1.3.1's
+    `mikroscope/` directory included.
+  - `upgrade` with neither `--remote-image` nor `--agent-tar` looked for Go to build the agent: it
+    does not take the image from the manifest. A second `install` on an installed router created
+    nothing (`install done: 0 step(s) created`).
+- **The Configure pages' runs**, 2026-09-27, x86_64 lab: `doctor` on a stock CHR was MISSING only
+  the interface list `LAN`, with a fix offering `--iface-list none`, and with both lists `none` every
+  check passed. Built-in lists were refused before any connect. The trap check against the
+  `advanced-firewall` and `advanced-firewall-range` profiles named the rule that drops the agent's
+  replies, and its fix. An address list that did not exist was created by the install's entry and
+  was gone after `uninstall`. The probe's first round trip read 1.02 to 1.03 s on three of six
+  installs and 2 ms on the other three, and `status` a second later 1 to 2 ms.
 - **On the RB5009, 2026-09-17**, the four routes ran one after another, each under its own name,
   veth and `/30` so that nothing already on the device was touched, and each was removed before the
   next. `/healthz` was read from the collector host.
@@ -852,7 +1030,8 @@ Log times came over the API as full dates ([verified](https://jmrp.io/docs/mikro
 
 Measured on RB5009UG+S+ · 4 × 1.4 GHz Cortex-A72 · RouterOS 7.24.2 · 2026-09-16 · a 70 s `record` at 10 Hz, 700 samples over 69.9 s, the router otherwise at rest, three notes typed into `record`'s terminal
 
-The recording [First recording](https://jmrp.io/docs/mikroscope/start/walkthrough/) draws its chart from.
+The recording the chart on [Idle baseline](https://jmrp.io/docs/mikroscope/playbooks/idle/#recorded-chart) is drawn
+from.
 
 ##### `/stream` connection lifetime
 
@@ -866,7 +1045,7 @@ had to send, so a `/stream` consumer reconnects with the last `seq` it saw.
 
 ##### Relay fetch limit
 
-Measured on RB5009UG+S+ · 4 × 1.4 GHz Cortex-A72 · RouterOS 7.24.2 · Linux 5.6.3 · 2026-09-11 · `/tool fetch output=user` called over the binary API
+Measured on RB5009UG+S+ · 4 × 1.4 GHz Cortex-A72 · RouterOS 7.24.2 · Linux 5.6.3 · 2026-09-11 · `/tool fetch output=user` called over the binary API; each call took either about 3 ms or about 1 s, and about half took 1 s
 
 - `relay.replyMaxBytes` 64 512 B
 
@@ -974,7 +1153,7 @@ Over the binary API, `/container/print` returned every property of every contain
 
 #### Quoted values in find
 
-In a RouterOS `find`, address and port attributes match only when their values are quoted (RB5009UG+S+, RouterOS 7.24.2, 2026-09-11).
+In a RouterOS `find`, address and port attributes match only when their values are quoted, and a bare word is read as a variable name: over the same 15 dstnat rules (RouterOS 7.24.4, 2026-09-21), `protocol=tcp` found 0 and `protocol="tcp"` found 10 (RB5009UG+S+, RouterOS 7.24.2, 2026-09-11).
 
 #### Expose rules reach the agent
 
@@ -1036,6 +1215,34 @@ An `ether` port in a bridge counts its wire, frames the switch chip forwarded in
 
 A privileged container given the host's `/proc`, `/sys` and `/` as bind mounts read zero PIDs in the host's `/proc` and found no `class/net` in its `/sys`, so the namespaces held; the host's `/` did mount, and it exposed the RouterOS flash filesystem, configuration and files, secrets included. Run with the maintainer's consent (RB5009UG+S+, RouterOS 7.24.2, 2026-09-15).
 
+#### Credential sent when the host matches
+
+RouterOS presents the `/container/config` username and password for a reference whose host is `registry-url` as written: with a deliberately wrong credential, the 1.3.1 agent image named as `registry-1.docker.io/jmrplens/mikroscope-agent` failed with `auth error` under `registry-url=registry-1.docker.io`, and was pulled anonymously under `https://registry-1.docker.io`, the value MikroTik's examples use, and under the same with a trailing slash. A router given a credential did not fall back to an anonymous pull (CHR x86_64, RouterOS 7.24.4, 2026-09-27).
+
+#### No WebFig field for ignore-remote-image-change
+
+WebFig's New Container and container edit forms show no field for `ignore-remote-image-change`, with File or Remote Image set or not; the terminal sets it (CHR x86_64, RouterOS 7.24.4, 2026-09-27).
+
+#### A container set resets restart-policy
+
+A `/container/set` that leaves `restart-policy` out (of `ignore-remote-image-change`, of `comment`, of `logging`) put it from `on-failure` back to `always` and changed nothing else `/container/print detail` shows; a set that names it kept it, and so did Apply or OK in WebFig's edit form. The CLI never runs `/container/set` (CHR x86_64, RouterOS 7.24.4, 2026-09-27).
+
+#### WebFig shows env values
+
+WebFig shows a `/container/envs` entry's value in clear, in the Envs list and in its form, for the key `TOKEN` too (CHR x86_64, RouterOS 7.24.4, 2026-09-27).
+
+#### No Device Mode page in WebFig
+
+WebFig's System menu has no Device Mode page, so device mode is set from the terminal (CHR x86_64, RouterOS 7.24.4, 2026-09-26).
+
+#### fetch as-value returns the body
+
+`:put ([/tool/fetch url="http://172.30.10.2:9123/healthz" output=user as-value]->"data")`, run on the router, printed the agent's `/healthz` JSON, in an ssh session, in WebFig's terminal and at the end of a pasted script (CHR x86_64, RouterOS 7.24.4, 2026-09-27).
+
+#### Licence question takes the first lines
+
+The first interactive login after a reset asks `Do you want to see the software license? [Y/n]:` before the `] >` prompt. A script pasted into that question lost its first lines: one or two header comment lines, then a fragment run as a command (`bad command name .` or `syntax error`); the install script's `{ … }` block still ran and installed, and the uninstall script still removed everything (CHR x86_64, RouterOS 7.24.4, 2026-09-27).
+
 ### Not tested
 
 What no run, measurement or check here covers. A guide that states one of these as expected
@@ -1047,10 +1254,13 @@ behaviour links this list.
   agent's `linux/arm/v5` build is for, has not arrived, so the 32-bit counter-wrap path and neither
   32-bit ARM image have run on RouterOS. A [board report](https://github.com/jmrplens/mikroscope/issues/new?template=2-board-report.yml)
   from another board is what changes this.
-- x86 RouterOS on hardware: the amd64 image has run only on the lab's CHR.
-- Any RouterOS before 7.24, and any of the 7.24.2 figures re-measured on 7.24.4.
+- x86 RouterOS on hardware: the amd64 image has run only in QEMU, on the lab's CHR x86_64 and on
+  RouterOS x86 installed from MikroTik's ISO.
+- Any RouterOS before 7.24 beyond `doctor`'s version check, which S17 ran on a 7.23.7 CHR, and any
+  of the 7.24.2 figures re-measured on 7.24.4.
 - Anything that needs a reboot of the RB5009, which waits for a maintenance window. So a persistent
-  install surviving a reboot with `start-on-boot=yes` is untested.
+  install surviving a reboot with `start-on-boot=yes` is untested on hardware. On the lab's CHR it
+  answered again within 90 s of a power cut (S7, on both architectures).
 - Which files are namespaced, on another RouterOS version or another board: every row of
   [Container view](https://jmrp.io/docs/mikroscope/about/status/#container-view) was read on one RB5009 on 7.24.2.
 - A board with hwmon sensors, or a later RouterOS that builds containers differently: the sensor
@@ -1063,16 +1273,22 @@ behaviour links this list.
 - Every source cadence on another device or workload: the cadences are the RB5009's, on 7.24.2.
   Re-measure with `FLOOR_HZ` equal to the sampler rate.
 - Which loss keys and counters another RouterOS version or board returns.
+- What `--goarm 7` saves against the ARMv5 build: no ARM hardware has run either.
+- Envlist entries on a RouterOS before 7.24: mikroscope writes `key=`, because `name=` failed on the
+  RB5009 on 7.24.2, and how an earlier 7.x takes either was not tried.
 - Traffic heavier than the RB5009's ordinary load: about 19 Mbit/s on the WAN
   during the 2026-09-18 campaign. No rate is claimed for any other board.
 
 #### Install and upgrade
 
-- A pull from GHCR by a router with no registry credential set, and any GHCR pull with the host
-  inside `remote-image=`: the one GHCR run took the host from `registry-url`.
-- Which credential RouterOS presents to a host named only in `remote-image=`. The one run with a
-  host that differed from `registry-url`'s, on 2026-09-24, named `registry.invalid`, which never
-  resolved.
+- On the RB5009, a pull from GHCR with no registry credential set, and any GHCR pull with the host
+  inside `remote-image=`: its one GHCR run took the host from `registry-url`. The lab's CHR did both
+  on 7.24.4 ([Install routes tested](https://jmrp.io/docs/mikroscope/about/status/#install-routes-tested)).
+- Which credential RouterOS presents to a host named only in `remote-image=` when `registry-url`
+  names another. The one run with a host that differed from `registry-url`'s, on 2026-09-24, named
+  `registry.invalid`, which never resolved. With the same host, the lab showed RouterOS presents it
+  only when `registry-url` is written as the bare host
+  ([verified](https://jmrp.io/docs/mikroscope/about/status/#verified-registry-url-host-match)).
 - On the RB5009: a whole `install` or `upgrade` that sends the full reference, a `registry-url` at
   its factory default, and the full reference on any RouterOS but 7.24.4. The lab's CHR ran both
   with 1.3.1 on 7.24.4.
@@ -1080,15 +1296,33 @@ behaviour links this list.
 - Doctor's registry host comparison against a real router: it has run only against fake router
   answers in the tests.
 - Whether a `read,api` user can read the envlist values in `/container/envs`.
+- The byte-identical round trip on hardware other than the RB5009, on the RB5009 with any RouterOS
+  but 7.24.2, with `install` and `upgrade` run without `--ephemeral`, or with the current container
+  settings (`privileged=yes`, `memory-max=64M`, the envlist entries `MEM_LIMIT_MB`, `CAPTURE_MB`,
+  `TRIGGERS` and `FLOOR_HZ`): it ran with `memory-max=32M`. `install`, `status` and `uninstall` have
+  run on 7.24.4 since, and the lab's CHR 7.24.4 runs the round trip.
+- Firewalls other than the RB5009's, where on 2026-09-11 the two list memberships were enough, and
+  the lab's profiles. A firewall with other drop rules in `raw`, `input` or `forward` may drop the
+  container's traffic elsewhere, and `install` adds nothing for that beyond the two memberships.
+  Whether a router's factory default configuration carries the two raw rules was not checked.
+- `--expose` from outside the LAN: only a LAN host reaching the router's LAN address was tested.
+  Whether anything outside the LAN reaches that address depends on the rest of the firewall, and no
+  such path was tried.
+- Winbox: the WebFig install page says Winbox has the same menus and fields, and no Winbox ran. The
+  `--expose` rules through WebFig's NAT and Filter Rules forms, a whole script pasted into WebFig's
+  or Winbox's terminal, and WebFig on any RouterOS but 7.24.4.
+- The script generator's scripts, the manual terminal install and the WebFig install on the arm64
+  lab or on the RB5009.
 
 #### Recording and capture
 
 - A recording above 10 Hz: the lossless 20, 50 and 100 Hz runs were the collector's, which uses the
   same batch sizing. A recording through the relay, at any rate.
 - The relay's throughput. From `/tool fetch` round trips of about 1 s for half the calls and about
-  3 ms for the rest, arithmetic gives on the order of 26 samples a second, less when the slow calls
+  3 ms for the rest ([measured](https://jmrp.io/docs/mikroscope/about/status/#campaign-relay-fetch) on the RB5009 on 7.24.2),
+  arithmetic gives on the order of 26 samples a second, less when the slow calls
   cluster. The relay cap and the start-up warning are read from the code (2026-09-15), not measured
-  against a device.
+  against a device. The relay's cap and its 1 s share on any RouterOS but 7.24.2.
 - The cost of a trigger fire on the device; 3 µs for a 10 s window at 10 Hz is the design's
   estimate. How the agent behaves under a sustained trigger storm. Any capture at 50 or 100 Hz. The
   capture sizes on [Triggered capture](https://jmrp.io/docs/mikroscope/record/triggers/) are arithmetic from the line
@@ -1131,6 +1365,15 @@ behaviour links this list.
   2026-09-19 reboot. A provoked flap with `link-flap` running; the flaps of 2026-09-15 were not.
 - Whether RouterOS computes `cpu-load`'s one-second window on a wall clock or on jiffies. Whether the
   API's conntrack count and the slab count track each other.
+
+#### Other tools
+
+- None of the six tools on [Compared with alternatives](https://jmrp.io/docs/mikroscope/start/compared/) was run for
+  that page. Every cell in their rows is what their own documentation or source code says, read on
+  2026-09-24: mktxp at commit `1e4412a` (dated 2026-09-21), mikrotik-exporter at `428dbfc` (dated
+  2026-07-03), and the MIB file MikroTik publishes for RouterOS 7.24.4. What SNMP polling, The Dude,
+  Graphing, the Profiler, mktxp or mikrotik-exporter costs a router, how often each can usefully
+  poll one, and what RouterOS puts in `hrProcessorLoad` were not measured.
 
 #### Dashboards and alerts
 
@@ -1183,31 +1426,54 @@ Checked against the code on 2026-09-24, and the end-of-run summary's stream agai
 
 #### Found in the virtual lab
 
-What the published 1.3.1 CLI and agent image met on the lab's CHR, RouterOS 7.24.4, on 2026-09-26:
+What the published 1.3.1 CLI and agent image met on the lab's CHR, RouterOS 7.24.4, on 2026-09-26.
+Each item ends with what the code after 1.3.1 does, checked in the lab on 2026-09-27; that code is
+not released on that date, and the changelog's Unreleased section lists it.
 
 - **`doctor` with its defaults fails three checks on a CHR.** `--arch` defaults to arm64, which
   fails on x86_64 only; the interface list `LAN` does not exist; and the address list `LANs` "has
   entries" fails on an empty or missing list, although its own fix says an empty list is fine if no
   such rule exists. A router without that rule passes only by giving the list an entry, or with
-  `--no-doctor`, which skips every other check.
+  `--no-doctor`, which skips every other check. **After 1.3.1**: `--arch` defaults to `auto` and
+  reads the router's architecture, an empty address list is no longer a failure, and a missing
+  interface list, still MISSING with the defaults, has a fix that offers `--iface-list none` (S1).
 - **A built-in interface list** such as `static`, `all` or `dynamic` passes doctor's existence
-  check, and RouterOS refuses to add a member to it.
+  check, and RouterOS refuses to add a member to it. **After 1.3.1**: `--iface-list` and
+  `--addr-list` refuse `all`, `dynamic` and `static`; RouterOS answers `cannot add to builtin list`.
 - **`--ephemeral` needs a tmpfs disk**, and a CHR lists no disk. Doctor's fix,
   `/disk/add type=tmpfs tmpfs-max-size=64M slot=tmpfs`, worked, and the install went to
-  `tmpfs/mikroscope/mikroscope` with `start-on-boot=no`.
+  `tmpfs/mikroscope/mikroscope` with `start-on-boot=no`. **After 1.3.1**: the same, and `doctor`
+  also warns when start-on-boot is forced on a root on a tmpfs disk, which a reboot empties.
 - **`uninstall` races the container's stop.** It stops the container, waits a fixed 4 s and removes
   it, and the agent took 0 s to stop six times, 4 s four times and 5 s once (RouterOS log, 1 s
   resolution): 5 of 15 first attempts on x86_64 failed with `failure: cannot remove running`. With a
   client on `/stream` it failed every time on both architectures, because the agent's HTTP shutdown
   waits up to 5 s for it. The steps after it still ran, and a second `uninstall` cleaned up every
-  time.
+  time. **After 1.3.1**: the removal waits up to 30 s while the container is `running` or
+  `stopping`, and every first attempt was clean ([Lab timings](https://jmrp.io/docs/mikroscope/about/status/#lab-timings)).
 - **An empty `mikroscope` directory stays in `/file` after every `uninstall`**: the parent of the
-  container's root-dir, which the ownership count does not include.
+  container's root-dir, which the ownership count does not include. **After 1.3.1**: every install
+  route writes an install manifest, and `uninstall` removes what it lists, then the manifest and the
+  `mikroscope/` directory when nothing else is in it; no mikroscope path was left on `/file` after
+  any route (F4).
 - **The probe after `install` misreads a running container** on 7.24.4. It asks
   `/container/find … status="running"`, and `status` is not a property of `/container` there
   (`/container/find status=running` answers `bad parameter status`), while the flag `running`
   reads 1. So when the probe failed, the CLI said "the container is not running on the router" with
-  the agent running and about to answer. Seen twice on arm64.
+  the agent running and about to answer. Seen twice on arm64. **After 1.3.1**: the probe reads the
+  `running` flag.
+- **The plan listing named a tar with `--remote-image`**: `image=mikroscope.tar`, a file `install`
+  never uploads, and it printed the upload or the pull as a step of its own under the container
+  step's number, so two steps shared a number. **After 1.3.1**: `image=` names the reference the
+  router pulls, and the pull or upload is a line of the container step.
+- **The agent token travelled on ssh's command line**, where the host's process table showed it
+  while the command ran: the 1.3.1 code showed it on two command lines. **After 1.3.1** a command
+  that carries it goes to ssh on standard input; reading the process table every 2 ms through an
+  install and an upgrade with `--expose` found it on none, on both architectures.
+- **RouterOS's words were lost when its ssh exited 1**: the error read
+  `ssh "<script>": exit status 1`, and RouterOS's message, on the lines after it, was dropped by
+  uninstall's skip line. RouterOS's ssh exited 1 or 0 on the same failure, about half and half.
+  **After 1.3.1** the error starts with what RouterOS printed.
 
 ### Uncollected sources
 
@@ -1611,278 +1877,321 @@ with a hole in it is a chart telling the truth.
   this one.
 - [Tested on](https://jmrp.io/docs/mikroscope/about/status/#not-tested): everything else that has not been tested.
 
-## How the project tests itself
+## Test suites
 
-Three test layers for the sinks (the bytes each sends, whether a real store takes them, whether the dashboards' queries answer) and a virtual RouterOS lab for the installer; what each proves and what none does.
+The four test suites, unit, end to end, real stores and the virtual RouterOS lab: what each proves, how to run it, what it needs and when CI runs it.
 
 Source: <https://jmrp.io/docs/mikroscope/reference/testing/>
 
-A sink can be wrong in three places, and each one needs a different test. It
-can encode the wrong bytes. It can encode bytes a store refuses — which a
-capture server never notices, because a capture server says 204 to everything.
-And it can write something a store keeps but no dashboard can read back.
+Four suites test mikroscope, and none of them needs a router. Run the one that
+covers your change before you open a pull request. CI runs the first three on
+every pull request, and the lab when a pull request touches what installs the
+agent.
 
-The project therefore has three layers, and they are three commands.
+| Suite                | Command                             | Needs                                | What it proves                                                                                         |
+| -------------------- | ----------------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| Unit                 | `go test ./cmd/... ./internal/...`  | Go                                   | each package, against captured `/proc` trees, fakes and golden files                                   |
+| End to end           | `make test-e2e`                     | Go                                   | both binaries as separate processes, and the exact bytes each sink sends                               |
+| Stores               | `make test-e2e-docker`              | Linux, Docker                        | a real store accepts those bytes and hands them back; every dashboard panel's query answers            |
+| Virtual RouterOS lab | `make lab-up`, then `make test-lab` | Linux, Docker, `/dev/kvm` for x86_64 | the deploy verbs against a real RouterOS, with the router's `/export` back to its start after each one |
 
-| Layer               | Command                | Docker | What it proves                                                    |
-| ------------------- | ---------------------- | ------ | ----------------------------------------------------------------- |
-| 1, the contract     | `make test-e2e`        | no     | the exact bytes each sink puts on the wire                        |
-| 2, the stores       | `make test-e2e-docker` | yes    | a real store accepts those bytes, and hands them back unchanged   |
-| 3, the dashboards   | the same target        | yes    | every panel's own query answers against what the sinks just wrote |
+`make test` runs the unit and end-to-end suites together. The stores and lab
+suites sit behind the build tags `dockere2e` and `labe2e`, so `make test`
+compiles neither, and `make lint` type-checks both so that they cannot rot.
 
-None of the three touches a router. Layers 1 and 2 drive the collector against
-a fake agent that serves canned samples, and layer 1 also drives the real agent
-binary against [`testdata/proc/rb5009/`](https://github.com/jmrplens/mikroscope/tree/main/testdata/proc/rb5009), a captured `/proc` and `/sys` tree of
-the reference device. That is what makes a run reproducible on any machine, and
-what keeps the router out of the loop.
+When each suite first ran, how long it takes and what it found are
+on [Tested on](https://jmrp.io/docs/mikroscope/about/status/#the-test-suites).
 
-The verbs that write to a router — `install`, `upgrade`, `uninstall` and the
-rest — are tested apart, against a real RouterOS that is nobody's router: the
-[virtual RouterOS lab](https://jmrp.io/docs/mikroscope/reference/testing/#the-virtual-routeros-lab).
+### Choose a suite
 
-### Layer 1 — the contract
+| You changed                                                               | Run                                                                      |
+| ------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| Any Go code                                                               | `make test`                                                              |
+| The sampler, the ring, the stream or a sink                               | `make test-race` as well                                                 |
+| A test that might have grown a dependency on the network                  | `make test-e2e-offline` (Linux)                                          |
+| A sink, its encoding or its schema, or a dashboard                        | `make test-e2e-docker`                                                   |
+| `internal/router`, a deploy verb, the agent image or how the agent starts | `make lab-up`, then `make test-lab`                                      |
+| The lab's driver (`cmd/mikroscope-lab`, `internal/lab`)                   | `go test ./internal/lab/... ./cmd/mikroscope-lab/`, then `make test-lab` |
 
-`make test-e2e` builds both binaries and points every sink at a receiver inside
-the test binary: HTTP capture servers for InfluxDB, Loki, OTLP, Elasticsearch
-and Telegraf, TCP and UDP listeners for Graphite and Telegraf's socket modes,
-real files for the file and SQL sinks, the process's own stdout, and a scrape
-of the collector's own `/metrics` for Prometheus. Each receiver asserts what
-arrived, byte for byte.
+The static checks a pull request owes as well (`make analyze`, the agent's size
+budget, the site's gates) are in [`CONTRIBUTING.md`](https://github.com/jmrplens/mikroscope/blob/main/CONTRIBUTING.md).
 
-It needs no router, no Grafana, no database, no container and no network: every
-address it binds or dials is on loopback. `make test-e2e-offline` proves that
-rather than asserting it, by running the whole suite inside a network namespace
-that has nothing but `lo`.
+### Unit suite
 
-### Layer 2 — the stores
+```sh
+go test ./cmd/... ./internal/...   # the unit suite alone
+make test                          # every untagged package, the end-to-end suite included
+make test-race                     # every suite under the race detector
+make cover-check                   # fails below COVERAGE_MIN over cmd/ and internal/
+```
 
+Each package tests itself against fixtures, never against a router:
+
+- The `/proc` and `/sys` parsers read a captured tree of a real
+  router, [`testdata/proc/rb5009/`](https://github.com/jmrplens/mikroscope/tree/main/testdata/proc/rb5009).
+- `plan`, the install script and the listings are compared with golden files
+  in [`internal/router/testdata/`](https://github.com/jmrplens/mikroscope/tree/main/internal/router/testdata), one set per case of
+  `cases.json`. `make check-generated` fails when the site's copy of those
+  scripts is stale.
+- The lab's driver runs against a fake Docker and a fake router: provisioning,
+  the lock, the downloads and their checksums, the snapshot chain, the
+  firewall rules, QEMU's command line and the CLI's refusals.
+
+| Job                                   | What it runs                                                  | When                         |
+| ------------------------------------- | ------------------------------------------------------------- | ---------------------------- |
+| Cross-platform, Linux, macOS, Windows | the unit suite; on macOS and Windows the end-to-end suite too | every pull request           |
+| Coverage                              | `make cover-check`                                            | every pull request           |
+| Race detector                         | `make test-race`                                              | weekly, and before a release |
+
+### End-to-end suite
+
+`make test-e2e` builds both binaries and drives them as separate processes.
+The agent reads the captured tree. The collector reads that agent, or a fake
+one that serves canned samples, and writes every sink to a receiver inside the
+test binary, which asserts what arrived byte for byte.
+
+| Sink                                          | Receiver                               |
+| --------------------------------------------- | -------------------------------------- |
+| InfluxDB, Loki, OTLP, Elasticsearch, Telegraf | an HTTP capture server                 |
+| Graphite, Telegraf's socket modes             | TCP and UDP listeners                  |
+| File, SQL                                     | real files                             |
+| stdout                                        | the process's own standard output      |
+| Prometheus                                    | a scrape of the collector's `/metrics` |
+
+It needs no router, no Grafana, no database, no container and no network:
+every address it binds or dials is on loopback. `make test-e2e-offline` proves
+that on Linux by running the suite in a network namespace with nothing but
+`lo`. It needs `unshare` and `setpriv`, and runs `unshare` under `sudo` unless
+it already has the capability.
+
+CI runs the suite and its offline form on every pull request, weekly and
+before a release, and runs the suite on macOS and Windows as well, where the
+executable's name, the files the file and SQL sinks write and how a child
+process is stopped can differ.
+
+### Stores suite
+
+A capture server answers 204 to anything; a store does not.
 `make test-e2e-docker` starts eight stores and a Grafana with docker compose,
-nine containers in all, runs the same
-collector against the same fake agent with every sink pointed at them, and then
-asks each store its own question with its own API. The file sink's JSONL is the
-oracle each store is compared against — value by value, not only by count.
+runs the same collector against the same fake agent with every sink pointed
+at them, and asks each store its own question through its own API. The file
+sink's JSONL is the oracle: each store is compared with it value by value, not
+only by count.
 
-| Store                   | The question it is asked                                              |
-| ----------------------- | --------------------------------------------------------------------- |
-| InfluxDB 3 Core         | SQL over HTTP: the tables, a row count per table, every `ctxt` value   |
-| PostgreSQL 18           | the SQL sink's script through `psql`, and the connecting PostgreSQL sink into a second database; counts, the `ctxt` range, and whether the two databases hold the same rows (34 tables byte for byte, 2026-09-20) |
-| Elasticsearch 9         | `_search` with an aggregation by kind, and one whole document          |
-| Loki 3                  | `query_range` for this run's labels, and the text of each record       |
-| Graphite                | `metrics/find` for the tree, `render` for the points and their order   |
-| OpenTelemetry Collector | what it decoded, written back out as OTLP/JSON                         |
-| Telegraf 1.39           | the line protocol it parsed: measurements, tags, field types, timestamps |
-| Prometheus 3            | a scrape of the exporter, against the exposition it served             |
+| Store                   | The question it is asked                                                                                                                                         |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| InfluxDB 3 Core         | SQL over HTTP: the tables, a row count per table, every `ctxt` value                                                                                             |
+| PostgreSQL 18           | the SQL sink's script through `psql`, and the connecting PostgreSQL sink into a second database: counts, the `ctxt` range, and whether both hold the same rows |
+| Elasticsearch 9         | `_search` with an aggregation by kind, and one whole document                                                                                                    |
+| Loki 3                  | `query_range` for this run's labels, and the text of each record                                                                                                 |
+| Graphite                | `metrics/find` for the tree, `render` for the points and their order                                                                                             |
+| OpenTelemetry Collector | what it decoded, written back out as OTLP/JSON                                                                                                                   |
+| Telegraf 1.39           | the line protocol it parsed: measurements, tags, field types, timestamps                                                                                         |
+| Prometheus 3            | a scrape of the exporter, against the exposition it served                                                                                                       |
 
-The suite also publishes the five datasources with `forward --grafana` and
+The suite also publishes the five datasources with `forward --grafana`, and
 empties every store again with `uninstall --targets data`.
 
-Each of those is there because that product refuses something a capture server
-accepts:
+#### Failures only a store shows
 
 - **InfluxDB 3** fixes a column as a tag or a field the first time it sees the
-  table and refuses a later write that disagrees.
-- **Carbon** answers nothing at all: a point older than its longest archive, or
-  a name whisper cannot make a path of, is dropped in silence.
-- **Loki** answers 204 for a push that is not queryable until the chunk
+  table, and refuses a later write that disagrees.
+- **Carbon** answers nothing at all: a point older than its longest archive,
+  or a name whisper cannot make a path of, is dropped in silence.
+- **Loki** answers 204 to a push that is not queryable until the chunk
   flushes, and rejects out-of-order entries per stream, in the body.
 - **Elasticsearch** infers a mapping from the first document it sees for a
-  field and then rejects a later one that does not fit it — per document,
-  inside a bulk request that still answers 200.
+  field, then rejects a later one that does not fit it, per document, inside a
+  bulk request that still answers 200.
 - **Telegraf** is a real line-protocol parser: an unescaped space in a tag
   value, or a field with no type, is dropped and the batch is still 204.
 - **PostgreSQL** is the only thing that can say whether the SQL sink's script
   is valid SQL, whether the types it chose hold the values it emits, and
   whether its primary keys collide on a real run.
 
-### Layer 3 — the dashboards
+#### Dashboards
 
-The same target then imports all five dashboards into a real Grafana, each
-pointed at the store the run just filled, and runs every panel's query through Grafana's
-own `/api/ds/query`. That is where a panel fails for reasons no unit test
-reaches: a type an aggregate returns that the datasource plugin cannot decode,
-a macro the plugin escapes, a column the store does not have.
+The same run imports all five dashboards into Grafana, each pointed at the
+store the run just filled, and runs every panel's query through Grafana's own
+`/api/ds/query`: the `dashboards check` you can run against your own store. A
+panel fails there for reasons no unit test reaches: a type an aggregate
+returns that the datasource plugin cannot decode, a macro the plugin escapes, a
+column the store does not have. On InfluxDB 3 a missing column is not an empty
+one: the query fails with `Schema error: No field named <column>`, and the
+panel cannot render at all ([found this way](https://jmrp.io/docs/mikroscope/about/status/#the-test-suites)).
 
-The first full run, on 2026-09-16, found one: the port-event table names
-`label` and `role`, which the sink writes onto a kernel-log row only from the
-API tier's inventory. A column that is not in the table is not an empty column
-on InfluxDB 3 — it is `Schema error: No field named label` and a panel that
-cannot render at all.
-
-### Running it
+#### Run the stores suite
 
 ```sh
-make test-e2e-docker   # the whole thing; the stack comes up and goes down with it
-make e2e-docker-up     # keep the stack up, for a targeted run
+make test-e2e-docker        # the whole suite; the stack comes up and goes down with it
+make e2e-docker-up          # keep the stack up between runs
 go test -v -tags dockere2e -run TestLoki ./test/e2e/docker/
-make e2e-docker-down
+make e2e-docker-down        # stop the stack and delete its volumes
+make test-e2e-docker-race   # the same suite under the race detector
 ```
 
-The package is behind the `dockere2e` build tag, so `make test` and every
-default CI job compile none of it — the tag is how you ask for nine containers.
-`make lint` type-checks it so it cannot rot, and **every pull request runs it**,
-along with the weekly workflow and the release gate.
-
-It was not on the pull-request path until 2026-09-18, on the grounds that nine
-containers are a lot to ask of one. That is how 1.0.5 reached `main` with two
-tests in this suite still reading the agent's `/metrics`, which that release
-had removed: every pull-request check was green, and the tag was what found
-it. The cost of having it there is **2 min 37 s**, measured on the release run
-that failed — containers included.
-
-Measured on the development machine on 2026-09-16: the stack comes up in 55 to
-81 s with the images already pulled, and the whole suite takes 75 to 100 s from
-nothing.
+The harness reuses a stack it did not start, and leaves it up afterwards.
+Why each store is a real one and not a fake is
+in [`test/e2e/docker/README.md`](https://github.com/jmrplens/mikroscope/blob/main/test/e2e/docker/README.md). CI runs the suite on every pull
+request, weekly, on dispatch and before a release.
 
 > **Linux, for two of the nine**
 >
 > Prometheus and Grafana run on the host's network stack, because Prometheus is
-> the one sink that is scraped rather than pushed to and it has to reach the
+> the one sink that is scraped rather than pushed to, and it has to reach the
 > collector's exporter on the host. A container on a bridge network reaches the
 > host through the bridge's gateway, and that path goes through the host's
 > INPUT chain, which a default-deny firewall drops. The other seven services
 > are ordinary bridge-network containers.
 
-### The virtual RouterOS lab
+### Virtual RouterOS lab
 
-`doctor`, `plan`, `install`, `upgrade`, `status` and `uninstall` need a router
-to be tested at all, and the lab is one that belongs to nobody: MikroTik's
-Cloud Hosted Router (CHR) 7.24.4 under QEMU, in a Docker container, provisioned
-once into a clean snapshot (the `container` package installed,
-`device-mode container=yes` confirmed) and put back to that snapshot in
-seconds. No test needs a real router. [`test/lab/README.md`](https://github.com/jmrplens/mikroscope/blob/main/test/lab/README.md) is the
-full account: how it is wired, what each step took, and what CHR taught the
-installer.
+`doctor`, `plan`, `install`, `upgrade`, `status` and `uninstall` need a
+RouterOS to be tested at all. The lab is MikroTik's Cloud Hosted Router (CHR),
+a real RouterOS, under QEMU in a Docker container. It is provisioned once into
+a clean snapshot, with the `container` package installed and
+`device-mode container=yes` confirmed, and put back to that snapshot in
+seconds. The full account, how it is wired and what CHR taught the installer,
+is [`test/lab/README.md`](https://github.com/jmrplens/mikroscope/blob/main/test/lab/README.md).
 
-| Lab    | Runs as                 | Snapshot to ssh | What it is for                                                                                                 |
-| ------ | ----------------------- | --------------- | -------------------------------------------------------------------------------------------------------------- |
-| x86_64 | CHR under KVM           | 7 s             | every scenario, fast; the one CI runs on pull requests and before a release                                    |
-| arm64  | CHR emulated (QEMU TCG) | 26–28 s         | the RB5009's architecture, kernel version and core (Cortex-A72): the arm64 `container` package and agent image |
+| Lab    | Runs as                                            | Use it for                                                                                        |
+| ------ | -------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| x86_64 | CHR under KVM                                      | every scenario, fast; CI runs it on pull requests and before a release                            |
+| arm64  | CHR emulated by QEMU (TCG), CPU model `cortex-a72` | the arm64 `container` package and agent image, and RouterOS choosing the image for arm64; slow   |
 
-The boot times were measured on 2026-09-26 on the development machine
-(x86_64, 12 cores); the arm64 one is the emulation's, not a router's.
+A third lab, RouterOS x86 installed from MikroTik's ISO
+(`make lab-up LAB_KIND=iso`, x86_64 only), is an opt-in recipe that CI never
+runs. It adds the PC install path, an `x86` board name and the x86 licence (a
+24-hour trial, then a Level 1 registration or a paid licence per device), and
+nothing the agent reads that CHR x86_64 does not.
 
 The CLI runs inside the lab's LAN. `mikroscope-lab cli` starts it in the lab
 container's network namespace, where 172.30.0.0/16 routes to the lab router,
 so the agent's default address, 172.30.10.2, reaches the lab's agent and
-nothing else. From a developer machine's own shell the same address leaves by
-its default route, toward whatever network that is. Every deploy verb, by
-hand (`make lab-cli`) or in the suite, goes through `mikroscope-lab cli`,
-which refuses `--router` and a `--subnet` outside the lab's routes. The lab's namespace has
-its own firewall: it opens no new connection to a private address outside the
-lab, and takes none from another container.
+nothing else. From your own shell the same address leaves by your default
+route, toward whatever network that is. So every deploy verb, by hand
+(`make lab-cli`) or in the suite, goes through `mikroscope-lab cli`, which
+refuses `--router` and a `--subnet` outside the lab's routes. The lab's
+namespace has its own firewall: it opens no new connection to a private
+address outside the lab, and takes none from another container.
 
-#### What the lab suite runs
+#### Lab suite
 
 `make test-lab` builds the CLI and the agent image tars, then runs the suite
-in [`test/e2e/lab/`](https://github.com/jmrplens/mikroscope/tree/main/test/e2e/lab) (build tag `labe2e`) against the running lab,
-holding the lab's lock for the whole run. Every scenario starts from a reset
-and the set-up it names, takes the router's `/export` there as its baseline,
-and ends by comparing the two.
+in [`test/e2e/lab/`](https://github.com/jmrplens/mikroscope/tree/main/test/e2e/lab) against the running lab, holding the lab's
+lock for the whole run. Every scenario starts from a reset and the profile it
+names, takes the router's `/export` there as its baseline, and ends by
+comparing the two.
 
-| Scenario | What it does                                                                   | What it asserts                                                                                      |
-| -------- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
-| S1       | `doctor` on a stock CHR, with the lists `none` and with the defaults           | nothing missing with `none`; with the defaults only the interface list `LAN`, whose fix offers `--iface-list none` |
-| S2       | install by pulling the image from Docker Hub, `status`, `upgrade`, `uninstall` | the agent answers `/healthz` and `/capabilities`; the export is back to its baseline                 |
-| S3       | install and upgrade from the branch's own image tar                            | the agent reports the branch build's version, commit and date                                        |
-| S4       | `plan --rsc` for both image routes, run with `/import`                         | `status` recognises the script's objects; `uninstall` leaves the baseline                            |
-| S5       | every golden script the lab can run, imported as the site hands it over     | the agent answers on its own /30; `uninstall` with the case's flags leaves the baseline              |
-| S6       | `--ephemeral` on a tmpfs disk, then a power cut                                | the container is left stopped with its root gone; `uninstall --ephemeral` leaves nothing at all      |
-| S7       | a persistent install, 45 s for it to reach the disk, then a power cut          | the agent answers again within 90 s: start-on-boot works                                             |
-| S8       | `--expose` with a token                                                        | `/capabilities` answers 401 without the token and 200 with it; both firewall rules go with uninstall |
-| S9       | `uninstall` while a client reads `/stream`, ten times                          | every first attempt verifies the router clean                                                        |
-| S10      | the raw rules of MikroTik's advanced firewall, in list and range form          | `doctor` names the rule that drops the agent's replies, and the list memberships that pass           |
-| S11      | a foreign veth, a routed /30, a foreign envlist                                | `doctor` names each; `install` writes nothing; the `plan --rsc` script stops at its guard for the veth and the envlist |
-| S12      | two installs side by side                                                      | removing one leaves the other running and untouched                                                  |
-| S13, S14 | installs with other lists, and with `--expose`, uninstalled with no flag       | everything they created is removed; a contradicting flag is refused                                  |
-| S17      | `doctor` on a RouterOS below 7.24 (`LAB_ROS=7.23.7`)                           | `RouterOS 7.24 or later` is missing, and every other check still reads                               |
-| S18      | a pull from GHCR with no registry credential                                   | the agent answers                                                                                    |
-| F4       | every install route, a 1.3.1 install, and objects the user made first          | `/export` equals the one before the install and `/file` holds no mikroscope path; the user's objects stay |
-| repeat   | 10 tar installs and uninstalls on x86_64, 3 on arm64                           | no install fails                                                                                     |
+| Scenario | What it does                                                                        | What it asserts                                                                                                         |
+| -------- | ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| S1       | `doctor` on a stock CHR, with the lists `none` and with the defaults                | nothing missing with `none`; with the defaults only the interface list `LAN`, whose fix offers `--iface-list none`      |
+| S2       | install by pulling the image from Docker Hub, `status`, `upgrade`, `uninstall`      | the agent answers `/healthz` and `/capabilities`; the export is back to its baseline                                    |
+| S3       | install and upgrade from the branch's own image tar                                 | the agent reports the branch build's version, commit and date                                                           |
+| S4       | `plan --rsc` for both image routes, run with `/import`                              | `status` recognises the script's objects; `uninstall` leaves the baseline                                               |
+| S5       | every golden script the lab can run, imported as the site hands it over            | the agent answers on its own /30; `uninstall` with the case's flags leaves the baseline                                 |
+| S6       | `--ephemeral` on a tmpfs disk, then a power cut                                     | the container is left stopped with its root gone; `uninstall --ephemeral` leaves nothing at all                         |
+| S7       | a persistent install, 45 s for it to reach the disk, then a power cut               | the agent answers again within 90 s: start-on-boot works                                                                |
+| S8       | `--expose` with a token                                                             | `/capabilities` answers 401 without the token and 200 with it; both firewall rules go with uninstall                    |
+| S9       | `uninstall` while a client reads `/stream`, ten times                               | every first attempt verifies the router clean                                                                           |
+| S10      | the raw rules of MikroTik's advanced firewall, in list and range form               | `doctor` names the rule that drops the agent's replies, and the list memberships that pass                              |
+| S11      | a foreign veth, a routed /30, a foreign envlist                                     | `doctor` names each; `install` writes nothing; the `plan --rsc` script stops at its guard for the veth and the envlist |
+| S12      | two installs side by side                                                           | removing one leaves the other running and untouched                                                                     |
+| S13, S14 | installs with other lists, and with `--expose`, uninstalled with no flag            | everything they created is removed; a contradicting flag is refused                                                     |
+| S17      | `doctor` on a lab below the minimum RouterOS                                        | `RouterOS 7.24 or later` is missing, and every other check still reads                                                  |
+| S18      | a pull from GHCR with no registry credential                                        | the agent answers                                                                                                       |
+| F4       | every install route, an install made by a released CLI, objects the user made first | `/export` equals the one before the install and `/file` holds no mikroscope path; the user's objects stay               |
+| repeat   | tar installs and uninstalls in a row, ten on x86_64 and three on arm64              | no install fails                                                                                                        |
 
 The scenarios assert the fixed behaviour: none runs a second uninstall, and
-none allows a mikroscope path left on `/file`. Three more assert the CLI's own
-faults stay fixed: the agent token on no command line of the host, RouterOS's
-words in every error, and the probe reading the `running` flag. S5 pulls from
-Docker Hub twelve times and from GHCR once, and a few other scenarios pull
-where the route is the point; the rest install the branch's own tar, which
-also tests the branch's agent. Those pulls are anonymous unless the lab is
-given an account ([pulling as an account](https://jmrp.io/docs/mikroscope/reference/testing/#pulling-as-an-account)), and the
-scenarios about a router with no credential — S1, S18, and S5's Docker Hub and
-GHCR scripts — boot without it in any case. The suite drops every `MIKROSCOPE_*` variable before it runs
-anything, so a shell set up for a real router cannot steer it.
+none allows a mikroscope path left on `/file`. Four more tests hold what the
+CLI must keep doing: the agent token on no command line of the host,
+RouterOS's words in every error, the probe reading the `running` flag, and
+`doctor`'s warning for start-on-boot with the root on a tmpfs disk.
 
-S7 waits 45 s between the install and the cut. In the arm64 lab, three of
-four cuts made as soon as the agent answered brought back no agent within
-90 s, and the two looked at had a container that could not start
-(`Exec format error`, `Segmentation fault`), most likely because RouterOS had
-not yet written the install to its disk; that was not examined. A power loss that
-close to an install is its own question, and S7 asks only whether
-start-on-boot works.
+S7 waits 45 s between the install and the power cut. A cut made as soon as the
+agent answers can bring back a container that cannot start
+([seen in the lab](https://jmrp.io/docs/mikroscope/about/status/#virtual-lab)), which is a question
+of its own; S7 asks only whether start-on-boot works.
 
-Measured on 2026-09-27 with CHR 7.24.4 and the code with these scenarios and
-the fixes review asked for: the suite took 29 min 2 s on x86_64 and
-57 min 13 s on arm64 side by side, every test passing; S9's uninstalls took
-8.0 to 12.6 s each. Earlier that day, before those fixes, it took 28 min 32 s
-on x86_64 alone, and 28 min 17 s and 57 min 29 s side by side. Before them, on 2026-09-26 with the 1.3.1 code, the suite took
-7 min 21 s to 9 min 49 s on x86_64 over six runs and 12 min 12 s to
-16 min 48 s on arm64 over three, the slowest of each with both suites running
-side by side on a busy host, and no install failed. `make roundtrip` —
-`doctor`, `install`, `status`, `upgrade` and `uninstall`, every one with
-`--ephemeral`, and the router's `/export` hashed before and after — took 28 to
-34 s on x86_64 over three runs and 40 to 45 s on arm64 over four, and left the
-export byte-identical every time.
+Only the scenarios that test a pull make the router pull. Docker Hub limits
+anonymous pulls per address, and a CI runner shares its address with whatever
+else ran from it, so every other scenario installs the branch's own tar from
+`make agent-tars`, which also tests the branch's agent. The pulls are
+anonymous unless the lab is given an account
+([Pull as an account](https://jmrp.io/docs/mikroscope/reference/testing/#pulling-as-an-account)), and the scenarios about a
+router with no credential, S1, S18 and S5's Docker Hub and GHCR scripts, boot
+without it in any case. The suite drops every
+`MIKROSCOPE_*` variable before it runs anything, so a shell set up for a real
+router cannot steer it.
 
-#### Running the lab
+#### Run the lab
 
 ```sh
-make lab-up                     # the first run downloads RouterOS and provisions it
-make test-lab                   # the suite, x86_64
-make test-lab LAB_RUN='S09'     # one scenario, by a -run pattern
+make lab-up                   # start the lab; the first run downloads RouterOS and provisions it
+make lab-status               # the container, who holds the lock, what the router reports
+make test-lab                 # the whole suite, x86_64
+make test-lab LAB_RUN='S09'   # the tests a go test -run pattern matches
 make lab-cli ARGS='doctor --arch amd64'
-make lab-reset                  # back to the clean snapshot
-make lab-down
-make lab-up LAB_ARCH=arm64      # the emulated one, then the same targets with LAB_ARCH=arm64
+make lab-reset                # back to the clean snapshot
+make roundtrip                # doctor, install, status, upgrade, uninstall; /export compared
+make lab-down                 # stop it; the disks keep their state
+make lab-up LAB_ARCH=arm64    # the emulated lab: every target takes LAB_ARCH=arm64
 ```
 
-It needs Linux, Docker, Go for the lab's driver and for the CLI and agent
-under test, about 910 MB of disk for both architectures, and `/dev/kvm` for
-x86_64: without it the default `LAB_KVM=auto` falls back to emulation, many
-times slower and not measured, and `LAB_KVM=require` stops instead. Without a
-running lab every test of the suite skips, and `MIKROSCOPE_LAB_REQUIRED=1`
-makes that a failure. Only one driver at a time: every verb takes a lock per
-lab, so two checkouts never drive one lab between each other's steps, and `LAB_STATE_DIR`
-points a second checkout at the lab a first one runs; `LAB_INSTANCE=<name>`
-runs a second lab of an architecture beside the first, with its own
-container, ports, lock and disks. The lab's admin password and agent token
-are generated into `test/lab/.env` on first use, gitignored and never
-printed.
+S17 needs a lab below the minimum RouterOS, which is a lab of its own:
 
-Every target runs the lab's driver, `bin/mikroscope-lab`: a build-time tool
-in Go, like the one that draws the brand, which `make lab-tool` builds
-from [`cmd/mikroscope-lab/`](https://github.com/jmrplens/mikroscope/tree/main/cmd/mikroscope-lab) and [`internal/lab/`](https://github.com/jmrplens/mikroscope/tree/main/internal/lab),
-and nothing ships. The same static binary is the lab container's first process,
-which sets up its network and runs QEMU until the guest powers off, and the
-suite calls the driver in its own process rather than as a command.
-`test/lab/lab.sh`, the shell script the driver replaced on 2026-09-27, now
-only builds and starts it. The driver's unit tests stand a fake Docker and a
-fake router in for the real ones, so provisioning, the lock, the downloads and
-their checksums, the snapshot chain, the firewall rules, QEMU's command line
-and the CLI's refusals are tested in `go test`; what only a real RouterOS
-shows, the lab suite shows.
+```sh
+make lab-up LAB_ROS=7.23.7
+make test-lab LAB_ROS=7.23.7 LAB_RUN=S17
+```
 
-A third lab, RouterOS x86 installed from MikroTik's ISO
-(`make lab-up LAB_KIND=iso`), is an opt-in recipe that CI never runs. It adds
-the PC install path, an `x86` board name and the x86 licence — a 24-hour trial,
-then a Level 1 registration or a paid licence per device — and nothing the
-agent reads that CHR x86_64 does not.
+The lab needs:
 
-#### Pulling as an account
+- Linux, and Docker allowed to give a container `NET_ADMIN` and
+  `/dev/net/tun`.
+- Go, for the lab's driver and for the CLI and agent under test.
+- About 910 MB of disk for both architectures, 810 MB for one.
+- The loopback ports 220N, 800N, 870N and 910N free, with N = 1 for x86_64
+  and 2 for arm64, plus an instance's offset.
+- Network access: Docker Hub and Debian's mirrors for the lab image the first
+  time, `download.mikrotik.com` once per RouterOS version, and Docker Hub for
+  what the router pulls.
+- `/dev/kvm` for x86_64. Without it, `LAB_KVM=auto` falls back to emulation,
+  many times slower, and `LAB_KVM=require` stops instead. arm64 is emulated on
+  an x86 host whatever you set.
+
+Without a running lab every test of the suite skips, and
+`MIKROSCOPE_LAB_REQUIRED=1` makes that a failure. The lab's admin password and
+agent token are generated into `test/lab/.env` on first use, gitignored, and
+never printed.
+
+Every target runs the lab's driver, `bin/mikroscope-lab`, which
+`make lab-tool` builds from [`cmd/mikroscope-lab/`](https://github.com/jmrplens/mikroscope/tree/main/cmd/mikroscope-lab)
+and [`internal/lab/`](https://github.com/jmrplens/mikroscope/tree/main/internal/lab): a build-time tool that nothing ships.
+`bin/mikroscope-lab help` lists its verbs, and `test/lab/lab.sh` only builds
+and starts it, for a command written for the old script. The same static
+binary is the lab container's first process, which sets up its network and
+runs QEMU until the router powers off.
+
+One driver drives a lab at a time: every verb takes the lab's lock, and
+`bin/mikroscope-lab lock <command>` holds it for a whole session, as
+`make test-lab` and `make roundtrip` do. The two labs run side by side, and so
+can their suites, but not as two `make test-lab` in one checkout, because each
+rebuilds the agent tars the other may be reading. Build once, and start each
+suite under its own lab's lock:
+
+```sh
+make build agent-tars lab-tool
+LAB_ARCH=x86_64 bin/mikroscope-lab lock go test -tags labe2e -count=1 -timeout 150m ./test/e2e/lab/ &
+LAB_ARCH=arm64 bin/mikroscope-lab lock go test -tags labe2e -count=1 -timeout 150m ./test/e2e/lab/
+```
+
+#### Pull as an account
 
 The lab router pulls the agent image itself, about a dozen times per run of
-the suite, and Docker Hub allows 100 anonymous pulls per 6 hours per address
-(Docker's usage page, read 2026-09-26); a CI runner shares its address with
-whatever else ran from it. Given a Docker Hub account, the router pulls as
-that account instead:
+the suite, and Docker Hub limits anonymous pulls per address. Given a Docker
+Hub account, the router pulls as that account instead:
 
 ```sh
 # in a file of your own, mode 0600, outside the repository
@@ -1895,35 +2204,47 @@ set -a; . ~/.config/mikroscope/lab-registry.env; set +a
 make lab-reset                  # every up and reset gives the router the credential
 ```
 
-The lab only pulls, so on your own machine a read-only token is enough. The
-lab's driver writes
+The lab only pulls, so on your own machine a read-only token is enough. At
+every `up` and `reset` the lab's driver writes
 `/container/config/set registry-url=… username=… password=…` to a file,
-copies it to the router, runs it with `/import` and deletes it, at every
-`up` and `reset`, so the credential is on no command line and the cached
-snapshot never has it. Exported from a file, as above, it stays off `make`'s
-command line too, which the process table would show. Without the two
-variables nothing changes and the router pulls anonymously; one without the
-other is refused. The suite prints the user and the token as
-`<LAB_REGISTRY_USER>` and `<LAB_REGISTRY_TOKEN>`, and one of its tests reads
-the host's process table every 2 ms through a reset to hold the driver to all
-of it.
+copies it to the router, runs it with `/import` and deletes it, so the
+credential is on no command line and the cached snapshot never has it.
+Exported from a file, as above, it stays off `make`'s command line too, which
+the process table would show. Without the two variables the router pulls
+anonymously; one without the other is refused. The suite prints the user and
+the token as `<LAB_REGISTRY_USER>` and `<LAB_REGISTRY_TOKEN>`, and one of its
+tests reads the host's process table every 2 ms through a reset to hold the
+driver to all of it.
 
 `registry-url` is `registry-1.docker.io`, with no scheme (`LAB_REGISTRY_URL`
 names another registry's host). RouterOS presents the username and password
 for a reference whose host is `registry-url` as written, and mikroscope
-writes the host into every reference. Measured in the x86_64 lab on
-2026-09-27 (CHR 7.24.4) with a deliberately wrong credential: the 1.3.1
-agent image, `registry-1.docker.io/jmrplens/mikroscope-agent`, failed with
-`auth error` under `registry-url=registry-1.docker.io`, and was pulled
-anonymously under `https://registry-1.docker.io`, the value MikroTik's
-examples use, and under the same with a trailing slash. A router that was
-given a credential did not fall back to an anonymous pull. With that
-credential given as the lab gives it, S2's install failed with `auth error`,
-while S1, S18, S5's two scripts and the process-table test passed; with no
-credential, S2 passed. A valid token was not tried: that Docker Hub counts
-the pulls against the account is its documentation, not a measurement.
+writes the host into every reference; with `https://` in front, the same pull
+goes out anonymously ([verified](https://jmrp.io/docs/mikroscope/about/status/#verified-registry-url-host-match)).
 
-#### The lab in CI
+#### Lab settings
+
+Each setting goes on the `make` line or in the environment.
+
+| Setting                                   | Default                                  | What it does                                                                                            |
+| ----------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `LAB_ARCH`                                | `x86_64`                                 | which lab: `x86_64` or `arm64`                                                                          |
+| `LAB_ROS`                                 | the Makefile's                           | the RouterOS version to download and run; a new version is a new provision                              |
+| `LAB_KIND`                                | `chr`                                    | `iso` is RouterOS x86 from MikroTik's ISO, x86_64 only                                                  |
+| `LAB_KVM`                                 | `auto`                                   | `require` stops without `/dev/kvm`, `off` never uses it, `auto` uses it when it is there                |
+| `LAB_RUN`                                 | every test                               | a `go test -run` pattern for `make test-lab`, such as `S09` or `F4`                                     |
+| `LAB_INSTALL_REPEAT`                      | 10 on x86_64, 3 on arm64                 | how many installs the repeat test makes                                                                 |
+| `LAB_S5_CASES`                            | every case the lab can run               | S5's cases, by id, separated by commas                                                                  |
+| `LAB_REMOTE_IMAGE`                        | the last release on Docker Hub           | the image the pull scenarios pull                                                                       |
+| `LAB_GHCR_IMAGE`                          | the same image on GHCR                   | the image S18 pulls                                                                                     |
+| `LAB_STATE_DIR`                           | this checkout's `test/lab`               | where the lab's `.cache/` and `.env` live: point a second checkout at a lab another one runs            |
+| `LAB_INSTANCE`                            | none                                     | a second lab of an architecture, with its own container, ports, lock and disks                          |
+| `LAB_LOCK_WAIT`                           | as long as it takes                      | seconds to wait for another driver's lock before failing and naming the holder                          |
+| `MIKROSCOPE_LAB_REQUIRED`                 | unset                                    | `1` turns a skip for want of a lab into a failure                                                       |
+| `LAB_REGISTRY_USER`, `LAB_REGISTRY_TOKEN` | unset: the router pulls anonymously      | a registry account the lab router pulls with, given to it at every `up` and reset, never in the snapshot |
+| `LAB_REGISTRY_URL`                        | `registry-1.docker.io`                   | the registry that account belongs to, written as the host the references name                           |
+
+#### Lab in CI
 
 | Lab    | Pull request                            | Release                  | Weekly | On dispatch |
 | ------ | --------------------------------------- | ------------------------ | ------ | ----------- |
@@ -1931,79 +2252,76 @@ the pulls against the account is its documentation, not a measurement.
 | arm64  | no                                      | no                       | yes    | yes         |
 
 The workflow, [`.github/workflows/lab.yml`](https://github.com/jmrplens/mikroscope/blob/main/.github/workflows/lab.yml), runs the same
-`make lab-up` and `make test-lab`, with `MIKROSCOPE_LAB_REQUIRED=1`. What counts as "what
-installs the agent" is a list of paths in the `changes` job of `ci.yml`:
-`internal/router`, `internal/image`, `internal/agent`, `cmd/mikroscope`,
-`cmd/mikroscope-agent`, `Dockerfile.agent`, the `Makefile`, the agent tar and
-round-trip scripts, the lab, its driver (`cmd/mikroscope-lab`,
-`internal/lab`) and its suite, and `lab.yml` itself. arm64 is not a gate:
-under emulation it takes an estimated 25 to 35 minutes, and it depends on
-MikroTik's download server and on Docker Hub being up. On a release the pull scenarios pull the release before it, because the
-new tag's agent image is pushed only after the gates pass.
+`make lab-up` and `make test-lab`, with `MIKROSCOPE_LAB_REQUIRED=1`. What
+counts as "what installs the agent" is the list of paths in the `changes` job
+of `ci.yml`: `internal/router`, `internal/image`, `internal/agent`,
+`cmd/mikroscope`, `cmd/mikroscope-agent`, `Dockerfile.agent`, the `Makefile`,
+the agent tar and round-trip scripts, the RouterOS scripts the site renders,
+the lab, its driver and its suite, and `lab.yml` itself. A dispatch takes
+`ref`, `arch` (`both`, `x86_64` or `arm64`) and `ros`.
+
+arm64 is not a gate: it runs under emulation, which is slow, and it depends on
+MikroTik's download server and on Docker Hub being up. On a release, the pull
+scenarios pull the release before it, because the new tag's agent image is
+pushed only after the gates pass.
 
 The Actions cache keeps MikroTik's downloads per architecture and RouterOS
-version, checked against the SHA-256 sums the repository pins in
-the file [`test/lab/SHA256SUMS`](https://github.com/jmrplens/mikroscope/blob/main/test/lab/SHA256SUMS), and the provisioned router. The
-snapshot carries no credential: admin has CHR's empty password and no key
-until the run's `make lab-up` gives it that run's own, so the `.env` and the
-ssh key never leave the runner. A failed or timed-out run uploads the console
-log, the container log, the lab's status, what an install left on the router,
-and the test log, each credential replaced by its name, and never the `.env`
-or the ssh key.
+version, checked against the SHA-256 sums the repository pins
+in [`test/lab/SHA256SUMS`](https://github.com/jmrplens/mikroscope/blob/main/test/lab/SHA256SUMS), and the provisioned router, keyed on the
+driver, the lab image and those sums. The snapshot carries no credential:
+admin has CHR's empty password and no key until the run's `make lab-up` gives
+it that run's own, so the `.env` and the ssh key never leave the runner. A
+failed or timed-out run uploads the console log, the container log, the lab's
+status, what an install left on the router and the test log, each lab
+credential replaced by its name, and never the `.env` or the ssh key.
 
-The router pulls as an account when the repository has two secrets:
+The router pulls as an account when the repository has two secrets,
 `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN`, the token the release also pushes
-images with; the lab only pulls with it. They become `LAB_REGISTRY_USER` and `LAB_REGISTRY_TOKEN` for the
-steps that bring the lab up, run the suite and redact the failure report,
-and no other; `ci.yml` and `release.yml` pass the two by name.
-A pull request from a fork gets no secrets, and a repository without
-`DOCKERHUB_TOKEN` gets neither variable: both run anonymously. So does a
-dispatch that checks out another `ref`, which may be a fork's merge commit:
+images with; the lab only pulls with it. They become `LAB_REGISTRY_USER` and
+`LAB_REGISTRY_TOKEN` for the steps that bring the lab up, run the suite and
+redact the failure report, and no other; `ci.yml` and `release.yml` pass the
+two by name. A pull request from a fork gets no secrets, and a repository
+without `DOCKERHUB_TOKEN` gets neither variable: both run anonymously. So does
+a dispatch that checks out another `ref`, which may be a fork's merge commit:
 the lab builds and runs that code, and the token stays out of its
 environment.
 
-#### Where the lab stops being a router
+#### Lab limits
 
 - **Virtual, not hardware.** No RouterBOARD, no flash, no sensors, no switch
-  chip, no device tree. Measured through the agent's `/capabilities` on
-  2026-09-26: `cpufreq`, `mtd`, `psi`, `schedstat` and `thermal` absent on both
-  labs, and `status` cannot map kernel port names to RouterOS ones. Anything
-  about a board still needs a real one.
+  chip and no device tree. `cpufreq`, `mtd`, `psi`, `schedstat` and `thermal`
+  are absent from the agent's `/capabilities`, and `status` cannot map kernel
+  port names to RouterOS ones. Anything about a board still needs a real one.
 - **The free CHR licence caps what the router sends** at 1 Mbit/s per
-  interface: 2 MiB copied off the lab router over its LAN took 15.6 s. The
-  agent's `/stream` measured 0.21 Mbit/s at 10 Hz there, so by arithmetic
-  50 Hz sits at the cap and 100 Hz above it, and a rate test above 10 Hz in the
-  lab measures the licence rather than the agent.
+  interface. A rate test above 10 Hz in the lab measures the licence rather
+  than the agent ([the arithmetic](https://jmrp.io/docs/mikroscope/about/status/#virtual-lab)).
 - **Emulated arm64 figures are not costs.** Under emulation the guest's clock
   follows the host's, so every duration, every CPU figure (`cpu-load`,
   `self.cpu_us`, `read_ns`, `wake_ns`, the `dt_ns` spread, `slipped`), every
-  interrupt, softirq and context-switch rate and every PMU count from the arm64
-  lab measures the host's emulation, not a Cortex-A72.
+  interrupt, softirq and context-switch rate and every PMU count from the
+  arm64 lab measures the host's emulation, not the core it emulates.
+- **No 32-bit ARM.** MikroTik publishes CHR for x86_64 and arm64 only, so the
+  armv5 and armv7 agent meets RouterOS only on hardware. `make agent-smoke`
+  starts its image under QEMU user-mode, which is not RouterOS.
 
-> **What the lab has not shown**
->
-> How long the lab jobs take on GitHub's runners, and whether those runners
-> give this repository `/dev/kvm`: the workflow has not run there yet, and the
-> first dispatch is the measurement. MikroTik publishes CHR for x86_64 and
-> arm64 only, so the 32-bit arm agent (armv5, armv7) meets RouterOS on
-> hardware only: `make agent-smoke` starts its image under QEMU user-mode,
-> which is not RouterOS.
+### Manual checks
 
-### What the three layers still leave to a human
+No suite shows:
 
-> **What none of these prove**
->
-> That a sink works from the router. The samples in all three layers come from a
-> fake agent or a captured `/proc` tree, never from a live device, and the
-> container stack runs on the development machine rather than across the
-> router's veth. File, Prometheus and InfluxDB 3 have carried real RB5009
-> samples end to end; the other eight — Loki, OTLP, Graphite, Elasticsearch,
-> SQL, PostgreSQL, Telegraf and stdout — have not.
+- **A sink fed from a router.** The samples in every suite come from a fake
+  agent, a captured tree or the lab's CHR, and the stores run on the test host,
+  not across a router's veth. Which sinks have carried a router's samples is
+  under [Feature status](https://jmrp.io/docs/mikroscope/about/status/#what-works-end-to-end).
+- **Anything about a board**: its flash, sensors, switch chip and CPU
+  frequency, and what the agent costs on it.
+  [Agent cost](https://jmrp.io/docs/mikroscope/cost/#measuring-it-on-your-own-device) says how to
+  measure it on yours.
 
 ### See also
 
-- [Where the project stands](https://jmrp.io/docs/mikroscope/about/status/): what has run against
-  the reference device and what has not.
-- [The collector and its sinks](https://jmrp.io/docs/mikroscope/sinks/): what each sink writes.
-- [Importing and checking the dashboards](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/):
-  the same `dashboards check` the third layer runs, against your own store.
+- [Tested on](https://jmrp.io/docs/mikroscope/about/status/#the-test-suites): when each suite
+  first ran, how long it takes, what the lab found, and what has not been
+  tested.
+- [Run the collector](https://jmrp.io/docs/mikroscope/sinks/): what each sink writes.
+- [Import and check](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/): the same
+  `dashboards check` the stores suite runs, against your own store.

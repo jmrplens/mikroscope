@@ -9,6 +9,7 @@
   },
   "urls": [
     "http://localhost:4321/mikroscope/",
+    "http://localhost:4321/mikroscope/start/",
     "http://localhost:4321/mikroscope/start/walkthrough/",
     "http://localhost:4321/mikroscope/cost/rate-ceiling/",
     "http://localhost:4321/mikroscope/install/firewall/",
@@ -23,6 +24,7 @@
     "http://localhost:4321/mikroscope/reference/measurements/",
     "http://localhost:4321/mikroscope/about/status/",
     "http://localhost:4321/mikroscope/es/",
+    "http://localhost:4321/mikroscope/es/start/",
     "http://localhost:4321/mikroscope/es/start/walkthrough/",
     "http://localhost:4321/mikroscope/es/cost/rate-ceiling/",
     "http://localhost:4321/mikroscope/es/install/firewall/",

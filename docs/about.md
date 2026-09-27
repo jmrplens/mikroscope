@@ -64,7 +64,7 @@ A `v*` tag runs the GoReleaser configuration, [`.goreleaser.yaml`](https://githu
   under [`deploy/`](https://github.com/jmrplens/mikroscope/tree/main/deploy).
 - **`checksums.txt`**, covering every archive and every agent image tar, a keyless cosign
   signature over it, and an SPDX SBOM per archive, signed in its own right. [Verifying the
-  download](https://jmrp.io/docs/mikroscope/install/routes/#verifying-the-download) has the commands.
+  download](https://jmrp.io/docs/mikroscope/install/offline/#download-and-verify) has the commands.
 
 Installing from a release needs no Go toolchain and no checkout. A checkout and Go 1.27 install an
 agent built from your own tree instead: `make build` for the CLI, `make build-agent` for the agent,
@@ -220,7 +220,7 @@ corrections to this page included, is in [`CHANGELOG.md`](https://github.com/jmr
 - [Releases](https://jmrp.io/docs/mikroscope/about/changelog/): the current release, what it publishes, and where the
   history of every release, this page's corrections among them, is kept.
 
-## The mark
+## Logo and brand
 
 Nine sample bars and the line of their own mean, why none of it is drawn at partial opacity, and the contrast each tone measures against its page.
 

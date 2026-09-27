@@ -87,10 +87,11 @@ const publicUrl = (route) => (route ? `${PUBLIC}/${route}/` : `${PUBLIC}/`);
 // for one file is split where a reader's question changes (walkthrough.md and
 // questions.md; sinks.md and dashboards.md).
 const MANIFEST = [
-	// What the thing is, and the five minutes that show it working.
+	// The four commands that install it, and the first recording that shows it
+	// working.
 	{
 		file: "walkthrough.md",
-		title: "Five minutes with a router",
+		title: "Quick install and a first recording",
 		routes: ["start", "start/walkthrough"],
 	},
 	// What a reader asks before installing, answered in a paragraph each, and
@@ -101,11 +102,13 @@ const MANIFEST = [
 		title: "Short answers, and the alternatives",
 		routes: ["start/questions", "start/compared"],
 	},
-	// Getting it onto a router: the routes the image can take, what the router
-	// needs, the CLI, and the install itself.
+	// Getting it onto a router: the methods, what the router needs, the CLI,
+	// the install with it, the script, by hand in the terminal and in WebFig,
+	// offline from the tar, and upgrading and removing it. The script
+	// generator is the one Install page not here (NOT_IN_DOCS).
 	{
 		file: "install.md",
-		title: "Installing the agent",
+		title: "Install, upgrade and uninstall",
 		routes: [
 			"install/routes",
 			"install/prerequisites",
@@ -182,8 +185,9 @@ const MANIFEST = [
 			"reference/glossary",
 		],
 	},
-	// Why the numbers have the resolution they have, and what a container on
-	// the router can and cannot see. SECURITY.md links this file by name.
+	// How the agent and the collector fit together, why the numbers have the
+	// resolution they have, and what a container on the router can and cannot
+	// see. SECURITY.md links this file by name.
 	{
 		file: "limits.md",
 		title: "How it works and its limits",
@@ -239,7 +243,7 @@ const MANIFEST = [
 	},
 ];
 
-// The two pages that are not documentation, each with the reason it is not.
+// The pages that are not documentation, each with the reason it is not.
 const NOT_IN_DOCS = new Map([
 	[
 		"",
@@ -480,7 +484,8 @@ function transplant(markdown, context) {
 	const out = [];
 	let prose = [];
 	const flush = () => {
-		if (prose.length > 0) out.push(rewrite(prose.join("\n"), context));
+		if (prose.length > 0)
+			out.push(separateQuotes(rewrite(prose.join("\n"), context)));
 		prose = [];
 	};
 	for (const line of markdown.split("\n")) {
@@ -506,6 +511,17 @@ function transplant(markdown, context) {
 	flush();
 	return out.join("\n");
 }
+
+/**
+ * Two asides in a row become two blockquotes with a blank line between them,
+ * which some renderers join into one quote (markdownlint's MD028). An empty
+ * HTML comment between them keeps them apart and shows nothing.
+ *
+ * @param {string} prose a run of lines with no fenced code in it
+ * @returns {string} the prose
+ */
+const separateQuotes = (prose) =>
+	prose.replaceAll(/^(>.*)\n\n(?=>)/gm, "$1\n\n<!-- -->\n\n");
 
 /**
  * One file of docs/.

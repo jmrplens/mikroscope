@@ -192,7 +192,7 @@ not vulnerabilities.
 - [Privileged mode](https://jmrp.io/docs/mikroscope/limits/privileged/): what the default privilege grant reads,
   and what it does not.
 
-## What the installer refuses
+## Installer safeguards
 
 The objects install will not build on, the values it will not put in a RouterOS command, and how uninstall proves it left nothing behind.
 
@@ -395,8 +395,8 @@ mikroscope-agent-armv5.tar asset instead`, with `armv7` for `--goarm 7`). That c
   The router then needs to reach that registry over its own network. **mikroscope never writes
   `/container/config`**, the global setting that holds the device's `registry-url` and its one
   registry username and password, and needs nothing in it: the host inside `remote-image=` overrides
-`registry-url` ([Nothing to set on the
-router](https://jmrp.io/docs/mikroscope/install/routes/#nothing-to-set-on-the-router)). Trust in the image is trust
+`registry-url` ([Registry
+settings](https://jmrp.io/docs/mikroscope/install/routes/#nothing-to-set-on-the-router)). Trust in the image is trust
 in that registry: nothing in the CLI verifies what the router pulls. When a username is set,
 RouterOS presents it to the registry `registry-url` names, and a credential meant for another
 registry can end the pull of a public image in `auth error`. `doctor` warns when a
@@ -415,11 +415,14 @@ as one block whose guards stop it before its first write on a router that cannot
 RouterOS 7.24, without the container package or device-mode, with the tar missing on the tar route,
 or with a veth, an envlist, a container of `--container-name` or a file at the manifest's path of
 the install's names that is not mikroscope's. An envlist without mikroscope's marker would
-otherwise take the marker, and `uninstall` would then remove its owner's entries with it. And,
+otherwise take the marker, and `uninstall` would then remove the entries it holds. And,
 when `--token` or `MIKROSCOPE_TOKEN` is set, the envlist line carries the token in clear, because
 the router needs it. The script says so in its own header. Treat the file the way you treat the
 token: do not commit it, do not paste it where it is logged, and delete it from the router's Files
-after `/import`. Without a token it holds no secret, only the plan.
+after `/import`. Without a token it holds no secret, only the plan. Paste it only at the `] >`
+prompt: a script pasted while RouterOS is asking about the licence loses its first lines.
+[RouterOS script](https://jmrp.io/docs/mikroscope/install/script/) and the [Script generator](https://jmrp.io/docs/mikroscope/install/generator/)
+show both ways to run it.
 
 `plan`, `install --dry-run` and `upgrade --dry-run` mask the token in what they print to the
 terminal (`value="(token)"`); `--rsc` cannot, since the script has to run.
@@ -435,8 +438,8 @@ CLI's own command line too.
 
 1. It reads the install manifest, `mikroscope/<name>.manifest.txt`, in the connect that reads the
    install's shape, and takes from it the shape the install was made with; a flag that contradicts
-   it is refused, naming both values. An install made by 1.3.x has no manifest, and its shape is
-   read from its tagged objects.
+   it is refused, naming both values. An install made before the manifest existed has none, and
+   its shape is read from its tagged objects.
 2. It runs every removal newest first, ignoring what is already gone. The container step, once it
    has removed this install's container, removes the container root `mikroscope/<name>` if
    RouterOS left it.
@@ -481,10 +484,10 @@ for every install route, and for an install without a manifest: after `uninstall
 
 ### See also
 
-- [Installing the agent](https://jmrp.io/docs/mikroscope/install/): the commands, and what `doctor` checks before any
+- [Install with the CLI](https://jmrp.io/docs/mikroscope/install/): the commands, and what `doctor` checks before any
   of this.
-- [Where things go](https://jmrp.io/docs/mikroscope/install/layout/): every object `install` creates, and the flag that
-  moves it.
-- [What `--expose` opens](https://jmrp.io/docs/mikroscope/security/expose/): the two optional firewall rules and their
+- [Storage and container settings](https://jmrp.io/docs/mikroscope/install/layout/): every object `install` creates,
+  and the flag that moves it.
+- [Expose on the LAN](https://jmrp.io/docs/mikroscope/security/expose/): the two optional firewall rules and their
   selectors.
-- [Commands and flags](https://jmrp.io/docs/mikroscope/reference/cli/): every flag with its default and variable.
+- [CLI](https://jmrp.io/docs/mikroscope/reference/cli/): every flag with its default and variable.

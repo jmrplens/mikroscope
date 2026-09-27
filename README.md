@@ -63,7 +63,7 @@ and shows every RouterOS command before writing any of them.
 
 Or build it yourself with `go install github.com/jmrplens/mikroscope/cmd/mikroscope@latest`,
 or take an archive from the [releases page](https://github.com/jmrplens/mikroscope/releases/latest).
-[Getting the CLI](https://jmrp.io/docs/mikroscope/install/cli/) has each
+[Install the CLI](https://jmrp.io/docs/mikroscope/install/cli/) has each
 platform step by step, with the checksum and the cosign signature.
 
 ## Put the agent on the router
@@ -87,16 +87,18 @@ to choose. The registry host travels inside the reference
 (`registry-1.docker.io/…`), so the router's global `/container/config` needs no
 change and no registry login. Pin the version instead of `latest` for a
 deployment you want to be able to reproduce.
-[The four install routes](https://jmrp.io/docs/mikroscope/install/routes/)
-covers the other two, including a RouterOS script for a device you reach only
-through WinBox.
+[Install methods](https://jmrp.io/docs/mikroscope/install/routes/) covers the
+others: the image tar, a RouterOS script (or the site's script generator) for a
+device you reach only through WebFig or Winbox, and the whole install by hand,
+in the terminal or through WebFig's menus. `mikroscope uninstall` removes
+whatever any of them created.
 
 Two things the tool cannot do for you: RouterOS **7.24 or later**, and
 `device-mode container=yes`, which MikroTik gates behind a physical
 reset-button press or a power cycle.
-[Prerequisites](https://jmrp.io/docs/mikroscope/install/prerequisites/) is that
-list, and `mikroscope doctor` checks the rest of it against your own device. It
-prints the RouterOS version but does not refuse one below 7.24.
+[Requirements](https://jmrp.io/docs/mikroscope/install/prerequisites/) is that
+list, and `mikroscope doctor` checks all of it against your own device, the
+RouterOS version included.
 
 ## Use it
 
@@ -129,7 +131,7 @@ docker compose -f deploy/compose.influxdb-grafana.yaml up -d
 OTLP, Graphite, Elasticsearch, PostgreSQL both as a script and down a
 connection, Telegraf and standard output — and merges the kernel tier with the
 RouterOS API tier as it goes.
-[Five minutes with a router](https://jmrp.io/docs/mikroscope/start/walkthrough/)
+[First recording](https://jmrp.io/docs/mikroscope/start/walkthrough/)
 is the whole path once, end to end.
 
 ## What it draws
@@ -198,17 +200,20 @@ All of it is at <https://jmrp.io/docs/mikroscope/>, in English and Spanish.
 
 ### Using it
 
-- [Five minutes with a router](https://jmrp.io/docs/mikroscope/start/walkthrough/) — what it is, and the whole path once
-- [Install](https://jmrp.io/docs/mikroscope/install/) — prerequisites, the four routes, the two firewall traps, reaching the agent
+- [Quick install](https://jmrp.io/docs/mikroscope/start/) — the CLI, `doctor`, the agent and a check, in four commands
+- [First recording](https://jmrp.io/docs/mikroscope/start/walkthrough/) — record, mark and plot, the whole path once
+- [Install methods](https://jmrp.io/docs/mikroscope/install/routes/) — the CLI, the script generator, a RouterOS script, by hand in the terminal or WebFig, offline; upgrade and uninstall
+- [Configure](https://jmrp.io/docs/mikroscope/install/reaching-the-agent/) — network access, the two firewall traps, storage and container settings, the API user
 - [Record, mark and plot](https://jmrp.io/docs/mikroscope/record/) — recording, markers, charts, triggered capture
 - [Run the collector](https://jmrp.io/docs/mikroscope/sinks/) — the eleven sinks, the RouterOS API tier, the derive stage
 - [Dashboards](https://jmrp.io/docs/mikroscope/dashboards/) — the five dashboards, publishing them, alert rules
 - [Diagnose faults](https://jmrp.io/docs/mikroscope/playbooks/) — the signature of each fault, and the checks to make before trusting a reading
-- [When something does not work](https://jmrp.io/docs/mikroscope/reference/troubleshooting/) — the symptoms this produces, in the words you actually see
+- [Troubleshooting](https://jmrp.io/docs/mikroscope/reference/troubleshooting/) — the symptoms this produces, in the words you actually see
 
 ### Knowing what to trust
 
 - [Agent cost](https://jmrp.io/docs/mikroscope/cost/) — the observer's own CPU and memory, the rate ceiling, the tick floor
+- [How it works](https://jmrp.io/docs/mikroscope/how-it-works/) — the agent, the collector and the data path between them
 - [Resolution limits](https://jmrp.io/docs/mikroscope/limits/) — namespaces, privileged, the per-source floors
 - [Security model](https://jmrp.io/docs/mikroscope/security/) — what runs where, the API user, what `--expose` opens, what the installer refuses
 - [Tested on](https://jmrp.io/docs/mikroscope/about/status/) — the devices, RouterOS versions and dates behind each claim, what has not been tested, and the known issues
@@ -216,7 +221,7 @@ All of it is at <https://jmrp.io/docs/mikroscope/>, in English and Spanish.
 
 ### Reference
 
-- [Commands and flags](https://jmrp.io/docs/mikroscope/reference/cli/) · [environment](https://jmrp.io/docs/mikroscope/reference/environment/) · [HTTP endpoints](https://jmrp.io/docs/mikroscope/reference/http/) · [metric families](https://jmrp.io/docs/mikroscope/reference/metrics/) · [store schema](https://jmrp.io/docs/mikroscope/reference/measurements/)
+- [CLI](https://jmrp.io/docs/mikroscope/reference/cli/) · [environment](https://jmrp.io/docs/mikroscope/reference/environment/) · [HTTP endpoints](https://jmrp.io/docs/mikroscope/reference/http/) · [metric families](https://jmrp.io/docs/mikroscope/reference/metrics/) · [store schema](https://jmrp.io/docs/mikroscope/reference/measurements/)
 
 ## Contributing
 

@@ -426,57 +426,20 @@ export default defineConfig({
 					label: "Start here",
 					translations: { es: "Empezar" },
 					items: [
-						{
-							slug: "start",
-							label: "Overview",
-							translations: { es: "Visión general" },
-						},
-						{
-							slug: "start/walkthrough",
-							label: "First recording",
-							translations: { es: "Primera grabación" },
-						},
-						{
-							slug: "start/questions",
-							label: "FAQ",
-							translations: { es: "Preguntas frecuentes" },
-						},
-						{
-							slug: "start/compared",
-							label: "Compared with alternatives",
-							translations: { es: "Comparado con alternativas" },
-						},
+						{ slug: "start" },
+						{ slug: "start/walkthrough" },
+						{ slug: "start/questions" },
+						{ slug: "start/compared" },
 					],
 				},
 				{
 					label: "Install",
 					translations: { es: "Instalar" },
 					items: [
-						{
-							slug: "install/routes",
-							label: "Install methods",
-							translations: { es: "Métodos de instalación" },
-						},
-						{
-							slug: "install/prerequisites",
-							label: "Requirements",
-							translations: { es: "Requisitos" },
-						},
-						{
-							// A label rather than the page title, like the other
-							// install and configure entries: the sidebar is the
-							// site's table of contents, so it names what a page
-							// holds. Part 2 of the docs overhaul retitles these
-							// pages to match, and the overrides can then go.
-							label: "Install the CLI",
-							translations: { es: "Instalar la CLI" },
-							slug: "install/cli",
-						},
-						{
-							slug: "install",
-							label: "Install with the CLI",
-							translations: { es: "Instalar con la CLI" },
-						},
+						{ slug: "install/routes" },
+						{ slug: "install/prerequisites" },
+						{ slug: "install/cli" },
+						{ slug: "install" },
 						{ slug: "install/generator" },
 						{ slug: "install/script" },
 						{ slug: "install/manual-cli" },
@@ -489,27 +452,11 @@ export default defineConfig({
 					label: "Configure",
 					translations: { es: "Configurar" },
 					items: [
-						{
-							slug: "install/reaching-the-agent",
-							label: "Network access",
-							translations: { es: "Acceso por red" },
-						},
-						{
-							slug: "install/firewall",
-							label: "Firewall lists",
-							translations: { es: "Listas del firewall" },
-						},
-						{
-							slug: "install/layout",
-							label: "Storage and container settings",
-							translations: { es: "Almacenamiento y contenedor" },
-						},
+						{ slug: "install/reaching-the-agent" },
+						{ slug: "install/firewall" },
+						{ slug: "install/layout" },
 						{ slug: "security/api-user" },
-						{
-							slug: "security/expose",
-							label: "Expose on the LAN",
-							translations: { es: "Exponer en la LAN" },
-						},
+						{ slug: "security/expose" },
 					],
 				},
 				{
@@ -543,11 +490,7 @@ export default defineConfig({
 						{ slug: "sinks/detections" },
 						{ slug: "sinks/device-info" },
 						{ slug: "reference/port-names" },
-						{
-							slug: "reference/troubleshooting",
-							label: "Troubleshooting",
-							translations: { es: "Solución de problemas" },
-						},
+						{ slug: "reference/troubleshooting" },
 						{ slug: "reference/glossary" },
 					],
 				},
@@ -561,11 +504,7 @@ export default defineConfig({
 						{ slug: "limits/privileged" },
 						{ slug: "limits/source-floors" },
 						{ slug: "security" },
-						{
-							slug: "security/installer",
-							label: "Installer safeguards",
-							translations: { es: "Salvaguardas del instalador" },
-						},
+						{ slug: "security/installer" },
 					],
 				},
 				// The pages that keep provenance (src/lib/voice.mjs
@@ -593,13 +532,7 @@ export default defineConfig({
 								{ slug: "playbooks/conntrack" },
 							],
 						},
-						{
-							// Shorter than the title, "How the project tests
-							// itself", and the name Tested on gives the suites.
-							label: "Test suites",
-							translations: { es: "Baterías de pruebas" },
-							slug: "reference/testing",
-						},
+						{ slug: "reference/testing" },
 					],
 				},
 				{

@@ -77,9 +77,11 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   cache keeps MikroTik's downloads, pinned by SHA-256 in
   `test/lab/SHA256SUMS`, and the provisioned snapshot, which carries no
   credential; a failed or timed-out run uploads the console, container and
-  test logs with the lab's credentials replaced by their names. Not yet
-  run on GitHub's runners: whether they give the job `/dev/kvm`, and how long
-  it takes there, is for the first dispatch to measure. The lab router pulls
+  test logs with the lab's credentials replaced by their names. On GitHub's
+  runners on 2026-09-27 the x86_64 job had `/dev/kvm` and took 29 min 52 s,
+  the suite 1 633 s, pulling as the repository's Docker Hub account; the
+  arm64 lab, emulated because GitHub's arm64 runner has no `/dev/kvm`, took
+  16 min 24 s on dispatch. The lab router pulls
   from Docker Hub as an account when the repository has the secrets
   `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` (the release's token),
   since Docker Hub allows an address 100 anonymous pulls per 6 hours and a
@@ -224,6 +226,24 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   by side, every test passing, S9's twenty uninstalls with a client on
   `/stream` each clean at the first attempt. S17, run on a 7.23.7 lab the
   same day, passed.
+- **The site's script generator** (`install/generator`): a form that renders
+  the `mikroscope plan --rsc` script in the browser from the steps spec,
+  byte for byte, with its uninstall script, the equivalent command line and
+  a token generated in the page; nothing is sent or stored.
+  `pnpm run rsc:check`, part of `pnpm lint`, holds it to every golden case,
+  and `pnpm test:generator` drives the form in a browser, the `.rsc`
+  downloads under the site's CSP included. `<ManualSteps>` renders the manual
+  install pages' RouterOS commands from the same spec, with placeholders.
+  Both of the page's scripts, pasted at the `] >` prompt of the x86_64 lab
+  (CHR 7.24.4, 2026-09-27), installed a running agent, and both the CLI's
+  uninstall and the page's uninstall script left `/export` as it was.
+- **The install through WebFig or Winbox** (`install/manual-gui`), form by
+  form, with the manifest the CLI writes, so `status`, `upgrade` and
+  `uninstall` treat a GUI install as their own. Its 29 captures come from a
+  real install in the virtual lab by `site/scripts/gen-webfig-captures.mjs`,
+  which is also the GUI route's test: on 2026-09-27 both image routes left
+  the same `/export` as the reference script's `/import`, the veth's random
+  MAC addresses aside, and were removed back to the starting `/export`.
 
 ### Changed
 
@@ -263,28 +283,38 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `forward` logs `resuming from` the oldest sequence the new ring holds, not
   always 1 (`internal/forward/forward.go`); and the collector page no longer
   derives a relay ceiling from one fetch per poll, because `forward` drains up
-  to 100 fetches a poll while the replies come back full.
+  to 100 fetches a poll while the replies come back full. Then the start,
+  install, configure and reference pages followed the code after 1.3.1:
+  Start is the quick install, four commands from the CLI to `status`; the
+  install group gains RouterOS script, Offline install, Upgrade and
+  uninstall, Manual install: terminal and Manual install: WebFig and Winbox,
+  and the explanation group How it works; the configure and reference pages
+  document the list values `none`, the container flags, the install manifest,
+  doctor's checks and their fixes. The commands of the quick install, script,
+  offline and both manual pages, `upgrade`, `uninstall` and the first
+  recording ran in the virtual lab; removing dashboards and data
+  (`uninstall --targets`) did not, as the lab has no Grafana or stores.
 - **Tested on (`about/status`) is the single evidence page.** It holds the
   reference hardware once, the virtual lab (CHR x86_64 and arm64, RouterOS
   7.24.4, 2026-09-26), the devices and versions, the feature status, the
-  install routes tested, the agent's cost, the 26 measurement campaigns and 18
+  install routes tested, the agent's cost, the 26 measurement campaigns and 25
   verified RouterOS facts as registers with stable ids (`#campaign-<id>`,
   `#verified-<id>`, the same in both languages), everything not tested, the
   known issues and the uncollected sources. The cost pages gained SSH cost and
   API tier cost; the case studies keep their provenance; the landing's figures
   link their campaign.
 - **The sidebar follows the reader's task**: Start here, Install, Configure,
-  Use, Reference, Explanation, Evidence and About. No page changed address and
-  every published heading id still resolves: `site/scripts/anchors.txt` gained
-  140 ids and lost none. `docs/` follows the groups: new `configure.md` and
+  Use, Reference, Explanation, Evidence and About, and each entry is the page's
+  own title. No page changed address and every published heading id still
+  resolves: `site/scripts/anchors.txt` gained 358 ids and lost none. `docs/` follows the groups: new `configure.md` and
   `evidence.md`; `sinks/derive`, `sinks/detections` and `sinks/device-info`
   moved to `reference.md`, the cost pages to `evidence.md`, Diagnose faults to
   `dashboards.md`, and `playbooks.md` holds the case studies.
 - **The llms files follow the groups and llms.txt v2.** Each index entry now
   carries a link to the page's markdown twin, every page points at its index
   with `rel="describedby"`, and `llms-core.txt` is Start here plus the install
-  routes, the router's requirements, the resolution limits, Tested on and the
-  agent's cost. The section files are renamed after the new groups;
+  methods, the router's requirements, How it works, the resolution limits,
+  Tested on and the agent's cost. The section files are renamed after the new groups;
   `llms/start-here.txt` keeps its name.
 - **`pnpm run voice:check`** (`site/scripts/check-voice.mjs`, part of
   `pnpm lint`) reports provenance on a guide, an evidence-only component off

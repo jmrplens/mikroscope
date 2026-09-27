@@ -25,8 +25,8 @@
 //     below, which is more than many tools read in one go (GEO audit,
 //     2026-09-24). So it is no longer the only cut.
 //   - llms-core.txt, the pages that answer what the project is, how to
-//     install it, what a router needs, what it cannot see, what it costs and
-//     where it was tested: CORE below. The index prints its size beside the
+//     install it, what a router needs, how it works, what it cannot see, what
+//     it costs and where it was tested: CORE below. The index prints its size beside the
 //     whole's.
 //   - llms/<section>.txt, one per sidebar group, named after the group's
 //     English label (llms/use.txt, llms/reference.txt), so a model after the
@@ -152,8 +152,9 @@ const REPO = "https://github.com/jmrplens/mikroscope";
  *
  * The section /start/ opens ("Start here") is taken whole, so a page added
  * there is in the core without an edit here. The pages beside it answer how to
- * install, what a router needs, why the floor is the kernel's, what the agent
- * costs and where each claim was tested. What is left out is the rest of each
+ * install, what a router needs, how the agent and the collector fit together,
+ * why the floor is the kernel's, what the agent costs and where each claim was
+ * tested. What is left out is the rest of each
  * group: flags, variables, metric families, dashboards, each sink in turn,
  * the case studies, which the section files carry. Sections are named by a
  * page they hold rather than by label, so relabelling one does not empty the
@@ -164,6 +165,7 @@ const CORE = {
 	pages: [
 		"install/routes",
 		"install/prerequisites",
+		"how-it-works",
 		"limits",
 		"about/status",
 		"cost",

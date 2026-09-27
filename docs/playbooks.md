@@ -27,9 +27,10 @@ Three 20-second buckets:
 ```
 
 The percentages were computed afterwards from the raw tick deltas the agent
-ships; the agent never turns them into percentages. There is no chart: the
-reading predates the history of the reference InfluxDB store, which begins on
-2026-09-19.
+ships; the agent never turns them into percentages. This reading has no chart:
+it predates the history of the reference InfluxDB store, which begins on
+2026-09-19. The [recorded chart](https://jmrp.io/docs/mikroscope/playbooks/idle/#recorded-chart) below is a later `record` of
+the same router at rest.
 
 ### What to look at
 
@@ -74,6 +75,47 @@ sample stays a data point.
 > WireGuard and bridge. A router with different services, a scaling clock or a different board has a
 > different idle shape. Take the same sixty seconds on yours before reading any other case study
 > against it.
+
+### Recorded chart
+
+[![RB5009UG+S+, 70 s at 10 Hz: 700 samples over 69.9 s on four cores, with three dashed markers — “baseline, router idle” at 12 s, “dashboards check started” at 30 s and “check finished” at 50 s. Per-core busy stays low with single-sample excursions to 100 %; the softnet panel shows time squeezes and a flat zero for dropped; memory available stays between 662 and 671 MiB.](../site/src/assets/walkthrough/rb5009-walkthrough.svg)](../site/src/assets/walkthrough/rb5009-walkthrough.svg)
+
+[Open the chart at full size](../site/src/assets/walkthrough/rb5009-walkthrough.svg) (SVG, 1200 × 754) to read its labels on
+a phone.
+
+Measured on RB5009UG+S+ · 4 × 1.4 GHz Cortex-A72 · RouterOS 7.24.2 · 2026-09-16 · a 70 s `record` at 10 Hz, 700 samples over 69.9 s, the router otherwise at rest, three notes typed into `record`'s terminal
+
+This is a real recording of a router at rest, the shape everything else is read against. The three
+dashed lines are the notes typed into `record`'s terminal during it; the chips carry them in full
+because they fit, and a longer one is shortened rather than laid over the next.
+
+- **t = 12 s, `baseline, router idle`.** Nothing is happening, and the panels say so: every core
+  averages under 10 % over the whole recording, and over the quiet stretch that follows this note
+  the four together average 3.9 %.
+- **t = 30 to 50 s, between `dashboards check started` and `check finished`.** A browser loading
+  the two Grafana dashboards against this router's own collector. The four cores together average
+  5.0 % over that stretch, and the work arrives in two short bursts right after the note: core 0
+  at or above 50 % for 0.6 s from 32.3 s, and again for 0.3 s at 33.2 s.
+- **The work is in short excursions.** 76 of the 700 samples have a core at or above 50 %, in 46
+  separate stretches; 38 of those are one sample long, and the longest is 1.4 s, at the start of
+  the recording and before the first note. The kernel's scheduler puts each excursion on whichever
+  core is free. One isolated sample — one core at 100 % for 100 ms — moves a four-core, one-second
+  average by 2.5 %.
+- **softnet: `dropped` flat at zero, `time_squeeze` between 0 and about 20 per second.** Nothing
+  was lost in 70 s. The squeezes are this device's background rather than an event; what the
+  collector calls a microburst is a cluster of them — three flagged samples on one core inside
+  60 s — and never a single one.
+- **memory available, 662 to 671 MiB.** About 9 MiB of ordinary churn across the recording, with
+  no step at either end of the dashboards check.
+
+RouterOS's own `cpu-load`, at 1 s, reports this minute as a flat few per cent. The recording shows
+what the few per cent are made of: which core took each excursion, how long it lasted, and where
+the notes fall against it.
+
+> **True of this device, not of yours**
+>
+> One recording, on one router, at 10 Hz, with the router otherwise at rest. The per-panel figures
+> above are read off this chart, not re-measured.
 
 ### See also
 

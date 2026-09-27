@@ -141,10 +141,10 @@ type SidebarEntry = (typeof starlightRoute.sidebar)[number];
 
 /**
  * The label of the sidebar group that holds the current page, in the page's
- * language: "Collector and sinks" for /sinks/prometheus/, "Colector y
- * destinos" for its twin. The group, not the first path segment, so
- * /reference/testing/ is "For contributors", where the sidebar puts it. A page
- * the sidebar does not list has no section.
+ * language: "Use" for /sinks/prometheus/, "Uso" for its twin. The group, not
+ * the first path segment, so /reference/testing/ is "Evidence", where the
+ * sidebar puts it, and /install/firewall/ is "Configure". A page the sidebar
+ * does not list has no section.
  */
 function sectionOf(sidebar: SidebarEntry[], group?: string): string | undefined {
 	for (const entry of sidebar) {
