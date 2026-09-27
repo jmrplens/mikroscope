@@ -7,6 +7,11 @@ import (
 	"strings"
 )
 
+// Strings this file uses more than once, named once.
+const (
+	diskSlot = "{{disk}}/"
+)
+
 // The steps spec: every RouterOS command an install, an upgrade, an uninstall
 // and a status send, and every line of the `plan --rsc` script, written once
 // as data. Plan renders it for the CLI, Script renders it for the router's
@@ -91,10 +96,10 @@ var derivedTemplates = []struct {
 }{
 	{"tag", ts("mikroscope:{{name}} (managed by mikroscope)")},
 	{"envList", ts("{{name}}-env")},
-	{"imageFile", []fragment{w("disk", "{{disk}}/"), t("{{name}}.tar")}},
-	{"rootDir", []fragment{w("disk", "{{disk}}/"), t("mikroscope/{{name}}")}},
-	{"manifestDir", []fragment{w("disk", "{{disk}}/"), t("mikroscope")}},
-	{"manifestFile", []fragment{w("disk", "{{disk}}/"), t("mikroscope/{{name}}.manifest.txt")}},
+	{"imageFile", []fragment{w("disk", diskSlot), t("{{name}}.tar")}},
+	{"rootDir", []fragment{w("disk", diskSlot), t("mikroscope/{{name}}")}},
+	{"manifestDir", []fragment{w("disk", diskSlot), t("mikroscope")}},
+	{"manifestFile", []fragment{w("disk", diskSlot), t("mikroscope/{{name}}.manifest.txt")}},
 }
 
 // markerFind selects the envlist's marker entry: the one entry that says the

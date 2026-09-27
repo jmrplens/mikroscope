@@ -7,6 +7,16 @@ import (
 	"strings"
 )
 
+// Strings this file uses more than once, named once.
+const (
+	keyShapeVeth      = "shape.veth"
+	keyShapeAddress   = "shape.address"
+	keyShapeMember    = "shape.member"
+	keyShapeAddrList  = "shape.addrlist"
+	keyShapeNAT       = "shape.nat"
+	keyShapeContainer = "shape.container"
+)
+
 // Shape is what an install on the router says about the flags it was made
 // with. uninstall, status and upgrade read it before they build a plan, so a
 // flag left out takes the value the install was made with, and a flag given
@@ -118,12 +128,12 @@ func shapeQueries(o Options) []query {
 	marker := `[/container/envs/find list="` + o.EnvList() + `" key="` + MarkerName + `" value="` + o.Tag() + `"]`
 	return []query{
 		{key: "shape.manifest", raw: true, text: shapeManifestQuery(o)},
-		one("shape.veth", "/interface/veth", tag, "name address"),
-		one("shape.address", "/ip/address", tag, "address"),
-		one("shape.member", "/interface/list/member", tag, "list"),
-		one("shape.addrlist", "/ip/firewall/address-list", tag, "list"),
-		one("shape.nat", "/ip/firewall/nat", tag+" action=dst-nat", "dst-address dst-port"),
-		one("shape.container", "/container", tag, "name root-dir remote-image start-on-boot"),
+		one(keyShapeVeth, "/interface/veth", tag, "name address"),
+		one(keyShapeAddress, "/ip/address", tag, "address"),
+		one(keyShapeMember, "/interface/list/member", tag, "list"),
+		one(keyShapeAddrList, "/ip/firewall/address-list", tag, "list"),
+		one(keyShapeNAT, "/ip/firewall/nat", tag+" action=dst-nat", "dst-address dst-port"),
+		one(keyShapeContainer, "/container", tag, "name root-dir remote-image start-on-boot"),
 		{key: "shape.env", raw: true, text: `:if ([:len ` + marker + `] > 0) do={ ` +
 			`:foreach e in=[/container/envs/find list="` + o.EnvList() + `" key="PORT"] do={ :put ("` + keyPrefix + `shape.env.port=" . [/container/envs/get $e value]) }; ` +
 			`:put ("` + keyPrefix + `shape.env.token=" . [:len [/container/envs/find list="` + o.EnvList() + `" key="TOKEN"]]) }`},
@@ -184,12 +194,12 @@ func shapeOfObjects(a answers, name string) Shape {
 		v, ok := a[key+"."+prop]
 		return v, ok
 	}
-	s.Found = one["shape.veth"] || one["shape.container"]
-	s.Veth, _ = val("shape.veth", "name")
+	s.Found = one[keyShapeVeth] || one[keyShapeContainer]
+	s.Veth, _ = val(keyShapeVeth, "name")
 	// The /30 from the router end's address, or, when that address is gone
 	// (an uninstall that stopped half-way), from the container end the veth
 	// holds.
-	for _, from := range [][2]string{{"shape.address", "address"}, {"shape.veth", "address"}} {
+	for _, from := range [][2]string{{keyShapeAddress, "address"}, {keyShapeVeth, "address"}} {
 		if addr, ok := val(from[0], from[1]); ok && s.Subnet == "" {
 			first, _, _ := strings.Cut(strings.NewReplacer(";", ",").Replace(addr), ",")
 			if _, n, err := net.ParseCIDR(strings.TrimSpace(first)); err == nil && n.IP.To4() != nil {
@@ -202,18 +212,18 @@ func shapeOfObjects(a answers, name string) Shape {
 	// manifest, and a membership it no longer has may have been lost, which
 	// upgrade makes again, rather than never made (1.3.x, which wrote no
 	// manifest, had no --iface-list none).
-	s.IfaceList, _ = val("shape.member", "list")
-	s.AddrList, _ = val("shape.addrlist", "list")
-	if dst, ok := val("shape.nat", "dst-address"); ok {
+	s.IfaceList, _ = val(keyShapeMember, "list")
+	s.AddrList, _ = val(keyShapeAddrList, "list")
+	if dst, ok := val(keyShapeNAT, "dst-address"); ok {
 		s.Expose, s.LANAddress = true, dst
 		s.Port, _ = strconv.Atoi(a.get("shape.nat.dst-port"))
 	}
-	if root, ok := val("shape.container", "root-dir"); ok {
+	if root, ok := val(keyShapeContainer, "root-dir"); ok {
 		s.Disk = diskOfRoot(root, name)
 	}
-	s.ContainerName, _ = val("shape.container", "name")
-	s.RemoteImage, _ = val("shape.container", "remote-image")
-	if sob, ok := val("shape.container", "start-on-boot"); ok {
+	s.ContainerName, _ = val(keyShapeContainer, "name")
+	s.RemoteImage, _ = val(keyShapeContainer, "remote-image")
+	if sob, ok := val(keyShapeContainer, "start-on-boot"); ok {
 		s.StartOnBoot = yesNo(isYes(sob))
 	}
 	if p, err := strconv.Atoi(a.get("shape.env.port")); err == nil {
@@ -224,12 +234,12 @@ func shapeOfObjects(a answers, name string) Shape {
 }
 
 // shapeKeys are the shape reads, in the order a message names them.
-var shapeKeys = []string{"shape.veth", "shape.address", "shape.member", "shape.addrlist", "shape.nat", "shape.container"}
+var shapeKeys = []string{keyShapeVeth, keyShapeAddress, keyShapeMember, keyShapeAddrList, keyShapeNAT, keyShapeContainer}
 
 // shapeMenus names each shape read's menu, for a message.
 var shapeMenus = map[string]string{
-	"shape.veth": "/interface/veth", "shape.address": "/ip/address", "shape.member": "/interface/list/member",
-	"shape.addrlist": "/ip/firewall/address-list", "shape.nat": "/ip/firewall/nat", "shape.container": "/container",
+	keyShapeVeth: "/interface/veth", keyShapeAddress: "/ip/address", keyShapeMember: "/interface/list/member",
+	keyShapeAddrList: "/ip/firewall/address-list", keyShapeNAT: "/ip/firewall/nat", keyShapeContainer: "/container",
 }
 
 // diskOfRoot reads the disk out of a container's root-dir. RouterOS stores

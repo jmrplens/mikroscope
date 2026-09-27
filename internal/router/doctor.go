@@ -8,6 +8,13 @@ import (
 	"strings"
 )
 
+// Strings this file uses more than once, named once.
+const (
+	routerEq   = "router="
+	freeOrOurs = " is free or ours"
+	oursEq     = " ours="
+)
+
 // Item is one preflight check with the exact fix when it fails.
 //
 // Warn marks a finding that is worth an operator's attention but does not
@@ -329,7 +336,7 @@ func (d *doctorRun) archChecks() {
 		return
 	}
 	supported := slices.Contains(containerArches, arch)
-	d.add("architecture has a container package", supported, "router="+arch,
+	d.add("architecture has a container package", supported, routerEq+arch,
 		"no container package exists for "+arch+": MikroTik publishes it for "+strings.Join(containerArches, ", ")+" only, so no agent can run on this router")
 	if !supported {
 		return
@@ -341,14 +348,14 @@ func (d *doctorRun) archChecks() {
 			"which of the two RouterOS pulls on an EN7562CT board (hEX Refresh), where only the v5 one runs, was not measured; "+
 				"if the container stops with `Exec format error`, install from mikroscope-agent-armv5.tar with --agent-tar instead")
 	case o.UsesRemoteImage():
-		d.add("the router picks the image's architecture", true, "router="+arch+", linux/"+want+" from the image's index", "")
+		d.add("the router picks the image's architecture", true, routerEq+arch+", linux/"+want+" from the image's index", "")
 	case d.img.Arch != "":
-		d.add("architecture matches the --agent-tar image", d.img.Arch == want, "router="+arch+", image linux/"+d.img.Arch,
+		d.add("architecture matches the --agent-tar image", d.img.Arch == want, routerEq+arch+", image linux/"+d.img.Arch,
 			"this router needs mikroscope-agent-"+assetArch(want)+".tar from the release")
 	case o.DetectArch:
-		d.add("architecture read from the router", true, "router="+arch+", install builds or loads linux/"+want, "")
+		d.add("architecture read from the router", true, routerEq+arch+", install builds or loads linux/"+want, "")
 	default:
-		d.add("architecture matches --arch "+o.Arch, o.Arch == want, "router="+arch,
+		d.add("architecture matches --arch "+o.Arch, o.Arch == want, routerEq+arch,
 			"re-run with `--arch "+want+"`, or leave --arch out: install then reads it from the router")
 	}
 }
@@ -455,20 +462,20 @@ func (d *doctorRun) collisionChecks() {
 	o := d.o
 	found, _ := d.count(qVeth)
 	owned, _ := d.count(qVethOwned)
-	d.add("veth name "+o.Veth+" is free or ours", found == 0 || owned > 0, foundPrefix+d.a.get(qVeth)+" ours="+d.a.get(qVethOwned),
+	d.add("veth name "+o.Veth+freeOrOurs, found == 0 || owned > 0, foundPrefix+d.a.get(qVeth)+oursEq+d.a.get(qVethOwned),
 		"a veth named "+o.Veth+" exists without this install's tag: pick another --veth (and --subnet), or remove it by hand if it is a leftover of yours")
 	lists, _ := d.count(qEnvList)
 	marked, _ := d.count(qEnvMarker)
-	d.add("envlist "+o.EnvList()+" is free or ours", lists == 0 || marked > 0, "entries="+d.a.get(qEnvList)+" marker="+d.a.get(qEnvMarker),
+	d.add("envlist "+o.EnvList()+freeOrOurs, lists == 0 || marked > 0, "entries="+d.a.get(qEnvList)+" marker="+d.a.get(qEnvMarker),
 		"an envlist named "+o.EnvList()+" exists without this install's "+MarkerName+" entry: pick another --name")
 	files, _ := d.count(qManifest)
 	manifestOurs, _ := d.count(qManifestOurs)
-	d.add("install manifest "+ManifestFile(*o)+" is free or ours", files == 0 || manifestOurs > 0, foundPrefix+d.a.get(qManifest)+" ours="+d.a.get(qManifestOurs),
+	d.add("install manifest "+ManifestFile(*o)+freeOrOurs, files == 0 || manifestOurs > 0, foundPrefix+d.a.get(qManifest)+oursEq+d.a.get(qManifestOurs),
 		"a file at "+ManifestFile(*o)+" is not this install's manifest (it has no tag="+o.Tag()+" line): move it away, or pick another --name")
 	if o.ContainerName != "" {
 		named, _ := d.count(qCName)
 		ours, _ := d.count(qCNameOwned)
-		d.add("container name "+o.ContainerName+" is free or ours", named == 0 || ours > 0, foundPrefix+d.a.get(qCName)+" ours="+d.a.get(qCNameOwned),
+		d.add("container name "+o.ContainerName+freeOrOurs, named == 0 || ours > 0, foundPrefix+d.a.get(qCName)+oursEq+d.a.get(qCNameOwned),
 			"a container named "+o.ContainerName+" exists without this install's tag: pick another --container-name")
 	}
 	if !d.a.has(qOverlap) {

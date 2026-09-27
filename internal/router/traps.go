@@ -10,6 +10,13 @@ import (
 	"strings"
 )
 
+// Strings this file uses more than once, named once.
+const (
+	propInInterfaceList = "in-interface-list"
+	propSrcAddressList  = "src-address-list"
+	propSrcAddress      = "src-address"
+)
+
 // The firewall trap check (doctor check 13) asks one question: does a
 // firewall rule on this router drop the agent's replies? The agent answers a
 // collector; it never opens a connection itself. So what has to get through
@@ -194,7 +201,7 @@ func (r fwRule) matches(p reply) tri {
 // matcher judges one matcher against the reply; what it cannot judge is a maybe.
 func (p reply) matcher(key, value string) tri {
 	switch key {
-	case "in-interface", "in-interface-list", "src-address", "src-address-list", "src-address-type":
+	case "in-interface", propInInterfaceList, propSrcAddress, propSrcAddressList, "src-address-type":
 		return p.sourceMatcher(key, value)
 	case "dst-address-type":
 		if !p.toRouter {
@@ -237,7 +244,7 @@ func (p reply) sourceMatcher(key, value string) tri {
 			return triMaybe
 		}
 		return triOf(value == p.veth)
-	case "in-interface-list":
+	case propInInterfaceList:
 		switch value {
 		case "all":
 			return triYes
@@ -247,9 +254,9 @@ func (p reply) sourceMatcher(key, value string) tri {
 			return triMaybe
 		}
 		return triOf(p.ifaceLists[value])
-	case "src-address":
+	case propSrcAddress:
 		return inAddress(p.src, value)
-	case "src-address-list":
+	case propSrcAddressList:
 		// An address list the plan does not join is read as not holding the
 		// /30: doctor does not read the lists' entries.
 		return triOf(p.srcLists[value])
@@ -440,13 +447,13 @@ func (t trapInput) membershipThatPasses() (ifaceList, addrList string, found boo
 func (t trapInput) candidateLists() (ifaces, addrs []string) {
 	ifaces, addrs = []string{t.o.IfaceList}, []string{t.o.AddrList}
 	for _, r := range t.rules {
-		if v, has := r.props["in-interface-list"]; has {
+		if v, has := r.props[propInInterfaceList]; has {
 			v = strings.TrimPrefix(v, "!")
 			if !slices.Contains(t.uplinkLists, v) && !slices.Contains(builtinIfaceLists, v) {
 				ifaces = appendNew(ifaces, v)
 			}
 		}
-		if v, has := r.props["src-address-list"]; has {
+		if v, has := r.props[propSrcAddressList]; has {
 			addrs = appendNew(addrs, strings.TrimPrefix(v, "!"))
 		}
 	}
@@ -492,7 +499,7 @@ func trapItem(t trapInput) Item {
 		} else {
 			it.Fix = "no interface or address list the rules name lets the agent's replies past " + plan.rule.String() +
 				": add an accept rule for in-interface=" + o.Veth + " before it"
-			if v, has := plan.rule.props["src-address"]; has && strings.HasPrefix(v, "!") {
+			if v, has := plan.rule.props[propSrcAddress]; has && strings.HasPrefix(v, "!") {
 				it.Fix += ", or pick a --subnet inside " + strings.TrimPrefix(v, "!")
 			}
 		}

@@ -11,11 +11,16 @@ import (
 	"github.com/jmrplens/mikroscope/internal/router"
 )
 
+// Strings this file uses more than once, named once.
+const (
+	flagLANAddress = "lan-address"
+)
+
 // shapeEnv is the MIKROSCOPE_* variable behind each flag an install's shape
 // fills, for the flags that have one.
 var shapeEnv = map[string]string{
 	"veth": "VETH", "subnet": "SUBNET", "iface-list": "IFACE_LIST", "addr-list": "ADDR_LIST",
-	"disk": "DISK", "lan-address": "LAN_ADDRESS", "remote-image": "REMOTE_IMAGE",
+	"disk": "DISK", flagLANAddress: "LAN_ADDRESS", "remote-image": "REMOTE_IMAGE",
 }
 
 // explicitFlags is every flag given on the command line, and every one whose
@@ -168,8 +173,8 @@ func applyDisk(c *cli, s router.Shape, conflicts *[]string) {
 func applyExpose(c *cli, s router.Shape, conflicts *[]string) {
 	o := &c.opts
 	switch {
-	case s.Expose && c.given("lan-address") && o.LANAddress != s.LANAddress:
-		*conflicts = append(*conflicts, fmt.Sprintf("installed with --lan-address %s, given %s", s.LANAddress, c.givenAs("lan-address", o.LANAddress)))
+	case s.Expose && c.given(flagLANAddress) && o.LANAddress != s.LANAddress:
+		*conflicts = append(*conflicts, fmt.Sprintf("installed with --lan-address %s, given %s", s.LANAddress, c.givenAs(flagLANAddress, o.LANAddress)))
 	case s.Expose:
 		o.Expose, o.LANAddress = true, s.LANAddress
 	case o.Expose && c.given("expose"):
