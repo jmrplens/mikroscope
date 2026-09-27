@@ -2,8 +2,6 @@ package main
 
 import (
 	"context"
-	"io"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -86,21 +84,14 @@ func TestUpgradeDryRunWritesNothingAndNeedsNoRouter(t *testing.T) {
 		t.Fatal("this test is only meaningful with no router set")
 	}
 
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	saved := os.Stdout
-	os.Stdout = w
-	upErr := upgrade(c)
-	os.Stdout = saved
-	_ = w.Close()
-	out, _ := io.ReadAll(r)
+	// capture drains stdout while upgrade writes: the listing is larger than
+	// a Windows pipe buffer, and reading only afterwards hung this test there.
+	var upErr error
+	got := capture(t, func() { upErr = upgrade(c) })
 
 	if upErr != nil {
 		t.Fatalf("upgrade --dry-run failed with no router: %v", upErr)
 	}
-	got := string(out)
 	for _, want := range []string{
 		"mikroscope upgrade plan for",
 		"remove container",

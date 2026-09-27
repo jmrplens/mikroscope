@@ -13,8 +13,9 @@ import (
 
 // S2: the whole life of an install whose image the router pulls from Docker
 // Hub: install, the agent's answers, status, an upgrade to the same
-// reference, uninstall. The router must end as it began, apart from the empty
-// directory 1.3.1 leaves in /file. Two of the run's three pulls.
+// reference, uninstall. The router must end as it began, the /file entries
+// included: 1.3.1 left an empty mikroscope directory there, and uninstall now
+// removes everything the install created (spec F4). Two of the run's pulls.
 func TestS02PullInstallStatusUpgradeUninstall(t *testing.T) {
 	l, dir, base := start(t, "doctor-lists")
 	flags := pullFlags(l)
@@ -44,7 +45,7 @@ func TestS02PullInstallStatusUpgradeUninstall(t *testing.T) {
 
 	uninstall(t, l, dir, flags...)
 	assertExport(t, l, base)
-	assertResidue(t, l, base, knownDir)
+	assertResidue(t, l, base)
 }
 
 // S3: install and upgrade from the branch's own agent tar. The agent must
@@ -75,7 +76,7 @@ func TestS03TarInstallUpgradeUninstall(t *testing.T) {
 
 	uninstall(t, l, dir, flags...)
 	assertExport(t, l, base)
-	assertResidue(t, l, base, knownDir)
+	assertResidue(t, l, base)
 }
 
 // S4: the script `plan --rsc` writes, run by RouterOS itself with /import, by
@@ -119,7 +120,7 @@ func TestS04PlanScriptImported(t *testing.T) {
 			}
 			uninstall(t, l, dir, flags...)
 			assertExport(t, l, base)
-			assertResidue(t, l, base, knownDir)
+			assertResidue(t, l, base)
 		})
 	}
 }

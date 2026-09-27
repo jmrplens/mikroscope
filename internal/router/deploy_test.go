@@ -1,6 +1,9 @@
 package router
 
 import (
+	"regexp"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -40,5 +43,71 @@ func TestUpgradeListingMasksTheToken(t *testing.T) {
 	UpgradeListing(o, 4096, &b)
 	if strings.Contains(b.String(), "s3cr3t-token-value") {
 		t.Errorf("the token reached the plan:\n%s", b.String())
+	}
+}
+
+// TestListingNumbersEachStepOnce pins F3: every step of the install and the
+// upgrade listing has one number, in order, and the upload or the pull is a
+// line of the container step rather than a step of its own. The options line
+// names the image the router is given: the tar, or the full reference.
+func TestListingNumbersEachStepOnce(t *testing.T) {
+	number := regexp.MustCompile(`(?m)^ {2,3}(\d+)\. `)
+	for _, remote := range []string{"", "jmrplens/mikroscope-agent:1.3.1"} {
+		o := defaults(t, func(o *Options) { o.RemoteImage = remote })
+		var install, upgrade strings.Builder
+		Listing(o, 7<<20, &install)
+		UpgradeListing(o, 7<<20, &upgrade)
+		for name, out := range map[string]string{"install": install.String(), "upgrade": upgrade.String()} {
+			for i, m := range number.FindAllStringSubmatch(out, -1) {
+				if m[1] != strconv.Itoa(i+1) {
+					t.Fatalf("%s listing, remote %q: step %d is numbered %s:\n%s", name, remote, i+1, m[1], out)
+				}
+			}
+			image := "image=" + o.ImageFile() + " "
+			if remote != "" {
+				image = "image=" + o.RemoteRef() + " "
+			}
+			if !strings.Contains(out, image) {
+				t.Fatalf("%s listing, remote %q: the options do not name %s:\n%s", name, remote, image, out)
+			}
+		}
+	}
+}
+
+// TestScriptIsOneGuardedBlock pins Script v2's shape: one `{ … }` block,
+// every guard before the first write, each guard an :error, each step's
+// Create exactly as Plan renders it, and the closing comment selecting by the
+// tag rather than by a container name RouterOS may have picked itself.
+func TestScriptIsOneGuardedBlock(t *testing.T) {
+	o := defaults(t, nil)
+	var b strings.Builder
+	Script(o, &b)
+	lines := strings.Split(strings.TrimSuffix(b.String(), "\n"), "\n")
+	open, closing := slices.Index(lines, "{"), slices.Index(lines, "}")
+	if open < 0 || closing < open || strings.Count(b.String(), "\n{\n") != 1 {
+		t.Fatalf("the script is not one block:\n%s", b.String())
+	}
+	firstWrite := -1
+	for i, l := range lines[open+1 : closing] {
+		if strings.HasPrefix(l, "# ") { // the first step's name, its Create on the next line
+			firstWrite = open + 2 + i
+			break
+		}
+	}
+	for i, l := range lines[open+1 : firstWrite] {
+		if !strings.HasPrefix(l, ":if (") && !strings.HasPrefix(l, ":local dm ") && !strings.HasPrefix(l, "# ") {
+			t.Errorf("line %d before the first write is not a guard: %s", open+2+i, l)
+		}
+		if strings.HasPrefix(l, ":if (") && !strings.Contains(l, ":error \"mikroscope: ") {
+			t.Errorf("guard %q does not stop with :error", l)
+		}
+	}
+	for _, s := range Plan(o) {
+		if !slices.Contains(lines, s.Create) || !slices.Contains(lines, "# "+s.Name) {
+			t.Errorf("the script does not carry step %q as Plan renders it", s.Name)
+		}
+	}
+	if !strings.Contains(b.String(), `# When it is done: /container/print where comment="`+o.Tag()+`"`) {
+		t.Errorf("the closing comment does not select by the tag:\n%s", b.String())
 	}
 }

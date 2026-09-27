@@ -48,6 +48,11 @@ type Config struct {
 	MikroscopeBin string // MIKROSCOPE_BIN
 	CLIToken      string // LAB_CLI_TOKEN: "lab" hands cli the lab's agent token
 
+	// Registry is the credential the router's /container/config gets at
+	// every up and reset: LAB_REGISTRY_URL, LAB_REGISTRY_USER and
+	// LAB_REGISTRY_TOKEN. Unset, the router pulls anonymously (registry.go).
+	Registry Registry
+
 	// What follows is derived.
 	LabDir    string   // the checkout's test/lab: Dockerfile, SHA256SUMS, routeros/
 	Repo      string   // the checkout
@@ -89,7 +94,8 @@ var (
 // the checkout, and wd the directory a relative LAB_STATE_DIR is read from.
 // An unknown kind or architecture is a *usageError; the
 // ISO on arm64, an instance name or port offset out of range, a LAB_ROS, a
-// LAB_DISK_SIZE or LAB_AGENT_ROUTES of the wrong shape (validate), a
+// LAB_DISK_SIZE, LAB_AGENT_ROUTES or a LAB_REGISTRY_* credential of the
+// wrong shape (validate), a
 // LAB_LOCK_WAIT that is not a number and a LAB_STATE_DIR that is not a
 // directory are plain errors, which lab.sh reported with `die`. lab.sh
 // took the first four as they came and read LAB_LOCK_WAIT only when the
@@ -119,9 +125,14 @@ func Load(getenv func(string) string, labDir, repo, wd string) (*Config, error) 
 		Installer:     getenv("LAB_INSTALLER"),
 		MikroscopeBin: getenv("MIKROSCOPE_BIN"),
 		CLIToken:      getenv("LAB_CLI_TOKEN"),
-		LabDir:        labDir,
-		Repo:          repo,
-		LockWait:      -1,
+		Registry: Registry{
+			URL:   or("LAB_REGISTRY_URL", DefaultRegistryURL),
+			User:  getenv("LAB_REGISTRY_USER"),
+			Token: getenv("LAB_REGISTRY_TOKEN"),
+		},
+		LabDir:   labDir,
+		Repo:     repo,
+		LockWait: -1,
 	}
 	if held := getenv("LAB_LOCK_HELD"); held != "" {
 		c.LockHeld = strings.Split(held, ":")
@@ -183,10 +194,14 @@ func Load(getenv func(string) string, labDir, repo, wd string) (*Config, error) 
 // validate refuses the settings that reach a file path, a URL or a
 // RouterOS command in a shape they cannot have: a LAB_ROS that is not a
 // version (it names a directory under .cache, where "../.." would leave
-// it), a LAB_DISK_SIZE that is not a size, and LAB_AGENT_ROUTES that are
-// not IPv4 networks (each becomes a route in the namespace and a blackhole
-// route on the router).
+// it), a LAB_DISK_SIZE that is not a size, LAB_AGENT_ROUTES that are not
+// IPv4 networks (each becomes a route in the namespace and a blackhole
+// route on the router), and a registry credential the router could not be
+// given (Registry.validate).
 func (c *Config) validate() error {
+	if err := c.Registry.validate(); err != nil {
+		return err
+	}
 	if !rosVersion.MatchString(c.ROS) {
 		return fmt.Errorf("LAB_ROS=%s: want a RouterOS version such as 7.24.4 or 7.25beta2", c.ROS)
 	}

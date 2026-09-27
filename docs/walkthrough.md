@@ -72,13 +72,14 @@ programs are under the MIT licence, in [`LICENSE`](https://github.com/jmrplens/m
 
 **What `install` writes to your router**
 
+- the install manifest, a file `mikroscope/<name>.manifest.txt` on the install's disk that lists the options and every object below
 - a veth
 - one address
-- one interface-list membership
-- one address-list entry
+- one interface-list membership, unless `--iface-list none`
+- one address-list entry, unless `--addr-list none`
 - an envlist
-- the image tar, unless `--remote-image` has the router pull the image
-- the container
+- the image tar, deleted once the container is extracted, unless `--remote-image` has the router pull the image
+- the container, and its root `mikroscope/<name>` on the same disk
 
 Every object carries the comment `mikroscope:<name> (managed by mikroscope)`
 
@@ -417,13 +418,14 @@ the notes fall against it.
 
 **What `install` writes to your router**
 
+- the install manifest, a file `mikroscope/<name>.manifest.txt` on the install's disk that lists the options and every object below
 - a veth
 - one address
-- one interface-list membership
-- one address-list entry
+- one interface-list membership, unless `--iface-list none`
+- one address-list entry, unless `--addr-list none`
 - an envlist
-- the image tar, unless `--remote-image` has the router pull the image
-- the container
+- the image tar, deleted once the container is extracted, unless `--remote-image` has the router pull the image
+- the container, and its root `mikroscope/<name>` on the same disk
 
 Every object carries the comment `mikroscope:<name> (managed by mikroscope)`
 

@@ -5,6 +5,7 @@ package router
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -121,8 +122,8 @@ func TestSSHRunnerReportsAFailureWithItsOutput(t *testing.T) {
 	if err == nil {
 		t.Fatal("a failing ssh returned no error")
 	}
-	if !strings.Contains(err.Error(), "/export") || !strings.Contains(err.Error(), "permission denied") {
-		t.Errorf("error = %q, want the command and the router's own words", err)
+	if !strings.Contains(err.Error(), "/export") || !strings.HasPrefix(err.Error(), "permission denied (") {
+		t.Errorf("error = %q, want the router's own words first, then the command", err)
 	}
 	if !strings.Contains(out, "permission denied") {
 		t.Errorf("Run returned %q; the output is returned even on failure", out)
@@ -159,5 +160,133 @@ func TestSSHRunnerAlwaysBoundsItself(t *testing.T) {
 	if got := (SSHRunner{}).base("-p"); strings.Contains(strings.Join(got, " "), "-i") ||
 		strings.Contains(strings.Join(got, " "), "-p") {
 		t.Errorf("base with no port and no key = %v", got)
+	}
+}
+
+// The operator's --ssh-option values go before the CLI's own: ssh keeps the
+// first value it reads for a keyword, so a ConnectTimeout given after the
+// default ConnectTimeout=15 would be ignored without a word. Checked with
+// `ssh -G` on OpenSSH 10.0 (2026-09-26).
+func TestSSHRunnerPutsTheOperatorsOptionsFirst(t *testing.T) {
+	argv := stubSSH(t)
+	r := SSHRunner{Target: "admin@192.0.2.1", Options: []string{"ConnectTimeout=30", "StrictHostKeyChecking=accept-new"}}
+	if _, err := r.Run(":put 1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Upload([]byte("x"), "f.tar"); err != nil {
+		t.Fatal(err)
+	}
+	for _, got := range argvLines(t, argv) {
+		mine, theirs := slices.Index(got, "ConnectTimeout=30"), slices.Index(got, "ConnectTimeout=15")
+		accept := slices.Index(got, "StrictHostKeyChecking=accept-new")
+		if mine < 1 || accept < 1 || theirs < 1 || mine > theirs || accept > theirs {
+			t.Errorf("%s argv %q: the operator's options must come before ConnectTimeout=15", got[0], got)
+			continue
+		}
+		if got[mine-1] != "-o" || got[accept-1] != "-o" {
+			t.Errorf("%s argv %q: each option must follow its own -o", got[0], got)
+		}
+	}
+}
+
+// The runner does not trust its caller to have used ParseSSHOption: an
+// option it would refuse, or would respell, stops Run and Upload before ssh
+// or scp is started.
+func TestSSHRunnerChecksItsOptionsBeforeRunning(t *testing.T) {
+	argv := stubSSH(t)
+	for _, opts := range [][]string{{"ProxyCommand=nc"}, {"connecttimeout=5"}, {"ConnectTimeout=5", "UserKnownHostsFile=a b"}} {
+		r := SSHRunner{Target: "admin@192.0.2.1", Options: opts}
+		if _, err := r.Run(":put 1"); err == nil || !strings.Contains(err.Error(), "ssh-option") {
+			t.Errorf("Run with %q: %v", opts, err)
+		}
+		if err := r.Upload([]byte("x"), "f.tar"); err == nil || !strings.Contains(err.Error(), "ssh-option") {
+			t.Errorf("Upload with %q: %v", opts, err)
+		}
+	}
+	if _, err := os.Stat(argv); err == nil {
+		t.Errorf("ssh or scp was started: %q", argvLines(t, argv))
+	}
+}
+
+// RouterOS's words come first, on the error's first line. Uninstall keeps
+// only that line, and it used to be `ssh "<script>": exit status 1`, with
+// `failure: cannot remove running container` on the lines after it (the
+// virtual lab, 2026-09-26). A long command is clipped, and a secret in it
+// masked.
+func TestSSHRunnerKeepsRouterOSWordsOnTheFirstLine(t *testing.T) {
+	dir := t.TempDir()
+	script := "#!/bin/sh\nprintf 'failure: cannot remove running container\\r\\n\\r\\nsecond line\\r\\n'\nexit 1\n"
+	if err := os.WriteFile(filepath.Join(dir, "ssh"), []byte(script), 0o700); err != nil { // #nosec G306 -- it has to be executable
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	r := SSHRunner{Target: "lab", Secrets: []string{"s3cr3t-token"}}
+	long := `/container/envs/add list="mikroscope-env" key=TOKEN value="s3cr3t-token"; ` + strings.Repeat(`/container/stop [find]; `, 20)
+	_, err := r.Run(long)
+	if err == nil {
+		t.Fatal("ssh exited 1 and Run returned no error")
+	}
+	first, _, _ := strings.Cut(err.Error(), "\n")
+	if !strings.HasPrefix(first, "failure: cannot remove running container / second line (ssh lab: exit status 1, running ") {
+		t.Errorf("first line = %q", first)
+	}
+	if strings.Contains(err.Error(), "s3cr3t-token") || !strings.Contains(err.Error(), "(secret)") {
+		t.Errorf("the secret is not masked: %q", err)
+	}
+	if !strings.Contains(err.Error(), "…") || len(err.Error()) > 400 {
+		t.Errorf("a long command is not clipped: %q", err)
+	}
+	// No output at all still says what ran.
+	if writeErr := os.WriteFile(filepath.Join(dir, "ssh"), []byte("#!/bin/sh\nexit 255\n"), 0o700); writeErr != nil { // #nosec G306 -- it has to be executable
+		t.Fatal(writeErr)
+	}
+	if _, err = r.Run(":put 1"); err == nil || err.Error() != `ssh lab: exit status 255, no output (running ":put 1")` {
+		t.Errorf("error with no output = %v", err)
+	}
+}
+
+// A command that carries a secret never reaches ssh's argv: it goes on
+// standard input, with -T and no remote command, and ends with a newline,
+// without which RouterOS does not run the last line (measured in the
+// virtual lab, CHR x86_64, RouterOS 7.24.4, 2026-09-26). Every other command
+// stays an argument.
+func TestSSHRunnerSendsASecretOnStandardInput(t *testing.T) {
+	dir := t.TempDir()
+	argv, stdin := filepath.Join(dir, "argv"), filepath.Join(dir, "stdin")
+	script := "#!/bin/sh\nfor a in \"$@\"; do printf '%s\\037' \"$a\" >> " + argv + "; done\nprintf '\\n' >> " + argv + "\ncat >> " + stdin + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "ssh"), []byte(script), 0o700); err != nil { // #nosec G306 -- it has to be executable
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	r := SSHRunner{Target: "admin@192.0.2.1", Secrets: []string{"", "0123456789abcdefghijABCDEFGHIJ01"}}
+	withToken := `/container/envs/add list="mikroscope-env" key=TOKEN value="0123456789abcdefghijABCDEFGHIJ01"`
+	if _, err := r.Run(withToken); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Run(":put 1"); err != nil {
+		t.Fatal(err)
+	}
+	a, err := os.ReadFile(argv) // #nosec G304 -- the test's own temp dir
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := strings.Split(strings.TrimSuffix(string(a), "\n"), "\n")
+	if len(calls) != 2 {
+		t.Fatalf("ssh ran %d times: %q", len(calls), calls)
+	}
+	secret := strings.Split(strings.TrimSuffix(calls[0], "\x1f"), "\x1f")
+	if strings.Contains(calls[0], "0123456789abcdefghijABCDEFGHIJ01") || secret[len(secret)-1] != "admin@192.0.2.1" || secret[len(secret)-2] != "-T" {
+		t.Errorf("the secret's argv = %q, want it to end -T admin@192.0.2.1 with no command", secret)
+	}
+	plain := strings.Split(strings.TrimSuffix(calls[1], "\x1f"), "\x1f")
+	if plain[len(plain)-1] != ":put 1" || slices.Contains(plain, "-T") {
+		t.Errorf("a command with no secret: argv %q", plain)
+	}
+	in, err := os.ReadFile(stdin) // #nosec G304 -- the test's own temp dir
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(in) != withToken+"\n" {
+		t.Errorf("ssh read %q on stdin, want the command and one newline", in)
 	}
 }

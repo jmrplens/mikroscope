@@ -157,16 +157,17 @@ func TestDoctorHealthReadsTheNewestEndOfALongRing(t *testing.T) {
 }
 
 // Standalone doctor asks for the flash the install would need: with
-// --remote-image no tar is uploaded, so the 4 MiB of headroom alone, as
-// install asks; from a tar, twice the assumed 7 MiB image plus that headroom.
+// --remote-image no tar is uploaded, so the root the pulled image is
+// extracted into, about 7 MiB, and 4 MiB of headroom, as install asks; from
+// a tar, twice the assumed 7 MiB image plus that headroom.
 func TestDoctorSizesTheFlashCheckLikeInstall(t *testing.T) {
 	stubRouter(t, "0")
 	for _, c := range []struct {
 		remote string
 		want   string
 	}{
-		{"jmrplens/mikroscope-agent:1.0.10", "free flash ≥ 4.0 MiB"},
-		{"", "free flash ≥ 18.0 MiB"},
+		{"jmrplens/mikroscope-agent:1.0.10", "free flash ≥ 11.0 MiB (extracted root)"},
+		{"", "free flash ≥ 18.0 MiB (image tar + extracted root)"},
 	} {
 		cl := deployCLI(t)
 		cl.opts.RemoteImage = c.remote

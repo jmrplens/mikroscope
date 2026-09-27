@@ -6,6 +6,7 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -294,5 +295,61 @@ func TestRingSinceHonoursTheLimit(t *testing.T) {
 	}
 	if all, _ := r.Since(10, 0); len(all) != 40 {
 		t.Fatalf("Since(10, 0) = %d entries, want 40", len(all))
+	}
+}
+
+// TestTriggerGrammarIsWhatTheParserTakes: the table is what the parser reads
+// and what the install script generator offers, so every entry has to parse
+// at both ends of its range and refuse just outside it, a condition without
+// an operator has to refuse a threshold, and the default set has to parse.
+func TestTriggerGrammarIsWhatTheParserTakes(t *testing.T) {
+	if _, err := ParseTriggers(DefaultTriggers); err != nil {
+		t.Fatalf("DefaultTriggers: %v", err)
+	}
+	seen := map[string]bool{}
+	for _, g := range TriggerGrammar {
+		if seen[g.Name] {
+			t.Fatalf("%s is in the grammar twice", g.Name)
+		}
+		seen[g.Name] = true
+		if g.Op == "" {
+			checkBareTrigger(t, g)
+			continue
+		}
+		checkLevelTrigger(t, g)
+	}
+	if _, err := ParseTriggers("nosuch"); err == nil {
+		t.Error("an unknown condition parsed")
+	}
+}
+
+func checkBareTrigger(t *testing.T, g TriggerSpec) {
+	t.Helper()
+	if _, err := ParseTriggers(g.Name); err != nil {
+		t.Errorf("%s: %v", g.Name, err)
+	}
+	if _, err := ParseTriggers(g.Name + ">=1"); err == nil {
+		t.Errorf("%s took a threshold", g.Name)
+	}
+}
+
+func checkLevelTrigger(t *testing.T, g TriggerSpec) {
+	t.Helper()
+	if g.Op != ">=" && g.Op != "<=" {
+		t.Fatalf("%s: operator %q", g.Name, g.Op)
+	}
+	for _, v := range []float64{g.Min, g.Max} {
+		c, err := ParseTriggers(g.Name + g.Op + strconv.FormatFloat(v, 'g', -1, 64))
+		if err != nil || len(c) != 1 || c[0].Threshold != v {
+			t.Errorf("%s%s%g: %v %v", g.Name, g.Op, v, c, err)
+		}
+	}
+	for _, v := range []float64{g.Min - 0.01, g.Max + 1} {
+		if _, err := ParseTriggers(g.Name + g.Op + strconv.FormatFloat(v, 'g', -1, 64)); err == nil {
+			t.Errorf("%s%s%g parsed outside the range", g.Name, g.Op, v)
+		}
+	}
+	if _, err := ParseTriggers(g.Name); err == nil {
+		t.Errorf("%s parsed without its threshold", g.Name)
 	}
 }

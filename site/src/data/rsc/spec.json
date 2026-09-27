@@ -1,0 +1,1008 @@
+{
+  "bounds": {
+    "arch": [
+      "arm64",
+      "arm",
+      "amd64",
+      "auto"
+    ],
+    "builtinIfaceLists": [
+      "all",
+      "dynamic",
+      "static"
+    ],
+    "listNone": "none",
+    "ranges": {
+      "bufferS": [
+        10,
+        3600
+      ],
+      "captureMB": [
+        0,
+        256
+      ],
+      "extractTimeoutS": [
+        10,
+        600
+      ],
+      "floorHz": [
+        0,
+        1000
+      ],
+      "memLimitMB": [
+        8,
+        1024
+      ],
+      "port": [
+        1,
+        65535
+      ],
+      "rateHz": [
+        1,
+        100
+      ],
+      "restartMaxCount": [
+        0,
+        100
+      ]
+    },
+    "regex": {
+      "disk": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+      "duration": "^\\d{1,4}[smh]$",
+      "imageRef": "^[a-z0-9]([a-z0-9._/-]*[a-z0-9])?(:[0-9]+)?(/[a-z0-9._/-]+)*(:[A-Za-z0-9._-]+)?(@sha256:[a-f0-9]{64})?$",
+      "memory": "^\\d{1,6}[KMG]?$",
+      "name": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,31}$",
+      "objectName": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$",
+      "token": "^[A-Za-z0-9_.-]{0,128}$"
+    },
+    "startOnBoot": [
+      "auto",
+      "yes",
+      "no"
+    ],
+    "subnetPrefix": 30
+  },
+  "cli": {
+    "command": "mikroscope plan --rsc",
+    "plain": "^[A-Za-z0-9_./:@,=+-]+$",
+    "rule": "each flag in flags order whose value differs from defaults: a true bool as the flag alone, a false bool as flag=false, a value matching plain as is, any other in single quotes; the token never, which the command reads from the variable tokenEnv, to be exported before it runs",
+    "tokenEnv": "MIKROSCOPE_TOKEN"
+  },
+  "defaults": {
+    "name": "mikroscope",
+    "veth": "veth-mikroscope",
+    "subnet": "172.30.10.0/30",
+    "ifaceList": "LAN",
+    "addrList": "LANs",
+    "disk": "",
+    "ephemeral": false,
+    "arch": "auto",
+    "port": 9123,
+    "rateHz": 10,
+    "bufferS": 60,
+    "memoryMax": "64M",
+    "memLimitMB": 0,
+    "floorHz": 0,
+    "captureMB": 4,
+    "triggers": "",
+    "token": "",
+    "remoteImage": "",
+    "expose": false,
+    "lanAddress": "",
+    "privileged": true,
+    "restartMaxCount": 5,
+    "restartInterval": "10s",
+    "startOnBoot": "auto",
+    "containerName": "",
+    "extractTimeout": "120s"
+  },
+  "derive": {
+    "approxLineBytes": 3456,
+    "dockerHubAliases": [
+      "docker.io",
+      "index.docker.io",
+      "registry-1.docker.io",
+      "registry.hub.docker.com"
+    ],
+    "dockerHubHost": "registry-1.docker.io",
+    "memLimitRingFactorHalves": 5,
+    "memoryCapDenominator": 4,
+    "memoryCapNumerator": 3,
+    "minMemLimitMB": 16,
+    "rules": {
+      "containerIP": "the subnet's network address + 2",
+      "disk": "tmpfs when ephemeral, else the disk as given",
+      "extractTimeoutS": "extractTimeout in seconds: digits then s, m (x60) or h (x3600)",
+      "gatewayIP": "the subnet's network address + 1",
+      "manifest": "see manifest.rule",
+      "memLimitMB": "memLimitMB when not 0; else ceil(rateHz * bufferS * approxLineBytes * memLimitRingFactorHalves / 2 / 2^20), at least minMemLimitMB, and at most memoryMax * memoryCapNumerator / memoryCapDenominator in MiB (rounded down) when that ceiling is above the ring's own MiB (rounded down)",
+      "privileged": "yes or no",
+      "registryHost": "the host remoteRef names; empty without remoteImage",
+      "remoteRef": "empty without remoteImage; else registryHost + '/' + the rest, where the first path component is the host when it holds a dot or a colon or is localhost, a Docker Hub alias becomes dockerHubHost, and a Docker Hub name with no '/' gains 'library/'",
+      "source": "remote with remoteImage, else tar",
+      "startOnBoot": "yes or no as given; for auto, no when ephemeral, else yes"
+    }
+  },
+  "derived": [
+    {
+      "key": "tag",
+      "text": [
+        {
+          "text": "mikroscope:{{name}} (managed by mikroscope)"
+        }
+      ]
+    },
+    {
+      "key": "envList",
+      "text": [
+        {
+          "text": "{{name}}-env"
+        }
+      ]
+    },
+    {
+      "key": "imageFile",
+      "text": [
+        {
+          "when": "disk",
+          "text": "{{disk}}/"
+        },
+        {
+          "text": "{{name}}.tar"
+        }
+      ]
+    },
+    {
+      "key": "rootDir",
+      "text": [
+        {
+          "when": "disk",
+          "text": "{{disk}}/"
+        },
+        {
+          "text": "mikroscope/{{name}}"
+        }
+      ]
+    },
+    {
+      "key": "manifestDir",
+      "text": [
+        {
+          "when": "disk",
+          "text": "{{disk}}/"
+        },
+        {
+          "text": "mikroscope"
+        }
+      ]
+    },
+    {
+      "key": "manifestFile",
+      "text": [
+        {
+          "when": "disk",
+          "text": "{{disk}}/"
+        },
+        {
+          "text": "mikroscope/{{name}}.manifest.txt"
+        }
+      ]
+    }
+  ],
+  "flags": [
+    {
+      "key": "name",
+      "flag": "--name"
+    },
+    {
+      "key": "veth",
+      "flag": "--veth"
+    },
+    {
+      "key": "subnet",
+      "flag": "--subnet"
+    },
+    {
+      "key": "ifaceList",
+      "flag": "--iface-list"
+    },
+    {
+      "key": "addrList",
+      "flag": "--addr-list"
+    },
+    {
+      "key": "disk",
+      "flag": "--disk"
+    },
+    {
+      "key": "ephemeral",
+      "flag": "--ephemeral"
+    },
+    {
+      "key": "arch",
+      "flag": "--arch"
+    },
+    {
+      "key": "remoteImage",
+      "flag": "--remote-image"
+    },
+    {
+      "key": "port",
+      "flag": "--port"
+    },
+    {
+      "key": "rateHz",
+      "flag": "--rate"
+    },
+    {
+      "key": "bufferS",
+      "flag": "--buffer"
+    },
+    {
+      "key": "memoryMax",
+      "flag": "--memory-max"
+    },
+    {
+      "key": "memLimitMB",
+      "flag": "--mem-limit-mb"
+    },
+    {
+      "key": "floorHz",
+      "flag": "--floor-hz"
+    },
+    {
+      "key": "captureMB",
+      "flag": "--capture-mb"
+    },
+    {
+      "key": "triggers",
+      "flag": "--triggers"
+    },
+    {
+      "key": "privileged",
+      "flag": "--privileged"
+    },
+    {
+      "key": "expose",
+      "flag": "--expose"
+    },
+    {
+      "key": "lanAddress",
+      "flag": "--lan-address"
+    },
+    {
+      "key": "token",
+      "flag": "--token"
+    },
+    {
+      "key": "restartMaxCount",
+      "flag": "--restart-max-count"
+    },
+    {
+      "key": "restartInterval",
+      "flag": "--restart-interval"
+    },
+    {
+      "key": "startOnBoot",
+      "flag": "--start-on-boot"
+    },
+    {
+      "key": "containerName",
+      "flag": "--container-name"
+    },
+    {
+      "key": "extractTimeout",
+      "flag": "--extract-timeout"
+    }
+  ],
+  "manifest": {
+    "format": "mikroscope-manifest=1",
+    "header": [
+      {
+        "text": "mikroscope-manifest=1"
+      },
+      {
+        "text": "name={{name}}"
+      },
+      {
+        "text": "tag={{tag}}"
+      },
+      {
+        "text": "disk={{disk}}"
+      },
+      {
+        "text": "veth={{veth}}"
+      },
+      {
+        "text": "subnet={{subnet}}"
+      },
+      {
+        "text": "port={{port}}"
+      },
+      {
+        "text": "iface-list={{ifaceList}}"
+      },
+      {
+        "text": "addr-list={{addrList}}"
+      },
+      {
+        "when": "expose",
+        "text": "expose={{lanAddress}}"
+      },
+      {
+        "when": "!expose",
+        "text": "expose="
+      },
+      {
+        "text": "container-name={{containerName}}"
+      },
+      {
+        "when": "remote",
+        "text": "remote-image={{remoteRef}}"
+      },
+      {
+        "when": "tar",
+        "text": "remote-image="
+      },
+      {
+        "when": "token",
+        "text": "token=yes"
+      },
+      {
+        "when": "!token",
+        "text": "token=no"
+      }
+    ],
+    "read": "on the router: :put [/file/get [find name=\"\u003cmanifestFile\u003e\"] contents]",
+    "rule": "the value manifest is each line of manifest.header, then of the manifest field of each step whose when holds, in step order, joined with the two characters \\n, and a final \\n; RouterOS stores each \\n inside the quoted string as a newline"
+  },
+  "placeholders": [
+    "addrList",
+    "bufferS",
+    "captureMB",
+    "containerIP",
+    "containerName",
+    "disk",
+    "envList",
+    "extractTimeoutS",
+    "floorHz",
+    "gatewayIP",
+    "ifaceList",
+    "imageFile",
+    "lanAddress",
+    "manifest",
+    "manifestDir",
+    "manifestFile",
+    "memLimitMB",
+    "memoryMax",
+    "name",
+    "port",
+    "privileged",
+    "rateHz",
+    "registryHost",
+    "remoteRef",
+    "restartInterval",
+    "restartMaxCount",
+    "rootDir",
+    "source",
+    "startOnBoot",
+    "subnet",
+    "tag",
+    "token",
+    "triggers",
+    "version",
+    "veth"
+  ],
+  "predicates": [
+    "addrList",
+    "containerName",
+    "disk",
+    "ephemeral",
+    "expose",
+    "floorHz",
+    "ifaceList",
+    "remote",
+    "tar",
+    "token",
+    "triggers"
+  ],
+  "schema": 1,
+  "script": "each line of scriptHeader, then of scriptGuards, then for each step whose when holds the line \"# \" + name and the line create, then each line of scriptFooter; every line ends with a newline",
+  "scriptFooter": [
+    {
+      "text": ":local k 0; :while ([:len [/container/find comment=\"{{tag}}\" running]] = 0 \u0026\u0026 $k \u003c 120) do={ :delay 1s; :set k ($k + 1) }"
+    },
+    {
+      "text": ":if ([:len [/container/find comment=\"{{tag}}\" running]] \u003e 0) do={ :put \"mikroscope: agent running, http://{{containerIP}}:{{port}}/healthz\" } else={ :put \"mikroscope: not running yet; see /log/print where topics~\\\"container\\\"\" }"
+    },
+    {
+      "text": "}"
+    },
+    {
+      "text": "# When it is done: /container/print where comment=\"{{tag}}\""
+    },
+    {
+      "text": "# The agent answers on http://{{containerIP}}:{{port}}/healthz from the router's LAN."
+    }
+  ],
+  "scriptGuards": [
+    {
+      "text": ":if (!([/system/resource/get version] ~ \"^(7[.](2[4-9]|[3-9][0-9]|[1-9][0-9][0-9])|([89]|[1-9][0-9]+)[.])\")) do={ :error \"mikroscope: needs RouterOS 7.24 or later\" }"
+    },
+    {
+      "text": ":if ([:len [/system/package/find name=\"container\" disabled=no]] = 0) do={ :error \"mikroscope: the container package is not installed\" }"
+    },
+    {
+      "text": ":local dm [:tostr [/system/device-mode/get container]]; :if ($dm != \"yes\" \u0026\u0026 $dm != \"true\") do={ :error \"mikroscope: device-mode container is not enabled\" }"
+    },
+    {
+      "text": ":if ([:len [/interface/veth/find name=\"{{veth}}\"]] \u003e 0 \u0026\u0026 [:len [/interface/veth/find name=\"{{veth}}\" comment=\"{{tag}}\"]] = 0) do={ :error \"mikroscope: veth {{veth}} exists and is not mikroscope's\" }"
+    },
+    {
+      "text": ":if ([:len [/container/envs/find list=\"{{envList}}\"]] \u003e 0 \u0026\u0026 [:len [/container/envs/find list=\"{{envList}}\" key=\"MIKROSCOPE_TAG\" value=\"{{tag}}\"]] = 0) do={ :error \"mikroscope: envlist {{envList}} exists and is not mikroscope's\" }"
+    },
+    {
+      "when": "containerName",
+      "text": ":if ([:len [/container/find name=\"{{containerName}}\"]] \u003e 0 \u0026\u0026 [:len [/container/find name=\"{{containerName}}\" comment=\"{{tag}}\"]] = 0) do={ :error \"mikroscope: a container named {{containerName}} exists and is not mikroscope's\" }"
+    },
+    {
+      "when": "ifaceList",
+      "text": ":if ([:len [/interface/list/find name=\"{{ifaceList}}\"]] = 0) do={ :error \"mikroscope: interface list {{ifaceList}} does not exist\" }"
+    },
+    {
+      "when": "disk",
+      "text": ":if ([:len [/disk/find slot=\"{{disk}}\"]] = 0) do={ :error \"mikroscope: disk {{disk}} does not exist\" }"
+    },
+    {
+      "when": "tar",
+      "text": ":if ([:len [/file/find name=\"{{imageFile}}\"]] = 0) do={ :error \"mikroscope: upload {{imageFile}} first\" }"
+    },
+    {
+      "text": ":if ([:len [/file/find name=\"{{manifestFile}}\"]] \u003e 0) do={ :if (!([:typeof [:find [/file/get [find name=\"{{manifestFile}}\"] contents] \"\\ntag={{tag}}\\n\"]] = \"num\")) do={ :error \"mikroscope: {{manifestFile}} exists and is not this install's manifest\" } }"
+    }
+  ],
+  "scriptHeader": [
+    {
+      "text": "# mikroscope {{version}}: install script for RouterOS 7.24 or later. Container name: {{name}}"
+    },
+    {
+      "text": "# Every object it creates carries the comment \"{{tag}}\", which is how"
+    },
+    {
+      "text": "# `mikroscope status` and `uninstall` recognize them later. It lists them in"
+    },
+    {
+      "text": "# {{manifestFile}} on the router, which `mikroscope uninstall` reads and deletes last."
+    },
+    {
+      "text": "#"
+    },
+    {
+      "when": "remote",
+      "text": "# The router pulls {{remoteRef}} itself."
+    },
+    {
+      "when": "remote",
+      "text": "# The registry host is part of remote-image= (RouterOS 7.18 and later take it"
+    },
+    {
+      "when": "remote",
+      "text": "# there), so this script neither reads nor changes the device-wide registry-url."
+    },
+    {
+      "when": "remote",
+      "text": "# A registry username set on the device for a registry other than {{registryHost}}"
+    },
+    {
+      "when": "remote",
+      "text": "# can make the pull end in `auth error`; `mikroscope doctor` warns about it."
+    },
+    {
+      "when": "tar",
+      "text": "# BEFORE RUNNING: put the agent image tar on the device as {{imageFile}}"
+    },
+    {
+      "when": "tar",
+      "text": "# (upload it over WinBox/WebFig Files, or /tool/fetch it), or regenerate this"
+    },
+    {
+      "when": "tar",
+      "text": "# script with --remote-image so the router pulls the image instead."
+    },
+    {
+      "when": "token",
+      "text": "#"
+    },
+    {
+      "when": "token",
+      "text": "# The agent's bearer token is in clear below: treat this file as a credential."
+    },
+    {
+      "text": "#"
+    },
+    {
+      "text": "# It runs as one block: a check that fails stops it before anything is written,"
+    },
+    {
+      "text": "# and a step that fails stops the steps after it."
+    },
+    {
+      "text": ""
+    },
+    {
+      "text": "{"
+    }
+  ],
+  "steps": [
+    {
+      "id": "manifest",
+      "name": [
+        {
+          "text": "install manifest {{manifestFile}}"
+        }
+      ],
+      "check": [
+        {
+          "text": ":put [:len [/file/find name=\"{{manifestFile}}\"]]"
+        }
+      ],
+      "create": [
+        {
+          "text": ":local m \"{{manifest}}\"; :if ([:len [/file/find name=\"{{manifestFile}}\"]] \u003e 0) do={ /file/set [find name=\"{{manifestFile}}\"] contents=$m } else={ /file/add name=\"{{manifestFile}}\" contents=$m }"
+        }
+      ],
+      "owned": [
+        {
+          "text": ":if ([:len [/file/find name=\"{{manifestFile}}\"]] \u003e 0) do={ :if ([:typeof [:find [/file/get [find name=\"{{manifestFile}}\"] contents] \"\\ntag={{tag}}\\n\"]] = \"num\") do={ :put 1 } else={ :put 0 } } else={ :put 0 }"
+        }
+      ],
+      "remove": [
+        {
+          "text": ":if (([:len [/ip/firewall/address-list/find comment=\"{{tag}}\"]] + [:len [/interface/list/member/find comment=\"{{tag}}\"]] + [:len [/ip/firewall/nat/find comment=\"{{tag}}\"]] + [:len [/ip/firewall/filter/find comment=\"{{tag}}\"]] + [:len [/ip/firewall/raw/find comment=\"{{tag}}\"]] + [:len [/ip/firewall/mangle/find comment=\"{{tag}}\"]] + [:len [/ip/route/find comment=\"{{tag}}\"]] + [:len [/container/mounts/find comment=\"{{tag}}\"]] + [:len [/ip/address/find comment=\"{{tag}}\"]] + [:len [/interface/veth/find comment=\"{{tag}}\"]] + [:len [/interface/list/find comment=\"{{tag}}\"]] + [:len [/disk/find comment=\"{{tag}}\"]] + [:len [/container/find comment=\"{{tag}}\"]] + [:len [/container/envs/find list=\"{{envList}}\" key=\"MIKROSCOPE_TAG\" value=\"{{tag}}\"]]) \u003e 0) do={ :error \"mikroscope: objects tagged {{tag}} remain, so {{manifestFile}} stays\" }; :if ([:len [/file/find name=\"{{manifestFile}}\"]] \u003e 0) do={ :if ([:typeof [:find [/file/get [find name=\"{{manifestFile}}\"] contents] \"\\ntag={{tag}}\\n\"]] = \"num\") do={ :if ([:len [/file/find name=\"{{rootDir}}\"]] \u003e 0 \u0026\u0026 ([:len [/container/find root-dir=\"/{{rootDir}}\"]] + [:len [/container/find root-dir=\"{{rootDir}}\"]]) = 0) do={ :do { /file/remove [find name=\"{{rootDir}}\"] } on-error={} }; /file/remove [find name=\"{{manifestFile}}\"] } }; :if ([:len [/file/find name~\"^{{manifestDir}}/\"]] = 0) do={ /file/remove [find name=\"{{manifestDir}}\" type=\"directory\"] }"
+        }
+      ],
+      "present": [
+        {
+          "text": ":if ([:len [/file/find name=\"{{manifestFile}}\"]] \u003e 0) do={ :if ([/file/get [find name=\"{{manifestFile}}\"] contents] = \"{{manifest}}\") do={ :put 1 } else={ :put 0 } } else={ :put 0 }"
+        }
+      ],
+      "manifest": [
+        {
+          "text": "dir={{manifestDir}}"
+        },
+        {
+          "text": "file={{manifestFile}}"
+        }
+      ]
+    },
+    {
+      "id": "veth",
+      "menu": "/interface/veth",
+      "name": [
+        {
+          "text": "veth interface {{veth}}"
+        }
+      ],
+      "check": [
+        {
+          "text": ":put [:len [/interface/veth/find name=\"{{veth}}\"]]"
+        }
+      ],
+      "create": [
+        {
+          "text": "/interface/veth/add name=\"{{veth}}\" address={{containerIP}}/30 gateway={{gatewayIP}} comment=\"{{tag}}\""
+        }
+      ],
+      "owned": [
+        {
+          "text": ":put [:len [/interface/veth/find name=\"{{veth}}\" comment=\"{{tag}}\"]]"
+        }
+      ],
+      "remove": [
+        {
+          "text": "/interface/veth/remove [find name=\"{{veth}}\" comment=\"{{tag}}\"]"
+        }
+      ],
+      "manifest": [
+        {
+          "text": "object=/interface/veth name={{veth}}"
+        }
+      ]
+    },
+    {
+      "id": "address",
+      "menu": "/ip/address",
+      "name": [
+        {
+          "text": "router address {{gatewayIP}}"
+        }
+      ],
+      "check": [
+        {
+          "text": ":put [:len [/ip/address/find interface=\"{{veth}}\"]]"
+        }
+      ],
+      "create": [
+        {
+          "text": "/ip/address/add address={{gatewayIP}}/30 interface=\"{{veth}}\" comment=\"{{tag}}\""
+        }
+      ],
+      "owned": [
+        {
+          "text": ":put [:len [/ip/address/find interface=\"{{veth}}\" comment=\"{{tag}}\"]]"
+        }
+      ],
+      "remove": [
+        {
+          "text": "/ip/address/remove [find interface=\"{{veth}}\" comment=\"{{tag}}\"]"
+        }
+      ],
+      "manifest": [
+        {
+          "text": "object=/ip/address interface={{veth}}"
+        }
+      ]
+    },
+    {
+      "id": "iface-member",
+      "when": "ifaceList",
+      "menu": "/interface/list/member",
+      "name": [
+        {
+          "text": "interface-list membership {{ifaceList}}"
+        }
+      ],
+      "check": [
+        {
+          "text": ":put [:len [/interface/list/member/find interface=\"{{veth}}\" list=\"{{ifaceList}}\"]]"
+        }
+      ],
+      "create": [
+        {
+          "text": "/interface/list/member/add list=\"{{ifaceList}}\" interface=\"{{veth}}\" comment=\"{{tag}}\""
+        }
+      ],
+      "owned": [
+        {
+          "text": ":put [:len [/interface/list/member/find interface=\"{{veth}}\" list=\"{{ifaceList}}\" comment=\"{{tag}}\"]]"
+        }
+      ],
+      "remove": [
+        {
+          "text": "/interface/list/member/remove [find interface=\"{{veth}}\" list=\"{{ifaceList}}\" comment=\"{{tag}}\"]"
+        }
+      ],
+      "manifest": [
+        {
+          "text": "object=/interface/list/member interface={{veth}} list={{ifaceList}}"
+        }
+      ]
+    },
+    {
+      "id": "addr-member",
+      "when": "addrList",
+      "menu": "/ip/firewall/address-list",
+      "name": [
+        {
+          "text": "address-list membership {{addrList}}"
+        }
+      ],
+      "check": [
+        {
+          "text": ":put [:len [/ip/firewall/address-list/find list=\"{{addrList}}\" address=\"{{subnet}}\"]]"
+        }
+      ],
+      "create": [
+        {
+          "text": "/ip/firewall/address-list/add list=\"{{addrList}}\" address={{subnet}} comment=\"{{tag}}\""
+        }
+      ],
+      "owned": [
+        {
+          "text": ":put [:len [/ip/firewall/address-list/find list=\"{{addrList}}\" address=\"{{subnet}}\" comment=\"{{tag}}\"]]"
+        }
+      ],
+      "remove": [
+        {
+          "text": "/ip/firewall/address-list/remove [find list=\"{{addrList}}\" address=\"{{subnet}}\" comment=\"{{tag}}\"]"
+        }
+      ],
+      "manifest": [
+        {
+          "text": "object=/ip/firewall/address-list list={{addrList}} address={{subnet}}"
+        }
+      ]
+    },
+    {
+      "id": "expose-nat",
+      "when": "expose",
+      "menu": "/ip/firewall/nat",
+      "name": [
+        {
+          "text": "expose dst-nat {{lanAddress}}:{{port}}"
+        }
+      ],
+      "check": [
+        {
+          "text": ":put [:len [/ip/firewall/nat/find chain=dstnat dst-address=\"{{lanAddress}}\" dst-port=\"{{port}}\" protocol=\"tcp\"]]"
+        }
+      ],
+      "create": [
+        {
+          "text": "/ip/firewall/nat/add chain=dstnat dst-address={{lanAddress}} protocol=tcp dst-port={{port}} action=dst-nat to-addresses={{containerIP}} to-ports={{port}} comment=\"{{tag}}\""
+        }
+      ],
+      "owned": [
+        {
+          "text": ":put [:len [/ip/firewall/nat/find chain=dstnat dst-address=\"{{lanAddress}}\" dst-port=\"{{port}}\" protocol=\"tcp\" comment=\"{{tag}}\"]]"
+        }
+      ],
+      "remove": [
+        {
+          "text": "/ip/firewall/nat/remove [find chain=dstnat dst-address=\"{{lanAddress}}\" dst-port=\"{{port}}\" protocol=\"tcp\" comment=\"{{tag}}\"]"
+        }
+      ],
+      "manifest": [
+        {
+          "text": "object=/ip/firewall/nat chain=dstnat dst-address={{lanAddress}} dst-port={{port}} protocol=tcp"
+        }
+      ]
+    },
+    {
+      "id": "expose-accept",
+      "when": "expose",
+      "menu": "/ip/firewall/filter",
+      "name": [
+        {
+          "text": "expose forward accept"
+        }
+      ],
+      "check": [
+        {
+          "text": ":put [:len [/ip/firewall/filter/find chain=forward dst-address=\"{{containerIP}}\" dst-port=\"{{port}}\" protocol=\"tcp\"]]"
+        }
+      ],
+      "create": [
+        {
+          "text": ":local d [/ip/firewall/filter/find chain=forward action=drop]; :if ([:len $d] \u003e 0) do={ /ip/firewall/filter/add chain=forward dst-address={{containerIP}} protocol=tcp dst-port={{port}} connection-nat-state=dstnat action=accept comment=\"{{tag}}\" place-before=($d-\u003e0) } else={ /ip/firewall/filter/add chain=forward dst-address={{containerIP}} protocol=tcp dst-port={{port}} connection-nat-state=dstnat action=accept comment=\"{{tag}}\" }"
+        }
+      ],
+      "owned": [
+        {
+          "text": ":put [:len [/ip/firewall/filter/find chain=forward dst-address=\"{{containerIP}}\" dst-port=\"{{port}}\" protocol=\"tcp\" comment=\"{{tag}}\"]]"
+        }
+      ],
+      "remove": [
+        {
+          "text": "/ip/firewall/filter/remove [find chain=forward dst-address=\"{{containerIP}}\" dst-port=\"{{port}}\" protocol=\"tcp\" comment=\"{{tag}}\"]"
+        }
+      ],
+      "manifest": [
+        {
+          "text": "object=/ip/firewall/filter chain=forward dst-address={{containerIP}} dst-port={{port}} protocol=tcp"
+        }
+      ]
+    },
+    {
+      "id": "container",
+      "menu": "/container",
+      "name": [
+        {
+          "text": "container {{name}}"
+        }
+      ],
+      "check": [
+        {
+          "text": ":put ([:len [/container/find interface=\"{{veth}}\"]] + [:len [/container/envs/find list=\"{{envList}}\"]]"
+        },
+        {
+          "when": "tar",
+          "text": " + [:len [/file/find name=\"{{imageFile}}\"]]"
+        },
+        {
+          "when": "containerName",
+          "text": " + [:len [/container/find name=\"{{containerName}}\"]]"
+        },
+        {
+          "text": ")"
+        }
+      ],
+      "create": [
+        {
+          "text": ":if ([:len [/container/envs/find list=\"{{envList}}\" key=\"MIKROSCOPE_TAG\" value=\"{{tag}}\"]] \u003e 0) do={ /container/envs/remove [find list=\"{{envList}}\"] }; "
+        },
+        {
+          "text": "/container/envs/add list=\"{{envList}}\" key=MIKROSCOPE_TAG value=\"{{tag}}\"; "
+        },
+        {
+          "text": "/container/envs/add list=\"{{envList}}\" key=RATE_HZ value=\"{{rateHz}}\"; "
+        },
+        {
+          "text": "/container/envs/add list=\"{{envList}}\" key=BUFFER_S value=\"{{bufferS}}\"; "
+        },
+        {
+          "text": "/container/envs/add list=\"{{envList}}\" key=PORT value=\"{{port}}\"; "
+        },
+        {
+          "text": "/container/envs/add list=\"{{envList}}\" key=ADDR value=\"{{containerIP}}\"; "
+        },
+        {
+          "text": "/container/envs/add list=\"{{envList}}\" key=MEM_LIMIT_MB value=\"{{memLimitMB}}\"; "
+        },
+        {
+          "when": "floorHz",
+          "text": "/container/envs/add list=\"{{envList}}\" key=FLOOR_HZ value=\"{{floorHz}}\"; "
+        },
+        {
+          "text": "/container/envs/add list=\"{{envList}}\" key=CAPTURE_MB value=\"{{captureMB}}\"; "
+        },
+        {
+          "when": "triggers",
+          "text": "/container/envs/add list=\"{{envList}}\" key=TRIGGERS value=\"{{triggers}}\"; "
+        },
+        {
+          "when": "token",
+          "text": "/container/envs/add list=\"{{envList}}\" key=TOKEN value=\"{{token}}\"; "
+        },
+        {
+          "text": "/container/add "
+        },
+        {
+          "when": "containerName",
+          "text": "name=\"{{containerName}}\" "
+        },
+        {
+          "when": "tar",
+          "text": "file={{imageFile}}"
+        },
+        {
+          "when": "remote",
+          "text": "remote-image=\"{{remoteRef}}\""
+        },
+        {
+          "text": " interface=\"{{veth}}\" root-dir={{rootDir}} envlist=\"{{envList}}\" logging=yes start-on-boot={{startOnBoot}} restart-policy=on-failure restart-max-count={{restartMaxCount}} restart-interval={{restartInterval}} memory-max={{memoryMax}} privileged={{privileged}} ignore-remote-image-change=yes comment=\"{{tag}}\"; "
+        },
+        {
+          "when": "tar",
+          "text": ":local w 0; :while ([:len [/container/find comment=\"{{tag}}\" stopped]] = 0 \u0026\u0026 $w \u003c {{extractTimeoutS}}) do={ :delay 1s; :set w ($w + 1) }; :if ([:len [/container/find comment=\"{{tag}}\" stopped]] = 0) do={ :error \"mikroscope: the image was not extracted within {{extractTimeoutS}} s; {{imageFile}} stays\" }; /file/remove [find name=\"{{imageFile}}\"]; "
+        },
+        {
+          "text": "/container/start [find comment=\"{{tag}}\"]"
+        }
+      ],
+      "owned": [
+        {
+          "text": ":if ([:len [/container/envs/find list=\"{{envList}}\" key=\"MIKROSCOPE_TAG\" value=\"{{tag}}\"]] \u003e 0) do={ :put ([:len [/container/find comment=\"{{tag}}\"]] + [:len [/container/envs/find list=\"{{envList}}\"]]"
+        },
+        {
+          "when": "tar",
+          "text": " + [:len [/file/find name=\"{{imageFile}}\"]]"
+        },
+        {
+          "text": ") } else={ :put [:len [/container/find comment=\"{{tag}}\"]] }"
+        }
+      ],
+      "remove": [
+        {
+          "text": ":local had [:len [/container/find comment=\"{{tag}}\"]]; :do { /container/stop [find comment=\"{{tag}}\"] } on-error={}; :local s 0; :while (([:len [/container/find comment=\"{{tag}}\" running]] + [:len [/container/find comment=\"{{tag}}\" stopping]]) \u003e 0 \u0026\u0026 $s \u003c 30) do={ :delay 1s; :set s ($s + 1) }; /container/remove [find comment=\"{{tag}}\"]; :local i 0; :while ([:len [/container/find comment=\"{{tag}}\"]] \u003e 0 \u0026\u0026 $i \u003c 20) do={ :delay 1s; :set i ($i + 1) }; :if ($had \u003e 0) do={ :local r 0; :while ([:len [/file/find name=\"{{rootDir}}\"]] \u003e 0 \u0026\u0026 ([:len [/container/find root-dir=\"/{{rootDir}}\"]] + [:len [/container/find root-dir=\"{{rootDir}}\"]]) = 0 \u0026\u0026 $r \u003c 10) do={ :delay 1s; :set r ($r + 1) }; :if ([:len [/file/find name=\"{{rootDir}}\"]] \u003e 0 \u0026\u0026 ([:len [/container/find root-dir=\"/{{rootDir}}\"]] + [:len [/container/find root-dir=\"{{rootDir}}\"]]) = 0) do={ :do { /file/remove [find name=\"{{rootDir}}\"] } on-error={} } }; :if ([:len [/container/envs/find list=\"{{envList}}\" key=\"MIKROSCOPE_TAG\" value=\"{{tag}}\"]] \u003e 0) do={ "
+        },
+        {
+          "when": "tar",
+          "text": ":local j 0; :while ([:len [/file/find name=\"{{imageFile}}\"]] \u003e 0 \u0026\u0026 $j \u003c 15) do={ /file/remove [find name=\"{{imageFile}}\"]; :delay 1s; :set j ($j + 1) }; :if ([:len [/file/find name=\"{{imageFile}}\"]] = 0) do={ "
+        },
+        {
+          "text": "/container/envs/remove [find list=\"{{envList}}\" key!=\"MIKROSCOPE_TAG\"]; /container/envs/remove [/container/envs/find list=\"{{envList}}\" key=\"MIKROSCOPE_TAG\" value=\"{{tag}}\"]"
+        },
+        {
+          "when": "tar",
+          "text": " }"
+        },
+        {
+          "text": " }"
+        }
+      ],
+      "present": [
+        {
+          "text": ":put [:len [/container/find comment=\"{{tag}}\"]]"
+        }
+      ],
+      "manifest": [
+        {
+          "when": "tar",
+          "text": "file={{imageFile}}"
+        },
+        {
+          "text": "object=/container/envs list={{envList}}"
+        },
+        {
+          "text": "object=/container interface={{veth}}"
+        },
+        {
+          "text": "dir={{rootDir}}"
+        }
+      ]
+    }
+  ],
+  "sweep": {
+    "count": ":put [:len [{{menu}}/find comment=\"{{tag}}\"]]",
+    "menus": [
+      "/ip/firewall/address-list",
+      "/interface/list/member",
+      "/ip/firewall/nat",
+      "/ip/firewall/filter",
+      "/ip/firewall/raw",
+      "/ip/firewall/mangle",
+      "/ip/route",
+      "/container/mounts",
+      "/ip/address",
+      "/interface/veth",
+      "/interface/list",
+      "/disk"
+    ],
+    "remove": ":local n [:len [{{menu}}/find comment=\"{{tag}}\"]]; :if ($n \u003e 0) do={ {{menu}}/remove [find comment=\"{{tag}}\"]; :put (\"@@swept={{menu}} \" . $n) }",
+    "rule": "{{menu}} is each of menus in turn; uninstall sends every remove line after the steps' removals and before the manifest step's"
+  },
+  "triggers": [
+    {
+      "name": "busy",
+      "op": "\u003e=",
+      "min": 0.05,
+      "max": 1
+    },
+    {
+      "name": "slip",
+      "op": "\u003e=",
+      "min": 1.1,
+      "max": 100
+    },
+    {
+      "name": "memfall",
+      "op": "\u003e=",
+      "min": 1,
+      "max": 100000
+    },
+    {
+      "name": "kmsg",
+      "op": "\u003c=",
+      "min": 0,
+      "max": 7
+    },
+    {
+      "name": "softnet-drop",
+      "op": "",
+      "min": 0,
+      "max": 0
+    },
+    {
+      "name": "squeeze",
+      "op": "",
+      "min": 0,
+      "max": 0
+    },
+    {
+      "name": "oom",
+      "op": "",
+      "min": 0,
+      "max": 0
+    },
+    {
+      "name": "reset",
+      "op": "",
+      "min": 0,
+      "max": 0
+    },
+    {
+      "name": "irq-err",
+      "op": "",
+      "min": 0,
+      "max": 0
+    },
+    {
+      "name": "flash-bad",
+      "op": "",
+      "min": 0,
+      "max": 0
+    }
+  ],
+  "version": "1.3.1"
+}

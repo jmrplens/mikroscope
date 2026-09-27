@@ -1,12 +1,13 @@
 # Makefile for mikroscope. Running `make` with no arguments lists the targets.
 #
-# Two binaries and two build-time tools: the CLI and collector
+# Two binaries and three build-time tools: the CLI and collector
 # (cmd/mikroscope), the agent that runs in a scratch container on the router
-# (cmd/mikroscope-agent), cmd/gen_brand, which writes brand/, and
-# cmd/mikroscope-lab, which drives the virtual RouterOS lab. Neither tool is
-# shipped. Every check CI runs has a target here, and the workflows call the
-# target rather than restating the command, so `make analyze` on a laptop asks
-# the questions a pull request is asked.
+# (cmd/mikroscope-agent), cmd/gen_brand, which writes brand/, cmd/gen_rsc,
+# which writes site/src/data/rsc/, and cmd/mikroscope-lab, which drives the
+# virtual RouterOS lab. None of the three tools is shipped. Every check CI runs
+# has a target here, and the workflows call the target rather than restating
+# the command, so `make analyze` on a laptop asks the questions a pull request
+# is asked.
 
 .DEFAULT_GOAL := help
 SHELL := /bin/bash
@@ -19,7 +20,7 @@ SHELL := /bin/bash
 	cover cover-check \
 	fmt fmt-check vet tidy lint golangci-lint govulncheck actionlint shellcheck analyze analyze-fix sonar \
 	mdlint mdlint-fix check-doc-links \
-	gen-dashboards check-dashboards gen-brand check-brand check-generated \
+	gen-dashboards check-dashboards gen-brand check-brand gen-rsc check-rsc check-generated \
 	install-tools tools-versions release-check roundtrip roundtrip-device \
 	lab-tool lab-up lab-down lab-reset lab-status lab-ssh lab-cli lab-console lab-provision \
 	lab-profile lab-export lab-residue lab-power-cycle test-lab e2e-lab-build
@@ -491,7 +492,22 @@ check-brand: ## Fail if the mark and favicons in brand/ no longer match cmd/gen_
 	done; \
 	exit "$$status"
 
-check-generated: check-dashboards check-brand ## Every committed artifact matches its generator
+# site/src/data/rsc is the steps spec (internal/router/stepspec.go) as the
+# site's script generator and manual install pages read it, the golden case
+# matrix with each case's option object, and each case's `plan --rsc` script.
+# cmd/gen_rsc writes all of it; nothing else edits it. The check writes into a
+# scratch directory and compares, so a change to the steps that was never
+# regenerated fails it, and so does a hand edit.
+gen-rsc: ## Regenerate the steps spec and the case scripts into site/src/data/rsc (cmd/gen_rsc)
+	go run ./cmd/gen_rsc
+
+check-rsc: ## Fail if site/src/data/rsc no longer matches what cmd/gen_rsc writes (offline)
+	@echo "=== site/src/data/rsc up to date ==="
+	@set -euo pipefail; tmp="$$(mktemp -d)"; trap 'rm -rf "$$tmp"' EXIT; \
+	go run ./cmd/gen_rsc -out "$$tmp" >/dev/null; \
+	diff -r "$$tmp" site/src/data/rsc || { echo "FAIL: site/src/data/rsc differs from cmd/gen_rsc; run make gen-rsc"; exit 1; }
+
+check-generated: check-dashboards check-brand check-rsc ## Every committed artifact matches its generator
 
 ##@ Tools and release
 
@@ -614,7 +630,7 @@ LAB_GOARCH = $(if $(filter arm64,$(LAB_ARCH)),arm64,amd64)
 # repeat test makes (10 on x86_64, 3 on arm64).
 test-lab: build agent-tars lab-tool ## Run the end-to-end suite against the lab router (make lab-up first; LAB_ARCH, LAB_RUN='S0[1-4]')
 	LAB_REMOTE_IMAGE='$(LAB_REMOTE_IMAGE)' MIKROSCOPE_LAB_REQUIRED='$(MIKROSCOPE_LAB_REQUIRED)' \
-	  $(LAB) lock go test -tags labe2e -count=1 -timeout 75m -v $(if $(LAB_RUN),-run '$(LAB_RUN)') ./test/e2e/lab/
+	  $(LAB) lock go test -tags labe2e -count=1 -timeout 150m -v $(if $(LAB_RUN),-run '$(LAB_RUN)') ./test/e2e/lab/
 
 # doctor → install → status → upgrade → uninstall, every verb with
 # --ephemeral, in the lab: scripts/roundtrip.sh with the lab's defaults, the

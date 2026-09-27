@@ -1,0 +1,142 @@
+[
+    {
+        "id": "default-tar",
+        "args": [],
+        "lab": true,
+        "profiles": ["doctor-lists"],
+        "note": "every default: arm64, the tar route, the agent built from source; in the lab the tar is put on the router first"
+    },
+    {
+        "id": "arch-amd64-tar",
+        "args": ["--arch", "amd64", "--agent-tar", "mikroscope-agent-amd64.tar"],
+        "lab": false,
+        "profiles": [],
+        "note": "the amd64 release asset; the script is default-tar's, only the listing names the arch"
+    },
+    {
+        "id": "arch-armv5-tar",
+        "args": ["--arch", "arm", "--agent-tar", "mikroscope-agent-armv5.tar"],
+        "lab": false,
+        "profiles": [],
+        "note": "32-bit ARM at the default --goarm 5; no virtual RouterOS runs arm"
+    },
+    {
+        "id": "arch-armv7-tar",
+        "args": ["--arch", "arm", "--goarm", "7", "--agent-tar", "mikroscope-agent-armv7.tar"],
+        "lab": false,
+        "profiles": [],
+        "note": "32-bit ARM at --goarm 7; no virtual RouterOS runs arm"
+    },
+    {
+        "id": "pull-dockerhub",
+        "args": ["--remote-image", "jmrplens/mikroscope-agent:1.3.1"],
+        "lab": true,
+        "profiles": ["doctor-lists"],
+        "note": "the router pulls from Docker Hub; the reference gains registry-1.docker.io"
+    },
+    {
+        "id": "pull-ghcr",
+        "args": ["--remote-image", "ghcr.io/jmrplens/mikroscope-agent:1.3.1"],
+        "lab": true,
+        "profiles": ["doctor-lists"],
+        "note": "the router pulls from GHCR, the host kept as given (S18)"
+    },
+    {
+        "id": "pull-private",
+        "args": ["--remote-image", "registry.example:5000/team/agent:1.0"],
+        "lab": false,
+        "profiles": [],
+        "note": "a private registry with a port; registry.example does not resolve"
+    },
+    {
+        "id": "ephemeral-tar",
+        "args": ["--ephemeral"],
+        "lab": true,
+        "profiles": ["tmpfs-disk", "doctor-lists"],
+        "note": "tar and root on the tmpfs disk, start-on-boot=no"
+    },
+    {
+        "id": "ephemeral-pull",
+        "args": ["--ephemeral", "--remote-image", "jmrplens/mikroscope-agent:1.3.1"],
+        "lab": true,
+        "profiles": ["tmpfs-disk", "doctor-lists"],
+        "note": "root on the tmpfs disk, the router pulls, start-on-boot=no"
+    },
+    {
+        "id": "disk-usb1-tar",
+        "args": ["--disk", "usb1"],
+        "lab": false,
+        "profiles": [],
+        "note": "tar and root on a named disk; CHR has no usb1"
+    },
+    {
+        "id": "lists-custom",
+        "args": ["--iface-list", "MYLAN", "--addr-list", "MYNETS", "--remote-image", "jmrplens/mikroscope-agent:1.3.1"],
+        "lab": true,
+        "profiles": ["custom-lists"],
+        "note": "lists other than LAN/LANs; the custom-lists profile creates MYLAN and MYNETS"
+    },
+    {
+        "id": "lists-none",
+        "args": ["--iface-list", "none", "--addr-list", "none", "--remote-image", "jmrplens/mikroscope-agent:1.3.1"],
+        "lab": true,
+        "profiles": [],
+        "note": "neither list membership is written, for a firewall that drops nothing by list; the lab router without a profile is one"
+    },
+    {
+        "id": "second-install",
+        "args": ["--name", "b", "--veth", "veth-b", "--subnet", "172.30.11.0/30", "--port", "9200", "--container-name", "b", "--remote-image", "jmrplens/mikroscope-agent:1.3.1"],
+        "lab": true,
+        "profiles": ["doctor-lists"],
+        "note": "a second install beside the default one: its own name, veth, /30, port and container name= (S12)"
+    },
+    {
+        "id": "expose-token",
+        "args": ["--expose", "--lan-address", "192.168.88.1", "--token", "0123456789abcdefghijABCDEFGHIJ01", "--remote-image", "jmrplens/mikroscope-agent:1.3.1"],
+        "lab": true,
+        "profiles": ["doctor-lists"],
+        "note": "dst-nat and forward accept on the LAN address, with the token the exposure requires; the token is a fixed fake"
+    },
+    {
+        "id": "token-only",
+        "args": ["--token", "0123456789abcdefghijABCDEFGHIJ01", "--remote-image", "jmrplens/mikroscope-agent:1.3.1"],
+        "lab": true,
+        "profiles": ["doctor-lists"],
+        "note": "a token without exposure; the token is a fixed fake"
+    },
+    {
+        "id": "rate50-ring300",
+        "args": ["--rate", "50", "--buffer", "300", "--memory-max", "128M", "--remote-image", "jmrplens/mikroscope-agent:1.3.1"],
+        "lab": true,
+        "profiles": ["doctor-lists"],
+        "note": "a larger ring and memory.max; the memory limit is derived from them"
+    },
+    {
+        "id": "capture-triggers",
+        "args": ["--floor-hz", "10", "--capture-mb", "0", "--triggers", "busy>=0.9,slip>=2,oom", "--remote-image", "jmrplens/mikroscope-agent:1.3.1"],
+        "lab": true,
+        "profiles": ["doctor-lists"],
+        "note": "FLOOR_HZ and TRIGGERS in the envlist, capture off"
+    },
+    {
+        "id": "memlimit-explicit",
+        "args": ["--mem-limit-mb", "40", "--remote-image", "jmrplens/mikroscope-agent:1.3.1"],
+        "lab": true,
+        "profiles": ["doctor-lists"],
+        "note": "an explicit memory limit instead of the derived one"
+    },
+    {
+        "id": "unprivileged",
+        "args": ["--privileged=false", "--remote-image", "jmrplens/mikroscope-agent:1.3.1"],
+        "lab": true,
+        "profiles": ["doctor-lists"],
+        "note": "privileged=no"
+    },
+    {
+        "id": "restart-boot",
+        "args": ["--restart-max-count", "3", "--restart-interval", "5s", "--start-on-boot", "no", "--remote-image", "jmrplens/mikroscope-agent:1.3.1"],
+        "lab": true,
+        "profiles": ["doctor-lists"],
+        "note": "restart-max-count, restart-interval and start-on-boot given instead of their defaults"
+    }
+]

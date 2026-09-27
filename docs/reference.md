@@ -8,13 +8,12 @@ Every verb and flag of the mikroscope CLI, with its default, its accepted range 
 
 Source: <https://jmrp.io/docs/mikroscope/reference/cli/>
 
-This page answers one question for each flag of `mikroscope`: what it does,
-what it defaults to, what range is accepted, and whether an environment
-variable can set it. It is read from the Go files in [`cmd/mikroscope/`](https://github.com/jmrplens/mikroscope/tree/main/cmd/mikroscope)
-and from [`internal/router/options.go`](https://github.com/jmrplens/mikroscope/blob/main/internal/router/options.go), not from the help text, and
-where the two differ the page says so.
+`mikroscope` takes a verb and its flags. Each flag below has what it does, its
+default, the range it accepts and the environment variable that sets it, as the
+files in [`cmd/mikroscope/`](https://github.com/jmrplens/mikroscope/tree/main/cmd/mikroscope) and [`internal/router/options.go`](https://github.com/jmrplens/mikroscope/blob/main/internal/router/options.go)
+define them; where the help text says otherwise, the difference is noted.
 
-### Usage and exit status
+### Usage and exit codes
 
 ```sh
 mikroscope <verb> [flags]
@@ -38,10 +37,9 @@ anything, so a bad value stops the verb with nothing sent to the router: exit
 status 2 for `doctor`, `plan`, `install`, `upgrade`, `status` and `image`, and
 1 for `uninstall`, `record`, `mark`, `plot` and `forward`. The check is
 `Finish` in [`internal/router/options.go`](https://github.com/jmrplens/mikroscope/blob/main/internal/router/options.go), one function for all
-eleven verbs. Checked on 2026-09-24 with a build of 1.2.2 and no router in
-reach: `install --rate 500`, `image --rate 500` and `doctor --name bad/name`
-exited 2, and `uninstall --rate 500`, `record --port 0` and `forward --port 0`
-exited 1, each printing the value it refused. `--triggers` goes through the
+eleven verbs: `install --rate 500`, `image --rate 500` and
+`doctor --name bad/name` exit 2, and `uninstall --rate 500`, `record --port 0`
+and `forward --port 0` exit 1, each printing the value it refused. `--triggers` goes through the
 agent's own `ParseTriggers`, so an unknown condition, a bad threshold, a quote
 or a semicolon fails the verb, with exit 2 for `doctor`, `plan`, `install`,
 `upgrade`, `status` and `image` and 1 for `uninstall`, and nothing is sent. The agent parses
@@ -50,28 +48,32 @@ hand on the router: a bad value there shows up as a container that exits with
 status `2` after a `mikroscope-agent: bad configuration:` line in the router
 log, which `restart-policy=on-failure` then restarts.
 
-#### Where a default comes from
+#### Defaults
 
 A flag that names a variable in the tables below reads its default from
 `MIKROSCOPE_<KEY>`; a variable set to the empty string counts as unset, and a
 flag on the command line always wins. **Only the flags that name a variable
 have one.** `--rate`, `--buffer`, `--port`, `--memory-max`, `--mem-limit-mb`,
-`--capture-mb`, `--triggers`, `--floor-hz`, `--privileged`, `--ephemeral` and
-`--expose` are flags only. The CLI does not read `.env` itself; export it
+`--capture-mb`, `--triggers`, `--floor-hz`, `--privileged`, `--ephemeral`,
+`--expose`, `--restart-max-count`, `--restart-interval`, `--start-on-boot`,
+`--container-name` and `--extract-timeout` are flags only. `status`, `upgrade`
+and `uninstall` take the flags that describe an install's shape from the install
+on the router when they are not given ([Install
+shape](https://jmrp.io/docs/mikroscope/reference/cli/#pass-the-same-shape-to-status-upgrade-and-uninstall)). The CLI does not read `.env` itself; export it
 first with `set -a; . ./.env; set +a`. [Environment
 variables](https://jmrp.io/docs/mikroscope/reference/environment/) lists every variable, including
 the credentials that have no flag at all.
 
-### The deployment verbs
+### Deployment commands
 
 | Verb        | What it does                                                                                                                           | Writes to the router |
 | ----------- | -------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
 | `doctor`    | Read-only preflight in one ssh connect; each failing check names its fix. Then reads the running agent's ring for a loop, STP churn, link flaps and softnet drops. Exits 1 if any prerequisite is missing; warnings and findings do not. | no                   |
 | `plan`      | Prints every object `install` would create, then stops. Same as `install --dry-run`; with `--rsc` it writes a RouterOS script instead. | no                   |
-| `install`   | Gets the image, prints the listing, runs `doctor`, asks for confirmation, writes, then probes the agent from this host.                | yes                  |
-| `upgrade`   | Gets a new image, checks that every install step is present, asks, removes and re-creates the container step, then probes.             | yes                  |
-| `uninstall` | Removes every step newest first, then verifies by ownership counts and fails naming anything that remains. `--targets` widens it past the router; nothing goes without `--yes`. | yes                  |
-| `status`    | Prints the ownership count of every step; if anything is installed, probes the agent and prints its health and board.                  | no                   |
+| `install` | Runs `doctor`, gets the image for the router's architecture, prints the listing, asks for confirmation, writes the install manifest and then every object, then probes the agent from this host. | yes |
+| `upgrade` | Reads the install's shape, gets a new image, lists the install manifest, the container step and any other step the router no longer holds, asks, writes the manifest and the missing steps, removes and re-creates the container step, then probes. | yes |
+| `uninstall` | Reads the install's manifest, removes everything the install created newest first and the manifest last, then verifies by ownership counts and by tag, and fails naming anything that remains. `--targets` widens it past the router; nothing goes without `--yes`. | yes |
+| `status` | Reads the install's shape and prints the ownership count of every step; if anything is installed, probes the agent and prints its health and board. | no |
 | `image`     | Builds the agent image tar and writes it to `--out`, for side-loading by hand.                                                         | no                   |
 
 `doctor` runs these checks, in this order:
@@ -80,17 +82,34 @@ The checks doctor runs:
 
 | Check, as printed | Passes when | The fix it names |
 | --- | --- | --- |
-| no registry credential meant for another registry | a warning, with `--remote-image` only: no `/container/config` username is set, or the host of `registry-url` is the host the image is pulled from, every spelling of Docker Hub counted as one. An empty `registry-url` with a username set warns. Doctor reads whether a username is set, never the name, and cannot read the password | `/container/config` holds one username for the whole device. A credential from another registry makes a pull end in `auth error` even for a public image (measured on the reference RB5009 with a Docker Hub login sent to GHCR, 2026-09-21); whether RouterOS presents it to a host named only in `remote-image=` was not measured. Install from a tar with `--agent-tar`, pass a `--remote-image` on the registry the username belongs to, or clear the username if nothing else needs it |
-| container package installed and enabled | a `container` package exists with `disabled=no` | download, upload, reboot; then `/system/package/enable container` |
-| device-mode container=yes | `/system/device-mode` reports `container=yes` | `/system/device-mode/update container=yes`, then the reset or mode button, or a power cycle, within 5 minutes |
-| architecture matches --arch <arch> | the router's `architecture-name` is the one `--arch` maps to (`arm64`, `arm`, `x86_64`) | re-run with the `--arch` it names |
+| RouterOS 7.24 or later | `/system/resource` reports a `version` of 7.24 or later; `7.24.4 (stable)`, `7.24 (stable)` and `7.25rc1 (testing)` all read | upgrade RouterOS to 7.24 or later (`/system/package/update`), and the `container` package with it |
+| architecture has a container package | the router's `architecture-name` is `arm`, `arm64` or `x86_64`, the architectures MikroTik publishes a `container` package for | none: no agent can run on this router |
+| the router picks the image's architecture | with `--remote-image`: always, naming the router's architecture, because RouterOS picks it from the image's multi-architecture index. A warning on `arm`, where the index holds both `linux/arm/v5` and `linux/arm/v7` and which one RouterOS pulls is not known | on `arm`, if the container stops with `Exec format error`, install from `mikroscope-agent-armv5.tar` with `--agent-tar` |
+| architecture matches the --agent-tar image | with `--agent-tar`: the tar's own architecture is the router's (`amd64` for `x86_64`); `--arch` is not needed | download the release asset it names, `mikroscope-agent-<arch>.tar` |
+| architecture read from the router | with neither image flag and `--arch` unset (or `auto`): always; `install` and `upgrade` build or load the image for the architecture doctor read | none |
+| architecture matches --arch <arch> | with an explicit `--arch` and neither image flag: the router's `architecture-name` is the one `--arch` maps to (`arm64`, `arm`, `x86_64`) | re-run with the `--arch` it names, or leave `--arch` out so that `install` reads it from the router |
+| container package installed and enabled | a `container` package exists with `disabled=no` | download the `container` package for this architecture and RouterOS version, upload it and reboot; when it is there and disabled, `/system/package/enable container` and reboot |
+| device-mode container=yes | `/system/device-mode` reports `container=yes` | `/system/device-mode/update container=yes`, then confirm it as the console asks: on a router that says `update: please activate by turning power off or pressing reset or mode button`, press the reset or mode button or cut the power; on CHR, which says `update: turn off power in 5m to activate changes`, power the VM off and on again within 5 minutes |
 | free memory ≥ <--memory-max> | `free-memory` is at least what `--memory-max` asks for, 64 MiB by default | free memory on the router, or ask for less with `--memory-max` |
-| free flash ≥ <size> (image tar + extracted root) | without `--disk`: `free-hdd-space` is at least twice the image plus 4 MiB | free flash, or install with `--disk tmpfs` or `--ephemeral` where a tmpfs disk exists |
-| disk <disk> exists | with `--disk` or `--ephemeral`: a disk with that slot exists; its free space is not checked | `/disk/add type=tmpfs tmpfs-max-size=64M slot=tmpfs` for a RAM disk, or name an existing disk with `--disk` |
-| interface list <list> exists (raw rule trap) | the `--iface-list` list (default `LAN`) exists | `/interface/list/add name=…`, or pass the list your `in-interface-list=!…` drop rule uses |
-| address list <list> has entries (raw rule trap) | the `--addr-list` list (default `LANs`) has at least one entry | pass the list your `drop local if not from default IP range` rule uses; an empty list is fine only if there is no such rule |
-| veth name <veth> is free or ours | always reported `ok`, with the count found | none: a collision is caught by `install` itself |
-| the installed agent published on the LAN asks for a token | a warning, shown only when an install of this `--name` has a dst-nat on the LAN: its environment holds a `TOKEN`. Doctor counts the entries, never reads the value | `upgrade` with the same `--name`, the flags it was installed with (`--expose --lan-address` among them) and `--token <secret>`; or remove the agent, LAN rules and container together, with `uninstall --name <name> --expose --lan-address <router LAN IPv4> --token <any> --yes` plus any other shape flag the install was given (`--port`, `--veth`, `--subnet`) |
+| free memory leaves room for the pull | a warning, with `--remote-image` only: `free-memory` is at least `--memory-max` plus 16 MiB, room for RouterOS to pull and extract the image before the agent starts. How much a pull takes is not measured, so the margin is an estimate | install from a tar with `--agent-tar` if the pull fails |
+| free flash ≥ <size> (image tar + extracted root) | without `--disk` or `--ephemeral`: `free-hdd-space` is at least twice the image plus 4 MiB. With `--remote-image` nothing is uploaded and the name ends in `(extracted root)`: the root the pulled image is extracted into, 7 MiB, plus 4 MiB | free flash, or install with `--disk tmpfs` or `--ephemeral` where a tmpfs disk exists |
+| disk <disk> exists | with `--disk` or `--ephemeral`: a disk with that slot exists | `/disk/add type=tmpfs tmpfs-max-size=64M slot=tmpfs` for a RAM disk, or name an existing disk with `--disk` |
+| disk <disk> has ≥ <size> free (image tar + extracted root) | with `--disk` or `--ephemeral`, once the disk exists: its free space is at least twice the image plus 4 MiB; with `--remote-image`, the 7 MiB root plus 4 MiB, as the flash check | free space on that disk, or give a tmpfs disk a larger `tmpfs-max-size` |
+| disk tmpfs is RAM | with `--ephemeral`: the disk in slot `tmpfs` is of type `tmpfs` | free the slot for a tmpfs disk, or install with `--disk <slot>` without `--ephemeral` |
+| start-on-boot suits a root in RAM | a warning, when the disk is a tmpfs disk: start-on-boot resolves to `no`, since a reboot empties the disk and a container started at boot has no root | pass `--start-on-boot no`, or `--ephemeral` |
+| veth name <veth> is free or ours | no veth has that name, or the one that has it carries this install's tag | pick another `--veth` (and `--subnet`), or remove the veth by hand if it is a leftover of yours |
+| envlist <name>-env is free or ours | no envlist has that name, or the one that has it holds this install's `MIKROSCOPE_TAG` entry | pick another `--name` |
+| install manifest <disk/>mikroscope/<name>.manifest.txt is free or ours | no file is at the install manifest's path, or the one there holds this install's `tag=` line | move the file away, or pick another `--name` |
+| container name <name> is free or ours | with `--container-name`: no container has that name, or the one that has it carries this install's tag | pick another `--container-name` |
+| subnet <subnet> does not overlap a route | no route of the main table, active or not, lies inside the /30, and no connected network on another interface holds its router end. Routes that only contain the /30 (a default route, a wider prefix to a VPN), blackhole routes and the install's own veth are left out | pick another /30 with `--subnet` |
+| interface list <list> exists | the `--iface-list` list (default `LAN`) exists. With `--iface-list none` doctor prints `interface list the veth joins` and passes: no membership is written | `--iface-list none` when no firewall rule needs the veth in a list (doctor offers it first then); otherwise `/interface/list/add name=…`, or pass the list your `in-interface-list=!…` drop rule uses |
+| address list <list> | always: install adds the /30 to the `--addr-list` list (default `LANs`), which creates it when it is missing, and uninstall removes the entry. With `--addr-list none` doctor prints `address list the /30 joins`. Whether a rule needs the membership is the next row's question | none |
+| no firewall rule drops the agent's replies | doctor reads every enabled rule of the chains the agent's replies meet, `/ip/firewall/raw` prerouting and `/ip/firewall/filter` forward and input, and walks each one as RouterOS does, first match wins, with the replies in the lists the plan joins: no rule drops them. A warning when a rule might, because it matches on something doctor does not judge (a destination, a mark, a rate), and when the replies to a LAN host pass but a rule may drop the ones to the router itself (filter input), which the relay transport needs | the `--iface-list` and `--addr-list` that let the replies through; when no list does (a `src-address=!<range>` rule, say), add an accept rule for `in-interface=<veth>` before that rule, or pick a `--subnet` inside the range |
+| --lan-address <address> is the router's | with `--expose`: an interface of the router holds that address | pass the address the router has on its LAN, as `/ip/address/print` lists it |
+| --lan-address is not on the uplink | a warning, with `--expose`: the interface that holds the address carries no default route, is in no `WAN` list, and shares no interface list with the interface that carries the default route | pass the router's LAN address: on the uplink the dst-nat would publish the agent on the Internet side |
+| no registry credential meant for another registry | a warning, with `--remote-image` only: no `/container/config` username is set, or the host of `registry-url` is the host the image is pulled from, every spelling of Docker Hub counted as one. An empty `registry-url` with a username set warns. Doctor reads whether a username is set, never the name, and cannot read the password | `/container/config` holds one username for the whole device, and a credential from another registry can make the pull of a public image end in `auth error`. Install from a tar with `--agent-tar`, pass a `--remote-image` on the registry the username belongs to, or clear the username if nothing else needs it |
+| the installed agent published on the LAN asks for a token | a warning, shown only when an install of this `--name` has a dst-nat on the LAN: its environment holds a `TOKEN`. Doctor counts the entries, never reads the value | `upgrade` with the same `--name` and `--token <secret>`; or remove the agent, the LAN rules and the container together with `uninstall --name <name> --yes` |
+| nothing tagged for <name> that these flags do not select | a warning: in every menu an install writes to, the objects that carry the install's tag are no more than the plan for these flags selects. An install made with other flags (`--expose`, other lists, another `--subnet`) leaves more | run `status` and `uninstall` with no shape flag, so that they read the install manifest, or with the flags that install was given |
 
 Standalone `doctor`, but not the doctor that `install` runs, then pulls the agent's ring once
 over HTTP from the `--subnet` .2 address on `--port`, sending `--token`, and gives up after 3 s.
@@ -115,27 +134,28 @@ status.
 > install](https://jmrp.io/docs/mikroscope/install/routes/) sets the four side by side, and [Installing the
 > agent](https://jmrp.io/docs/mikroscope/install/) walks what `install` does.
 
-#### Flags of the deployment verbs
+#### Deployment flags
 
 | Flag             | Default                         | Variable                  | Accepted                                                   | Meaning                                                                                                                                                                                                                                                                                                         |
 | ---------------- | ------------------------------- | ------------------------- | ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `--router`       | none, required                  | `MIKROSCOPE_ROUTER`       | `user@host` or an ssh config alias                         | ssh target; every verb but `plan`, `install --dry-run`, `upgrade --dry-run`, `image` and an `uninstall` without `--yes` (or without the `router` target) fails without it                                                                                                                                                                                                                             |
 | `--ssh-port`     | empty (ssh config)              | `MIKROSCOPE_SSH_PORT`     |                                                            | ssh port                                                                                                                                                                                                                                                                                                        |
 | `--ssh-key`      | empty (agent or ssh config)     | `MIKROSCOPE_SSH_KEY`      |                                                            | ssh identity file                                                                                                                                                                                                                                                                                               |
+| `--ssh-option` | none | `MIKROSCOPE_SSH_OPTIONS`, comma-separated | `Key=value`, repeatable; the key one of `StrictHostKeyChecking`, `UserKnownHostsFile`, `ConnectTimeout`, `HostKeyAlgorithms`, `PubkeyAcceptedAlgorithms`, `IdentitiesOnly`, `ServerAliveInterval`; the value `^[A-Za-z0-9_./~+:-]{1,256}$` | an ssh and scp option, placed before the CLI's own `-o BatchMode=yes -o ConnectTimeout=15`; the first flag replaces the variable's whole list. A router not yet in `known_hosts` needs `StrictHostKeyChecking=accept-new`, because the CLI runs ssh in batch mode |
 | `--name`         | `mikroscope`                    | `MIKROSCOPE_NAME`         | `^[A-Za-z0-9][A-Za-z0-9_.-]{0,31}$`                        | container name; tags every object as `mikroscope:<name> (managed by mikroscope)`                                                                                                                                                                                                                                |
 | `--veth`         | `veth-mikroscope`               | `MIKROSCOPE_VETH`         | `^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`                        | veth interface name on the router                                                                                                                                                                                                                                                                               |
 | `--subnet`       | `172.30.10.0/30`                | `MIKROSCOPE_SUBNET`       | an IPv4 /30 at its network address                         | the router takes `.1`, the agent `.2`                                                                                                                                                                                                                                                                           |
-| `--iface-list`   | `LAN`                           | `MIKROSCOPE_IFACE_LIST`   | same pattern as `--veth`                                   | interface list the veth joins                                                                                                                                                                                                                                                                                   |
-| `--addr-list`    | `LANs`                          | `MIKROSCOPE_ADDR_LIST`    | same pattern as `--veth`                                   | address list the /30 joins                                                                                                                                                                                                                                                                                      |
+| `--iface-list` | `LAN` | `MIKROSCOPE_IFACE_LIST` | same pattern as `--veth`, or `none`; not `all`, `dynamic` or `static` | interface list the veth joins; `none` writes no membership, for a firewall with no rule that drops by interface list |
+| `--addr-list` | `LANs` | `MIKROSCOPE_ADDR_LIST` | same pattern as `--veth`, or `none` | address list the /30 joins, created by the entry when the list has none; `none` writes no entry |
 | `--disk`         | empty (internal flash)          | `MIKROSCOPE_DISK`         | `^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$`                         | RouterOS disk for the image tar and the root: `tmpfs`, `disk1`, `usb1` …                                                                                                                                                                                                                                        |
-| `--ephemeral`    | `false`                         | none                      |                                                            | forces `--disk tmpfs` and `start-on-boot=no`: nothing written to flash, nothing survives a reboot                                                                                                                                                                                                               |
-| `--arch`         | `arm64`                         | `MIKROSCOPE_ARCH`         | `^[a-z0-9]{1,16}$`; `doctor` knows `arm64`, `arm`, `amd64` | device architecture, used as `GOARCH` and in the image manifest                                                                                                                                                                                                                                                 |
-| `--goarm`        | `5`                             | none                      |                                                            | `GOARM` level, used only with `--arch arm`: 5 runs on every 32-bit ARM MikroTik ships, 7 does not run on EN7562CT boards (hEX Refresh)                                                                                                                                                                                                                                                                      |
+| `--ephemeral`    | `false`                         | none                      |                                                            | forces `--disk tmpfs`, and `start-on-boot=no` unless `--start-on-boot` says otherwise: nothing written to flash, nothing survives a reboot                                                                                                                                                                                                               |
+| `--arch` | `auto` | `MIKROSCOPE_ARCH` | `arm64`, `arm`, `amd64` or `auto` | device architecture, used as `GOARCH` and in the image manifest. `auto` reads it from the router: `doctor`, `install` and `upgrade` take it from doctor's batch (`install --no-doctor` makes one connect for it, and none with `--remote-image`, where the router picks the architecture from the image's index); `plan`, `--dry-run` and `image`, which connect to nothing, take `arm64` |
+| `--goarm`        | `5`                             | none                      | `5`, `6` or `7`                                            | `GOARM` level, used only with `--arch arm`: 5 runs on every 32-bit ARM MikroTik ships, 7 does not run on EN7562CT boards (hEX Refresh)                                                                                                                                                                                                                                                                      |
 | `--agent-tar`    | empty (build the agent here)    | `MIKROSCOPE_AGENT_TAR`    | a path to an agent image tar                               | `plan`, `install`, `upgrade`, `image`: upload this tar instead of building one, so neither a Go toolchain nor a checkout is needed. The tar is checked first: one that is not a mikroscope agent image, or is built for an architecture other than `--arch`, fails the verb naming the asset to download        |
 | `--remote-image` | empty (upload a tar)            | `MIKROSCOPE_REMOTE_IMAGE` | a registry reference, `owner/name:tag` or `host/owner/name:tag`             | `plan`, `install`, `upgrade`: the router pulls the image itself, so nothing is built and nothing is uploaded, and no tar lands on the device. The whole reference goes into `remote-image=`, registry host included: none, `docker.io`, `index.docker.io` or `registry.hub.docker.com` becomes `registry-1.docker.io`, any other host is kept. The global `/container/config registry-url` is neither needed nor written, and no registry login is needed for the published image |
 | `--rsc`          | `false`                         | none                      |                                                            | `plan`: write a RouterOS script that installs from the router itself, instead of the listing                                                                                                                                                                                                                    |
 | `--port`         | `9123`                          | none                      | 1–65535                                                    | agent HTTP port on the veth                                                                                                                                                                                                                                                                                     |
-| `--rate`         | `10`                            | none                      | 1–100                                                      | sampler rate in Hz (envlist `RATE_HZ`); 10, 50 and 100 Hz measured lossless on the RB5009 ([rate ceiling](https://jmrp.io/docs/mikroscope/cost/rate-ceiling/))                                                                                                                                                                      |
+| `--rate` | `10` | none | 1–100 | sampler rate in Hz (envlist `RATE_HZ`); 10, 50 and 100 Hz are lossless ([rate ceiling](https://jmrp.io/docs/mikroscope/cost/rate-ceiling/)) |
 | `--buffer`       | `60`                            | none                      | 10–3600                                                    | ring buffer in seconds (envlist `BUFFER_S`)                                                                                                                                                                                                                                                                     |
 | `--memory-max`   | `64M`                           | none                      | `^\d{1,6}[KMG]?$`                                          | container cgroup `memory-max`, RouterOS syntax                                                                                                                                                                                                                                                                  |
 | `--mem-limit-mb` | `0` (derived)                   | none                      | `0`, or 8–1024                                             | agent Go soft memory limit in MiB (envlist `MEM_LIMIT_MB`). `0` derives it from the ring: rate × buffer × 3 456 B × 2.5, rounded up, at least 16 MiB and at most ¾ of `--memory-max` while that still leaves room for the ring. That gives 16 at the defaults. A number you pass is used as is                                                                                                                                         |
@@ -143,100 +163,62 @@ status.
 | `--triggers`     | empty (the agent's default set) | none                      | see [triggered capture](https://jmrp.io/docs/mikroscope/record/triggers/)      | trigger conditions, comma-separated (envlist `TRIGGERS`)                                                                                                                                                                                                                                                        |
 | `--floor-hz`     | `0`                             | none                      | 0–1000                                                     | one cadence for every level source, in Hz (envlist `FLOOR_HZ`); `0` keeps the per-source floors; equal to `--rate` reads and emits every source every tick                                                                                                                                                      |
 | `--privileged`   | `true`                          | none                      |                                                            | runs the container `privileged=yes`; `-privileged=false` opts out                                                                                                                                                                                                                                               |
-| `--token`        | empty                           | `MIKROSCOPE_TOKEN`        | `^[A-Za-z0-9_.-]{0,128}$`                                  | bearer token the agent requires (envlist `TOKEN`); mandatory with `--expose`; `doctor` also sends it to read the agent's ring                                                                                                                                                                                                                                    |
-| `--expose`       | `false`                         | none                      | needs `--lan-address` and `--token`                        | dst-nat the agent port on the router's LAN address; adds two tagged firewall rules                                                                                                                                                                                                                              |
+| `--container-name` | empty (RouterOS names it) | none | `^[A-Za-z0-9][A-Za-z0-9_.-]{0,31}$` | the container's `name=`; `doctor` checks that no other container holds it |
+| `--restart-max-count` | `5` | none | 0–100 | `restart-max-count` of the container's on-failure restart policy |
+| `--restart-interval` | `10s` | none | `^\d{1,4}[smh]$` | `restart-interval` between those restarts |
+| `--start-on-boot` | `auto` | none | `auto`, `yes` or `no` | `start-on-boot` of the container; `auto` is `no` with `--ephemeral` and `yes` without. `doctor` warns on `yes` with the root on a tmpfs disk |
+| `--extract-timeout` | `120s` | none | `^\d{1,4}[smh]$`, 10–600 s | tar route: how long the container step waits for RouterOS to extract the image before it deletes the tar; on timeout it stops and says so, and the tar stays. The ssh deadline for one command, 3 minutes, grows to this and one minute more when that is longer |
+| `--token` | empty | `MIKROSCOPE_TOKEN` | `^[A-Za-z0-9_.-]{0,128}$` | bearer token the agent requires (envlist `TOKEN`); `install`, `upgrade` and `plan` need it with `--expose`, and `upgrade` refuses an install that has one when none is given; `doctor` also sends it to read the agent's ring. It reaches ssh on standard input, never on a command line |
+| `--expose` | `false` | none | needs `--lan-address`; `install`, `upgrade` and `plan` also need `--token` | dst-nat the agent port on the router's LAN address; adds two tagged firewall rules |
 | `--lan-address`  | empty                           | `MIKROSCOPE_LAN_ADDRESS`  | an IPv4 address                                            | the router's LAN address for `--expose`                                                                                                                                                                                                                                                                         |
 | `--dry-run`      | `false`                         | none                      |                                                            | `install` and `upgrade`: print the listing and write nothing                                                                                                                                                                                                                                                                  |
 | `--yes`          | `false`                         | none                      |                                                            | `install`, `upgrade`: do not ask before writing. `uninstall`: remove what it lists, which it does not do without this flag                                                                                                                                                                                                                                                                 |
-| `--no-doctor`    | `false`                         | none                      |                                                            | `install`: skip the preflight checks                                                                                                                                                                                                                                                                            |
+| `--no-doctor` | `false` | none |  | `install`: skip the preflight checks; with `--arch` unset and no `--remote-image`, one connect reads the router's architecture |
 | `--out`          | `mikroscope-agent-<arch>.tar`   | none                      |                                                            | `image`: output path of the tar. `plan --rsc`: where the script is written; empty writes it to standard output                                                                                                                                                                                                  |
 
-Three settings of the container are not flags: `logging=yes`,
-`restart-policy=on-failure` with `restart-max-count=5` and
-`restart-interval=10s`, and `ignore-remote-image-change=yes`. The restart
-values are the ones `Defaults()` sets; all three are what `install` writes
-([`internal/router/steps.go`](https://github.com/jmrplens/mikroscope/blob/main/internal/router/steps.go)). `start-on-boot` has no flag of its own either: it
-is `no` with `--ephemeral` and `yes` without.
+Two settings of the container are not flags: `logging=yes` and
+`ignore-remote-image-change=yes`. `restart-policy=on-failure` is not either;
+its count and interval are `--restart-max-count` and `--restart-interval`.
 
-#### Pass the same shape to status, upgrade and uninstall
+#### Install shape
 
-`status`, `upgrade` and `uninstall` do not read what is on the router to learn
-how it was installed. Each one rebuilds the install plan from the flags of its
-own invocation and selects objects by that plan's names, paths and tag. So:
+`status`, `upgrade` and `uninstall` read how the install on the router was made before they build
+their plan: from its install manifest, `mikroscope/<name>.manifest.txt` on its disk, or, for an
+install made by 1.3.x, which has none, from the objects that carry its tag.
 
-- An install made with `--expose` is only removed, and only verified, by an
-  `uninstall` that is also given `--expose --lan-address … --token …`.
-  Without them the two firewall rules are not in the plan, and the
-  verification does not look for them.
-- `upgrade` removes the envlist with the container and writes it again from
-  its own flags. An `upgrade` without the `--rate`, `--buffer`,
-  `--mem-limit-mb`, `--capture-mb`, `--triggers`, `--floor-hz` or `--token`
-  you installed with writes the defaults in their place, and `--memory-max`
-  and `--privileged` likewise go back to theirs.
-- `--name`, `--veth`, `--subnet`, `--iface-list`, `--addr-list`, `--port` and
-  `--disk` or `--ephemeral` decide what the selectors match; change one and
-  the verb is looking for different objects.
+- A shape flag not given takes the value the install was made with: `--veth`, `--subnet`,
+  `--iface-list`, `--addr-list`, `--disk` (and `--ephemeral`), `--port`, `--expose` with
+  `--lan-address`, `--container-name` and `--start-on-boot`, and for `status` and `uninstall`
+  `--remote-image`. `uninstall --yes` with no other flag removes an install made with any of them.
+- Without a manifest, a list membership the router does not hold is not read as `none`: the flag,
+  or its default, decides, and `upgrade` makes the membership again.
+- A flag given, or set by its `MIKROSCOPE_*` variable, that contradicts the install is refused
+  before anything is written, naming both values: `the install named mikroscope on the router does
+  not match the flags: installed with --iface-list MYLAN, given LAN`. That holds for `--veth`,
+  `--subnet`, `--iface-list`, `--addr-list`, `--disk` and `--ephemeral`, `--port`, and `--expose`
+  with `--lan-address`. `--container-name`, `--start-on-boot` and `--remote-image` are filled in
+  when not given and never refused: a flag given wins, and `upgrade` takes its image from its own
+  flags only.
+- `--name` selects the install, and is never read from the router.
+- `upgrade` writes the envlist again from its own flags: an `upgrade` without the `--rate`,
+  `--buffer`, `--mem-limit-mb`, `--capture-mb`, `--triggers` or `--floor-hz` you installed with
+  writes the defaults in their place, and `--memory-max`, `--privileged`, `--restart-max-count`
+  and `--restart-interval` likewise go back to theirs. It refuses an install whose envlist holds a
+  `TOKEN` when no `--token` is given, so an exposed agent never loses its authentication to an
+  upgrade.
 
-All three were run against the reference RB5009 (RouterOS 7.24.4) on
-2026-09-21, as a second install beside the production one under its own
-`--name`, `--veth`, `--subnet` and `--port`. **They hold, and the second one is
-worse than it reads.**
-
-The install was made exposed, with a token and with `--rate 20 --buffer 90
---mem-limit-mb 64 --capture-mb 8 --floor-hz 5 --memory-max 96M`. Through the
-router's LAN address `/snapshot` then answered `401` with no token, `200` with
-it, and `401` with a wrong one.
-
-An `upgrade` given only `--name`, `--veth`, `--subnet` and `--port` rewrote the
-envlist to `RATE_HZ=10`, `BUFFER_S=60`, `MEM_LIMIT_MB=16`, `CAPTURE_MB=4`, no
-`FLOOR_HZ` line at all — and **no `TOKEN`**. The two firewall rules are not in
-an upgrade's plan, so the exposure survived untouched, and the same
-`/snapshot` that had answered `401` a minute earlier returned `200` and
-68 041 bytes of kernel telemetry to anything on the LAN. **The default for
-`--token` is empty, so "writes the defaults in their place" means an upgrade
-silently removes authentication from an install that is still published.**
-Pass `--token` to every `upgrade` of an exposed install.
-
-The `uninstall` without `--expose` then removed the container, the veth, the
-address and both list memberships, printed `verified: nothing mikroscope
-created remains on the router`, and left the dst-nat pointing at
-`172.30.21.2` — an address that no longer existed on the device.
-
-> **Fixed in 1.1.0: the expose rules could not be removed at all**
->
-> The run also found a defect. Both expose selectors carried `protocol=tcp` unquoted, and a
-> RouterOS `find` reads a bare word as a variable name — an unset variable is the empty value, so
-> the selector matched nothing. Measured on the same device: over the same 15 dstnat rules, `find
-> chain=dstnat protocol=tcp` returned `0` and `find chain=dstnat protocol="tcp"` returned `10`.
->
-> The same string is the existence check, the ownership check and the removal, so all three agreed
-> with each other and disagreed with the router: `uninstall --expose` removed **neither** rule and
-> then reported `verified: nothing mikroscope created remains` over a live dst-nat, and `install`
-> could not see its own rule, so installing twice left two copies. Creation was never affected —
-> `add protocol=tcp` takes a bare word — which is why the rules appeared correctly and were
-> invisible only to their own queries. Both selectors quote the value now,
-> `TestFindSelectorsQuoteEveryValue` fails if a new one does not, and the fixed binary removed the
-> two rules the unfixed one had left behind.
-
-What that run did not cover:
-
-> **Untested**
->
-> `--disk` against `--ephemeral` as the thing that changes which objects the selectors match: the
-> run varied `--name`, `--veth`, `--subnet` and `--port`, not the storage mode. An exposed install
-> on any board other than the RB5009.
-
-#### What the writing verbs write
+#### Router writes
 
 **What `install` writes to your router**
 
+- the install manifest, a file `mikroscope/<name>.manifest.txt` on the install's disk that lists the options and every object below
 - a veth
 - one address
-- one interface-list membership
-- one address-list entry
+- one interface-list membership, unless `--iface-list none`
+- one address-list entry, unless `--addr-list none`
 - an envlist
-- the image tar, unless `--remote-image` has the router pull the image
-- the container
+- the image tar, deleted once the container is extracted, unless `--remote-image` has the router pull the image
+- the container, and its root `mikroscope/<name>` on the same disk
 
 Every object carries the comment `mikroscope:<name> (managed by mikroscope)`
 
@@ -248,7 +230,7 @@ Every object carries the comment `mikroscope:<name> (managed by mikroscope)`
 
 - two firewall rules, tagged
 - a token becomes mandatory
-- `uninstall` and `status` see the two rules only when given `--expose` again
+- `uninstall` and `status` find the two rules through the manifest and the tag, with or without `--expose`
 
 Every object carries the comment `mikroscope:<name> (managed by mikroscope)`
 
@@ -256,8 +238,10 @@ Every object carries the comment `mikroscope:<name> (managed by mikroscope)`
 
 **What `upgrade` replaces**
 
+- the install manifest, written first every time, so an install made before there was one gets it
 - a new image and the container
-- the envlist, rewritten from the flags `upgrade` is given
+- the envlist, rewritten from the flags `upgrade` is given; it refuses an install with a token when no `--token` is given
+- any other object of the install the router no longer holds, created again before the container
 - network objects stay
 
 Every object carries the comment `mikroscope:<name> (managed by mikroscope)`
@@ -266,13 +250,10 @@ Every object carries the comment `mikroscope:<name> (managed by mikroscope)`
 
 **What `uninstall` removes**
 
-- a veth
-- one address
-- one interface-list membership
-- one address-list entry
-- an envlist
-- the image tar, unless `--remote-image` has the router pull the image
-- the container
+- every object in the install's manifest, and any other object that carries its tag
+- the container root `mikroscope/<name>`, with the container, or on the manifest's word when a root is left
+- the manifest, last, and then the `mikroscope` directory when nothing else is in it
+- never device-mode, the `container` package, `/container/config`, or a list, disk or rule the router had before
 
 Every object carries the comment `mikroscope:<name> (managed by mikroscope)`
 
@@ -282,12 +263,12 @@ Every object carries the comment `mikroscope:<name> (managed by mikroscope)`
 
 #### `uninstall --targets`
 
-`uninstall` has meant "the objects `install` created on the router" since
-1.0.0 and still does when it is given nothing else. `--targets` widens it.
+`uninstall` means "everything `install` created on the router" when it is
+given nothing else. `--targets` widens it.
 
 | Target      | What goes                                                                                      |
 | ----------- | ------------------------------------------------------------------------------------------------ |
-| `router`    | the container, the veth, the address, and the two list memberships — the default                 |
+| `router` | everything `install` created: the objects in the install manifest, any other object with the install's tag, the container root, the manifest, and the `mikroscope` directory when nothing else is in it — the default |
 | `dashboard` | the dashboard and the datasource `forward --grafana` published, per store this collector writes to |
 | `data`      | the tables and indices the sinks wrote, and the files the file sinks wrote                        |
 | `all`       | the three above                                                                                  |
@@ -334,7 +315,7 @@ One store needs a word about what "deleted" means to it:
 >
 > A table deleted through `/api/v3/configure/table` stays in
 > `information_schema` under a name carrying the deletion instant —
-> `mikroscope_cpu-20260919T225605`, measured 2026-09-20. Those are gone and are
+> `mikroscope_cpu-<timestamp>`. Those are gone and are
 > not offered again; without that filter an uninstall would list the same
 > tables on every run, delete them successfully, and never empty. The delete
 > asks for `hard_delete_at=now`, which the server accepts and schedules.
@@ -346,7 +327,7 @@ something to a sibling is accepted and ignored: `plot --for 5m` parses and
 does nothing. The table marks which verb reads each flag. `--from-start` is
 the exception: only `record` registers it, and `forward`, `mark` and `plot`
 refuse it as an unknown flag. `forward` always starts at the agent's newest
-sample ([`internal/forward/`](https://github.com/jmrplens/mikroscope/tree/main/internal/forward)); through 1.2.0 it listed the flag and ignored it.
+sample ([`internal/forward/`](https://github.com/jmrplens/mikroscope/tree/main/internal/forward)).
 
 | Flag            | Default                      | Variable              | Read by                     | Meaning                                                                                                                                                                                                                                                                                                                |
 | --------------- | ---------------------------- | --------------------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -355,7 +336,7 @@ sample ([`internal/forward/`](https://github.com/jmrplens/mikroscope/tree/main/i
 | `--from-start`  | `false`                      | none                  | `record`                    | backfill everything the agent's ring holds before going live                                                                                                                                                                                                                                                           |
 | `--poll`        | `500ms`                      | none                  | `record`, `forward`         | how often the agent's ring is pulled                                                                                                                                                                                                                                                                                   |
 | `--batch`       | `0`                          | none                  | `record`, `forward`         | samples per pull; `0` is twice what one `--poll` produces at the agent's rate, never under 20. The relay caps a pull at 13. A pull repeats until it comes back short                                                                                                                                                   |
-| `--transport`   | `auto`                       | none                  | `record`, `forward`         | `auto` (direct, then relay), `direct` (HTTP to the veth) or `relay` (`/tool fetch` over the RouterOS API; each call returns at most 64 512 B and took either ~3 ms or ~1 s on the RB5009, RouterOS 7.24.2, 2026-09-11; see [reaching the agent](https://jmrp.io/docs/mikroscope/install/reaching-the-agent/)) |
+| `--transport`   | `auto`                       | none                  | `record`, `forward`         | `auto` (direct, then relay), `direct` (HTTP to the veth) or `relay` (`/tool fetch` over the RouterOS API; each call returns at most 64 512 B and takes either about 3 ms or about 1 s; see [reaching the agent](https://jmrp.io/docs/mikroscope/install/reaching-the-agent/)) |
 | `--log-markers` | `false`                      | none                  | `record`, `mark`            | `record`: after recording, pull the router log over the API and append the matching lines to `<out>.markers.csv`. `mark`: add the log lines of the recording's window                                                                                                                                                  |
 | `--topics`      | `system,interface,container` | none                  | `record`, `mark`            | log topics kept as markers with `--log-markers`                                                                                                                                                                                                                                                                        |
 | `--router-tz`   | `Local`                      | none                  | `record`, `mark`            | IANA zone the router's clock shows; RouterOS log times carry no zone                                                                                                                                                                                                                                                   |
@@ -397,15 +378,15 @@ refuses to start without at least one sink.
 | `--api-mode`        | `full`  | none                    | preset. `off` sets `--api-every 0` unless you set it yourself, so the collector opens no API-tier session; the relay transport still uses the API. `slow` runs the tier every 10 s with no `/system/health` and no conntrack count; `/system/resource`, `/system/resource/cpu`, `monitor-traffic` on `--interfaces` and the `--counters-every` port counters are still read. `full` (the flag defaults) reads everything. An explicit flag below wins over it |
 | `--api-every`       | `1s`    | none                    | API-tier cadence; `0` disables the tier. `off` sets it to `0`, `slow` to `10s`                                                                                                                                                                                                                                                                                                                                                                                |
 | `--interfaces`      | empty   | `MIKROSCOPE_INTERFACES` | comma-separated interfaces for `monitor-traffic`, one call for all                                                                                                                                                                                                                                                                                                                                                                                            |
-| `--conntrack-every` | `0`     | none                    | ask the conntrack count this often; `0` never, because it is a table scan. One scan took 1.3 ms at 6 212 entries on the RB5009 (2026-09-11). `slow` sets it to `0` unless given explicitly                                                                                                                                                                                                        |
+| `--conntrack-every` | `0`     | none                    | ask the conntrack count this often; `0` never, because it is a table scan. One scan took 1.3 ms at 6 212 entries. `slow` sets it to `0` unless given explicitly                                                                                                                                                                                                        |
 | `--counters-every`  | `10s`   | none                    | read every port's cumulative counters (typed errors, fast-path split, link-downs, frame sizes) this often; `0` never                                                                                                                                                                                                                                                                                                                                          |
 | `--labels-every`    | `5m`    | none                    | re-read what each interface is (label from its comment, type, interface lists, bridge, MTU); read once before the first kernel pull and again this often; `0` takes the 5 min default                                                                                                                                                                                                                                                                         |
 | `--no-health`       | `false` | none                    | skip `/system/health`. `slow` sets it                                                                                                                                                                                                                                                                                                                                                                                                                         |
 
 Without `--api` and `--api-user`, `forward` runs the kernel tier alone. With them,
 a first dial that fails logs `api tier: not connected yet, will keep trying: …`
-and the tier connects on the first round the router answers — since 1.0.9 it is
-never disabled for the life of the process.
+and the tier connects on the first round the router answers; it is never
+disabled for the life of the process.
 
 #### Sinks
 
@@ -487,7 +468,7 @@ can describe their own datasource and which have to be told.
 ```sh
 mikroscope dashboards gen
 mikroscope dashboards import --store influxdb --datasource-uid <uid>
-mikroscope dashboards check  --store influxdb --datasource-uid <uid> --window 1h --end 2026-09-13T08:30:00Z
+mikroscope dashboards check  --store influxdb --datasource-uid <uid> --window 1h --end <RFC 3339 time>
 ```
 
 | Flag               | Default         | Variable      | Read by           | Meaning                                                                                          |
@@ -532,14 +513,22 @@ Two programs read environment variables, and they read different ones. The
 **CLI** on your machine reads `MIKROSCOPE_*` variables as flag defaults, plus a
 handful of credentials that have no flag, plus `GRAFANA_URL` and
 `GRAFANA_TOKEN`. The **agent** on the router reads unprefixed variables
-(`RATE_HZ`, `TOKEN` …) from its container envlist, which `install` writes. This
-page lists both, from the Go files in [`cmd/mikroscope/`](https://github.com/jmrplens/mikroscope/tree/main/cmd/mikroscope) and
-from [`internal/agent/config.go`](https://github.com/jmrplens/mikroscope/blob/main/internal/agent/config.go).
+(`RATE_HZ`, `TOKEN` …) from its container envlist, which `install` writes. The
+CLI's are defined in [`cmd/mikroscope/`](https://github.com/jmrplens/mikroscope/tree/main/cmd/mikroscope), the agent's
+in [`internal/agent/config.go`](https://github.com/jmrplens/mikroscope/blob/main/internal/agent/config.go).
 
-### How the CLI reads them
+### Precedence
 
 - A variable sets a flag's **default**; the flag on the command line wins.
 - A variable set to the empty string is treated as unset.
+- The shape variables (`MIKROSCOPE_VETH`, `MIKROSCOPE_SUBNET`,
+  `MIKROSCOPE_IFACE_LIST`, `MIKROSCOPE_ADDR_LIST`, `MIKROSCOPE_DISK`,
+  `MIKROSCOPE_LAN_ADDRESS`, `MIKROSCOPE_REMOTE_IMAGE`) set what `install`
+  writes. `status`, `upgrade` and `uninstall` take the shape of the install on
+  the router instead, from its manifest or its tagged objects, and refuse a
+  variable or flag that contradicts it, naming both values; `MIKROSCOPE_REMOTE_IMAGE`
+  is the exception, filled in for `status` and `uninstall` and never refused.
+  `.env.example` leaves them unset for that reason.
 - The CLI never reads a `.env` file. Export it into the shell first:
 
   ```sh
@@ -552,8 +541,9 @@ from [`internal/agent/config.go`](https://github.com/jmrplens/mikroscope/blob/ma
 
 Most deployment flags have **no** variable. `--rate`, `--buffer`, `--port`,
 `--memory-max`, `--mem-limit-mb`, `--capture-mb`, `--triggers`, `--floor-hz`,
-`--privileged`, `--ephemeral` and `--expose` are set on the command line or not
-at all. [Commands and flags](https://jmrp.io/docs/mikroscope/reference/cli/) has every flag.
+`--privileged`, `--ephemeral`, `--expose`, `--restart-max-count`,
+`--restart-interval`, `--start-on-boot`, `--container-name` and
+`--extract-timeout` are set on the command line or not at all. [Commands and flags](https://jmrp.io/docs/mikroscope/reference/cli/) has every flag.
 
 ### Router and deployment
 
@@ -562,28 +552,36 @@ at all. [Commands and flags](https://jmrp.io/docs/mikroscope/reference/cli/) has
 | `MIKROSCOPE_ROUTER`       | `--router`       | `doctor`, `install`, `upgrade`, `uninstall`, `status` | none (required)              | set                   |
 | `MIKROSCOPE_SSH_PORT`     | `--ssh-port`     | the same                                              | ssh config                   | `22`                    |
 | `MIKROSCOPE_SSH_KEY`      | `--ssh-key`      | the same                                              | ssh agent or config          | empty                   |
-| `MIKROSCOPE_ARCH`         | `--arch`         | the deployment verbs                                  | `arm64`                      | `arm64`                 |
+| `MIKROSCOPE_SSH_OPTIONS` | `--ssh-option` | the same | none | commented out, `StrictHostKeyChecking=accept-new` |
+| `MIKROSCOPE_ARCH` | `--arch` | the deployment verbs | `auto` | commented out, `auto` |
 | `MIKROSCOPE_AGENT_TAR`    | `--agent-tar`    | `plan`, `install`, `upgrade`, `image`                 | empty (build the agent here) | commented out           |
 | `MIKROSCOPE_REMOTE_IMAGE` | `--remote-image` | `plan`, `install`, `upgrade`                          | empty (upload a tar)         | commented out           |
 | `MIKROSCOPE_NAME`         | `--name`         | the deployment verbs                                  | `mikroscope`                 | commented out           |
-| `MIKROSCOPE_VETH`         | `--veth`         | the deployment verbs                                  | `veth-mikroscope`            | `veth-mikroscope`       |
-| `MIKROSCOPE_SUBNET`       | `--subnet`       | the deployment verbs, `record`, `forward`             | `172.30.10.0/30`             | `172.30.10.0/30`        |
-| `MIKROSCOPE_IFACE_LIST`   | `--iface-list`   | the deployment verbs                                  | `LAN`                        | `LAN`                   |
-| `MIKROSCOPE_ADDR_LIST`    | `--addr-list`    | the deployment verbs                                  | `LANs`                       | `LANs`                  |
+| `MIKROSCOPE_VETH` | `--veth` | the deployment verbs | `veth-mikroscope` | commented out |
+| `MIKROSCOPE_SUBNET` | `--subnet` | the deployment verbs, `record`, `forward` | `172.30.10.0/30` | commented out |
+| `MIKROSCOPE_IFACE_LIST` | `--iface-list` | the deployment verbs | `LAN`; `none` joins no list | commented out |
+| `MIKROSCOPE_ADDR_LIST` | `--addr-list` | the deployment verbs | `LANs`; `none` joins no list | commented out |
 | `MIKROSCOPE_DISK`         | `--disk`         | the deployment verbs                                  | empty (internal flash)       | commented out, `tmpfs`  |
 | `MIKROSCOPE_LAN_ADDRESS`  | `--lan-address`  | the deployment verbs                                  | empty                        | commented out           |
 | `MIKROSCOPE_TOKEN`        | `--token`        | the deployment verbs, `record`, `forward`             | empty                        | commented out           |
 
-`MIKROSCOPE_TOKEN` is two things at once. For `install` it is the token
-written into the agent's envlist, which the agent then requires. For `record`,
+`MIKROSCOPE_SSH_OPTIONS` is a comma-separated list of `Key=value` pairs, the
+same as repeating `--ssh-option`; the first `--ssh-option` on the command line
+replaces the whole list. [Commands and flags](https://jmrp.io/docs/mikroscope/reference/cli/) has
+the keys it takes.
+
+`MIKROSCOPE_TOKEN` is two things at once. For `install` and `upgrade` it is the
+token written into the agent's envlist, which the agent then requires; the CLI
+hands the command that writes it to ssh on its standard input, never on a
+command line. `status` and `uninstall` do not need it. For `record`,
 `forward` and `doctor`'s health section it is the token sent to the agent over
 the direct transport; without it, `doctor` skips the ring of an agent that has
 one. The envlist is not
 a secret store: any RouterOS user with the `read` policy can list every
-container's envlist over the API (verified on RB5009UG+S+, RouterOS 7.24.2, 2026-09-11), which is why the token
-is the only credential that goes there.
+container's envlist over the API, which is why the token is the only
+credential that goes there.
 
-### Reaching the agent and the RouterOS API
+### Agent and API access
 
 | Variable                  | Flag           | Read by                     | Meaning                                                                                            |
 | ------------------------- | -------------- | --------------------------- | -------------------------------------------------------------------------------------------------- |
@@ -617,7 +615,7 @@ every sink whose flag ends up non-empty, from the command line or from the
 variable. Every one of these names carries the `MIKROSCOPE_` prefix: a bare
 `LOKI_URL` is read by nothing.
 
-### Credentials that have no flag
+### Credential variables
 
 A flag is visible in `ps` and in a shell history, so every secret the CLI uses
 is read from the environment only.
@@ -654,7 +652,7 @@ The token is `GRAFANA_TOKEN`, the same one, with no prefix. `forward --grafana`
 refuses to publish without it: some Grafanas accept an anonymous request, and
 one that did would write as whoever the server thinks is asking.
 
-### The agent's envlist
+### Agent envlist
 
 The agent reads these from its container's environment when it starts. An
 invalid value makes it print one line starting
@@ -691,19 +689,20 @@ Before it listens, the agent checks the ring against the container's own
 `memory.max`: `RATE_HZ × BUFFER_S × 3 456 B` plus `CAPTURE_MB` must fit, or it
 refuses to start and names the three variables and `--memory-max`. If that
 figure is more than half of `MEM_LIMIT_MB`, it starts and logs a warning with
-the limit to raise to. 3 456 B is not itself a measurement: it is the Go
-allocator size class that serves the line measured on the RB5009 with every
-source on (3 230 B, 4 cores, `IRQ_TOP_K` 8, RouterOS 7.24.2, 2026-09-17),
-because that class is what the heap is charged. The 2 560 B used before 1.0.5
-came from a 2 439 B line measured on 2026-09-12, before the PMU and the
-sampler's own timing were in it, and understated the ring by 35 %. A board with more cores
-or more interrupt lines writes longer lines, so the check errs open. When the
+the limit to raise to. 3 456 B is not itself a measurement: it is the Go
+allocator size class that serves a line with every source on
+(3 230 B, 4 cores, `IRQ_TOP_K` 8), because that class
+is what the heap is charged. A board with more cores or more interrupt lines
+writes longer lines, so the check errs open. When the
 agent cannot read its `memory.max`, the refusal check does not run.
 
-#### What install writes into it
+#### Written by install
 
 `install` and `upgrade` write the envlist `<name>-env` with these entries, in
-this order, and nothing else:
+this order, and nothing else. The install's shape (its lists, disk and
+exposure) is not in the envlist: `install` records it in the install manifest,
+`mikroscope/<name>.manifest.txt` on the install's disk, which holds no secret
+either.
 
 The entries install writes into the agent's envlist:
 
@@ -714,7 +713,7 @@ The entries install writes into the agent's envlist:
 | `BUFFER_S` | always | `--buffer`, default `60`, 10–3600 | the ring's length, in seconds |
 | `PORT` | always | `--port`, default `9123`, 1–65535 | the agent's HTTP port |
 | `ADDR` | always | `--subnet` | the agent's address, the `.2` of the /30; the agent binds only there |
-| `MEM_LIMIT_MB` | always | `--mem-limit-mb`, 8–1024 | the agent's Go soft memory limit, in MiB; derived from the ring since 1.0.6 (rate × buffer × line, × 2.5, at least 16 MiB, at most three quarters of `--memory-max` while that still holds the ring) rather than a flat number |
+| `MEM_LIMIT_MB` | always | `--mem-limit-mb`, 8–1024 | the agent's Go soft memory limit, in MiB; derived from the ring (rate × buffer × line, × 2.5, at least 16 MiB, at most three quarters of `--memory-max` while that still holds the ring) unless `--mem-limit-mb` gives it |
 | `FLOOR_HZ` | only when above 0 | `--floor-hz`, default `0`, 0–1000 | one cadence for every level source, in Hz |
 | `CAPTURE_MB` | always | `--capture-mb`, default `4`, 0–256 | the triggered-capture budget, in MiB; `0` turns captures off |
 | `TRIGGERS` | only when set | `--triggers` | the trigger conditions; unset, the agent uses its default set |
@@ -722,42 +721,21 @@ The entries install writes into the agent's envlist:
 
 > **The agent's defaults and install's defaults are not the same**
 >
-> An agent started with no envlist entry uses a 14 MiB soft memory limit. The ring is **60 s** by default, not the 300 it was until 1.0.6. What it buys is how long the
-> collector may be absent before samples are lost, and it is not a window anybody reads — the
-> collector drains it twice a second. Measured on the reference deployment over 24 hours on
-> 2026-09-17: the largest interruption in delivery was 114.5 s, and it was self-inflicted (a
-> container swap plus the minute the collector takes to notice a restarted agent); in ordinary
-> running the collector never falls behind. 60 s covers a restart of either side on a LAN and costs
-> 2.0 MiB of ring at 10 Hz instead of 9.9. A link that drops for longer raises it with `--buffer`,
-> and the memory limit follows because it is derived from the ring.
+> An agent started with no envlist entry uses a 14 MiB soft memory limit. The ring is **60 s** by
+> default. What it buys is how long the collector may be absent before samples are lost, and it is
+> not a window anybody reads: the collector drains it twice a second. 60 s covers a restart of
+> either side on a LAN and costs 2.0 MiB of ring at 10 Hz. A link that drops for longer raises it
+> with `--buffer`, and the memory limit follows because it is derived from the ring.
 >
-> `install` **derives**
-> `MEM_LIMIT_MB` from the ring — rate × buffer × the line size, times 2.5, floored at 16 MiB and
-> capped at three quarters of `memory-max` — so the default install writes `MEM_LIMIT_MB=16` for a
-> 60 s ring at 10 Hz, where it used to write a flat 40. A fixed number cannot be right for every
-> rate: the same 40 left 8 MiB unused at 10 Hz and is below the ring itself at 50 Hz.
+> `install` **derives** `MEM_LIMIT_MB` from the ring: rate × buffer × the line size, times 2.5,
+> floored at 16 MiB and capped at three quarters of `memory-max`. The default install writes
+> `MEM_LIMIT_MB=16` for a 60 s ring at 10 Hz. A fixed number cannot be right for every rate, and
+> below about twice the ring the Go collector runs so often that the CPU per sample climbs steeply
+> ([Agent cost](https://jmrp.io/docs/mikroscope/cost/#size-the-memory-limit-to-the-data)).
 >
-> The factor is measured, not chosen. On the reference RB5009 (RouterOS 7.24.2, 10 Hz, 300 s, every
-> source on) on 2026-09-17, four limits over four windows of about 12 000 samples each:
->
->
->
-> | limit          | ring multiple | RSS       | CPU per sample | What it cost |
-> | -------------- | ------------- | --------- | -------------- | ------------------------ |
-> | 40 MiB         | 4.0×          | 32.9 MiB  | 2 657 µs       | the limit never binds    |
-> | 24 MiB         | 2.4×          | 26.3 MiB  | 2 780 µs       | no measurable cost       |
-> | 21 MiB         | 2.1×          | 23.5 MiB  | 3 250 µs       | +22 %, and climbing      |
-> | 18 MiB         | 1.8×          | 20.4 MiB  | 14 800 µs      | +457 %, worst tick 52 ms |
->
->
->
-> The rows are the ones the comment on `memLimitRingFactor` in [`internal/router/options.go`](https://github.com/jmrplens/mikroscope/blob/main/internal/router/options.go) records.
-> The 2.5× factor `install` derives would be 25 MiB at 300 s; the window measured nearest it was
-> 24 MiB, and none of the four windows was written down with its spread.
->
-> The same cliff was measured from the other side on 2026-09-12: 9.38 % of one core at 14 MiB against 1.39 % with room, both with the ring full. `IRQ_TOP_K`, `CAPTURE_PRE_S`, `CAPTURE_POST_S`, `CAPTURE_POLICY`,
-> `TRIGGER_REFRACTORY_S`, `SOURCES`, `PROC_ROOT` and `SYS_ROOT` have no flag, so an installed agent
-> runs with their defaults.
+> `IRQ_TOP_K`, `CAPTURE_PRE_S`, `CAPTURE_POST_S`, `CAPTURE_POLICY`, `TRIGGER_REFRACTORY_S`,
+> `SOURCES`, `PROC_ROOT` and `SYS_ROOT` have no flag, so an installed agent runs with their
+> defaults.
 
 ### See also
 
@@ -2356,22 +2334,34 @@ and ends by comparing the two.
 
 | Scenario | What it does                                                                   | What it asserts                                                                                      |
 | -------- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
-| S1       | `doctor` with its defaults on a stock CHR                                      | exactly the checks the code on the branch is known to miss there                                     |
+| S1       | `doctor` on a stock CHR, with the lists `none` and with the defaults           | nothing missing with `none`; with the defaults only the interface list `LAN`, whose fix offers `--iface-list none` |
 | S2       | install by pulling the image from Docker Hub, `status`, `upgrade`, `uninstall` | the agent answers `/healthz` and `/capabilities`; the export is back to its baseline                 |
 | S3       | install and upgrade from the branch's own image tar                            | the agent reports the branch build's version, commit and date                                        |
 | S4       | `plan --rsc` for both image routes, run with `/import`                         | `status` recognises the script's objects; `uninstall` leaves the baseline                            |
+| S5       | every golden script the lab can run, imported as the site hands it over     | the agent answers on its own /30; `uninstall` with the case's flags leaves the baseline              |
 | S6       | `--ephemeral` on a tmpfs disk, then a power cut                                | the container is left stopped with its root gone; `uninstall --ephemeral` leaves nothing at all      |
 | S7       | a persistent install, 45 s for it to reach the disk, then a power cut          | the agent answers again within 90 s: start-on-boot works                                             |
 | S8       | `--expose` with a token                                                        | `/capabilities` answers 401 without the token and 200 with it; both firewall rules go with uninstall |
-| S9       | `uninstall` while a client reads `/stream`                                     | the known refusal, then a clean router                                                               |
+| S9       | `uninstall` while a client reads `/stream`, ten times                          | every first attempt verifies the router clean                                                        |
+| S10      | the raw rules of MikroTik's advanced firewall, in list and range form          | `doctor` names the rule that drops the agent's replies, and the list memberships that pass           |
+| S11      | a foreign veth, a routed /30, a foreign envlist                                | `doctor` names each; `install` writes nothing; the `plan --rsc` script stops at its guard for the veth and the envlist |
 | S12      | two installs side by side                                                      | removing one leaves the other running and untouched                                                  |
+| S13, S14 | installs with other lists, and with `--expose`, uninstalled with no flag       | everything they created is removed; a contradicting flag is refused                                  |
+| S17      | `doctor` on a RouterOS below 7.24 (`LAB_ROS=7.23.7`)                           | `RouterOS 7.24 or later` is missing, and every other check still reads                               |
+| S18      | a pull from GHCR with no registry credential                                   | the agent answers                                                                                    |
+| F4       | every install route, a 1.3.1 install, and objects the user made first          | `/export` equals the one before the install and `/file` holds no mikroscope path; the user's objects stay |
 | repeat   | 10 tar installs and uninstalls on x86_64, 3 on arm64                           | no install fails                                                                                     |
 
-The scenarios encode what the code on the branch does, its known bugs
-included, so a test fails when one of those bugs goes away without its
-scenario changing with it. Only S2 and one case of S4 pull from Docker Hub,
-three pulls a run; the rest install the branch's own tar, which also tests the
-branch's agent. The suite drops every `MIKROSCOPE_*` variable before it runs
+The scenarios assert the fixed behaviour: none runs a second uninstall, and
+none allows a mikroscope path left on `/file`. Three more assert the CLI's own
+faults stay fixed: the agent token on no command line of the host, RouterOS's
+words in every error, and the probe reading the `running` flag. S5 pulls from
+Docker Hub twelve times and from GHCR once, and a few other scenarios pull
+where the route is the point; the rest install the branch's own tar, which
+also tests the branch's agent. Those pulls are anonymous unless the lab is
+given an account ([pulling as an account](https://jmrp.io/docs/mikroscope/reference/testing/#pulling-as-an-account)), and the
+scenarios about a router with no credential — S1, S18, and S5's Docker Hub and
+GHCR scripts — boot without it in any case. The suite drops every `MIKROSCOPE_*` variable before it runs
 anything, so a shell set up for a real router cannot steer it.
 
 S7 waits 45 s between the install and the cut. In the arm64 lab, three of
@@ -2382,7 +2372,11 @@ not yet written the install to its disk; that was not examined. A power loss tha
 close to an install is its own question, and S7 asks only whether
 start-on-boot works.
 
-Measured on 2026-09-26 with CHR 7.24.4 and the 1.3.1 code: the suite took
+Measured on 2026-09-27 with CHR 7.24.4 and the code with these scenarios and
+the fixes review asked for: the suite took 29 min 2 s on x86_64 and
+57 min 13 s on arm64 side by side, every test passing; S9's uninstalls took
+8.0 to 12.6 s each. Earlier that day, before those fixes, it took 28 min 32 s
+on x86_64 alone, and 28 min 17 s and 57 min 29 s side by side. Before them, on 2026-09-26 with the 1.3.1 code, the suite took
 7 min 21 s to 9 min 49 s on x86_64 over six runs and 12 min 12 s to
 16 min 48 s on arm64 over three, the slowest of each with both suites running
 side by side on a busy host, and no install failed. `make roundtrip` —
@@ -2435,6 +2429,53 @@ the PC install path, an `x86` board name and the x86 licence — a 24-hour trial
 then a Level 1 registration or a paid licence per device — and nothing the
 agent reads that CHR x86_64 does not.
 
+#### Pulling as an account
+
+The lab router pulls the agent image itself, about a dozen times per run of
+the suite, and Docker Hub allows 100 anonymous pulls per 6 hours per address
+(Docker's usage page, read 2026-09-26); a CI runner shares its address with
+whatever else ran from it. Given a Docker Hub account, the router pulls as
+that account instead:
+
+```sh
+# in a file of your own, mode 0600, outside the repository
+LAB_REGISTRY_USER=<the Docker Hub account>
+LAB_REGISTRY_TOKEN=<a personal access token of it, read-only>
+```
+
+```sh
+set -a; . ~/.config/mikroscope/lab-registry.env; set +a
+make lab-reset                  # every up and reset gives the router the credential
+```
+
+The lab only pulls, so on your own machine a read-only token is enough. The
+lab's driver writes
+`/container/config/set registry-url=… username=… password=…` to a file,
+copies it to the router, runs it with `/import` and deletes it, at every
+`up` and `reset`, so the credential is on no command line and the cached
+snapshot never has it. Exported from a file, as above, it stays off `make`'s
+command line too, which the process table would show. Without the two
+variables nothing changes and the router pulls anonymously; one without the
+other is refused. The suite prints the user and the token as
+`<LAB_REGISTRY_USER>` and `<LAB_REGISTRY_TOKEN>`, and one of its tests reads
+the host's process table every 2 ms through a reset to hold the driver to all
+of it.
+
+`registry-url` is `registry-1.docker.io`, with no scheme (`LAB_REGISTRY_URL`
+names another registry's host). RouterOS presents the username and password
+for a reference whose host is `registry-url` as written, and mikroscope
+writes the host into every reference. Measured in the x86_64 lab on
+2026-09-27 (CHR 7.24.4) with a deliberately wrong credential: the 1.3.1
+agent image, `registry-1.docker.io/jmrplens/mikroscope-agent`, failed with
+`auth error` under `registry-url=registry-1.docker.io`, and was pulled
+anonymously under `https://registry-1.docker.io`, the value MikroTik's
+examples use, and under the same with a trailing slash. A router that was
+given a credential did not fall back to an anonymous pull. With that
+credential given as the lab gives it, S2's install failed with `auth error`,
+while S1, S18, S5's two scripts and the process-table test passed; with no
+credential, S2 passed. A valid token was not tried: that Docker Hub counts
+the pulls against the account is its documentation, not a measurement.
+
 #### The lab in CI
 
 | Lab    | Pull request                            | Release                  | Weekly | On dispatch |
@@ -2462,6 +2503,17 @@ ssh key never leave the runner. A failed or timed-out run uploads the console
 log, the container log, the lab's status, what an install left on the router,
 and the test log, each credential replaced by its name, and never the `.env`
 or the ssh key.
+
+The router pulls as an account when the repository has two secrets:
+`DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN`, the token the release also pushes
+images with; the lab only pulls with it. They become `LAB_REGISTRY_USER` and `LAB_REGISTRY_TOKEN` for the
+steps that bring the lab up, run the suite and redact the failure report,
+and no other; `ci.yml` and `release.yml` pass the two by name.
+A pull request from a fork gets no secrets, and a repository without
+`DOCKERHUB_TOKEN` gets neither variable: both run anonymously. So does a
+dispatch that checks out another `ref`, which may be a fork's merge commit:
+the lab builds and runs that code, and the token stays out of its
+environment.
 
 #### Where the lab stops being a router
 
@@ -2515,25 +2567,40 @@ Symptoms in the words you see (a RouterOS error, a container that exits, an empt
 
 Source: <https://jmrp.io/docs/mikroscope/reference/troubleshooting/>
 
-Every page here explains one thing properly. This one is the index you reach
-for when something is already broken: find the line you are looking at, and it
-says what it means and where the explanation lives.
+Find the line you are looking at: each row says what it means and where the
+explanation lives.
 
 ### Installing
 
 | You see                                                              | It means                                                              |
 | --------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `doctor`: `MISSING RouterOS 7.24 or later` | [RouterOS below 7.24](https://jmrp.io/docs/mikroscope/reference/troubleshooting/#routeros-version) |
+| `doctor`: `MISSING architecture has a container package` | No agent can run on this router: MikroTik publishes the `container` package for `arm`, `arm64` and `x86_64` only |
 | `doctor`: `device-mode container=no`                                  | [The one step nobody can do remotely](https://jmrp.io/docs/mikroscope/reference/troubleshooting/#device-mode-containeryes)       |
 | `doctor`: `container package installed and enabled … found=0`         | [The package is not on the router](https://jmrp.io/docs/mikroscope/reference/troubleshooting/#no-container-package)              |
-| `doctor`: `architecture matches --arch … router=arm`                  | Re-run with the `--arch` it names                                      |
+| `doctor`: `MISSING architecture matches --arch … router=arm` | Leave `--arch` out so that `install` reads it from the router, or pass the one it names |
+| `doctor`: `MISSING architecture matches the --agent-tar image` | The tar is for another board: download the asset the fix names |
 | RouterOS: `unknown parameter privileged`                              | [RouterOS older than 7.24](https://jmrp.io/docs/mikroscope/reference/troubleshooting/#unknown-parameter-privileged)              |
 | Container log: `exec format error`                                    | [The wrong image for the board](https://jmrp.io/docs/mikroscope/reference/troubleshooting/#exec-format-error)                    |
 | `no Go toolchain on PATH`                                             | Install with `--remote-image` or `--agent-tar` instead                 |
 | `--agent-tar …: this is not a mikroscope agent image`                 | The wrong asset — see [which tar](https://jmrp.io/docs/mikroscope/install/routes/#which-tar) |
-| `doctor` (1.2.2 and earlier): `registry-url is https://… registry-url=…` | [The registry host](https://jmrp.io/docs/mikroscope/reference/troubleshooting/#the-registry-host)                                |
+| A CLI of 1.2.2 or earlier: `registry-url is https://… registry-url=…` | [Registry host](https://jmrp.io/docs/mikroscope/reference/troubleshooting/#the-registry-host) |
 | `doctor`: `free flash ≥ …` fails                                      | `--disk tmpfs` or `--ephemeral`, or free space on the flash            |
+| `doctor`: `MISSING disk … has ≥ … free` or `MISSING disk tmpfs is RAM` | Free space on the disk or give the tmpfs disk a larger `tmpfs-max-size`; `--ephemeral` needs the disk in slot `tmpfs` to be a tmpfs disk |
+| `doctor`: `WARN start-on-boot suits a root in RAM` | The root on a tmpfs disk is gone after a reboot: pass `--start-on-boot no`, or `--ephemeral` |
+| `doctor`: `WARN free memory leaves room for the pull` | Less than `--memory-max` plus 16 MiB is free; if the pull fails, install from a tar with `--agent-tar` |
+| `doctor`: `WARN the router picks the image's architecture` on `arm` | Which of the two 32-bit ARM images RouterOS pulls is not known; on `Exec format error`, install from `mikroscope-agent-armv5.tar` |
+| `doctor`: `MISSING --lan-address … is the router's` or `WARN --lan-address is not on the uplink` | Pass the address the router has on its LAN, as `/ip/address/print` lists it |
+| `doctor`: `MISSING veth name … is free or ours` | [Foreign veth](https://jmrp.io/docs/mikroscope/reference/troubleshooting/#foreign-veth) |
+| `doctor`: `MISSING envlist … is free or ours` or `container name … is free or ours` | Something else holds that name: pick another `--name` or `--container-name` |
+| `doctor`: `MISSING install manifest … is free or ours` | A file at that path is not this install's manifest: move it away, or pick another `--name` |
+| `doctor`: `MISSING subnet … does not overlap a route` | [Subnet overlap](https://jmrp.io/docs/mikroscope/reference/troubleshooting/#subnet-overlap) |
+| `doctor`: `MISSING interface list LAN exists` | `--iface-list none` when the fix offers it, or create the list |
+| `doctor`: `MISSING no firewall rule drops the agent's replies` | [Firewall trap](https://jmrp.io/docs/mikroscope/reference/troubleshooting/#firewall-traps) |
 | `doctor`: `WARN no registry credential meant for another registry`    | [One credential for every registry](https://jmrp.io/docs/mikroscope/reference/troubleshooting/#one-credential-for-every-registry) |
-| `doctor`: `WARN the installed agent published on the LAN asks for a token` | `upgrade` with the same `--name`, the original install flags and `--token`; or `uninstall --expose --lan-address … --token …`, which removes the agent entirely |
+| `doctor`: `WARN the installed agent published on the LAN asks for a token` | `upgrade` with the same `--name` and `--token`; or `uninstall --name … --yes`, which removes the agent and its LAN rules |
+| `doctor`: `WARN nothing tagged for … that these flags do not select` | An install made with other flags: run `status` and `uninstall` with no shape flag, and they read how it was made |
+| `the install named … on the router does not match the flags` | A flag or `MIKROSCOPE_*` variable contradicts the install on the router: drop it, and the verb uses what the router holds |
 | `doctor`: `WARN layer2-loop` in the `health` section                  | [A loop RouterOS does not show](https://jmrp.io/docs/mikroscope/reference/troubleshooting/#a-loop-routeros-does-not-show)        |
 | `doctor`: `WARN stp-churn` in the `health` section                    | A second path to the router, or a topology that keeps changing behind that port: [What the running agent shows](https://jmrp.io/docs/mikroscope/install/prerequisites/#what-the-running-agent-shows) |
 | `doctor`: `WARN link-flap` in the `health` section                    | The cable, the connector, the device at the other end rebooting, or auto-negotiation failing |
@@ -2560,12 +2627,13 @@ is installed **and** not disabled.
 #### unknown parameter privileged
 
 RouterOS 7.24 added `privileged=`, and the container step writes it, so an
-earlier 7.x is expected to fail there — after the tar has been uploaded, which
-is why the install then takes it back with it. That is read from the code: no
-install has been tried on a RouterOS before 7.24. Upgrade RouterOS to 7.24 or later:
+earlier 7.x fails there. `doctor` stops an install on such a router before it
+writes anything ([RouterOS below 7.24](https://jmrp.io/docs/mikroscope/reference/troubleshooting/#routeros-version)); with
+`--no-doctor` it fails at the container step, after the tar has been uploaded,
+which is why the install then takes it back with it. Upgrade RouterOS to 7.24 or later:
 `--privileged=false` does not help, because the step then writes
 `privileged=no`, the same unknown parameter
-([`internal/router/steps.go`](https://github.com/jmrplens/mikroscope/blob/main/internal/router/steps.go)). Once on 7.24,
+([`internal/router/stepspec.go`](https://github.com/jmrplens/mikroscope/blob/main/internal/router/stepspec.go)). Once on 7.24,
 [what privileged buys](https://jmrp.io/docs/mikroscope/limits/privileged/) says what the setting
 changes: without it the agent cannot read `/dev/kmsg`, and the kernel log is
 where several of this project's playbooks start.
@@ -2589,29 +2657,67 @@ not run on the first. So:
 
 [Which tar](https://jmrp.io/docs/mikroscope/install/routes/#which-tar) is the table.
 
-#### The registry host
+#### RouterOS below 7.24
 
-mikroscope 1.2.2 and earlier put the reference into `remote-image=` without its
-registry host, so RouterOS took the host from `/container/config registry-url`,
-one setting for the whole device, and `doctor` checked that setting against a
-reference that named a host. Since 1.3.0 mikroscope sends the whole reference,
-registry host included, and neither checks the setting nor needs it: on the
-reference router the host inside `remote-image=` overrode `registry-url`
-(verified on RB5009UG+S+, RouterOS 7.24.4, 2026-09-24), and Docker Hub served the
-agent with no registry login (verified on RB5009UG+S+, RouterOS 7.24.4, 2026-09-24;
-[Nothing to set on the router](https://jmrp.io/docs/mikroscope/install/routes/#nothing-to-set-on-the-router)
-has the rest, and what was not measured). With 1.2.2 or earlier, either set the
-setting as the fix line says, which changes it for every other container on the
-router too, or install from the tar with `--agent-tar`.
+The agent needs RouterOS 7.24 or later, and `doctor` checks the version first:
+`MISSING RouterOS 7.24 or later (<version>)`, with the fix to upgrade
+RouterOS (`/system/package/update`) and the `container` package with it. The
+rest of the report still reads, so fix everything it names in one visit.
 
-#### One credential for every registry
+#### Foreign veth
+
+`MISSING veth name veth-mikroscope is free or ours (found=1 ours=0)`: a veth
+with that name exists and does not carry the install's tag. mikroscope does not
+build on an object it did not create, and will not remove it either. Pick
+another `--veth`, and another `--subnet` with it, for a second install beside
+something else; or remove the veth by hand if it is a leftover of your own. The
+envlist `<name>-env` and `--container-name` are checked the same way.
+
+#### Subnet overlap
+
+`MISSING subnet 172.30.10.0/30 does not overlap a route (routes=172.30.10.0/30 via ether2)`:
+a route of the main table lies inside the /30 (an inactive or disabled one too, which can become
+active), or a network on another interface holds its
+router end, so the agent's address would be ambiguous. Pick another /30 with
+`--subnet`, one no interface and no route of the router uses. A route that only
+contains the /30, such as a default route or a wider prefix to a VPN, is no
+overlap, and neither is a blackhole route.
+
+#### Firewall trap
+
+`MISSING no firewall rule drops the agent's replies`, followed by the rule, as
+`/ip/firewall/raw rule 0 (chain=prerouting action=drop, …) "…" drops them`.
+`doctor` reads the raw prerouting and filter forward and input rules and follows
+the agent's replies through them with the list memberships the install would
+write. The fix names the `--iface-list` and `--addr-list` that let them through.
+When no list does, as for a rule written with `src-address=!192.168.88.0/24`
+instead of an address list, add an accept rule for `in-interface=<veth>` before
+it, or pick a `--subnet` inside the range. A `WARN` on the same line means a
+rule might drop them, because it matches on something `doctor` does not judge:
+if the agent does not answer after install, that rule is the first to look at.
+[Firewall lists](https://jmrp.io/docs/mikroscope/install/firewall/) explains the two rules a
+default configuration has.
+
+#### Registry host
+
+mikroscope sends the whole reference in `remote-image=`, registry host
+included, so `/container/config registry-url`, one setting for the whole
+device, decides nothing about the pull, and Docker Hub and GHCR serve the
+agent with no registry login
+([Nothing to set on the router](https://jmrp.io/docs/mikroscope/install/routes/#nothing-to-set-on-the-router)).
+A CLI of 1.2.2 or earlier sent the reference without its host, and RouterOS
+took the host from `registry-url`. With such a CLI, either set the setting as
+its fix line says, which changes it for every other container on the router
+too, or install from the tar with `--agent-tar`.
+
+#### Registry credentials
 
 `/container/config` holds one username and password for the device. A Docker
 Hub account presented to GHCR fails, and the container stays in `error` with
-`auth error` in its log, for an image anyone can pull anonymously: measured on
-2026-09-21 with GHCR named in `registry-url`. Whether RouterOS still presents the
-username to a host named only in `remote-image=` was not measured, so `doctor`
-warns whenever a username is set and the host `registry-url` names is not the
+`auth error` in its log, for an image anyone can pull anonymously, when
+`registry-url` names the registry the pull goes to. Whether RouterOS also
+presents the username to a host named only in `remote-image=` is not known
+([Tested on](https://jmrp.io/docs/mikroscope/about/status/)), so `doctor` warns whenever a username is set and the host `registry-url` names is not the
 host the image comes from, and `upgrade` prints the same check before it
 removes anything. Install from a tar with `--agent-tar`, which pulls
 nothing, or pull from the registry the username belongs to — the Docker Hub
@@ -2622,29 +2728,24 @@ because doctor cannot tell which registry the username is for; if you know it is
 a Docker Hub login and you pull the Docker Hub reference, the warning is advice
 you can ignore.
 
-#### A loop RouterOS does not show
+#### Hidden layer-2 loop
 
 The bridge is receiving its own frames back on that port: something behind it
 reaches the router by a second path. A mesh node with both a cable and a
 wireless backhaul is the usual cause, and so is a switch cabled twice. STP does
 its job and blocks the port, so nothing melts down, and RouterOS reports the
 port running and error-free — but whatever is behind it reaches the router
-some other way or not at all. On the reference RB5009 (RouterOS 7.24.4) the
-port received 12 to 13 packets a second and sent 1 on 2026-09-21 and 22, during
-the loop; on 2026-09-23, after the second path was removed, it received 192 and
-sent 178. Find the second path and break it; the finding goes away within one
-ring.
+some other way or not at all ([Layer-2 loop](https://jmrp.io/docs/mikroscope/playbooks/loop/) is a
+case read end to end). Find the second path and break it; the finding goes away
+within one ring.
 
 `doctor` reads only the ring, about the last minute, so a loop that has already
 cleared or comes and goes can be gone by the time it runs. The alert
 [`mikroscope-bridge-port-dark`](https://jmrp.io/docs/mikroscope/dashboards/alerts/#the-rules) reads
 the same fault from history: a bridge port that received packets for ten
 minutes while the bridge sent it neither a unicast nor a broadcast frame.
-Backtested over the reference store from 2026-09-19 to 2026-09-23, it marked
-the two ports of that week's loop, sfp-sfpplus1 in 204 ten-minute bins and
-ether2 in 376, and no other port.
 
-### The agent is installed and nothing answers
+### Agent not reachable
 
 ```sh
 mikroscope status
@@ -2656,14 +2757,15 @@ something between you and it is not:
 
 - **The firewall.** Two rules commonly eat this traffic, and neither is
   obvious: [The two firewall traps](https://jmrp.io/docs/mikroscope/install/firewall/) is that page,
-  and `doctor` checks the two list memberships that avoid them.
+  and `doctor` follows the agent's replies through the router's rules
+  ([Firewall trap](https://jmrp.io/docs/mikroscope/reference/troubleshooting/#firewall-traps)).
 - **The route.** The agent answers on its `/30`, on the router's LAN side. A
   collector elsewhere reaches it the ways
   [Reaching the agent](https://jmrp.io/docs/mikroscope/install/reaching-the-agent/) lists.
 - **The container never started.** `/container/print detail` on the router, and
   `/log/print where topics~"container"`.
 
-### Data is arriving and something is empty
+### Missing data
 
 | You see                                             | It means                                                                  |
 | ----------------------------------------------------- | -------------------------------------------------------------------------- |
@@ -2684,7 +2786,7 @@ moved into it rather than left to draw an empty graph among the others.
 holds and does that sorting for your store:
 [Import and check](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/).
 
-#### The agent restarted and the kernel tier stopped
+#### Kernel tier stops after restart
 
 The agent numbers its samples from 1 at every start, so an agent that restarts
 — an upgrade, a container restart, a reboot — has a newest sequence number far
@@ -2700,30 +2802,23 @@ nobody was collecting is picked up rather than skipped. The minute's worth of
 samples between the restart and the health read is lost with the container, not
 by the collector.
 
-Before 1.0.4 it did not notice: the cursor stayed where it was, the agent's ring
-answered an empty batch to every pull, and the kernel tier stopped for good
-while the API tier kept counting and the sinks kept being written — so the run
-looked healthy. If you are on an earlier version, restart the collector after
-restarting the agent; it takes its cursor from the health read at start.
+A collector that has not noticed keeps its cursor where it was, the agent's
+ring answers an empty batch to every pull, and the kernel tier stops while the
+API tier keeps counting, so the run looks healthy. Restarting the collector
+resets its cursor from the health read at start.
 
-#### The API panels are blank and the kernel panels are fine
+#### API panels blank
 
 The mirror image of the entry above, and it has the same cause: a reboot.
 
 The API tier holds **one** persistent RouterOS API connection. When the router
 goes away — a reboot, a RouterOS upgrade, an operator restarting the API
-service — that socket dies, and before 1.0.9 nothing reopened it. The kernel
-tier resynced and carried on; the API tier wrote to the dead socket for as long
-as the collector ran. Everything the API feeds went blank: interface throughput
-and packet rate, the per-port counters, RouterOS `cpu-load`, and **"Reboots in
-the window"**, which reads `uptime_s` and so cannot count the very reboot that
-broke its own source.
+service — that socket dies. While it is dead, everything the API feeds is
+blank: interface throughput and packet rate, the per-port counters, RouterOS
+`cpu-load`, and **"Reboots in the window"**, which reads `uptime_s` and so
+cannot count the very reboot that broke its own source.
 
-On the reference RB5009 a RouterOS upgrade on 2026-09-19 rebooted the router at
-00:43:30 CEST. The kernel tier resumed at 00:45:03; the API tier failed every
-command for the next 7 h 24 min, until the collector was restarted by hand.
-
-From 1.0.9 the tier reconnects on its own. A transport failure — EOF, a broken
+The tier reconnects on its own. A transport failure — EOF, a broken
 pipe, a connection reset, a command timeout — reopens the connection, at most
 once every five seconds, and the round is retried on the new one. A `!trap`
 does not reconnect: that is a live router refusing a command, and asking it
@@ -2738,10 +2833,9 @@ api tier: recovered after 137 failed round(s)
 ```
 
 and the minute report grows an `api: N failed round(s), N reconnect(s)` clause
-for as long as either is nonzero. If you are on an earlier version, restart the
-collector after the router comes back.
+for as long as either is nonzero.
 
-#### A sink is dropping
+#### Sink drops
 
 Every network sink is queued, and the queue is bounded — `--queue-seconds`, 60
 by default. A destination that cannot keep up loses the oldest batch rather
@@ -2751,7 +2845,7 @@ again at the end of the run. There is no metric family for it. That is a deliber
 protects the data, and a collector waiting on a slow store would lose more than
 the store does.
 
-### The store and the dashboard
+### Stores and dashboards
 
 #### `flightsql: Unauthenticated`, from an InfluxDB datasource
 
@@ -2768,10 +2862,9 @@ The same plugin, the same two transports, and the other half of the same trap:
 the FlightSQL side attempts TLS unless `insecureGrpc` is set, so a datasource
 pointed at a **plain-HTTP** InfluxDB answers this on every panel. Set
 `insecureGrpc` on the datasource, or use `forward --grafana`, which follows the
-scheme of the URL the sink writes to. Measured against the reference store on
-2026-09-19, by creating the datasource without it.
+scheme of the URL the sink writes to.
 
-#### The panels are empty and the SQL is fine in `psql`
+#### Empty PostgreSQL panels
 
 The InfluxDB plugin rejects a result whose columns are all numeric and none is
 time-typed, so a panel whose query returns one row of numbers renders its
@@ -2824,14 +2917,14 @@ recovered, for a dashboard published on the next restart, which can. The line
 carries what the server said. `--grafana-dry-run` prints what it would write
 without writing anything, and runs before the router is touched.
 
-#### `uninstall` lists the same tables every time
+#### Repeated tables on uninstall
 
 InfluxDB 3 deletes a table by **renaming** it and leaving the entry in
-`information_schema` under a name carrying the deletion instant. Before 1.1.0
-this would have listed those again on every run, deleted them successfully —
-the store accepts a delete of a name it has already retired — and never
-emptied. They are filtered out now. If you are looking at
-`mikroscope_cpu-20260919T225605` in a query result, that table is already
+`information_schema` under a name carrying the deletion instant. `uninstall`
+filters those out; without the filter it would list them on every run, delete
+them successfully (the store accepts a delete of a name it has already retired)
+and never empty. If you are looking at
+`mikroscope_cpu-<timestamp>` in a query result, that table is already
 gone.
 
 #### `uninstall --targets data` says a sink stores nothing it can remove
@@ -2843,13 +2936,13 @@ and rows already loaded from it into a real database have to be removed there �
 or with `--postgres` pointed at that database. Each prints its own reason,
 because silence would read as nothing to remove.
 
-#### `--targets dashboard` left the datasource behind
+#### Datasource left behind
 
 It was adopted. A datasource named in `--grafana-datasource-uid` was somebody
 else's before the collector ran and is somebody else's after: publishing leaves
 it alone and so does removing.
 
-### Reading what it shows
+### Reading the data
 
 Once the data is arriving, the question changes from "why is this broken" to
 "what is this telling me". That is a different set of pages:

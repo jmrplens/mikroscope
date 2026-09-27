@@ -82,42 +82,66 @@ func ParseTriggers(spec string) ([]Condition, error) {
 	return out, nil
 }
 
+// TriggerSpec is one condition TRIGGERS takes: its name and, for the level
+// conditions, the comparison and the closed range of its threshold. A
+// condition without Op takes no threshold.
+type TriggerSpec struct {
+	Name string  `json:"name"`
+	Op   string  `json:"op"` // ">=", "<=", or "" for a condition that takes no threshold
+	Min  float64 `json:"min"`
+	Max  float64 `json:"max"`
+	kind condKind
+}
+
+// TriggerGrammar is every condition parseCondition accepts, in the order the
+// error message lists them. It is the one table: the parser reads it, and the
+// install script generator reads it through the steps spec (router.SpecJSON),
+// so a condition added here is offered there.
+var TriggerGrammar = []TriggerSpec{
+	{Name: "busy", Op: ">=", Min: 0.05, Max: 1, kind: condBusy},
+	{Name: "slip", Op: ">=", Min: 1.1, Max: 100, kind: condSlip},
+	{Name: "memfall", Op: ">=", Min: 1, Max: 100000, kind: condMemFall},
+	{Name: "kmsg", Op: "<=", Min: 0, Max: 7, kind: condKmsg},
+	{Name: "softnet-drop", kind: condDrop},
+	{Name: "squeeze", kind: condSqueeze},
+	{Name: "oom", kind: condOOM},
+	{Name: "reset", kind: condReset},
+	{Name: "irq-err", kind: condIRQErr},
+	{Name: "flash-bad", kind: condFlashBad},
+}
+
 func parseCondition(raw string) (Condition, error) {
 	name, arg := raw, ""
 	if i := strings.IndexAny(raw, "<>"); i >= 0 {
 		name, arg = raw[:i], raw[i:]
 	}
 	c := Condition{Name: raw}
-	needs := func(op string, lo, hi float64) error {
-		if !strings.HasPrefix(arg, op) {
-			return fmt.Errorf("trigger %q: want %s%s<number>", raw, name, op)
+	var spec *TriggerSpec
+	for i := range TriggerGrammar {
+		if TriggerGrammar[i].Name == name {
+			spec = &TriggerGrammar[i]
+			break
 		}
-		v, err := strconv.ParseFloat(strings.TrimPrefix(arg, op), 64)
-		if err != nil || v < lo || v > hi {
-			return fmt.Errorf("trigger %q: want a number in %g..%g", raw, lo, hi)
-		}
-		c.Threshold = v
-		return nil
 	}
-	var err error
-	switch name {
-	case "busy":
-		c.kind, err = condBusy, needs(">=", 0.05, 1)
-	case "slip":
-		c.kind, err = condSlip, needs(">=", 1.1, 100)
-	case "memfall":
-		c.kind, err = condMemFall, needs(">=", 1, 100000)
-	case "kmsg":
-		c.kind, err = condKmsg, needs("<=", 0, 7)
-	case "softnet-drop", "squeeze", "oom", "reset", "irq-err", "flash-bad":
+	if spec == nil {
+		return Condition{}, fmt.Errorf("trigger %q: unknown condition (busy>=X, slip>=X, memfall>=MB, kmsg<=N, softnet-drop, squeeze, oom, reset, irq-err, flash-bad)", raw)
+	}
+	c.kind = spec.kind
+	if spec.Op == "" {
 		if arg != "" {
 			return Condition{}, fmt.Errorf("trigger %q takes no threshold", raw)
 		}
-		c.kind = map[string]condKind{"softnet-drop": condDrop, "squeeze": condSqueeze, "oom": condOOM, "reset": condReset, "irq-err": condIRQErr, "flash-bad": condFlashBad}[name]
-	default:
-		return Condition{}, fmt.Errorf("trigger %q: unknown condition (busy>=X, slip>=X, memfall>=MB, kmsg<=N, softnet-drop, squeeze, oom, reset, irq-err, flash-bad)", raw)
+		return c, nil
 	}
-	return c, err
+	if !strings.HasPrefix(arg, spec.Op) {
+		return c, fmt.Errorf("trigger %q: want %s%s<number>", raw, name, spec.Op)
+	}
+	v, err := strconv.ParseFloat(strings.TrimPrefix(arg, spec.Op), 64)
+	if err != nil || v < spec.Min || v > spec.Max {
+		return c, fmt.Errorf("trigger %q: want a number in %g..%g", raw, spec.Min, spec.Max)
+	}
+	c.Threshold = v
+	return c, nil
 }
 
 // Capture is one retained window. The header is what /captures lists and

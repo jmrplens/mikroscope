@@ -13,3 +13,7 @@ pnpm-lock.yaml
 # empty code block; keeping both authorities on the same files made each
 # formatter dirty the other.
 src/content/docs/**/*.mdx
+# The steps spec and its case scripts, written by cmd/gen_rsc (make gen-rsc)
+# and checked byte for byte against it (make check-rsc): prettier would
+# rewrite what the check compares.
+src/data/rsc/

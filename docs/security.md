@@ -63,7 +63,7 @@ The entries install writes into the agent's envlist:
 | `BUFFER_S` | always | `--buffer`, default `60`, 10–3600 | the ring's length, in seconds |
 | `PORT` | always | `--port`, default `9123`, 1–65535 | the agent's HTTP port |
 | `ADDR` | always | `--subnet` | the agent's address, the `.2` of the /30; the agent binds only there |
-| `MEM_LIMIT_MB` | always | `--mem-limit-mb`, 8–1024 | the agent's Go soft memory limit, in MiB; derived from the ring since 1.0.6 (rate × buffer × line, × 2.5, at least 16 MiB, at most three quarters of `--memory-max` while that still holds the ring) rather than a flat number |
+| `MEM_LIMIT_MB` | always | `--mem-limit-mb`, 8–1024 | the agent's Go soft memory limit, in MiB; derived from the ring (rate × buffer × line, × 2.5, at least 16 MiB, at most three quarters of `--memory-max` while that still holds the ring) unless `--mem-limit-mb` gives it |
 | `FLOOR_HZ` | only when above 0 | `--floor-hz`, default `0`, 0–1000 | one cadence for every level source, in Hz |
 | `CAPTURE_MB` | always | `--capture-mb`, default `4`, 0–256 | the triggered-capture budget, in MiB; `0` turns captures off |
 | `TRIGGERS` | only when set | `--triggers` | the trigger conditions; unset, the agent uses its default set |
@@ -323,7 +323,7 @@ agent, what the token protects and what it does not, and how the rules come off 
 
 - two firewall rules, tagged
 - a token becomes mandatory
-- `uninstall` and `status` see the two rules only when given `--expose` again
+- `uninstall` and `status` find the two rules through the manifest and the tag, with or without `--expose`
 
 Every object carries the comment `mikroscope:<name> (managed by mikroscope)`
 
@@ -475,44 +475,48 @@ Source: <https://jmrp.io/docs/mikroscope/security/installer/>
 
 The installer writes to a router it did not configure, over the operator's own admin ssh session,
 so there is no privilege boundary between a mistake and the router. What stands in for one is a
-set of refusals. This page lists them: what `install` stops on before it writes, what it will not
-touch, what it treats as a failure, and how `uninstall` shows that it is done rather than saying so.
+set of refusals: what `install` stops on before it writes, what it will not touch, what it treats as
+a failure, and how `uninstall` shows that it is done rather than saying so.
 
-### Nothing is written before it is listed
+### Listing before writing
 
-`install` builds the image, prints every command it would run with its exact RouterOS text, and
-then, in this order:
+`install` writes nothing until it has printed every command it would run, with its exact RouterOS
+text. In this order, it:
 
-1. runs `doctor`, the read-only preflight, unless `--no-doctor` is given; a missing prerequisite
-   stops it with `N prerequisite(s) missing; nothing was written`. A `WARN` line (a registry
-   credential meant for another registry, or an install already published on the LAN with no
-   token) is printed and does not stop it;
-2. asks `write the objects above to the router? [y/N]`, unless `--yes` is given; anything but `y` or
-   `Y` stops it with `not confirmed; nothing written`;
-3. only then writes.
+1. runs `doctor`, the read-only preflight, in one ssh connect, unless `--no-doctor` is given; a
+   missing prerequisite stops it with `N prerequisite(s) missing; nothing was written`. A `WARN`
+   line is printed and does not stop it. With `--no-doctor`, no `--arch` and no `--remote-image`,
+   one connect of a single read takes the router's architecture instead, and the output says so;
+2. builds or loads the image for the architecture the router reported (`--agent-tar` must match
+   it; `--remote-image` leaves the choice to RouterOS);
+3. prints the listing, with the token masked as `value="(token)"`;
+4. asks `write the objects above to the router? [y/N]`, unless `--yes` is given; anything but `y`
+   or `Y` stops it with `not confirmed; nothing written`;
+5. only then writes, the install manifest first.
 
-`plan`, `install --dry-run` and `upgrade --dry-run` stop after the listing — the last of
-those only since 1.1.0, which is when `upgrade` began honouring the flag at all. The
-listing masks the token as `value="(token)"`.
+`plan`, `install --dry-run` and `upgrade --dry-run` stop after the listing and open no connection.
 
-`upgrade` does not get this guarantee. It builds the image, refuses a router where any step of the
-plan built from its own flags is missing (`nothing to upgrade: run install first`), and asks the
-same `write the objects above to the router? [y/N]` — and since 1.1.0 it does print a listing of
-its own, the container step alone. It still runs no `doctor` first; with `--remote-image` it reads `registry-url` and whether
-a registry username is set, in the same connect that checks the install is there, and prints doctor's credential check before the
-question. On `y` it removes the container, the envlist and the image
-and writes them again, the envlist from the flags given to `upgrade`; [what `--expose`
-opens](https://jmrp.io/docs/mikroscope/security/expose/) has what that means for the token.
+`upgrade` runs no `doctor`. In one connect it reads the shape the install was made with (its
+manifest, or its tagged objects for an install that has none), whether every step is there, the
+router's architecture and, with `--remote-image`, doctor's registry-credential check, which it
+prints; when the shape it reads changes the plan the flags gave, a second connect asks about the
+steps of that plan. It refuses a router with no install (`nothing to upgrade: run install first`), and an
+install whose envlist holds a `TOKEN` when no `--token` is given. It lists the install manifest,
+which it writes first every time, and the container step; any other step of the install the router
+no longer holds is listed after them and created before the container. Then it asks the same
+question. On `y` it removes the container, the envlist and the image and writes them
+again, the envlist from the flags given to `upgrade`.
 
 **What `install` writes to your router**
 
+- the install manifest, a file `mikroscope/<name>.manifest.txt` on the install's disk that lists the options and every object below
 - a veth
 - one address
-- one interface-list membership
-- one address-list entry
+- one interface-list membership, unless `--iface-list none`
+- one address-list entry, unless `--addr-list none`
 - an envlist
-- the image tar, unless `--remote-image` has the router pull the image
-- the container
+- the image tar, deleted once the container is extracted, unless `--remote-image` has the router pull the image
+- the container, and its root `mikroscope/<name>` on the same disk
 
 Every object carries the comment `mikroscope:<name> (managed by mikroscope)`
 
@@ -520,74 +524,82 @@ Every object carries the comment `mikroscope:<name> (managed by mikroscope)`
 
 `uninstall` removes by exact tag plus identity, never by pattern, and fails naming the step if anything remains.
 
-### Objects it does not own
+### Foreign objects
 
-Before writing, `install` asks the router three questions about every step in one ssh connect:
-is our object there, does something with the same effect exist, and does it carry our tag. An
-object that exists but does not carry mikroscope's tag stops `install`, naming the step:
+`doctor` names the objects an install would collide with before anything is written: a veth, an
+envlist or a container name that is not this install's, a file at the install manifest's path that
+is not its manifest, and a route that overlaps the /30. Then, before writing, `install` asks the
+router three questions about every step in one ssh connect: is our object there, does something
+with the same effect exist, and does it carry our tag. An object that exists but does not carry
+mikroscope's tag stops `install`, naming the step:
 
 ```text
-veth interface veth-mikroscope exists on the router and was not created by mikroscope (no ownership tag); pick another --name/--veth/--subnet, or remove it by hand if it is yours
+veth interface veth-mikroscope exists on the router and was not created by mikroscope (no ownership tag); pick another --name/--veth/--subnet, or remove it by hand if it is yours; nothing was written
 ```
 
 What counts as "the same effect" is the object's identity, not its name alone:
 
 | Step                      | Collides with any existing                                                                        | Ours when it carries                                    |
 | ------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| install manifest | a file at `mikroscope/<name>.manifest.txt` on the install's disk | its `tag=` line holding the tag |
 | veth                      | `/interface/veth` with the same name                                                              | the tag in `comment`                                    |
 | router address            | `/ip/address` on that veth                                                                        | the tag in `comment`                                    |
 | interface-list membership | member with that interface in that list                                                           | the tag in `comment`                                    |
 | address-list membership   | entry with the /30 in that list                                                                   | the tag in `comment`                                    |
 | expose dst-nat            | `dstnat` rule with that destination address, port and protocol                                    | the tag in `comment`                                    |
 | expose forward accept     | `forward` rule with the container's address, that port and protocol                               | the tag in `comment`                                    |
-| container                 | a container using the same image file, an envlist named `<name>-env`, or a file at the image path | a container with the tag; an envlist holding the marker |
+| container | a container on the same veth, an envlist named `<name>-env`, a file at the image path, or a container named `--container-name` | a container with the tag; an envlist holding the marker |
 
 A step that is already ours is skipped, so running `install` twice creates nothing the second time.
 
-The refusal happens when `install` reaches the colliding step. Steps before it that were absent
-have already been created; they carry the tag, and `uninstall` removes them. `uninstall` never
-touches the foreign object.
+`install` has every answer before its first write, so a foreign object at any step stops it with
+nothing written, with `--no-doctor` too. `uninstall` never touches the foreign object.
 
-#### The envlist and the image carry no comment
+#### Untagged objects
 
-Neither `/container/envs` nor `/file` has a comment field, so the container step signs them another
-way: the first entry written to the envlist is `MIKROSCOPE_TAG` holding the exact tag, and the
+Neither `/container/envs` nor `/file` has a comment field, so the install signs them another way.
+The manifest carries the tag on a `tag=` line and is this install's only while it does. In the
+container step, the first entry written to the envlist is `MIKROSCOPE_TAG` holding the exact tag, and the
 image file counts as ours only while that marker exists. A foreign envlist with the same name, a
 foreign file at the image path, or another container's envlist is therefore foreign, and stops
 `install`. Leftovers of an earlier mikroscope install — an envlist under our marker with no
 container — are ours to replace, and `install` clears them before writing new ones.
 
-### Selectors are exact
+### Exact selectors
 
 Every object `install` creates carries the comment `mikroscope:<name> (managed by mikroscope)`,
 verbatim. Every network object is removed by that exact comment together with the identity its check used —
 `comment="…"`, never a pattern match. The container is removed by the comment alone, and the
 envlist and the image, which carry no comment, by `list="<name>-env"` and the exact image file name,
-only while the marker entry holding the exact tag exists. So `uninstall` cannot reach a hand-made
+only while the marker entry holding the exact tag exists; the manifest, the container root and the
+`mikroscope` directory by their exact paths, which `--name` and `--disk` derive. So `uninstall` cannot reach a hand-made
 setup, or anything else whose comment or name shares a substring with the container name.
 
 Every `find` quotes every non-numeric value except the `chain` and `action` enums. Unquoted, an
 address or a port is parsed as a typed value and the comparison with the stored one comes back
-empty; verified for both on RB5009UG+S+, RouterOS 7.24.2, 2026-09-11. A bare word such as `tcp` is read as a
-variable name, whose unset value is empty: on the same RB5009 running RouterOS 7.24.4, on
-2026-09-21, `find chain=dstnat protocol=tcp` returned 0 of 15 dstnat rules and
-`protocol="tcp"` returned 10. Before 1.1.0 the expose rules' `protocol` was the one value left
-unquoted, so `uninstall --expose` removed neither rule and reported them gone.
+empty. A bare word such as `tcp` is read as a variable name, whose unset value is empty, so
+`find chain=dstnat protocol=tcp` matches no rule where `protocol="tcp"` matches every TCP one.
 
-### A write that prints is a failure
+### Write errors
 
-A RouterOS write prints nothing on success, and over ssh it reports errors as text with exit status
-0, abandoning the rest of a `;`-joined line. So `install` treats any output from a write as a
-failure (`create <step>: router said "…"`) and stops there.
+A RouterOS write prints nothing on success, and over ssh it reports errors as text, with exit
+status 0 or 1, abandoning the rest of a `;`-joined line. So `install` treats any output from a
+write as a failure (`create <step>: router said "…"`) and stops there. When ssh exits non-zero, the
+error starts with what RouterOS printed, so the words survive where only an error's first line is
+shown, as in `uninstall`'s `skip` lines.
 
 The image tar is uploaded with scp before the container step runs, and before the marker exists.
 If that step then fails, `install` removes the uploaded file (`undo  removed the uploaded …`);
-otherwise it would count as a foreign file on every later attempt.
+otherwise it would count as a foreign file on every later attempt. The tar stays when a container
+of this install already holds it — the step stopped at its wait for the extraction, and RouterOS may
+still be extracting it (`keep  …`) — and `uninstall` removes the two together. The ssh deadline
+for one command is 3 minutes, or the `--extract-timeout` and one minute more when that is longer,
+so the extraction wait ends with its own message rather than with ssh killed.
 
 `uninstall` reads output the same way in the other direction: a removal that printed something is
 reported as `skip`, not `gone`.
 
-### Values it will not put in a command
+### Input bounds
 
 Every flag that reaches a RouterOS command is interpolated into it verbatim. There is no privilege
 to escalate — the command runs as your admin — but a quote or a semicolon would turn a clear error
@@ -598,9 +610,11 @@ rule it broke:
 | Flag                                    | Accepted                                                                                          |
 | --------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | `--name`                                | `^[A-Za-z0-9][A-Za-z0-9_.-]{0,31}$`                                                               |
-| `--veth`, `--iface-list`, `--addr-list` | `^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`                                                               |
+| `--veth` | `^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$` |
+| `--iface-list`, `--addr-list` | `^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`, or `none` for no membership; `--iface-list` refuses RouterOS's built-in lists `all`, `dynamic` and `static`, which take no member |
+| `--container-name` | `^[A-Za-z0-9][A-Za-z0-9_.-]{0,31}$`, or empty for the name RouterOS gives |
 | `--disk`                                | `^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$`, or empty for the internal flash; `--ephemeral` forces `tmpfs` |
-| `--arch`                                | `^[a-z0-9]{1,16}$`                                                                                |
+| `--arch` | `arm64`, `arm`, `amd64` or `auto` |
 | `--token`                               | `^[A-Za-z0-9_.-]{0,128}$`                                                                         |
 | `--subnet`                              | an IPv4 /30, written as its network address                                                       |
 | `--port`                                | 1–65535                                                                                           |
@@ -610,9 +624,20 @@ rule it broke:
 | `--mem-limit-mb`                        | 8–1024                                                                                            |
 | `--floor-hz`                            | 0–1000                                                                                            |
 | `--capture-mb`                          | 0–256                                                                                             |
-| `--expose`                              | needs `--lan-address` as an IPv4 address, and a non-empty token                                   |
+| `--restart-max-count` | 0–100 |
+| `--restart-interval` | `^\d{1,4}[smh]$` |
+| `--start-on-boot` | `auto`, `yes` or `no` |
+| `--extract-timeout` | `^\d{1,4}[smh]$`, 10–600 s |
+| `--expose` | needs `--lan-address` as an IPv4 address; `install`, `upgrade` and `plan` also need a non-empty token |
 | `--triggers`                            | the agent's own condition list, parsed by `agent.ParseTriggers`                                   |
 | `--remote-image`                        | a registry reference: `owner/name:1.0.0`, with or without a host, no quote, space or semicolon                    |
+| `--ssh-option` | a key from `StrictHostKeyChecking`, `UserKnownHostsFile`, `ConnectTimeout`, `HostKeyAlgorithms`, `PubkeyAcceptedAlgorithms`, `IdentitiesOnly` and `ServerAliveInterval`, and a value matching `^[A-Za-z0-9_./~+:-]{1,256}$` |
+
+`--ssh-option` does not reach RouterOS but the ssh and scp command lines, and the same rule applies:
+no key that runs a command or reads a file as configuration (`ProxyCommand`, `LocalCommand`,
+`Include`), so a value in an env file cannot become command execution. Its options go before the
+CLI's own `-o BatchMode=yes -o ConnectTimeout=15`, because ssh keeps the first value it reads for
+an option.
 
 There is no exception. `--triggers` is checked by the same gate as the rest: `Finish` hands it to
 `agent.ParseTriggers`, the agent's own parser, which is the authority on what a condition means.
@@ -621,20 +646,20 @@ status 2 before the first connect, and nothing is written.
 
 The agent parses `TRIGGERS` again when it starts, because the envlist can be edited on the router
 by hand. On a value it cannot parse it exits non-zero with a `mikroscope-agent: bad configuration: …`
-line in the router log; under the on-failure policy RouterOS may retry it up to five times. No run
-with a bad `TRIGGERS` on the router is recorded.
+line in the router log; under the on-failure policy RouterOS retries it up to
+`--restart-max-count` times.
 
-### What it refuses to send to the router
+### Image checks
 
 Two of the four install routes hand the router something the CLI did not build, and each gets a
 check of its own before anything is written.
 
 - **`--agent-tar <file>`**, the image tar the release publishes, is read and inspected on your host
   first. It has to be a docker-save tar of exactly one image with one layer whose entrypoint is
-  `/mikroscope-agent`, and its architecture has to match `--arch`; otherwise the verb stops, and
-  for a mismatch it names the asset to download instead
-  (`--agent-tar … is a linux/arm64 image and --arch says arm: download the mikroscope-agent-arm.tar
-  asset instead`). That check says the tar is a mikroscope agent image of the right architecture. It
+  `/mikroscope-agent`, and its architecture has to match the router's (read by `doctor`) or an
+explicit `--arch`; otherwise the verb stops, and for a mismatch it names the asset to download
+instead (`--agent-tar … is a linux/arm64 image and the router is arm: download the
+mikroscope-agent-armv5.tar asset instead`, with `armv7` for `--goarm 7`). That check says the tar is a mikroscope agent image of the right architecture. It
   does not say the tar is the one the release published — verify it against `checksums.txt` from the
   release, and its cosign signature if you use one, before you pass it.
 - **`--remote-image <reference>`** makes the router pull the image itself, so nothing is uploaded
@@ -644,24 +669,28 @@ check of its own before anything is written.
   host, or with a Docker Hub alias, becomes `registry-1.docker.io/…`, and any other host is kept.
   The router then needs to reach that registry over its own network. **mikroscope never writes
   `/container/config`**, the global setting that holds the device's `registry-url` and its one
-  registry username and password, and no longer needs anything in it: on the reference router the
-  host inside `remote-image=` overrode `registry-url` (verified
-  on RB5009UG+S+, RouterOS 7.24.4, 2026-09-24), and
-  [Nothing to set on the router](https://jmrp.io/docs/mikroscope/install/routes/#nothing-to-set-on-the-router) says
-  what was not measured. Trust in the image is trust in that registry: nothing in the CLI verifies
-  what the router pulls. When set, RouterOS presented that username to the registry `registry-url`
-  named: a Docker Hub account sent to GHCR ended a pull in `auth error` on 2026-09-21. Whether it
-  presents it to a host named only in `remote-image=` was not measured. `doctor` warns when a
+  registry username and password, and needs nothing in it: the host inside `remote-image=` overrides
+`registry-url` ([Nothing to set on the
+router](https://jmrp.io/docs/mikroscope/install/routes/#nothing-to-set-on-the-router)). Trust in the image is trust
+in that registry: nothing in the CLI verifies what the router pulls. When a username is set,
+RouterOS presents it to the registry `registry-url` names, and a credential meant for another
+registry can end the pull of a public image in `auth error`. `doctor` warns when a
   username is set and `registry-url` is empty or names a host other than the one the image comes
   from (`WARN no registry credential meant for another registry`), and `upgrade` prints the same
   check before it removes anything; both read `registry-url` and only whether a username is set,
   never the name. The password cannot be read back at all.
   `--agent-tar` pulls from no registry, so no registry credential is sent.
 
-### A generated .rsc script is a credential
+### Scripts and tokens
 
 `plan --rsc` writes the install as a RouterOS script for a router you reach only through WinBox or
-WebFig. It carries the same commands `install` runs, in the same order, with the same tags — and,
+WebFig. It carries the same commands `install` runs, in the same order, with the same tags and the
+same install manifest, so `uninstall` removes a scripted install as completely as its own. It runs
+as one block whose guards stop it before its first write on a router that cannot take it: below
+RouterOS 7.24, without the container package or device-mode, with the tar missing on the tar route,
+or with a veth, an envlist, a container of `--container-name` or a file at the manifest's path of
+the install's names that is not mikroscope's. An envlist without mikroscope's marker would
+otherwise take the marker, and `uninstall` would then remove its owner's entries with it. And,
 when `--token` or `MIKROSCOPE_TOKEN` is set, the envlist line carries the token in clear, because
 the router needs it. The script says so in its own header. Treat the file the way you treat the
 token: do not commit it, do not paste it where it is logged, and delete it from the router's Files
@@ -670,43 +699,60 @@ after `/import`. Without a token it holds no secret, only the plan.
 `plan`, `install --dry-run` and `upgrade --dry-run` mask the token in what they print to the
 terminal (`value="(token)"`); `--rsc` cannot, since the script has to run.
 
-### How uninstall proves it is done
+The CLI's own commands never put the token on a command line of this machine: the RouterOS command
+that writes it reaches ssh on its standard input, so it does not show in the process table while
+ssh runs. The CLI reads it from `--token` or `MIKROSCOPE_TOKEN`; the variable keeps it off the
+CLI's own command line too.
 
-`uninstall` runs every removal newest first, ignoring what is already gone. Then it asks the router,
-in one connect, how many objects each step created are still there, prints one line per step with
-the count, and fails naming every step whose count is not zero
-(`uninstall left objects behind: …`). A removal that printed nothing is not evidence; the count is.
-`status` runs the same count on its own.
+### Uninstall verification
 
-The count covers only the steps of the plan built from `uninstall`'s own flags, not everything on
-the router that carries the tag. Given other flags than the install had — no `--expose`, another
-`--name`, `--veth`, `--subnet`, `--port`, `--iface-list` or `--addr-list` — it passes over objects
-that are still there: on the reference RB5009 (RouterOS 7.24.4, 2026-09-21) an `uninstall` without
-`--expose` printed `verified: nothing mikroscope created remains on the router` with the expose
-dst-nat still in place. Pass it the flags `install` had; [commands and
-flags](https://jmrp.io/docs/mikroscope/reference/cli/#pass-the-same-shape-to-status-upgrade-and-uninstall) has the
-run.
+`uninstall` removes everything the install created, and nothing else.
+
+1. It reads the install manifest, `mikroscope/<name>.manifest.txt`, in the connect that reads the
+   install's shape, and takes from it the shape the install was made with; a flag that contradicts
+   it is refused, naming both values. An install made by 1.3.x has no manifest, and its shape is
+   read from its tagged objects.
+2. It runs every removal newest first, ignoring what is already gone. The container step, once it
+   has removed this install's container, removes the container root `mikroscope/<name>` if
+   RouterOS left it.
+3. It removes, by the exact tag and nothing wider, any other object that carries the install's tag
+   in the menus an install writes to, and in any other menu the manifest lists.
+4. It removes the manifest last: first the container root, when one is left, no container holds it
+   and the manifest is this install's, then the manifest, then the `mikroscope` directory when
+   nothing else is in it. A `/file/remove` of a directory takes everything under it, so a directory
+   with anything else in it stays. A path is removed only on the word of the tagged container or of
+   the manifest; without either, a root no container holds is reported, not removed.
+5. It asks the router, in one connect, how many objects of each step are still there, how many
+   carry the tag in each menu beyond what those steps counted, and whether any path the manifest
+   lists is there, prints one line per step with the count, and fails naming every step, menu or
+   path that remains (`uninstall left objects behind: …`). A removal that printed nothing is not
+   evidence; the count is.
+
+`status` runs the same count on its own, in the connect that reads the install's shape.
+
+What `uninstall` never touches: device-mode, the `container` package, `/container/config`, and any
+list, disk, rule or file the router had before the install, a `mikroscope` directory with other
+files in it included. An empty `mikroscope` directory on the install's disk is removed even when it
+was there before the install: nothing in it says whose it is, and removing it takes nothing with
+it.
 
 The container step is the slow one, and the order inside it is what keeps the count honest:
 
-- the container is stopped (guarded, because stopping a stopped container is an error) and removed;
-- `/container/remove` returns before the container is gone, and a `/file/remove` of the image issued
-  meanwhile did nothing, silently (RB5009UG+S+, RouterOS 7.24.2, 2026-09-11) — so it waits up to 20 s for
-  the container to vanish, then retries the file removal for up to 15 s;
+- the container is stopped (guarded, because stopping a stopped container is an error), and
+  `uninstall` waits, up to 30 s, until RouterOS reports it neither running nor stopping: RouterOS
+  refuses to remove a container while it is still stopping (`cannot remove running`), and clears
+  the running flag before it has stopped;
+- `/container/remove` returns before the container is gone, and a `/file/remove` of the image
+  issued meanwhile does nothing, silently, so it waits up to 20 s for the container to vanish, then
+  retries the file removal for up to 15 s;
 - the rest of the envlist goes, and the marker goes last, only once the file is gone.
 
 If the file removal does not take, the marker stays, the count keeps including the envlist and the
 file, and `uninstall` says so instead of reporting clean.
 
-A doctor → install → status → upgrade → uninstall round trip (the round trip script, then `make roundtrip`; on a real router it is now `make roundtrip-device`) left the RB5009's `/export` byte-identical, compared by hash (verified on RB5009UG+S+, RouterOS 7.24.2, 2026-09-12). `make roundtrip` now runs the same script in the [virtual RouterOS lab](https://jmrp.io/docs/mikroscope/reference/testing/#the-virtual-routeros-lab).
-
-> **True of this device, not of yours**
->
-> The byte-identical `/export` after that one round trip, and every RouterOS behaviour quoted on
-> this page — the silent `/file/remove`, the quoted `find` selectors, errors printed with exit
-> status 0 — were observed on one RB5009 running RouterOS 7.24.2, except the bare `protocol=tcp`
-> case, measured on the same device on 7.24.4. The refusal logic itself is covered by tests against
-> a fake router, not by a run on another board or RouterOS version.
+The [virtual RouterOS lab](https://jmrp.io/docs/mikroscope/reference/testing/#the-virtual-routeros-lab) checks this
+for every install route, and for an install without a manifest: after `uninstall`, the router's
+`/export` equals the one taken before the install, and `/file` lists no path of mikroscope's.
 
 ### See also
 

@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"time"
 
@@ -26,11 +27,13 @@ const usageText = `mikroscope — sub-second kernel telemetry for container-capa
 usage: mikroscope <verb> [flags]
 
 verbs
-  doctor     read-only preflight: package, device-mode, architecture, space, lists; names the fix
+  doctor     read-only preflight: RouterOS version, package, device-mode, architecture, memory,
+             space, name and route collisions, lists and firewall; names the fix
   plan       print every object install would create, and stop (nothing is written);
              --rsc writes it as a RouterOS script to run on the router itself
   install    doctor, get the agent image, deploy it, then probe the agent; --dry-run = plan
-  upgrade    replace the container with a fresh image; network objects stay
+  upgrade    rewrite the install manifest, make any step that is missing, and replace the
+             container with a fresh image; network objects stay
   uninstall  remove what this put in place: --targets router (default), dashboard, data, all;
              lists and removes nothing without --yes
   status     ownership counts and, if reachable, the agent's health
@@ -51,12 +54,15 @@ pulls it itself and nothing is uploaded). plan --rsc writes the whole install
 as a RouterOS script for a router you reach only through WinBox or WebFig.
 
 Some flags read their default from a MIKROSCOPE_* environment variable: --router,
---ssh-port, --ssh-key, --name, --veth, --subnet, --iface-list, --addr-list, --disk,
---arch, --token, --lan-address, --agent-tar, --remote-image, and the collector's
-sink URLs (see .env.example).
+--ssh-port, --ssh-key, --ssh-option (MIKROSCOPE_SSH_OPTIONS, comma-separated),
+--name, --veth, --subnet, --iface-list, --addr-list, --disk, --arch, --token,
+--lan-address, --agent-tar, --remote-image, and the collector's sink URLs (see
+.env.example).
 The rest — among them --rate, --buffer, --port, --memory-max, --mem-limit-mb,
---capture-mb, --triggers, --floor-hz, --privileged, --ephemeral and --expose —
-take their default from the code and must be passed on each invocation.
+--capture-mb, --triggers, --floor-hz, --privileged, --ephemeral, --expose,
+--restart-max-count, --restart-interval, --start-on-boot, --container-name and
+--extract-timeout — take their default from the code and must be passed on each
+invocation.
 Nothing is written to the device without being listed first.
 `
 
@@ -69,17 +75,72 @@ func env(key, fallback string) string {
 }
 
 type cli struct {
-	router   string
-	sshPort  string
-	sshKey   string
-	dryRun   bool
-	yes      bool
-	noDoctor bool
-	out      string
-	goarm    string
-	agentTar string
-	rsc      bool
-	opts     router.Options
+	router     string
+	sshPort    string
+	sshKey     string
+	sshOptions sshOptions
+	dryRun     bool
+	yes        bool
+	noDoctor   bool
+	out        string
+	goarm      string
+	agentTar   string
+	rsc        bool
+	opts       router.Options
+	// explicit names the deployment flags given on the command line or by
+	// their MIKROSCOPE_* variable, and where each came from: the ones an
+	// install's stored shape does not override (applyShape).
+	explicit map[string]string
+}
+
+// sshOptions is --ssh-option: repeatable, each one checked by
+// router.ParseSSHOption as it is given. MIKROSCOPE_SSH_OPTIONS, a
+// comma-separated list, is the default, and the first --ssh-option replaces
+// all of it, as a flag replaces the environment everywhere else.
+type sshOptions struct {
+	list    []string
+	fromEnv bool
+}
+
+func (s *sshOptions) String() string { return strings.Join(s.list, ",") }
+
+func (s *sshOptions) Set(v string) error {
+	kv, err := router.ParseSSHOption(v)
+	if err != nil {
+		return err
+	}
+	if s.fromEnv {
+		s.list, s.fromEnv = nil, false
+	}
+	s.list = append(s.list, kv)
+	return nil
+}
+
+// fromEnvironment takes MIKROSCOPE_SSH_OPTIONS as the default, unchecked
+// until check: a value no flag replaces is checked after the flags are read.
+func (s *sshOptions) fromEnvironment() {
+	for item := range strings.SplitSeq(env("SSH_OPTIONS", ""), ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			s.list = append(s.list, item)
+		}
+	}
+	s.fromEnv = len(s.list) > 0
+}
+
+// check refuses an environment default that ParseSSHOption would, and
+// spells the keys the way ssh_config(5) does.
+func (s *sshOptions) check() error {
+	if !s.fromEnv {
+		return nil
+	}
+	for i, item := range s.list {
+		kv, err := router.ParseSSHOption(item)
+		if err != nil {
+			return fmt.Errorf("MIKROSCOPE_SSH_OPTIONS: %w", err)
+		}
+		s.list[i] = kv
+	}
+	return nil
 }
 
 func parse(verb string, args []string) (cli, error) {
@@ -98,14 +159,18 @@ func parseWith(verb string, args []string, fs *flag.FlagSet) (cli, error) {
 	fs.StringVar(&c.router, "router", env("ROUTER", ""), "ssh target: user@host or an ssh config alias (MIKROSCOPE_ROUTER)")
 	fs.StringVar(&c.sshPort, "ssh-port", env("SSH_PORT", ""), "ssh port; empty = ssh config (MIKROSCOPE_SSH_PORT)")
 	fs.StringVar(&c.sshKey, "ssh-key", env("SSH_KEY", ""), "ssh identity file; empty = agent / config (MIKROSCOPE_SSH_KEY)")
+	c.sshOptions.fromEnvironment()
+	fs.Var(&c.sshOptions, "ssh-option", "extra ssh and scp option `Key=value`, repeatable; the keys are "+
+		strings.Join(router.SSHOptionKeys(), ", ")+" (MIKROSCOPE_SSH_OPTIONS, comma-separated)")
 	fs.StringVar(&c.opts.Name, "name", env("NAME", c.opts.Name), "container name; tags every object created")
 	fs.StringVar(&c.opts.Veth, "veth", env("VETH", c.opts.Veth), "veth interface name on the router")
 	fs.StringVar(&c.opts.Subnet, "subnet", env("SUBNET", c.opts.Subnet), "point-to-point /30 for the container")
-	fs.StringVar(&c.opts.IfaceList, "iface-list", env("IFACE_LIST", c.opts.IfaceList), "interface list the veth joins")
-	fs.StringVar(&c.opts.AddrList, "addr-list", env("ADDR_LIST", c.opts.AddrList), "address list the /30 joins")
+	fs.StringVar(&c.opts.IfaceList, "iface-list", env("IFACE_LIST", c.opts.IfaceList), "interface list the veth joins; "+router.ListNone+" joins no list")
+	fs.StringVar(&c.opts.AddrList, "addr-list", env("ADDR_LIST", c.opts.AddrList), "address list the /30 joins; "+router.ListNone+" joins no list")
 	fs.StringVar(&c.opts.Disk, "disk", env("DISK", ""), "RouterOS disk for image and root: empty = internal flash, tmpfs, disk1, usb1 …")
-	fs.BoolVar(&c.opts.Ephemeral, "ephemeral", false, "root on the tmpfs disk, start-on-boot=no: nothing written to flash, nothing survives a reboot")
-	fs.StringVar(&c.opts.Arch, "arch", env("ARCH", c.opts.Arch), "device architecture: arm64, arm, amd64")
+	fs.BoolVar(&c.opts.Ephemeral, "ephemeral", false, "root on the tmpfs disk, start-on-boot=no unless --start-on-boot yes: nothing written to flash, nothing survives a reboot")
+	fs.StringVar(&c.opts.Arch, "arch", env("ARCH", router.ArchAuto), "device architecture: arm64, arm, amd64 or "+router.ArchAuto+
+		"; "+router.ArchAuto+", the default when neither this flag nor MIKROSCOPE_ARCH is set, is read from the router by doctor, install and upgrade, and is "+c.opts.Arch+" for plan, --dry-run and image (MIKROSCOPE_ARCH)")
 	// 5, not the toolchain's 7. MikroTik's container documentation says the
 	// package exists for arm, arm64 and x86 only, and that "for devices with
 	// EN7562CT CPU like the hEX Refresh, only arm32v5 container images are
@@ -129,6 +194,12 @@ func parseWith(verb string, args []string, fs *flag.FlagSet) (cli, error) {
 	fs.IntVar(&c.opts.FloorHz, "floor-hz", router.Defaults().FloorHz, "override every per-source sampling floor with one rate in Hz (0 = the measured per-source floors); set it to --rate to read and emit every source every tick, for re-measuring the floors")
 	fs.BoolVar(&c.opts.Privileged, "privileged", true, "run the container privileged: drops its user namespace so the kernel log, slabinfo and MTD ECC counters are readable (-privileged=false to opt out)")
 	fs.StringVar(&c.opts.LANAddress, "lan-address", env("LAN_ADDRESS", ""), "router LAN address for --expose")
+	fs.IntVar(&c.opts.RestartMaxCount, "restart-max-count", c.opts.RestartMaxCount, "how many times RouterOS restarts the container after it exits with an error before it stops trying, 0-100")
+	fs.StringVar(&c.opts.RestartInterval, "restart-interval", c.opts.RestartInterval, "the wait between those restarts, a RouterOS duration such as 10s or 1m")
+	fs.StringVar(&c.opts.StartOnBootMode, "start-on-boot", c.opts.StartOnBootMode, "start the container when the router boots: "+
+		router.StartOnBootAuto+" (no with --ephemeral, yes otherwise), "+router.StartOnBootYes+" or "+router.StartOnBootNo)
+	fs.StringVar(&c.opts.ContainerName, "container-name", "", "the container's RouterOS name (name=); empty lets RouterOS name it. Removals select by the comment tag, not by this name")
+	fs.StringVar(&c.opts.ExtractTimeout, "extract-timeout", c.opts.ExtractTimeout, "tar installs: how long to wait for RouterOS to extract the image before the tar is deleted, 10s-600s (120s, 2m)")
 	fs.BoolVar(&c.dryRun, "dry-run", false, "print the plan and write nothing")
 	fs.BoolVar(&c.yes, "yes", false, "do not ask for confirmation before writing")
 	fs.BoolVar(&c.noDoctor, "no-doctor", false, "install: skip the preflight checks")
@@ -141,7 +212,16 @@ func parseWith(verb string, args []string, fs *flag.FlagSet) (cli, error) {
 	if err := fs.Parse(args); err != nil {
 		return c, err
 	}
-	if err := c.opts.Finish(); err != nil {
+	c.explicit = explicitFlags(fs)
+	if err := c.sshOptions.check(); err != nil {
+		return c, err
+	}
+	// Go takes GOARM 5, 6 and 7 on linux/arm; anything else would fail the
+	// build after the listing, or name an asset that does not exist.
+	if !slices.Contains([]string{"5", "6", "7"}, c.goarm) {
+		return c, fmt.Errorf("goarm must be 5, 6 or 7, got %q", c.goarm)
+	}
+	if err := c.opts.FinishFor(verb); err != nil {
 		return c, err
 	}
 	return c, nil
@@ -237,7 +317,25 @@ func (c cli) runner() (router.Runner, error) {
 	if c.router == "" {
 		return nil, errors.New("--router (or MIKROSCOPE_ROUTER) is required")
 	}
-	return router.SSHRunner{Target: c.router, Port: c.sshPort, Key: c.sshKey, Timeout: 3 * time.Minute}, nil
+	// The token is a Secret: the container step's command, which writes it
+	// into the envlist, reaches ssh on its standard input rather than on its
+	// command line, where any process listing would show it for as long as
+	// the command runs.
+	var secrets []string
+	if c.opts.Token != "" {
+		secrets = []string{c.opts.Token}
+	}
+	return router.SSHRunner{Target: c.router, Port: c.sshPort, Key: c.sshKey, Options: c.sshOptions.list, Secrets: secrets, Timeout: c.sshTimeout()}, nil
+}
+
+// sshTimeout is how long one ssh command may run: 3 minutes, or the
+// --extract-timeout and one minute more when that is longer. A tar
+// install's container step waits for the extraction inside its one command,
+// and an ssh killed at its own deadline first would print `signal: killed`
+// in place of the step's "not extracted within N s", with RouterOS still
+// extracting the tar.
+func (c cli) sshTimeout() time.Duration {
+	return max(3*time.Minute, time.Duration(c.opts.ExtractTimeoutS())*time.Second+time.Minute)
 }
 
 // buildImage produces the image the container step needs, by whichever of
@@ -258,11 +356,11 @@ func buildImage(c cli) ([]byte, error) {
 		return nil, nil
 	}
 	if c.agentTar != "" {
-		return loadAgentTar(c.agentTar, c.opts.Arch)
+		return loadAgentTar(c.agentTar, c.opts.Arch, c.goarm)
 	}
 	if _, err := exec.LookPath("go"); err != nil {
-		return nil, fmt.Errorf("no Go toolchain on PATH, so the agent cannot be built here. Either pass --agent-tar with the mikroscope-agent-%s.tar from the release, or --remote-image jmrplens/mikroscope-agent:%s to let the router pull it from Docker Hub, or install Go %s and run this from a checkout of the repository",
-			c.opts.Arch, version.Version, goVersionWanted)
+		return nil, fmt.Errorf("no Go toolchain on PATH, so the agent cannot be built here. Either pass --agent-tar with the %s from the release, or --remote-image jmrplens/mikroscope-agent:%s to let the router pull it from Docker Hub, or install Go %s and run this from a checkout of the repository",
+			agentAsset(c.opts.Arch, c.goarm), version.Version, goVersionWanted)
 	}
 	fmt.Fprintf(os.Stderr, "building %s for linux/%s\n", image.BinaryName, c.opts.Arch)
 	binary, err := image.BuildAgent(c.opts.Arch, c.goarm, image.Stamp{Version: version.Version, Commit: version.Commit, BuildDate: version.BuildDate})
@@ -277,25 +375,117 @@ func buildImage(c cli) ([]byte, error) {
 // binary does not carry.
 const goVersionWanted = "1.27"
 
+// agentAsset is the name of the release's image tar for a GOARCH and, for
+// arm, a GOARM level: the release publishes mikroscope-agent-armv5.tar and
+// -armv7.tar and no mikroscope-agent-arm.tar, so a fix text that named the
+// GOARCH alone sent the reader after an asset that does not exist. GOARM 6
+// has no asset of its own; the v5 one runs on every 32-bit ARM MikroTik ships.
+func agentAsset(arch, goarm string) string {
+	if arch != "arm" {
+		return image.BinaryName + "-" + arch + ".tar"
+	}
+	if goarm == "7" {
+		return image.BinaryName + "-armv7.tar"
+	}
+	return image.BinaryName + "-armv5.tar"
+}
+
 // loadAgentTar reads an image tar and refuses one that is not this agent, or
 // not for this architecture.
-func loadAgentTar(path, arch string) ([]byte, error) {
+func loadAgentTar(path, arch, goarm string) ([]byte, error) {
+	data, info, err := inspectAgentTar(path)
+	if err != nil {
+		return nil, err
+	}
+	if info.Arch != arch {
+		return nil, fmt.Errorf("--agent-tar %s is a linux/%s image and --arch says %s: download the %s asset instead", path, info.Arch, arch, agentAsset(arch, goarm))
+	}
+	return data, nil
+}
+
+// inspectAgentTar reads an image tar, refuses one that is not this agent,
+// and says which it is.
+func inspectAgentTar(path string) ([]byte, image.Info, error) {
 	data, err := os.ReadFile(path) // #nosec G304 -- the operator's own --agent-tar path
 	if err != nil {
-		return nil, fmt.Errorf("--agent-tar: %w", err)
+		return nil, image.Info{}, fmt.Errorf("--agent-tar: %w", err)
 	}
 	info, err := image.Inspect(data)
 	if err != nil {
-		return nil, fmt.Errorf("--agent-tar %s: %w", path, err)
-	}
-	if info.Arch != arch {
-		return nil, fmt.Errorf("--agent-tar %s is a linux/%s image and --arch says %s: download the mikroscope-agent-%s.tar asset instead", path, info.Arch, arch, arch)
+		return nil, image.Info{}, fmt.Errorf("--agent-tar %s: %w", path, err)
 	}
 	fmt.Fprintf(os.Stderr, "using %s: linux/%s%s, agent %d KiB\n", path, info.Arch, info.Variant, info.Size/1024)
 	if note := image.VariantNote(info); note != "" {
 		fmt.Fprintln(os.Stderr, note)
 	}
-	return data, nil
+	return data, info, nil
+}
+
+// agentTar is an --agent-tar read before anything connects: its bytes and
+// the GOARCH its manifest declares. The zero value is no tar.
+type agentTar struct {
+	data []byte
+	arch string
+}
+
+// loaded says whether an --agent-tar was read.
+func (t agentTar) loaded() bool { return t.data != nil }
+
+// readAgentTar loads --agent-tar, or returns the zero agentTar without one. With --arch
+// named, the tar must be for it; with auto the router has not been asked
+// yet, and doctor, or resolveArch after --no-doctor, compares the two.
+func (c cli) readAgentTar() (agentTar, error) {
+	if c.agentTar == "" || c.opts.UsesRemoteImage() {
+		return agentTar{}, nil
+	}
+	if !c.opts.DetectArch {
+		data, err := loadAgentTar(c.agentTar, c.opts.Arch, c.goarm)
+		if err != nil {
+			return agentTar{}, err
+		}
+		return agentTar{data: data, arch: c.opts.Arch}, nil
+	}
+	data, info, err := inspectAgentTar(c.agentTar)
+	if err != nil {
+		return agentTar{}, err
+	}
+	return agentTar{data: data, arch: info.Arch}, nil
+}
+
+// resolveArch settles --arch auto once the router has said what it is:
+// the tar's own architecture with --agent-tar (checked against the
+// router's), the router's otherwise. With --remote-image the router picks
+// from the image's index and Arch only names it in the listing. An --arch
+// that was given is left as it is.
+func resolveArch(c *cli, routerArch string, tar agentTar) error {
+	if !c.opts.DetectArch {
+		return nil
+	}
+	c.opts.DetectArch = false
+	goarch, known := router.GOARCHFor(routerArch)
+	switch {
+	case tar.loaded():
+		if known && goarch != tar.arch {
+			return fmt.Errorf("--agent-tar %s is a linux/%s image and the router is %s: download the %s asset instead", c.agentTar, tar.arch, routerArch, agentAsset(goarch, c.goarm))
+		}
+		c.opts.Arch = tar.arch
+	case known:
+		c.opts.Arch = goarch
+		fmt.Printf("architecture: the router is %s, so the image is linux/%s\n", routerArch, goarch)
+	case c.opts.UsesRemoteImage():
+	default:
+		return fmt.Errorf("the router's architecture is %q, and MikroTik publishes the container package for arm, arm64 and x86_64 only; nothing was written", routerArch)
+	}
+	return nil
+}
+
+// image is the bytes the container step uploads: the tar read before the
+// router was asked, or one built now for the architecture it said.
+func (c cli) image(tar agentTar) ([]byte, error) {
+	if tar.loaded() {
+		return tar.data, nil
+	}
+	return buildImage(c)
 }
 
 // writeScript renders the install as a RouterOS script for the operator to
@@ -338,7 +528,11 @@ func doctor(c cli) error {
 	if err != nil {
 		return err
 	}
-	rep, err := router.Doctor(r, c.opts, doctorImageBytes(c))
+	tar, err := c.readAgentTar()
+	if err != nil {
+		return err
+	}
+	rep, err := router.Doctor(r, c.opts, c.doctorImage(tar))
 	if err != nil {
 		return err
 	}
@@ -354,11 +548,12 @@ func doctor(c cli) error {
 	return nil
 }
 
-// doctorImageBytes is the image size standalone doctor sizes the flash check
-// for, since it builds nothing: 7 MiB for a tar, and none with --remote-image,
-// where install uploads no tar either and asks for the 4 MiB of headroom
-// alone. Doctor used to assume the tar under --remote-image too and asked for
-// 18.0 MiB that the install it was checking for would never use.
+// doctorImageBytes is the image size doctor sizes the flash check for when
+// no tar has been read: 7 MiB for one install would build, and none with
+// --remote-image, where install uploads no tar and doctor asks for room for
+// the extracted root and the 4 MiB of headroom. Doctor used to assume the
+// tar under --remote-image too and asked for 18.0 MiB that the install it
+// was checking for would never use.
 func doctorImageBytes(c cli) int {
 	if c.opts.UsesRemoteImage() {
 		return 0
@@ -366,29 +561,49 @@ func doctorImageBytes(c cli) int {
 	return 7 << 20
 }
 
-func install(c cli) error {
-	img, err := buildImage(c)
-	if err != nil {
-		return err
+// doctorImage is what doctor is told of the image: an --agent-tar's size
+// and architecture, or the estimate for one install would build.
+func (c cli) doctorImage(tar agentTar) router.DoctorImage {
+	if tar.loaded() {
+		return router.DoctorImage{Bytes: len(tar.data), Arch: tar.arch}
 	}
-	router.Listing(c.opts, len(img), os.Stdout)
+	return router.DoctorImage{Bytes: doctorImageBytes(c)}
+}
+
+// install asks the router first — doctor's one batch, which also reads the
+// architecture — and only then builds or loads the image, lists every write
+// and asks. Nothing is written before it is listed: doctor only reads. plan
+// and --dry-run connect to nothing and list the arm64 plan when --arch is
+// auto.
+func install(c cli) error {
 	if c.dryRun {
+		img, err := buildImage(c)
+		if err != nil {
+			return err
+		}
+		router.Listing(c.opts, len(img), os.Stdout)
 		return nil
 	}
 	r, err := c.runner()
 	if err != nil {
 		return err
 	}
-	if !c.noDoctor {
-		rep, docErr := router.Doctor(r, c.opts, len(img))
-		if docErr != nil {
-			return docErr
-		}
-		rep.Print(os.Stdout)
-		if failed := rep.Failed(); len(failed) > 0 {
-			return fmt.Errorf("%d prerequisite(s) missing; nothing was written", len(failed))
-		}
+	tar, err := c.readAgentTar()
+	if err != nil {
+		return err
 	}
+	routerArch, err := c.installPreflight(r, tar)
+	if err != nil {
+		return err
+	}
+	if archErr := resolveArch(&c, routerArch, tar); archErr != nil {
+		return archErr
+	}
+	img, err := c.image(tar)
+	if err != nil {
+		return err
+	}
+	router.Listing(c.opts, len(img), os.Stdout)
 	if !c.yes && !confirm() {
 		return errors.New("not confirmed; nothing written")
 	}
@@ -398,6 +613,29 @@ func install(c cli) error {
 	}
 	fmt.Printf("install done: %d step(s) created\n", created)
 	return probe(c, r)
+}
+
+// installPreflight runs doctor and returns the architecture it read. With
+// --no-doctor there is no doctor batch, so when --arch is auto and the
+// image is not pulled, the architecture takes a connect of its own, which
+// is said.
+func (c cli) installPreflight(r router.Runner, tar agentTar) (string, error) {
+	if !c.noDoctor {
+		rep, err := router.Doctor(r, c.opts, c.doctorImage(tar))
+		if err != nil {
+			return "", err
+		}
+		rep.Print(os.Stdout)
+		if failed := rep.Failed(); len(failed) > 0 {
+			return "", fmt.Errorf("%d prerequisite(s) missing; nothing was written", len(failed))
+		}
+		return rep.Arch, nil
+	}
+	if !c.opts.DetectArch || c.opts.UsesRemoteImage() {
+		return "", nil
+	}
+	fmt.Println("reading the router's architecture: one connect more, because --no-doctor skips the batch that reads it with everything else")
+	return router.ReadArch(r)
 }
 
 // probe waits for the agent on the veth and says which transport works.
@@ -411,7 +649,7 @@ func probe(c cli, r router.Runner) error {
 		return nil
 	}
 	fmt.Printf("  direct transport failed: %v\n", err)
-	running, runErr := r.Run(`:put [:len [/container/find comment="` + c.opts.Tag() + `" status="running"]]`)
+	running, runErr := r.Run(runningQuery(c.opts))
 	switch {
 	case runErr != nil:
 		fmt.Printf("  could not ask the router whether the container runs: %v\n", runErr)
@@ -423,13 +661,33 @@ func probe(c cli, r router.Runner) error {
 	return errors.New("agent installed but not reachable from this host")
 }
 
+// runningQuery counts this install's containers that run. `running` is a
+// flag of /container, read as a selector: a container has no `status`
+// property to compare, and the `status="running"` this used to send matched
+// nothing, so a running container read as not running. The flag selector was
+// measured in the virtual lab (CHR x86_64, RouterOS 7.24.4, 2026-09-26): 1
+// for a started container, 0 once it was stopped, and `stopped` the other
+// way round.
+func runningQuery(o router.Options) string {
+	return `:put [:len [/container/find comment="` + o.Tag() + `" running]]`
+}
+
 func status(c cli) error {
 	r, err := c.runner()
 	if err != nil {
 		return err
 	}
-	verifyErr := router.Verify(r, c.opts, os.Stdout)
-	if verifyErr == nil {
+	// One connect reads the install's shape, its manifest and the counts
+	// for the plan the flags give; a second asks again only when the shape
+	// the router holds changes that plan.
+	present, err := router.Status(r, c.opts, func(s router.Shape) (router.Options, error) {
+		adoptErr := adoptShape(&c, s, "status", os.Stdout)
+		return c.opts, adoptErr
+	}, os.Stdout)
+	if err != nil {
+		return err
+	}
+	if !present {
 		return nil // nothing installed, nothing to probe
 	}
 	h, rtt, probeErr := router.Probe(context.Background(), c.opts.ContainerIP, c.opts.Port, 3*time.Second)
@@ -470,39 +728,57 @@ func printBoard(board string) {
 }
 
 func upgrade(c cli) error {
-	img, err := buildImage(c)
-	if err != nil {
-		return err
-	}
-	// The plan first, and --dry-run stops here — before the runner exists, so
-	// a dry run opens no connection to the router at all. Until 1.1.0 this
-	// function ignored c.dryRun outright: it printed no plan and fell through
-	// to confirm(), so `upgrade --dry-run --yes` replaced the container on a
-	// live router while the flag promised nothing would be written.
-	router.UpgradeListing(c.opts, len(img), os.Stdout)
+	// --dry-run lists and stops before the runner exists, so a dry run opens
+	// no connection to the router at all. Until 1.1.0 this function ignored
+	// c.dryRun outright: it printed no plan and fell through to confirm(),
+	// so `upgrade --dry-run --yes` replaced the container on a live router
+	// while the flag promised nothing would be written.
 	if c.dryRun {
+		img, err := buildImage(c)
+		if err != nil {
+			return err
+		}
+		router.UpgradeListing(c.opts, len(img), os.Stdout)
 		return nil
 	}
 	r, err := c.runner()
 	if err != nil {
 		return err
 	}
-	// One connect asks whether the install is there and, with
-	// --remote-image, what doctor's credential check reads; upgrade runs no
-	// doctor and removes the old container before the router pulls, so the
-	// check and any note about registry-url are printed here, before the
-	// confirmation and before anything is removed.
-	installed, err := router.UpgradePreflight(r, c.opts, os.Stdout)
+	tar, err := c.readAgentTar()
 	if err != nil {
 		return err
 	}
-	if !installed {
+	// One connect asks how the install was made, whether it is there, the
+	// router's architecture and, with --remote-image, what doctor's
+	// credential check reads; upgrade runs no doctor and removes the old
+	// container before the router pulls, so the check and any note about
+	// registry-url are printed here, before the listing, the confirmation
+	// and anything removed.
+	st, opts, err := router.UpgradeRead(r, c.opts, func(s router.Shape) (router.Options, error) {
+		adoptErr := adoptShape(&c, s, "upgrade", os.Stdout)
+		return c.opts, adoptErr
+	}, os.Stdout)
+	if err != nil {
+		return err
+	}
+	c.opts = opts
+	if !st.Installed {
 		return errors.New("nothing to upgrade: run install first")
 	}
+	if archErr := resolveArch(&c, st.Arch, tar); archErr != nil {
+		return archErr
+	}
+	img, err := c.image(tar)
+	if err != nil {
+		return err
+	}
+	router.UpgradeListing(c.opts, len(img), os.Stdout)
+	router.MissingListing(c.opts, st.Missing, os.Stdout)
 	if !c.yes && !confirm() {
 		return errors.New("not confirmed; nothing written")
 	}
-	if upErr := router.Upgrade(r, c.opts, img, os.Stdout); upErr != nil {
+	if upErr := router.Upgrade(r, c.opts, st.Missing, img, os.Stdout); upErr != nil {
 		return upErr
 	}
 	return probe(c, r)

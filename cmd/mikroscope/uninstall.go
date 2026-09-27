@@ -107,17 +107,31 @@ func uninstall(args []string, out io.Writer) error {
 // removeRouterObjects is the router half, which keeps its own shape: Uninstall
 // already prints a line per object and verifies by ownership count afterwards,
 // and re-listing it here would say the same thing twice in two formats.
+//
+// The install's own shape comes first (readShape): a flag left out takes the
+// value the install was made with, so `uninstall --name <n> --yes` removes an
+// install made with other lists, another veth or --expose. Without a router
+// to ask, the listing is the plan for the flags as given.
 func removeRouterObjects(c *cli, yes bool, out io.Writer) error {
+	var (
+		r     router.Runner
+		shape router.Shape
+	)
+	if c.router != "" || yes {
+		var err error
+		if r, err = c.runner(); err != nil {
+			return err
+		}
+		if shape, err = readShape(c, r, "uninstall", out); err != nil {
+			return err
+		}
+	}
 	if !yes {
 		fmt.Fprintln(out, "router objects (add --yes to remove them):")
 		router.RemovalListing(c.opts, out)
 		return nil
 	}
-	r, err := c.runner()
-	if err != nil {
-		return err
-	}
-	return router.Uninstall(r, c.opts, out)
+	return router.UninstallShape(r, c.opts, shape, out)
 }
 
 // carryOut prints what would go, and takes it away when told to.

@@ -116,6 +116,11 @@ jobs:
     uses: ./.github/workflows/lab.yml
     with:
       arch: x86_64
+    # By name, never `secrets: inherit`: the Docker Hub account and token
+    # the lab router pulls with (lab.yml says why).
+    secrets:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
     permissions:
       contents: read
 

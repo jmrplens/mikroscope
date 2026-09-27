@@ -7,29 +7,43 @@ import { Aside } from "@astrojs/starlight/components";
 import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
 import Src from "../../../../components/Src.astro";
-import Verified from "../../../../components/Verified.astro";
 
-Cada página de aquí explica una cosa a fondo. Esta es el índice al que acudes
-cuando algo ya está roto: busca la línea que estás mirando y te dice qué
-significa y dónde está la explicación.
+Busca la línea que estás mirando: cada fila dice qué significa y dónde está la
+explicación.
 
-## Instalando
+## Instalación {#instalando}
 
 <ScrollTable label="Qué sale mal al instalar, y qué significa cada mensaje">
 
 | Ves                                                                  | Significa                                                              |
 | --------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `doctor`: `MISSING RouterOS 7.24 or later` | [RouterOS por debajo de 7.24](#routeros-anterior-a-724) |
+| `doctor`: `MISSING architecture has a container package` | En este router no puede ejecutarse ningún agente: MikroTik publica el paquete `container` solo para `arm`, `arm64` y `x86_64` |
 | `doctor`: `device-mode container=no`                                  | [El paso que nadie puede hacer en remoto](#device-mode-containeryes)   |
 | `doctor`: `container package installed and enabled … found=0`         | [El paquete no está en el router](#sin-paquete-container)              |
-| `doctor`: `architecture matches --arch … router=arm`                  | Vuelve a ejecutar con el `--arch` que nombra                           |
+| `doctor`: `MISSING architecture matches --arch … router=arm` | Quita `--arch` para que `install` la lea del router, o pasa la que nombra |
+| `doctor`: `MISSING architecture matches the --agent-tar image` | El tar es para otra placa: descarga el recurso que nombra la corrección |
 | RouterOS: `unknown parameter privileged`                              | [RouterOS anterior a 7.24](#unknown-parameter-privileged)              |
 | Registro del contenedor: `exec format error`                          | [La imagen equivocada para la placa](#exec-format-error)               |
 | `no Go toolchain on PATH`                                             | Instala con `--remote-image` o `--agent-tar` en su lugar               |
 | `--agent-tar …: this is not a mikroscope agent image`                 | El artefacto equivocado — mira [qué tar](/mikroscope/es/install/routes/#qué-tar) |
-| `doctor` (1.2.2 y anteriores): `registry-url is https://… registry-url=…` | [El host del registro](#el-host-del-registro)                          |
+| Una CLI 1.2.2 o anterior: `registry-url is https://… registry-url=…` | [Host del registro](#el-host-del-registro) |
 | `doctor`: falla `free flash ≥ …`                                      | `--disk tmpfs` o `--ephemeral`, o libera espacio en la flash           |
+| `doctor`: `MISSING disk … has ≥ … free` o `MISSING disk tmpfs is RAM` | Libera espacio en el disco o da al disco tmpfs un `tmpfs-max-size` mayor; `--ephemeral` necesita que el disco del slot `tmpfs` sea tmpfs |
+| `doctor`: `WARN start-on-boot suits a root in RAM` | La raíz en un disco tmpfs desaparece tras un reinicio: pasa `--start-on-boot no`, o `--ephemeral` |
+| `doctor`: `WARN free memory leaves room for the pull` | Hay libres menos de `--memory-max` más 16 MiB; si la descarga falla, instala desde un tar con `--agent-tar` |
+| `doctor`: `WARN the router picks the image's architecture` en `arm` | No se sabe cuál de las dos imágenes ARM de 32 bits descarga RouterOS; ante `Exec format error`, instala desde `mikroscope-agent-armv5.tar` |
+| `doctor`: `MISSING --lan-address … is the router's` o `WARN --lan-address is not on the uplink` | Pasa la dirección que el router tiene en su LAN, tal como la lista `/ip/address/print` |
+| `doctor`: `MISSING veth name … is free or ours` | [Veth ajena](#veth-ajena) |
+| `doctor`: `MISSING envlist … is free or ours` o `container name … is free or ours` | Otra cosa tiene ese nombre: elige otro `--name` u otro `--container-name` |
+| `doctor`: `MISSING install manifest … is free or ours` | El fichero de esa ruta no es el manifiesto de esta instalación: muévelo a otro sitio, o elige otro `--name` |
+| `doctor`: `MISSING subnet … does not overlap a route` | [Solapamiento de subred](#solapamiento-de-subred) |
+| `doctor`: `MISSING interface list LAN exists` | `--iface-list none` cuando la corrección lo ofrece, o crea la lista |
+| `doctor`: `MISSING no firewall rule drops the agent's replies` | [Trampa del cortafuegos](#trampa-del-cortafuegos) |
 | `doctor`: `WARN no registry credential meant for another registry`    | [Una credencial para todos los registros](#una-credencial-para-todos-los-registros) |
-| `doctor`: `WARN the installed agent published on the LAN asks for a token` | `upgrade` con el mismo `--name`, las opciones de la instalación original y `--token`; o `uninstall --expose --lan-address … --token …`, que quita el agente entero |
+| `doctor`: `WARN the installed agent published on the LAN asks for a token` | `upgrade` con el mismo `--name` y `--token`; o `uninstall --name … --yes`, que retira el agente y sus reglas de LAN |
+| `doctor`: `WARN nothing tagged for … that these flags do not select` | Una instalación hecha con otras opciones: ejecuta `status` y `uninstall` sin opciones de forma, y leen cómo se hizo |
+| `the install named … on the router does not match the flags` | Una opción o variable `MIKROSCOPE_*` contradice la instalación del router: quítala, y el verbo usa lo que tiene el router |
 | `doctor`: `WARN layer2-loop` en la sección `health`                   | [Un bucle que RouterOS no muestra](#un-bucle-que-routeros-no-muestra)  |
 | `doctor`: `WARN stp-churn` en la sección `health`                     | Un segundo camino hasta el router, o una topología que no deja de cambiar detrás de ese puerto: [Lo que muestra el agente en marcha](/mikroscope/es/install/prerequisites/#lo-que-muestra-el-agente-en-marcha) |
 | `doctor`: `WARN link-flap` en la sección `health`                     | El cable, el conector, el equipo del otro extremo reiniciándose o una autonegociación que falla |
@@ -59,12 +73,13 @@ está instalado **y** no deshabilitado.
 ### unknown parameter privileged
 
 RouterOS 7.24 añadió `privileged=`, y el paso del contenedor lo escribe, así que
-una 7.x anterior debería fallar ahí —después de haber subido el tar, que es la
-razón de que la instalación se lo lleve de vuelta—. Eso sale del código: no se ha
-probado ninguna instalación en un RouterOS anterior a la 7.24. Actualiza RouterOS
-a la 7.24 o posterior: `--privileged=false` no ayuda, porque entonces el paso escribe
+una 7.x anterior falla ahí. `doctor` detiene la instalación en un router así
+antes de escribir nada ([RouterOS anterior a 7.24](#routeros-anterior-a-724)); con
+`--no-doctor` falla en el paso del contenedor, después de haber subido el tar,
+que es la razón de que la instalación se lo lleve de vuelta. Actualiza RouterOS a
+la 7.24 o posterior: `--privileged=false` no ayuda, porque entonces el paso escribe
 `privileged=no`, el mismo parámetro desconocido
-(<Src path="internal/router/steps.go" />). Ya en la 7.24,
+(<Src path="internal/router/stepspec.go" />). Ya en la 7.24,
 [qué te da privileged](/mikroscope/es/limits/privileged/) explica qué cambia el
 ajuste: sin él el agente no puede leer `/dev/kmsg`, y el registro del kernel es
 donde empiezan varios de los playbooks de este proyecto.
@@ -89,30 +104,70 @@ ARMv5 funciona en las dos, una ARMv7 no arranca en las primeras. Así que:
 
 [Qué tar](/mikroscope/es/install/routes/#qué-tar) es la tabla.
 
-### El host del registro
+### RouterOS anterior a 7.24
 
-mikroscope 1.2.2 y anteriores ponían la referencia en `remote-image=` sin su
-host de registro, así que RouterOS tomaba el host de `/container/config
-registry-url`, un único ajuste para todo el equipo, y `doctor` comparaba ese
-ajuste con las referencias que nombraban un host. Desde la 1.3.0, mikroscope
-envía la referencia entera, con el host del registro incluido, y ni comprueba el
-ajuste ni lo necesita: en el router de referencia el host dentro de
-`remote-image=` mandó sobre `registry-url` (verificado
-en <Verified of="remote-image-host" />), y Docker Hub sirvió el agente sin login
-de registro (verificado en <Verified of="docker-hub-anonymous" />;
-[Nada que ajustar en el router](/mikroscope/es/install/routes/#nada-que-ajustar-en-el-router)
-tiene el resto, y lo que no se ha medido). Con la 1.2.2 o anteriores, o pones el
-ajuste como dice la línea `fix:`, lo que lo cambia también para todos los demás
-contenedores del router, o instalas desde el tar con `--agent-tar`.
+El agente necesita RouterOS 7.24 o posterior, y `doctor` comprueba la versión la
+primera: `MISSING RouterOS 7.24 or later (<version>)`, con la corrección de
+actualizar RouterOS (`/system/package/update`) y el paquete `container` con él.
+El resto del informe se sigue leyendo, así que arregla todo lo que nombra en una
+sola visita.
 
-### Una credencial para todos los registros
+### Veth ajena
+
+`MISSING veth name veth-mikroscope is free or ours (found=1 ours=0)`: existe una
+veth con ese nombre y no lleva la etiqueta de la instalación. mikroscope no
+construye sobre un objeto que no creó, ni tampoco lo quitará. Elige otra
+`--veth`, y otra `--subnet` con ella, para una segunda instalación junto a otra
+cosa; o borra la veth a mano si es un resto tuyo. La envlist `<name>-env` y
+`--container-name` se comprueban igual.
+
+### Solapamiento de subred
+
+`MISSING subnet 172.30.10.0/30 does not overlap a route (routes=172.30.10.0/30 via ether2)`:
+una ruta de la tabla main cae dentro de la /30 (también una inactiva o desactivada, que puede
+activarse), o una red de otra interfaz contiene su
+extremo del router, así que la dirección del agente sería ambigua. Elige otra /30
+con `--subnet`, una que no use ninguna interfaz ni ninguna ruta del router. Una
+ruta que solo contiene la /30, como una ruta por defecto o un prefijo más amplio
+hacia una VPN, no es un solapamiento, y una ruta blackhole tampoco.
+
+### Trampa del cortafuegos
+
+`MISSING no firewall rule drops the agent's replies`, seguido de la regla, como
+`/ip/firewall/raw rule 0 (chain=prerouting action=drop, …) "…" drops them`.
+`doctor` lee las reglas de raw prerouting y de filter forward e input, y sigue
+las respuestas del agente a través de ellas con las pertenencias a listas que
+escribiría la instalación. La corrección nombra las `--iface-list` y
+`--addr-list` que las dejan pasar. Cuando ninguna lista lo consigue, como con una
+regla escrita con `src-address=!192.168.88.0/24` en vez de con una lista de
+direcciones, añade antes de ella una regla de aceptación para
+`in-interface=<veth>`, o elige una `--subnet` dentro del rango. Un `WARN` en la
+misma línea significa que una regla podría descartarlas, porque filtra por algo
+que `doctor` no evalúa: si el agente no responde después de instalar, esa regla
+es la primera que hay que mirar. [Listas del cortafuegos](/mikroscope/es/install/firewall/)
+explica las dos reglas que trae una configuración por defecto.
+
+### Host del registro {#el-host-del-registro}
+
+mikroscope envía la referencia entera en `remote-image=`, con el host del
+registro incluido, así que `/container/config registry-url`, un único ajuste para
+todo el equipo, no decide nada sobre la descarga, y Docker Hub y GHCR sirven el
+agente sin login de registro
+([Nada que ajustar en el router](/mikroscope/es/install/routes/#nada-que-ajustar-en-el-router)).
+Una CLI 1.2.2 o anterior enviaba la referencia sin su host, y RouterOS tomaba el
+host de `registry-url`. Con una CLI así, o pones el ajuste como dice su línea
+`fix:`, lo que lo cambia también para todos los demás contenedores del router, o
+instalas desde el tar con `--agent-tar`.
+
+### Credenciales de registro {#una-credencial-para-todos-los-registros}
 
 `/container/config` guarda un único usuario y contraseña para el equipo. Una
 cuenta de Docker Hub presentada a GHCR falla, y el contenedor se queda en
 `error` con `auth error` en su registro, para una imagen que cualquiera puede
-descargar de forma anónima: medido el 2026-09-21 con GHCR en `registry-url`. No
-se ha medido si RouterOS sigue presentando el usuario a un host que solo nombra
-`remote-image=`, así que `doctor` avisa siempre que hay un usuario puesto y el
+descargar de forma anónima, cuando `registry-url` nombra el registro del que se
+descarga. No se sabe si RouterOS presenta también el usuario a un host que solo
+nombra `remote-image=` ([Dónde se ha probado](/mikroscope/es/about/status/)), así
+que `doctor` avisa siempre que hay un usuario puesto y el
 host que nombra `registry-url` no es del que viene la imagen, y `upgrade`
 imprime la misma comprobación antes de retirar nada. Instala desde un
 tar con `--agent-tar`, que no descarga nada, o descarga del registro al que
@@ -124,29 +179,25 @@ saber de qué registro es el usuario; si sabes que es un login de Docker Hub y
 descargas la referencia de Docker Hub, el aviso es un consejo que puedes pasar
 por alto.
 
-### Un bucle que RouterOS no muestra
+### Bucle de capa 2 oculto {#un-bucle-que-routeros-no-muestra}
 
 El bridge está recibiendo de vuelta sus propias tramas por ese puerto: algo
 detrás de él llega al router por un segundo camino. Un nodo mesh con backhaul
 por cable y por radio a la vez es la causa habitual, y también un switch
 cableado dos veces. STP hace su trabajo y bloquea el puerto, así que nada se
 viene abajo, y RouterOS informa del puerto en marcha y sin errores —pero lo que
-hay detrás llega al router por otro lado o no llega—. En el RB5009 de referencia
-(RouterOS 7.24.4) el puerto recibió de 12 a 13 paquetes por segundo y envió 1 el
-2026-09-21 y el 22, durante el bucle; el 2026-09-23, después de quitar el
-segundo camino, recibió 192 y envió 178. Encuentra el segundo camino y rómpelo;
-el hallazgo desaparece en un anillo.
+hay detrás llega al router por otro lado o no llega— ([Bucle de capa
+2](/mikroscope/es/playbooks/loop/) es un caso leído de principio a fin). Encuentra
+el segundo camino y rómpelo; el hallazgo desaparece en un anillo.
 
 `doctor` solo lee el anillo, más o menos el último minuto, así que un bucle que
 ya se ha resuelto o que va y viene puede haber desaparecido cuando se ejecuta.
 La alerta [`mikroscope-bridge-port-dark`](/mikroscope/es/dashboards/alerts/#las-reglas)
 lee el mismo fallo en el histórico: un puerto de bridge que ha recibido paquetes
 durante diez minutos sin que el bridge le enviara ni una trama unicast ni una de
-broadcast. Probada contra el almacén de referencia del 2026-09-19 al 2026-09-23,
-marcó los dos puertos del bucle de esa semana, sfp-sfpplus1 en 204 intervalos de
-diez minutos y ether2 en 376, y ningún otro puerto.
+broadcast.
 
-## El agente está instalado y no responde nada
+## Agente inalcanzable {#el-agente-está-instalado-y-no-responde-nada}
 
 ```sh
 mikroscope status
@@ -158,15 +209,15 @@ entre tú y él:
 
 - **El cortafuegos.** Dos reglas se comen este tráfico habitualmente, y ninguna
   es evidente: [Las dos trampas del cortafuegos](/mikroscope/es/install/firewall/)
-  es esa página, y `doctor` comprueba las dos pertenencias a listas que las
-  evitan.
+  es esa página, y `doctor` sigue las respuestas del agente a través de las
+  reglas del router ([Trampa del cortafuegos](#trampa-del-cortafuegos)).
 - **La ruta.** El agente responde en su `/30`, del lado LAN del router. Un
   colector en otra máquina llega de las formas que enumera
   [Llegar al agente](/mikroscope/es/install/reaching-the-agent/).
 - **El contenedor nunca arrancó.** `/container/print detail` en el router, y
   `/log/print where topics~"container"`.
 
-## Llegan datos y algo está vacío
+## Datos que faltan {#llegan-datos-y-algo-está-vacío}
 
 <ScrollTable label="Datos vacíos o ausentes, según dónde estés mirando">
 
@@ -176,11 +227,11 @@ entre tú y él:
 | Ningún panel de PMU, ni ciclos ni instrucciones     | `perf_event_open` no está disponible en ese kernel o placa                 |
 | Un panel dice **No data** y los demás están bien    | Esa medida no se produce en este equipo; el dashboard tiene una fila para eso |
 | Un panel muestra una insignia roja de error         | La consulta falló: la fuente de datos, no los datos                        |
-| `forward` imprime `… dropped` para un destino       | [El destino no pudo seguir el ritmo](#un-destino-está-descartando)         |
+| `forward` imprime `… dropped` para un destino       | [El destino no pudo seguir el ritmo](/mikroscope/es/reference/troubleshooting/#un-destino-está-descartando)         |
 | Loki lo aceptó todo y una consulta no devuelve nada | Un envío no es consultable hasta que se vuelca el trozo                    |
 | Los números paran en un momento redondo y siguen    | Un hueco: el anillo dio la vuelta antes de que el colector tirara de él    |
-| El tier de kernel se para en seco y el de API sigue | [El agente se reinició](#el-agente-se-reinició-y-el-tier-de-kernel-se-paró) |
-| Los paneles de API están vacíos y los de kernel bien | [La conexión de API murió](#los-paneles-de-api-están-vacíos-y-los-de-kernel-bien) |
+| El tier de kernel se para en seco y el de API sigue | [El agente se reinició](/mikroscope/es/reference/troubleshooting/#el-agente-se-reinició-y-el-tier-de-kernel-se-paró) |
+| Los paneles de API están vacíos y los de kernel bien | [La conexión de API murió](/mikroscope/es/reference/troubleshooting/#los-paneles-de-api-están-vacíos-y-los-de-kernel-bien) |
 
 </ScrollTable>
 
@@ -191,7 +242,7 @@ mueven allí en vez de dejarlos dibujando una gráfica vacía entre los demás.
 de verdad y hace esa separación para tu almacén:
 [Importar y comprobar](/mikroscope/es/dashboards/import-and-check/).
 
-### El agente se reinició y el tier de kernel se paró
+### Kernel parado tras reinicio {#el-agente-se-reinició-y-el-tier-de-kernel-se-paró}
 
 El agente numera sus muestras desde 1 en cada arranque, así que un agente que se
 reinicia —una actualización, un contenedor que se reinicia, un arranque del
@@ -208,33 +259,24 @@ tomó mientras nadie recogía se recupera en vez de saltárselo. El minuto de
 muestras que va del reinicio a la lectura de estado se pierde con el contenedor,
 no por culpa del colector.
 
-Antes de 1.0.4 no se enteraba: el cursor se quedaba donde estaba, el anillo del
-agente respondía un lote vacío a cada petición, y el tier de kernel se paraba
-para siempre mientras el de API seguía contando y los destinos seguían
-escribiéndose — así que la ejecución parecía sana. Si estás en una versión
-anterior, reinicia el colector después de reiniciar el agente: toma su cursor de
-la lectura de estado del arranque.
+Un colector que no se ha enterado deja su cursor donde estaba, el anillo del
+agente responde un lote vacío a cada petición, y el tier de kernel se para
+mientras el de API sigue contando, así que la ejecución parece sana. Reiniciar el
+colector pone su cursor a partir de la lectura de estado del arranque.
 
-### Los paneles de API están vacíos y los de kernel bien
+### Paneles de API vacíos {#los-paneles-de-api-están-vacíos-y-los-de-kernel-bien}
 
 La imagen espejo de la entrada anterior, y con la misma causa: un reinicio.
 
 El tier de API mantiene **una** conexión persistente a la API de RouterOS.
 Cuando el router desaparece — un reinicio, una actualización de RouterOS, un
-operador reiniciando el servicio de API — ese socket muere, y antes de 1.0.9
-nada lo reabría. El tier de kernel resincronizaba y seguía; el de API escribía
-sobre el socket muerto mientras el colector estuviera en marcha. Todo lo que
-alimenta la API se quedaba en blanco: caudal y tasa de paquetes por interfaz,
-los contadores por puerto, el `cpu-load` de RouterOS y **«Reboots in the
-window»**, que lee `uptime_s` y por tanto no puede contar el mismo reinicio que
-rompió su propia fuente.
+operador reiniciando el servicio de API — ese socket muere. Mientras está
+muerto, todo lo que alimenta la API se queda en blanco: caudal y tasa de
+paquetes por interfaz, los contadores por puerto, el `cpu-load` de RouterOS y
+**«Reboots in the window»**, que lee `uptime_s` y por tanto no puede contar el
+mismo reinicio que rompió su propia fuente.
 
-En el RB5009 de referencia, una actualización de RouterOS el 2026-09-19 reinició
-el router a las 00:43:30 CEST. El tier de kernel se reanudó a las 00:45:03; el
-de API falló todos los comandos durante las 7 h 24 min siguientes, hasta que se
-reinició el colector a mano.
-
-Desde 1.0.9 el tier reconecta solo. Un fallo de transporte — EOF, una tubería
+El tier reconecta solo. Un fallo de transporte — EOF, una tubería
 rota, una conexión reiniciada, un tiempo de espera agotado — reabre la conexión,
 como mucho una vez cada cinco segundos, y la ronda se reintenta sobre la nueva.
 Un `!trap` no reconecta: es un router vivo rechazando un comando, y repetirlo
@@ -249,10 +291,9 @@ api tier: recovered after 137 failed round(s)
 ```
 
 y el informe por minuto gana una cláusula `api: N failed round(s), N
-reconnect(s)` mientras alguno de los dos no sea cero. Si estás en una versión
-anterior, reinicia el colector cuando el router vuelva.
+reconnect(s)` mientras alguno de los dos no sea cero.
 
-### Un destino está descartando
+### Descartes de un destino {#un-destino-está-descartando}
 
 Todos los destinos de red tienen cola, y la cola está acotada
 —`--queue-seconds`, 60 por defecto—. Un destino que no puede seguir el ritmo
@@ -263,7 +304,7 @@ deliberada, y [el colector](/mikroscope/es/sinks/) la explica: el anillo del
 agente es lo que protege los datos, y un colector esperando a un almacén lento
 perdería más de lo que pierde el almacén.
 
-## El almacén y el dashboard
+## Almacenes y dashboards {#el-almacén-y-el-dashboard}
 
 ### `flightsql: Unauthenticated`, de una fuente de datos de InfluxDB
 
@@ -282,10 +323,9 @@ trampa: el lado de FlightSQL intenta TLS salvo que esté `insecureGrpc`, así qu
 una fuente de datos apuntada a un InfluxDB en **HTTP plano** responde esto en
 todos los paneles. Pon `insecureGrpc` en la fuente de datos, o usa
 `forward --grafana`, que sigue el esquema de la URL a la que escribe el
-destino. Medido contra el almacén de referencia el 2026-09-19, creando la
-fuente de datos sin él.
+destino.
 
-### Los paneles están vacíos y el SQL funciona en `psql`
+### Paneles de PostgreSQL vacíos {#los-paneles-están-vacíos-y-el-sql-funciona-en-psql}
 
 El plugin de InfluxDB rechaza un resultado cuyas columnas son todas numéricas y
 ninguna es de tipo tiempo, así que un panel cuya consulta devuelve una fila de
@@ -340,15 +380,14 @@ recuperan, por un dashboard publicado en el siguiente arranque, que sí. La
 línea lleva lo que dijo el servidor. `--grafana-dry-run` imprime lo que
 escribiría sin escribir nada, y se ejecuta antes de tocar el router.
 
-### `uninstall` lista las mismas tablas cada vez
+### Tablas repetidas en uninstall {#uninstall-lista-las-mismas-tablas-cada-vez}
 
 InfluxDB 3 borra una tabla **renombrándola** y dejando la entrada en
-`information_schema` con un nombre que lleva el instante del borrado. Antes de
-la 1.1.0 esto las habría listado otra vez en cada ejecución, las habría
-borrado con éxito —el almacén acepta borrar un nombre que ya retiró— y no se
-habría vaciado nunca. Ahora se filtran. Si estás mirando
-`mikroscope_cpu-20260919T225605` en el resultado de una consulta, esa tabla ya
-no está.
+`information_schema` con un nombre que lleva el instante del borrado.
+`uninstall` las filtra; sin el filtro las listaría en cada ejecución, las
+borraría con éxito (el almacén acepta borrar un nombre que ya retiró) y no se
+vaciaría nunca. Si estás mirando `mikroscope_cpu-<timestamp>` en el resultado
+de una consulta, esa tabla ya no está.
 
 ### `uninstall --targets data` dice que un destino no guarda nada que pueda borrar
 
@@ -360,13 +399,13 @@ en una base de datos real hay que borrarlas allí —o con `--postgres` apuntado
 esa base—. Cada uno imprime su propio motivo, porque el silencio se leería como
 que no hay nada que borrar.
 
-### `--targets dashboard` dejó la fuente de datos
+### Fuente de datos abandonada {#--targets-dashboard-dejó-la-fuente-de-datos}
 
 Estaba adoptada. Una fuente de datos nombrada en `--grafana-datasource-uid` era
 de otro antes de que el colector se ejecutara y es de otro después: publicar la
 deja en paz y borrar también.
 
-## Leer lo que muestra
+## Leer los datos {#leer-lo-que-muestra}
 
 Cuando los datos ya llegan, la pregunta cambia de «por qué está roto esto» a
 «qué me está diciendo esto». Eso es otro conjunto de páginas:

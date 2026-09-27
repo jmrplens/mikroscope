@@ -107,6 +107,23 @@ func TestProbeDiagnosesWhatItCannotReach(t *testing.T) {
 	}
 }
 
+// The probe's question is the running flag of the install's own container,
+// as a selector: `status="running"` compared a property /container does not
+// have and matched nothing.
+func TestRunningQueryReadsTheRunningFlag(t *testing.T) {
+	o := router.Defaults()
+	if err := o.Finish(); err != nil {
+		t.Fatal(err)
+	}
+	q := runningQuery(o)
+	if q != `:put [:len [/container/find comment="mikroscope:mikroscope (managed by mikroscope)" running]]` {
+		t.Errorf("runningQuery = %s", q)
+	}
+	if strings.Contains(q, "status") {
+		t.Errorf("runningQuery still reads a status property: %s", q)
+	}
+}
+
 // mark writes into a finished recording from another shell, so its refusals
 // are what stop a marker landing in a file that is not a recording.
 func TestRunMarkNeedsARecordingAndSomethingToSay(t *testing.T) {

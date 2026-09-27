@@ -1,6 +1,9 @@
 /**
  * The entries `install` and `upgrade` write into the agent's envlist, in the
- * order `containerStep` writes them (internal/router/steps.go:133-149).
+ * order the container step writes them (internal/router). The install's
+ * shape (its lists, disk and exposure) is not here: install records it in
+ * the install manifest, a file beside the container root, which uninstall,
+ * status and upgrade read (router-objects.ts).
  *
  * Three pages need this list — where things go, the environment reference and
  * the security page, which argues from it that nothing but configuration and
@@ -8,12 +11,12 @@
  * the three pages and both locales on the code's side.
  *
  * Defaults and accepted ranges are `Defaults()` and `Finish()` in
- * internal/router/options.go:100-180; `--rate` accepts 1–100 Hz
- * (cmd/mikroscope/main.go:87).
+ * internal/router/options.go; `--rate` accepts 1–100 Hz (its flag is
+ * registered in cmd/mikroscope/main.go).
  */
 import type { Lang } from "./measurements";
 
-/** When `containerStep` writes the entry. */
+/** When the container step writes the entry. */
 export type Written = "always" | "aboveZero" | "whenSet";
 
 export interface EnvlistEntry {
@@ -89,8 +92,8 @@ export const envlist: readonly EnvlistEntry[] = [
 		default: null,
 		range: "8–1024",
 		holds: {
-			en: "the agent's Go soft memory limit, in MiB; derived from the ring since 1.0.6 (rate × buffer × line, × 2.5, at least 16 MiB, at most three quarters of `--memory-max` while that still holds the ring) rather than a flat number",
-			es: "el límite blando de memoria de Go del agente, en MiB; desde 1.0.6 se deriva del anillo (cadencia × búfer × línea, × 2,5, con un mínimo de 16 MiB y un máximo de tres cuartos de `--memory-max` mientras en él aún quepa el anillo) en vez de ser un número fijo",
+			en: "the agent's Go soft memory limit, in MiB; derived from the ring (rate × buffer × line, × 2.5, at least 16 MiB, at most three quarters of `--memory-max` while that still holds the ring) unless `--mem-limit-mb` gives it",
+			es: "el límite blando de memoria de Go del agente, en MiB; se deriva del anillo (cadencia × búfer × línea, × 2,5, con un mínimo de 16 MiB y un máximo de tres cuartos de `--memory-max` mientras en él aún quepa el anillo) salvo que lo fije `--mem-limit-mb`",
 		},
 	},
 	{

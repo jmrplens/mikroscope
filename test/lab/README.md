@@ -13,7 +13,7 @@ the CLI and the agent it tests (`make lab-tool`, `make build`,
 ```sh
 make lab-up                 # the first run downloads RouterOS and provisions it
 make lab-status
-make lab-cli ARGS='doctor --arch amd64 --remote-image $(LAB_REMOTE_IMAGE)'
+make lab-cli ARGS='doctor --remote-image $(LAB_REMOTE_IMAGE)'
 make lab-profile PROFILE=doctor-lists
 make lab-ssh CMD='/container/print'
 make lab-reset              # back to the clean snapshot
@@ -85,7 +85,8 @@ that CHR does not, which is little, and where its licence stops it.
 - Network access: to Docker Hub and Debian's mirrors the first time the lab
   image is built (`debian:trixie-20260918-slim` and its packages), to
   `download.mikrotik.com` once per version, and to Docker Hub for whatever
-  the router pulls.
+  the router pulls, anonymously unless you give it an account
+  ([pulling as an account](#pulling-as-an-account)).
 - Free ports on the host's loopback: 220N, 800N, 870N and 910N, with N = 1 for
   x86_64, 2 for arm64 and 3 for the ISO lab, plus
   [an instance's](#several-labs-on-one-host) offset.
@@ -95,6 +96,121 @@ that CHR does not, which is little, and where its licence stops it.
   stderr.
   The binary is mounted into a throwaway container, so it must be a static
   Linux binary (`make build` and the release are).
+
+## Pulling as an account
+
+The lab router pulls the agent image itself, from Docker Hub unless a
+scenario names another registry, and Docker Hub counts anonymous pulls per
+address: 100 per 6 hours per IPv4 address or IPv6 /64 (Docker's usage page,
+read 2026-09-26). One run of the suite pulls about a dozen times, S5's golden
+scripts twelve of them, and a CI runner's address is shared with whatever
+else ran from it. Given an account, the router pulls as that account, and
+the pulls count against it instead:
+
+```sh
+# ~/.config/mikroscope/lab-registry.env, mode 0600, outside the repository
+LAB_REGISTRY_USER=<the Docker Hub account>
+LAB_REGISTRY_TOKEN=<a personal access token of it, read-only>
+```
+
+```sh
+set -a; . ~/.config/mikroscope/lab-registry.env; set +a
+make lab-reset              # or lab-up: every boot gives the router the credential
+make test-lab
+```
+
+- **Which token.** The lab only pulls, so on your own machine a read-only
+  personal access token is enough (Docker's page on access tokens, read
+  2026-09-27, names the permissions Read, Write and Delete; where the form
+  offers "Public Repo Read-only", that is the narrowest). CI uses the
+  repository's `DOCKERHUB_TOKEN`, the one the release pushes images with: the
+  owner keeps one Docker Hub token, and in CI it reaches only the lab's
+  steps, in a VM the job throws away.
+- **How it reaches the router.** `up` and `reset` write
+  `/container/config/set registry-url=… username=… password=…` to a file in
+  the lab container (mode 0600, through docker exec's stdin), copy it to the
+  router with scp, `/import` it and delete it on both: the way the admin
+  password travels. Every value in the file is written in RouterOS's `\HH`
+  escapes, so a token passes whatever printable characters it holds; a space,
+  a control character or a byte beyond ASCII is refused, and so is one of the
+  two variables without the other. Nothing puts the credential on a command
+  line, the host's or the container's, and `mikroscope-lab env` says whether
+  it is set, never what it is. Export the variables from a file, as above:
+  on `make`'s command line they would be in the process table.
+- **The snapshot never has it.** Provisioning takes the snapshot before any
+  boot that gives the credential, so `clean.qcow2`, and CI's cache of it,
+  carries none. Each `up` and `reset` applies it from its own environment; a
+  run without the variables leaves `/container/config` alone, so a router
+  reset without them has none and pulls anonymously, and a live layer keeps
+  what an earlier `up` gave it until the next reset. RouterOS keeps the token
+  on its disk as written: after an `up` with a dummy credential (x86_64,
+  CHR 7.24.4, 2026-09-27), `run.qcow2` held the token's bytes verbatim, and
+  `base.qcow2`, `clean.qcow2` and `console.log` did not; after a `reset`
+  without the variables `run.qcow2` no longer held them. So on a shared
+  machine, `reset` once you are done; CI's runner is thrown away, and its
+  cache takes `base.qcow2` and `clean.qcow2` only.
+- **`LAB_REGISTRY_URL`** goes into `registry-url`: `registry-1.docker.io`
+  unless set, Docker Hub's host with no scheme. RouterOS presents the
+  username and password for a reference whose host is `registry-url` as
+  written, and for a reference with no host, which it pulls from
+  `registry-url`; mikroscope writes the host into every reference
+  (`registry-1.docker.io/jmrplens/…`). With `https://registry-1.docker.io`,
+  the value MikroTik's examples use, every pull of the suite stayed
+  anonymous (the table below). For another registry, give its host as
+  references name it.
+- **What shows it.** `/export` prints
+  `/container config set registry-url=… username=…`, never the password. The
+  suite replaces the user and the token with `<LAB_REGISTRY_USER>` and
+  `<LAB_REGISTRY_TOKEN>` in every line it prints, and CI's failure report
+  does the same in every file it uploads.
+- **Scenarios that boot without it.** A router as its users have it has no
+  credential, so the scenarios that test one boot without the lab's
+  whatever the environment says: S1 (doctor on a stock router), S18 (a pull
+  from GHCR with no credential) and S5's `pull-dockerhub` and `pull-ghcr`
+  scripts, which are the run's one anonymous Docker Hub pull and its pull
+  from GHCR. The variables come back when the test ends, and the next
+  scenario's reset gives the router the credential again.
+  `TestRegistryCredentialAtEveryReset` reads the host's process table every
+  2 ms through a reset and then compares `/container/config` with the
+  variables, printing neither; without the variables it checks that the
+  router has no username and no password.
+- **In CI** the repository's secrets `DOCKERHUB_USERNAME` and
+  `DOCKERHUB_TOKEN` become these variables for the steps that bring the
+  lab up, run the suite and redact the failure report, and no other step;
+  `ci.yml` and `release.yml` pass the two by name. A fork's pull request, a
+  repository without `DOCKERHUB_TOKEN`, and a dispatch that checks out another
+  `ref` (which may be a fork's merge commit, code the lab builds and runs)
+  run anonymously, as before.
+
+**What was measured**, in the x86_64 lab on 2026-09-27 (CHR 7.24.4), with a
+deliberately wrong credential: `LAB_REGISTRY_USER=lab-invalid` and a 23-byte
+token holding `_ - . $ " \ ?`, which Docker Hub's token endpoint refuses (a
+wrong login asked from the host got 401, no login 200). Each row is one
+container added by hand beside the suite, read from the router's container
+log:
+
+| `registry-url`                                 | `remote-image`                                           | Result                                                |
+| ---------------------------------------------- | -------------------------------------------------------- | ----------------------------------------------------- |
+| `registry-1.docker.io`                         | `registry-1.docker.io/jmrplens/mikroscope-agent:1.3.1`   | `fetch manifest failed: … auth error`: presented      |
+| `https://registry-1.docker.io`                 | `registry-1.docker.io/jmrplens/mikroscope-agent:1.3.1`   | pulled, the 3,093,207-byte layer: not presented       |
+| `https://registry-1.docker.io/`                | `registry-1.docker.io/jmrplens/mikroscope-agent:1.3.1`   | pulled: not presented                                 |
+| `https://registry-1.docker.io`                 | `jmrplens/mikroscope-agent:1.3.1`                        | `auth error`: presented                               |
+| `https://registry-1.docker.io`, no credential  | `jmrplens/mikroscope-agent:1.3.1`                        | pulled                                                |
+| either of the first two                        | `ghcr.io/jmrplens/mikroscope-agent:1.3.1` (the CLI)      | pulled: not presented to ghcr.io, or ignored there    |
+
+A router given a credential does not fall back to an anonymous pull: the
+failed pulls stayed failed. With the same credential given as the lab gives
+it, `registry-url=registry-1.docker.io`, S2's install failed the same way
+(`auth error`, the container left as `F - DOWNLOAD/EXTRACT FAILED`), and a
+pull from ghcr.io by the CLI went through. S1, S18, S5's `pull-dockerhub` and
+`pull-ghcr` passed on their boots without it, and so did
+`TestRegistryCredentialAtEveryReset`: through its reset the watch read
+213,700 command lines and saw 19 ssh or scp processes, the token on none, and
+the router's user and token, 11 and 23 bytes, equalled the variables. With no
+variable set, S2 and that test passed, the router with no username and no
+password. A valid token was not tried, so that Docker Hub counts
+the lab's pulls against the account rather than the address is what Docker
+documents, not something measured here.
 
 ## Sharing one lab between checkouts
 
@@ -173,13 +289,13 @@ and checks) takes the lock once for all of them with `mikroscope-lab lock`:
 
 ```sh
 make build agent-tars lab-tool
-bin/mikroscope-lab lock go test -tags labe2e -count=1 -timeout 75m ./test/e2e/lab/
+bin/mikroscope-lab lock go test -tags labe2e -count=1 -timeout 150m ./test/e2e/lab/
 LAB_ARCH=arm64 bin/mikroscope-lab lock ./my-script.sh
 ```
 
 The suite takes longer than `go test`'s default ten-minute timeout (up to
-10 min on x86_64 and 17 min on arm64 here), which is why the line above, like
-`make test-lab`, sets 75 minutes.
+29 min on x86_64 and 58 min on arm64 here), which is why the line above, like
+`make test-lab`, sets 150 minutes.
 
 `lock` exports `LAB_LOCK_HELD`, the lock files it holds, and every run of the
 driver the command starts finds its own lock there instead of waiting for
@@ -212,6 +328,7 @@ ran.
 | `defconf-firewall`        | `LAN` (ether2) and `WAN` (ether1), and the IPv4 filter rules of RouterOS 7's default home configuration. It closes the router's input from ether1, so the in-container `ssh lab-wan` stops working; ether2 stays open.                        |
 | `advanced-firewall`       | The raw rules of MikroTik's "Building Advanced Firewall" that decide an agent's replies, with the guide's LAN range written as the address list `LANs`: a veth outside `LAN`, or a /30 outside `LANs`, is dropped. List membership fixes it. |
 | `advanced-firewall-range` | The same with the guide's own `src-address=!192.168.88.0/24`: no list membership fixes it. It replaces `advanced-firewall`'s rules rather than stacking on them, and the other way round.                                                   |
+| `custom-lists`            | The interface list `MYLAN` (ether2) and the address list `MYNETS` (192.168.88.0/24), for installs given `--iface-list MYLAN --addr-list MYNETS`: a router whose firewall names lists other than defconf's.                                    |
 
 What each did in the x86_64 lab on 2026-09-26, with the 1.3.1 CLI built from
 this branch and its agent:
@@ -260,17 +377,26 @@ make test-lab LAB_RUN='S09'                 # one scenario, by a -run pattern
   takes the router's export and residue there as its baseline. It ends by
   comparing them: the export must be equal, and after an install the residue
   too, apart from what the scenario names.
-- **Tar first.** Scenarios install the branch's tar. Only S2 (install and
-  upgrade) and S4's pull case pull from Docker Hub: three pulls per run, of
-  `LAB_REMOTE_IMAGE`.
+- **Tar first, pulls where the route is the point.** Scenarios install the
+  branch's tar, except where the pull is what they test. S5 imports every
+  lab-runnable golden script as it is, and the goldens pull
+  `jmrplens/mikroscope-agent:1.3.1`: twelve Docker Hub pulls and one from
+  GHCR per run (`LAB_S5_CASES=<id>,<id>` narrows it). S2, S4's pull case, the
+  complete-uninstall scenario's pull and the released 1.3.1 CLI's pull
+  installs pull `LAB_REMOTE_IMAGE`, and S18 pulls from GHCR. Docker Hub's
+  anonymous limit, 100 pulls per 6 hours per address, holds for a run or
+  two per architecture; with `LAB_REGISTRY_USER` and `LAB_REGISTRY_TOKEN`
+  every Docker Hub pull but S5's `pull-dockerhub` counts against that
+  account instead ([pulling as an account](#pulling-as-an-account)).
 - **Secrets.** S8 uses the agent token from `.env`, and puts it on no command
   line of its own (`docker`, `mikroscope`): the CLI gets it as
   `MIKROSCOPE_TOKEN` through `LAB_CLI_TOKEN=lab`, and `curl` reads its header
-  from stdin. The 1.3.1 CLI still hands the RouterOS script, token included,
-  to `ssh` as an argument, so the token shows in the host's process table
-  while that `ssh` runs; that is the CLI's to fix, in a later pull request.
-  The suite also replaces every value of `.env` with `<lab secret>` in each
-  line it logs.
+  from stdin. The CLI itself sends any command that carries the token to
+  `ssh` on standard input, and `TestTokenIsOnNoCommandLine` reads the host's
+  process table every 2 ms through an install and an upgrade to hold it to
+  that. The suite also replaces every value of `.env` with `<lab secret>` in each
+  line it logs, and the registry credential with `<LAB_REGISTRY_USER>` and
+  `<LAB_REGISTRY_TOKEN>`.
 - **The CLI's working directory** is `build/lab-e2e/<lab>/<test>`, inside
   the repository and so inside one of the two directories `mikroscope-lab cli`
   mounts, per lab so that the x86_64 and arm64 suites do not clear each
@@ -293,49 +419,95 @@ make test-lab LAB_RUN='S09'                 # one scenario, by a -run pattern
   came back. So S7 waits 45 s between the install and the cut: it tests
   start-on-boot, not a power loss right after an install.
 
-**What 1.3.1 does, asserted as known.** The suite encodes the behaviour of
-the code on the branch, bugs included, and fails when one of them changes
-without the scenario changing with it:
+**What the suite asserts.** The fixed behaviour, with no allowance for the
+bugs 1.3.1 had: every uninstall verifies the router clean at its first
+attempt, a client on `/stream` included (S9, `LAB_S9_REPEAT` times, 10 by
+default); no scenario runs a second uninstall; and after an uninstall `/file`
+lists no path of mikroscope's, the `mikroscope` directory included. What the
+router held before an install, a user's own `mikroscope` directory among it,
+stays.
 
-- S1: doctor with its defaults misses exactly the interface list `LAN`, the
-  address list `LANs` and, on x86_64, the architecture (`--arch` defaults to
-  arm64).
-- S9: with a client on `/stream`, the first `uninstall` is refused with
-  `cannot remove running` (its fixed 4 s wait against the agent's 5 s
-  shutdown), and a second one cleans up. RouterOS's words reach the CLI's
-  output only when its ssh session exits 0; when it exits 1, the CLI's skip
-  line keeps only `ssh "<script>": exit status 1`, which happened on both
-  architectures on 2026-09-26 (one of seven first attempts on arm64, then
-  the next x86_64 run's). The suite then reads the race
-  from what it leaves, the same either way: uninstall's own verify naming
-  the container among the steps still present. When a failure matches
-  neither, the test prints the router's container log.
-- Every other uninstall may meet the same race without a client, since the
-  wait is fixed; the suite allows one retry for it and says so in the log.
-- The empty `mikroscope` directory an uninstall leaves in `/file` is allowed
-  in the residue, and logged.
-
-**Scenarios.** The numbers follow the lab's plan; the gaps (S5, S10, S11 and
-S13 to S18) are scenarios that come with the changes that make them pass.
+**Scenarios.** The numbers follow the lab's plan; S15 and S16 come with the
+documentation's own pages.
 
 | Test                                          | Profiles                 | What it does                                                                                                    | What it asserts                                                                                                                                                                                   |
 | --------------------------------------------- | ------------------------ | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| S1 `TestS01DoctorDefaultsMissTheKnownChecks`  | none                     | `doctor --remote-image` with every other flag at its default                                                    | exit 1, exactly the known MISSING set, export unchanged                                                                                                                                           |
-| S2 `TestS02PullInstallStatusUpgradeUninstall` | doctor-lists             | install *pull*, `/healthz` and `/capabilities`, `status`, `upgrade` to the same reference, `uninstall`          | the agent answers; `status` names it; the export equals the baseline; the residue too, apart from the known directory                                                                             |
-| S3 `TestS03TarInstallUpgradeUninstall`        | doctor-lists             | install from the branch's tar, `upgrade` from it, `uninstall`                                                   | the agent reports the branch build's version, commit and date before and after the upgrade, and restarted; clean export                                                                           |
-| S4 `TestS04PlanScriptImported`                | doctor-lists             | `plan --rsc` for the tar (the tar put as `mikroscope.tar`) and for *pull*; `/import`; `status`; `uninstall`     | the agent answers; `status` recognises the script's objects; clean export                                                                                                                         |
-| S6 `TestS06EphemeralThroughAPowerCut`         | tmpfs-disk, doctor-lists | install `--ephemeral`, power cycle, `uninstall --ephemeral`                                                     | after the cut the container is configured and stopped, its root and image are gone, the tmpfs disk is there and empty, nothing answers; afterwards nothing at all is left, the directory included |
-| S7 `TestS07StartOnBootAfterAPowerCut`         | doctor-lists             | a persistent install, 45 s for it to reach the disk, power cycle                                                | the agent answers within 90 s, as a new start; clean export                                                                                                                                       |
-| S8 `TestS08ExposeWithToken`                   | doctor-lists             | install `--expose --lan-address 192.168.88.1 --token …`, reads from the LAN side, uninstall with the same flags | `/healthz` 200, `/capabilities` 401 without the token and 200 with it; both firewall rules there, then gone; clean export                                                                         |
-| S9 `TestS09UninstallWhileAClientStreams`      | doctor-lists             | install, a client on `/stream`, uninstall, uninstall again                                                      | the known refusal, then a clean router                                                                                                                                                            |
-| S12 `TestS12TwoInstallsSideBySide`            | doctor-lists             | install a, install b (`--name b --veth veth-b --subnet 172.30.11.0/30 --port 9200`), uninstall b, uninstall a   | b answers on its own /30; removing b leaves every object of a and a running agent; clean export                                                                                                   |
-| `TestRepeatedTarInstalls`                     | doctor-lists             | `LAB_INSTALL_REPEAT` installs and uninstalls on one boot (10 on x86_64, 3 on arm64)                             | no install fails; how often uninstall met the race is logged                                                                                                                                      |
+| S1 `TestS01DoctorOnAStockRouter` | none, no registry credential | doctor with lists `none`, by pull and by tar, no `--arch`; a tar of the other architecture; the default lists | nothing missing, the architecture read from the router; the other tar MISSING; with the default lists only `interface list LAN` MISSING, its fix offering `--iface-list none`; export unchanged |
+| `TestDoctorWarnsOnStartOnBootWithATmpfsRoot` | tmpfs-disk | doctor `--disk tmpfs --start-on-boot yes` | a WARN, exit 0 |
+| S2 `TestS02PullInstallStatusUpgradeUninstall` | doctor-lists | install *pull*, `/healthz` and `/capabilities`, `status`, `upgrade` to the same reference, `uninstall` | the agent answers; `status` names it; the export equals the baseline; no mikroscope path left |
+| S3 `TestS03TarInstallUpgradeUninstall` | doctor-lists | install from the branch's tar, `upgrade` from it, `uninstall` | the agent reports the branch build's version, commit and date before and after the upgrade, and restarted; clean export |
+| S4 `TestS04PlanScriptImported` | doctor-lists | `plan --rsc` for the tar (the tar put as `mikroscope.tar`) and for *pull*; `/import`; `status`; `uninstall` | the agent answers; `status` recognises the script's objects; clean export |
+| S5 `TestS05GoldenScriptsInstallAndUninstall` | per case; `pull-dockerhub` and `pull-ghcr` with no registry credential | every `lab: true` case of `internal/router/testdata/cases.json`: the site's `.rsc` (equal to the Go golden), `/import`, `/healthz` on its /30, the token checks, `status`, `uninstall` with the case's flags | the agent answers; clean export; no mikroscope path left |
+| S6 `TestS06EphemeralThroughAPowerCut` | tmpfs-disk, doctor-lists | install `--ephemeral`, power cycle, `uninstall --ephemeral` | after the cut the container is configured and stopped, its root and image are gone, the tmpfs disk is there and empty, nothing answers; afterwards nothing at all is left, the directory included |
+| S7 `TestS07StartOnBootAfterAPowerCut` | doctor-lists | a persistent install, 45 s for it to reach the disk, power cycle | the agent answers within 90 s, as a new start; clean export |
+| S8 `TestS08ExposeWithToken` | doctor-lists | install `--expose --lan-address 192.168.88.1 --token …`, reads from the LAN side, uninstall with the same flags | `/healthz` 200, `/capabilities` 401 without the token and 200 with it; both firewall rules there, then gone; clean export |
+| S9 `TestS09UninstallWhileAClientStreams` | doctor-lists | `LAB_S9_REPEAT` times: install, a client on `/stream`, uninstall | every first attempt verifies clean |
+| S10 `TestS10TrapByAddressList` | advanced-firewall | doctor and install `--no-doctor` with lists `none`; install with the lists | doctor names the `LANs` trap; the unreachable agent reported as running; reachable with the lists |
+| S10 `TestS10TrapByRange` | advanced-firewall-range | doctor, install | an item naming the range and saying no list fixes it; no agent answers |
+| S11 `TestS11ForeignObjectsStopTheInstall` | doctor-lists, plus a foreign veth, a 172.30.10.1/30 on ether2 or a foreign envlist | doctor, install (and `--no-doctor` for the veth); for the veth and the envlist, the `plan --rsc` script /imported | MISSING names each; the script stops at its guard; nothing written |
+| S12 `TestS12TwoInstallsSideBySide` | doctor-lists | install a, install b (`--name b --veth veth-b --subnet 172.30.11.0/30 --port 9200 --container-name b`), uninstall b, uninstall a | b answers on its own /30; removing b leaves every object of a, its root and a running agent; nothing left |
+| S13 `TestS13UninstallReadsTheStoredShape` | custom-lists | install `--iface-list MYLAN --addr-list MYNETS`; uninstall with no flag; `--iface-list LAN` refused | everything removed; the refusal names both values |
+| S14 `TestS14UninstallWithoutExposeRemovesTheRules` | doctor-lists | install `--expose`; doctor and uninstall with no flag | the leftover WARN; both rules removed; never "verified" over a live rule |
+| S17 `TestS17DoctorNeedsRouterOS724` | none, on a lab below 7.24 (`LAB_ROS=7.23.7`) | doctor | MISSING `RouterOS 7.24 or later`; skips on 7.24 and later |
+| S18 `TestS18GHCRPullWithoutCredential` | doctor-lists, no registry credential | install from `ghcr.io/…` with no `/container/config` username | the agent answers; the router logged the ghcr.io pull |
+| `TestF4UninstallRemovesEverything` | doctor-lists | CLI pull, CLI tar, CLI tar then upgrade, `plan --rsc` imported, each uninstalled | export equal to the one before the install; no mikroscope path |
+| `TestF4KeepsWhatItDidNotCreate` | tmpfs-disk, doctor-lists, plus a user's objects | a flash and an `--ephemeral` install, each uninstalled | the user's `mikroscope/` directory and file, tmpfs disk, `registry-url` and envlist stay |
+| `TestF4ReleasedInstallIsRemovedCompletely` | per case | the v1.3.1 CLI (downloaded, SHA-256 pinned) installs; this CLI uninstalls, or upgrades and uninstalls, with no flag; `--expose`; `--ephemeral` | nothing left, 1.3.1's directory included |
+| `TestTokenIsOnNoCommandLine` | doctor-lists | install and upgrade `--expose`, the host's process table read every 2 ms | the token on no command line, while ssh processes were seen |
+| `TestRegistryCredentialAtEveryReset` | none | a reset, the host's process table read every 2 ms; without `LAB_REGISTRY_*`, a reset | `LAB_REGISTRY_TOKEN` on no command line, and `/container/config` holding the URL, user and token; without the variables, no username and no password |
+| `TestRouterOSWordsReachTheInstallError`, `…UninstallSkipLine` | doctor-lists | a create RouterOS refuses; a container held in `stopping` (stop-signal 28, stop-time 3 min) | RouterOS's words in every output line, whatever ssh's exit status |
+| `TestF2ProbeReadsTheRunningFlag` | doctor-lists, plus a forward drop to the agent | install with the container stopped during the probe; upgrade | "not running", then "runs; this host cannot reach" |
+| `TestRepeatedTarInstalls` | doctor-lists | `LAB_INSTALL_REPEAT` installs and uninstalls on one boot (10 on x86_64, 3 on arm64) | every install and every first uninstall succeeds |
 
-**How long it took**, on 2026-09-26 on the machine described under
-[how long each step took](#how-long-each-step-took), CHR 7.24.4 and the 1.3.1
-code of this branch, one run per architecture. `make test-lab` took 7 min
-29 s on x86_64 and 12 min 12 s on arm64, with the builds already cached; the
-arm64 figures are the emulation's, not a router's.
+**How long it takes**, on 2026-09-27 on the machine described under
+[how long each step took](#how-long-each-step-took), CHR 7.24.4 and the code
+of this branch with the fixes review asked for. With both suites side by side,
+each under its own lock and with other builds and tests running on the host,
+`make test-lab` took 29 min 2 s on x86_64 and 57 min 13 s on arm64, builds
+included; the arm64 figures are the emulation's, not a router's. Every test
+passed; S17 skips on 7.24.4. S9's ten uninstalls with a client on `/stream`
+were each clean at the first attempt, 8.0 to 8.3 s each on x86_64 and 10.3 to
+12.6 s on arm64, and so was every uninstall of the repeated installs (10 and
+3). S5's fifteen scripts answered 2.9 to 5.6 s after their import began on
+x86_64 and 5.3 to 12.4 s on arm64. Earlier the same day, before those fixes,
+the suite took 28 min 32 s on x86_64 alone, and 28 min 17 s and 57 min 29 s
+side by side; S17, run on a 7.23.7 x86_64 lab (`LAB_ROS=7.23.7`), passed in
+14.7 s.
+
+| Test                                     | x86_64 beside arm64 | arm64 (TCG) |
+| ---------------------------------------- | ------------------- | ----------- |
+| S1                                       | 27.5 s              | 68.5 s      |
+| S1's tmpfs WARN                          | 15.3 s              | 49.4 s      |
+| S2                                       | 27.2 s              | 63.3 s      |
+| S3                                       | 22.8 s              | 59.3 s      |
+| S4, both routes                          | 42.8 s              | 96.3 s      |
+| S5, fifteen scripts                      | 357.0 s             | 835.0 s     |
+| S6                                       | 41.0 s              | 84.0 s      |
+| S7                                       | 82.7 s              | 127.4 s     |
+| S8                                       | 31.2 s              | 65.6 s      |
+| S9, ten uninstalls                       | 125.9 s             | 221.0 s     |
+| S10, list and range                      | 77.3 s              | 141.0 s     |
+| S11, three collisions and two scripts    | 92.7 s              | 180.3 s     |
+| S12                                      | 26.8 s              | 65.9 s      |
+| S13                                      | 51.1 s              | 122.4 s     |
+| S14                                      | 21.2 s              | 64.9 s      |
+| S18                                      | 24.7 s              | 66.6 s      |
+| complete uninstall, four routes          | 84.6 s              | 217.9 s     |
+| what it did not create, two installs     | 47.6 s              | 106.7 s     |
+| a 1.3.1 install, four cases              | 124.7 s             | 220.6 s     |
+| the token on no command line             | 23.9 s              | 56.7 s      |
+| RouterOS's words, install error          | 21.5 s              | 56.8 s      |
+| RouterOS's words, uninstall skip line    | 204.3 s             | 235.4 s     |
+| the probe's running flag                 | 88.8 s              | 146.5 s     |
+| `TestRepeatedTarInstalls`                | 75.0 s (10)         | 76.7 s (3)  |
+
+The uninstall skip-line test holds a container in `stopping` for three
+minutes on purpose, which is most of its time on both architectures.
+
+**The first suite**, on 2026-09-26 on the same machine, CHR 7.24.4 and the
+1.3.1 code of this branch, one run per architecture: `make test-lab` took
+7 min 29 s on x86_64 and 12 min 12 s on arm64, with the builds already
+cached; the arm64 figures are the emulation's, not a router's.
 
 | Test                                    | x86_64 (KVM)          | arm64 (TCG)             |
 | --------------------------------------- | --------------------- | ----------------------- |
@@ -383,8 +555,8 @@ build:
 
 ```sh
 make build agent-tars lab-tool
-LAB_ARCH=x86_64 bin/mikroscope-lab lock go test -tags labe2e -count=1 -timeout 75m -v ./test/e2e/lab/ &
-LAB_ARCH=arm64 bin/mikroscope-lab lock go test -tags labe2e -count=1 -timeout 75m -v ./test/e2e/lab/
+LAB_ARCH=x86_64 bin/mikroscope-lab lock go test -tags labe2e -count=1 -timeout 150m -v ./test/e2e/lab/ &
+LAB_ARCH=arm64 bin/mikroscope-lab lock go test -tags labe2e -count=1 -timeout 150m -v ./test/e2e/lab/
 ```
 
 The suite finds the pull scenarios' image itself (the last release tag, as
@@ -840,9 +1012,10 @@ installed disk and came up in 8.1 s.
 - **Docker Hub counts the pulls.** Docker's usage page (read 2026-09-26) allows
   unauthenticated clients 100 pulls per 6 hours per IPv4 address or IPv6 /64,
   and a pull of a multi-architecture image counts once per architecture
-  pulled. The router pulls anonymously, from the host's address; on a CI
-  runner that address is shared with whatever else ran from it. So a suite
-  installs from the branch's own tar (`make agent-tars`, `--agent-tar
+  pulled. The router pulls anonymously, from the host's address, unless it
+  is given an account ([pulling as an account](#pulling-as-an-account)); on a
+  CI runner that address is shared with whatever else ran from it. So a
+  suite installs from the branch's own tar (`make agent-tars`, `--agent-tar
   build/agent-images/mikroscope-agent-<arch>.tar`), which also tests the
   branch's agent, and only the scenarios that test the pull itself pull.
 - **arm64 is emulated.** It is the RB5009's architecture, kernel version and

@@ -28,6 +28,7 @@ cmd/mikroscope          the CLI and collector: install, record, plot, forward, d
 cmd/mikroscope-agent    the agent that runs on the router
 cmd/gen_brand           build-time tool that writes brand/; never shipped
 cmd/mikroscope-lab      build-time tool that drives the virtual RouterOS lab; never shipped
+cmd/gen_rsc             build-time tool that writes the steps spec and case scripts into site/src/data/rsc; never shipped
 internal/procfs         parsers for the /proc and /sys files the agent reads
 internal/sample         one tick's raw values and the deltas between two
 internal/agent          the sampler, the ring, triggered captures, the HTTP server
@@ -136,12 +137,13 @@ the end of the heading) or has one the list lacks (`pnpm run anchors` in
 `site/scripts/gen-docs.mjs` and never edited by hand: change the page and its
 Spanish twin, then `pnpm run docs` in `site/`.
 
-For a change to the dashboards or the mark:
+For a change to the dashboards, the mark or the commands the installer sends:
 
 ```sh
 make gen-dashboards     # writes dashboards/*.json and the alert rules
 make gen-brand          # writes the mark and the favicons into brand/
-make check-generated    # writes nothing, fails if either is stale
+make gen-rsc            # writes the steps spec and the case scripts into site/src/data/rsc
+make check-generated    # writes nothing, fails if any of them is stale
 ```
 
 ## Coverage
@@ -253,6 +255,32 @@ with its own container, ports, lock and disks. A change to the driver runs
 fake router cover provisioning, the lock, the downloads and the CLI's
 refusals, and then the lab suite on a real lab.
 
+The lab router pulls from Docker Hub anonymously, and Docker Hub allows an
+address 100 anonymous pulls per 6 hours; a suite run pulls about a dozen
+times. If yours runs out, or you run the suite often, give the router a
+Docker Hub account with a **read-only** personal access token (read and
+nothing else: the lab only pulls). Keep the two in a file of your own, mode
+0600 and outside the repository, and export them from it rather than typing
+them on `make`'s command line, where the process table shows them:
+
+```sh
+set -a; . ~/.config/mikroscope/lab-registry.env; set +a   # LAB_REGISTRY_USER, LAB_REGISTRY_TOKEN
+make lab-reset                # every up and reset gives the router the credential
+```
+
+The driver gives `/container/config` the two at every `up` and `reset`, in a
+file it imports and deletes, never on a command line; the snapshot never has
+them, and without them nothing changes. `registry-url` is
+`registry-1.docker.io` with no scheme: RouterOS 7.24.4 presents the
+credential for a reference whose host is `registry-url` as written, and
+under `https://registry-1.docker.io` every pull of the suite stayed
+anonymous. `LAB_REGISTRY_URL` names another registry's host. The scenarios
+that test a router with no credential boot without it anyway. In CI the
+secrets `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` (the release's token; the
+lab only pulls with it) feed the same variables; a fork's pull
+request, and a dispatch that checks out another `ref`, run anonymously.
+`test/lab/README.md` ("Pulling as an account") has the rest.
+
 The two labs are separate containers and run side by side, and so can their
 suites, but not as two `make test-lab` in one checkout: each rebuilds the
 agent tars, and one can read a tar the other is halfway through writing.
@@ -260,8 +288,8 @@ Build once and start each under its own lab's lock, or use two checkouts:
 
 ```sh
 make build agent-tars lab-tool
-LAB_ARCH=x86_64 bin/mikroscope-lab lock go test -tags labe2e -count=1 -timeout 75m ./test/e2e/lab/ &
-LAB_ARCH=arm64 bin/mikroscope-lab lock go test -tags labe2e -count=1 -timeout 75m ./test/e2e/lab/
+LAB_ARCH=x86_64 bin/mikroscope-lab lock go test -tags labe2e -count=1 -timeout 150m ./test/e2e/lab/ &
+LAB_ARCH=arm64 bin/mikroscope-lab lock go test -tags labe2e -count=1 -timeout 150m ./test/e2e/lab/
 ```
 
 - **Deploy verbs run through the lab.** `make lab-cli` builds this checkout's
@@ -345,7 +373,7 @@ trial runs out was not observed.
   not to a Cortex-A72.
 - **Docker Hub counts anonymous pulls** per address, shared on a CI runner, so
   the suite installs the branch's tar and pulls only in the scenarios that
-  test the pull.
+  test the pull, as `LAB_REGISTRY_USER` when that is set.
 
 ### On a real router
 
@@ -404,6 +432,14 @@ PromQL and SQL forms, `make gen-dashboards`, its `alertFiresWhen` entry in
 Spanish twin, and a backtest over a real store that states the window, the
 device and how often the rule would have fired. It is judged against any
 user's healthy router, not only against the reference device's faults.
+
+**A change to a RouterOS command** means a change to the steps spec in
+`internal/router/stepspec.go`, which `plan`, `install`, `plan --rsc`, the
+install manifest and the site's script data all render. The goldens under
+`internal/router/testdata/golden` pin every case of `testdata/cases.json`:
+`go test ./internal/router -run TestGolden -update` rewrites them, the diff is
+reviewed as part of the change, and `make gen-rsc` follows. A `VERSION` bump
+changes the first line of every script, so a release runs both too.
 
 **A new doctor check** means its item in `internal/router/doctor.go`, a test,
 its row in `site/src/data/doctor-checks.ts` in both languages, and the

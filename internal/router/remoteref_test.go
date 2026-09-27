@@ -129,10 +129,10 @@ func TestUpgradePullsTheSameFullReference(t *testing.T) {
 	}
 	f := &fakeRunner{present: map[string]bool{}}
 	var out bytes.Buffer
-	if err := Upgrade(f, o, nil, &out); err != nil {
+	if err := Upgrade(f, o, nil, nil, &out); err != nil {
 		t.Fatal(err)
 	}
-	if len(f.ran) != 2 || !strings.Contains(f.ran[1], want) {
+	if len(f.ran) != 3 || !strings.Contains(f.ran[2], want) {
 		t.Fatalf("upgrade ran %q, want the create to carry %s", f.ran, want)
 	}
 	if len(f.uploads) != 0 {
@@ -166,7 +166,7 @@ func TestInstallPrintsTheFullReference(t *testing.T) {
 		t.Errorf("install does not name the full reference it pulls:\n%s", out.String())
 	}
 	var up bytes.Buffer
-	if err := Upgrade(&fakeRunner{present: map[string]bool{}}, o, nil, &up); err != nil {
+	if err := Upgrade(&fakeRunner{present: map[string]bool{}}, o, nil, nil, &up); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(up.String(), "pull  the router pulls registry-1.docker.io/jmrplens/mikroscope-agent:1.2.2 itself") {
@@ -194,13 +194,13 @@ func (u *upgradeRouter) Run(command string) (string, error) {
 	for _, q := range lines {
 		switch {
 		case strings.Contains(q, "get registry-url"):
-			out = append(out, u.registryURL)
+			out = append(out, answerLine(q, u.registryURL))
 		case strings.Contains(q, "get username"):
-			out = append(out, u.userSet)
+			out = append(out, answerLine(q, u.userSet))
 		case u.absent:
-			out = append(out, "0")
+			out = append(out, answerLine(q, "0"))
 		default:
-			out = append(out, "1")
+			out = append(out, answerLine(q, "1"))
 		}
 	}
 	return strings.Join(out, "\n") + "\n", nil
@@ -221,11 +221,11 @@ func TestUpgradeWarnsBeforeItRemoves(t *testing.T) {
 	o := defaults(t, func(o *Options) { o.RemoteImage = "jmrplens/mikroscope-agent:1.2.2" })
 	r := &upgradeRouter{registryURL: "https://docker.1ms.run", userSet: "true"}
 	var out bytes.Buffer
-	installed, err := UpgradePreflight(r, o, &out)
+	st, _, err := UpgradeRead(r, o, nil, &out)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !installed {
+	if !st.Installed {
 		t.Fatal("a router holding every step read as not installed")
 	}
 	if len(r.ran) != 1 {
@@ -251,7 +251,7 @@ func TestUpgradeWarnsBeforeItRemoves(t *testing.T) {
 		}
 	}
 	// What upgrade does after the confirmation.
-	if upErr := Upgrade(r, o, nil, &out); upErr != nil {
+	if upErr := Upgrade(r, o, nil, nil, &out); upErr != nil {
 		t.Fatal(upErr)
 	}
 	removeAt := slices.IndexFunc(r.ran, func(cmd string) bool { return strings.Contains(cmd, "/container/remove") })
@@ -264,17 +264,17 @@ func TestUpgradeWarnsBeforeItRemoves(t *testing.T) {
 	}
 }
 
-// TestUpgradePreflightStaysQuiet: no note and no warning when registry-url
+// TestUpgradeReadStaysQuiet: no note and no warning when registry-url
 // names the host the pull goes to and no username is set; nothing about
 // /container/config at all for a tar upgrade; and nothing printed when the
 // install is not there, which upgrade reports as `nothing to upgrade`.
-func TestUpgradePreflightStaysQuiet(t *testing.T) {
+func TestUpgradeReadStaysQuiet(t *testing.T) {
 	t.Parallel()
 	hub := defaults(t, func(o *Options) { o.RemoteImage = "jmrplens/mikroscope-agent:1.2.2" })
 	var out bytes.Buffer
-	installed, err := UpgradePreflight(&upgradeRouter{registryURL: "https://registry-1.docker.io/", userSet: "false"}, hub, &out)
-	if err != nil || !installed {
-		t.Fatalf("installed=%v err=%v", installed, err)
+	st, _, err := UpgradeRead(&upgradeRouter{registryURL: "https://registry-1.docker.io/", userSet: "false"}, hub, nil, &out)
+	if err != nil || !st.Installed {
+		t.Fatalf("installed=%v err=%v", st.Installed, err)
 	}
 	if !strings.Contains(out.String(), "ok      no registry credential meant for another registry") ||
 		strings.Contains(out.String(), "WARN") || strings.Contains(out.String(), "note") {
@@ -284,7 +284,7 @@ func TestUpgradePreflightStaysQuiet(t *testing.T) {
 	// An empty registry-url with no username: nothing to warn about, and no
 	// registry-url host to keep.
 	out.Reset()
-	if _, err = UpgradePreflight(&upgradeRouter{registryURL: "", userSet: "false"}, hub, &out); err != nil {
+	if _, _, err = UpgradeRead(&upgradeRouter{registryURL: "", userSet: "false"}, hub, nil, &out); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(out.String(), "WARN") || strings.Contains(out.String(), "note") {
@@ -294,17 +294,17 @@ func TestUpgradePreflightStaysQuiet(t *testing.T) {
 	tar := defaults(t, nil)
 	r := &upgradeRouter{}
 	out.Reset()
-	installed, err = UpgradePreflight(r, tar, &out)
-	if err != nil || !installed {
-		t.Fatalf("tar: installed=%v err=%v", installed, err)
+	st, _, err = UpgradeRead(r, tar, nil, &out)
+	if err != nil || !st.Installed {
+		t.Fatalf("tar: installed=%v err=%v", st.Installed, err)
 	}
 	if out.Len() != 0 || strings.Contains(r.ran[0], "/container/config") {
 		t.Errorf("a tar upgrade asked about or printed the registry: %q\n%s", r.ran[0], out.String())
 	}
 
 	out.Reset()
-	installed, err = UpgradePreflight(&upgradeRouter{absent: true, registryURL: "https://ghcr.io", userSet: "true"}, hub, &out)
-	if err != nil || installed || out.Len() != 0 {
-		t.Errorf("nothing installed: installed=%v err=%v printed %q", installed, err, out.String())
+	st, _, err = UpgradeRead(&upgradeRouter{absent: true, registryURL: "https://ghcr.io", userSet: "true"}, hub, nil, &out)
+	if err != nil || st.Installed || out.Len() != 0 {
+		t.Errorf("nothing installed: installed=%v err=%v printed %q", st.Installed, err, out.String())
 	}
 }

@@ -2,6 +2,7 @@ package router
 
 import (
 	"bytes"
+	"encoding/base64"
 	"regexp"
 	"slices"
 	"strings"
@@ -25,6 +26,11 @@ type fakeRunner struct {
 	owned   map[string]bool
 	ran     []string
 	uploads []string
+	// manifest is the text of the install manifest the router holds; the
+	// manifest query answers "-" (no file) while it is empty. A sweep line
+	// (it prints "@@swept=" only when it removes something) is a write that
+	// removes nothing.
+	manifest string
 }
 
 func (f *fakeRunner) Run(command string) (string, error) {
@@ -36,7 +42,16 @@ func (f *fakeRunner) Run(command string) (string, error) {
 		}
 		return out.String(), nil
 	}
-	if !strings.Contains(command, ":put") { // a write: nothing printed on success
+	if command == endLine { // the line every batch ends with
+		return keyPrefix + batchEnd + "=1\n", nil
+	}
+	if strings.Contains(command, "to=base64") {
+		if f.manifest == "" {
+			return answerLine(command, "-") + "\n", nil
+		}
+		return answerLine(command, "m:"+base64.StdEncoding.EncodeToString([]byte(f.manifest))) + "\n", nil
+	}
+	if !strings.Contains(command, ":put") || strings.Contains(command, sweepPrefix) { // a write: nothing printed on success
 		f.ran = append(f.ran, command)
 		return "", nil
 	}
@@ -44,12 +59,31 @@ func (f *fakeRunner) Run(command string) (string, error) {
 	if f.owned != nil && strings.Contains(command, "(managed by mikroscope)") {
 		table = f.owned
 	}
+	plain := unkeyed(command)
 	for frag, ok := range table {
-		if ok && strings.Contains(command, frag) {
-			return "1\n", nil
+		if ok && strings.Contains(plain, frag) {
+			return answerLine(command, "1") + "\n", nil
 		}
 	}
-	return "0\n", nil
+	return answerLine(command, "0") + "\n", nil
+}
+
+// unkeyed undoes keyed: every `("@@<key>=" . <expr>)` becomes <expr>, so a
+// test can name a query by the text the plan wrote.
+func unkeyed(q string) string {
+	for {
+		i := strings.Index(q, `("`+keyPrefix)
+		if i < 0 {
+			return q
+		}
+		end := exprEnd(q, i)
+		inner := q[i:end]
+		j := strings.Index(inner, `" . `)
+		if j < 0 || !strings.HasSuffix(inner, ")") {
+			return q
+		}
+		q = q[:i] + inner[j+len(`" . `):len(inner)-1] + q[end:]
+	}
 }
 
 func (f *fakeRunner) Upload(_ []byte, remoteName string) error {
@@ -112,10 +146,11 @@ func TestInstallRefusesWhatItDoesNotOwn(t *testing.T) {
 		if !strings.Contains(installErr.Error(), wantStep) || !strings.Contains(installErr.Error(), "not created by mikroscope") {
 			t.Fatalf("install with foreign %q: error does not name the collision: %v", frag, installErr)
 		}
-		for _, cmd := range f.ran {
-			if strings.Contains(cmd, frag) {
-				t.Fatalf("install wrote to the foreign object %q: %s", frag, cmd)
-			}
+		if len(f.ran) > 0 || len(f.uploads) > 0 {
+			t.Fatalf("install with foreign %q wrote before it refused: %v, uploaded %v", frag, f.ran, f.uploads)
+		}
+		if !strings.Contains(installErr.Error(), "nothing was written") {
+			t.Fatalf("install with foreign %q does not say nothing was written: %v", frag, installErr)
 		}
 	}
 }
@@ -158,7 +193,35 @@ func TestUninstallGuardsDerivedResourcesByMarker(t *testing.T) {
 func TestUninstallSelectsOnlyWhatInstallTagged(t *testing.T) {
 	o := defaults(t, func(o *Options) { o.Name = "bouncer"; o.Expose = true; o.LANAddress = "192.168.88.1"; o.Token = "t0k" })
 	tag := `comment="` + o.Tag() + `"`
-	for _, s := range Plan(o) {
+	plan := Plan(o)
+	// The manifest is a file, which carries no comment: it is selected by
+	// its exact path and is ours only when it holds the exact tag line, and
+	// its removal refuses while any object carries the tag.
+	m := plan[0]
+	path := `name="` + ManifestFile(o) + `"`
+	tagLine := `"\ntag=` + o.Tag() + `\n"`
+	// The one pattern is the count of what is under the directory, which
+	// decides whether the empty directory goes; nothing is selected for a
+	// removal by it.
+	dirCount := `[:len [/file/find name~"^` + manifestDir(&o) + `/"]]`
+	for what, cmd := range map[string]string{"remove": strings.ReplaceAll(m.Remove, dirCount, ""), "owned": m.Owned} {
+		if !strings.Contains(cmd, path) || !strings.Contains(cmd, tagLine) || strings.Contains(cmd, "~") {
+			t.Fatalf("%s of the manifest does not select by the exact path and tag line: %s", what, cmd)
+		}
+	}
+	// The container root it lists goes on the manifest's word alone, and
+	// before the manifest itself, so an attempt cut short between the two
+	// still has the record.
+	ours := strings.Index(m.Remove, `= "num") do={ `)
+	root := strings.Index(m.Remove, `/file/remove [find name="`+o.RootDir()+`"]`)
+	gone := strings.Index(m.Remove, `/file/remove [find `+path+`]`)
+	if ours < 0 || root < ours || gone < root {
+		t.Fatalf("the manifest's removal does not remove the root inside the manifest's own branch, before the manifest: %s", m.Remove)
+	}
+	if !strings.HasPrefix(m.Remove, `:if (([:len [/ip/firewall/address-list/find `+tag+`]] + `) {
+		t.Fatalf("the manifest's removal does not first count what the tag still selects: %s", m.Remove)
+	}
+	for _, s := range plan[1:] {
 		for what, cmd := range map[string]string{"remove": s.Remove, "owned": s.Owned} {
 			if strings.Contains(cmd, "comment~") {
 				t.Fatalf("%s of %q matches by pattern: %s", what, s.Name, cmd)
@@ -171,7 +234,7 @@ func TestUninstallSelectsOnlyWhatInstallTagged(t *testing.T) {
 			t.Fatalf("create of %q does not write the tag: %s", s.Name, s.Create)
 		}
 	}
-	addr := Plan(o)[3]
+	addr := Plan(o)[4]
 	want := `/ip/firewall/address-list/remove [find list="` + o.AddrList + `" address="` + o.Subnet + `" ` + tag + `]`
 	if addr.Remove != want {
 		t.Fatalf("address-list removal:\n got %s\nwant %s", addr.Remove, want)
@@ -245,8 +308,10 @@ func TestUninstallVerifiesAndFailsOnLeftovers(t *testing.T) {
 			t.Fatalf("error does not name %q: %v", s.Name, err)
 		}
 	}
-	if len(dirty.ran) != len(Plan(o)) {
-		t.Fatalf("verification changed the number of removals run: %d, want %d", len(dirty.ran), len(Plan(o)))
+	// One removal per step, one sweep line per sweep menu, and nothing
+	// more: verification writes nothing.
+	if len(dirty.ran) != len(Plan(o))+len(sweepMenus) {
+		t.Fatalf("verification changed the number of removals run: %d, want %d", len(dirty.ran), len(Plan(o))+len(sweepMenus))
 	}
 	if !strings.Contains(err.Error(), "left objects behind") {
 		t.Fatalf("uninstall error does not say so: %v", err)
@@ -254,8 +319,8 @@ func TestUninstallVerifiesAndFailsOnLeftovers(t *testing.T) {
 }
 
 // TestImageTarIsRemovedAfterExtraction pins that the tar is deleted by the
-// container step itself, after the container exists and before it starts, so
-// a normal uninstall has no file left to find.
+// container step itself, after the container is extracted and before it
+// starts, so a normal uninstall has no file left to find.
 func TestImageTarIsRemovedAfterExtraction(t *testing.T) {
 	o := defaults(t, nil)
 	c := Plan(o)[len(Plan(o))-1].Create
@@ -263,8 +328,8 @@ func TestImageTarIsRemovedAfterExtraction(t *testing.T) {
 	if add < 0 || rm < add || start < rm {
 		t.Fatalf("tar removal is not between add and start: %s", c)
 	}
-	if !strings.Contains(c[add:rm], `:while ([:len [/container/find file="`+o.ImageFile()+`"]] = 0`) {
-		t.Fatalf("tar removal does not wait for the container to exist: %s", c)
+	if !strings.Contains(c[add:rm], `:while ([:len [/container/find comment="`+o.Tag()+`" stopped]] = 0`) {
+		t.Fatalf("tar removal does not wait for the container to be extracted: %s", c)
 	}
 }
 
@@ -353,6 +418,26 @@ func TestOptionsAreBounded(t *testing.T) {
 		func(o *Options) { o.Disk = `a"b` },
 		func(o *Options) { o.Arch = "ARM 64" },
 		func(o *Options) { o.Arch = "" },
+		func(o *Options) { o.Arch = "x86_64" }, // RouterOS's name for it; --arch takes GOARCH
+		func(o *Options) { o.Arch = "Auto" },
+		func(o *Options) { o.IfaceList = "all" }, // RouterOS's built-in lists refuse members
+		func(o *Options) { o.IfaceList = "dynamic" },
+		func(o *Options) { o.IfaceList = "static" },
+		func(o *Options) { o.ContainerName = "a b" },
+		func(o *Options) { o.ContainerName = `a"b` },
+		func(o *Options) { o.ContainerName = strings.Repeat("a", 33) },
+		func(o *Options) { o.StartOnBootMode = "maybe" },
+		func(o *Options) { o.StartOnBootMode = "YES" },
+		func(o *Options) { o.RestartMaxCount = -1 },
+		func(o *Options) { o.RestartMaxCount = 101 },
+		func(o *Options) { o.RestartInterval = "10" },
+		func(o *Options) { o.RestartInterval = "5 s" },
+		func(o *Options) { o.ExtractTimeout = "9s" },
+		func(o *Options) { o.ExtractTimeout = "601s" },
+		func(o *Options) { o.ExtractTimeout = "11m" },
+		func(o *Options) { o.ExtractTimeout = "1h" },
+		func(o *Options) { o.ExtractTimeout = "2x" },
+		func(o *Options) { o.ExtractTimeout = "" },
 		func(o *Options) { o.Port = 0 },
 		func(o *Options) { o.Port = 65536 },
 		func(o *Options) { o.Subnet = "10.0.0.0/24" },
@@ -383,6 +468,19 @@ func TestOptionsAreBounded(t *testing.T) {
 		func(o *Options) { o.Disk = "disk1" },
 		func(o *Options) { o.Disk = "" },
 		func(o *Options) { o.Arch = "arm" },
+		func(o *Options) { o.Arch = "amd64" },
+		func(o *Options) { o.Arch = ArchAuto },
+		func(o *Options) { o.IfaceList = ListNone; o.AddrList = ListNone },
+		func(o *Options) { o.IfaceList = "ALL" }, // an ordinary list: RouterOS names are case-sensitive
+		func(o *Options) { o.ContainerName = "b" },
+		func(o *Options) { o.StartOnBootMode = StartOnBootYes; o.Ephemeral = true },
+		func(o *Options) { o.StartOnBootMode = StartOnBootNo },
+		func(o *Options) { o.StartOnBootMode = "" },
+		func(o *Options) { o.RestartMaxCount = 0; o.RestartInterval = "1m" },
+		func(o *Options) { o.RestartMaxCount = 100 },
+		func(o *Options) { o.ExtractTimeout = "10s" },
+		func(o *Options) { o.ExtractTimeout = "600s" },
+		func(o *Options) { o.ExtractTimeout = "10m" },
 		func(o *Options) { o.Port = 2200 },
 		func(o *Options) { o.Subnet = "172.30.9.0/30" },
 		func(o *Options) { o.RateHz = 20; o.BufferS = 3600 },
@@ -438,9 +536,20 @@ func TestWritesThatPrintAreFailures(t *testing.T) {
 	if _, installErr := Install(failing, o, []byte("img"), &bytes.Buffer{}); installErr == nil {
 		t.Fatal("install succeeded past a failing container step")
 	}
-	undo := `/file/remove [find name="` + o.ImageFile() + `"]`
+	// The undo removes the tar only while no container of this install
+	// holds it (a container extracting it is the extraction wait's
+	// failure, whose error says the tar stays).
+	undo := `:if ([:len [/container/find comment="` + o.Tag() + `"]] = 0) do={ /file/remove [find name="` + o.ImageFile() + `"]; :put "removed" } else={ :put "kept" }`
 	if !slices.Contains(quiet.ran, undo) {
 		t.Fatalf("uploaded image not taken back after a failed container step: %v", quiet.ran)
+	}
+	var said bytes.Buffer
+	for _, answer := range []string{"kept", "bad command name"} {
+		undoUpload(&failAtRunner{fakeRunner: &fakeRunner{present: map[string]bool{}}, failOn: `:put "kept"`, say: answer}, o, &said)
+	}
+	if !strings.Contains(said.String(), "keep  "+o.ImageFile()+": this install's container holds it") ||
+		!strings.Contains(said.String(), "skip  removing the uploaded "+o.ImageFile()+` (router said "bad command name")`) {
+		t.Errorf("the undo said:\n%s", said.String())
 	}
 	var out bytes.Buffer
 	if unErr := Uninstall(r, o, &out); unErr != nil {
@@ -451,11 +560,30 @@ func TestWritesThatPrintAreFailures(t *testing.T) {
 	}
 }
 
+// TestContainerStopIsGuarded pins F1: the stop is guarded, the removal then
+// waits, bounded, while the container is running OR stopping — /container/remove
+// refuses a stopping container with "cannot remove running", and `running` is
+// already clear while it stops (measured in the virtual lab, CHR x86_64,
+// RouterOS 7.24.4, with a client on /stream) — and only then removes it.
 func TestContainerStopIsGuarded(t *testing.T) {
-	plan := Plan(defaults(t, nil))
+	o := defaults(t, nil)
+	plan := Plan(o)
 	rm := plan[len(plan)-1].Remove
-	if !strings.HasPrefix(rm, ":do { /container/stop [find") || !strings.Contains(rm, "} on-error={}; /container/remove [find") {
-		t.Fatalf("container removal does not guard the stop: %s", rm)
+	tag := `comment="` + o.Tag() + `"`
+	had := `:local had [:len [/container/find ` + tag + `]]; `
+	stop := `:do { /container/stop [find ` + tag + `] } on-error={}; `
+	wait := `:local s 0; :while (([:len [/container/find ` + tag + ` running]] + [:len [/container/find ` + tag + ` stopping]]) > 0 && $s < 30) do={ :delay 1s; :set s ($s + 1) }; `
+	if !strings.HasPrefix(rm, had+stop+wait+`/container/remove [find `+tag+`]; `) {
+		t.Fatalf("container removal does not count, guard the stop, then wait while running or stopping, then remove: %s", rm)
+	}
+	// The root goes only when the removal took a tagged container, after
+	// that container is gone, and before the envlist.
+	rootAt, goneAt := strings.Index(rm, `:if ($had > 0) do={ `), strings.Index(rm, `:local i 0; :while ([:len [/container/find `+tag+`]] > 0`)
+	if rootAt < goneAt || !strings.Contains(rm[rootAt:], `/file/remove [find name="`+o.RootDir()+`"]`) || strings.Index(rm, `/file/remove [find name="`+o.RootDir()+`"]`) < rootAt {
+		t.Fatalf("the container root is not removed under the tagged container's count, after it is gone: %s", rm)
+	}
+	if strings.Contains(rm, ":delay 4s") {
+		t.Fatalf("the fixed delay is back: %s", rm)
 	}
 	// The derived resources are touched only after the asynchronous remove
 	// has finished: a wait loop sits between /container/remove and the guard.
@@ -476,6 +604,10 @@ func (f *failAtRunner) Run(command string) (string, error) {
 	if strings.Contains(command, f.failOn) && !strings.Contains(command, "\n") {
 		f.ran = append(f.ran, command)
 		return f.say + "\n", nil
+	}
+	if strings.Contains(command, `:put "removed"`) { // the undo of an upload, which says what it did
+		f.ran = append(f.ran, command)
+		return "removed\n", nil
 	}
 	return f.fakeRunner.Run(command)
 }
@@ -508,7 +640,7 @@ type countingRunner struct {
 }
 
 func (c *countingRunner) Run(command string) (string, error) {
-	if strings.Contains(command, ":put") {
+	if strings.Contains(command, ":put") && !strings.Contains(command, sweepPrefix) {
 		c.reads++
 	} else {
 		c.writes++
@@ -542,7 +674,9 @@ func TestRemoteImageInstallTouchesNoFile(t *testing.T) {
 		t.Errorf("create does not pull the image: %s", container.Create)
 	}
 	for what, cmd := range map[string]string{"create": container.Create, "check": container.Check, "owned": container.Owned, "remove": container.Remove} {
-		if strings.Contains(cmd, o.ImageFile()) || strings.Contains(cmd, "/file/") {
+		// The removal touches /file for the container root, which a pull
+		// has too, and never for a tar.
+		if strings.Contains(cmd, o.ImageFile()) || (what != "remove" && strings.Contains(cmd, "/file/")) {
 			t.Errorf("%s still accounts for a tar that is never uploaded: %s", what, cmd)
 		}
 	}
@@ -732,5 +866,28 @@ func TestFindSelectorsQuoteEveryValue(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// TestTarWaitsForExtraction pins F6: the tar is deleted only once the
+// container is `stopped`, which is when RouterOS has extracted it, waiting up
+// to --extract-timeout; past it the step stops with :error and keeps the tar.
+func TestTarWaitsForExtraction(t *testing.T) {
+	o := defaults(t, func(o *Options) { o.ExtractTimeout = "3m" })
+	plan := Plan(o)
+	create := plan[len(plan)-1].Create
+	tag := `comment="` + o.Tag() + `"`
+	wait := `:local w 0; :while ([:len [/container/find ` + tag + ` stopped]] = 0 && $w < 180) do={ :delay 1s; :set w ($w + 1) }; `
+	stop := `:if ([:len [/container/find ` + tag + ` stopped]] = 0) do={ :error "mikroscope: the image was not extracted within 180 s; ` + o.ImageFile() + ` stays" }; `
+	drop := `/file/remove [find name="` + o.ImageFile() + `"]; /container/start [find ` + tag + `]`
+	if !strings.Contains(create, wait+stop+drop) {
+		t.Fatalf("the tar is not deleted after a bounded wait for extraction: %s", create)
+	}
+	if strings.Contains(create, ":delay 3s") {
+		t.Fatalf("the fixed delay is back: %s", create)
+	}
+	pull := Plan(defaults(t, func(o *Options) { o.RemoteImage = "jmrplens/mikroscope-agent:1.3.1" }))
+	if c := pull[len(pull)-1].Create; strings.Contains(c, "stopped]]") || strings.Contains(c, "/file/remove") {
+		t.Fatalf("a pull waits for or deletes a tar it never uploaded: %s", c)
 	}
 }

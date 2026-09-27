@@ -20,9 +20,9 @@ const labLANAddress = "192.168.88.1"
 // to the CLI as MIKROSCOPE_TOKEN in its container's environment
 // (LAB_CLI_TOKEN=lab), and curl reads its header from stdin. As a --token argument it sat in the
 // host's process table for as long as each install and uninstall ran. The
-// 1.3.1 CLI itself still hands the RouterOS script, token included, to ssh as
-// an argument, so the token shows in the process table while that ssh runs;
-// that is the CLI's to fix.
+// 1.3.1 CLI itself handed the RouterOS script, token included, to ssh as an
+// argument, so the token showed in the process table while that ssh ran;
+// TestTokenIsOnNoCommandLine watches the process table for it.
 func TestS08ExposeWithToken(t *testing.T) {
 	l, dir, base := start(t, "doctor-lists")
 	t.Setenv("LAB_CLI_TOKEN", "lab")
@@ -53,5 +53,5 @@ func TestS08ExposeWithToken(t *testing.T) {
 		t.Errorf("the LAN address still answers on 9123 after uninstall: %d", code)
 	}
 	assertExport(t, l, base)
-	assertResidue(t, l, base, knownDir)
+	assertResidue(t, l, base)
 }
