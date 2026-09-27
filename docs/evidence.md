@@ -12,7 +12,7 @@ Where each part of mikroscope was run, measured or checked: the device, the Rout
 date and the conditions, what each run found, and what has not been tested. The guides state what
 the tool does and link here for the proof. The feature verdicts were checked against the code at
 1.2.0 and 1.2.2 on 2026-09-24, and the sections that came from the guides against the code of 1.3.1
-on 2026-09-26; the current release is [1.3.1](https://github.com/jmrplens/mikroscope/releases/tag/v1.3.1).
+on 2026-09-26; the current release is [1.4.0](https://github.com/jmrplens/mikroscope/releases/tag/v1.4.0).
 
 ### Reference hardware
 

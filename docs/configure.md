@@ -128,7 +128,7 @@ slipped ticks and the round trip:
 
 ```text
 probing http://172.30.10.2:9123/healthz from this host …
-  direct transport ok: agent 1.3.1 (<commit>) built <time>, 10 Hz, seq 4, 0 slipped, 2ms round trip
+  direct transport ok: agent 1.4.0 (<commit>) built <time>, 10 Hz, seq 4, 0 slipped, 2ms round trip
 ```
 
 An agent the CLI built reports the CLI's own version, commit and build time. One the router pulled,
@@ -438,7 +438,7 @@ iface-list=LAN
 addr-list=LANs
 expose=
 container-name=
-remote-image=registry-1.docker.io/jmrplens/mikroscope-agent:1.3.1
+remote-image=registry-1.docker.io/jmrplens/mikroscope-agent:1.4.0
 token=no
 dir=mikroscope
 file=mikroscope/mikroscope.manifest.txt
