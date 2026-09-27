@@ -1,165 +1,225 @@
 ---
-title: Dónde va cada cosa
-description: Dónde vive en el router cada objeto que crea `install` — el disco que guarda la imagen y la raíz, lo que lleva la envlist y los ajustes del contenedor.
+title: Almacenamiento y ajustes del contenedor
+description: Dónde pone install la imagen, la raíz del contenedor y el manifiesto de la instalación, los ajustes del contenedor y las opciones que los cambian, y cómo dimensionar su memoria.
+docType: how-to
+head:
+  - tag: title
+    content: Dónde va cada cosa | mikroscope
 ---
 
+import DoctorChecks from "../../../../components/DoctorChecks.astro";
 import EnvlistKeys from "../../../../components/EnvlistKeys.astro";
 import Measured from "../../../../components/Measured.astro";
-import NotClaimed from "../../../../components/NotClaimed.astro";
-import RunFlags from "../../../../components/RunFlags.astro";
 import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
-import Verified from "../../../../components/Verified.astro";
+import TestedOn from "../../../../components/TestedOn.astro";
 
-Esta página responde a dónde pone las cosas `install`: las direcciones, el disco
-que guarda la imagen y la raíz del contenedor, lo que va en la envlist y nada
-más, y los ajustes con los que se crea el contenedor. Cada valor de aquí es lo
-que imprime `mikroscope plan` para tus opciones, así que el plan es la forma de
-comprobarlo para tu router antes de escribir nada.
+`install` pone el tar de la imagen, la raíz del contenedor y el manifiesto de la instalación en un
+mismo disco, y crea el contenedor con los ajustes de abajo. Ejecuta `mikroscope plan` con tus
+opciones para ver cada valor antes de que se escriba nada.
 
-## Los objetos y sus valores por defecto
+## Valores por defecto {#los-objetos-y-sus-valores-por-defecto}
 
 <ScrollTable label="Dónde va cada objeto, con su valor por defecto y su opción">
 
-| Objeto               | Por defecto                                                                                                           | Opción                                             |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
-| veth + /30           | `veth-mikroscope`, `172.30.10.0/30` (router `.1`, agente `.2`)                                                        | `--veth`, `--subnet`                               |
-| dirección del router | `172.30.10.1/30` en la veth                                                                                           | derivada de `--subnet`                             |
-| tar de la imagen     | `<name>.tar`, subido con `scp`, **borrado justo después de la extracción**; ninguno con `--remote-image`              | `--disk`, `--ephemeral`, `--remote-image`          |
-| raíz del contenedor  | `mikroscope/<name>` en la flash interna                                                                               | `--disk tmpfs` para un disco en RAM, `--ephemeral` |
-| envlist              | `<name>-env`                                                                                                          | `--rate`, `--buffer`, `--port`, `--token`, …       |
-| etiqueta             | `mikroscope:<name> (managed by mikroscope)` en cada objeto que admite comentario; como `MIKROSCOPE_TAG` en la envlist | `--name`, por defecto `mikroscope`                 |
+| Objeto                      | Por defecto                                                                                                           | Opción                                       |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| veth + /30                  | `veth-mikroscope`, `172.30.10.0/30` (router `.1`, agente `.2`)                                                        | `--veth`, `--subnet`                         |
+| dirección del router        | `172.30.10.1/30` en la veth                                                                                           | derivada de `--subnet`                       |
+| manifiesto de la instalación | `mikroscope/<name>.manifest.txt` en la flash interna                                                                 | `--disk`, `--ephemeral`                      |
+| tar de la imagen            | `<name>.tar`, subido con `scp` y borrado en cuanto se extrae la imagen; ninguno con `--remote-image`                  | `--disk`, `--ephemeral`, `--remote-image`    |
+| raíz del contenedor         | `mikroscope/<name>` en la flash interna                                                                               | `--disk`, `--ephemeral`                      |
+| contenedor                  | sin `name=`: RouterOS le pone nombre                                                                                  | `--container-name`                           |
+| envlist                     | `<name>-env`                                                                                                          | `--rate`, `--buffer`, `--port`, `--token`, … |
+| etiqueta                    | `mikroscope:<name> (managed by mikroscope)` en cada objeto que admite comentario; como `MIKROSCOPE_TAG` en la envlist | `--name`, por defecto `mikroscope`           |
 
 </ScrollTable>
 
-`--subnet` debe ser una /30 IPv4 dada en su dirección de red; el router toma la
-`.1` y el agente la `.2`. `--name` admite hasta 32 caracteres y `--veth` hasta
-64, letras, dígitos, `_`, `.` y `-`, empezando por letra o dígito. La /30 y el
-nombre de veth por defecto se eligieron para no chocar con un muestreador
-instalado a mano en el equipo de referencia; si `172.30.10.0/30` está en uso en
-el tuyo, elige otra.
+- `--subnet` es una /30 IPv4 dada en su dirección de red; el router toma la `.1` y el agente la
+  `.2`. Si `172.30.10.0/30` está en uso en tu router, elige otra: `doctor` nombra la ruta que se
+  solapa con ella.
+- `--name` y `--container-name` admiten hasta 32 caracteres y `--veth` hasta 64: letras, dígitos,
+  `_`, `.` y `-`, empezando por letra o dígito.
+- `--disk` es un slot de disco de RouterOS: vacío para la flash interna, `tmpfs`, `disk1`, `usb1` y
+  así sucesivamente. Con `--disk`, el manifiesto, el tar y la raíz se mueven juntos:
+  `<disk>/<name>.tar` y `<disk>/mikroscope/<name>`.
+- Todo borrado selecciona el contenedor por su etiqueta, no por su nombre.
 
-Con `--disk`, la imagen y la raíz se mueven juntas: `<disk>/<name>.tar` y
-`<disk>/mikroscope/<name>`. El valor es un slot de disco de RouterOS: vacío para
-la flash interna, `tmpfs`, `disk1`, `usb1` y así sucesivamente.
+`doctor` comprueba el espacio y el disco antes de que `install` escriba:
+
+<DoctorChecks only={["flash", "disk", "disk-free", "disk-ram", "start-on-boot"]} />
 
 ## Persistente o efímera
 
-**Persistente es lo predeterminado**: la raíz en la flash interna,
-`start-on-boot=yes` y `restart-policy=on-failure` limitado a cinco reintentos
-separados diez segundos, para que una imagen rota no entre en bucle al arrancar.
+<ScrollTable label="Dónde van la imagen y la raíz, y qué hace un reinicio, por opción">
 
-**`--ephemeral`** pone el tar y la raíz en el disco tmpfs del router, si lo tiene
-— el RB5009 lo tiene — con `start-on-boot=no`: cero escrituras en flash, y nada
-sobrevive a un reinicio. Verificado en <Verified of="tmpfs-zero-writes" />:
-`write-sect-since-reboot` marcaba 58 279 antes de la instalación y 58 279
-después del borrado — el mismo valor, no un incremento pequeño. Con `--ephemeral` en un router sin disco tmpfs, `doctor` lo
-marca como ausente y nombra la orden que añade uno.
+|                            | Por defecto             | `--disk tmpfs`                                                  | `--ephemeral`                                                    |
+| -------------------------- | ----------------------- | --------------------------------------------------------------- | ---------------------------------------------------------------- |
+| Manifiesto, tar y raíz     | flash interna           | el disco tmpfs                                                  | el disco tmpfs                                                   |
+| `start-on-boot`            | `yes`                   | `yes`; `doctor` avisa                                           | `no`                                                             |
+| Escrituras en flash        | el tar y la raíz        | ninguna para el tar y la raíz                                   | ninguna                                                          |
+| Tras un reinicio           | el agente vuelve a arrancar | la raíz desaparece, y un contenedor que arranca con el equipo no tiene ninguna | el contenedor está parado, sin raíz, imagen ni manifiesto |
 
-`--disk tmpfs` sin `--ephemeral` también pone las dos cosas en el disco tmpfs,
-pero mantiene `start-on-boot=yes`; solo `--ephemeral` cambia el ajuste de
-arranque.
+</ScrollTable>
 
-<NotClaimed variant="untested">
-	Que sobreviva a un reinicio, en cualquiera de los dos modos: el router de referencia está en
-	producción y no se reinicia para pruebas.
-</NotClaimed>
+- **Persistente es lo predeterminado**: la raíz en la flash interna, `start-on-boot=yes` y
+  `restart-policy=on-failure` limitado a cinco reinicios separados diez segundos, para que una
+  imagen rota no entre en bucle al arrancar.
+- **`--ephemeral`** pone el manifiesto, el tar y la raíz en el disco del slot `tmpfs`, que tiene que
+  ser un disco en RAM, y fija `start-on-boot=no`. No se escribe nada en la flash
+  (<TestedOn of="tmpfs-zero-writes">medido</TestedOn>), y nada sobrevive a un reinicio. Un router
+  sin ese disco no pasa `doctor`, cuya solución añade uno:
 
-## Por qué se borra el tar al instalar
+  ```text
+  /disk/add type=tmpfs tmpfs-max-size=64M slot=tmpfs
+  ```
 
-RouterOS extrae la imagen cuando se añade el contenedor, así que una vez que el
-contenedor existe el tar ya no sirve para nada. Un tar que se queda en el equipo
-es lo que `uninstall` tendría que encontrar después en un índice de `/file` que
-iba minutos por detrás tras quitar un contenedor. Así que `install` espera hasta 15 s a
-que el contenedor aparezca y luego 3 s más, borra el tar y solo entonces arranca
-el contenedor. No comprueba que la extracción haya terminado; en el RB5009 un
-tar de 1,8 MiB se extrajo en el mismo segundo del alta (RouterOS 7.24.2,
-2026-09-11). Ese tar era una compilación de esa fecha, anterior a 1.0.0, no la imagen que
-`install` instala ahora.
+- **`--disk tmpfs`** sin `--ephemeral` pone los mismos ficheros en el disco tmpfs y mantiene
+  `start-on-boot=yes`, de lo que `doctor` avisa. Añade `--start-on-boot no`, o usa `--ephemeral`.
 
-El contenedor se crea con `ignore-remote-image-change=yes`. Con el `no` por
-defecto, RouterOS vigilaba la imagen y, en cuanto se quitaba el tar, paraba y
-quitaba el contenedor y lo volvía a extraer minutos después (<Verified of="remote-image-change" />).
+Tras un reinicio, el contenedor de una instalación `--ephemeral` sigue configurado y parado, y su
+manifiesto se fue con el disco (<TestedOn of="virtual-lab">probado</TestedOn>).
+`uninstall --ephemeral` quita el resto por su etiqueta.
 
-Hasta que se borra el tar, este y la raíz extraída de él comparten disco, y por
-eso `doctor` pide el doble de la imagen más 4 MiB de flash libre.
+## Ajustes del contenedor {#los-ajustes-del-contenedor}
 
-Con `--remote-image` no pasa nada de esto. RouterOS se baja las capas él mismo,
-ningún tar aterriza en el equipo, no hay nada a lo que esperar ni nada que
-borrar, `doctor` pide solo los 4 MiB, tanto por sí solo como dentro de
-`install`, y `uninstall` no tiene ningún fichero del
-que dar cuenta: el recuento de propiedad del contenedor son el contenedor y la
-envlist. La raíz del contenedor sigue yendo donde digan `--disk` y
-`--ephemeral`.
+<ScrollTable label="Los ajustes con los que se crea el contenedor, y la opción de cada uno">
 
-## Lo que lleva la envlist
+| Ajuste                        | Valor                                                                        | Opción                                          |
+| ----------------------------- | ---------------------------------------------------------------------------- | ----------------------------------------------- |
+| `name=`                       | no se escribe, así que RouterOS le pone nombre al contenedor                 | `--container-name`                              |
+| `file=` o `remote-image=`     | el tar subido, o la referencia entera, con el host del registro incluido     | `--agent-tar`, `--remote-image`                 |
+| `interface=`                  | la veth                                                                      | `--veth`                                        |
+| `root-dir=`                   | `mikroscope/<name>` en el disco                                              | `--disk`, `--ephemeral`, `--name`               |
+| `envlist=`                    | `<name>-env`                                                                 | `--name`                                        |
+| `logging=`                    | `yes`, para que lo que imprime el agente llegue al log del router            | ninguna                                         |
+| `start-on-boot=`              | `yes`; `no` con `--ephemeral`                                                | `--start-on-boot`: `auto`, `yes` o `no`         |
+| `restart-policy=`             | `on-failure`                                                                 | ninguna                                         |
+| `restart-max-count=`          | `5`                                                                          | `--restart-max-count`, 0–100                    |
+| `restart-interval=`           | `10s`                                                                        | `--restart-interval`, `^\d{1,4}[smh]$`          |
+| `memory-max=`                 | `64M`, aplicado como límite del cgroup del contenedor                        | `--memory-max`                                  |
+| `privileged=`                 | `yes`                                                                        | `--privileged=false`                            |
+| `ignore-remote-image-change=` | `yes`                                                                        | ninguna                                         |
+| `comment=`                    | la etiqueta                                                                  | `--name`                                        |
 
-La envlist guarda la configuración del agente y la marca de propiedad, y nada
-más:
+</ScrollTable>
+
+- `--start-on-boot auto` es `no` con `--ephemeral` y `yes` en otro caso.
+- `privileged=yes` quita el espacio de nombres de usuario del contenedor, para que el log del
+  kernel, `/proc/slabinfo` y los contadores ECC de la MTD se puedan leer. No amplía el espacio de
+  nombres de red ni el de PID; [Modo privilegiado](/mikroscope/es/limits/privileged/) tiene el
+  detalle.
+- El agente captura SIGTERM; RouterOS mata al instante un contenedor que no lo hace. El agente se
+  detiene dentro del tiempo de parada por defecto de RouterOS, 10 s.
+
+## Limpieza del tar {#por-qué-se-borra-el-tar-al-instalar}
+
+RouterOS extrae la imagen cuando se añade el contenedor, y después el tar ya no sirve para nada. En
+la vía del tar, `install`:
+
+1. añade el contenedor;
+2. espera a que RouterOS lo marque `stopped`, que es cuando termina la extracción, hasta
+   `--extract-timeout` (por defecto `120s`, de 10 a 600 s);
+3. borra el tar;
+4. arranca el contenedor.
+
+Si se agota el tiempo, se detiene con `mikroscope: the image was not extracted within 120 s;
+mikroscope.tar stays`. El tar se queda con el contenedor, y `uninstall` quita los dos juntos. Un tar
+olvidado sería lo que `uninstall` tendría que encontrar después, en un índice de `/file` que puede ir
+minutos por detrás del borrado de un contenedor.
+
+El contenedor se crea con `ignore-remote-image-change=yes`. Con `no`, RouterOS vigila la imagen, y
+quitar el tar hace que pare, quite y vuelva a extraer el contenedor minutos después
+(<TestedOn of="remote-image-change">verificado</TestedOn>).
+
+Hasta que se borra el tar, este y la raíz extraída de él comparten disco, así que `doctor` pide el
+doble de la imagen más 4 MiB. Con `--remote-image` no se sube nada: RouterOS se baja las capas, no
+hay tar al que esperar ni que borrar, y `doctor` pide la raíz extraída, 7 MiB, más 4 MiB. La raíz
+sigue yendo donde digan `--disk` y `--ephemeral`.
+
+## Manifiesto de la instalación {#manifiesto-de-la-instalación}
+
+`install` escribe primero el manifiesto de la instalación, `mikroscope/<name>.manifest.txt` junto a
+la raíz del contenedor, y `uninstall` lo borra al final. Recoge cómo se hizo la instalación y cada
+objeto que creó:
+
+```text
+mikroscope-manifest=1
+name=mikroscope
+tag=mikroscope:mikroscope (managed by mikroscope)
+disk=
+veth=veth-mikroscope
+subnet=172.30.10.0/30
+port=9123
+iface-list=LAN
+addr-list=LANs
+expose=
+container-name=
+remote-image=registry-1.docker.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}
+token=no
+dir=mikroscope
+file=mikroscope/mikroscope.manifest.txt
+object=/interface/veth name=veth-mikroscope
+object=/ip/address interface=veth-mikroscope
+object=/interface/list/member interface=veth-mikroscope list=LAN
+object=/ip/firewall/address-list list=LANs address=172.30.10.0/30
+object=/container/envs list=mikroscope-env
+object=/container interface=veth-mikroscope
+dir=mikroscope/mikroscope
+```
+
+- Las líneas de cabecera son la forma de la instalación, con los nombres de las opciones de la CLI.
+  `status`, `upgrade` y `uninstall` las leen, así que no necesitan ninguna opción de forma, y
+  rechazan la que las contradiga.
+- `token=` dice solo si se puso un token, nunca su valor. El manifiesto no guarda ningún secreto.
+- `dir=`, `file=` y `object=` enumeran lo que creó la instalación, en orden de creación: una ruta, o
+  un menú y un selector que, con la etiqueta, selecciona el objeto.
+- Lo escriben todas las vías de instalación: `install` y `upgrade` de la CLI, y el script de
+  `plan --rsc`.
+- Una instalación sin manifiesto, hecha por una CLI anterior o una `--ephemeral` tras un reinicio, se
+  lee de sus objetos etiquetados.
+
+## Contenido de la envlist {#lo-que-lleva-la-envlist}
+
+La envlist guarda la configuración del agente y la marca de propiedad, y nada más:
 
 <EnvlistKeys />
 
-No va en ella ninguna dirección de destino, ningún token de destino ni ninguna
-credencial de la API. Cualquier usuario de RouterOS con `read` puede listar la
-envlist de cualquier contenedor por la API (verificado en <Verified of="read-user-envlist" />), así que
-lo que se escribe aquí lo pueden leer todos ellos — el token incluido, si pones
-uno. El plan imprime la envlist con el token enmascarado como `(token)`.
-[Qué se ejecuta dónde](/mikroscope/es/security/) dice qué credencial vive dónde;
-el agente lee más variables de las que escribe `install`, y
-[Variables de entorno](/mikroscope/es/reference/environment/) las enumera.
+No va en ella ninguna dirección de destino, ningún token de destino ni ninguna credencial de la API.
+Trata todo lo que contiene, el token incluido, como legible por cualquier usuario de RouterOS con
+`read`: un usuario así puede listar la envlist de cualquier contenedor por la API
+(<TestedOn of="read-user-envlist">verificado</TestedOn>). El plan imprime el token enmascarado como
+`(token)`. [Modelo de seguridad](/mikroscope/es/security/) dice qué credencial vive dónde, y
+[Variables de entorno](/mikroscope/es/reference/environment/) enumera las variables que lee el agente
+además de estas.
 
-## Los ajustes del contenedor
+## Tamaño de la memoria {#dimensiona-la-memoria-al-anillo}
 
-El contenedor se añade con:
+Mueve `--memory-max` y `--mem-limit-mb` con `--rate` y `--buffer`:
 
-- `file=` el tar subido, o `remote-image=` la referencia entera, con el host
-  del registro incluido (`registry-1.docker.io/…` para Docker Hub), cuando el
-  router se baja la imagen;
-- `interface=` la veth, `root-dir=` la raíz, `envlist=` la envlist, y la
-  etiqueta como comentario;
-- `logging=yes`, para que lo que imprime el agente llegue al log del router;
-- `start-on-boot=yes`, o `no` con `--ephemeral`;
-- `restart-policy=on-failure restart-max-count=5 restart-interval=10s`;
-- `memory-max=64M`, aplicado como límite del cgroup del contenedor
-  (`--memory-max`);
-- `privileged=yes` (`--privileged=false` para renunciar a ello), que quita el
-  espacio de nombres de usuario del contenedor para que el log del kernel,
-  `/proc/slabinfo` y los contadores ECC de la MTD se puedan leer, y no amplía su
-  espacio de nombres de red ni el de PID —
-  [Lo que aporta privileged](/mikroscope/es/limits/privileged/) tiene el
-  detalle;
-- `ignore-remote-image-change=yes`, por el motivo de arriba.
+- El anillo guarda `rate × buffer` líneas de unos <Measured id="ring.lineKB" /> cada una.
+- El límite blando de Go quiere más o menos el doble del anillo y tiene que quedar holgadamente por
+  debajo de `memory-max`. `--mem-limit-mb 0`, el valor por defecto, lo deriva: 16 MiB para 10 Hz y
+  un anillo de 60 s bajo `64M`.
+- La comprobación de arranque del agente cuenta <Measured id="ring.lineChargedBytes" /> por línea
+  más `--capture-mb`. Por encima de `memory-max` se niega a arrancar; por encima de la mitad de
+  `--mem-limit-mb` avisa.
 
-El agente captura SIGTERM: RouterOS mata al instante un contenedor que no lo
-hace. Respeta el tiempo de parada por defecto de 10 s.
-
-## Dimensiona la memoria al anillo
-
-`--memory-max` y `--mem-limit-mb` tienen que moverse con `--rate` y `--buffer`.
-El anillo guarda `rate × buffer` líneas de unos <Measured id="ring.lineKB" /> cada una; el límite
-blando de Go quiere más o menos el doble y tiene que quedar holgadamente por
-debajo de `memory-max`. La comprobación de arranque del agente
-cuenta <Measured id="ring.lineChargedBytes" /> por línea más `--capture-mb`: por encima de `memory-max` se niega a
-arrancar, y por encima de la mitad de `--mem-limit-mb` avisa. Los
-valores por defecto —un límite blando derivado del anillo, bajo `64M`— están
-dimensionados para 10 Hz y un anillo de 60 s. El presupuesto de la captura por disparo cuenta contra
-los dos límites en esa comprobación, igual que el anillo.
-
-En las ejecuciones medidas se usó <RunFlags run="10hz" /> a 10 Hz, <RunFlags run="50hz" />
-a 50 Hz y <RunFlags run="100hz" /> a 100 Hz. Lo que cuesta un límite ajustado está en
-[El coste del observador](/mikroscope/es/cost/); las ejecuciones en sí están en
-[El techo de muestreo](/mikroscope/es/cost/rate-ceiling/).
+Los valores por defecto aguantaron a 10, 50 y 100 Hz: `--buffer 60`, el `--mem-limit-mb` derivado y
+`--memory-max 64M` (<TestedOn of="rates-2026-09-18">medido</TestedOn>). Lo que cuesta un límite
+ajustado está en [Coste del agente](/mikroscope/es/cost/), y cada cadencia en [Techo de
+muestreo](/mikroscope/es/cost/rate-ceiling/).
 
 <SeeAlso>
 
 ## Véase también
 
-- [Instalar el agente](/mikroscope/es/install/): el orden en que se crean estos objetos, y cómo se
-  quitan.
-- [El techo de muestreo](/mikroscope/es/cost/rate-ceiling/): lo que cuesta cada cadencia con las
+- [Instalar con la CLI](/mikroscope/es/install/): el orden en que se crean estos objetos.
+- [Actualizar y desinstalar](/mikroscope/es/install/upgrade/#uninstall): cómo se quitan.
+- [Techo de muestreo](/mikroscope/es/cost/rate-ceiling/): lo que cuesta cada cadencia con las
   opciones de memoria de arriba.
-- [Lo que aporta privileged](/mikroscope/es/limits/privileged/): el único ajuste del contenedor que
-  es una concesión de privilegio real.
-- [Qué se ejecuta dónde](/mikroscope/es/security/): qué más puede leer la envlist.
+- [Modo privilegiado](/mikroscope/es/limits/privileged/): el único ajuste del contenedor que es una
+  concesión de privilegio real.
+- [Modelo de seguridad](/mikroscope/es/security/): qué más puede leer la envlist.
 
 </SeeAlso>

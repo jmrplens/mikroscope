@@ -1,117 +1,164 @@
 ---
-title: The two firewall traps
-description: Two raw rules in a MikroTik firewall can silently drop every packet a container sends — what `install` adds so they do not, and which lists to name.
+title: Firewall lists
+description: The list memberships install adds so the router's raw drop rules let the agent's replies through, how to name your own lists or none, and what doctor checks.
+docType: how-to
 head:
   - tag: title
     content: The two RouterOS firewall traps for containers | mikroscope
 ---
 
-import NotClaimed from "../../../components/NotClaimed.astro";
+import DoctorChecks from "../../../components/DoctorChecks.astro";
 import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
-import Verified from "../../../components/Verified.astro";
+import TestedOn from "../../../components/TestedOn.astro";
 
-This page answers why an agent that is running can still be unreachable on a
-router whose raw firewall carries MikroTik's `defconf:` rules, and what `install`
-changes in that firewall so it is not. It adds two list memberships and nothing else; without
-`--expose` it writes no firewall rule.
+`install` adds the veth to an interface list and the container's /30 to an address list, so that
+the raw drop rules of a MikroTik firewall let the agent's replies through. Name the lists your rules
+use with `--iface-list` and `--addr-list`, or `none` when no rule needs them. Without `--expose`,
+`install` writes no firewall rule.
 
-## Two rules that drop everything a container sends
+## Raw drop rules {#two-rules-that-drop-everything-a-container-sends}
 
 MikroTik's [Building Advanced Firewall](https://help.mikrotik.com/docs/spaces/ROS/pages/328513/Building+Advanced+Firewall)
-guide adds raw rules commented `defconf:`, and two of them, in the form the
-reference RB5009 carries them, silently drop every packet a container sends:
+guide adds raw rules commented `defconf:`. Two of them silently drop every packet a new container
+sends:
 
-- `drop the rest (in-interface-list=!LAN)` matches a packet that enters on an
-  interface outside the `LAN` interface list, and a new veth is outside it.
-- `drop local if not from default IP range (src-address-list=!LANs)` matches a
-  source address outside the `LANs` address list, and the container's /30 is
-  outside it.
+<ScrollTable label="The raw rules that drop a container's traffic, and what lets it through">
 
-The guide writes the second rule with the range itself, `src-address=!192.168.88.0/24`, rather
-than a list, and no list membership gets a /30 outside that range past it; for that form
-`install` adds nothing that helps.
-
-The drop is silent. From your host the agent does not answer, and that looks
-the same as a container that is not running — which is why the probe after
-`install` asks the router whether the container runs before it suggests
-anything else.
-
-## What install adds
-
-`install` adds the veth to your `LAN` interface list and the container's /30 to
-your `LANs` address list. Both are additions to lists that already exist, both
-carry the tag, and `uninstall` removes both by that tag plus the list and the
-member. With the defaults the two writes are:
-
-<ScrollTable label="The two list memberships install writes">
-
-| Step                      | Command                                                                                                                     |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| interface-list membership | `/interface/list/member/add list="LAN" interface="veth-mikroscope" comment="mikroscope:mikroscope (managed by mikroscope)"` |
-| address-list membership   | `/ip/firewall/address-list/add list="LANs" address=172.30.10.0/30 comment="mikroscope:mikroscope (managed by mikroscope)"`  |
+| Rule                                                                | Drops a packet that                                   | A new container is dropped because | What lets it through                                                                                   |
+| ------------------------------------------------------------------- | ----------------------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `drop the rest`, `in-interface-list=!LAN`                           | enters on an interface outside the `LAN` list         | its veth is in no interface list   | the veth in `LAN`: `--iface-list`                                                                      |
+| `drop local if not from default IP range`, `src-address-list=!LANs` | comes from an address outside the `LANs` address list | its /30 is in no address list      | the /30 in `LANs`: `--addr-list`                                                                       |
+| the same rule written `src-address=!192.168.88.0/24`                | comes from an address outside that range              | its /30 is outside the range       | no list: add an accept rule for `in-interface=<veth>` before it, or pick a `--subnet` inside the range |
 
 </ScrollTable>
 
-On <Verified of="direct-lists" /> these two memberships were enough
-for a host on the LAN to reach the agent directly through the router.
+The drop is silent. From your host the agent does not answer, which looks the same as a container
+that is not running, so the probe after `install` asks the router whether the container runs before
+it suggests anything else ([Network access](/mikroscope/install/reaching-the-agent/)).
 
-A membership is not scoped to mikroscope. Any other rule on your router that
-matches the `LAN` interface list or the `LANs` address list matches the
-container's traffic too, for as long as it is installed. Read your own rules with
-that in mind.
+Other drop rules in `raw`, `input` or `forward` can drop the container's traffic elsewhere.
+`install` adds nothing for them beyond the two memberships; `doctor`'s [trap check](#trap-check)
+reads them and names the rule.
 
-## When your lists have other names
+## List memberships {#what-install-adds}
 
-Pass the names your rules use:
+With the default lists, `install` writes these two entries:
 
-- `--iface-list` (`MIKROSCOPE_IFACE_LIST`): the list your
-  `in-interface-list=!…` drop rule uses.
-- `--addr-list` (`MIKROSCOPE_ADDR_LIST`): the list your
-  `drop local if not from default IP range` rule uses.
+<ScrollTable label="The two list memberships install writes">
 
-`doctor` checks both before `install` writes anything. An interface list that
-does not exist is reported with the fix `/interface/list/add name=…`, or the
-flag. An address list with no entries is reported too; its fix text says an
-empty list is fine only if no such rule exists, but the check still counts as
-missing, and only `--no-doctor` gets past it, skipping every other check with
-it. `uninstall`, `status` and `upgrade` need the same two flags again, because
-the selectors are built from them; with other names `upgrade` finds the
-memberships missing and refuses with `nothing to upgrade: run install first`.
+| Step                      | Command                                                                                                                     | Left out with       |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------- |
+| interface-list membership | `/interface/list/member/add list="LAN" interface="veth-mikroscope" comment="mikroscope:mikroscope (managed by mikroscope)"` | `--iface-list none` |
+| address-list membership   | `/ip/firewall/address-list/add list="LANs" address=172.30.10.0/30 comment="mikroscope:mikroscope (managed by mikroscope)"`  | `--addr-list none`  |
 
-## When the membership already exists
+</ScrollTable>
 
-If the veth is already in the interface list, or the /30 is already in the
-address list, and that entry does not carry mikroscope's tag, `install` stops at
-that step and names it: the effect exists, but mikroscope did not create it and
-will not later remove it. Pick another `--veth` or `--subnet`, or remove your
-entry by hand if it is yours. `uninstall` never touches it.
+- Both carry the tag. `uninstall` removes each by the tag, the list and the member.
+- The interface list must exist. The address list need not: its first entry creates it, and
+  `uninstall` removes the entry.
+- With both memberships, a host on the LAN reaches the agent directly through the router
+  (<TestedOn of="direct-lists">verified</TestedOn>).
 
-## The rules `--expose` adds
+A membership is not scoped to mikroscope. Any other rule of your router that matches the `LAN`
+interface list or the `LANs` address list matches the container's traffic too, for as long as it is
+installed. Read your own rules with that in mind.
 
-Only `--expose` writes firewall rules: a dst-nat on the router's LAN address and
-a forward accept placed before the first forward drop, both tagged, both removed
-by `uninstall --expose --lan-address <the same address> --token …`: the dst-nat
-selector matches the LAN address, and `--expose` is refused without a token even
-though no selector uses it. What that opens and why the token becomes mandatory is
-on [What `--expose` opens](/mikroscope/security/expose/); how to use it is on
-[Reaching the agent](/mikroscope/install/reaching-the-agent/).
+## Custom list names {#when-your-lists-have-other-names}
 
-<NotClaimed variant="device-specific">
-	One firewall was measured: the RB5009's, on 2026-09-11, where the two memberships were enough. A
-	firewall with other drop rules in `raw`, `input` or `forward` may drop the container's traffic
-	somewhere else, and `install` adds nothing for that case beyond the two memberships. Whether a
-	router's factory default configuration carries these two raw rules was not checked.
-</NotClaimed>
+Pass the lists your drop rules use:
+
+<ScrollTable label="The two list flags">
+
+| Flag           | Variable                | Default | Accepted                                                                                               | Names                                                             |
+| -------------- | ----------------------- | ------- | ------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------- |
+| `--iface-list` | `MIKROSCOPE_IFACE_LIST` | `LAN`   | `^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$` or `none`; not RouterOS's built-in `all`, `dynamic` or `static` | the list your `in-interface-list=!…` drop rule uses               |
+| `--addr-list`  | `MIKROSCOPE_ADDR_LIST`  | `LANs`  | `^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$` or `none`                                                          | the list your `drop local if not from default IP range` rule uses |
+
+</ScrollTable>
+
+```sh
+mikroscope install --iface-list MYLAN --addr-list MYNETS
+```
+
+A built-in interface list takes no member, so `--iface-list static` stops before the first connect:
+
+```text
+mikroscope: iface-list "static" is a RouterOS built-in list, which takes no member: name the list your firewall's in-interface-list=!… drop rule uses, or none to join no list
+```
+
+`status`, `upgrade` and `uninstall` read the lists from the install on the router, so they need no
+list flag. A list flag that contradicts the install is refused, naming both values ([Install
+shape](/mikroscope/reference/cli/#pass-the-same-shape-to-status-upgrade-and-uninstall)).
+
+## No membership {#no-membership}
+
+A router with no rule that drops by list needs neither membership. Leave both out:
+
+```sh
+mikroscope install --iface-list none --addr-list none
+```
+
+`doctor` tells you when that is the case: its trap check ends with
+`they would pass with no list membership as well`, and a missing interface list is reported with
+`--iface-list none` as the first fix:
+
+```text
+  MISSING interface list LAN exists (found=0)
+          fix: --iface-list none: no firewall rule here needs the veth in an interface list. Or create it: `/interface/list/add name=LAN`
+```
+
+## Trap check {#trap-check}
+
+`doctor`, run alone or by `install`, checks the lists and then follows the agent's replies through
+your firewall:
+
+<DoctorChecks only={["iface-list", "addr-list", "firewall-traps"]} />
+
+The trap check reads every enabled rule of `/ip/firewall/raw` prerouting and `/ip/firewall/filter`
+forward and input, and walks each chain as RouterOS does, first match first. The replies it follows
+come in on the veth, from the agent's address and port, in the lists the plan joins.
+
+<ScrollTable label="What the trap check prints, and what to do">
+
+| Prints                                                                                     | Means                                                                                   | Do                                                                        |
+| ------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `ok … no rule drops them`                                                                  | the replies pass with the plan's memberships                                            | nothing                                                                   |
+| `ok … they would pass with no list membership as well`                                     | no rule needs a membership                                                              | `--iface-list none --addr-list none`, if you want no membership           |
+| `MISSING … drops them`, fix `install with --iface-list … --addr-list …`                    | a rule drops the replies, and other lists the rules name let them through               | install with the lists the fix names                                      |
+| `MISSING … drops them`, fix `… add an accept rule for in-interface=<veth> before it`       | no list the rules name lets the replies through, as with a `src-address=!<range>` rule | add that accept rule, or pick a `--subnet` inside the range the fix names |
+| `WARN … may drop them`                                                                     | the rule matches on something `doctor` does not judge: a destination, a mark, a rate    | if the agent does not answer after `install`, look at that rule first     |
+| `WARN … may drop the ones to the router itself`                                            | replies to a LAN host pass, and a `filter input` rule may drop replies to the router    | use the direct transport; the relay may not reach the agent               |
+
+</ScrollTable>
+
+`doctor` names a rule by its table, chain and number, its matchers and its comment, as in
+`/ip/firewall/raw rule 0 (chain=prerouting action=drop, …) "…"`. It never proposes a list the
+router's uplink is in, and it takes an address list other than the plan's to hold no entry for the
+/30.
+
+## Existing memberships {#when-the-membership-already-exists}
+
+If the veth is already in the interface list, or the /30 already in the address list, and that
+entry does not carry mikroscope's tag, `install` stops at that step and names it: the effect exists,
+but mikroscope did not create it and will not remove it. Pick another `--veth` or `--subnet`, or
+remove your entry by hand if it is yours. `uninstall` never touches it.
+
+## Expose rules {#the-rules---expose-adds}
+
+Only `--expose` writes firewall rules: a dst-nat on the router's LAN address and a forward accept
+placed before the first forward drop, both tagged. `uninstall` removes them with the rest of the
+install, because it reads from the router that the install was exposed. [Expose on the
+LAN](/mikroscope/security/expose/) has both rules and who reaches the agent through them.
 
 <SeeAlso>
 
 ## See also
 
-- [Reaching the agent](/mikroscope/install/reaching-the-agent/): what to do when the memberships
-  are not enough.
-- [What the router needs](/mikroscope/install/prerequisites/): the `doctor` checks for both lists.
-- [What `--expose` opens](/mikroscope/security/expose/): the two rules, and who can reach the agent
-  afterwards.
+- [Network access](/mikroscope/install/reaching-the-agent/): the three ways to reach the agent, and
+  what to do when the memberships are not enough.
+- [Requirements](/mikroscope/install/prerequisites/): every `doctor` check.
+- [Expose on the LAN](/mikroscope/security/expose/): the two rules `--expose` adds.
+- [Tested on](/mikroscope/about/status/): the firewalls these memberships ran against.
 
 </SeeAlso>

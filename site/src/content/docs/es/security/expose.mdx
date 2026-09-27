@@ -1,37 +1,40 @@
 ---
-title: Lo que abre --expose
-description: Las dos reglas de cortafuegos etiquetadas que añade install --expose, quién llega al agente a través de ellas y por qué el token pasa a ser obligatorio.
+title: Exponer en la LAN
+description: Publica el agente en la dirección LAN del router con install --expose, las dos reglas de cortafuegos etiquetadas que añade, quién llega al agente a través de ellas, el token que exigen y cómo se quitan.
+docType: how-to
 head:
   - tag: title
     content: "Exponer el agente con el cortafuegos de RouterOS | mikroscope"
 ---
 
 import { Aside } from "@astrojs/starlight/components";
-import NotClaimed from "../../../../components/NotClaimed.astro";
 import RouterWrites from "../../../../components/RouterWrites.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
-import Verified from "../../../../components/Verified.astro";
+import TestedOn from "../../../../components/TestedOn.astro";
 
-`--expose` es la única opción de instalación que cambia el cortafuegos del router más allá de las
-dos pertenencias a listas que añade toda instalación. Esta página responde qué escribe exactamente,
-quién puede llegar después al agente, qué protege el token y qué no, y cómo se quitan las reglas.
+`--expose` publica el agente en la dirección LAN del router, para un cliente que no llega a la /30 de
+la veth: un job de Prometheus, un navegador, `curl`. Añade dos reglas de cortafuegos etiquetadas y
+hace obligatorio un token.
+
+```sh
+mikroscope install --expose --lan-address 192.168.88.1
+```
+
+Guarda el token en `MIKROSCOPE_TOKEN`, que lo mantiene fuera de la línea de órdenes.
 
 <RouterWrites command="expose" />
 
-## Sin ella
+## Alcance por defecto {#sin-ella}
 
 El agente escucha en la dirección del contenedor, la `.2` de `--subnet` (`172.30.10.2` por
 defecto), en `--port` (`9123`). Sin `--expose` solo se llega a él desde las máquinas que el router
-encamina hacia esa /30 de la veth. En el RB5009 de referencia, las pertenencias a la lista de
-interfaces y a la lista de direcciones que añade toda instalación bastaron para que una máquina de
-la LAN llegara a él directamente; [las dos trampas del cortafuegos](/mikroscope/es/install/firewall/)
-explica por qué hacen falta esas dos.
+encamina hacia esa /30 de la veth, gracias a las dos pertenencias a listas que añade toda instalación
+([Acceso por red](/mikroscope/es/install/reaching-the-agent/)).
 
-## Las dos reglas
+## Reglas del cortafuegos {#las-dos-reglas}
 
-`install --expose --lan-address <router LAN IP> --token …` añade, después de las pertenencias a
-listas y antes del contenedor, un dst-nat desde la dirección LAN del router en el puerto del agente
-hacia la veth:
+`install --expose` añade, después de las pertenencias a listas y antes del contenedor, un dst-nat
+desde la dirección LAN del router en el puerto del agente hacia la veth:
 
 ```text
 /ip/firewall/nat/add chain=dstnat dst-address=<router LAN IP> protocol=tcp dst-port=9123 action=dst-nat to-addresses=172.30.10.2 to-ports=9123 comment="mikroscope:mikroscope (managed by mikroscope)"
@@ -44,125 +47,119 @@ action=drop`, o añadido al final cuando la cadena forward no tiene ningún drop
 /ip/firewall/filter/add chain=forward dst-address=172.30.10.2 protocol=tcp dst-port=9123 connection-nat-state=dstnat action=accept comment="mikroscope:mikroscope (managed by mikroscope)" place-before=<first forward drop>
 ```
 
-Las direcciones y el puerto de arriba son los valores por defecto, y `<first forward drop>`
-representa la búsqueda que la orden real hace en el router antes de añadir la regla; `plan` imprime
-las dos órdenes exactamente como se ejecutarán, con tus valores. Las dos llevan la etiqueta, y las
-dos se verificaron en <Verified of="expose-rules" />: la LAN llegó al agente a través de
-la dirección del propio router, y las dos reglas se pudieron quitar por etiqueta.
+- Las direcciones y el puerto son los valores por defecto. `<first forward drop>` representa la
+  búsqueda que hace la orden real en el router antes de añadir la regla. `plan` imprime las dos
+  órdenes exactamente como se ejecutan, con tus valores.
+- Las dos llevan la etiqueta. El par permite que la LAN llegue al agente a través de la dirección del
+  propio router (<TestedOn of="expose-rules">verificado</TestedOn>).
+- `--lan-address` tiene que ser una dirección IPv4; `install` rechaza `--expose` sin ella
+  (`--expose needs the router's IPv4 LAN address`). `doctor` comprueba que una interfaz del router
+  tenga esa dirección y que no esté en el enlace de subida.
+- Una regla existente con la misma cadena, dirección de destino, puerto y protocolo que no lleve la
+  etiqueta detiene `install`, como cualquier objeto ajeno ([Salvaguardas del
+  instalador](/mikroscope/es/security/installer/)).
 
-`--lan-address` tiene que ser una dirección IPv4; `install` rechaza `--expose` sin ella
-(`--expose needs the router's IPv4 LAN address`). Una regla existente con la misma cadena, dirección
-de destino, puerto y protocolo que no lleve la etiqueta detiene `install`, como cualquier objeto
-ajeno — mira [lo que el instalador rechaza](/mikroscope/es/security/installer/).
+## Máquinas que llegan {#quién-llega-al-agente-a-través-de-ellas}
 
-## Quién llega al agente a través de ellas
+Cualquier máquina de la LAN llega al agente en `<router LAN IP>:9123`. Ninguna de las dos reglas
+restringe el origen: el dst-nat no tiene `in-interface` ni `src-address`, y el accept solo compara el
+destino, el puerto y `connection-nat-state=dstnat`. Qué máquinas pasan lo decide qué máquinas pueden
+enviar un paquete a la dirección LAN del router, y lo que hagan tus otras reglas antes que estas. Si
+algo de fuera de la LAN llega a esa dirección depende del resto de tu cortafuegos, que mikroscope ni
+lee ni cambia (<TestedOn of="not-tested">sin probar</TestedOn>).
 
-A partir de ahí, cualquier máquina de la LAN llega al agente en `<router LAN IP>:9123`. Ninguna de
-las dos reglas restringe el origen: el dst-nat no tiene `in-interface` ni `src-address`, y el accept
-solo compara el destino, el puerto y `connection-nat-state=dstnat`. Qué máquinas pasan lo decide qué
-máquinas pueden enviar un paquete a la dirección LAN del router, y lo que hagan tus otras reglas
-antes que estas.
+## Token {#el-token}
 
-<NotClaimed variant="untested">
-	Solo se probó una máquina de la LAN llegando a la dirección LAN del router. Si algo de fuera de la
-	LAN puede llegar a esa dirección en tu router depende del resto de tu cortafuegos, que mikroscope
-	ni lee ni cambia, y no se probó ningún camino así.
-</NotClaimed>
+Como al agente ya no se llega solo a través de la veth, `install` y `upgrade` rechazan `--expose`
+sin token (`--expose makes the agent reachable from the LAN: a token is mandatory`).
 
-## El token
-
-Como al agente ya no se llega solo a través de la veth, el token es obligatorio: `install` rechaza
-`--expose` sin uno (`--expose makes the agent reachable from the LAN: a token is mandatory`). Con
-un token puesto, todos los endpoints que sirve el agente salvo `/healthz` devuelven
+Con un token puesto, todos los endpoints que sirve el agente salvo `/healthz` devuelven
 `401 token required`, con `WWW-Authenticate: Bearer`, a menos que la petición lleve
 `Authorization: Bearer <token>`: `/capabilities`, `/sampler`, `/snapshot`, `/stream`, `/captures`,
 `/captures/{id}` (incluido `DELETE`) y `POST /capture`. Una ruta que el agente no sirve recibe `404`,
-y un método equivocado `405`, haya token o no. El agente quita un prefijo `"Bearer "` opcional antes de
-comparar, así que también se acepta una cabecera que lleve el token a secas.
+y un método equivocado `405`, haya token o no. El agente quita un prefijo `"Bearer "` opcional antes
+de comparar, así que también se acepta una cabecera que lleve el token a secas.
 
 `/healthz` sigue abierto. Devuelve la versión del agente, la cadencia, los números de secuencia, el
 tiempo en marcha, la cuenta de retrasos, el hash de capacidades, sus relojes de pared y monótono, y
-el modelo del device-tree de la placa — el modelo está ahí a propósito, porque es lo que se le pide
-a un operador que envíe cuando su placa aún no tiene mapa de puertos del kernel a RouterOS.
+el modelo del device-tree de la placa. El modelo está ahí a propósito: es lo que se le pide a un
+operador que envíe cuando su placa aún no tiene mapa de puertos del kernel a RouterOS.
 
 Lo que el token es, y lo que no:
 
 - Puede contener letras, dígitos, `_`, `.` y `-`, hasta 128 caracteres; cualquier otra cosa se
   rechaza antes de la primera orden.
-- Se guarda en la envlist como `TOKEN`. `/container/print` devolvió la propiedad `envlist` a un
-  usuario `read,api` (<Verified of="read-user-envlist" />); leer los valores de las entradas no se
-  comprobó por separado, y el diseño supone que un usuario `read` puede. Tómalo como protección de
-  las rutas HTTP del agente frente a la LAN, no frente a los propios usuarios `read` del router.
-  `doctor` cuenta las entradas `TOKEN` y nunca lee su valor.
+- Se guarda en la envlist como `TOKEN`. Un usuario `read,api` puede listar la propiedad `envlist` de
+  cualquier contenedor (<TestedOn of="read-user-envlist">verificado</TestedOn>); no se comprobó si
+  ese usuario lee los valores de las entradas, y el diseño supone que puede. Tómalo como protección
+  de las rutas HTTP del agente frente a la LAN, no frente a los propios usuarios `read` del router.
+- `doctor`, `status` y `upgrade` cuentan las entradas `TOKEN` y nunca leen su valor; el manifiesto
+  de la instalación dice solo `token=yes` o `token=no`.
 - Un token puesto sin `--expose` se escribe igualmente y se exige igualmente.
 - El agente lo compara como una cadena normal, sobre HTTP sin cifrar: el dst-nat no lleva TLS, así
   que la cabecera cruza la LAN sin cifrar.
 
-## Qué usa el camino expuesto, y qué no
+## Clientes de la dirección {#qué-usa-el-camino-expuesto-y-qué-no}
 
-Las reglas sirven a un cliente que se dirige a `<router LAN IP>:<port>` — un job de Prometheus, un
+Las reglas sirven a un cliente que se dirige a `<router LAN IP>:<port>`: un job de Prometheus, un
 navegador, un `curl` con la cabecera. Las órdenes de mikroscope no usan esa dirección:
 
-- `record` y `forward` construyen la URL del agente a partir de `--subnet` y `--port`, así
-  que siempre marcan la dirección del contenedor. No hay ninguna opción que las apunte a la dirección
-  LAN.
+- `record` y `forward` construyen la URL del agente a partir de `--subnet` y `--port`, así que
+  siempre marcan la dirección del contenedor. Ninguna opción las apunta a la dirección LAN.
 - `install`, `upgrade` y `status` también sondean `/healthz` en la dirección del contenedor, y
   `doctor` lee allí `/healthz` y después el anillo del agente, presentando el token si se le da.
 - El transporte relay no puede llevar el token: `/tool fetch` en el router no envía cabecera
   `Authorization`. Contra un agente con token, el `/healthz` del relay responde y toda petición de
   muestras se rechaza. Un token necesita el transporte directo, o un despliegue sin token.
 
-## Quitarlas
+## Actualizar {#actualizar}
 
-Solo un `uninstall` al que se le da `--expose --lan-address … --token …`, como a la instalación,
-quita las reglas: los pasos de las reglas solo existen en un plan construido con `--expose`, y
-`--expose` sin token se rechaza en todos los verbos. Ese `uninstall` selecciona cada regla por la
-etiqueta junto con la cadena, la dirección de destino, el puerto y el protocolo; luego cuenta, para
-cada paso de su propio plan, los objetos etiquetados que siguen ahí, y falla nombrando el paso si
-queda alguno. Un `uninstall` sin más no tiene pasos de reglas, así que ni las quita ni las busca. En
-el RB5009 de referencia (RouterOS 7.24.4, 2026-09-21) uno así quitó todo lo demás, imprimió
-`verified: nothing mikroscope created remains on the router` y dejó el dst-nat apuntando a una
-dirección que ya no existía; [pasa la misma
-forma](/mikroscope/es/reference/cli/#pasa-la-misma-forma-a-status-upgrade-y-uninstall) tiene la
-prueba.
+`upgrade` conserva las dos reglas. Lee en el router que la instalación está expuesta, quita el paso
+del contenedor (el contenedor, la envlist `<name>-env` y la imagen) y lo vuelve a crear, con la
+envlist escrita a partir de las opciones que recibe `upgrade`.
 
-Esos selectores `find` ponen entre comillas todo valor no numérico salvo los enumerados `chain` y
-`action`. Sin comillas, una dirección o un puerto se interpretan como valores tipados y no
-encuentran nada — un `dst-port=9123` sin comillas no encontró ninguna regla
-en <Verified of="find-quoting" /> — y una palabra suelta como `tcp` se lee como el nombre de una
-variable, cuyo valor sin definir es vacío: sobre las mismas 15 reglas dstnat del RB5009 de
-referencia (7.24.4, 2026-09-21), `protocol=tcp` encontró 0 y `protocol="tcp"` encontró 10. Antes de
-1.1.0 el protocolo era el único valor sin comillas, así que `uninstall --expose` no quitaba ninguna
-de las dos reglas y después daba el router por limpio con ambas en su sitio.
+- Rechaza una instalación cuya envlist tiene un `TOKEN` cuando no recibe token:
+  `the install named mikroscope asks for a token and upgrade would write its envlist without one: pass --token (or MIKROSCOPE_TOKEN)`.
+- Una opción de ajuste que falte vuelve a su valor por defecto. Pasa los `--rate`, `--buffer`,
+  `--mem-limit-mb`, `--capture-mb`, `--triggers`, `--floor-hz`, `--memory-max`, `--privileged`,
+  `--restart-max-count` y `--restart-interval` con los que instalaste.
 
-`upgrade` no toca ninguna de las dos reglas. Quita el paso del contenedor — el contenedor, la envlist
-`<name>-env` y la imagen — y lo vuelve a crear, escribiendo la envlist a partir de las opciones dadas
-a `upgrade`, no de las que usó la instalación. Su única comprobación es que exista cada paso del plan
-construido con sus propias opciones, y un plan construido sin `--expose` no tiene pasos de reglas que
-echar en falta.
-
-<Aside type="caution" title="Dale a upgrade las opciones que tuvo install">
-	Pasa a `upgrade` el mismo `--token` (o `MIKROSCOPE_TOKEN`), `--expose` y `--lan-address`, y las
-	mismas opciones de ajuste (`--rate`, `--mem-limit-mb`, `--privileged` y las demás), que a la
-	instalación. Un upgrade sin el token pasa su comprobación, deja las dos reglas en su sitio y
-	escribe una envlist sin `TOKEN`: al agente se llega entonces desde la LAN sin token. Una opción de
-	ajuste que falte vuelve a su valor por defecto. Medido en el RB5009 de referencia (RouterOS
-	7.24.4, 2026-09-21): tras un upgrade así, `/snapshot` por la dirección LAN del router pasó de `401`
-	a `200`. Desde 1.2.0 `doctor` detecta ese estado: cuando una instalación con el mismo `--name`
-	tiene un dst-nat etiquetado y ninguna entrada `TOKEN`, imprime `WARN the installed agent published
-	on the LAN asks for a token`. Cuenta las entradas y nunca lee su valor. Ejecuta `doctor` después
-	de cada `upgrade` de una instalación expuesta.
+<Aside type="caution" title="Un agente expuesto sin token">
+	Una instalación con el mismo `--name` que tiene un dst-nat etiquetado y ninguna entrada `TOKEN`
+	está publicada en la LAN sin token. `doctor` avisa de ello, contando las entradas sin leer nunca un
+	valor: `WARN the installed agent published on the LAN asks for a token`. Su solución es
+	`mikroscope upgrade --name <name> --token <secret>`, o `mikroscope uninstall --name <name> --yes`,
+	que quita el agente y las dos reglas.
 </Aside>
+
+## Quitar las reglas {#quitarlas}
+
+`uninstall` quita las dos reglas con el resto de la instalación. Lee la forma de la instalación en el
+router, así que no necesita `--expose` ni `--lan-address`, ni ningún token:
+
+```sh
+mikroscope uninstall        # lists what it would remove, the two rules included
+mikroscope uninstall --yes  # removes it
+```
+
+- Cada regla se selecciona por la etiqueta junto con la cadena, la dirección de destino, el puerto y
+  el protocolo. Cualquier otro objeto que lleve la etiqueta de la instalación en `/ip/firewall/nat`
+  o `/ip/firewall/filter` se quita por la etiqueta.
+- Después cuenta lo que queda, por paso y por menú, y falla nombrando lo que siga ahí.
+- Esos selectores `find` ponen entre comillas todo valor no numérico salvo los enumerados `chain` y
+  `action`. Sin comillas, una dirección o un puerto se interpretan como valores tipados y no
+  encuentran nada (<TestedOn of="find-quoting">verificado</TestedOn>), y una palabra suelta como
+  `tcp` se lee como el nombre de una variable, cuyo valor sin definir es vacío.
 
 <SeeAlso>
 
 ## Véase también
 
-- [Llegar al agente](/mikroscope/es/install/reaching-the-agent/): directo, relay y `--expose`
+- [Acceso por red](/mikroscope/es/install/reaching-the-agent/): directo, relay y `--expose`
   comparados.
-- [Qué se ejecuta dónde](/mikroscope/es/security/): dónde está el token entre las demás credenciales.
-- [Lo que el instalador rechaza](/mikroscope/es/security/installer/): las comprobaciones de
-  propiedad por las que pasa cada regla.
-- [Los endpoints HTTP del agente](/mikroscope/es/reference/http/): cada ruta que protege el token.
+- [Modelo de seguridad](/mikroscope/es/security/): dónde está el token entre las demás credenciales.
+- [Salvaguardas del instalador](/mikroscope/es/security/installer/): las comprobaciones de propiedad
+  por las que pasa cada regla.
+- [Endpoints HTTP](/mikroscope/es/reference/http/): cada ruta que protege el token.
 
 </SeeAlso>

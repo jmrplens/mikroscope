@@ -1,5 +1,6 @@
 ---
 title: Environment variables
+docType: reference
 description: The MIKROSCOPE_* variables the CLI reads, the credentials that exist only as variables, and the envlist variables the agent reads on the router.
 ---
 
@@ -44,7 +45,7 @@ Most deployment flags have **no** variable. `--rate`, `--buffer`, `--port`,
 `--memory-max`, `--mem-limit-mb`, `--capture-mb`, `--triggers`, `--floor-hz`,
 `--privileged`, `--ephemeral`, `--expose`, `--restart-max-count`,
 `--restart-interval`, `--start-on-boot`, `--container-name` and
-`--extract-timeout` are set on the command line or not at all. [Commands and flags](/mikroscope/reference/cli/) has every flag.
+`--extract-timeout` are set on the command line or not at all. [CLI](/mikroscope/reference/cli/) has every flag.
 
 ## Router and deployment
 
@@ -57,8 +58,8 @@ Most deployment flags have **no** variable. `--rate`, `--buffer`, `--port`,
 | `MIKROSCOPE_SSH_KEY`      | `--ssh-key`      | the same                                              | ssh agent or config          | empty                   |
 | `MIKROSCOPE_SSH_OPTIONS` | `--ssh-option` | the same | none | commented out, `StrictHostKeyChecking=accept-new` |
 | `MIKROSCOPE_ARCH` | `--arch` | the deployment verbs | `auto` | commented out, `auto` |
-| `MIKROSCOPE_AGENT_TAR`    | `--agent-tar`    | `plan`, `install`, `upgrade`, `image`                 | empty (build the agent here) | commented out           |
-| `MIKROSCOPE_REMOTE_IMAGE` | `--remote-image` | `plan`, `install`, `upgrade`                          | empty (upload a tar)         | commented out           |
+| `MIKROSCOPE_AGENT_TAR`    | `--agent-tar`    | `doctor`, `plan`, `install`, `upgrade`, `image`       | empty (build the agent here) | commented out           |
+| `MIKROSCOPE_REMOTE_IMAGE` | `--remote-image` | the deployment verbs                                  | empty (upload a tar)         | commented out           |
 | `MIKROSCOPE_NAME`         | `--name`         | the deployment verbs                                  | `mikroscope`                 | commented out           |
 | `MIKROSCOPE_VETH` | `--veth` | the deployment verbs | `veth-mikroscope` | commented out |
 | `MIKROSCOPE_SUBNET` | `--subnet` | the deployment verbs, `record`, `forward` | `172.30.10.0/30` | commented out |
@@ -72,7 +73,7 @@ Most deployment flags have **no** variable. `--rate`, `--buffer`, `--port`,
 
 `MIKROSCOPE_SSH_OPTIONS` is a comma-separated list of `Key=value` pairs, the
 same as repeating `--ssh-option`; the first `--ssh-option` on the command line
-replaces the whole list. [Commands and flags](/mikroscope/reference/cli/) has
+replaces the whole list. [CLI](/mikroscope/reference/cli/) has
 the keys it takes.
 
 `MIKROSCOPE_TOKEN` is two things at once. For `install` and `upgrade` it is the
@@ -119,7 +120,7 @@ user](/mikroscope/security/api-user/) has the policy that user needs.
 | `MIKROSCOPE_GRAPHITE_ADDR` | `--graphite`    | empty               | carbon plaintext `host:port`                                                     |
 | `MIKROSCOPE_ELASTIC_URL`   | `--elastic`     | empty               | Elasticsearch or OpenSearch base URL                                             |
 | `MIKROSCOPE_TELEGRAF_URL`  | `--telegraf`    | empty               | Telegraf listener URL (`http://`, `tcp://` or `udp://`)                          |
-| `MIKROSCOPE_HOST_TAG`      | `--host-tag`    | `router`            | host tag on every point in every sink; <Src path=".env.example" /> has `rb5009` commented out |
+| `MIKROSCOPE_HOST_TAG`      | `--host-tag`    | `router`            | host tag on every point in every sink; <Src path=".env.example" /> has it commented out |
 
 </ScrollTable>
 
@@ -208,7 +209,7 @@ The names `SOURCES` accepts are the optional sources `/capabilities` reports:
 `meminfo`, `loadavg`, `softnet`, `softirqs`, `interrupts`, `vmstat`, `psi`,
 `schedstat`, `self`, `buddyinfo`, `yaffs`, `diskstats`, `slabinfo`, `kmsg`,
 `thermal`, `cpufreq`, `mtd` and `perf`. The trigger conditions and what each
-compares are on [triggered capture](/mikroscope/record/triggers/).
+compares are on [Triggered capture](/mikroscope/record/triggers/).
 
 Before it listens, the agent checks the ring against the container's own
 `memory.max`: `RATE_HZ × BUFFER_S × 3 456 B` plus `CAPTURE_MB` must fit, or it
@@ -255,10 +256,10 @@ defaults.
 
 ## See also
 
-- [Commands and flags](/mikroscope/reference/cli/): every flag, including the ones no variable
+- [CLI](/mikroscope/reference/cli/): every flag, including the ones no variable
   sets.
-- [The API user](/mikroscope/security/api-user/): the RouterOS user behind `MIKROSCOPE_API_USER`.
-- [Each source at its own floor](/mikroscope/limits/source-floors/): what `FLOOR_HZ` overrides.
-- [The cost of the observer](/mikroscope/cost/): why the memory limit is sized to the ring.
+- [API user](/mikroscope/security/api-user/): the RouterOS user behind `MIKROSCOPE_API_USER`.
+- [Source cadences](/mikroscope/limits/source-floors/): what `FLOOR_HZ` overrides.
+- [Agent cost](/mikroscope/cost/): why the memory limit is sized to the ring.
 
 </SeeAlso>

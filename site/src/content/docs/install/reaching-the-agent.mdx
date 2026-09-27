@@ -1,138 +1,159 @@
 ---
-title: Reaching the agent
-description: The agent listens only on its veth address — how your host reaches it directly, through the RouterOS API relay or with `--expose`, and what each one costs.
+title: Network access
+description: Reach the agent on its veth address from your host, directly, through a static route, over the RouterOS API relay or with --expose, and read what the probe after install says.
+docType: how-to
+head:
+  - tag: title
+    content: Reaching the agent | mikroscope
 ---
 
+import DoctorChecks from "../../../components/DoctorChecks.astro";
 import Measured from "../../../components/Measured.astro";
-import NotClaimed from "../../../components/NotClaimed.astro";
 import RouterWrites from "../../../components/RouterWrites.astro";
 import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
-import Src from "../../../components/Src.astro";
-import Verified from "../../../components/Verified.astro";
+import TestedOn from "../../../components/TestedOn.astro";
 
-The agent listens on the veth address only — `http://172.30.10.2:9123` with the
-defaults — and makes no outbound connection, ever. Something has to come to it.
-This page answers how your host gets there, what `install` checks for you, and
-which of the three ways to use when the first one does not work.
+The agent listens on its veth address only, `http://172.30.10.2:9123` with the defaults, and opens
+no outbound connection. Your host reaches it in one of three ways: directly through the router, over
+the RouterOS API relay, or on the router's LAN address with `--expose`.
 
-## What the probe after install tells you
-
-After `install` and `upgrade`, the CLI probes the agent from your host: a TCP
-connect to the agent's address and port, then `GET /healthz`, retried a second
-after each failed attempt (each attempt times out after 2 s) for up to 30 s. When it answers, the CLI prints the agent's version,
-rate, sequence number, slipped ticks and the round trip, as in
-`direct transport ok: agent 1.0.0, 10 Hz, seq 29, 0 slipped, 7ms round trip`.
-The version is the CLI's own: `install` stamps the agent it builds with
-`internal/version.Version`, and both the <Src path="Makefile" /> and the release take that
-from the <Src path="VERSION" /> file, so an agent put there by 1.0.0 reports `1.0.0`. An agent
-the router pulled reports the tag it was published under.
-On the RB5009 (RouterOS 7.24.2, 2026-09-12) the agent answered 3 s after install,
-with a 5–7 ms round trip.
-
-When it does not answer, the CLI asks the router — one more connect — whether
-the container carrying the tag is running, because a veth is up only while its
-container runs:
-
-- **Not running**: it says so and points at the router log,
-  `/log/print where topics~"container"`. The firewall is not the problem yet.
-- **Running**: this host cannot reach the agent's address. It suggests running
-  the collector on a host the router routes to the veth from, or
-  `install --expose --lan-address <router LAN IP> --token …`. The relay is not in that message; it
-  is the third way, below.
-
-Either way the command fails with
-`agent installed but not reachable from this host`, and everything it created
-stays on the router.
-
-## Direct, the default
-
-Your host reaches the /30 through the router, with plain HTTP to the agent's
-address. On <Verified of="direct-lists" /> the two list memberships `install` adds were
-enough; [The two firewall traps](/mikroscope/install/firewall/) explains
-them. The host needs its packets for the /30 to go to the router: a host whose
-default gateway is the router already sends them there.
-
-With a token set, the direct transport sends `Authorization: Bearer <token>`
-from `--token` or `MIKROSCOPE_TOKEN`. `/healthz` never needs it.
-
-## Relay, through the RouterOS API
-
-`record` and `forward` with `--transport relay` run `/tool fetch` on the router
-over the binary API, and the router, which does reach its own veth, fetches from
-the agent.
-
-- It needs a RouterOS user with the `read,api,test` policy: on RouterOS 7.24.2
-  `/tool fetch` requires `test`, and without it the call comes back `not enough
-permissions (9)` rather than empty. [The API user](/mikroscope/security/api-user/)
-  has the commands. The CLI takes `--api host:port` (`MIKROSCOPE_API_ADDR`),
-  `--api-user` (`MIKROSCOPE_API_USER`) and the password from
-  `MIKROSCOPE_API_PASSWORD` only, never from a flag.
-- Each call returns at most <Measured id="relay.replyMaxBytes" />; anything longer is truncated silently
-  by RouterOS. The relay therefore asks for at most <Measured id="relay.maxBatch" /> samples per pull and
-  refuses a reply that reaches the cap rather than parse it truncated. `forward`
-  warns at start when that cannot keep up with the agent's rate.
-- Each call takes either ~3 ms or ~1 s; about half the calls took ~1 s
-  (RB5009, RouterOS 7.24.2, 2026-09-11).
-- This build's relay sends only the URL to `/tool fetch`, no header, so it does
-  not present a token. Every path but `/healthz` returns 401 without one: an agent installed
-  with a token needs the direct transport.
-
-`--transport auto`, the default, tries direct first; if `/healthz` does not
-answer and `--api` and `--api-user` are set, it tries the relay; otherwise it
-fails naming `install --expose`.
-
-## `--expose`, on the router's LAN address {#expose-on-the-routers-lan-address}
-
-<RouterWrites command="expose" />
-
-`install --expose --lan-address <router LAN IP> --token …` adds a dst-nat from
-the router's LAN address on the agent port to the veth, and a forward accept for
-that flow placed before the first forward drop (appended when the forward chain
-has no drop). Every LAN host can then reach the agent, so the token is
-mandatory: `install` refuses `--expose` without a token or without an IPv4 LAN
-address. The token may hold letters, digits, `_`, `.` and `-`, up to 128
-characters. Both rules are removed by `uninstall` — given `--expose` again, as
-[Installing the agent](/mikroscope/install/) warns. Verified
-on <Verified of="expose-rules" />: the pair works, and both rules are removable by tag.
-
-A client you point at `http://<router LAN IP>:9123` uses it: Prometheus, `curl`.
-The CLI's own transports do not. `record`, `forward`, the probe after `install`
-and the health read of standalone `doctor` build the agent's address from
-`--subnet` and `--port`, and this build has no flag that points them at the
-exposed address. `doctor`'s health read does not use the relay either: it reads
-directly or not at all.
-
-What a LAN-wide listener opens is on
-[What `--expose` opens](/mikroscope/security/expose/).
-
-## Choosing
+## Compare transports {#choosing}
 
 <ScrollTable label="The three ways to reach the agent">
 
-| Way        | Needs                                                           | Costs and limits                                                                                      |
-| ---------- | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| direct     | a route from your host to the /30 through the router            | only the two list memberships `install` already adds                                                  |
-| relay      | an API user with `read,api,test`; `--transport relay` or `auto` | <Measured id="relay.replyMaxBytes" /> and <Measured id="relay.maxBatch" /> samples per call, ~1 s in about half the calls, no token |
-| `--expose` | `--lan-address` and a token; two firewall rules on the router   | reachable from the whole LAN; not used by `record`, `forward`, the probe or `doctor`'s health read    |
+| Way        | Needs                                                                   | Limits                                                                                                                                                 |
+| ---------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| direct     | a route from your host to the /30 through the router                    | none beyond the two list memberships `install` adds                                                                                                    |
+| relay      | an API user with `read,api,test`; `--transport relay`, or `auto`        | <Measured id="relay.replyMaxBytes" /> and <Measured id="relay.maxBatch" /> samples per call, about 1 s for about half the calls, no token |
+| `--expose` | `--lan-address` and a token; two firewall rules on the router           | reachable from the whole LAN; `record`, `forward`, the probe and `doctor`'s health read do not use it                                                  |
 
 </ScrollTable>
 
-<NotClaimed variant="device-specific">
-	Every reachability result here is the RB5009's, on its own firewall and LAN, in September 2026.
-	The relay's ~1 s share and the <Measured id="relay.replyMaxBytes" /> cap were measured on RouterOS
-	7.24.2 and may differ on another version.
-</NotClaimed>
+## Direct (default) {#direct-the-default}
+
+Your host sends plain HTTP to the agent's address, and the router forwards it to the veth. Two
+things make that work:
+
+- **The firewall lets it through.** The two list memberships `install` adds are enough for the raw
+  drop rules of MikroTik's advanced firewall (<TestedOn of="direct-lists">verified</TestedOn>);
+  [Firewall lists](/mikroscope/install/firewall/) has the rules and `doctor`'s check of your own.
+- **Your host routes the /30 to the router.** A host whose default gateway is the router already
+  does.
+
+With a token set, the direct transport sends `Authorization: Bearer <token>`, from `--token` or
+`MIKROSCOPE_TOKEN`. `/healthz` never needs it.
+
+### Static route {#static-route}
+
+A host whose default gateway is another router needs a route for the /30 through the router's LAN
+address. On Linux, with your `--subnet` and the router's LAN address:
+
+```sh
+sudo ip route add 172.30.10.0/30 via 192.168.88.1
+```
+
+A wider prefix that holds the /30 works too, such as `172.30.0.0/16`
+(<TestedOn of="virtual-lab">tested</TestedOn>). Make the route permanent the way your system keeps
+its network configuration.
+
+## API relay {#relay-through-the-routeros-api}
+
+`record` and `forward` with `--transport relay` run `/tool fetch` on the router over the binary API,
+and the router, which reaches its own veth, fetches from the agent.
+
+1. Create a RouterOS user with the `read,api,test` policy: `/tool fetch` requires `test`
+   (<TestedOn of="test-policy">verified</TestedOn>), and without it the call returns
+   `not enough permissions (9)`. [API user](/mikroscope/security/api-user/) has the commands.
+2. Give the CLI `--api host:port` (`MIKROSCOPE_API_ADDR`), `--api-user` (`MIKROSCOPE_API_USER`) and
+   the password in `MIKROSCOPE_API_PASSWORD`. The password has no flag.
+3. Run `record` or `forward` with `--transport relay`.
+
+What the relay cannot do:
+
+- **Large replies.** RouterOS truncates a reply longer than <Measured id="relay.replyMaxBytes" />,
+  silently. The relay asks for at most <Measured id="relay.maxBatch" /> samples per call and refuses
+  a reply that reaches the cap rather than parse it truncated. `forward` warns at start when that
+  cannot keep up with the agent's rate.
+- **Fast calls.** A call takes either about 3 ms or about 1 s, and about half take 1 s
+  (<TestedOn of="relay-fetch">measured</TestedOn>).
+- **A token.** The relay passes only the URL to `/tool fetch`, with no header. Every path but
+  `/healthz` returns 401 without the token, so an agent installed with one needs the direct
+  transport.
+
+`--transport auto`, the default, tries the direct transport first. If `/healthz` does not answer and
+`--api` and `--api-user` are set, it tries the relay; otherwise it fails with
+``direct transport did not answer and the relay is not configured: … (or `install --expose`)``.
+
+## Expose on the LAN {#expose-on-the-routers-lan-address}
+
+```sh
+mikroscope install --expose --lan-address 192.168.88.1
+```
+
+Keep the token in `MIKROSCOPE_TOKEN`, which keeps it off the command line.
+
+<RouterWrites command="expose" />
+
+`--expose` adds a dst-nat from the router's LAN address on the agent port to the veth, and a forward
+accept for that flow placed before the first forward drop, or appended when the forward chain has no
+drop. Every LAN host can then reach the agent, so:
+
+- `install` and `upgrade` refuse `--expose` without a token (`--token` or `MIKROSCOPE_TOKEN`) or
+  without an IPv4 `--lan-address`.
+- `status` and `uninstall` need neither flag: they read from the router that the install is exposed,
+  and `uninstall` removes both rules with the rest.
+- `doctor` checks the address:
+
+<DoctorChecks only={["lan-address", "lan-uplink"]} />
+
+A client you point at `http://<router LAN IP>:9123` uses the exposed path: Prometheus, `curl`, a
+browser. The CLI's own transports do not. `record`, `forward`, the probe after `install` and the
+health read of `doctor` build the agent's address from `--subnet` and `--port`, and no flag points
+them at the LAN address. `doctor`'s health read does not use the relay either: it reads directly or
+not at all.
+
+[Expose on the LAN](/mikroscope/security/expose/) has both rules, the token, and who reaches the
+agent through them.
+
+## Install probe {#what-the-probe-after-install-tells-you}
+
+After `install` and `upgrade`, the CLI probes the agent from your host: a TCP connect to the agent's
+address and port, then `GET /healthz`. Each attempt times out after 2 s and is retried a second
+later, for up to 30 s. When the agent answers, the CLI prints its version, rate, sequence number,
+slipped ticks and the round trip:
+
+```text
+probing http://172.30.10.2:9123/healthz from this host …
+  direct transport ok: agent {{MIKROSCOPE_VERSION}} (<commit>) built <time>, 10 Hz, seq 4, 0 slipped, 2ms round trip
+```
+
+An agent the CLI built reports the CLI's own version, commit and build time. One the router pulled,
+or loaded from a release tar, reports the release it was built for.
+
+When the agent does not answer, the CLI asks the router, in one more connect, whether the container
+runs, because a veth is up only while its container runs:
+
+<ScrollTable label="What the probe prints when the agent does not answer, and what to do">
+
+| The CLI prints                                                                                | Means                                                              | Do                                                                                                  |
+| --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
+| ``the container is not running on the router: check `/log/print where topics~"container"` `` | the container stopped or never started, so its veth is down         | read the router log; the firewall is not the problem yet                                            |
+| `the container runs; this host cannot reach 172.30.10.2. Options: …`                          | a firewall rule or a missing route stands between this host and the /30 | check [Firewall lists](/mikroscope/install/firewall/), add a [static route](#static-route), or use the relay or `--expose` |
+| `could not ask the router whether the container runs: …`                                      | the connect that asks failed                                       | run `mikroscope status`                                                                             |
+
+</ScrollTable>
+
+Either way the command fails with `agent installed but not reachable from this host`, and everything
+it created stays on the router.
 
 <SeeAlso>
 
 ## See also
 
-- [The two firewall traps](/mikroscope/install/firewall/): the memberships the direct transport
-  depends on.
-- [The API user](/mikroscope/security/api-user/): the user the relay needs, and where to restrict
-  it.
-- [What `--expose` opens](/mikroscope/security/expose/): the two rules and the token.
-- [The collector](/mikroscope/sinks/): what pulls from the agent once it is reachable.
+- [Firewall lists](/mikroscope/install/firewall/): the memberships the direct transport depends on.
+- [API user](/mikroscope/security/api-user/): the user the relay needs, and where to restrict it.
+- [Expose on the LAN](/mikroscope/security/expose/): the two rules and the token.
+- [Run the collector](/mikroscope/sinks/): what pulls from the agent once it is reachable.
 
 </SeeAlso>

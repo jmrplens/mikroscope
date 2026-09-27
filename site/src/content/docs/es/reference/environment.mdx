@@ -1,5 +1,6 @@
 ---
 title: Variables de entorno
+docType: reference
 description: Las variables MIKROSCOPE_* que lee la CLI, las credenciales que solo existen como variables y las variables de la envlist que lee el agente en el router.
 ---
 
@@ -47,8 +48,7 @@ La mayoría de las opciones de despliegue **no** tienen variable. `--rate`,
 `--triggers`, `--floor-hz`, `--privileged`, `--ephemeral`, `--expose`,
 `--restart-max-count`, `--restart-interval`, `--start-on-boot`,
 `--container-name` y `--extract-timeout` se fijan en la línea de órdenes o no
-se fijan. [Órdenes y
-opciones](/mikroscope/es/reference/cli/) tiene todas las opciones.
+se fijan. [CLI](/mikroscope/es/reference/cli/) tiene todas las opciones.
 
 ## Router y despliegue
 
@@ -61,8 +61,8 @@ opciones](/mikroscope/es/reference/cli/) tiene todas las opciones.
 | `MIKROSCOPE_SSH_KEY`      | `--ssh-key`      | los mismos                                            | agente o configuración de ssh   | vacío                   |
 | `MIKROSCOPE_SSH_OPTIONS` | `--ssh-option` | los mismos | ninguno | comentada, `StrictHostKeyChecking=accept-new` |
 | `MIKROSCOPE_ARCH` | `--arch` | los verbos de despliegue | `auto` | comentada, `auto` |
-| `MIKROSCOPE_AGENT_TAR`    | `--agent-tar`    | `plan`, `install`, `upgrade`, `image`                 | vacío (compilar el agente aquí) | comentada               |
-| `MIKROSCOPE_REMOTE_IMAGE` | `--remote-image` | `plan`, `install`, `upgrade`                          | vacío (subir un tar)            | comentada               |
+| `MIKROSCOPE_AGENT_TAR`    | `--agent-tar`    | `doctor`, `plan`, `install`, `upgrade`, `image`       | vacío (compilar el agente aquí) | comentada               |
+| `MIKROSCOPE_REMOTE_IMAGE` | `--remote-image` | los verbos de despliegue                              | vacío (subir un tar)            | comentada               |
 | `MIKROSCOPE_NAME`         | `--name`         | los verbos de despliegue                              | `mikroscope`                    | comentada               |
 | `MIKROSCOPE_VETH` | `--veth` | los verbos de despliegue | `veth-mikroscope` | comentada |
 | `MIKROSCOPE_SUBNET` | `--subnet` | los verbos de despliegue, `record`, `forward` | `172.30.10.0/30` | comentada |
@@ -76,8 +76,8 @@ opciones](/mikroscope/es/reference/cli/) tiene todas las opciones.
 
 `MIKROSCOPE_SSH_OPTIONS` es una lista de pares `Clave=valor` separados por
 comas, lo mismo que repetir `--ssh-option`; el primer `--ssh-option` en la
-línea de órdenes sustituye la lista entera. [Órdenes y
-opciones](/mikroscope/es/reference/cli/) tiene las claves que admite.
+línea de órdenes sustituye la lista entera. [CLI](/mikroscope/es/reference/cli/) tiene las claves
+que admite.
 
 `MIKROSCOPE_TOKEN` es dos cosas a la vez. Para `install` y `upgrade` es el
 token que se escribe en la envlist del agente, y que el agente pasa entonces a
@@ -124,7 +124,7 @@ usuario.
 | `MIKROSCOPE_GRAPHITE_ADDR` | `--graphite`    | vacío                    | `host:port` de texto plano de carbon                                                    |
 | `MIKROSCOPE_ELASTIC_URL`   | `--elastic`     | vacío                    | URL base de Elasticsearch u OpenSearch                                                  |
 | `MIKROSCOPE_TELEGRAF_URL`  | `--telegraf`    | vacío                    | URL del receptor de Telegraf (`http://`, `tcp://` o `udp://`)                           |
-| `MIKROSCOPE_HOST_TAG`      | `--host-tag`    | `router`                 | etiqueta de host en cada punto de cada destino; <Src path=".env.example" /> tiene `rb5009` comentada |
+| `MIKROSCOPE_HOST_TAG`      | `--host-tag`    | `router`                 | etiqueta de host en cada punto de cada destino; <Src path=".env.example" /> la tiene comentada |
 
 </ScrollTable>
 
@@ -213,7 +213,7 @@ Los nombres que acepta `SOURCES` son las fuentes opcionales que informa
 `/capabilities`: `meminfo`, `loadavg`, `softnet`, `softirqs`, `interrupts`,
 `vmstat`, `psi`, `schedstat`, `self`, `buddyinfo`, `yaffs`, `diskstats`,
 `slabinfo`, `kmsg`, `thermal`, `cpufreq`, `mtd` y `perf`. Las condiciones de
-disparo y qué compara cada una están en [captura por
+disparo y qué compara cada una están en [Captura por
 disparo](/mikroscope/es/record/triggers/).
 
 Antes de escuchar, el agente compara el anillo con el propio `memory.max` del
@@ -264,12 +264,12 @@ valores por defecto.
 
 ## Véase también
 
-- [Órdenes y opciones](/mikroscope/es/reference/cli/): todas las opciones, incluidas las que no fija
+- [CLI](/mikroscope/es/reference/cli/): todas las opciones, incluidas las que no fija
   ninguna variable.
-- [El usuario de la API](/mikroscope/es/security/api-user/): el usuario de RouterOS detrás de
+- [Usuario de la API](/mikroscope/es/security/api-user/): el usuario de RouterOS detrás de
   `MIKROSCOPE_API_USER`.
-- [Cada fuente a su propio suelo](/mikroscope/es/limits/source-floors/): lo que anula `FLOOR_HZ`.
-- [El coste del observador](/mikroscope/es/cost/): por qué el límite de memoria se dimensiona según
+- [Cadencias de las fuentes](/mikroscope/es/limits/source-floors/): lo que anula `FLOOR_HZ`.
+- [Coste del agente](/mikroscope/es/cost/): por qué el límite de memoria se dimensiona según
   el anillo.
 
 </SeeAlso>
