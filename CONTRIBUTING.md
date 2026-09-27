@@ -258,8 +258,8 @@ refusals, and then the lab suite on a real lab.
 The lab router pulls from Docker Hub anonymously, and Docker Hub allows an
 address 100 anonymous pulls per 6 hours; a suite run pulls about a dozen
 times. If yours runs out, or you run the suite often, give the router a
-Docker Hub account with a **read-only** personal access token ("Public Repo
-Read-only": the lab only pulls). Keep the two in a file of your own, mode
+Docker Hub account with a **read-only** personal access token (read and
+nothing else: the lab only pulls). Keep the two in a file of your own, mode
 0600 and outside the repository, and export them from it rather than typing
 them on `make`'s command line, where the process table shows them:
 
@@ -277,9 +277,9 @@ under `https://registry-1.docker.io` every pull of the suite stayed
 anonymous. `LAB_REGISTRY_URL` names another registry's host. The scenarios
 that test a router with no credential boot without it anyway. In CI the
 secrets `DOCKERHUB_USERNAME` and `DOCKERHUB_PULL_TOKEN` (read-only; never
-`DOCKERHUB_TOKEN`, which can push) feed the same variables, and a fork's pull
-request runs anonymously. `test/lab/README.md` ("Pulling as an account") has
-the rest.
+`DOCKERHUB_TOKEN`, which can push) feed the same variables; a fork's pull
+request, and a dispatch that checks out another `ref`, run anonymously.
+`test/lab/README.md` ("Pulling as an account") has the rest.
 
 The two labs are separate containers and run side by side, and so can their
 suites, but not as two `make test-lab` in one checkout: each rebuilds the

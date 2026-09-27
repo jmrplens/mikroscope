@@ -315,7 +315,7 @@ cuenta:
 ```sh
 # en un archivo propio, modo 0600, fuera del repositorio
 LAB_REGISTRY_USER=<la cuenta de Docker Hub>
-LAB_REGISTRY_TOKEN=<un token de acceso personal suyo, alcance «Public Repo Read-only»>
+LAB_REGISTRY_TOKEN=<un token de acceso personal suyo, de solo lectura>
 ```
 
 ```sh
@@ -399,7 +399,10 @@ batería y ocultan las credenciales del informe de fallo, y para ningún otro;
 `DOCKERHUB_TOKEN`, que puede publicar las imágenes de la versión, nunca llega
 al laboratorio. Una pull request desde un fork no recibe secretos, y un
 repositorio sin `DOCKERHUB_PULL_TOKEN` no recibe ninguna de las dos
-variables: ambos descargan de forma anónima.
+variables: ambos descargan de forma anónima. También una ejecución a petición
+que extrae otra `ref`, que puede ser el commit de fusión de un fork: el
+laboratorio compila y ejecuta ese código, y el token queda fuera de su
+entorno.
 
 ### Dónde deja de ser un router
 

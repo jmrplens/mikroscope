@@ -2440,7 +2440,7 @@ that account instead:
 ```sh
 # in a file of your own, mode 0600, outside the repository
 LAB_REGISTRY_USER=<the Docker Hub account>
-LAB_REGISTRY_TOKEN=<a personal access token of it, scope "Public Repo Read-only">
+LAB_REGISTRY_TOKEN=<a personal access token of it, read-only>
 ```
 
 ```sh
@@ -2511,7 +2511,10 @@ steps that bring the lab up, run the suite and redact the failure report,
 and no other; `ci.yml` and `release.yml` pass the two by name, so
 `DOCKERHUB_TOKEN`, which can push the release's images, never reaches the lab.
 A pull request from a fork gets no secrets, and a repository without
-`DOCKERHUB_PULL_TOKEN` gets neither variable: both run anonymously.
+`DOCKERHUB_PULL_TOKEN` gets neither variable: both run anonymously. So does a
+dispatch that checks out another `ref`, which may be a fork's merge commit:
+the lab builds and runs that code, and the token stays out of its
+environment.
 
 #### Where the lab stops being a router
 

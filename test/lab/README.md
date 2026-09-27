@@ -119,10 +119,12 @@ make lab-reset              # or lab-up: every boot gives the router the credent
 make test-lab
 ```
 
-- **A read-only token.** Docker Hub's personal access tokens have a scope,
-  and the lab only pulls: make one with "Public Repo Read-only". A token that
-  can push, the one a release pushes images with, has no place in a lab
-  router's configuration.
+- **A read-only token.** Docker Hub's personal access tokens carry
+  permissions, and the lab only pulls: give it read and nothing else (Docker's
+  page on access tokens, read 2026-09-27, names them Read, Write and Delete;
+  where the form offers "Public Repo Read-only", that is the narrowest). A
+  token that can push, the one a release pushes images with, has no place in
+  a lab router's configuration.
 - **How it reaches the router.** `up` and `reset` write
   `/container/config/set registry-url=… username=… password=…` to a file in
   the lab container (mode 0600, through docker exec's stdin), copy it to the
@@ -139,7 +141,13 @@ make test-lab
   carries none. Each `up` and `reset` applies it from its own environment; a
   run without the variables leaves `/container/config` alone, so a router
   reset without them has none and pulls anonymously, and a live layer keeps
-  what an earlier `up` gave it until the next reset.
+  what an earlier `up` gave it until the next reset. RouterOS keeps the token
+  on its disk as written: after an `up` with a dummy credential (x86_64,
+  CHR 7.24.4, 2026-09-27), `run.qcow2` held the token's bytes verbatim, and
+  `base.qcow2`, `clean.qcow2` and `console.log` did not; after a `reset`
+  without the variables `run.qcow2` no longer held them. So on a shared
+  machine, `reset` once you are done; CI's runner is thrown away, and its
+  cache takes `base.qcow2` and `clean.qcow2` only.
 - **`LAB_REGISTRY_URL`** goes into `registry-url`: `registry-1.docker.io`
   unless set, Docker Hub's host with no scheme. RouterOS presents the
   username and password for a reference whose host is `registry-url` as
@@ -169,8 +177,10 @@ make test-lab
   `DOCKERHUB_PULL_TOKEN` become these variables for the steps that bring the
   lab up, run the suite and redact the failure report, and no other step;
   `ci.yml` and `release.yml` pass the two by name. `DOCKERHUB_TOKEN`, which
-  can push, never reaches the lab. A fork's pull request, or a repository
-  without `DOCKERHUB_PULL_TOKEN`, runs anonymously, as before.
+  can push, never reaches the lab. A fork's pull request, a repository
+  without `DOCKERHUB_PULL_TOKEN`, and a dispatch that checks out another
+  `ref` (which may be a fork's merge commit, code the lab builds and runs)
+  run anonymously, as before.
 
 **What was measured**, in the x86_64 lab on 2026-09-27 (CHR 7.24.4), with a
 deliberately wrong credential: `LAB_REGISTRY_USER=lab-invalid` and a 23-byte

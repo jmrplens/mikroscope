@@ -92,7 +92,8 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   credential, RouterOS presented it for `registry-1.docker.io/jmrplens/…`
   under that value (`auth error`) and not under `https://registry-1.docker.io`
   (pulled anonymously), and mikroscope writes the host into every reference.
-  Without them, as on a fork's pull request, the router pulls anonymously.
+  Without them, as on a fork's pull request or a dispatch that checks out
+  another `ref`, the router pulls anonymously.
   S1, S18 and S5's Docker Hub and GHCR scripts, which test a router with no
   credential, boot without it.
 
