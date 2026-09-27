@@ -245,7 +245,7 @@ export const campaigns = {
 			es: "un `record` de 70 s a 10 Hz, 700 muestras en 69,9 s, el router por lo demás en reposo, tres notas escritas en el terminal de `record`",
 		},
 		source:
-			"site/src/content/docs/start/walkthrough.mdx; site/src/assets/walkthrough/rb5009-walkthrough.svg subtitle",
+			"site/src/content/docs/playbooks/idle.mdx; site/src/assets/walkthrough/rb5009-walkthrough.svg subtitle",
 	},
 	// The next three predate the project's own measurement pages, and the date
 	// each carries is the one recorded beside it when it was measured. The ssh
@@ -276,11 +276,11 @@ export const campaigns = {
 		kernel: "5.6.3",
 		date: "2026-09-11",
 		conditions: {
-			en: "`/tool fetch output=user` called over the binary API",
-			es: "`/tool fetch output=user` llamado por la API binaria",
+			en: "`/tool fetch output=user` called over the binary API; each call took either about 3 ms or about 1 s, and about half took 1 s",
+			es: "`/tool fetch output=user` llamado por la API binaria; cada llamada tardó o unos 3 ms o alrededor de 1 s, y más o menos la mitad tardó 1 s",
 		},
 		source:
-			"site/src/content/docs/install/reaching-the-agent.mdx; measured on the RB5009, RouterOS 7.24.2, kernel 5.6.3, 2026-09-11: truncates silently at 64 512 B for 64 K, 256 K, 1 M and 4 M bodies",
+			"site/src/content/docs/install/reaching-the-agent.mdx; measured on the RB5009, RouterOS 7.24.2, kernel 5.6.3, 2026-09-11: truncates silently at 64 512 B for 64 K, 256 K, 1 M and 4 M bodies, and about half the calls took ~1 s against ~3 ms for the rest",
 	},
 	// The count and its latency are one set of ten calls. The pages place it
 	// "about a day before" the slab reading of 2026-09-12; the day is the one recorded

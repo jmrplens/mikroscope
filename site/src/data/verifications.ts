@@ -1,6 +1,6 @@
 /**
  * Yes-or-no facts about RouterOS that the guides rest on, each checked once
- * on the reference device, for `<Verified>` and for the register of them on
+ * on the reference device or in the virtual lab, for `<Verified>` and for the register of them on
  * Tested on (about/status, <VerifiedRegister>), where a guide links each one
  * with `<TestedOn of="<id>">`.
  *
@@ -37,6 +37,8 @@ export interface Verification {
 }
 
 const onRB5009 = { device: RB5009.device, routeros: RB5009.routeros } as const;
+/** The virtual lab's CHR x86_64 (Tested on › Virtual lab), for a fact checked there. */
+const onLab = { device: "CHR x86_64", routeros: "7.24.4" } as const;
 /** The same device on the RouterOS it runs now, for a fact checked after the upgrade to it. */
 const onRB5009Now = {
 	device: RB5009.device,
@@ -79,8 +81,8 @@ export const verifications = {
 			es: "Valores entre comillas en find",
 		},
 		statement: {
-			en: "In a RouterOS `find`, address and port attributes match only when their values are quoted",
-			es: "En un `find` de RouterOS, los atributos de dirección y de puerto solo coinciden cuando su valor va entre comillas",
+			en: 'In a RouterOS `find`, address and port attributes match only when their values are quoted, and a bare word is read as a variable name: over the same 15 dstnat rules (RouterOS 7.24.4, 2026-09-21), `protocol=tcp` found 0 and `protocol="tcp"` found 10',
+			es: 'En un `find` de RouterOS, los atributos de dirección y de puerto solo coinciden cuando su valor va entre comillas, y una palabra suelta se lee como nombre de variable: sobre las mismas 15 reglas dstnat (RouterOS 7.24.4, 2026-09-21), `protocol=tcp` encontró 0 y `protocol="tcp"` encontró 10',
 		},
 		...onRB5009,
 		date: "2026-09-11",
@@ -314,6 +316,113 @@ export const verifications = {
 		fact: "bind-mounting host /proc, /sys and / into a privileged container: /proc reads zero PIDs, /sys has no class/net, / exposes the flash filesystem with configuration and secrets",
 		source:
 			"site/src/content/docs/limits/namespaces.mdx, limits/privileged.mdx and security/index.mdx at dc0e354",
+	},
+	// The facts below were checked in the virtual lab (Tested on › Virtual
+	// lab) while the install pages were written, on CHR x86_64 under KVM.
+	"registry-url-host-match": {
+		title: {
+			en: "Credential sent when the host matches",
+			es: "La credencial va si el host coincide",
+		},
+		statement: {
+			en: "RouterOS presents the `/container/config` username and password for a reference whose host is `registry-url` as written: with a deliberately wrong credential, the 1.3.1 agent image named as `registry-1.docker.io/jmrplens/mikroscope-agent` failed with `auth error` under `registry-url=registry-1.docker.io`, and was pulled anonymously under `https://registry-1.docker.io`, the value MikroTik's examples use, and under the same with a trailing slash. A router given a credential did not fall back to an anonymous pull",
+			es: "RouterOS presenta el usuario y la contraseña de `/container/config` para una referencia cuyo host es `registry-url` tal como está escrito: con una credencial errónea a propósito, la imagen del agente 1.3.1 nombrada como `registry-1.docker.io/jmrplens/mikroscope-agent` falló con `auth error` con `registry-url=registry-1.docker.io`, y se descargó de forma anónima con `https://registry-1.docker.io`, el valor de los ejemplos de MikroTik, y con el mismo terminado en barra. Un router al que se dio una credencial no volvió a intentar la descarga de forma anónima",
+		},
+		...onLab,
+		date: "2026-09-27",
+		fact: "the /container/config credential is presented for a reference whose host equals registry-url as written (registry-1.docker.io: auth error with a wrong credential); under https://registry-1.docker.io, with or without a trailing slash, the pull is anonymous; no fallback to anonymous",
+		source:
+			"internal/lab/registry.go, DefaultRegistryURL; site/src/content/docs/reference/testing.mdx (Pull as an account)",
+	},
+	"webfig-no-ignore-remote-image-change": {
+		title: {
+			en: "No WebFig field for ignore-remote-image-change",
+			es: "WebFig no tiene campo para ignore-remote-image-change",
+		},
+		statement: {
+			en: "WebFig's New Container and container edit forms show no field for `ignore-remote-image-change`, with File or Remote Image set or not; the terminal sets it",
+			es: "Los formularios New Container y de edición del contenedor de WebFig no muestran campo para `ignore-remote-image-change`, con File o Remote Image puestos o no; lo pone el terminal",
+		},
+		...onLab,
+		date: "2026-09-27",
+		fact: "WebFig's New Container and container edit forms have no ignore-remote-image-change field, with File or Remote Image set or not",
+		source:
+			"site/scripts/gen-webfig-captures.mjs; site/src/content/docs/install/manual-gui.mdx",
+	},
+	"container-set-resets-restart-policy": {
+		title: {
+			en: "A container set resets restart-policy",
+			es: "Un set del contenedor reinicia restart-policy",
+		},
+		statement: {
+			en: "A `/container/set` that leaves `restart-policy` out (of `ignore-remote-image-change`, of `comment`, of `logging`) put it from `on-failure` back to `always` and changed nothing else `/container/print detail` shows; a set that names it kept it, and so did Apply or OK in WebFig's edit form. The CLI never runs `/container/set`",
+			es: "Un `/container/set` que no nombra `restart-policy` (de `ignore-remote-image-change`, de `comment`, de `logging`) la devolvió de `on-failure` a `always` sin cambiar nada más de lo que muestra `/container/print detail`; un set que la nombra la conservó, igual que Apply u OK en el formulario de edición de WebFig. La CLI nunca ejecuta `/container/set`",
+		},
+		...onLab,
+		date: "2026-09-27",
+		fact: "a /container/set that does not name restart-policy resets it from on-failure to always; naming it, or Apply/OK in WebFig, keeps it",
+		source:
+			"site/scripts/gen-webfig-captures.mjs; site/src/content/docs/install/manual-gui.mdx (the terminal step names both properties)",
+	},
+	"webfig-shows-env-values": {
+		title: {
+			en: "WebFig shows env values",
+			es: "WebFig muestra los valores de env",
+		},
+		statement: {
+			en: "WebFig shows a `/container/envs` entry's value in clear, in the Envs list and in its form, for the key `TOKEN` too",
+			es: "WebFig muestra en claro el valor de una entrada de `/container/envs`, en la lista Envs y en su formulario, también con la clave `TOKEN`",
+		},
+		...onLab,
+		date: "2026-09-27",
+		fact: "WebFig shows /container/envs values in clear, TOKEN included, in the Envs list and in the entry's form",
+		source:
+			"site/scripts/gen-webfig-captures.mjs; site/src/content/docs/install/manual-gui.mdx",
+	},
+	"webfig-no-device-mode-page": {
+		title: {
+			en: "No Device Mode page in WebFig",
+			es: "WebFig no tiene página Device Mode",
+		},
+		statement: {
+			en: "WebFig's System menu has no Device Mode page, so device mode is set from the terminal",
+			es: "El menú System de WebFig no tiene página Device Mode, así que el modo de dispositivo se pone desde el terminal",
+		},
+		...onLab,
+		date: "2026-09-26",
+		fact: "WebFig's System menu has no Device Mode page",
+		source:
+			"plan/tool-docs-spec.md D7 (read-only survey of WebFig); site/src/content/docs/install/manual-gui.mdx",
+	},
+	"fetch-as-value-prints-body": {
+		title: {
+			en: "fetch as-value returns the body",
+			es: "fetch as-value devuelve el cuerpo",
+		},
+		statement: {
+			en: '`:put ([/tool/fetch url="http://172.30.10.2:9123/healthz" output=user as-value]->"data")`, run on the router, printed the agent\'s `/healthz` JSON, in an ssh session, in WebFig\'s terminal and at the end of a pasted script',
+			es: '`:put ([/tool/fetch url="http://172.30.10.2:9123/healthz" output=user as-value]->"data")`, ejecutado en el router, imprimió el JSON de `/healthz` del agente, en una sesión ssh, en el terminal de WebFig y al final de un script pegado',
+		},
+		...onLab,
+		date: "2026-09-27",
+		fact: ':put ([/tool/fetch url=... output=user as-value]->"data") prints the response body',
+		source:
+			"site/src/content/docs/install/{generator,manual-cli,manual-gui}.mdx (the Verify steps); the generator's and the WebFig captures' lab runs",
+	},
+	"licence-prompt-eats-paste": {
+		title: {
+			en: "Licence question takes the first lines",
+			es: "La pregunta de la licencia se lleva las primeras líneas",
+		},
+		statement: {
+			en: "The first interactive login after a reset asks `Do you want to see the software license? [Y/n]:` before the `] >` prompt. A script pasted into that question lost its first lines: one or two header comment lines, then a fragment run as a command (`bad command name .` or `syntax error`); the install script's `{ … }` block still ran and installed, and the uninstall script still removed everything",
+			es: "El primer inicio de sesión interactivo tras un reinicio pregunta `Do you want to see the software license? [Y/n]:` antes del indicador `] >`. Un script pegado en esa pregunta perdió sus primeras líneas: una o dos líneas de comentario de la cabecera, y después un fragmento ejecutado como orden (`bad command name .` o `syntax error`); el bloque `{ … }` del script de instalación se ejecutó igualmente e instaló, y el script de desinstalación retiró igualmente todo",
+		},
+		...onLab,
+		date: "2026-09-27",
+		fact: "a script pasted while RouterOS asks about the licence loses its first lines; with the current header, the block still runs",
+		source:
+			"site/src/content/docs/install/{generator,script,manual-cli}.mdx (the paste cautions); the generator's and the install pages' lab runs",
 	},
 } as const satisfies Record<string, Verification>;
 

@@ -1,296 +1,355 @@
 ---
-title: How the project tests itself
-description: "Three test layers for the sinks (the bytes each sends, whether a real store takes them, whether the dashboards' queries answer) and a virtual RouterOS lab for the installer; what each proves and what none does."
+title: Test suites
+description: "The four test suites, unit, end to end, real stores and the virtual RouterOS lab: what each proves, how to run it, what it needs and when CI runs it."
+docType: evidence
+head:
+  - tag: title
+    content: "Test suites: unit, end to end, real stores, RouterOS lab | mikroscope"
 ---
 
 import { Aside } from "@astrojs/starlight/components";
-import NotClaimed from "../../../components/NotClaimed.astro";
 import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
 import Src from "../../../components/Src.astro";
+import TestedOn from "../../../components/TestedOn.astro";
 
-A sink can be wrong in three places, and each one needs a different test. It
-can encode the wrong bytes. It can encode bytes a store refuses — which a
-capture server never notices, because a capture server says 204 to everything.
-And it can write something a store keeps but no dashboard can read back.
+Four suites test mikroscope, and none of them needs a router. Run the one that
+covers your change before you open a pull request. CI runs the first three on
+every pull request, and the lab when a pull request touches what installs the
+agent.
 
-The project therefore has three layers, and they are three commands.
+<ScrollTable label="The four test suites: the command, what each needs and what it proves">
 
-<ScrollTable label="The three test layers, what each proves and what it needs">
-
-| Layer               | Command                | Docker | What it proves                                                    |
-| ------------------- | ---------------------- | ------ | ----------------------------------------------------------------- |
-| 1, the contract     | `make test-e2e`        | no     | the exact bytes each sink puts on the wire                        |
-| 2, the stores       | `make test-e2e-docker` | yes    | a real store accepts those bytes, and hands them back unchanged   |
-| 3, the dashboards   | the same target        | yes    | every panel's own query answers against what the sinks just wrote |
+| Suite                | Command                             | Needs                                | What it proves                                                                                         |
+| -------------------- | ----------------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| Unit                 | `go test ./cmd/... ./internal/...`  | Go                                   | each package, against captured `/proc` trees, fakes and golden files                                   |
+| End to end           | `make test-e2e`                     | Go                                   | both binaries as separate processes, and the exact bytes each sink sends                               |
+| Stores               | `make test-e2e-docker`              | Linux, Docker                        | a real store accepts those bytes and hands them back; every dashboard panel's query answers            |
+| Virtual RouterOS lab | `make lab-up`, then `make test-lab` | Linux, Docker, `/dev/kvm` for x86_64 | the deploy verbs against a real RouterOS, with the router's `/export` back to its start after each one |
 
 </ScrollTable>
 
-None of the three touches a router. Layers 1 and 2 drive the collector against
-a fake agent that serves canned samples, and layer 1 also drives the real agent
-binary against <Src path="testdata/proc/rb5009/" />, a captured `/proc` and `/sys` tree of
-the reference device. That is what makes a run reproducible on any machine, and
-what keeps the router out of the loop.
+`make test` runs the unit and end-to-end suites together. The stores and lab
+suites sit behind the build tags `dockere2e` and `labe2e`, so `make test`
+compiles neither, and `make lint` type-checks both so that they cannot rot.
 
-The verbs that write to a router — `install`, `upgrade`, `uninstall` and the
-rest — are tested apart, against a real RouterOS that is nobody's router: the
-[virtual RouterOS lab](#the-virtual-routeros-lab).
+When each suite first ran, how long it takes and what it found are
+on <TestedOn of="test-suites">Tested on</TestedOn>.
 
-## Layer 1 — the contract
+## Choose a suite
 
-`make test-e2e` builds both binaries and points every sink at a receiver inside
-the test binary: HTTP capture servers for InfluxDB, Loki, OTLP, Elasticsearch
-and Telegraf, TCP and UDP listeners for Graphite and Telegraf's socket modes,
-real files for the file and SQL sinks, the process's own stdout, and a scrape
-of the collector's own `/metrics` for Prometheus. Each receiver asserts what
-arrived, byte for byte.
+<ScrollTable label="Which suite to run for which change">
 
-It needs no router, no Grafana, no database, no container and no network: every
-address it binds or dials is on loopback. `make test-e2e-offline` proves that
-rather than asserting it, by running the whole suite inside a network namespace
-that has nothing but `lo`.
+| You changed                                                               | Run                                                                      |
+| ------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| Any Go code                                                               | `make test`                                                              |
+| The sampler, the ring, the stream or a sink                               | `make test-race` as well                                                 |
+| A test that might have grown a dependency on the network                  | `make test-e2e-offline` (Linux)                                          |
+| A sink, its encoding or its schema, or a dashboard                        | `make test-e2e-docker`                                                   |
+| `internal/router`, a deploy verb, the agent image or how the agent starts | `make lab-up`, then `make test-lab`                                      |
+| The lab's driver (`cmd/mikroscope-lab`, `internal/lab`)                   | `go test ./internal/lab/... ./cmd/mikroscope-lab/`, then `make test-lab` |
 
-## Layer 2 — the stores
+</ScrollTable>
 
+The static checks a pull request owes as well (`make analyze`, the agent's size
+budget, the site's gates) are in <Src path="CONTRIBUTING.md" />.
+
+## Unit suite
+
+```sh
+go test ./cmd/... ./internal/...   # the unit suite alone
+make test                          # every untagged package, the end-to-end suite included
+make test-race                     # every suite under the race detector
+make cover-check                   # fails below COVERAGE_MIN over cmd/ and internal/
+```
+
+Each package tests itself against fixtures, never against a router:
+
+- The `/proc` and `/sys` parsers read a captured tree of a real
+  router, <Src path="testdata/proc/rb5009/" />.
+- `plan`, the install script and the listings are compared with golden files
+  in <Src path="internal/router/testdata/" />, one set per case of
+  `cases.json`. `make check-generated` fails when the site's copy of those
+  scripts is stale.
+- The lab's driver runs against a fake Docker and a fake router: provisioning,
+  the lock, the downloads and their checksums, the snapshot chain, the
+  firewall rules, QEMU's command line and the CLI's refusals.
+
+<ScrollTable label="Where CI runs the unit suite">
+
+| Job                                   | What it runs                                                  | When                         |
+| ------------------------------------- | ------------------------------------------------------------- | ---------------------------- |
+| Cross-platform, Linux, macOS, Windows | the unit suite; on macOS and Windows the end-to-end suite too | every pull request           |
+| Coverage                              | `make cover-check`                                            | every pull request           |
+| Race detector                         | `make test-race`                                              | weekly, and before a release |
+
+</ScrollTable>
+
+## End-to-end suite {#layer-1--the-contract}
+
+`make test-e2e` builds both binaries and drives them as separate processes.
+The agent reads the captured tree. The collector reads that agent, or a fake
+one that serves canned samples, and writes every sink to a receiver inside the
+test binary, which asserts what arrived byte for byte.
+
+<ScrollTable label="The receiver each sink writes to in the end-to-end suite">
+
+| Sink                                          | Receiver                               |
+| --------------------------------------------- | -------------------------------------- |
+| InfluxDB, Loki, OTLP, Elasticsearch, Telegraf | an HTTP capture server                 |
+| Graphite, Telegraf's socket modes             | TCP and UDP listeners                  |
+| File, SQL                                     | real files                             |
+| stdout                                        | the process's own standard output      |
+| Prometheus                                    | a scrape of the collector's `/metrics` |
+
+</ScrollTable>
+
+It needs no router, no Grafana, no database, no container and no network:
+every address it binds or dials is on loopback. `make test-e2e-offline` proves
+that on Linux by running the suite in a network namespace with nothing but
+`lo`. It needs `unshare` and `setpriv`, and runs `unshare` under `sudo` unless
+it already has the capability.
+
+CI runs the suite and its offline form on every pull request, weekly and
+before a release, and runs the suite on macOS and Windows as well, where the
+executable's name, the files the file and SQL sinks write and how a child
+process is stopped can differ.
+
+## Stores suite {#layer-2--the-stores}
+
+A capture server answers 204 to anything; a store does not.
 `make test-e2e-docker` starts eight stores and a Grafana with docker compose,
-nine containers in all, runs the same
-collector against the same fake agent with every sink pointed at them, and then
-asks each store its own question with its own API. The file sink's JSONL is the
-oracle each store is compared against — value by value, not only by count.
+runs the same collector against the same fake agent with every sink pointed
+at them, and asks each store its own question through its own API. The file
+sink's JSONL is the oracle: each store is compared with it value by value, not
+only by count.
 
-<ScrollTable label="What each store is asked, in the container suite">
+<ScrollTable label="What each store is asked, in the stores suite">
 
-| Store                   | The question it is asked                                              |
-| ----------------------- | --------------------------------------------------------------------- |
-| InfluxDB 3 Core         | SQL over HTTP: the tables, a row count per table, every `ctxt` value   |
-| PostgreSQL 18           | the SQL sink's script through `psql`, and the connecting PostgreSQL sink into a second database; counts, the `ctxt` range, and whether the two databases hold the same rows (34 tables byte for byte, 2026-09-20) |
-| Elasticsearch 9         | `_search` with an aggregation by kind, and one whole document          |
-| Loki 3                  | `query_range` for this run's labels, and the text of each record       |
-| Graphite                | `metrics/find` for the tree, `render` for the points and their order   |
-| OpenTelemetry Collector | what it decoded, written back out as OTLP/JSON                         |
-| Telegraf 1.39           | the line protocol it parsed: measurements, tags, field types, timestamps |
-| Prometheus 3            | a scrape of the exporter, against the exposition it served             |
+| Store                   | The question it is asked                                                                                                                                         |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| InfluxDB 3 Core         | SQL over HTTP: the tables, a row count per table, every `ctxt` value                                                                                             |
+| PostgreSQL 18           | the SQL sink's script through `psql`, and the connecting PostgreSQL sink into a second database: counts, the `ctxt` range, and whether both hold the same rows |
+| Elasticsearch 9         | `_search` with an aggregation by kind, and one whole document                                                                                                    |
+| Loki 3                  | `query_range` for this run's labels, and the text of each record                                                                                                 |
+| Graphite                | `metrics/find` for the tree, `render` for the points and their order                                                                                             |
+| OpenTelemetry Collector | what it decoded, written back out as OTLP/JSON                                                                                                                   |
+| Telegraf 1.39           | the line protocol it parsed: measurements, tags, field types, timestamps                                                                                         |
+| Prometheus 3            | a scrape of the exporter, against the exposition it served                                                                                                       |
 
 </ScrollTable>
 
-The suite also publishes the five datasources with `forward --grafana` and
+The suite also publishes the five datasources with `forward --grafana`, and
 empties every store again with `uninstall --targets data`.
 
-Each of those is there because that product refuses something a capture server
-accepts:
+### Failures only a store shows
 
 - **InfluxDB 3** fixes a column as a tag or a field the first time it sees the
-  table and refuses a later write that disagrees.
-- **Carbon** answers nothing at all: a point older than its longest archive, or
-  a name whisper cannot make a path of, is dropped in silence.
-- **Loki** answers 204 for a push that is not queryable until the chunk
+  table, and refuses a later write that disagrees.
+- **Carbon** answers nothing at all: a point older than its longest archive,
+  or a name whisper cannot make a path of, is dropped in silence.
+- **Loki** answers 204 to a push that is not queryable until the chunk
   flushes, and rejects out-of-order entries per stream, in the body.
 - **Elasticsearch** infers a mapping from the first document it sees for a
-  field and then rejects a later one that does not fit it — per document,
-  inside a bulk request that still answers 200.
+  field, then rejects a later one that does not fit it, per document, inside a
+  bulk request that still answers 200.
 - **Telegraf** is a real line-protocol parser: an unescaped space in a tag
   value, or a field with no type, is dropped and the batch is still 204.
 - **PostgreSQL** is the only thing that can say whether the SQL sink's script
   is valid SQL, whether the types it chose hold the values it emits, and
   whether its primary keys collide on a real run.
 
-## Layer 3 — the dashboards
+### Dashboards {#layer-3--the-dashboards}
 
-The same target then imports all five dashboards into a real Grafana, each
-pointed at the store the run just filled, and runs every panel's query through Grafana's
-own `/api/ds/query`. That is where a panel fails for reasons no unit test
-reaches: a type an aggregate returns that the datasource plugin cannot decode,
-a macro the plugin escapes, a column the store does not have.
+The same run imports all five dashboards into Grafana, each pointed at the
+store the run just filled, and runs every panel's query through Grafana's own
+`/api/ds/query`: the `dashboards check` you can run against your own store. A
+panel fails there for reasons no unit test reaches: a type an aggregate
+returns that the datasource plugin cannot decode, a macro the plugin escapes, a
+column the store does not have. On InfluxDB 3 a missing column is not an empty
+one: the query fails with `Schema error: No field named <column>`, and the
+panel cannot render at all (<TestedOn of="test-suites">found this way</TestedOn>).
 
-The first full run, on 2026-09-16, found one: the port-event table names
-`label` and `role`, which the sink writes onto a kernel-log row only from the
-API tier's inventory. A column that is not in the table is not an empty column
-on InfluxDB 3 — it is `Schema error: No field named label` and a panel that
-cannot render at all.
-
-## Running it
+### Run the stores suite {#running-it}
 
 ```sh
-make test-e2e-docker   # the whole thing; the stack comes up and goes down with it
-make e2e-docker-up     # keep the stack up, for a targeted run
+make test-e2e-docker        # the whole suite; the stack comes up and goes down with it
+make e2e-docker-up          # keep the stack up between runs
 go test -v -tags dockere2e -run TestLoki ./test/e2e/docker/
-make e2e-docker-down
+make e2e-docker-down        # stop the stack and delete its volumes
+make test-e2e-docker-race   # the same suite under the race detector
 ```
 
-The package is behind the `dockere2e` build tag, so `make test` and every
-default CI job compile none of it — the tag is how you ask for nine containers.
-`make lint` type-checks it so it cannot rot, and **every pull request runs it**,
-along with the weekly workflow and the release gate.
-
-It was not on the pull-request path until 2026-09-18, on the grounds that nine
-containers are a lot to ask of one. That is how 1.0.5 reached `main` with two
-tests in this suite still reading the agent's `/metrics`, which that release
-had removed: every pull-request check was green, and the tag was what found
-it. The cost of having it there is **2 min 37 s**, measured on the release run
-that failed — containers included.
-
-Measured on the development machine on 2026-09-16: the stack comes up in 55 to
-81 s with the images already pulled, and the whole suite takes 75 to 100 s from
-nothing.
+The harness reuses a stack it did not start, and leaves it up afterwards.
+Why each store is a real one and not a fake is
+in <Src path="test/e2e/docker/README.md" />. CI runs the suite on every pull
+request, weekly, on dispatch and before a release.
 
 <Aside type="note" title="Linux, for two of the nine">
 	Prometheus and Grafana run on the host's network stack, because Prometheus is
-	the one sink that is scraped rather than pushed to and it has to reach the
+	the one sink that is scraped rather than pushed to, and it has to reach the
 	collector's exporter on the host. A container on a bridge network reaches the
 	host through the bridge's gateway, and that path goes through the host's
 	INPUT chain, which a default-deny firewall drops. The other seven services
 	are ordinary bridge-network containers.
 </Aside>
 
-## The virtual RouterOS lab
+## Virtual RouterOS lab {#the-virtual-routeros-lab}
 
-`doctor`, `plan`, `install`, `upgrade`, `status` and `uninstall` need a router
-to be tested at all, and the lab is one that belongs to nobody: MikroTik's
-Cloud Hosted Router (CHR) 7.24.4 under QEMU, in a Docker container, provisioned
-once into a clean snapshot (the `container` package installed,
-`device-mode container=yes` confirmed) and put back to that snapshot in
-seconds. No test needs a real router. <Src path="test/lab/README.md" /> is the
-full account: how it is wired, what each step took, and what CHR taught the
-installer.
+`doctor`, `plan`, `install`, `upgrade`, `status` and `uninstall` need a
+RouterOS to be tested at all. The lab is MikroTik's Cloud Hosted Router (CHR),
+a real RouterOS, under QEMU in a Docker container. It is provisioned once into
+a clean snapshot, with the `container` package installed and
+`device-mode container=yes` confirmed, and put back to that snapshot in
+seconds. The full account, how it is wired and what CHR taught the installer,
+is <Src path="test/lab/README.md" />.
 
 <ScrollTable label="The two labs, how each runs and what it is for">
 
-| Lab    | Runs as                 | Snapshot to ssh | What it is for                                                                                                 |
-| ------ | ----------------------- | --------------- | -------------------------------------------------------------------------------------------------------------- |
-| x86_64 | CHR under KVM           | 7 s             | every scenario, fast; the one CI runs on pull requests and before a release                                    |
-| arm64  | CHR emulated (QEMU TCG) | 26–28 s         | the RB5009's architecture, kernel version and core (Cortex-A72): the arm64 `container` package and agent image |
+| Lab    | Runs as                                            | Use it for                                                                                        |
+| ------ | -------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| x86_64 | CHR under KVM                                      | every scenario, fast; CI runs it on pull requests and before a release                            |
+| arm64  | CHR emulated by QEMU (TCG), CPU model `cortex-a72` | the arm64 `container` package and agent image, and RouterOS choosing the image for arm64; slow   |
 
 </ScrollTable>
 
-The boot times were measured on 2026-09-26 on the development machine
-(x86_64, 12 cores); the arm64 one is the emulation's, not a router's.
+A third lab, RouterOS x86 installed from MikroTik's ISO
+(`make lab-up LAB_KIND=iso`, x86_64 only), is an opt-in recipe that CI never
+runs. It adds the PC install path, an `x86` board name and the x86 licence (a
+24-hour trial, then a Level 1 registration or a paid licence per device), and
+nothing the agent reads that CHR x86_64 does not.
 
 The CLI runs inside the lab's LAN. `mikroscope-lab cli` starts it in the lab
 container's network namespace, where 172.30.0.0/16 routes to the lab router,
 so the agent's default address, 172.30.10.2, reaches the lab's agent and
-nothing else. From a developer machine's own shell the same address leaves by
-its default route, toward whatever network that is. Every deploy verb, by
-hand (`make lab-cli`) or in the suite, goes through `mikroscope-lab cli`,
-which refuses `--router` and a `--subnet` outside the lab's routes. The lab's namespace has
-its own firewall: it opens no new connection to a private address outside the
-lab, and takes none from another container.
+nothing else. From your own shell the same address leaves by your default
+route, toward whatever network that is. So every deploy verb, by hand
+(`make lab-cli`) or in the suite, goes through `mikroscope-lab cli`, which
+refuses `--router` and a `--subnet` outside the lab's routes. The lab's
+namespace has its own firewall: it opens no new connection to a private
+address outside the lab, and takes none from another container.
 
-### What the lab suite runs
+### Lab suite {#what-the-lab-suite-runs}
 
 `make test-lab` builds the CLI and the agent image tars, then runs the suite
-in <Src path="test/e2e/lab/" /> (build tag `labe2e`) against the running lab,
-holding the lab's lock for the whole run. Every scenario starts from a reset
-and the set-up it names, takes the router's `/export` there as its baseline,
-and ends by comparing the two.
+in <Src path="test/e2e/lab/" /> against the running lab, holding the lab's
+lock for the whole run. Every scenario starts from a reset and the profile it
+names, takes the router's `/export` there as its baseline, and ends by
+comparing the two.
 
 <ScrollTable label="The scenarios of the lab suite and what each asserts">
 
-| Scenario | What it does                                                                   | What it asserts                                                                                      |
-| -------- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
-| S1       | `doctor` on a stock CHR, with the lists `none` and with the defaults           | nothing missing with `none`; with the defaults only the interface list `LAN`, whose fix offers `--iface-list none` |
-| S2       | install by pulling the image from Docker Hub, `status`, `upgrade`, `uninstall` | the agent answers `/healthz` and `/capabilities`; the export is back to its baseline                 |
-| S3       | install and upgrade from the branch's own image tar                            | the agent reports the branch build's version, commit and date                                        |
-| S4       | `plan --rsc` for both image routes, run with `/import`                         | `status` recognises the script's objects; `uninstall` leaves the baseline                            |
-| S5       | every golden script the lab can run, imported as the site hands it over     | the agent answers on its own /30; `uninstall` with the case's flags leaves the baseline              |
-| S6       | `--ephemeral` on a tmpfs disk, then a power cut                                | the container is left stopped with its root gone; `uninstall --ephemeral` leaves nothing at all      |
-| S7       | a persistent install, 45 s for it to reach the disk, then a power cut          | the agent answers again within 90 s: start-on-boot works                                             |
-| S8       | `--expose` with a token                                                        | `/capabilities` answers 401 without the token and 200 with it; both firewall rules go with uninstall |
-| S9       | `uninstall` while a client reads `/stream`, ten times                          | every first attempt verifies the router clean                                                        |
-| S10      | the raw rules of MikroTik's advanced firewall, in list and range form          | `doctor` names the rule that drops the agent's replies, and the list memberships that pass           |
-| S11      | a foreign veth, a routed /30, a foreign envlist                                | `doctor` names each; `install` writes nothing; the `plan --rsc` script stops at its guard for the veth and the envlist |
-| S12      | two installs side by side                                                      | removing one leaves the other running and untouched                                                  |
-| S13, S14 | installs with other lists, and with `--expose`, uninstalled with no flag       | everything they created is removed; a contradicting flag is refused                                  |
-| S17      | `doctor` on a RouterOS below 7.24 (`LAB_ROS=7.23.7`)                           | `RouterOS 7.24 or later` is missing, and every other check still reads                               |
-| S18      | a pull from GHCR with no registry credential                                   | the agent answers                                                                                    |
-| F4       | every install route, a 1.3.1 install, and objects the user made first          | `/export` equals the one before the install and `/file` holds no mikroscope path; the user's objects stay |
-| repeat   | 10 tar installs and uninstalls on x86_64, 3 on arm64                           | no install fails                                                                                     |
+| Scenario | What it does                                                                        | What it asserts                                                                                                         |
+| -------- | ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| S1       | `doctor` on a stock CHR, with the lists `none` and with the defaults                | nothing missing with `none`; with the defaults only the interface list `LAN`, whose fix offers `--iface-list none`      |
+| S2       | install by pulling the image from Docker Hub, `status`, `upgrade`, `uninstall`      | the agent answers `/healthz` and `/capabilities`; the export is back to its baseline                                    |
+| S3       | install and upgrade from the branch's own image tar                                 | the agent reports the branch build's version, commit and date                                                           |
+| S4       | `plan --rsc` for both image routes, run with `/import`                              | `status` recognises the script's objects; `uninstall` leaves the baseline                                               |
+| S5       | every golden script the lab can run, imported as the site hands it over            | the agent answers on its own /30; `uninstall` with the case's flags leaves the baseline                                 |
+| S6       | `--ephemeral` on a tmpfs disk, then a power cut                                     | the container is left stopped with its root gone; `uninstall --ephemeral` leaves nothing at all                         |
+| S7       | a persistent install, 45 s for it to reach the disk, then a power cut               | the agent answers again within 90 s: start-on-boot works                                                                |
+| S8       | `--expose` with a token                                                             | `/capabilities` answers 401 without the token and 200 with it; both firewall rules go with uninstall                    |
+| S9       | `uninstall` while a client reads `/stream`, ten times                               | every first attempt verifies the router clean                                                                           |
+| S10      | the raw rules of MikroTik's advanced firewall, in list and range form               | `doctor` names the rule that drops the agent's replies, and the list memberships that pass                              |
+| S11      | a foreign veth, a routed /30, a foreign envlist                                     | `doctor` names each; `install` writes nothing; the `plan --rsc` script stops at its guard for the veth and the envlist |
+| S12      | two installs side by side                                                           | removing one leaves the other running and untouched                                                                     |
+| S13, S14 | installs with other lists, and with `--expose`, uninstalled with no flag            | everything they created is removed; a contradicting flag is refused                                                     |
+| S17      | `doctor` on a lab below the minimum RouterOS                                        | `RouterOS 7.24 or later` is missing, and every other check still reads                                                  |
+| S18      | a pull from GHCR with no registry credential                                        | the agent answers                                                                                                       |
+| F4       | every install route, an install made by a released CLI, objects the user made first | `/export` equals the one before the install and `/file` holds no mikroscope path; the user's objects stay               |
+| repeat   | tar installs and uninstalls in a row, ten on x86_64 and three on arm64              | no install fails                                                                                                        |
 
 </ScrollTable>
 
 The scenarios assert the fixed behaviour: none runs a second uninstall, and
-none allows a mikroscope path left on `/file`. Three more assert the CLI's own
-faults stay fixed: the agent token on no command line of the host, RouterOS's
-words in every error, and the probe reading the `running` flag. S5 pulls from
-Docker Hub twelve times and from GHCR once, and a few other scenarios pull
-where the route is the point; the rest install the branch's own tar, which
-also tests the branch's agent. Those pulls are anonymous unless the lab is
-given an account ([pulling as an account](#pulling-as-an-account)), and the
-scenarios about a router with no credential — S1, S18, and S5's Docker Hub and
-GHCR scripts — boot without it in any case. The suite drops every `MIKROSCOPE_*` variable before it runs
-anything, so a shell set up for a real router cannot steer it.
+none allows a mikroscope path left on `/file`. Four more tests hold what the
+CLI must keep doing: the agent token on no command line of the host,
+RouterOS's words in every error, the probe reading the `running` flag, and
+`doctor`'s warning for start-on-boot with the root on a tmpfs disk.
 
-S7 waits 45 s between the install and the cut. In the arm64 lab, three of
-four cuts made as soon as the agent answered brought back no agent within
-90 s, and the two looked at had a container that could not start
-(`Exec format error`, `Segmentation fault`), most likely because RouterOS had
-not yet written the install to its disk; that was not examined. A power loss that
-close to an install is its own question, and S7 asks only whether
-start-on-boot works.
+S7 waits 45 s between the install and the power cut. A cut made as soon as the
+agent answers can bring back a container that cannot start
+(<TestedOn of="virtual-lab">seen in the lab</TestedOn>), which is a question
+of its own; S7 asks only whether start-on-boot works.
 
-Measured on 2026-09-27 with CHR 7.24.4 and the code with these scenarios and
-the fixes review asked for: the suite took 29 min 2 s on x86_64 and
-57 min 13 s on arm64 side by side, every test passing; S9's uninstalls took
-8.0 to 12.6 s each. Earlier that day, before those fixes, it took 28 min 32 s
-on x86_64 alone, and 28 min 17 s and 57 min 29 s side by side. Before them, on 2026-09-26 with the 1.3.1 code, the suite took
-7 min 21 s to 9 min 49 s on x86_64 over six runs and 12 min 12 s to
-16 min 48 s on arm64 over three, the slowest of each with both suites running
-side by side on a busy host, and no install failed. `make roundtrip` —
-`doctor`, `install`, `status`, `upgrade` and `uninstall`, every one with
-`--ephemeral`, and the router's `/export` hashed before and after — took 28 to
-34 s on x86_64 over three runs and 40 to 45 s on arm64 over four, and left the
-export byte-identical every time.
+Only the scenarios that test a pull make the router pull. Docker Hub limits
+anonymous pulls per address, and a CI runner shares its address with whatever
+else ran from it, so every other scenario installs the branch's own tar from
+`make agent-tars`, which also tests the branch's agent. The pulls are
+anonymous unless the lab is given an account
+([Pull as an account](#pulling-as-an-account)), and the scenarios about a
+router with no credential, S1, S18 and S5's Docker Hub and GHCR scripts, boot
+without it in any case. The suite drops every
+`MIKROSCOPE_*` variable before it runs anything, so a shell set up for a real
+router cannot steer it.
 
-### Running the lab
+### Run the lab {#running-the-lab}
 
 ```sh
-make lab-up                     # the first run downloads RouterOS and provisions it
-make test-lab                   # the suite, x86_64
-make test-lab LAB_RUN='S09'     # one scenario, by a -run pattern
+make lab-up                   # start the lab; the first run downloads RouterOS and provisions it
+make lab-status               # the container, who holds the lock, what the router reports
+make test-lab                 # the whole suite, x86_64
+make test-lab LAB_RUN='S09'   # the tests a go test -run pattern matches
 make lab-cli ARGS='doctor --arch amd64'
-make lab-reset                  # back to the clean snapshot
-make lab-down
-make lab-up LAB_ARCH=arm64      # the emulated one, then the same targets with LAB_ARCH=arm64
+make lab-reset                # back to the clean snapshot
+make roundtrip                # doctor, install, status, upgrade, uninstall; /export compared
+make lab-down                 # stop it; the disks keep their state
+make lab-up LAB_ARCH=arm64    # the emulated lab: every target takes LAB_ARCH=arm64
 ```
 
-It needs Linux, Docker, Go for the lab's driver and for the CLI and agent
-under test, about 910 MB of disk for both architectures, and `/dev/kvm` for
-x86_64: without it the default `LAB_KVM=auto` falls back to emulation, many
-times slower and not measured, and `LAB_KVM=require` stops instead. Without a
-running lab every test of the suite skips, and `MIKROSCOPE_LAB_REQUIRED=1`
-makes that a failure. Only one driver at a time: every verb takes a lock per
-lab, so two checkouts never drive one lab between each other's steps, and `LAB_STATE_DIR`
-points a second checkout at the lab a first one runs; `LAB_INSTANCE=<name>`
-runs a second lab of an architecture beside the first, with its own
-container, ports, lock and disks. The lab's admin password and agent token
-are generated into `test/lab/.env` on first use, gitignored and never
-printed.
+S17 needs a lab below the minimum RouterOS, which is a lab of its own:
 
-Every target runs the lab's driver, `bin/mikroscope-lab`: a build-time tool
-in Go, like the one that draws the brand, which `make lab-tool` builds
-from <Src path="cmd/mikroscope-lab/" /> and <Src path="internal/lab/" />,
-and nothing ships. The same static binary is the lab container's first process,
-which sets up its network and runs QEMU until the guest powers off, and the
-suite calls the driver in its own process rather than as a command.
-`test/lab/lab.sh`, the shell script the driver replaced on 2026-09-27, now
-only builds and starts it. The driver's unit tests stand a fake Docker and a
-fake router in for the real ones, so provisioning, the lock, the downloads and
-their checksums, the snapshot chain, the firewall rules, QEMU's command line
-and the CLI's refusals are tested in `go test`; what only a real RouterOS
-shows, the lab suite shows.
+```sh
+make lab-up LAB_ROS=7.23.7
+make test-lab LAB_ROS=7.23.7 LAB_RUN=S17
+```
 
-A third lab, RouterOS x86 installed from MikroTik's ISO
-(`make lab-up LAB_KIND=iso`), is an opt-in recipe that CI never runs. It adds
-the PC install path, an `x86` board name and the x86 licence — a 24-hour trial,
-then a Level 1 registration or a paid licence per device — and nothing the
-agent reads that CHR x86_64 does not.
+The lab needs:
 
-### Pulling as an account
+- Linux, and Docker allowed to give a container `NET_ADMIN` and
+  `/dev/net/tun`.
+- Go, for the lab's driver and for the CLI and agent under test.
+- About 910 MB of disk for both architectures, 810 MB for one.
+- The loopback ports 220N, 800N, 870N and 910N free, with N = 1 for x86_64
+  and 2 for arm64, plus an instance's offset.
+- Network access: Docker Hub and Debian's mirrors for the lab image the first
+  time, `download.mikrotik.com` once per RouterOS version, and Docker Hub for
+  what the router pulls.
+- `/dev/kvm` for x86_64. Without it, `LAB_KVM=auto` falls back to emulation,
+  many times slower, and `LAB_KVM=require` stops instead. arm64 is emulated on
+  an x86 host whatever you set.
+
+Without a running lab every test of the suite skips, and
+`MIKROSCOPE_LAB_REQUIRED=1` makes that a failure. The lab's admin password and
+agent token are generated into `test/lab/.env` on first use, gitignored, and
+never printed.
+
+Every target runs the lab's driver, `bin/mikroscope-lab`, which
+`make lab-tool` builds from <Src path="cmd/mikroscope-lab/" />
+and <Src path="internal/lab/" />: a build-time tool that nothing ships.
+`bin/mikroscope-lab help` lists its verbs, and `test/lab/lab.sh` only builds
+and starts it, for a command written for the old script. The same static
+binary is the lab container's first process, which sets up its network and
+runs QEMU until the router powers off.
+
+One driver drives a lab at a time: every verb takes the lab's lock, and
+`bin/mikroscope-lab lock <command>` holds it for a whole session, as
+`make test-lab` and `make roundtrip` do. The two labs run side by side, and so
+can their suites, but not as two `make test-lab` in one checkout, because each
+rebuilds the agent tars the other may be reading. Build once, and start each
+suite under its own lab's lock:
+
+```sh
+make build agent-tars lab-tool
+LAB_ARCH=x86_64 bin/mikroscope-lab lock go test -tags labe2e -count=1 -timeout 150m ./test/e2e/lab/ &
+LAB_ARCH=arm64 bin/mikroscope-lab lock go test -tags labe2e -count=1 -timeout 150m ./test/e2e/lab/
+```
+
+### Pull as an account {#pulling-as-an-account}
 
 The lab router pulls the agent image itself, about a dozen times per run of
-the suite, and Docker Hub allows 100 anonymous pulls per 6 hours per address
-(Docker's usage page, read 2026-09-26); a CI runner shares its address with
-whatever else ran from it. Given a Docker Hub account, the router pulls as
-that account instead:
+the suite, and Docker Hub limits anonymous pulls per address. Given a Docker
+Hub account, the router pulls as that account instead:
 
 ```sh
 # in a file of your own, mode 0600, outside the repository
@@ -303,35 +362,51 @@ set -a; . ~/.config/mikroscope/lab-registry.env; set +a
 make lab-reset                  # every up and reset gives the router the credential
 ```
 
-The lab only pulls, so on your own machine a read-only token is enough. The
-lab's driver writes
+The lab only pulls, so on your own machine a read-only token is enough. At
+every `up` and `reset` the lab's driver writes
 `/container/config/set registry-url=… username=… password=…` to a file,
-copies it to the router, runs it with `/import` and deletes it, at every
-`up` and `reset`, so the credential is on no command line and the cached
-snapshot never has it. Exported from a file, as above, it stays off `make`'s
-command line too, which the process table would show. Without the two
-variables nothing changes and the router pulls anonymously; one without the
-other is refused. The suite prints the user and the token as
-`<LAB_REGISTRY_USER>` and `<LAB_REGISTRY_TOKEN>`, and one of its tests reads
-the host's process table every 2 ms through a reset to hold the driver to all
-of it.
+copies it to the router, runs it with `/import` and deletes it, so the
+credential is on no command line and the cached snapshot never has it.
+Exported from a file, as above, it stays off `make`'s command line too, which
+the process table would show. Without the two variables the router pulls
+anonymously; one without the other is refused. The suite prints the user and
+the token as `<LAB_REGISTRY_USER>` and `<LAB_REGISTRY_TOKEN>`, and one of its
+tests reads the host's process table every 2 ms through a reset to hold the
+driver to all of it.
 
 `registry-url` is `registry-1.docker.io`, with no scheme (`LAB_REGISTRY_URL`
 names another registry's host). RouterOS presents the username and password
 for a reference whose host is `registry-url` as written, and mikroscope
-writes the host into every reference. Measured in the x86_64 lab on
-2026-09-27 (CHR 7.24.4) with a deliberately wrong credential: the 1.3.1
-agent image, `registry-1.docker.io/jmrplens/mikroscope-agent`, failed with
-`auth error` under `registry-url=registry-1.docker.io`, and was pulled
-anonymously under `https://registry-1.docker.io`, the value MikroTik's
-examples use, and under the same with a trailing slash. A router that was
-given a credential did not fall back to an anonymous pull. With that
-credential given as the lab gives it, S2's install failed with `auth error`,
-while S1, S18, S5's two scripts and the process-table test passed; with no
-credential, S2 passed. A valid token was not tried: that Docker Hub counts
-the pulls against the account is its documentation, not a measurement.
+writes the host into every reference; with `https://` in front, the same pull
+goes out anonymously (<TestedOn of="registry-url-host-match">verified</TestedOn>).
 
-### The lab in CI
+### Lab settings
+
+Each setting goes on the `make` line or in the environment.
+
+<ScrollTable label="The lab's settings, their defaults and what each changes">
+
+| Setting                                   | Default                                  | What it does                                                                                            |
+| ----------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `LAB_ARCH`                                | `x86_64`                                 | which lab: `x86_64` or `arm64`                                                                          |
+| `LAB_ROS`                                 | the Makefile's                           | the RouterOS version to download and run; a new version is a new provision                              |
+| `LAB_KIND`                                | `chr`                                    | `iso` is RouterOS x86 from MikroTik's ISO, x86_64 only                                                  |
+| `LAB_KVM`                                 | `auto`                                   | `require` stops without `/dev/kvm`, `off` never uses it, `auto` uses it when it is there                |
+| `LAB_RUN`                                 | every test                               | a `go test -run` pattern for `make test-lab`, such as `S09` or `F4`                                     |
+| `LAB_INSTALL_REPEAT`                      | 10 on x86_64, 3 on arm64                 | how many installs the repeat test makes                                                                 |
+| `LAB_S5_CASES`                            | every case the lab can run               | S5's cases, by id, separated by commas                                                                  |
+| `LAB_REMOTE_IMAGE`                        | the last release on Docker Hub           | the image the pull scenarios pull                                                                       |
+| `LAB_GHCR_IMAGE`                          | the same image on GHCR                   | the image S18 pulls                                                                                     |
+| `LAB_STATE_DIR`                           | this checkout's `test/lab`               | where the lab's `.cache/` and `.env` live: point a second checkout at a lab another one runs            |
+| `LAB_INSTANCE`                            | none                                     | a second lab of an architecture, with its own container, ports, lock and disks                          |
+| `LAB_LOCK_WAIT`                           | as long as it takes                      | seconds to wait for another driver's lock before failing and naming the holder                          |
+| `MIKROSCOPE_LAB_REQUIRED`                 | unset                                    | `1` turns a skip for want of a lab into a failure                                                       |
+| `LAB_REGISTRY_USER`, `LAB_REGISTRY_TOKEN` | unset: the router pulls anonymously      | a registry account the lab router pulls with, given to it at every `up` and reset, never in the snapshot |
+| `LAB_REGISTRY_URL`                        | `registry-1.docker.io`                   | the registry that account belongs to, written as the host the references name                           |
+
+</ScrollTable>
+
+### Lab in CI {#the-lab-in-ci}
 
 <ScrollTable label="When CI runs the lab, per architecture">
 
@@ -343,83 +418,80 @@ the pulls against the account is its documentation, not a measurement.
 </ScrollTable>
 
 The workflow, <Src path=".github/workflows/lab.yml" />, runs the same
-`make lab-up` and `make test-lab`, with `MIKROSCOPE_LAB_REQUIRED=1`. What counts as "what
-installs the agent" is a list of paths in the `changes` job of `ci.yml`:
-`internal/router`, `internal/image`, `internal/agent`, `cmd/mikroscope`,
-`cmd/mikroscope-agent`, `Dockerfile.agent`, the `Makefile`, the agent tar and
-round-trip scripts, the lab, its driver (`cmd/mikroscope-lab`,
-`internal/lab`) and its suite, and `lab.yml` itself. arm64 is not a gate:
-under emulation it takes an estimated 25 to 35 minutes, and it depends on
-MikroTik's download server and on Docker Hub being up. On a release the pull scenarios pull the release before it, because the
-new tag's agent image is pushed only after the gates pass.
+`make lab-up` and `make test-lab`, with `MIKROSCOPE_LAB_REQUIRED=1`. What
+counts as "what installs the agent" is the list of paths in the `changes` job
+of `ci.yml`: `internal/router`, `internal/image`, `internal/agent`,
+`cmd/mikroscope`, `cmd/mikroscope-agent`, `Dockerfile.agent`, the `Makefile`,
+the agent tar and round-trip scripts, the RouterOS scripts the site renders,
+the lab, its driver and its suite, and `lab.yml` itself. A dispatch takes
+`ref`, `arch` (`both`, `x86_64` or `arm64`) and `ros`.
+
+arm64 is not a gate: it runs under emulation, which is slow, and it depends on
+MikroTik's download server and on Docker Hub being up. On a release, the pull
+scenarios pull the release before it, because the new tag's agent image is
+pushed only after the gates pass.
 
 The Actions cache keeps MikroTik's downloads per architecture and RouterOS
-version, checked against the SHA-256 sums the repository pins in
-the file <Src path="test/lab/SHA256SUMS" />, and the provisioned router. The
-snapshot carries no credential: admin has CHR's empty password and no key
-until the run's `make lab-up` gives it that run's own, so the `.env` and the
-ssh key never leave the runner. A failed or timed-out run uploads the console
-log, the container log, the lab's status, what an install left on the router,
-and the test log, each credential replaced by its name, and never the `.env`
-or the ssh key.
+version, checked against the SHA-256 sums the repository pins
+in <Src path="test/lab/SHA256SUMS" />, and the provisioned router, keyed on the
+driver, the lab image and those sums. The snapshot carries no credential:
+admin has CHR's empty password and no key until the run's `make lab-up` gives
+it that run's own, so the `.env` and the ssh key never leave the runner. A
+failed or timed-out run uploads the console log, the container log, the lab's
+status, what an install left on the router and the test log, each lab
+credential replaced by its name, and never the `.env` or the ssh key.
 
-The router pulls as an account when the repository has two secrets:
+The router pulls as an account when the repository has two secrets,
 `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN`, the token the release also pushes
-images with; the lab only pulls with it. They become `LAB_REGISTRY_USER` and `LAB_REGISTRY_TOKEN` for the
-steps that bring the lab up, run the suite and redact the failure report,
-and no other; `ci.yml` and `release.yml` pass the two by name.
-A pull request from a fork gets no secrets, and a repository without
-`DOCKERHUB_TOKEN` gets neither variable: both run anonymously. So does a
-dispatch that checks out another `ref`, which may be a fork's merge commit:
+images with; the lab only pulls with it. They become `LAB_REGISTRY_USER` and
+`LAB_REGISTRY_TOKEN` for the steps that bring the lab up, run the suite and
+redact the failure report, and no other; `ci.yml` and `release.yml` pass the
+two by name. A pull request from a fork gets no secrets, and a repository
+without `DOCKERHUB_TOKEN` gets neither variable: both run anonymously. So does
+a dispatch that checks out another `ref`, which may be a fork's merge commit:
 the lab builds and runs that code, and the token stays out of its
 environment.
 
-### Where the lab stops being a router
+### Lab limits {#where-the-lab-stops-being-a-router}
 
 - **Virtual, not hardware.** No RouterBOARD, no flash, no sensors, no switch
-  chip, no device tree. Measured through the agent's `/capabilities` on
-  2026-09-26: `cpufreq`, `mtd`, `psi`, `schedstat` and `thermal` absent on both
-  labs, and `status` cannot map kernel port names to RouterOS ones. Anything
-  about a board still needs a real one.
+  chip and no device tree. `cpufreq`, `mtd`, `psi`, `schedstat` and `thermal`
+  are absent from the agent's `/capabilities`, and `status` cannot map kernel
+  port names to RouterOS ones. Anything about a board still needs a real one.
 - **The free CHR licence caps what the router sends** at 1 Mbit/s per
-  interface: 2 MiB copied off the lab router over its LAN took 15.6 s. The
-  agent's `/stream` measured 0.21 Mbit/s at 10 Hz there, so by arithmetic
-  50 Hz sits at the cap and 100 Hz above it, and a rate test above 10 Hz in the
-  lab measures the licence rather than the agent.
+  interface. A rate test above 10 Hz in the lab measures the licence rather
+  than the agent (<TestedOn of="virtual-lab">the arithmetic</TestedOn>).
 - **Emulated arm64 figures are not costs.** Under emulation the guest's clock
   follows the host's, so every duration, every CPU figure (`cpu-load`,
   `self.cpu_us`, `read_ns`, `wake_ns`, the `dt_ns` spread, `slipped`), every
-  interrupt, softirq and context-switch rate and every PMU count from the arm64
-  lab measures the host's emulation, not a Cortex-A72.
+  interrupt, softirq and context-switch rate and every PMU count from the
+  arm64 lab measures the host's emulation, not the core it emulates.
+- **No 32-bit ARM.** MikroTik publishes CHR for x86_64 and arm64 only, so the
+  armv5 and armv7 agent meets RouterOS only on hardware. `make agent-smoke`
+  starts its image under QEMU user-mode, which is not RouterOS.
 
-<NotClaimed title="What the lab has not shown">
-	How long the lab jobs take on GitHub's runners, and whether those runners
-	give this repository `/dev/kvm`: the workflow has not run there yet, and the
-	first dispatch is the measurement. MikroTik publishes CHR for x86_64 and
-	arm64 only, so the 32-bit arm agent (armv5, armv7) meets RouterOS on
-	hardware only: `make agent-smoke` starts its image under QEMU user-mode,
-	which is not RouterOS.
-</NotClaimed>
+## Manual checks {#what-the-three-layers-still-leave-to-a-human}
 
-## What the three layers still leave to a human
+No suite shows:
 
-<NotClaimed title="What none of these prove">
-	That a sink works from the router. The samples in all three layers come from a
-	fake agent or a captured `/proc` tree, never from a live device, and the
-	container stack runs on the development machine rather than across the
-	router's veth. File, Prometheus and InfluxDB 3 have carried real RB5009
-	samples end to end; the other eight — Loki, OTLP, Graphite, Elasticsearch,
-	SQL, PostgreSQL, Telegraf and stdout — have not.
-</NotClaimed>
+- **A sink fed from a router.** The samples in every suite come from a fake
+  agent, a captured tree or the lab's CHR, and the stores run on the test host,
+  not across a router's veth. Which sinks have carried a router's samples is
+  under <TestedOn of="feature-status">Feature status</TestedOn>.
+- **Anything about a board**: its flash, sensors, switch chip and CPU
+  frequency, and what the agent costs on it.
+  [Agent cost](/mikroscope/cost/#measuring-it-on-your-own-device) says how to
+  measure it on yours.
 
 <SeeAlso>
 
 ## See also
 
-- [Where the project stands](/mikroscope/about/status/): what has run against
-  the reference device and what has not.
-- [The collector and its sinks](/mikroscope/sinks/): what each sink writes.
-- [Importing and checking the dashboards](/mikroscope/dashboards/import-and-check/):
-  the same `dashboards check` the third layer runs, against your own store.
+- [Tested on](/mikroscope/about/status/#the-test-suites): when each suite
+  first ran, how long it takes, what the lab found, and what has not been
+  tested.
+- [Run the collector](/mikroscope/sinks/): what each sink writes.
+- [Import and check](/mikroscope/dashboards/import-and-check/): the same
+  `dashboards check` the stores suite runs, against your own store.
 
 </SeeAlso>

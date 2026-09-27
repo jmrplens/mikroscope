@@ -17,8 +17,9 @@ import WebfigCapture from "../../../components/WebfigCapture.astro";
 Install the agent from the router's own menus, with no computer that runs the CLI. Each step is a
 form: its menu, the fields to fill in, and the form as it looks filled in. The values are the ones
 `mikroscope install` writes, so `mikroscope status`, `upgrade` and `uninstall` treat the result as
-their own. Winbox has the same menus and fields as WebFig; the pictures, and the run behind them,
-are WebFig's (<TestedOn of="install-routes">Tested on</TestedOn>).
+their own. Winbox has the same menus and fields as WebFig, though no install has run in Winbox
+(<TestedOn of="not-tested">not tested</TestedOn>); the pictures, and the run behind them, are
+WebFig's (<TestedOn of="install-routes">Tested on</TestedOn>).
 
 ## Before you start {#before-you-start}
 
@@ -63,7 +64,7 @@ RouterOS refuses an object, the form stays open with the reason under its button
 
 <Aside type="caution" title="The terminal, for two settings">
 	Two settings have no field in WebFig: device mode and `ignore-remote-image-change`
-	(<TestedOn of="verified">verified</TestedOn>). Set them in **Terminal** at the top of WebFig, or
+	(<TestedOn of="webfig-no-ignore-remote-image-change">verified</TestedOn>). Set them in **Terminal** at the top of WebFig, or
 	**New Terminal** in Winbox. If the terminal asks whether to show the software licence, answer
 	it first: what you type before the `] >` prompt goes to that question.
 </Aside>
@@ -189,7 +190,7 @@ settings: [Environment variables](/mikroscope/reference/environment/#the-agents-
 <WebfigCapture name="env-list" />
 
 A `TOKEN` entry holds its value in clear, and WebFig shows it in clear in this list and in its
-form (<TestedOn of="verified">verified</TestedOn>). Add one only for
+form (<TestedOn of="webfig-shows-env-values">verified</TestedOn>). Add one only for
 [Expose on the LAN](/mikroscope/security/expose/), and treat any screen that shows it as a secret.
 
 ## Create the container {#create-the-container}
@@ -258,7 +259,7 @@ Keep the tar until the next step is done.
 
 In the terminal, set `ignore-remote-image-change`, and name `restart-policy` in the same command: a
 `/container/set` that leaves `restart-policy` out puts it back to `always`
-(<TestedOn of="verified">verified</TestedOn>).
+(<TestedOn of="container-set-resets-restart-policy">verified</TestedOn>).
 
 ```text
 /container/set [find comment="mikroscope:mikroscope (managed by mikroscope)"] ignore-remote-image-change=yes restart-policy=on-failure
