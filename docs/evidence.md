@@ -13,7 +13,7 @@ date and the conditions, what each run found, and what has not been tested. The 
 the tool does and link here for the proof. The feature verdicts were checked against the code at
 1.2.0 and 1.2.2 on 2026-09-24, the sections that came from the guides against the code of 1.3.1 on
 2026-09-26, and what this page says of the code after 1.3.1, which 1.4.0 ships, against that code on
-2026-09-27; the current release is [1.4.0](https://github.com/jmrplens/mikroscope/releases/tag/v1.4.0).
+2026-09-27; the current release is [1.5.0](https://github.com/jmrplens/mikroscope/releases/tag/v1.5.0).
 
 ### Reference hardware
 

@@ -38,16 +38,16 @@ starts and dies with `exec format error` in the container log.
 ### Registry pull
 
 ```sh
-mikroscope install --router admin@192.168.88.1 --remote-image jmrplens/mikroscope-agent:1.4.0
+mikroscope install --router admin@192.168.88.1 --remote-image jmrplens/mikroscope-agent:1.5.0
 ```
 
 The container step becomes
-`/container/add remote-image="registry-1.docker.io/jmrplens/mikroscope-agent:1.4.0" …`,
+`/container/add remote-image="registry-1.docker.io/jmrplens/mikroscope-agent:1.5.0" …`,
 and the plan prints
-`the router pulls registry-1.docker.io/jmrplens/mikroscope-agent:1.4.0 (nothing is uploaded)`
+`the router pulls registry-1.docker.io/jmrplens/mikroscope-agent:1.5.0 (nothing is uploaded)`
 where an upload would be. Each release publishes the image twice, as
-`jmrplens/mikroscope-agent:1.4.0` on Docker Hub and as
-`ghcr.io/jmrplens/mikroscope-agent:1.4.0` on GHCR. Both carry `linux/amd64`,
+`jmrplens/mikroscope-agent:1.5.0` on Docker Hub and as
+`ghcr.io/jmrplens/mikroscope-agent:1.5.0` on GHCR. Both carry `linux/amd64`,
 `linux/arm64`, `linux/arm/v7` and `linux/arm/v5`, and RouterOS picks the one its architecture needs.
 
 The route needs two things the others do not: the router has to reach the registry, and it needs
@@ -62,7 +62,7 @@ because there is no tar to write.
 
 mikroscope hands RouterOS the whole reference, registry host included. A reference with no host,
 or one that starts with `docker.io/`, `index.docker.io/` or `registry.hub.docker.com/`, goes out as
-`registry-1.docker.io/jmrplens/mikroscope-agent:1.4.0`, the host Docker Hub's
+`registry-1.docker.io/jmrplens/mikroscope-agent:1.5.0`, the host Docker Hub's
 registry answers on; any other host is kept as given. RouterOS 7.18 and later take a registry host
 there ([7.18 changelog](https://download.mikrotik.com/routeros/7.18/CHANGELOG): "container - allow
 specifying registry using remote-image property"), and mikroscope needs 7.24.
@@ -87,7 +87,7 @@ So you set nothing on the router:
 > the three ways out.
 
 To pull through a mirror or a pull-through cache, name its host in the reference:
-`--remote-image <mirror-host>/jmrplens/mikroscope-agent:1.4.0`. mikroscope sends
+`--remote-image <mirror-host>/jmrplens/mikroscope-agent:1.5.0`. mikroscope sends
 it as given, and `upgrade` prints a `note` when `registry-url` names a host other than the one the
 pull goes to.
 
@@ -429,8 +429,8 @@ Two arguments, which are also the `VERSION` and `BIN_DIR` variables so they can
 be set through a pipe:
 
 ```sh
-curl -fsSL .../install.sh | VERSION=1.4.0 BIN_DIR=~/bin bash
-./install.sh --version 1.4.0 --dir ~/bin      # the same, with the file downloaded first
+curl -fsSL .../install.sh | VERSION=1.5.0 BIN_DIR=~/bin bash
+./install.sh --version 1.5.0 --dir ~/bin      # the same, with the file downloaded first
 ```
 
 The rest of this page is what those scripts do, one platform at a time, for
@@ -457,7 +457,7 @@ Anything whose name starts with `mikroscope-agent` is the other program.
   1. Download the archive and the checksums:
 
      ```sh
-     VERSION=1.4.0
+     VERSION=1.5.0
      curl -fsSLO https://github.com/jmrplens/mikroscope/releases/download/v$VERSION/mikroscope_${VERSION}_linux_x86_64.tar.gz
      curl -fsSLO https://github.com/jmrplens/mikroscope/releases/download/v$VERSION/checksums.txt
      ```
@@ -484,7 +484,7 @@ Anything whose name starts with `mikroscope-agent` is the other program.
      `darwin_x86_64` for Intel — and the checksums:
 
      ```sh
-     VERSION=1.4.0
+     VERSION=1.5.0
      curl -fsSLO https://github.com/jmrplens/mikroscope/releases/download/v$VERSION/mikroscope_${VERSION}_darwin_arm64.tar.gz
      curl -fsSLO https://github.com/jmrplens/mikroscope/releases/download/v$VERSION/checksums.txt
      ```
@@ -515,13 +515,13 @@ Anything whose name starts with `mikroscope-agent` is the other program.
   2. Check it in PowerShell, against the line for your file in `checksums.txt`:
 
      ```powershell
-     Get-FileHash .\mikroscope_1.4.0_windows_x86_64.zip -Algorithm SHA256
+     Get-FileHash .\mikroscope_1.5.0_windows_x86_64.zip -Algorithm SHA256
      ```
 
   3. Unpack it somewhere permanent and put that folder on your `PATH`:
 
      ```powershell
-     Expand-Archive .\mikroscope_1.4.0_windows_x86_64.zip -DestinationPath $HOME\mikroscope
+     Expand-Archive .\mikroscope_1.5.0_windows_x86_64.zip -DestinationPath $HOME\mikroscope
      $env:PATH += ";$HOME\mikroscope"
      ```
 
@@ -568,7 +568,7 @@ mikroscope version
 It prints the version, the commit and the build date:
 
 ```text
-mikroscope 1.4.0 (commit <commit>, built <time>)
+mikroscope 1.5.0 (commit <commit>, built <time>)
 ```
 
 Then, with a router to point at:
@@ -615,12 +615,12 @@ comes from:
 - **Registry pull**
 
   ```sh
-  mikroscope install --router admin@192.168.88.1 --remote-image jmrplens/mikroscope-agent:1.4.0
+  mikroscope install --router admin@192.168.88.1 --remote-image jmrplens/mikroscope-agent:1.5.0
   ```
 
   The router pulls the image for its own architecture from the registry. Nothing is built or
   uploaded, and `/container/config` is not touched. The same image is on GHCR as
-  `ghcr.io/jmrplens/mikroscope-agent:1.4.0`.
+  `ghcr.io/jmrplens/mikroscope-agent:1.5.0`.
 
 - **From source**
 
@@ -684,7 +684,7 @@ A router that cannot reach a registry takes the published image tar:
      new   router address 172.30.10.1
      new   interface-list membership LAN
      new   address-list membership LANs
-     pull  the router pulls registry-1.docker.io/jmrplens/mikroscope-agent:1.4.0 itself
+     pull  the router pulls registry-1.docker.io/jmrplens/mikroscope-agent:1.5.0 itself
      new   container mikroscope
    install done: 6 step(s) created
    ```
@@ -698,7 +698,7 @@ A router that cannot reach a registry takes the published image tar:
 
    ```text
    probing http://172.30.10.2:9123/healthz from this host …
-     direct transport ok: agent 1.4.0 (<commit>) built <time>, 10 Hz, seq 7, 0 slipped, 2ms round trip
+     direct transport ok: agent 1.5.0 (<commit>) built <time>, 10 Hz, seq 7, 0 slipped, 2ms round trip
    ```
 
    When the probe fails, it asks the router whether the container runs before it suggests
@@ -758,7 +758,7 @@ mikroscope status --router admin@192.168.88.1
 made without one, and prints the ownership count of every step from one connect:
 
 ```text
-install on the router (manifest mikroscope/mikroscope.manifest.txt): veth veth-mikroscope, subnet 172.30.10.0/30, lists LAN/LANs, port 9123, pulled from registry-1.docker.io/jmrplens/mikroscope-agent:1.4.0
+install on the router (manifest mikroscope/mikroscope.manifest.txt): veth veth-mikroscope, subnet 172.30.10.0/30, lists LAN/LANs, port 9123, pulled from registry-1.docker.io/jmrplens/mikroscope-agent:1.5.0
   manifest mikroscope/mikroscope.manifest.txt: the plan comes from it
   1     install manifest mikroscope/mikroscope.manifest.txt
   1     veth interface veth-mikroscope
@@ -766,7 +766,7 @@ install on the router (manifest mikroscope/mikroscope.manifest.txt): veth veth-m
   1     interface-list membership LAN
   1     address-list membership LANs
   8     container mikroscope
-agent: 1.4.0 (<commit>) built <time>, 10 Hz, seq 14 (oldest 1), up 1s, 0 slipped, 1ms round trip
+agent: 1.5.0 (<commit>) built <time>, 10 Hz, seq 14 (oldest 1), up 1s, 0 slipped, 1ms round trip
 ```
 
 - When nothing is installed it ends with `verified: nothing mikroscope created remains on the
@@ -852,7 +852,7 @@ writes anything. To fill in the options in a form instead, use the
 ### Generate
 
 ```sh
-mikroscope plan --rsc --remote-image jmrplens/mikroscope-agent:1.4.0 --out install.rsc
+mikroscope plan --rsc --remote-image jmrplens/mikroscope-agent:1.5.0 --out install.rsc
 ```
 
 It connects to nothing and prints
@@ -869,12 +869,12 @@ Without `--out` the script goes to standard output. It takes the same flags as `
 With the default options the script is:
 
 ```routeros
-# mikroscope 1.4.0: install script for RouterOS 7.24 or later. Container name: mikroscope
+# mikroscope 1.5.0: install script for RouterOS 7.24 or later. Container name: mikroscope
 # Every object it creates carries the comment "mikroscope:mikroscope (managed by mikroscope)", which is how
 # `mikroscope status` and `uninstall` recognize them later. It lists them in
 # mikroscope/mikroscope.manifest.txt on the router, which `mikroscope uninstall` reads and deletes last.
 #
-# The router pulls registry-1.docker.io/jmrplens/mikroscope-agent:1.4.0 itself.
+# The router pulls registry-1.docker.io/jmrplens/mikroscope-agent:1.5.0 itself.
 # The registry host is part of remote-image= (RouterOS 7.18 and later take it
 # there), so this script neither reads nor changes the device-wide registry-url.
 # A registry username set on the device for a registry other than registry-1.docker.io
@@ -892,7 +892,7 @@ With the default options the script is:
 :if ([:len [/interface/list/find name="LAN"]] = 0) do={ :error "mikroscope: interface list LAN does not exist" }
 :if ([:len [/file/find name="mikroscope/mikroscope.manifest.txt"]] > 0) do={ :if (!([:typeof [:find [/file/get [find name="mikroscope/mikroscope.manifest.txt"] contents] "\ntag=mikroscope:mikroscope (managed by mikroscope)\n"]] = "num")) do={ :error "mikroscope: mikroscope/mikroscope.manifest.txt exists and is not this install's manifest" } }
 # install manifest mikroscope/mikroscope.manifest.txt
-:local m "mikroscope-manifest=1\nname=mikroscope\ntag=mikroscope:mikroscope (managed by mikroscope)\ndisk=\nveth=veth-mikroscope\nsubnet=172.30.10.0/30\nport=9123\niface-list=LAN\naddr-list=LANs\nexpose=\ncontainer-name=\nremote-image=registry-1.docker.io/jmrplens/mikroscope-agent:1.4.0\ntoken=no\ndir=mikroscope\nfile=mikroscope/mikroscope.manifest.txt\nobject=/interface/veth name=veth-mikroscope\nobject=/ip/address interface=veth-mikroscope\nobject=/interface/list/member interface=veth-mikroscope list=LAN\nobject=/ip/firewall/address-list list=LANs address=172.30.10.0/30\nobject=/container/envs list=mikroscope-env\nobject=/container interface=veth-mikroscope\ndir=mikroscope/mikroscope\n"; :if ([:len [/file/find name="mikroscope/mikroscope.manifest.txt"]] > 0) do={ /file/set [find name="mikroscope/mikroscope.manifest.txt"] contents=$m } else={ /file/add name="mikroscope/mikroscope.manifest.txt" contents=$m }
+:local m "mikroscope-manifest=1\nname=mikroscope\ntag=mikroscope:mikroscope (managed by mikroscope)\ndisk=\nveth=veth-mikroscope\nsubnet=172.30.10.0/30\nport=9123\niface-list=LAN\naddr-list=LANs\nexpose=\ncontainer-name=\nremote-image=registry-1.docker.io/jmrplens/mikroscope-agent:1.5.0\ntoken=no\ndir=mikroscope\nfile=mikroscope/mikroscope.manifest.txt\nobject=/interface/veth name=veth-mikroscope\nobject=/ip/address interface=veth-mikroscope\nobject=/interface/list/member interface=veth-mikroscope list=LAN\nobject=/ip/firewall/address-list list=LANs address=172.30.10.0/30\nobject=/container/envs list=mikroscope-env\nobject=/container interface=veth-mikroscope\ndir=mikroscope/mikroscope\n"; :if ([:len [/file/find name="mikroscope/mikroscope.manifest.txt"]] > 0) do={ /file/set [find name="mikroscope/mikroscope.manifest.txt"] contents=$m } else={ /file/add name="mikroscope/mikroscope.manifest.txt" contents=$m }
 # veth interface veth-mikroscope
 /interface/veth/add name="veth-mikroscope" address=172.30.10.2/30 gateway=172.30.10.1 comment="mikroscope:mikroscope (managed by mikroscope)"
 # router address 172.30.10.1
@@ -902,7 +902,7 @@ With the default options the script is:
 # address-list membership LANs
 /ip/firewall/address-list/add list="LANs" address=172.30.10.0/30 comment="mikroscope:mikroscope (managed by mikroscope)"
 # container mikroscope
-:if ([:len [/container/envs/find list="mikroscope-env" key="MIKROSCOPE_TAG" value="mikroscope:mikroscope (managed by mikroscope)"]] > 0) do={ /container/envs/remove [find list="mikroscope-env"] }; /container/envs/add list="mikroscope-env" key=MIKROSCOPE_TAG value="mikroscope:mikroscope (managed by mikroscope)"; /container/envs/add list="mikroscope-env" key=RATE_HZ value="10"; /container/envs/add list="mikroscope-env" key=BUFFER_S value="60"; /container/envs/add list="mikroscope-env" key=PORT value="9123"; /container/envs/add list="mikroscope-env" key=ADDR value="172.30.10.2"; /container/envs/add list="mikroscope-env" key=MEM_LIMIT_MB value="16"; /container/envs/add list="mikroscope-env" key=CAPTURE_MB value="4"; /container/add remote-image="registry-1.docker.io/jmrplens/mikroscope-agent:1.4.0" interface="veth-mikroscope" root-dir=mikroscope/mikroscope envlist="mikroscope-env" logging=yes start-on-boot=yes restart-policy=on-failure restart-max-count=5 restart-interval=10s memory-max=64M privileged=yes ignore-remote-image-change=yes comment="mikroscope:mikroscope (managed by mikroscope)"; /container/start [find comment="mikroscope:mikroscope (managed by mikroscope)"]
+:if ([:len [/container/envs/find list="mikroscope-env" key="MIKROSCOPE_TAG" value="mikroscope:mikroscope (managed by mikroscope)"]] > 0) do={ /container/envs/remove [find list="mikroscope-env"] }; /container/envs/add list="mikroscope-env" key=MIKROSCOPE_TAG value="mikroscope:mikroscope (managed by mikroscope)"; /container/envs/add list="mikroscope-env" key=RATE_HZ value="10"; /container/envs/add list="mikroscope-env" key=BUFFER_S value="60"; /container/envs/add list="mikroscope-env" key=PORT value="9123"; /container/envs/add list="mikroscope-env" key=ADDR value="172.30.10.2"; /container/envs/add list="mikroscope-env" key=MEM_LIMIT_MB value="16"; /container/envs/add list="mikroscope-env" key=CAPTURE_MB value="4"; /container/add remote-image="registry-1.docker.io/jmrplens/mikroscope-agent:1.5.0" interface="veth-mikroscope" root-dir=mikroscope/mikroscope envlist="mikroscope-env" logging=yes start-on-boot=yes restart-policy=on-failure restart-max-count=5 restart-interval=10s memory-max=64M privileged=yes ignore-remote-image-change=yes comment="mikroscope:mikroscope (managed by mikroscope)"; /container/start [find comment="mikroscope:mikroscope (managed by mikroscope)"]
 :local k 0; :while ([:len [/container/find comment="mikroscope:mikroscope (managed by mikroscope)" running]] = 0 && $k < 120) do={ :delay 1s; :set k ($k + 1) }
 :if ([:len [/container/find comment="mikroscope:mikroscope (managed by mikroscope)" running]] > 0) do={ :put "mikroscope: agent running, http://172.30.10.2:9123/healthz" } else={ :put "mikroscope: not running yet; see /log/print where topics~\"container\"" }
 }
@@ -996,7 +996,7 @@ iface-list=LAN
 addr-list=LANs
 expose=
 container-name=
-remote-image=registry-1.docker.io/jmrplens/mikroscope-agent:1.4.0
+remote-image=registry-1.docker.io/jmrplens/mikroscope-agent:1.5.0
 token=no
 dir=mikroscope
 file=mikroscope/mikroscope.manifest.txt
@@ -1079,7 +1079,7 @@ Pick a value for each placeholder. The defaults are the ones `install` uses:
 | `MANIFEST_DIR`      | `mikroscope`                                   | `DISK/mikroscope` on a disk                                                                        |
 | `MANIFEST_FILE`     | `mikroscope/NAME.manifest.txt`                 | the install manifest                                                                              |
 | `ROOT_DIR`          | `mikroscope/NAME`                              | the container's root                                                                              |
-| `IMAGE_REF`         | `registry-1.docker.io/jmrplens/mikroscope-agent:1.4.0` | the image the router pulls (registry pull)                                  |
+| `IMAGE_REF`         | `registry-1.docker.io/jmrplens/mikroscope-agent:1.5.0` | the image the router pulls (registry pull)                                  |
 | `IMAGE_FILE`        | `NAME.tar`                                     | the uploaded image tar (tar route); `DISK/NAME.tar` on a disk                                    |
 | `RATE_HZ`           | `10`                                           | the sampler rate, 1–100 Hz                                                                        |
 | `BUFFER_S`          | `60`                                           | the ring, 10–3600 s                                                                               |
@@ -1393,7 +1393,7 @@ lists every value and how the others follow from it.
 | Envlist                          | `mikroscope-env`                                                         |
 | Root dir                         | `mikroscope/mikroscope`                                                  |
 | Manifest                         | `mikroscope/mikroscope.manifest.txt`                                     |
-| Image, registry pull             | `registry-1.docker.io/jmrplens/mikroscope-agent:1.4.0` |
+| Image, registry pull             | `registry-1.docker.io/jmrplens/mikroscope-agent:1.5.0` |
 | Image, tar                       | `mikroscope.tar`                                                         |
 
 Keep the tag as it is, character for character: it is how the CLI recognises every object as the
@@ -1440,7 +1440,7 @@ them all.
   addr-list=LANs
   expose=
   container-name=
-  remote-image=registry-1.docker.io/jmrplens/mikroscope-agent:1.4.0
+  remote-image=registry-1.docker.io/jmrplens/mikroscope-agent:1.5.0
   token=no
   dir=mikroscope
   file=mikroscope/mikroscope.manifest.txt
@@ -1586,7 +1586,7 @@ form ([verified](https://jmrp.io/docs/mikroscope/about/status/#verified-webfig-s
   | Field             | Value                                                                    |
   | ----------------- | ------------------------------------------------------------------------ |
   | Comment           | `mikroscope:mikroscope (managed by mikroscope)`                          |
-  | Remote Image      | `registry-1.docker.io/jmrplens/mikroscope-agent:1.4.0` |
+  | Remote Image      | `registry-1.docker.io/jmrplens/mikroscope-agent:1.5.0` |
   | Root Dir          | `mikroscope/mikroscope`                                                  |
   | Privileged        | ticked                                                                   |
   | Interface         | `veth-mikroscope`                                                        |
@@ -1749,7 +1749,7 @@ runs on every 32-bit ARM MikroTik ships, while an ARMv7 one does not run on thos
 > **Two assets have similar names**
 >
 > `mikroscope-agent-arm64.tar` is the container image, the one `--agent-tar` wants.
-> `mikroscope-agent_1.4.0_linux_arm64.tar.gz` is an archive of the bare agent
+> `mikroscope-agent_1.5.0_linux_arm64.tar.gz` is an archive of the bare agent
 > binary, for running it outside a container; `--agent-tar` rejects it.
 
 ### Download and verify
@@ -1758,7 +1758,7 @@ runs on every 32-bit ARM MikroTik ships, while an ARMv7 one does not run on thos
    [release](https://github.com/jmrplens/mikroscope/releases/latest):
 
    ```sh
-   VERSION=1.4.0
+   VERSION=1.5.0
    BASE=https://github.com/jmrplens/mikroscope/releases/download/v$VERSION
    curl -fsSLO $BASE/mikroscope-agent-arm64.tar
    curl -fsSLO $BASE/checksums.txt
@@ -1868,7 +1868,7 @@ was made from its manifest on the router, whichever method made it.
 ### Upgrade
 
 ```sh
-mikroscope upgrade --router admin@192.168.88.1 --remote-image jmrplens/mikroscope-agent:1.4.0
+mikroscope upgrade --router admin@192.168.88.1 --remote-image jmrplens/mikroscope-agent:1.5.0
 ```
 
 `upgrade` takes the image from its own flags only: pass `--remote-image` with the new version,
@@ -1892,10 +1892,10 @@ install's shape comes from the router.
    ```text
      wrote install manifest mikroscope/mikroscope.manifest.txt
      gone  container mikroscope
-     pull  the router pulls registry-1.docker.io/jmrplens/mikroscope-agent:1.4.0 itself
+     pull  the router pulls registry-1.docker.io/jmrplens/mikroscope-agent:1.5.0 itself
      new   container mikroscope
    probing http://172.30.10.2:9123/healthz from this host …
-     direct transport ok: agent 1.4.0 (<commit>) built <time>, 10 Hz, seq 8, 0 slipped, 2ms round trip
+     direct transport ok: agent 1.5.0 (<commit>) built <time>, 10 Hz, seq 8, 0 slipped, 2ms round trip
    ```
 
 **What `upgrade` replaces**
@@ -1951,7 +1951,7 @@ When the install or your setup comes from an older release:
   reference without its registry host and left the registry to `registry-url`. Now the host travels
   in the reference, and a reference with none goes to `registry-1.docker.io` directly. To keep
   pulling through a mirror or a pull-through cache, name its host:
-  `--remote-image <mirror-host>/jmrplens/mikroscope-agent:1.4.0`.
+  `--remote-image <mirror-host>/jmrplens/mikroscope-agent:1.5.0`.
 - **A Prometheus job that scrapes the agent.** The agent serves no `/metrics`: an agent of 1.0.4 or
   earlier did. Point the job at the collector's `--prom` address
   ([Prometheus](https://jmrp.io/docs/mikroscope/sinks/prometheus/)).
