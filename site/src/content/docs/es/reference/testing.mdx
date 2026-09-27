@@ -323,9 +323,8 @@ set -a; . ~/.config/mikroscope/lab-registry.env; set +a
 make lab-reset                  # cada up y cada reset dan la credencial al router
 ```
 
-El token es de solo lectura porque el laboratorio solo descarga: un token
-que puede publicar no tiene sitio en la configuración de un router de
-laboratorio. El conductor del laboratorio escribe
+El laboratorio solo descarga, así que en tu máquina basta un token de solo
+lectura. El conductor del laboratorio escribe
 `/container/config/set registry-url=… username=… password=…` en un archivo,
 lo copia al router, lo ejecuta con `/import` y lo borra, en cada `up` y cada
 `reset`, así que la credencial no está en ninguna línea de órdenes y la
@@ -391,14 +390,12 @@ router y el registro de las pruebas, con cada credencial sustituida por su
 nombre, y nunca el `.env` ni la clave ssh.
 
 El router descarga como una cuenta cuando el repositorio tiene dos secretos:
-`DOCKERHUB_USERNAME` y `DOCKERHUB_PULL_TOKEN`, un token de acceso de solo
-lectura de esa cuenta. Se convierten en `LAB_REGISTRY_USER` y
+`DOCKERHUB_USERNAME` y `DOCKERHUB_TOKEN`, el token con el que la versión
+también publica las imágenes; el laboratorio solo descarga con él. Se convierten en `LAB_REGISTRY_USER` y
 `LAB_REGISTRY_TOKEN` para los pasos que levantan el laboratorio, ejecutan la
 batería y ocultan las credenciales del informe de fallo, y para ningún otro;
-`ci.yml` y `release.yml` pasan los dos por su nombre, así que
-`DOCKERHUB_TOKEN`, que puede publicar las imágenes de la versión, nunca llega
-al laboratorio. Una pull request desde un fork no recibe secretos, y un
-repositorio sin `DOCKERHUB_PULL_TOKEN` no recibe ninguna de las dos
+`ci.yml` y `release.yml` pasan los dos por su nombre. Una pull request desde un fork no recibe secretos, y un
+repositorio sin `DOCKERHUB_TOKEN` no recibe ninguna de las dos
 variables: ambos descargan de forma anónima. También una ejecución a petición
 que extrae otra `ref`, que puede ser el commit de fusión de un fork: el
 laboratorio compila y ejecuta ese código, y el token queda fuera de su

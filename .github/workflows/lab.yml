@@ -71,8 +71,8 @@
 # times per run, and Docker Hub counts anonymous pulls per address: 100 per
 # 6 hours, and a runner's address is shared with whatever else ran from it.
 # So the router authenticates when the repository has DOCKERHUB_USERNAME and
-# DOCKERHUB_PULL_TOKEN, an access token with read-only scope. It is never
-# DOCKERHUB_TOKEN, which can push: that one stays with GoReleaser. ci.yml
+# DOCKERHUB_TOKEN, the token the release also pushes images with (the owner
+# keeps one Docker Hub token; the lab only pulls with it). ci.yml
 # and release.yml pass the two by name, and only the steps that bring the
 # router up, run the suite and redact the report see them, as
 # LAB_REGISTRY_USER and LAB_REGISTRY_TOKEN; mikroscope-lab gives them to
@@ -119,14 +119,14 @@ on:
         description: "x86_64, arm64 or both; ci.yml and release.yml pass x86_64"
         default: x86_64
         type: string
-    # Passed by name, never `secrets: inherit`, so the token that can push
-    # to Docker Hub never reaches this workflow.
+    # Passed by name, never `secrets: inherit`: only the Docker Hub account
+    # and its token reach this workflow.
     secrets:
       DOCKERHUB_USERNAME:
         description: "The Docker Hub account the lab router pulls as"
         required: false
-      DOCKERHUB_PULL_TOKEN:
-        description: "A read-only Docker Hub access token of that account"
+      DOCKERHUB_TOKEN:
+        description: "That account's Docker Hub token (the release's; the lab only pulls with it)"
         required: false
 
 permissions:
@@ -289,8 +289,8 @@ jobs:
       - name: Start the lab router
         timeout-minutes: ${{ matrix.arch == 'arm64' && 20 || 10 }}
         env:
-          LAB_REGISTRY_USER: ${{ !inputs.ref && secrets.DOCKERHUB_PULL_TOKEN != '' && secrets.DOCKERHUB_USERNAME || '' }}
-          LAB_REGISTRY_TOKEN: ${{ !inputs.ref && secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_PULL_TOKEN || '' }}
+          LAB_REGISTRY_USER: ${{ !inputs.ref && secrets.DOCKERHUB_TOKEN != '' && secrets.DOCKERHUB_USERNAME || '' }}
+          LAB_REGISTRY_TOKEN: ${{ !inputs.ref && secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN || '' }}
         run: make lab-up
 
       # Only when this run downloaded them: a snapshot hit downloads nothing.
@@ -330,8 +330,8 @@ jobs:
       - name: Run the lab suite
         timeout-minutes: ${{ matrix.arch == 'arm64' && 150 || 60 }}
         env:
-          LAB_REGISTRY_USER: ${{ !inputs.ref && secrets.DOCKERHUB_PULL_TOKEN != '' && secrets.DOCKERHUB_USERNAME || '' }}
-          LAB_REGISTRY_TOKEN: ${{ !inputs.ref && secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_PULL_TOKEN || '' }}
+          LAB_REGISTRY_USER: ${{ !inputs.ref && secrets.DOCKERHUB_TOKEN != '' && secrets.DOCKERHUB_USERNAME || '' }}
+          LAB_REGISTRY_TOKEN: ${{ !inputs.ref && secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN || '' }}
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/lab-report"
@@ -349,8 +349,8 @@ jobs:
         if: failure() || cancelled()
         env:
           OUT: ${{ runner.temp }}/lab-report
-          LAB_REGISTRY_USER: ${{ !inputs.ref && secrets.DOCKERHUB_PULL_TOKEN != '' && secrets.DOCKERHUB_USERNAME || '' }}
-          LAB_REGISTRY_TOKEN: ${{ !inputs.ref && secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_PULL_TOKEN || '' }}
+          LAB_REGISTRY_USER: ${{ !inputs.ref && secrets.DOCKERHUB_TOKEN != '' && secrets.DOCKERHUB_USERNAME || '' }}
+          LAB_REGISTRY_TOKEN: ${{ !inputs.ref && secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN || '' }}
         run: |
           set -uo pipefail
           mkdir -p "$OUT"

@@ -276,8 +276,8 @@ credential for a reference whose host is `registry-url` as written, and
 under `https://registry-1.docker.io` every pull of the suite stayed
 anonymous. `LAB_REGISTRY_URL` names another registry's host. The scenarios
 that test a router with no credential boot without it anyway. In CI the
-secrets `DOCKERHUB_USERNAME` and `DOCKERHUB_PULL_TOKEN` (read-only; never
-`DOCKERHUB_TOKEN`, which can push) feed the same variables; a fork's pull
+secrets `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` (the release's token; the
+lab only pulls with it) feed the same variables; a fork's pull
 request, and a dispatch that checks out another `ref`, run anonymously.
 `test/lab/README.md` ("Pulling as an account") has the rest.
 

@@ -119,12 +119,13 @@ make lab-reset              # or lab-up: every boot gives the router the credent
 make test-lab
 ```
 
-- **A read-only token.** Docker Hub's personal access tokens carry
-  permissions, and the lab only pulls: give it read and nothing else (Docker's
-  page on access tokens, read 2026-09-27, names them Read, Write and Delete;
-  where the form offers "Public Repo Read-only", that is the narrowest). A
-  token that can push, the one a release pushes images with, has no place in
-  a lab router's configuration.
+- **Which token.** The lab only pulls, so on your own machine a read-only
+  personal access token is enough (Docker's page on access tokens, read
+  2026-09-27, names the permissions Read, Write and Delete; where the form
+  offers "Public Repo Read-only", that is the narrowest). CI uses the
+  repository's `DOCKERHUB_TOKEN`, the one the release pushes images with: the
+  owner keeps one Docker Hub token, and in CI it reaches only the lab's
+  steps, in a VM the job throws away.
 - **How it reaches the router.** `up` and `reset` write
   `/container/config/set registry-url=… username=… password=…` to a file in
   the lab container (mode 0600, through docker exec's stdin), copy it to the
@@ -174,11 +175,10 @@ make test-lab
   variables, printing neither; without the variables it checks that the
   router has no username and no password.
 - **In CI** the repository's secrets `DOCKERHUB_USERNAME` and
-  `DOCKERHUB_PULL_TOKEN` become these variables for the steps that bring the
+  `DOCKERHUB_TOKEN` become these variables for the steps that bring the
   lab up, run the suite and redact the failure report, and no other step;
-  `ci.yml` and `release.yml` pass the two by name. `DOCKERHUB_TOKEN`, which
-  can push, never reaches the lab. A fork's pull request, a repository
-  without `DOCKERHUB_PULL_TOKEN`, and a dispatch that checks out another
+  `ci.yml` and `release.yml` pass the two by name. A fork's pull request, a
+  repository without `DOCKERHUB_TOKEN`, and a dispatch that checks out another
   `ref` (which may be a fork's merge commit, code the lab builds and runs)
   run anonymously, as before.
 
@@ -208,7 +208,7 @@ pull from ghcr.io by the CLI went through. S1, S18, S5's `pull-dockerhub` and
 213,700 command lines and saw 19 ssh or scp processes, the token on none, and
 the router's user and token, 11 and 23 bytes, equalled the variables. With no
 variable set, S2 and that test passed, the router with no username and no
-password. A valid read-only token was not tried, so that Docker Hub counts
+password. A valid token was not tried, so that Docker Hub counts
 the lab's pulls against the account rather than the address is what Docker
 documents, not something measured here.
 

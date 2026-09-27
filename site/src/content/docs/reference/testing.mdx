@@ -303,8 +303,8 @@ set -a; . ~/.config/mikroscope/lab-registry.env; set +a
 make lab-reset                  # every up and reset gives the router the credential
 ```
 
-The token is read-only because the lab only pulls: a token that can push has
-no place in a lab router's configuration. The lab's driver writes
+The lab only pulls, so on your own machine a read-only token is enough. The
+lab's driver writes
 `/container/config/set registry-url=… username=… password=…` to a file,
 copies it to the router, runs it with `/import` and deletes it, at every
 `up` and `reset`, so the credential is on no command line and the cached
@@ -364,13 +364,12 @@ and the test log, each credential replaced by its name, and never the `.env`
 or the ssh key.
 
 The router pulls as an account when the repository has two secrets:
-`DOCKERHUB_USERNAME` and `DOCKERHUB_PULL_TOKEN`, a read-only access token of
-that account. They become `LAB_REGISTRY_USER` and `LAB_REGISTRY_TOKEN` for the
+`DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN`, the token the release also pushes
+images with; the lab only pulls with it. They become `LAB_REGISTRY_USER` and `LAB_REGISTRY_TOKEN` for the
 steps that bring the lab up, run the suite and redact the failure report,
-and no other; `ci.yml` and `release.yml` pass the two by name, so
-`DOCKERHUB_TOKEN`, which can push the release's images, never reaches the lab.
+and no other; `ci.yml` and `release.yml` pass the two by name.
 A pull request from a fork gets no secrets, and a repository without
-`DOCKERHUB_PULL_TOKEN` gets neither variable: both run anonymously. So does a
+`DOCKERHUB_TOKEN` gets neither variable: both run anonymously. So does a
 dispatch that checks out another `ref`, which may be a fork's merge commit:
 the lab builds and runs that code, and the token stays out of its
 environment.

@@ -34,9 +34,9 @@ const DefaultRegistryURL = "registry-1.docker.io"
 // Docker Hub counts anonymous pulls per address, and a CI runner's address
 // is shared with whatever else ran from it, so a suite that pulls a dozen
 // times can find the allowance spent by others. With a user and a token the
-// router's pulls count against that account instead. The token is meant to
-// be a read-only one: the lab only pulls, and a token that can push must
-// not sit in a lab router's configuration.
+// router's pulls count against that account instead. The lab only pulls, so
+// a read-only token is enough; CI gives it the repository's DOCKERHUB_TOKEN
+// (lab.yml says why).
 //
 // Without them the router pulls anonymously, as RouterOS ships, and the lab
 // does nothing: /container/config stays as the snapshot has it.

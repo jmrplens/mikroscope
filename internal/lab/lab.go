@@ -326,8 +326,8 @@ Settings, from the environment (the Makefile passes them through):
              (make build), else the one on PATH
   LAB_CLI_TOKEN   ` + "`lab`" + ` hands ` + "`cli`" + ` the lab's agent token as
              MIKROSCOPE_TOKEN, for --expose without --token on a command line
-  LAB_REGISTRY_USER, LAB_REGISTRY_TOKEN   a registry account and a read-only
-             token the router pulls with, given to /container/config at every
+  LAB_REGISTRY_USER, LAB_REGISTRY_TOKEN   a registry account and a token
+             the router pulls with (read-only is enough), given to /container/config at every
              up and reset, in a file; unset, it pulls anonymously. Export
              them from a file, never on make's command line, which the
              process table shows

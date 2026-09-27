@@ -81,7 +81,7 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   run on GitHub's runners: whether they give the job `/dev/kvm`, and how long
   it takes there, is for the first dispatch to measure. The lab router pulls
   from Docker Hub as an account when the repository has the secrets
-  `DOCKERHUB_USERNAME` and `DOCKERHUB_PULL_TOKEN`, a read-only access token,
+  `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` (the release's token),
   since Docker Hub allows an address 100 anonymous pulls per 6 hours and a
   runner's address is shared: they become `LAB_REGISTRY_USER` and
   `LAB_REGISTRY_TOKEN` for the lab's steps only, and the driver gives them to
