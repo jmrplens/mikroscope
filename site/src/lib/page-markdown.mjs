@@ -56,6 +56,9 @@ import landingEs from "../content/docs/es/index.mdx?raw";
 import { parse as parseYaml } from "yaml";
 
 import stats from "../data/stats.json" with { type: "json" };
+import rscSpec from "../data/rsc/spec.json" with { type: "json" };
+import rscCases from "../data/rsc/cases.json" with { type: "json" };
+import { generatorDefaults, manualCode } from "./rsc.mjs";
 import en from "../content/i18n/en.json" with { type: "json" };
 import es from "../content/i18n/es.json" with { type: "json" };
 import { formatNumber, formatQuantity, numberWord } from "./format.ts";
@@ -451,6 +454,47 @@ function renderSelfClosing(name, attributes, expressions, context) {
 				],
 				rows,
 			);
+		}
+		// RouterOS commands of the manual install pages, as ManualSteps.astro
+		// renders them: manualCode() in src/lib/rsc.mjs, from the steps spec,
+		// with the values as placeholders.
+		case "ManualSteps":
+			return `\n\n\`\`\`text\n${manualCode(attributes, rscSpec, rscCases)}\n\`\`\`\n\n`;
+		// The script generator. A file cannot run the form, so the twin says
+		// so, in the page's own words, and shows each part as the page does
+		// before the form is touched: the defaults, a Docker Hub pull.
+		case "ScriptGenerator": {
+			const part = attributes.part ?? "form";
+			const def = generatorDefaults(rscSpec);
+			const fence = (/** @type {string} */ text) =>
+				`\`\`\`text\n${text.replace(/\n$/, "")}\n\`\`\``;
+			const blocks = {
+				form: () => [t("ms.gen.nojs")],
+				script: () => [
+					fence(def.script),
+					`${t("ms.gen.out.cli")}:`,
+					fence(def.cli),
+				],
+				tar: () => [fence(def.tar.join("\n"))],
+				verify: () => [
+					`${t("ms.gen.verify.router")}:`,
+					fence(def.verify.router.join("\n")),
+					`${t("ms.gen.verify.lan")}:`,
+					fence(def.verify.lan.join("\n")),
+				],
+				remove: () => [
+					`${t("ms.gen.remove.cli")}:`,
+					fence(def.uninstallCli),
+					`${t("ms.gen.out.uninstall")}:`,
+					fence(def.uninstall),
+				],
+			};
+			if (!Object.hasOwn(blocks, part)) {
+				throw new Error(
+					`${context.file}: <ScriptGenerator part="${part}" /> — part is form, script, tar, verify or remove`,
+				);
+			}
+			return `\n\n${blocks[/** @type {keyof typeof blocks} */ (part)]().join("\n\n")}\n\n`;
 		}
 		// What a command writes to the reader's router, from
 		// src/data/router-objects.ts, with the ownership tag and the two

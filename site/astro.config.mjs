@@ -477,6 +477,7 @@ export default defineConfig({
 							label: "Install with the CLI",
 							translations: { es: "Instalar con la CLI" },
 						},
+						{ slug: "install/generator" },
 					],
 				},
 				{

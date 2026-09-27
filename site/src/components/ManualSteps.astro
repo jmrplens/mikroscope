@@ -1,0 +1,67 @@
+---
+/**
+ * RouterOS commands for the manual install pages, rendered from the steps
+ * spec, never typed into a page.
+ *
+ * `mikroscope install`, `plan --rsc` and the script generator all render
+ * their commands from one table (src/data/rsc/spec.json, exported from Go by
+ * cmd/gen_rsc). A page that retyped them would drift from the CLI at the
+ * first change to a step, so this renders the same table with the values as
+ * placeholders — `NAME`, `VETH`, `AGENT_IP`… (PLACEHOLDERS in
+ * src/lib/rsc.mjs) — which the page's own table explains. The commands come
+ * from manualCode() in src/lib/rsc.mjs, which the Markdown twin's reduction
+ * calls too, and scripts/check-rsc.mjs holds every command it renders to the
+ * CLI's goldens.
+ *
+ *   <ManualSteps step="veth" />                  one step's create command
+ *   <ManualSteps step="veth" field="remove" />   … or its check, owned or remove
+ *   <ManualSteps step="manifest" />              the install manifest's command
+ *   <ManualSteps step="env" />                   the container step, in parts:
+ *   <ManualSteps step="env-optional" />            env, env-optional (FLOOR_HZ,
+ *   <ManualSteps step="container" />               TRIGGERS, TOKEN), container
+ *   <ManualSteps step="extract-wait" source="tar" /> (the /container/add),
+ *   <ManualSteps step="start" />                   extract-wait (tar), start
+ *   <ManualSteps step="container-step" field="check" />  the container step whole
+ *   <ManualSteps variant="remove" />             the removals, in uninstall's order
+ *   <ManualSteps variant="sweep" />              the tag sweep uninstall runs after them
+ *   <ManualSteps variant="script" />             a golden case's script (case="pull-dockerhub")
+ *
+ * `source` is `remote` (the router pulls the image, the default) or `tar`.
+ * `with` turns optional parts on, space-separated: `token`, `triggers`,
+ * `floorHz`, `containerName`, `disk`, `ephemeral`, `expose`. The two list
+ * memberships are on unless `without="ifaceList addrList"` turns them off.
+ */
+import { Code } from "@astrojs/starlight/components";
+
+import cases from "../data/rsc/cases.json";
+import spec from "../data/rsc/spec.json";
+import { manualCode } from "../lib/rsc.mjs";
+
+interface Props {
+	/** A step id of the spec, a part of the container step, or container-step. */
+	step?: string;
+	/** Which of the step's commands; create unless given. */
+	field?: "create" | "check" | "owned" | "remove" | "present";
+	/** A whole block instead of one step. */
+	variant?: "remove" | "sweep" | "script";
+	/** remote (a registry pull) or tar. */
+	source?: "remote" | "tar";
+	/** Optional parts to include, space-separated. */
+	with?: string;
+	/** Parts on by default to leave out: ifaceList, addrList. */
+	without?: string;
+	/** The golden case variant="script" shows. */
+	case?: string;
+	/** The code block's title. */
+	title?: string;
+}
+
+const { title, ...props } = Astro.props;
+const code = manualCode(
+	props,
+	spec as unknown as import("../lib/rsc.mjs").Spec,
+	cases as unknown as { id: string; options: import("../lib/rsc.mjs").GenOptions }[],
+);
+---
+
+<Code code={code} lang="text" title={title} wrap />

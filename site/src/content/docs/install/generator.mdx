@@ -1,0 +1,114 @@
+---
+title: Script generator
+description: Fill in a form and get the RouterOS script that installs the agent, the same script `mikroscope plan --rsc` prints, and the script that removes it again.
+docType: how-to
+head:
+  - tag: title
+    content: RouterOS install script generator for the agent | mikroscope
+---
+
+import { Steps } from "@astrojs/starlight/components";
+import RouterWrites from "../../../components/RouterWrites.astro";
+import ScriptGenerator from "../../../components/ScriptGenerator.astro";
+import SeeAlso from "../../../components/SeeAlso.astro";
+
+Install the agent without the CLI: pick the options, copy the script and paste
+it into the router's terminal. The script is the one `mikroscope plan --rsc`
+prints for the same options, byte for byte. Everything happens in this page:
+nothing you type or generate is sent anywhere or stored.
+
+## Before you start
+
+- The router runs RouterOS 7.24 or later, with the `container` package and
+  `device-mode container=yes`
+  ([Requirements](/mikroscope/install/prerequisites/)). The script checks the
+  three first and stops before it writes anything when one is missing.
+- For a registry pull, the router reaches the registry. With no way out,
+  choose **Uploaded image tar**.
+- A firewall that drops what is not in a list needs the agent in that list:
+  [Firewall lists](/mikroscope/install/firewall/).
+- On a CHR with the free licence, the router sends at most 1 Mbit/s, which a
+  rate of 50 Hz reaches ([Tested on](/mikroscope/about/status/#virtual-lab)).
+
+## Settings
+
+<ScriptGenerator />
+
+## Install script
+
+<ScriptGenerator part="script" />
+
+<RouterWrites command="install" />
+
+## Upload the image tar
+
+Only for **Uploaded image tar**. Download the tar for the router's
+architecture, check it against the release's checksums and copy it to the
+router under the name the script expects:
+
+<ScriptGenerator part="tar" />
+
+Without `scp`, upload the file in WebFig or Winbox under **Files** and rename
+it to that name. The script deletes the tar once RouterOS has extracted it.
+
+## Run the script
+
+<Steps>
+
+1. Open a terminal on the router: **Terminal** in WebFig, **New Terminal** in
+   Winbox, or `ssh admin@192.168.88.1`.
+
+2. Wait for the `] >` prompt. On the first login RouterOS asks whether to show
+   the software licence: answer that first. A script pasted into the licence
+   question loses its first lines.
+
+3. Paste the script and press Enter. It waits up to 120 s for the container to
+   start and prints `mikroscope: agent running, http://…/healthz`, or
+   `mikroscope: not running yet` and where to look.
+
+</Steps>
+
+Or download the `.rsc`, upload it under **Files** and run
+`/import file-name=mikroscope-install.rsc`.
+
+The script runs as one block. A check that fails stops it before anything is
+written, with a line that starts `mikroscope:` and names what is missing. A
+step that fails stops the steps after it; what it already created carries the
+tag, and the uninstall script or `mikroscope uninstall` removes it.
+
+## Verify
+
+<ScriptGenerator part="verify" />
+
+The router's fetch prints the agent's `/healthz` answer. `/healthz` needs no
+token.
+
+## Remove
+
+Remove the install with the CLI, which reads the manifest the script wrote and
+removes every object in it, or paste the uninstall script, which sends the same
+commands in the same order. Generate it with the settings you installed with.
+
+<ScriptGenerator part="remove" />
+
+Both remove the manifest last, then the `mikroscope` directory once it is
+empty. While anything tagged remains, the manifest stays, so the next attempt
+still finds the install. Neither touches what the install did not create:
+`device-mode`, the `container` package, `/container/config`, or a RAM disk you
+added.
+
+<SeeAlso>
+## See also
+
+- [Install methods](/mikroscope/install/routes/): every way to install, and
+  when to use each.
+- [Install with the CLI](/mikroscope/install/): the same install from a
+  computer, with `doctor` first.
+- [Storage and container settings](/mikroscope/install/layout/): the disk, the
+  root and the container's settings.
+- [Network access](/mikroscope/install/reaching-the-agent/): reaching the
+  agent from the collector.
+- [Installer safeguards](/mikroscope/security/installer/): the bounds every
+  value passes before it reaches a command.
+
+</SeeAlso>

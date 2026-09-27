@@ -243,6 +243,10 @@ const NOT_IN_DOCS = new Map([
 		"404",
 		"the not-found page: a hero and two links, for a mistyped address on a served site, which a file in a checkout cannot have",
 	],
+	[
+		"install/generator",
+		"interactive: a form that renders `mikroscope plan --rsc`'s script in the browser, which a file cannot run; the script itself is documented with the RouterOS script route",
+	],
 ]);
 
 // Named beside the generated files in the index, because the index is the
