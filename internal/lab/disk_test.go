@@ -66,6 +66,40 @@ func TestExtractOneTakesTheFirstMatchByItsBaseName(t *testing.T) {
 	}
 }
 
+// TestExtractOneNeverWritesOutsideDir is the zip-slip case: entries whose
+// names climb out of dir, are absolute or use backslashes are skipped, and
+// nothing appears next to dir.
+func TestExtractOneNeverWritesOutsideDir(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "dl")
+	if err := os.Mkdir(dir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	evil := filepath.Join(root, "slip.zip")
+	writeZip(t, evil, map[string]string{
+		"../escape.img":        "x",
+		"sub/../../escape.img": "x",
+		"/abs/escape.img":      "x",
+		`sub\..\..\escape.img`: "x",
+	})
+	got, err := ExtractOne(evil, func(string) bool { return true }, dir)
+	if err == nil && filepath.Dir(got) != dir {
+		t.Fatalf("wrote %s, outside %s", got, dir)
+	}
+	if _, statErr := os.Stat(filepath.Join(root, "escape.img")); statErr == nil {
+		t.Fatal("an entry escaped dir")
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if e.Name() != "escape.img" {
+			t.Errorf("unexpected file %s", e.Name())
+		}
+	}
+}
+
 func TestBackingReadsTheHeader(t *testing.T) {
 	dir := t.TempDir()
 	writeQcow2(t, filepath.Join(dir, "base.qcow2"), "")

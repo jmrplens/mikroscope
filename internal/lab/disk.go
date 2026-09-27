@@ -30,7 +30,7 @@ func (l *Lab) Disk(ctx context.Context) error {
 	if l.cfg.Kind == "iso" {
 		return l.isoInstall(ctx)
 	}
-	if !exists(filepath.Join(l.cfg.VM, "base.qcow2")) {
+	if !exists(filepath.Join(l.cfg.VM, baseDisk)) {
 		if err := l.convertBase(ctx); err != nil {
 			return err
 		}
@@ -56,18 +56,18 @@ func (l *Lab) convertBase(ctx context.Context) error {
 		return die("%s: %v", l.cfg.Downloads[0], err)
 	}
 	raw := filepath.Base(tmp) + "/" + filepath.Base(img)
-	err = l.qemuImg(ctx, l.cfg.VMRel, "convert", "-O", "qcow2", raw, "base.qcow2")
+	err = l.qemuImg(ctx, l.cfg.VMRel, "convert", "-O", "qcow2", raw, baseDisk)
 	if err != nil {
 		return err
 	}
-	err = l.qemuImg(ctx, l.cfg.VMRel, "resize", "-q", "base.qcow2", l.cfg.DiskSize)
+	err = l.qemuImg(ctx, l.cfg.VMRel, "resize", "-q", baseDisk, l.cfg.DiskSize)
 	if err != nil {
 		// A base.qcow2 of the image's own size would pass for a finished
 		// one on the next run.
-		_ = os.Remove(filepath.Join(l.cfg.VM, "base.qcow2"))
+		_ = os.Remove(filepath.Join(l.cfg.VM, baseDisk))
 		return err
 	}
-	return readOnly(filepath.Join(l.cfg.VM, "base.qcow2"))
+	return readOnly(filepath.Join(l.cfg.VM, baseDisk))
 }
 
 // extractPackage takes the container package out of the extra-packages
@@ -115,11 +115,20 @@ func ExtractOne(archive string, match func(string) bool, dir string) (string, er
 		if f.FileInfo().IsDir() || !match(f.Name) {
 			continue
 		}
+		// Zip slip: an entry may name any path. Only its base name is used,
+		// a name that holds ".." anywhere is refused outright, and the
+		// destination is checked to stay inside dir.
+		if strings.Contains(f.Name, "..") {
+			continue
+		}
 		base := path.Base(f.Name)
-		if base == "." || base == "/" || base == ".." || strings.ContainsAny(base, `/\`) {
+		if base == "." || base == "/" || strings.ContainsAny(base, `/\`) {
 			continue
 		}
 		dst := filepath.Join(dir, base)
+		if rel, relErr := filepath.Rel(dir, dst); relErr != nil || rel != base {
+			continue
+		}
 		err = extract(f, dst)
 		if err != nil {
 			return "", err
@@ -213,7 +222,7 @@ func Backing(p string) (string, error) {
 // the lab makes (run.qcow2 over clean.qcow2 over base.qcow2), every link a
 // file of dir named by a relative path, and base.qcow2 over nothing.
 func CheckChain(dir, top string) error {
-	want := map[string]string{"run.qcow2": "clean.qcow2", "clean.qcow2": "base.qcow2", "provision.qcow2": "base.qcow2", "base.qcow2": ""}
+	want := map[string]string{runDisk: cleanDisk, cleanDisk: baseDisk, provisionDisk: baseDisk, baseDisk: ""}
 	for name, seen := top, 0; ; seen++ {
 		expected, known := want[name]
 		if !known || seen > 3 {
