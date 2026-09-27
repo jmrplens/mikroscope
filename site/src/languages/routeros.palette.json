@@ -1,0 +1,116 @@
+{
+  "": ["#D6DEEB", "#403F53"],
+  "comment.line.number-sign.routeros": ["#919F9F", "#5F636F"],
+  "comment.line.number-sign.routeros punctuation.definition.comment.routeros": [
+    "#919F9F",
+    "#5F636F"
+  ],
+  "comment.line.semicolon.routeros": ["#919F9F", "#5F636F"],
+  "constant.character.escape.line-continuation.routeros": [
+    "#F78C6C",
+    "#AA0982"
+  ],
+  "constant.language.boolean.routeros": ["#FF6A83", "#A24848"],
+  "constant.language.routeros": ["#82AAFF", "#3B61B0"],
+  "constant.numeric.duration.routeros": ["#F78C6C", "#AA0982"],
+  "constant.numeric.ip.routeros": ["#F78C6C", "#AA0982"],
+  "constant.numeric.mac.routeros": ["#F78C6C", "#AA0982"],
+  "constant.numeric.routeros": ["#F78C6C", "#AA0982"],
+  "constant.other.placeholder.routeros": ["#82AAFF", "#3B61B0"],
+  "entity.name.function.routeros": ["#82AAFF", "#3B61B0"],
+  "entity.name.tag.routeros": ["#CAECE6", "#8844AE"],
+  "keyword.control.routeros": ["#C792EA", "#8844AE"],
+  "keyword.operator.accessor.routeros": ["#7FDBCA", "#096E72"],
+  "keyword.operator.arithmetic.routeros": ["#C792EA", "#8844AE"],
+  "keyword.operator.assignment.routeros": ["#C792EA", "#8844AE"],
+  "keyword.operator.comparison.routeros": ["#C792EA", "#8844AE"],
+  "keyword.operator.concatenation.routeros": ["#7FDBCA", "#096E72"],
+  "keyword.operator.logical.routeros": ["#C792EA", "#8844AE"],
+  "keyword.operator.negation.routeros": ["#7FDBCA", "#096E72"],
+  "keyword.operator.regexp.routeros": ["#7FDBCA", "#096E72"],
+  "keyword.operator.word.routeros": ["#7FDBCA", "#096E72"],
+  "keyword.other.where.routeros": ["#C792EA", "#8844AE"],
+  "meta.program-output.routeros": ["#D6DEEB", "#403F53"],
+  "meta.prompt.routeros": ["#D6DEEB", "#403F53"],
+  "punctuation.section.block.begin.routeros": ["#D6DEEB", "#403F53"],
+  "punctuation.section.block.end.routeros": ["#D6DEEB", "#403F53"],
+  "punctuation.section.brackets.begin.routeros": ["#D6DEEB", "#403F53"],
+  "punctuation.section.brackets.end.routeros": ["#D6DEEB", "#403F53"],
+  "punctuation.section.parens.begin.routeros": ["#D6DEEB", "#403F53"],
+  "punctuation.section.parens.end.routeros": ["#D6DEEB", "#403F53"],
+  "punctuation.separator.comma.routeros": ["#D6DEEB", "#403F53"],
+  "punctuation.terminator.statement.routeros": ["#D6DEEB", "#403F53"],
+  "storage.type.routeros": ["#C792EA", "#8844AE"],
+  "string.quoted.double.routeros": ["#ECC48D", "#984E4D"],
+  "string.quoted.double.routeros constant.character.escape.line-continuation.routeros": [
+    "#F78C6C",
+    "#AA0982"
+  ],
+  "string.quoted.double.routeros constant.character.escape.routeros": [
+    "#F78C6C",
+    "#AA0982"
+  ],
+  "string.quoted.double.routeros meta.interpolation.routeros constant.numeric.routeros": [
+    "#F78C6C",
+    "#AA0982"
+  ],
+  "string.quoted.double.routeros meta.interpolation.routeros keyword.operator.arithmetic.routeros": [
+    "#C792EA",
+    "#8844AE"
+  ],
+  "string.quoted.double.routeros meta.interpolation.routeros punctuation.section.interpolation.begin.routeros": [
+    "#ECC48D",
+    "#984E4D"
+  ],
+  "string.quoted.double.routeros meta.interpolation.routeros punctuation.section.interpolation.end.routeros": [
+    "#ECC48D",
+    "#984E4D"
+  ],
+  "string.quoted.double.routeros meta.interpolation.routeros support.function.builtin.routeros": [
+    "#C5E478",
+    "#3B61B0"
+  ],
+  "string.quoted.double.routeros meta.interpolation.routeros variable.other.routeros": [
+    "#C5E478",
+    "#3B61B0"
+  ],
+  "string.quoted.double.routeros meta.interpolation.routeros variable.other.routeros punctuation.definition.variable.routeros": [
+    "#C5E478",
+    "#3B61B0"
+  ],
+  "string.quoted.double.routeros punctuation.definition.string.begin.routeros": [
+    "#D9F5DD",
+    "#111111"
+  ],
+  "string.quoted.double.routeros punctuation.definition.string.end.routeros": [
+    "#D9F5DD",
+    "#111111"
+  ],
+  "string.quoted.double.routeros variable.other.routeros": [
+    "#C5E478",
+    "#3B61B0"
+  ],
+  "string.quoted.double.routeros variable.other.routeros punctuation.definition.variable.routeros": [
+    "#C5E478",
+    "#3B61B0"
+  ],
+  "string.regexp.routeros": ["#5CA7E4", "#3A688F"],
+  "string.regexp.routeros punctuation.definition.string.begin.routeros": [
+    "#D9F5DD",
+    "#111111"
+  ],
+  "string.regexp.routeros punctuation.definition.string.end.routeros": [
+    "#D9F5DD",
+    "#111111"
+  ],
+  "string.unquoted.routeros": ["#ECC48D", "#3B61B0"],
+  "support.constant.log-topic.routeros": ["#7FDBCA", "#096E72"],
+  "support.function.builtin.routeros": ["#C5E478", "#3B61B0"],
+  "support.function.routeros": ["#C5E478", "#3B61B0"],
+  "support.type.property-name.routeros": ["#80CBC4", "#096E72"],
+  "variable.other.routeros": ["#C5E478", "#3B61B0"],
+  "variable.other.routeros punctuation.definition.variable.routeros": [
+    "#C5E478",
+    "#3B61B0"
+  ]
+}

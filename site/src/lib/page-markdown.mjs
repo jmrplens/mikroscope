@@ -472,34 +472,38 @@ function renderSelfClosing(name, attributes, expressions, context) {
 		// renders them: manualCode() in src/lib/rsc.mjs, from the steps spec,
 		// with the values as placeholders.
 		case "ManualSteps":
-			return `\n\n\`\`\`text\n${manualCode(attributes, rscSpec, rscCases)}\n\`\`\`\n\n`;
+			return `\n\n\`\`\`routeros\n${manualCode(attributes, rscSpec, rscCases)}\n\`\`\`\n\n`;
 		// The script generator. A file cannot run the form, so the twin says
 		// so, in the page's own words, and shows each part as the page does
 		// before the form is touched: the defaults, a Docker Hub pull.
 		case "ScriptGenerator": {
 			const part = attributes.part ?? "form";
 			const def = generatorDefaults(rscSpec);
-			const fence = (/** @type {string} */ text) =>
-				`\`\`\`text\n${text.replace(/\n$/, "")}\n\`\`\``;
+			// Each part in the language it is written in: what runs on the
+			// router is RouterOS, what runs on the reader's machine is shell.
+			const fence = (
+				/** @type {"routeros" | "sh"} */ lang,
+				/** @type {string} */ text,
+			) => `\`\`\`${lang}\n${text.replace(/\n$/, "")}\n\`\`\``;
 			const blocks = {
 				form: () => [t("ms.gen.nojs")],
 				script: () => [
-					fence(def.script),
+					fence("routeros", def.script),
 					`${t("ms.gen.out.cli")}:`,
-					fence(def.cli),
+					fence("sh", def.cli),
 				],
-				tar: () => [fence(def.tar.join("\n"))],
+				tar: () => [fence("sh", def.tar.join("\n"))],
 				verify: () => [
 					`${t("ms.gen.verify.router")}:`,
-					fence(def.verify.router.join("\n")),
+					fence("routeros", def.verify.router.join("\n")),
 					`${t("ms.gen.verify.lan")}:`,
-					fence(def.verify.lan.join("\n")),
+					fence("sh", def.verify.lan.join("\n")),
 				],
 				remove: () => [
 					`${t("ms.gen.remove.cli")}:`,
-					fence(def.uninstallCli),
+					fence("sh", def.uninstallCli),
 					`${t("ms.gen.out.uninstall")}:`,
-					fence(def.uninstall),
+					fence("routeros", def.uninstall),
 				],
 			};
 			if (!Object.hasOwn(blocks, part)) {

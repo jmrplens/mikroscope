@@ -202,7 +202,7 @@ upload it to the router and reboot. If it is there and disabled, run
 `/system/package/enable container` and reboot. `doctor` counts the package only when it is installed
 and not disabled. To read it on the router:
 
-```text
+```routeros
 /system/package/print where name="container"
 ```
 
@@ -210,7 +210,7 @@ and not disabled. To read it on the router:
 
 1. Run, on the router's terminal:
 
-   ```text
+   ```routeros
    /system/device-mode/update container=yes
    ```
 
@@ -868,7 +868,7 @@ Without `--out` the script goes to standard output. It takes the same flags as `
 
 With the default options the script is:
 
-```text
+```routeros
 # mikroscope 1.4.0: install script for RouterOS 7.24 or later. Container name: mikroscope
 # Every object it creates carries the comment "mikroscope:mikroscope (managed by mikroscope)", which is how
 # `mikroscope status` and `uninstall` recognize them later. It lists them in
@@ -936,7 +936,7 @@ It runs as one `{ … }` block, in this order:
   1. Upload `install.rsc` in Files (WebFig or Winbox), or with `scp`.
   2. Run:
 
-     ```text
+     ```routeros
      /import file-name=install.rsc
      ```
 
@@ -966,7 +966,7 @@ Script Error: mikroscope: upload mikroscope.tar first (:error; line 20) (:import
 
 On the router:
 
-```text
+```routeros
 /container/print where comment="mikroscope:mikroscope (managed by mikroscope)"
 :put ([/tool/fetch url="http://172.30.10.2:9123/healthz" output=user as-value]->"data")
 ```
@@ -980,7 +980,7 @@ recognises the install and probes the agent.
 The script writes the install manifest first, `mikroscope/<name>.manifest.txt` on the install's
 disk. Read it on the router:
 
-```text
+```routeros
 :put [/file/get [find name="mikroscope/mikroscope.manifest.txt"] contents]
 ```
 
@@ -1115,7 +1115,7 @@ at least 16 and at most ¾ of `MEMORY_MAX` while that still leaves room for the 
 **Check the router.** Read the release and the architecture, the `container` package and device
 mode:
 
-```text
+```routeros
 /system/resource/print
 /system/package/print where name="container"
 /system/device-mode/print
@@ -1129,7 +1129,7 @@ machine off and on.
 
 **Check for collisions.** Each of these must print nothing, or a count of 0:
 
-```text
+```routeros
 /interface/veth/print where name="VETH"
 /container/envs/print count-only where list="ENVLIST"
 /ip/address/print where address in NET/30
@@ -1139,7 +1139,7 @@ machine off and on.
 
 And these must find what you name: the interface list, and the disk if you use one.
 
-```text
+```routeros
 /interface/list/print where name="IFACE_LIST"
 /disk/print
 ```
@@ -1163,13 +1163,13 @@ membership you skip, also write `none` after its `iface-list=` or `addr-list=`.
 
 - **Registry pull**
 
-  ```text
+  ```routeros
   :local m "mikroscope-manifest=1\nname=NAME\ntag=TAG\ndisk=DISK\nveth=VETH\nsubnet=NET/30\nport=PORT\niface-list=IFACE_LIST\naddr-list=ADDR_LIST\nexpose=\ncontainer-name=CONTAINER_NAME\nremote-image=IMAGE_REF\ntoken=no\ndir=MANIFEST_DIR\nfile=MANIFEST_FILE\nobject=/interface/veth name=VETH\nobject=/ip/address interface=VETH\nobject=/interface/list/member interface=VETH list=IFACE_LIST\nobject=/ip/firewall/address-list list=ADDR_LIST address=NET/30\nobject=/container/envs list=ENVLIST\nobject=/container interface=VETH\ndir=ROOT_DIR\n"; :if ([:len [/file/find name="MANIFEST_FILE"]] > 0) do={ /file/set [find name="MANIFEST_FILE"] contents=$m } else={ /file/add name="MANIFEST_FILE" contents=$m }
   ```
 
 - **Image tar**
 
-  ```text
+  ```routeros
   :local m "mikroscope-manifest=1\nname=NAME\ntag=TAG\ndisk=DISK\nveth=VETH\nsubnet=NET/30\nport=PORT\niface-list=IFACE_LIST\naddr-list=ADDR_LIST\nexpose=\ncontainer-name=CONTAINER_NAME\nremote-image=\ntoken=no\ndir=MANIFEST_DIR\nfile=MANIFEST_FILE\nobject=/interface/veth name=VETH\nobject=/ip/address interface=VETH\nobject=/interface/list/member interface=VETH list=IFACE_LIST\nobject=/ip/firewall/address-list list=ADDR_LIST address=NET/30\nfile=IMAGE_FILE\nobject=/container/envs list=ENVLIST\nobject=/container interface=VETH\ndir=ROOT_DIR\n"; :if ([:len [/file/find name="MANIFEST_FILE"]] > 0) do={ /file/set [find name="MANIFEST_FILE"] contents=$m } else={ /file/add name="MANIFEST_FILE" contents=$m }
   ```
 
@@ -1181,13 +1181,13 @@ Read it back with `:put [/file/get [find name="MANIFEST_FILE"] contents]`.
 
 ### Create the veth
 
-```text
+```routeros
 /interface/veth/add name="VETH" address=AGENT_IP/30 gateway=GW_IP comment="TAG"
 ```
 
 ### Add the address
 
-```text
+```routeros
 /ip/address/add address=GW_IP/30 interface="VETH" comment="TAG"
 ```
 
@@ -1199,17 +1199,17 @@ manifest and write `none` after its `iface-list=` or `addr-list=`.
 A membership is not scoped to mikroscope: any other rule that matches the list matches the veth or
 the /30 too ([Firewall lists](https://jmrp.io/docs/mikroscope/install/firewall/)).
 
-```text
+```routeros
 /interface/list/member/add list="IFACE_LIST" interface="VETH" comment="TAG"
 ```
 
-```text
+```routeros
 /ip/firewall/address-list/add list="ADDR_LIST" address=NET/30 comment="TAG"
 ```
 
 ### Create the envlist
 
-```text
+```routeros
 /container/envs/add list="ENVLIST" key=MIKROSCOPE_TAG value="TAG"
 /container/envs/add list="ENVLIST" key=RATE_HZ value="RATE_HZ"
 /container/envs/add list="ENVLIST" key=BUFFER_S value="BUFFER_S"
@@ -1221,7 +1221,7 @@ the /30 too ([Firewall lists](https://jmrp.io/docs/mikroscope/install/firewall/)
 
 Add the optional entries you use:
 
-```text
+```routeros
 /container/envs/add list="ENVLIST" key=FLOOR_HZ value="FLOOR_HZ"
 /container/envs/add list="ENVLIST" key=TRIGGERS value="TRIGGERS"
 /container/envs/add list="ENVLIST" key=TOKEN value="TOKEN"
@@ -1234,7 +1234,7 @@ keep other credentials out of the envlist.
 
 - **Registry pull**
 
-  ```text
+  ```routeros
   /container/add remote-image="IMAGE_REF" interface="VETH" root-dir=ROOT_DIR envlist="ENVLIST" logging=yes start-on-boot=START_ON_BOOT restart-policy=on-failure restart-max-count=RESTART_MAX_COUNT restart-interval=RESTART_INTERVAL memory-max=MEMORY_MAX privileged=PRIVILEGED ignore-remote-image-change=yes comment="TAG"
   ```
 
@@ -1247,14 +1247,14 @@ keep other credentials out of the envlist.
      `scp` ([Offline install](https://jmrp.io/docs/mikroscope/install/offline/)).
   2. Create the container from it:
 
-     ```text
+     ```routeros
      /container/add file=IMAGE_FILE interface="VETH" root-dir=ROOT_DIR envlist="ENVLIST" logging=yes start-on-boot=START_ON_BOOT restart-policy=on-failure restart-max-count=RESTART_MAX_COUNT restart-interval=RESTART_INTERVAL memory-max=MEMORY_MAX privileged=PRIVILEGED ignore-remote-image-change=yes comment="TAG"
      ```
 
   3. Wait for RouterOS to extract it, then delete the tar. The line stops, and keeps the tar, if
      extraction is not done within `EXTRACT_TIMEOUT_S`:
 
-     ```text
+     ```routeros
      :local w 0; :while ([:len [/container/find comment="TAG" stopped]] = 0 && $w < EXTRACT_TIMEOUT_S) do={ :delay 1s; :set w ($w + 1) }; :if ([:len [/container/find comment="TAG" stopped]] = 0) do={ :error "mikroscope: the image was not extracted within EXTRACT_TIMEOUT_S s; IMAGE_FILE stays" }; /file/remove [find name="IMAGE_FILE"]
      ```
 
@@ -1268,35 +1268,35 @@ Write the manifest again first, so that it records them: `expose=LAN_IP`, `token
 
 - **Registry pull**
 
-  ```text
+  ```routeros
   :local m "mikroscope-manifest=1\nname=NAME\ntag=TAG\ndisk=DISK\nveth=VETH\nsubnet=NET/30\nport=PORT\niface-list=IFACE_LIST\naddr-list=ADDR_LIST\nexpose=LAN_IP\ncontainer-name=CONTAINER_NAME\nremote-image=IMAGE_REF\ntoken=yes\ndir=MANIFEST_DIR\nfile=MANIFEST_FILE\nobject=/interface/veth name=VETH\nobject=/ip/address interface=VETH\nobject=/interface/list/member interface=VETH list=IFACE_LIST\nobject=/ip/firewall/address-list list=ADDR_LIST address=NET/30\nobject=/ip/firewall/nat chain=dstnat dst-address=LAN_IP dst-port=PORT protocol=tcp\nobject=/ip/firewall/filter chain=forward dst-address=AGENT_IP dst-port=PORT protocol=tcp\nobject=/container/envs list=ENVLIST\nobject=/container interface=VETH\ndir=ROOT_DIR\n"; :if ([:len [/file/find name="MANIFEST_FILE"]] > 0) do={ /file/set [find name="MANIFEST_FILE"] contents=$m } else={ /file/add name="MANIFEST_FILE" contents=$m }
   ```
 
 - **Image tar**
 
-  ```text
+  ```routeros
   :local m "mikroscope-manifest=1\nname=NAME\ntag=TAG\ndisk=DISK\nveth=VETH\nsubnet=NET/30\nport=PORT\niface-list=IFACE_LIST\naddr-list=ADDR_LIST\nexpose=LAN_IP\ncontainer-name=CONTAINER_NAME\nremote-image=\ntoken=yes\ndir=MANIFEST_DIR\nfile=MANIFEST_FILE\nobject=/interface/veth name=VETH\nobject=/ip/address interface=VETH\nobject=/interface/list/member interface=VETH list=IFACE_LIST\nobject=/ip/firewall/address-list list=ADDR_LIST address=NET/30\nobject=/ip/firewall/nat chain=dstnat dst-address=LAN_IP dst-port=PORT protocol=tcp\nobject=/ip/firewall/filter chain=forward dst-address=AGENT_IP dst-port=PORT protocol=tcp\nfile=IMAGE_FILE\nobject=/container/envs list=ENVLIST\nobject=/container interface=VETH\ndir=ROOT_DIR\n"; :if ([:len [/file/find name="MANIFEST_FILE"]] > 0) do={ /file/set [find name="MANIFEST_FILE"] contents=$m } else={ /file/add name="MANIFEST_FILE" contents=$m }
   ```
 
 Then add the two rules:
 
-```text
+```routeros
 /ip/firewall/nat/add chain=dstnat dst-address=LAN_IP protocol=tcp dst-port=PORT action=dst-nat to-addresses=AGENT_IP to-ports=PORT comment="TAG"
 ```
 
-```text
+```routeros
 :local d [/ip/firewall/filter/find chain=forward action=drop]; :if ([:len $d] > 0) do={ /ip/firewall/filter/add chain=forward dst-address=AGENT_IP protocol=tcp dst-port=PORT connection-nat-state=dstnat action=accept comment="TAG" place-before=($d->0) } else={ /ip/firewall/filter/add chain=forward dst-address=AGENT_IP protocol=tcp dst-port=PORT connection-nat-state=dstnat action=accept comment="TAG" }
 ```
 
 ### Start and verify
 
-```text
+```routeros
 /container/start [find comment="TAG"]
 ```
 
 On the router:
 
-```text
+```routeros
 /container/print where comment="TAG"
 /log/print where topics~"container"
 :put ([/tool/fetch url="http://AGENT_IP:PORT/healthz" output=user as-value]->"data")
@@ -1320,17 +1320,17 @@ envlist; the last removes the manifest and the `MANIFEST_DIR` directory when not
 it, and stops, keeping the manifest, if any object with the tag is left. If you exposed the agent,
 remove its two rules first:
 
-```text
+```routeros
 /ip/firewall/filter/remove [find chain=forward dst-address="AGENT_IP" dst-port="PORT" protocol="tcp" comment="TAG"]
 ```
 
-```text
+```routeros
 /ip/firewall/nat/remove [find chain=dstnat dst-address="LAN_IP" dst-port="PORT" protocol="tcp" comment="TAG"]
 ```
 
 Then the rest:
 
-```text
+```routeros
 :local had [:len [/container/find comment="TAG"]]; :do { /container/stop [find comment="TAG"] } on-error={}; :local s 0; :while (([:len [/container/find comment="TAG" running]] + [:len [/container/find comment="TAG" stopping]]) > 0 && $s < 30) do={ :delay 1s; :set s ($s + 1) }; /container/remove [find comment="TAG"]; :local i 0; :while ([:len [/container/find comment="TAG"]] > 0 && $i < 20) do={ :delay 1s; :set i ($i + 1) }; :if ($had > 0) do={ :local r 0; :while ([:len [/file/find name="ROOT_DIR"]] > 0 && ([:len [/container/find root-dir="/ROOT_DIR"]] + [:len [/container/find root-dir="ROOT_DIR"]]) = 0 && $r < 10) do={ :delay 1s; :set r ($r + 1) }; :if ([:len [/file/find name="ROOT_DIR"]] > 0 && ([:len [/container/find root-dir="/ROOT_DIR"]] + [:len [/container/find root-dir="ROOT_DIR"]]) = 0) do={ :do { /file/remove [find name="ROOT_DIR"] } on-error={} } }; :if ([:len [/container/envs/find list="ENVLIST" key="MIKROSCOPE_TAG" value="TAG"]] > 0) do={ /container/envs/remove [find list="ENVLIST" key!="MIKROSCOPE_TAG"]; /container/envs/remove [/container/envs/find list="ENVLIST" key="MIKROSCOPE_TAG" value="TAG"] }
 /ip/firewall/address-list/remove [find list="ADDR_LIST" address="NET/30" comment="TAG"]
 /interface/list/member/remove [find interface="VETH" list="IFACE_LIST" comment="TAG"]
@@ -1342,7 +1342,7 @@ Then the rest:
 If a tar is still there because extraction timed out, remove it too:
 `/file/remove [find name="IMAGE_FILE"]`. Then check that nothing is left; this prints `0`:
 
-```text
+```routeros
 :put ([:len [/interface/veth/find comment="TAG"]] + [:len [/ip/address/find comment="TAG"]] + [:len [/interface/list/member/find comment="TAG"]] + [:len [/ip/firewall/address-list/find comment="TAG"]] + [:len [/ip/firewall/nat/find comment="TAG"]] + [:len [/ip/firewall/filter/find comment="TAG"]] + [:len [/container/find comment="TAG"]] + [:len [/container/envs/find list="ENVLIST"]] + [:len [/file/find name="MANIFEST_FILE"]])
 ```
 
@@ -1637,7 +1637,7 @@ In the terminal, set `ignore-remote-image-change`, and name `restart-policy` in 
 `/container/set` that leaves `restart-policy` out puts it back to `always`
 ([verified](https://jmrp.io/docs/mikroscope/about/status/#verified-container-set-resets-restart-policy)).
 
-```text
+```routeros
 /container/set [find comment="mikroscope:mikroscope (managed by mikroscope)"] ignore-remote-image-change=yes restart-policy=on-failure
 :put [/container/get [find comment="mikroscope:mikroscope (managed by mikroscope)"] ignore-remote-image-change]
 :put [/container/get [find comment="mikroscope:mikroscope (managed by mikroscope)"] restart-policy]
@@ -1670,7 +1670,7 @@ For the image tar, delete it now: **Files**, select `mikroscope.tar`, **Remove**
 
 3. In the terminal, ask the agent from the router:
 
-   ```text
+   ```routeros
    :put ([/tool/fetch url="http://172.30.10.2:9123/healthz" output=user as-value]->"data")
    ```
 

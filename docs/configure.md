@@ -358,7 +358,7 @@ The checks doctor runs:
   ([measured](https://jmrp.io/docs/mikroscope/about/status/#verified-tmpfs-zero-writes)), and nothing survives a reboot. A router
   without that disk fails `doctor`, whose fix adds one:
 
-  ```text
+  ```routeros
   /disk/add type=tmpfs tmpfs-max-size=64M slot=tmpfs
   ```
 
@@ -561,7 +561,7 @@ there; it shows up as a failed login, `api <address>: …`.
 1. Create a group that grants `read`, `api` and `test` and denies by name every other policy
    [RouterOS defines](https://help.mikrotik.com/docs/spaces/ROS/pages/8978504/User):
 
-   ```text
+   ```routeros
    /user/group/add name=mikroscope policy=read,api,test,!write,!ftp,!local,!telnet,!ssh,!reboot,!policy,!winbox,!password,!web,!sniff,!sensitive,!romon,!rest-api
    ```
 
@@ -569,7 +569,7 @@ there; it shows up as a failed login, `api <address>: …`.
 
 2. Create the user in that group, restricted to the collector's address:
 
-   ```text
+   ```routeros
    /user/add name=mikroscope group=mikroscope password=<generate> address=<collector host>/32
    ```
 
@@ -663,14 +663,14 @@ access](https://jmrp.io/docs/mikroscope/install/reaching-the-agent/)).
 `install --expose` adds, after the list memberships and before the container, a dst-nat from the
 router's LAN address on the agent port to the veth:
 
-```text
+```routeros
 /ip/firewall/nat/add chain=dstnat dst-address=<router LAN IP> protocol=tcp dst-port=9123 action=dst-nat to-addresses=172.30.10.2 to-ports=9123 comment="mikroscope:mikroscope (managed by mikroscope)"
 ```
 
 and a forward accept for that flow, placed before the first `chain=forward action=drop` rule, or
 appended when the forward chain has no drop:
 
-```text
+```routeros
 /ip/firewall/filter/add chain=forward dst-address=172.30.10.2 protocol=tcp dst-port=9123 connection-nat-state=dstnat action=accept comment="mikroscope:mikroscope (managed by mikroscope)" place-before=<first forward drop>
 ```
 

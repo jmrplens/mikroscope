@@ -34,13 +34,13 @@ kernel. Es un paso seguro: un puerto muerto no interrumpe ningún tráfico.
 1. Busca un puerto realmente muerto, con cero paquetes en ambos sentidos en toda
    su vida:
 
-   ```text
+   ```routeros
    /interface/print stats where name="ether6" or name="ether7"
    ```
 
 2. Con el agente en marcha, apágalo y enciéndelo:
 
-   ```text
+   ```routeros
    /interface/ethernet/disable [find name="ether6"]
    :delay 4s
    /interface/ethernet/enable  [find name="ether6"]

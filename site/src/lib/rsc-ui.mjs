@@ -25,6 +25,7 @@ import {
 	uninstallCommand,
 	verifyCommands,
 } from "./rsc.mjs";
+import { highlightInto } from "./rsc-highlight.mjs";
 
 /** @typedef {import("./rsc.mjs").Spec} Spec */
 /** @typedef {import("./rsc.mjs").GenOptions} GenOptions */
@@ -293,8 +294,23 @@ export function start() {
 		token: "",
 	};
 
+	// An output marked data-gen-hl runs on the router and is coloured as RouterOS
+	// (src/lib/rsc-highlight.mjs); its text is the same either way. Should the
+	// colouring throw (a browser whose RegExp cannot compile the grammar), the
+	// output is still written, plain: `current` already holds the new script,
+	// and what copy and download hand out must be what the page shows.
 	const setOut = (/** @type {string} */ name, /** @type {string} */ text) => {
-		for (const el of all(`[data-gen-out="${name}"]`)) el.textContent = text;
+		for (const el of all(`[data-gen-out="${name}"]`)) {
+			if (!el.hasAttribute("data-gen-hl")) {
+				el.textContent = text;
+				continue;
+			}
+			try {
+				highlightInto(el, text);
+			} catch {
+				el.textContent = text;
+			}
+		}
 	};
 
 	const update = () => {

@@ -68,7 +68,15 @@ const EXTENSIONS = [".ts", ".mjs", ".js", ".astro", ".json", ".tsx"];
 // VERSION bump (.github/RELEASING.md), so VERSION's date already covers it.
 // Counted whole, every entry added under "Unreleased" would re-date every page
 // that shows the version.
-const NOT_CONTENT = new Set(["CHANGELOG.md"]);
+//
+// The RouterOS grammar and its palette: src/lib/rsc-highlight.mjs reads them to
+// colour the script generator's output. They decide the colour of its words,
+// not the words, like the stylesheets, which are not counted either.
+const NOT_CONTENT = new Set([
+	"CHANGELOG.md",
+	"site/src/languages/routeros.tmLanguage.json",
+	"site/src/languages/routeros.palette.json",
+]);
 
 // `import x from "…"`, `import { a,\n b } from "…"`, `export { a } from "…"`.
 // The `type` group separates the type-only imports. Quotes, backticks and

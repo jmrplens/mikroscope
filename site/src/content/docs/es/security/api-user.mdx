@@ -64,7 +64,7 @@ ahí; aparece como un inicio de sesión fallido, `api <dirección>: …`.
 1. Crea un grupo que conceda `read`, `api` y `test` y niegue por su nombre todas las demás
    políticas [que define RouterOS](https://help.mikrotik.com/docs/spaces/ROS/pages/8978504/User):
 
-   ```text
+   ```routeros
    /user/group/add name=mikroscope policy=read,api,test,!write,!ftp,!local,!telnet,!ssh,!reboot,!policy,!winbox,!password,!web,!sniff,!sensitive,!romon,!rest-api
    ```
 
@@ -72,7 +72,7 @@ ahí; aparece como un inicio de sesión fallido, `api <dirección>: …`.
 
 2. Crea el usuario en ese grupo, restringido a la dirección del colector:
 
-   ```text
+   ```routeros
    /user/add name=mikroscope group=mikroscope password=<generate> address=<collector host>/32
    ```
 

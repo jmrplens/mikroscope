@@ -261,7 +261,7 @@ In the terminal, set `ignore-remote-image-change`, and name `restart-policy` in 
 `/container/set` that leaves `restart-policy` out puts it back to `always`
 (<TestedOn of="container-set-resets-restart-policy">verified</TestedOn>).
 
-```text
+```routeros
 /container/set [find comment="mikroscope:mikroscope (managed by mikroscope)"] ignore-remote-image-change=yes restart-policy=on-failure
 :put [/container/get [find comment="mikroscope:mikroscope (managed by mikroscope)"] ignore-remote-image-change]
 :put [/container/get [find comment="mikroscope:mikroscope (managed by mikroscope)"] restart-policy]
@@ -294,7 +294,7 @@ For the image tar, delete it now: **Files**, select `mikroscope.tar`, **Remove**
 
 3. In the terminal, ask the agent from the router:
 
-   ```text
+   ```routeros
    :put ([/tool/fetch url="http://172.30.10.2:9123/healthz" output=user as-value]->"data")
    ```
 

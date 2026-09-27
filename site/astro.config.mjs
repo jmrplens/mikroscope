@@ -12,6 +12,7 @@ import { lastmodTable } from "./src/lib/lastmod.mjs";
 import { metaCsp } from "./src/lib/meta-csp.mjs";
 import { readRelease, withVersion } from "./src/lib/release.mjs";
 import { versionPlaceholder } from "./src/lib/version-placeholder.mjs";
+import routeros from "./src/languages/routeros.tmLanguage.json" with { type: "json" };
 
 const siteRoot = fileURLToPath(new URL(".", import.meta.url));
 const siteBase = "/mikroscope";
@@ -421,7 +422,20 @@ export default defineConfig({
 			// fence lost `overflow-x: auto`, and the page scrolled sideways to
 			// 845 px at a 390 px viewport (measured 2026-09-15). The `<Code>`
 			// component path was unaffected.
-			expressiveCode: { emitExternalStylesheet: true },
+			//
+			// `shiki.langs` adds the RouterOS grammar (src/languages/README.md),
+			// for ```routeros fences and <Code lang="routeros">. It sits here and
+			// not in ec.config.mjs because it is data: the <Code> component
+			// reads a serialised copy of these options, and a JSON grammar
+			// survives the copy. scripts/check-rsc-highlight.mjs reads this
+			// object to know how Expressive Code colours tokens, and fails on an
+			// option here it does not model. The cast: TypeScript types the JSON
+			// by its literal shape, which does not fit shiki's grammar type
+			// although the grammar does; shiki checks the grammar as it loads it.
+			expressiveCode: {
+				emitExternalStylesheet: true,
+				shiki: { langs: [/** @type {any} */ (routeros)] },
+			},
 			// The information architecture, in reading order: start, install,
 			// configure, use, then reference, explanation, the evidence and the
 			// project. A reader who came to do something finds it in the first

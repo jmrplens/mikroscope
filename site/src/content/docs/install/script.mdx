@@ -68,7 +68,7 @@ It runs as one `{ … }` block, in this order:
 1. Upload `install.rsc` in Files (WebFig or Winbox), or with `scp`.
 2. Run:
 
-   ```text
+   ```routeros
    /import file-name=install.rsc
    ```
 
@@ -102,7 +102,7 @@ Script Error: mikroscope: upload mikroscope.tar first (:error; line 20) (:import
 
 On the router:
 
-```text
+```routeros
 /container/print where comment="mikroscope:mikroscope (managed by mikroscope)"
 :put ([/tool/fetch url="http://172.30.10.2:9123/healthz" output=user as-value]->"data")
 ```
@@ -116,7 +116,7 @@ recognises the install and probes the agent.
 The script writes the install manifest first, `mikroscope/<name>.manifest.txt` on the install's
 disk. Read it on the router:
 
-```text
+```routeros
 :put [/file/get [find name="mikroscope/mikroscope.manifest.txt"] contents]
 ```
 
