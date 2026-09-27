@@ -176,10 +176,10 @@ make test-lab
   router has no username and no password.
 - **In CI** the repository's secrets `DOCKERHUB_USERNAME` and
   `DOCKERHUB_TOKEN` become these variables for the steps that bring the
-  lab up, run the suite and redact the failure report, and no other step;
-  `ci.yml` and `release.yml` pass the two by name. A fork's pull request, a
+  lab up, run the suite and redact the failure report, and no other step.
+  CI runs the lab weekly and on dispatch only, never on a pull request. A
   repository without `DOCKERHUB_TOKEN`, and a dispatch that checks out another
-  `ref` (which may be a fork's merge commit, code the lab builds and runs)
+  `ref` (which may be a fork's merge commit, code the lab builds and runs),
   run anonymously, as before.
 
 **What was measured**, in the x86_64 lab on 2026-09-27 (CHR 7.24.4), with a

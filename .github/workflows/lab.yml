@@ -16,15 +16,12 @@
 #           (Cortex-A72), correct and slow. Its timings are emulation and are
 #           never quoted as costs.
 #
-# When, as the maintainer decided on 2026-09-26:
-#
-#   x86_64  on a pull request that touches what installs the agent (ci.yml's
-#           `changes` job holds the list of paths), as a release gate
-#           (release.yml), weekly and on dispatch.
-#   arm64   weekly and on dispatch only: not on pull requests and not a
-#           release gate. It adds about an hour of emulation [estimate]
-#           and depends on MikroTik's download server and on Docker Hub being
-#           up, and a release should not wait on either.
+# When, as the maintainer decided on 2026-09-27: weekly on main and on
+# dispatch, both architectures, and never on a pull request or as a release
+# gate: with the install options' scenarios a run holds whatever waits on it
+# for half an hour or more. The weekly run is what notices when something the
+# lab uses changes under it (RouterOS on MikroTik's server, the agent image on
+# Docker Hub).
 #
 # The cache, as the maintainer decided on 2026-09-26: MikroTik's downloads
 # and the provisioned router.
@@ -53,35 +50,30 @@
 # cache scope with somebody else's lab driver, so it restores but never
 # saves.
 #
-# Duration. NOT MEASURED on a runner yet. The estimates behind the timeouts
-# come from the development machine, where the suite with the install
-# options' scenarios took 28 to 29 min on x86_64 (two runs, 2026-09-27) and
-# 58 min on arm64 (one run, beside an x86_64 one): x86_64 35-45 min in all
-# (setup 1-2, the lab image 1, downloads 0-1.5, provisioning 1, builds 1-2,
-# scenarios 29 and more on a slower runner); arm64 70-120 min. The first
-# dispatch with `arch: both` is the measurement, and its numbers replace
-# these, with the date, as e2e.yml records its own.
+# Duration, on GitHub's runners (x86_64 with KVM; arm64 emulated on an x86_64
+# runner, since the arm64 runner has no /dev/kvm): x86_64 13.5 min and arm64
+# 16.4 min with the lab's first suite (2026-09-26 and -27), and x86_64 30 and
+# 33 min with the install options' scenarios (two runs, 2026-09-27); arm64
+# with them took 58 min on the development machine and is unmeasured on a
+# runner. The timeouts leave room for that.
 #
-# Three ways in, as e2e.yml: called by ci.yml and release.yml with
-# `arch: x86_64`; by hand from the dispatch menu; and weekly on main, which is
-# also the run that fills the cache pull requests read (a cache saved on a
-# pull request's ref is visible to that pull request only).
+# Two ways in: by hand from the dispatch menu, and weekly on main, which is
+# also the run that fills the cache.
 #
 # Docker Hub. The lab router pulls the agent image itself, about a dozen
 # times per run, and Docker Hub counts anonymous pulls per address: 100 per
 # 6 hours, and a runner's address is shared with whatever else ran from it.
 # So the router authenticates when the repository has DOCKERHUB_USERNAME and
 # DOCKERHUB_TOKEN, the token the release also pushes images with (the owner
-# keeps one Docker Hub token; the lab only pulls with it). ci.yml
-# and release.yml pass the two by name, and only the steps that bring the
-# router up, run the suite and redact the report see them, as
+# keeps one Docker Hub token; the lab only pulls with it). Only the steps
+# that bring the router up, run the suite and redact the report see them, as
 # LAB_REGISTRY_USER and LAB_REGISTRY_TOKEN; mikroscope-lab gives them to
 # /container/config in a file at every boot, never on a command line, with
 # registry-url=registry-1.docker.io (no scheme: RouterOS 7.24.4 presents the
 # credential for a reference whose host is registry-url as written, measured
-# in the lab on 2026-09-27), and the cached snapshot never has them. A fork's
-# pull request, a repository without the pull token, and a dispatch that
-# checks out another `ref` get neither, and the router pulls anonymously, as
+# in the lab on 2026-09-27), and the cached snapshot never has them. A repository
+# without the token, and a dispatch that checks out another `ref`, get
+# neither, and the router pulls anonymously, as
 # before: that `ref` can be a fork's merge SHA, whose code the lab builds
 # and runs, and the token must not be in its environment. The scenarios that
 # test a router with no credential (S1, S18 and two golden scripts) boot
@@ -109,25 +101,6 @@ on:
         description: "RouterOS version; empty means the Makefile's LAB_ROS"
         default: ""
         type: string
-  workflow_call:
-    inputs:
-      ref:
-        description: "Git ref to check out; empty means the calling workflow's ref"
-        default: ""
-        type: string
-      arch:
-        description: "x86_64, arm64 or both; ci.yml and release.yml pass x86_64"
-        default: x86_64
-        type: string
-    # Passed by name, never `secrets: inherit`: only the Docker Hub account
-    # and its token reach this workflow.
-    secrets:
-      DOCKERHUB_USERNAME:
-        description: "The Docker Hub account the lab router pulls as"
-        required: false
-      DOCKERHUB_TOKEN:
-        description: "That account's Docker Hub token (the release's; the lab only pulls with it)"
-        required: false
 
 permissions:
   contents: read
@@ -230,29 +203,6 @@ jobs:
           echo "LAB_ROS=${ros}" >> "$GITHUB_ENV"
           echo "version=${ros}" >> "$GITHUB_OUTPUT"
           echo "RouterOS ${ros}, CHR ${LAB_ARCH}"
-
-      # On the release gate the checkout IS the tag being released, and the
-      # Makefile's default, the newest tag reachable from HEAD, would name an
-      # agent image GoReleaser pushes only after this gate has passed. The
-      # pull scenarios take the release before it instead; the branch's own
-      # agent is what the tar scenarios test.
-      - name: Pick the agent image the pull scenarios pull
-        if: github.ref_type == 'tag' && !inputs.ref
-        run: |
-          set -euo pipefail
-          repo=$(sed -n 's/^LAB_REMOTE_IMAGE *?= *\([^:]*\):.*/\1/p' Makefile)
-          if [ -z "$repo" ]; then
-            echo "::error::LAB_REMOTE_IMAGE is not defined in the Makefile"
-            exit 1
-          fi
-          if prev=$(git describe --tags --abbrev=0 'HEAD^' 2>/dev/null); then
-            image="${repo}:${prev#v}"
-          else
-            echo "::warning::no release tag before this one; the pull scenarios pull ${repo}:latest"
-            image="${repo}:latest"
-          fi
-          echo "LAB_REMOTE_IMAGE=${image}" >> "$GITHUB_ENV"
-          echo "pull scenarios: ${image}"
 
       - name: Restore MikroTik's downloads
         id: downloads

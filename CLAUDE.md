@@ -78,9 +78,10 @@ seconds. Writes, reboots, device-mode and power cuts need no consent there.
 - **Its limits.** No board, flash, sensors or switch chip; the free CHR licence
   caps what the router sends at 1 Mbit/s per interface. Arm64 lab timings and
   CPU figures are emulation, never costs.
-- **CI** (`.github/workflows/lab.yml`): x86_64 on a pull request that touches
-  the installer's paths and as a release gate; both architectures weekly and
-  on dispatch; the Actions cache keeps MikroTik's downloads (pinned in
+- **CI** (`.github/workflows/lab.yml`): both architectures weekly and on
+  dispatch, never on a pull request or as a release gate (a run takes half an
+  hour or more), so run `make test-lab` before a pull request that touches
+  the installer; the Actions cache keeps MikroTik's downloads (pinned in
   `test/lab/SHA256SUMS`) and the provisioned snapshot, which carries no
   credential. `LAB_KIND=iso`, RouterOS x86 from the installation ISO, is an
   opt-in recipe for x86_64 that CI never runs (a 24-hour trial licence).

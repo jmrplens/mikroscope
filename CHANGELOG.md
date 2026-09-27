@@ -71,9 +71,10 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   that could not start (`Exec format error`, `Segmentation fault`), most
   likely because the install had not reached the disk yet; on x86_64 three
   of three came back. The start-on-boot scenario waits 45 s before its cut.
-- **The lab in CI** (`.github/workflows/lab.yml`): x86_64 on a pull request
-  that touches what installs the agent, and as a gate before GoReleaser;
-  both architectures weekly (Mondays 05:03 UTC) and on dispatch. The Actions
+- **The lab in CI** (`.github/workflows/lab.yml`): both architectures weekly
+  (Mondays 05:03 UTC) and on dispatch, never on a pull request or as a gate
+  before GoReleaser, since with the install options' scenarios a run held a
+  pull request for 30 to 33 min on GitHub's runners (x86_64, 2026-09-27). The Actions
   cache keeps MikroTik's downloads, pinned by SHA-256 in
   `test/lab/SHA256SUMS`, and the provisioned snapshot, which carries no
   credential; a failed or timed-out run uploads the console, container and

@@ -272,6 +272,9 @@ reanudó al primer reintento. La sonda de KVM en el runner arm64 de GitHub encon
 `ubuntu-24.04-arm` con 4 CPU y sin `/dev/kvm`, así que el laboratorio arm64 sigue emulado en un
 runner x86_64.
 
+Las dos ejecuciones en el pull request #70 lo retuvieron 30 y 33 min, y por eso `lab.yml` se ejecuta ahora
+solo cada semana y a petición, nunca en un pull request ni antes de una publicación.
+
 ## Equipos y versiones {#un-equipo-dos-versiones-de-routeros}
 
 <ScrollTable label="Todos los RouterOS en los que ha funcionado mikroscope">

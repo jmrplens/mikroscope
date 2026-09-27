@@ -257,6 +257,9 @@ In the first two runs one download from MikroTik was cut (`connection reset by p
 first retry. The probe for KVM on GitHub's arm64 runner found `ubuntu-24.04-arm` with 4 CPUs and no
 `/dev/kvm`, so the arm64 lab stays emulated on an x86_64 runner.
 
+The two runs on pull request #70 held it for 30 and 33 min, which is why `lab.yml` now runs weekly and on
+dispatch only, never on a pull request or before a release.
+
 ## Devices and versions {#one-device-two-routeros-versions}
 
 <ScrollTable label="Every RouterOS mikroscope has run on">

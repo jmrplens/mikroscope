@@ -238,6 +238,9 @@ In the first two runs one download from MikroTik was cut (`connection reset by p
 first retry. The probe for KVM on GitHub's arm64 runner found `ubuntu-24.04-arm` with 4 CPUs and no
 `/dev/kvm`, so the arm64 lab stays emulated on an x86_64 runner.
 
+The two runs on pull request #70 held it for 30 and 33 min, which is why `lab.yml` now runs weekly and on
+dispatch only, never on a pull request or before a release.
+
 ### Devices and versions
 
 | Device                    | Kind                            | RouterOS | When                                        | What ran there                                                                                                                                  |
@@ -1885,8 +1888,8 @@ Source: <https://jmrp.io/docs/mikroscope/reference/testing/>
 
 Four suites test mikroscope, and none of them needs a router. Run the one that
 covers your change before you open a pull request. CI runs the first three on
-every pull request, and the lab when a pull request touches what installs the
-agent.
+every pull request. The lab runs weekly and on dispatch, so run it yourself
+before a pull request that touches what installs the agent.
 
 | Suite                | Command                             | Needs                                | What it proves                                                                                         |
 | -------------------- | ----------------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------ |
@@ -2056,7 +2059,7 @@ is [`test/lab/README.md`](https://github.com/jmrplens/mikroscope/blob/main/test/
 
 | Lab    | Runs as                                            | Use it for                                                                                        |
 | ------ | -------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| x86_64 | CHR under KVM                                      | every scenario, fast; CI runs it on pull requests and before a release                            |
+| x86_64 | CHR under KVM                                      | every scenario, fast; CI runs it weekly and on dispatch                                           |
 | arm64  | CHR emulated by QEMU (TCG), CPU model `cortex-a72` | the arm64 `container` package and agent image, and RouterOS choosing the image for arm64; slow   |
 
 A third lab, RouterOS x86 installed from MikroTik's ISO
@@ -2246,24 +2249,18 @@ Each setting goes on the `make` line or in the environment.
 
 #### Lab in CI
 
-| Lab    | Pull request                            | Release                  | Weekly | On dispatch |
-| ------ | --------------------------------------- | ------------------------ | ------ | ----------- |
-| x86_64 | when it touches what installs the agent | a gate before GoReleaser | yes    | yes         |
-| arm64  | no                                      | no                       | yes    | yes         |
+The workflow [`.github/workflows/lab.yml`](https://github.com/jmrplens/mikroscope/blob/main/.github/workflows/lab.yml) runs the same `make lab-up` and
+`make test-lab`, with `MIKROSCOPE_LAB_REQUIRED=1`, for both architectures,
+weekly on main and on dispatch. It never runs on a pull request or before a
+release: a run takes half an hour or more. Run `make test-lab` yourself before
+a pull request that touches what installs the agent: `internal/router`,
+`internal/image`, `internal/agent`, `cmd/mikroscope`, `cmd/mikroscope-agent`,
+`Dockerfile.agent`, the `Makefile`, the agent tar and round-trip scripts, the
+RouterOS scripts the site renders, and the lab, its driver and its suite. A
+dispatch takes `ref`, `arch` (`both`, `x86_64` or `arm64`) and `ros`.
 
-The workflow, [`.github/workflows/lab.yml`](https://github.com/jmrplens/mikroscope/blob/main/.github/workflows/lab.yml), runs the same
-`make lab-up` and `make test-lab`, with `MIKROSCOPE_LAB_REQUIRED=1`. What
-counts as "what installs the agent" is the list of paths in the `changes` job
-of `ci.yml`: `internal/router`, `internal/image`, `internal/agent`,
-`cmd/mikroscope`, `cmd/mikroscope-agent`, `Dockerfile.agent`, the `Makefile`,
-the agent tar and round-trip scripts, the RouterOS scripts the site renders,
-the lab, its driver and its suite, and `lab.yml` itself. A dispatch takes
-`ref`, `arch` (`both`, `x86_64` or `arm64`) and `ros`.
-
-arm64 is not a gate: it runs under emulation, which is slow, and it depends on
-MikroTik's download server and on Docker Hub being up. On a release, the pull
-scenarios pull the release before it, because the new tag's agent image is
-pushed only after the gates pass.
+arm64 runs under emulation, which is slow, and depends on MikroTik's download
+server and on Docker Hub being up.
 
 The Actions cache keeps MikroTik's downloads per architecture and RouterOS
 version, checked against the SHA-256 sums the repository pins

@@ -15,8 +15,9 @@ import TestedOn from "../../../../components/TestedOn.astro";
 
 Cuatro baterías prueban mikroscope, y ninguna necesita un router. Ejecuta la
 que cubre tu cambio antes de abrir un pull request. La CI ejecuta las tres
-primeras en cada pull request, y el laboratorio cuando un pull request toca lo
-que instala el agente.
+primeras en cada pull request. El laboratorio se ejecuta cada semana y a
+petición, así que ejecútalo tú antes de un pull request que toque lo que
+instala el agente.
 
 <ScrollTable label="Las cuatro baterías de pruebas: la orden, qué necesita cada una y qué demuestra">
 
@@ -215,7 +216,7 @@ instalador, está en <Src path="test/lab/README.md" />.
 
 | Laboratorio | Se ejecuta como                                          | Úsalo para                                                                                                   |
 | ----------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| x86_64      | CHR bajo KVM                                             | todos los escenarios, rápido; la CI lo ejecuta en los pull requests y antes de una publicación               |
+| x86_64      | CHR bajo KVM                                             | todos los escenarios, rápido; la CI lo ejecuta cada semana y a petición                                    |
 | arm64       | CHR emulado por QEMU (TCG), modelo de CPU `cortex-a72`   | el paquete `container` y la imagen del agente de arm64, y RouterOS eligiendo la imagen para arm64; lento     |
 
 </ScrollTable>
@@ -424,30 +425,19 @@ Cada ajuste va en la línea de `make` o en el entorno.
 
 ### El laboratorio en la CI {#el-laboratorio-en-la-ci}
 
-<ScrollTable label="Cuándo ejecuta la CI el laboratorio, por arquitectura">
+El flujo <Src path=".github/workflows/lab.yml" /> ejecuta los mismos `make lab-up` y
+`make test-lab`, con `MIKROSCOPE_LAB_REQUIRED=1`, para las dos arquitecturas,
+cada semana en main y a petición. Nunca se ejecuta en un pull request ni antes
+de una publicación: una ejecución tarda media hora o más. Ejecuta tú
+`make test-lab` antes de un pull request que toque lo que instala el agente:
+`internal/router`, `internal/image`, `internal/agent`, `cmd/mikroscope`,
+`cmd/mikroscope-agent`, `Dockerfile.agent`, el `Makefile`, los guiones del tar
+del agente y del viaje de ida y vuelta, los guiones de RouterOS que muestra el
+sitio, y el laboratorio, su conductor y su batería. Una ejecución a petición
+admite `ref`, `arch` (`both`, `x86_64` o `arm64`) y `ros`.
 
-| Laboratorio | Pull request                         | Publicación                    | Semanal | A petición |
-| ----------- | ------------------------------------ | ------------------------------ | ------- | ---------- |
-| x86_64      | cuando toca lo que instala el agente | una puerta antes de GoReleaser | sí      | sí         |
-| arm64       | no                                   | no                             | sí      | sí         |
-
-</ScrollTable>
-
-El flujo, <Src path=".github/workflows/lab.yml" />, ejecuta los mismos
-`make lab-up` y `make test-lab`, con `MIKROSCOPE_LAB_REQUIRED=1`. Qué cuenta
-como «lo que instala el agente» es la lista de rutas del trabajo `changes` de
-`ci.yml`: `internal/router`, `internal/image`, `internal/agent`,
-`cmd/mikroscope`, `cmd/mikroscope-agent`, `Dockerfile.agent`, el `Makefile`,
-los guiones del tar del agente y del viaje de ida y vuelta, los guiones de
-RouterOS que muestra el sitio, el laboratorio, su conductor y su batería, y el
-propio `lab.yml`. Una ejecución a petición admite `ref`, `arch` (`both`,
-`x86_64` o `arm64`) y `ros`.
-
-arm64 no es una puerta: se ejecuta bajo emulación, que es lenta, y depende de
-que el servidor de descargas de MikroTik y Docker Hub estén disponibles. En
-una publicación, los escenarios de descarga descargan la versión anterior,
-porque la imagen del agente de la nueva etiqueta solo se publica cuando las
-puertas han pasado.
+arm64 se ejecuta bajo emulación, que es lenta, y depende de que el servidor de
+descargas de MikroTik y Docker Hub estén disponibles.
 
 La caché de Actions guarda las descargas de MikroTik por arquitectura y
 versión de RouterOS, comprobadas contra las sumas SHA-256 que el repositorio

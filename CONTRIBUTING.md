@@ -104,8 +104,8 @@ go build ./... && go test ./...
 - `make test-lab` (after `make lab-up`) for any change to `internal/router`,
   the deploy verbs (`doctor`, `plan`, `install`, `upgrade`, `status`,
   `uninstall`), the image, or how the agent starts: it runs them against a
-  real RouterOS in the [virtual lab](#the-virtual-routeros-lab). CI runs it on
-  x86_64 for a pull request that touches those paths.
+  real RouterOS in the [virtual lab](#the-virtual-routeros-lab). CI does not
+  run it on pull requests, so run it before you open one.
 - `make shellcheck` is inside `make analyze` and runs over `install.sh`,
   every script under `scripts/` and `.github/scripts/`, and the lab's
   wrapper (`test/lab/lab.sh`). actionlint runs
@@ -334,15 +334,10 @@ LAB_ARCH=arm64 bin/mikroscope-lab lock go test -tags labe2e -count=1 -timeout 15
   and neither goes into a commit, an issue, an artifact or a screenshot.
 
 **In CI.** `.github/workflows/lab.yml` runs the same `make lab-up` and
-`make test-lab`. x86_64, under KVM, runs on a pull request that touches the
-installer's paths (`internal/router`, `internal/image`, `internal/agent`,
-`cmd/mikroscope`, `cmd/mikroscope-agent`, `Dockerfile.agent`, the
-`Makefile`, the agent tars, the round trip, the lab, its driver
-(`cmd/mikroscope-lab`, `internal/lab`) and its suite, and `lab.yml` itself;
-`ci.yml`'s `changes` job holds the list), as a gate before
-every release, weekly and on dispatch. arm64 runs weekly and on dispatch
-only: under emulation it takes an estimated 25 to 35 minutes, which the
-first dispatch will measure, and a release does not wait on it. The Actions
+`make test-lab`, for both architectures, weekly on main and on dispatch. It
+never runs on a pull request or as a release gate: with the install options'
+scenarios a run takes half an hour or more, so run `make test-lab` yourself
+before a pull request that touches the installer. The Actions
 cache keeps MikroTik's downloads, checked against `test/lab/SHA256SUMS`, and
 the provisioned router, which carries no credential: each run's `lab-up`
 gives it that run's key and password. A failed or timed-out run uploads the
