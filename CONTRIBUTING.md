@@ -255,6 +255,32 @@ with its own container, ports, lock and disks. A change to the driver runs
 fake router cover provisioning, the lock, the downloads and the CLI's
 refusals, and then the lab suite on a real lab.
 
+The lab router pulls from Docker Hub anonymously, and Docker Hub allows an
+address 100 anonymous pulls per 6 hours; a suite run pulls about a dozen
+times. If yours runs out, or you run the suite often, give the router a
+Docker Hub account with a **read-only** personal access token ("Public Repo
+Read-only": the lab only pulls). Keep the two in a file of your own, mode
+0600 and outside the repository, and export them from it rather than typing
+them on `make`'s command line, where the process table shows them:
+
+```sh
+set -a; . ~/.config/mikroscope/lab-registry.env; set +a   # LAB_REGISTRY_USER, LAB_REGISTRY_TOKEN
+make lab-reset                # every up and reset gives the router the credential
+```
+
+The driver gives `/container/config` the two at every `up` and `reset`, in a
+file it imports and deletes, never on a command line; the snapshot never has
+them, and without them nothing changes. `registry-url` is
+`registry-1.docker.io` with no scheme: RouterOS 7.24.4 presents the
+credential for a reference whose host is `registry-url` as written, and
+under `https://registry-1.docker.io` every pull of the suite stayed
+anonymous. `LAB_REGISTRY_URL` names another registry's host. The scenarios
+that test a router with no credential boot without it anyway. In CI the
+secrets `DOCKERHUB_USERNAME` and `DOCKERHUB_PULL_TOKEN` (read-only; never
+`DOCKERHUB_TOKEN`, which can push) feed the same variables, and a fork's pull
+request runs anonymously. `test/lab/README.md` ("Pulling as an account") has
+the rest.
+
 The two labs are separate containers and run side by side, and so can their
 suites, but not as two `make test-lab` in one checkout: each rebuilds the
 agent tars, and one can read a tar the other is halfway through writing.
@@ -347,7 +373,7 @@ trial runs out was not observed.
   not to a Cortex-A72.
 - **Docker Hub counts anonymous pulls** per address, shared on a CI runner, so
   the suite installs the branch's tar and pulls only in the scenarios that
-  test the pull.
+  test the pull, as `LAB_REGISTRY_USER` when that is set.
 
 ### On a real router
 

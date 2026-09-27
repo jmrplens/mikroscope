@@ -85,7 +85,8 @@ that CHR does not, which is little, and where its licence stops it.
 - Network access: to Docker Hub and Debian's mirrors the first time the lab
   image is built (`debian:trixie-20260918-slim` and its packages), to
   `download.mikrotik.com` once per version, and to Docker Hub for whatever
-  the router pulls.
+  the router pulls, anonymously unless you give it an account
+  ([pulling as an account](#pulling-as-an-account)).
 - Free ports on the host's loopback: 220N, 800N, 870N and 910N, with N = 1 for
   x86_64, 2 for arm64 and 3 for the ISO lab, plus
   [an instance's](#several-labs-on-one-host) offset.
@@ -95,6 +96,111 @@ that CHR does not, which is little, and where its licence stops it.
   stderr.
   The binary is mounted into a throwaway container, so it must be a static
   Linux binary (`make build` and the release are).
+
+## Pulling as an account
+
+The lab router pulls the agent image itself, from Docker Hub unless a
+scenario names another registry, and Docker Hub counts anonymous pulls per
+address: 100 per 6 hours per IPv4 address or IPv6 /64 (Docker's usage page,
+read 2026-09-26). One run of the suite pulls about a dozen times, S5's golden
+scripts twelve of them, and a CI runner's address is shared with whatever
+else ran from it. Given an account, the router pulls as that account, and
+the pulls count against it instead:
+
+```sh
+# ~/.config/mikroscope/lab-registry.env, mode 0600, outside the repository
+LAB_REGISTRY_USER=<the Docker Hub account>
+LAB_REGISTRY_TOKEN=<a personal access token of it, read-only>
+```
+
+```sh
+set -a; . ~/.config/mikroscope/lab-registry.env; set +a
+make lab-reset              # or lab-up: every boot gives the router the credential
+make test-lab
+```
+
+- **A read-only token.** Docker Hub's personal access tokens have a scope,
+  and the lab only pulls: make one with "Public Repo Read-only". A token that
+  can push, the one a release pushes images with, has no place in a lab
+  router's configuration.
+- **How it reaches the router.** `up` and `reset` write
+  `/container/config/set registry-url=… username=… password=…` to a file in
+  the lab container (mode 0600, through docker exec's stdin), copy it to the
+  router with scp, `/import` it and delete it on both: the way the admin
+  password travels. Every value in the file is written in RouterOS's `\HH`
+  escapes, so a token passes whatever printable characters it holds; a space,
+  a control character or a byte beyond ASCII is refused, and so is one of the
+  two variables without the other. Nothing puts the credential on a command
+  line, the host's or the container's, and `mikroscope-lab env` says whether
+  it is set, never what it is. Export the variables from a file, as above:
+  on `make`'s command line they would be in the process table.
+- **The snapshot never has it.** Provisioning takes the snapshot before any
+  boot that gives the credential, so `clean.qcow2`, and CI's cache of it,
+  carries none. Each `up` and `reset` applies it from its own environment; a
+  run without the variables leaves `/container/config` alone, so a router
+  reset without them has none and pulls anonymously, and a live layer keeps
+  what an earlier `up` gave it until the next reset.
+- **`LAB_REGISTRY_URL`** goes into `registry-url`: `registry-1.docker.io`
+  unless set, Docker Hub's host with no scheme. RouterOS presents the
+  username and password for a reference whose host is `registry-url` as
+  written, and for a reference with no host, which it pulls from
+  `registry-url`; mikroscope writes the host into every reference
+  (`registry-1.docker.io/jmrplens/…`). With `https://registry-1.docker.io`,
+  the value MikroTik's examples use, every pull of the suite stayed
+  anonymous (the table below). For another registry, give its host as
+  references name it.
+- **What shows it.** `/export` prints
+  `/container config set registry-url=… username=…`, never the password. The
+  suite replaces the user and the token with `<LAB_REGISTRY_USER>` and
+  `<LAB_REGISTRY_TOKEN>` in every line it prints, and CI's failure report
+  does the same in every file it uploads.
+- **Scenarios that boot without it.** A router as its users have it has no
+  credential, so the scenarios that test one boot without the lab's
+  whatever the environment says: S1 (doctor on a stock router), S18 (a pull
+  from GHCR with no credential) and S5's `pull-dockerhub` and `pull-ghcr`
+  scripts, which are the run's one anonymous Docker Hub pull and its pull
+  from GHCR. The variables come back when the test ends, and the next
+  scenario's reset gives the router the credential again.
+  `TestRegistryCredentialAtEveryReset` reads the host's process table every
+  2 ms through a reset and then compares `/container/config` with the
+  variables, printing neither; without the variables it checks that the
+  router has no username and no password.
+- **In CI** the repository's secrets `DOCKERHUB_USERNAME` and
+  `DOCKERHUB_PULL_TOKEN` become these variables for the steps that bring the
+  lab up, run the suite and redact the failure report, and no other step;
+  `ci.yml` and `release.yml` pass the two by name. `DOCKERHUB_TOKEN`, which
+  can push, never reaches the lab. A fork's pull request, or a repository
+  without `DOCKERHUB_PULL_TOKEN`, runs anonymously, as before.
+
+**What was measured**, in the x86_64 lab on 2026-09-27 (CHR 7.24.4), with a
+deliberately wrong credential: `LAB_REGISTRY_USER=lab-invalid` and a 23-byte
+token holding `_ - . $ " \ ?`, which Docker Hub's token endpoint refuses (a
+wrong login asked from the host got 401, no login 200). Each row is one
+container added by hand beside the suite, read from the router's container
+log:
+
+| `registry-url`                                 | `remote-image`                                           | Result                                                |
+| ---------------------------------------------- | -------------------------------------------------------- | ----------------------------------------------------- |
+| `registry-1.docker.io`                         | `registry-1.docker.io/jmrplens/mikroscope-agent:1.3.1`   | `fetch manifest failed: … auth error`: presented      |
+| `https://registry-1.docker.io`                 | `registry-1.docker.io/jmrplens/mikroscope-agent:1.3.1`   | pulled, the 3,093,207-byte layer: not presented       |
+| `https://registry-1.docker.io/`                | `registry-1.docker.io/jmrplens/mikroscope-agent:1.3.1`   | pulled: not presented                                 |
+| `https://registry-1.docker.io`                 | `jmrplens/mikroscope-agent:1.3.1`                        | `auth error`: presented                               |
+| `https://registry-1.docker.io`, no credential  | `jmrplens/mikroscope-agent:1.3.1`                        | pulled                                                |
+| either of the first two                        | `ghcr.io/jmrplens/mikroscope-agent:1.3.1` (the CLI)      | pulled: not presented to ghcr.io, or ignored there    |
+
+A router given a credential does not fall back to an anonymous pull: the
+failed pulls stayed failed. With the same credential given as the lab gives
+it, `registry-url=registry-1.docker.io`, S2's install failed the same way
+(`auth error`, the container left as `F - DOWNLOAD/EXTRACT FAILED`), and a
+pull from ghcr.io by the CLI went through. S1, S18, S5's `pull-dockerhub` and
+`pull-ghcr` passed on their boots without it, and so did
+`TestRegistryCredentialAtEveryReset`: through its reset the watch read
+213,700 command lines and saw 19 ssh or scp processes, the token on none, and
+the router's user and token, 11 and 23 bytes, equalled the variables. With no
+variable set, S2 and that test passed, the router with no username and no
+password. A valid read-only token was not tried, so that Docker Hub counts
+the lab's pulls against the account rather than the address is what Docker
+documents, not something measured here.
 
 ## Sharing one lab between checkouts
 
@@ -269,7 +375,9 @@ make test-lab LAB_RUN='S09'                 # one scenario, by a -run pattern
   complete-uninstall scenario's pull and the released 1.3.1 CLI's pull
   installs pull `LAB_REMOTE_IMAGE`, and S18 pulls from GHCR. Docker Hub's
   anonymous limit, 100 pulls per 6 hours per address, holds for a run or
-  two per architecture.
+  two per architecture; with `LAB_REGISTRY_USER` and `LAB_REGISTRY_TOKEN`
+  every Docker Hub pull but S5's `pull-dockerhub` counts against that
+  account instead ([pulling as an account](#pulling-as-an-account)).
 - **Secrets.** S8 uses the agent token from `.env`, and puts it on no command
   line of its own (`docker`, `mikroscope`): the CLI gets it as
   `MIKROSCOPE_TOKEN` through `LAB_CLI_TOKEN=lab`, and `curl` reads its header
@@ -277,7 +385,8 @@ make test-lab LAB_RUN='S09'                 # one scenario, by a -run pattern
   `ssh` on standard input, and `TestTokenIsOnNoCommandLine` reads the host's
   process table every 2 ms through an install and an upgrade to hold it to
   that. The suite also replaces every value of `.env` with `<lab secret>` in each
-  line it logs.
+  line it logs, and the registry credential with `<LAB_REGISTRY_USER>` and
+  `<LAB_REGISTRY_TOKEN>`.
 - **The CLI's working directory** is `build/lab-e2e/<lab>/<test>`, inside
   the repository and so inside one of the two directories `mikroscope-lab cli`
   mounts, per lab so that the x86_64 and arm64 suites do not clear each
@@ -313,12 +422,12 @@ documentation's own pages.
 
 | Test                                          | Profiles                 | What it does                                                                                                    | What it asserts                                                                                                                                                                                   |
 | --------------------------------------------- | ------------------------ | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| S1 `TestS01DoctorOnAStockRouter` | none | doctor with lists `none`, by pull and by tar, no `--arch`; a tar of the other architecture; the default lists | nothing missing, the architecture read from the router; the other tar MISSING; with the default lists only `interface list LAN` MISSING, its fix offering `--iface-list none`; export unchanged |
+| S1 `TestS01DoctorOnAStockRouter` | none, no registry credential | doctor with lists `none`, by pull and by tar, no `--arch`; a tar of the other architecture; the default lists | nothing missing, the architecture read from the router; the other tar MISSING; with the default lists only `interface list LAN` MISSING, its fix offering `--iface-list none`; export unchanged |
 | `TestDoctorWarnsOnStartOnBootWithATmpfsRoot` | tmpfs-disk | doctor `--disk tmpfs --start-on-boot yes` | a WARN, exit 0 |
 | S2 `TestS02PullInstallStatusUpgradeUninstall` | doctor-lists | install *pull*, `/healthz` and `/capabilities`, `status`, `upgrade` to the same reference, `uninstall` | the agent answers; `status` names it; the export equals the baseline; no mikroscope path left |
 | S3 `TestS03TarInstallUpgradeUninstall` | doctor-lists | install from the branch's tar, `upgrade` from it, `uninstall` | the agent reports the branch build's version, commit and date before and after the upgrade, and restarted; clean export |
 | S4 `TestS04PlanScriptImported` | doctor-lists | `plan --rsc` for the tar (the tar put as `mikroscope.tar`) and for *pull*; `/import`; `status`; `uninstall` | the agent answers; `status` recognises the script's objects; clean export |
-| S5 `TestS05GoldenScriptsInstallAndUninstall` | per case | every `lab: true` case of `internal/router/testdata/cases.json`: the site's `.rsc` (equal to the Go golden), `/import`, `/healthz` on its /30, the token checks, `status`, `uninstall` with the case's flags | the agent answers; clean export; no mikroscope path left |
+| S5 `TestS05GoldenScriptsInstallAndUninstall` | per case; `pull-dockerhub` and `pull-ghcr` with no registry credential | every `lab: true` case of `internal/router/testdata/cases.json`: the site's `.rsc` (equal to the Go golden), `/import`, `/healthz` on its /30, the token checks, `status`, `uninstall` with the case's flags | the agent answers; clean export; no mikroscope path left |
 | S6 `TestS06EphemeralThroughAPowerCut` | tmpfs-disk, doctor-lists | install `--ephemeral`, power cycle, `uninstall --ephemeral` | after the cut the container is configured and stopped, its root and image are gone, the tmpfs disk is there and empty, nothing answers; afterwards nothing at all is left, the directory included |
 | S7 `TestS07StartOnBootAfterAPowerCut` | doctor-lists | a persistent install, 45 s for it to reach the disk, power cycle | the agent answers within 90 s, as a new start; clean export |
 | S8 `TestS08ExposeWithToken` | doctor-lists | install `--expose --lan-address 192.168.88.1 --token …`, reads from the LAN side, uninstall with the same flags | `/healthz` 200, `/capabilities` 401 without the token and 200 with it; both firewall rules there, then gone; clean export |
@@ -330,11 +439,12 @@ documentation's own pages.
 | S13 `TestS13UninstallReadsTheStoredShape` | custom-lists | install `--iface-list MYLAN --addr-list MYNETS`; uninstall with no flag; `--iface-list LAN` refused | everything removed; the refusal names both values |
 | S14 `TestS14UninstallWithoutExposeRemovesTheRules` | doctor-lists | install `--expose`; doctor and uninstall with no flag | the leftover WARN; both rules removed; never "verified" over a live rule |
 | S17 `TestS17DoctorNeedsRouterOS724` | none, on a lab below 7.24 (`LAB_ROS=7.23.7`) | doctor | MISSING `RouterOS 7.24 or later`; skips on 7.24 and later |
-| S18 `TestS18GHCRPullWithoutCredential` | doctor-lists | install from `ghcr.io/…` with no `/container/config` username | the agent answers; the router logged the ghcr.io pull |
+| S18 `TestS18GHCRPullWithoutCredential` | doctor-lists, no registry credential | install from `ghcr.io/…` with no `/container/config` username | the agent answers; the router logged the ghcr.io pull |
 | `TestF4UninstallRemovesEverything` | doctor-lists | CLI pull, CLI tar, CLI tar then upgrade, `plan --rsc` imported, each uninstalled | export equal to the one before the install; no mikroscope path |
 | `TestF4KeepsWhatItDidNotCreate` | tmpfs-disk, doctor-lists, plus a user's objects | a flash and an `--ephemeral` install, each uninstalled | the user's `mikroscope/` directory and file, tmpfs disk, `registry-url` and envlist stay |
 | `TestF4ReleasedInstallIsRemovedCompletely` | per case | the v1.3.1 CLI (downloaded, SHA-256 pinned) installs; this CLI uninstalls, or upgrades and uninstalls, with no flag; `--expose`; `--ephemeral` | nothing left, 1.3.1's directory included |
 | `TestTokenIsOnNoCommandLine` | doctor-lists | install and upgrade `--expose`, the host's process table read every 2 ms | the token on no command line, while ssh processes were seen |
+| `TestRegistryCredentialAtEveryReset` | none | a reset, the host's process table read every 2 ms; without `LAB_REGISTRY_*`, a reset | `LAB_REGISTRY_TOKEN` on no command line, and `/container/config` holding the URL, user and token; without the variables, no username and no password |
 | `TestRouterOSWordsReachTheInstallError`, `…UninstallSkipLine` | doctor-lists | a create RouterOS refuses; a container held in `stopping` (stop-signal 28, stop-time 3 min) | RouterOS's words in every output line, whatever ssh's exit status |
 | `TestF2ProbeReadsTheRunningFlag` | doctor-lists, plus a forward drop to the agent | install with the container stopped during the probe; upgrade | "not running", then "runs; this host cannot reach" |
 | `TestRepeatedTarInstalls` | doctor-lists | `LAB_INSTALL_REPEAT` installs and uninstalls on one boot (10 on x86_64, 3 on arm64) | every install and every first uninstall succeeds |
@@ -892,9 +1002,10 @@ installed disk and came up in 8.1 s.
 - **Docker Hub counts the pulls.** Docker's usage page (read 2026-09-26) allows
   unauthenticated clients 100 pulls per 6 hours per IPv4 address or IPv6 /64,
   and a pull of a multi-architecture image counts once per architecture
-  pulled. The router pulls anonymously, from the host's address; on a CI
-  runner that address is shared with whatever else ran from it. So a suite
-  installs from the branch's own tar (`make agent-tars`, `--agent-tar
+  pulled. The router pulls anonymously, from the host's address, unless it
+  is given an account ([pulling as an account](#pulling-as-an-account)); on a
+  CI runner that address is shared with whatever else ran from it. So a
+  suite installs from the branch's own tar (`make agent-tars`, `--agent-tar
   build/agent-images/mikroscope-agent-<arch>.tar`), which also tests the
   branch's agent, and only the scenarios that test the pull itself pull.
 - **arm64 is emulated.** It is the RB5009's architecture, kernel version and

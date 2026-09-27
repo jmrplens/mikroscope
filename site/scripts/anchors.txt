@@ -617,6 +617,7 @@
 /es/reference/testing/#capa-3--los-paneles
 /es/reference/testing/#cómo-ejecutarlo
 /es/reference/testing/#cómo-usar-el-laboratorio
+/es/reference/testing/#descargar-con-una-cuenta
 /es/reference/testing/#dónde-deja-de-ser-un-router
 /es/reference/testing/#el-laboratorio-en-la-ci
 /es/reference/testing/#el-laboratorio-virtual-de-routeros
@@ -1152,6 +1153,7 @@
 /reference/testing/#layer-1--the-contract
 /reference/testing/#layer-2--the-stores
 /reference/testing/#layer-3--the-dashboards
+/reference/testing/#pulling-as-an-account
 /reference/testing/#running-it
 /reference/testing/#running-the-lab
 /reference/testing/#see-also

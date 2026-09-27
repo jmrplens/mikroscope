@@ -79,7 +79,22 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   credential; a failed or timed-out run uploads the console, container and
   test logs with the lab's credentials replaced by their names. Not yet
   run on GitHub's runners: whether they give the job `/dev/kvm`, and how long
-  it takes there, is for the first dispatch to measure.
+  it takes there, is for the first dispatch to measure. The lab router pulls
+  from Docker Hub as an account when the repository has the secrets
+  `DOCKERHUB_USERNAME` and `DOCKERHUB_PULL_TOKEN`, a read-only access token,
+  since Docker Hub allows an address 100 anonymous pulls per 6 hours and a
+  runner's address is shared: they become `LAB_REGISTRY_USER` and
+  `LAB_REGISTRY_TOKEN` for the lab's steps only, and the driver gives them to
+  `/container/config` at every boot in a file it imports and deletes, never
+  on a command line and never in the snapshot, with
+  `registry-url=registry-1.docker.io`. The scheme is left out on purpose:
+  measured in the lab on 2026-09-27 (CHR 7.24.4) with a deliberately wrong
+  credential, RouterOS presented it for `registry-1.docker.io/jmrplens/…`
+  under that value (`auth error`) and not under `https://registry-1.docker.io`
+  (pulled anonymously), and mikroscope writes the host into every reference.
+  Without them, as on a fork's pull request, the router pulls anonymously.
+  S1, S18 and S5's Docker Hub and GHCR scripts, which test a router with no
+  credential, boot without it.
 
 - **`uninstall` removes everything the install created, and nothing
   else.** Every install route writes an install manifest first,

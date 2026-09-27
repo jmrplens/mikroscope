@@ -2358,7 +2358,10 @@ faults stay fixed: the agent token on no command line of the host, RouterOS's
 words in every error, and the probe reading the `running` flag. S5 pulls from
 Docker Hub twelve times and from GHCR once, and a few other scenarios pull
 where the route is the point; the rest install the branch's own tar, which
-also tests the branch's agent. The suite drops every `MIKROSCOPE_*` variable before it runs
+also tests the branch's agent. Those pulls are anonymous unless the lab is
+given an account ([pulling as an account](https://jmrp.io/docs/mikroscope/reference/testing/#pulling-as-an-account)), and the
+scenarios about a router with no credential — S1, S18, and S5's Docker Hub and
+GHCR scripts — boot without it in any case. The suite drops every `MIKROSCOPE_*` variable before it runs
 anything, so a shell set up for a real router cannot steer it.
 
 S7 waits 45 s between the install and the cut. In the arm64 lab, three of
@@ -2426,6 +2429,53 @@ the PC install path, an `x86` board name and the x86 licence — a 24-hour trial
 then a Level 1 registration or a paid licence per device — and nothing the
 agent reads that CHR x86_64 does not.
 
+#### Pulling as an account
+
+The lab router pulls the agent image itself, about a dozen times per run of
+the suite, and Docker Hub allows 100 anonymous pulls per 6 hours per address
+(Docker's usage page, read 2026-09-26); a CI runner shares its address with
+whatever else ran from it. Given a Docker Hub account, the router pulls as
+that account instead:
+
+```sh
+# in a file of your own, mode 0600, outside the repository
+LAB_REGISTRY_USER=<the Docker Hub account>
+LAB_REGISTRY_TOKEN=<a personal access token of it, scope "Public Repo Read-only">
+```
+
+```sh
+set -a; . ~/.config/mikroscope/lab-registry.env; set +a
+make lab-reset                  # every up and reset gives the router the credential
+```
+
+The token is read-only because the lab only pulls: a token that can push has
+no place in a lab router's configuration. The lab's driver writes
+`/container/config/set registry-url=… username=… password=…` to a file,
+copies it to the router, runs it with `/import` and deletes it, at every
+`up` and `reset`, so the credential is on no command line and the cached
+snapshot never has it. Exported from a file, as above, it stays off `make`'s
+command line too, which the process table would show. Without the two
+variables nothing changes and the router pulls anonymously; one without the
+other is refused. The suite prints the user and the token as
+`<LAB_REGISTRY_USER>` and `<LAB_REGISTRY_TOKEN>`, and one of its tests reads
+the host's process table every 2 ms through a reset to hold the driver to all
+of it.
+
+`registry-url` is `registry-1.docker.io`, with no scheme (`LAB_REGISTRY_URL`
+names another registry's host). RouterOS presents the username and password
+for a reference whose host is `registry-url` as written, and mikroscope
+writes the host into every reference. Measured in the x86_64 lab on
+2026-09-27 (CHR 7.24.4) with a deliberately wrong credential: the 1.3.1
+agent image, `registry-1.docker.io/jmrplens/mikroscope-agent`, failed with
+`auth error` under `registry-url=registry-1.docker.io`, and was pulled
+anonymously under `https://registry-1.docker.io`, the value MikroTik's
+examples use, and under the same with a trailing slash. A router that was
+given a credential did not fall back to an anonymous pull. With that
+credential given as the lab gives it, S2's install failed with `auth error`,
+while S1, S18, S5's two scripts and the process-table test passed; with no
+credential, S2 passed. A valid token was not tried: that Docker Hub counts
+the pulls against the account is its documentation, not a measurement.
+
 #### The lab in CI
 
 | Lab    | Pull request                            | Release                  | Weekly | On dispatch |
@@ -2453,6 +2503,15 @@ ssh key never leave the runner. A failed or timed-out run uploads the console
 log, the container log, the lab's status, what an install left on the router,
 and the test log, each credential replaced by its name, and never the `.env`
 or the ssh key.
+
+The router pulls as an account when the repository has two secrets:
+`DOCKERHUB_USERNAME` and `DOCKERHUB_PULL_TOKEN`, a read-only access token of
+that account. They become `LAB_REGISTRY_USER` and `LAB_REGISTRY_TOKEN` for the
+steps that bring the lab up, run the suite and redact the failure report,
+and no other; `ci.yml` and `release.yml` pass the two by name, so
+`DOCKERHUB_TOKEN`, which can push the release's images, never reaches the lab.
+A pull request from a fork gets no secrets, and a repository without
+`DOCKERHUB_PULL_TOKEN` gets neither variable: both run anonymously.
 
 #### Where the lab stops being a router
 
