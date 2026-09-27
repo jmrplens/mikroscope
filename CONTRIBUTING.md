@@ -262,8 +262,8 @@ Build once and start each under its own lab's lock, or use two checkouts:
 
 ```sh
 make build agent-tars lab-tool
-LAB_ARCH=x86_64 bin/mikroscope-lab lock go test -tags labe2e -count=1 -timeout 75m ./test/e2e/lab/ &
-LAB_ARCH=arm64 bin/mikroscope-lab lock go test -tags labe2e -count=1 -timeout 75m ./test/e2e/lab/
+LAB_ARCH=x86_64 bin/mikroscope-lab lock go test -tags labe2e -count=1 -timeout 150m ./test/e2e/lab/ &
+LAB_ARCH=arm64 bin/mikroscope-lab lock go test -tags labe2e -count=1 -timeout 150m ./test/e2e/lab/
 ```
 
 - **Deploy verbs run through the lab.** `make lab-cli` builds this checkout's

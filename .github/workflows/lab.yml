@@ -22,7 +22,7 @@
 #           `changes` job holds the list of paths), as a release gate
 #           (release.yml), weekly and on dispatch.
 #   arm64   weekly and on dispatch only: not on pull requests and not a
-#           release gate. It adds about half an hour of emulation [estimate]
+#           release gate. It adds about an hour of emulation [estimate]
 #           and depends on MikroTik's download server and on Docker Hub being
 #           up, and a release should not wait on either.
 #
@@ -53,11 +53,14 @@
 # cache scope with somebody else's lab driver, so it restores but never
 # saves.
 #
-# Duration. NOT MEASURED on a runner yet. The estimates behind the timeouts:
-# x86_64 12-18 min (setup 1-2, the lab image 1, downloads 0-1.5, provisioning
-# 1, builds 1-2, scenarios 8-10); arm64 25-35 min. The first dispatch with
-# `arch: both` is the measurement, and its numbers replace these, with the
-# date, as e2e.yml records its own.
+# Duration. NOT MEASURED on a runner yet. The estimates behind the timeouts
+# come from the development machine, where the suite with the install
+# options' scenarios took 28 to 29 min on x86_64 (two runs, 2026-09-27) and
+# 58 min on arm64 (one run, beside an x86_64 one): x86_64 35-45 min in all
+# (setup 1-2, the lab image 1, downloads 0-1.5, provisioning 1, builds 1-2,
+# scenarios 29 and more on a slower runner); arm64 70-120 min. The first
+# dispatch with `arch: both` is the measurement, and its numbers replace
+# these, with the date, as e2e.yml records its own.
 #
 # Three ways in, as e2e.yml: called by ci.yml and release.yml with
 # `arch: x86_64`; by hand from the dispatch menu; and weekly on main, which is
@@ -104,11 +107,11 @@ jobs:
   lab:
     name: CHR ${{ matrix.arch }}
     runs-on: ubuntu-latest
-    # Above the sum of the step timeouts below (20 + 45 + 5 for arm64,
-    # 10 + 22 + 5 for x86_64) plus the builds, so a hung step times out as a
+    # Above the sum of the step timeouts below (20 + 150 + 5 for arm64,
+    # 10 + 60 + 5 for x86_64) plus the builds, so a hung step times out as a
     # failed step and the failure artifacts are still collected; a job that
     # calls this workflow cannot set its own.
-    timeout-minutes: ${{ matrix.arch == 'arm64' && 90 || 50 }}
+    timeout-minutes: ${{ matrix.arch == 'arm64' && 190 || 90 }}
     strategy:
       # One architecture failing says nothing about the other, and stopping
       # it would hide a second, different failure.
@@ -288,7 +291,7 @@ jobs:
       # failure: here, a lab that is not running is a broken run, not a
       # machine without Docker.
       - name: Run the lab suite
-        timeout-minutes: ${{ matrix.arch == 'arm64' && 45 || 22 }}
+        timeout-minutes: ${{ matrix.arch == 'arm64' && 150 || 60 }}
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/lab-report"

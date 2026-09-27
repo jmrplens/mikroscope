@@ -173,13 +173,13 @@ and checks) takes the lock once for all of them with `mikroscope-lab lock`:
 
 ```sh
 make build agent-tars lab-tool
-bin/mikroscope-lab lock go test -tags labe2e -count=1 -timeout 75m ./test/e2e/lab/
+bin/mikroscope-lab lock go test -tags labe2e -count=1 -timeout 150m ./test/e2e/lab/
 LAB_ARCH=arm64 bin/mikroscope-lab lock ./my-script.sh
 ```
 
 The suite takes longer than `go test`'s default ten-minute timeout (up to
-10 min on x86_64 and 17 min on arm64 here), which is why the line above, like
-`make test-lab`, sets 75 minutes.
+29 min on x86_64 and 58 min on arm64 here), which is why the line above, like
+`make test-lab`, sets 150 minutes.
 
 `lock` exports `LAB_LOCK_HELD`, the lock files it holds, and every run of the
 driver the command starts finds its own lock there instead of waiting for
@@ -383,8 +383,8 @@ build:
 
 ```sh
 make build agent-tars lab-tool
-LAB_ARCH=x86_64 bin/mikroscope-lab lock go test -tags labe2e -count=1 -timeout 75m -v ./test/e2e/lab/ &
-LAB_ARCH=arm64 bin/mikroscope-lab lock go test -tags labe2e -count=1 -timeout 75m -v ./test/e2e/lab/
+LAB_ARCH=x86_64 bin/mikroscope-lab lock go test -tags labe2e -count=1 -timeout 150m -v ./test/e2e/lab/ &
+LAB_ARCH=arm64 bin/mikroscope-lab lock go test -tags labe2e -count=1 -timeout 150m -v ./test/e2e/lab/
 ```
 
 The suite finds the pull scenarios' image itself (the last release tag, as

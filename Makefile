@@ -630,7 +630,7 @@ LAB_GOARCH = $(if $(filter arm64,$(LAB_ARCH)),arm64,amd64)
 # repeat test makes (10 on x86_64, 3 on arm64).
 test-lab: build agent-tars lab-tool ## Run the end-to-end suite against the lab router (make lab-up first; LAB_ARCH, LAB_RUN='S0[1-4]')
 	LAB_REMOTE_IMAGE='$(LAB_REMOTE_IMAGE)' MIKROSCOPE_LAB_REQUIRED='$(MIKROSCOPE_LAB_REQUIRED)' \
-	  $(LAB) lock go test -tags labe2e -count=1 -timeout 75m -v $(if $(LAB_RUN),-run '$(LAB_RUN)') ./test/e2e/lab/
+	  $(LAB) lock go test -tags labe2e -count=1 -timeout 150m -v $(if $(LAB_RUN),-run '$(LAB_RUN)') ./test/e2e/lab/
 
 # doctor → install → status → upgrade → uninstall, every verb with
 # --ephemeral, in the lab: scripts/roundtrip.sh with the lab's defaults, the
