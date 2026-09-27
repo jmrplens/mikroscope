@@ -453,7 +453,7 @@ const themeCss = readFileSync(path.join(SITE, "src/styles/theme.css"), "utf8");
 /** @param {string} selector */
 const surface = (selector) => {
 	const block = new RegExp(
-		`^${selector.replace(/[[\]"]/g, "\\$&")}\\s*\\{([\\s\\S]*?)^\\}`,
+		`^${selector.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&")}\\s*\\{([\\s\\S]*?)^\\}`,
 		"m",
 	).exec(themeCss);
 	const value = block && /--ms-surface:\s*(#[0-9a-fA-F]{6})\s*;/.exec(block[1]);
