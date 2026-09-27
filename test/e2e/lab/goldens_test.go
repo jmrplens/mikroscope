@@ -49,8 +49,11 @@ type goldenCase struct {
 //     path of mikroscope's (spec F4).
 //
 // Every case with --remote-image makes the router pull that image; with the
-// goldens as they are, that is about eleven anonymous Docker Hub pulls and one
-// from GHCR per run. LAB_S5_CASES=<id>,<id> narrows the run to those cases.
+// goldens as they are, that is twelve Docker Hub pulls and one from GHCR per
+// run. With LAB_REGISTRY_USER and LAB_REGISTRY_TOKEN set, the Docker Hub
+// pulls authenticate, except the cases in anonymousGoldens, which boot
+// without the credential. LAB_S5_CASES=<id>,<id> narrows the run to those
+// cases.
 func TestS05GoldenScriptsInstallAndUninstall(t *testing.T) {
 	l := Require(t)
 	raw, err := os.ReadFile(filepath.Join(l.Repo, "internal", "router", "testdata", "cases.json"))
@@ -84,9 +87,23 @@ func TestS05GoldenScriptsInstallAndUninstall(t *testing.T) {
 	t.Logf("%d golden case(s) run, %d of them pulling their image", ran, pulls)
 }
 
+// anonymousGoldens are the golden cases that run on a boot without the
+// registry credential (anonymous), each for its reason. Their scripts are
+// the site generator's for a router as users have it, and a user's router
+// pulls with no credential: that pull is what these cases prove works.
+var anonymousGoldens = map[string]string{
+	"pull-dockerhub": "the page's Docker Hub script as a user's router runs it: the run's one anonymous Docker Hub pull",
+	"pull-ghcr":      "the page's GHCR script with no credential on the router, as S18; the lab's credential is Docker Hub's",
+}
+
 func runGoldenCase(t *testing.T, c goldenCase) {
 	t.Helper()
-	l, dir, base := start(t, c.Profiles...)
+	begin := start
+	if why, ok := anonymousGoldens[c.ID]; ok {
+		t.Logf("%s runs without the registry credential: %s", c.ID, why)
+		begin = startAnonymous
+	}
+	l, dir, base := begin(t, c.Profiles...)
 	golden, err := os.ReadFile(filepath.Join(l.Repo, "internal", "router", "testdata", "golden", c.ID+".rsc.txt"))
 	if err != nil {
 		t.Fatalf("the Go golden for %s: %v", c.ID, err)

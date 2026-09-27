@@ -17,7 +17,11 @@ import (
 
 // Up starts the lab: provisions it when there is no clean snapshot yet,
 // boots the live layer, gives admin this lab's key and password on a boot of
-// the snapshot, and ends agent addresses at the router.
+// the snapshot, ends agent addresses at the router and, when
+// LAB_REGISTRY_USER and LAB_REGISTRY_TOKEN are set, gives /container/config
+// the registry credential. The last two happen at every up, a reset's
+// included, so they follow the environment of the run that brings the lab
+// up; a run without the credential leaves the router's as it finds it.
 func (l *Lab) Up(ctx context.Context) error {
 	if err := l.ensureImage(ctx); err != nil {
 		return err
@@ -57,6 +61,10 @@ func (l *Lab) Up(ctx context.Context) error {
 		return err
 	}
 	err = l.agentRoutesEndHere(ctx)
+	if err != nil {
+		return err
+	}
+	err = l.registryCredential(ctx)
 	if err != nil {
 		return err
 	}
@@ -398,7 +406,8 @@ func validProfile(n string) bool {
 	return n != "" && !strings.ContainsAny(n, `/\`) && n != "." && n != ".."
 }
 
-// Env says where the lab's credentials and key are, never what they are.
+// Env says where the lab's credentials and key are, never what they are,
+// and whether the router's pulls authenticate.
 func (l *Lab) Env() error {
 	c := l.cfg
 	w := l.o.Stdout
@@ -406,5 +415,10 @@ func (l *Lab) Env() error {
 	fmt.Fprintf(w, "ssh key:     %s\n", filepath.Join(c.SSHDir, "id_ed25519"))
 	fmt.Fprintf(w, "from the host: ssh -i %s -p %s -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null admin@127.0.0.1\n",
 		filepath.Join(c.SSHDir, "id_ed25519"), strconv.Itoa(c.PortSSH))
+	if c.Registry.Set() {
+		fmt.Fprintf(w, "registry:    %s, from the environment; given to the router at every up and reset\n", c.Registry)
+	} else {
+		fmt.Fprintln(w, "registry:    anonymous pulls (no LAB_REGISTRY_USER and LAB_REGISTRY_TOKEN in the environment)")
+	}
 	return nil
 }

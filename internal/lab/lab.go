@@ -326,4 +326,12 @@ Settings, from the environment (the Makefile passes them through):
              (make build), else the one on PATH
   LAB_CLI_TOKEN   ` + "`lab`" + ` hands ` + "`cli`" + ` the lab's agent token as
              MIKROSCOPE_TOKEN, for --expose without --token on a command line
+  LAB_REGISTRY_USER, LAB_REGISTRY_TOKEN   a registry account and a read-only
+             token the router pulls with, given to /container/config at every
+             up and reset, in a file; unset, it pulls anonymously. Export
+             them from a file, never on make's command line, which the
+             process table shows
+  LAB_REGISTRY_URL   registry-url, the registry they are for, default
+             ` + DefaultRegistryURL + `: RouterOS presents them for a
+             reference whose host is registry-url as written, so no scheme
 `

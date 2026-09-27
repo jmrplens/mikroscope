@@ -28,9 +28,11 @@ import (
 //     the default /30 (B6 #10).
 //
 // Doctor only reads, so the subtests share one reset, and the export is the
-// same at the end.
+// same at the end. A stock router has no registry credential, so the reset
+// boots without the lab's (startAnonymous), and doctor's credential check
+// reads what it reads on a router as MikroTik ships it.
 func TestS01DoctorOnAStockRouter(t *testing.T) {
-	l, dir, base := start(t)
+	l, dir, base := startAnonymous(t)
 	none := []string{"--iface-list", "none", "--addr-list", "none"}
 	archOK := regexp.MustCompile(`(?i)architecture`)
 

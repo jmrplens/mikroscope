@@ -24,7 +24,9 @@ func tarFlags(t *testing.T, l *Lab) []string {
 
 // pullFlags lets the router pull the last release's image from Docker Hub.
 // Docker Hub counts anonymous pulls per address, so only the scenarios that
-// test the pull use these: S2 (install and upgrade) and S4, three per run.
+// test the pull use these: S2 (install and upgrade), S4 and the complete
+// uninstall's pull route. With LAB_REGISTRY_USER and LAB_REGISTRY_TOKEN set,
+// the router makes them as that account.
 func pullFlags(l *Lab) []string {
 	return []string{"--arch", l.GoArch, "--remote-image", l.RemoteImage}
 }
@@ -49,6 +51,50 @@ func start(t *testing.T, profiles ...string) (*Lab, string, baseline) {
 	b := baseline{export: l.Export(t), residue: l.Residue(t)}
 	t.Logf("ready in %s: the %s %s lab, profiles %v", time.Since(began).Round(100*time.Millisecond), l.Kind, l.Arch, profiles)
 	return l, l.WorkDir(t), b
+}
+
+// anonymous clears the registry credential (LAB_REGISTRY_USER,
+// LAB_REGISTRY_TOKEN) for the rest of the test, so that its resets boot the
+// router without one: /container/config as RouterOS ships it, no
+// registry-url, no username, no password, which is how a user's router
+// pulls. The testing package sets both back when the test ends, and the
+// next scenario's reset gives the router the credential again. It changes
+// nothing on the router by itself: call it before the reset (startAnonymous
+// does both).
+//
+// The scenarios that test a router with no credential use it: S1, doctor on
+// a stock router; S18, a GHCR pull with no credential; and the golden
+// scripts in anonymousGoldens, among them the run's one anonymous Docker Hub
+// pull. Every other pull authenticates when the run has a credential, so a
+// CI runner's shared address does not spend Docker Hub's anonymous
+// allowance on them.
+func anonymous(t *testing.T) {
+	t.Helper()
+	t.Setenv(envRegistryUser, "")
+	t.Setenv(envRegistryToken, "")
+}
+
+// startAnonymous is start on a boot without the registry credential
+// (anonymous). It fails the test when the router still has a username or a
+// password in /container/config after the reset.
+func startAnonymous(t *testing.T, profiles ...string) (*Lab, string, baseline) {
+	t.Helper()
+	anonymous(t)
+	l, dir, base := start(t, profiles...)
+	if got := registryLengths(t, l); got != "0 0" {
+		t.Fatalf("after a reset without LAB_REGISTRY_USER and LAB_REGISTRY_TOKEN, /container/config's username and password are %s bytes long, want 0 0", got)
+	}
+	if l.Registry {
+		t.Logf("booted without the registry credential: this scenario pulls anonymously")
+	}
+	return l, dir, base
+}
+
+// registryLengths is the length of /container/config's username and of its
+// password, "<user> <password>", read in one connect: never their values.
+func registryLengths(t *testing.T, l *Lab) string {
+	t.Helper()
+	return strings.TrimSpace(l.ROS(t, `:put ([:len [/container/config/get username]] . " " . [:len [/container/config/get password]])`))
 }
 
 // install runs `install --yes` and fails the test unless it exits 0 with its

@@ -62,6 +62,13 @@ const (
 	envRemoteImage = "LAB_REMOTE_IMAGE"
 	envLockHeld    = "LAB_LOCK_HELD"
 	envBin         = "MIKROSCOPE_BIN"
+
+	// The registry credential the driver gives the router at every reset
+	// (internal/lab's Registry), and the scenarios that test a router
+	// without one clear for their own resets (anonymous).
+	envRegistryUser  = "LAB_REGISTRY_USER"
+	envRegistryToken = "LAB_REGISTRY_TOKEN"
+	envRegistryURL   = "LAB_REGISTRY_URL"
 )
 
 // How long one call of the lab's driver may take before the test gives up
@@ -105,10 +112,18 @@ type Lab struct {
 	Container   string // the lab's docker container
 	RemoteImage string // what the *pull* scenarios pull
 	Token       string // LAB_AGENT_TOKEN from the lab's .env; never logged
-	port        int    // the host's loopback port for the agent: 910N, plus an instance's offset
-	cfg         *lab.Config
-	secrets     []string
+	// Registry says that the run has a registry credential
+	// (LAB_REGISTRY_USER and LAB_REGISTRY_TOKEN), which every reset gives
+	// the router unless the test cleared it (anonymous).
+	Registry bool
+	registry lab.Registry // the run's credential, as Prepare found it
+	port     int          // the host's loopback port for the agent: 910N, plus an instance's offset
+	cfg      *lab.Config
+	secrets  []secret
 }
+
+// secret is a value the logs must not show, and what stands in its place.
+type secret struct{ value, placeholder string }
 
 var (
 	required  bool
@@ -116,6 +131,10 @@ var (
 	shared    *Lab
 	errSetup  error
 	skipWhy   string
+	// runRegistry is the registry credential the process was started with.
+	// Prepare reads it before any test runs, because a test that clears it
+	// (anonymous) may be the one whose Require discovers the lab.
+	runRegistry lab.Registry
 )
 
 // Prepare is what TestMain calls before any test: it reads
@@ -125,6 +144,11 @@ var (
 // runs). The returned function releases the lock.
 func Prepare() (release func(), err error) {
 	required = os.Getenv(envRequired) == "1"
+	runRegistry = lab.Registry{
+		URL:   envOr(envRegistryURL, lab.DefaultRegistryURL),
+		User:  os.Getenv(envRegistryUser),
+		Token: os.Getenv(envRegistryToken),
+	}
 	for _, kv := range os.Environ() {
 		if name, _, ok := strings.Cut(kv, "="); ok && strings.HasPrefix(name, "MIKROSCOPE_") {
 			if unsetErr := os.Unsetenv(name); unsetErr != nil {
@@ -258,6 +282,18 @@ func discover(ctx context.Context) (*Lab, error) {
 	if envErr := l.readEnvFile(); envErr != nil {
 		return nil, envErr
 	}
+	// The registry credential is redacted by name, the user included: it
+	// is in /export (`/container config set … username=…`), which a failed
+	// comparison prints, and the two together are the credential.
+	l.registry, l.Registry = runRegistry, runRegistry.Set()
+	if l.Registry {
+		l.secrets = append(l.secrets,
+			secret{runRegistry.Token, "<" + envRegistryToken + ">"},
+			secret{runRegistry.User, "<" + envRegistryUser + ">"})
+	}
+	// The longest first, so that a secret inside another is never left
+	// half replaced.
+	slices.SortStableFunc(l.secrets, func(a, b secret) int { return len(b.value) - len(a.value) })
 	return l, nil
 }
 
@@ -291,7 +327,7 @@ func (l *Lab) readEnvFile() error {
 			l.Token = value
 		}
 		if name != "LAB_ADMIN_USER" {
-			l.secrets = append(l.secrets, value)
+			l.secrets = append(l.secrets, secret{value, "<lab secret>"})
 		}
 	}
 	if scanErr := sc.Err(); scanErr != nil {
@@ -303,13 +339,16 @@ func (l *Lab) readEnvFile() error {
 	return nil
 }
 
-// redact replaces every value of the lab's .env with a placeholder.
+// redact replaces every value of the lab's .env with a placeholder, and the
+// registry credential with its variables' names.
 func (l *Lab) redact(s string) string {
 	if l == nil {
 		return s
 	}
-	for _, secret := range l.secrets {
-		s = strings.ReplaceAll(s, secret, "<lab secret>")
+	for _, sec := range l.secrets {
+		if sec.value != "" {
+			s = strings.ReplaceAll(s, sec.value, sec.placeholder)
+		}
 	}
 	return s
 }

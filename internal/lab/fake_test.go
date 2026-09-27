@@ -63,6 +63,11 @@ type fakeRouter struct {
 	modeSilent   bool // the device-mode update never asks for its confirmation
 	pkgRefused   bool // an uploaded package is not installed by the reboot
 	stayOn       bool // the guest ignores a shutdown
+
+	// /container/config, as the registry script sets it, unescaped.
+	registryURL, registryUser, registryPassword string
+	registrySets                                int  // how many registry scripts ran
+	registryFails                               bool // a registry script fails
 }
 
 // fakeDocker answers the docker commands the lab runs, and the few others
@@ -256,6 +261,7 @@ func (fd *fakeDocker) qemuImg(a []string) (stdout, stderr string, err error) {
 			// with no key, no password and no route.
 			r := fd.router
 			r.keys, r.password, r.routes, r.files = 0, "", nil, nil
+			r.registryURL, r.registryUser, r.registryPassword = "", "", ""
 		}
 	case "convert":
 		writeQcow2(fd.t, filepath.Join(fd.cache, dir, positional[1]), "")
@@ -400,7 +406,7 @@ func (fd *fakeDocker) exec(a []string, stdin string, env []string) (stdout, stde
 	case "rm":
 		return "", "", nil
 	case "sh":
-		return fd.accessScript(c, cmd, stdin)
+		return fd.privateScript(c, cmd, stdin)
 	case "bash":
 		return fd.bash(c, cmd, env)
 	case "curl":
@@ -409,15 +415,44 @@ func (fd *fakeDocker) exec(a []string, stdin string, env []string) (stdout, stde
 	return "", "unknown command in the container", exitCodeError(127)
 }
 
-// accessScript is grantAccess's two shells: the script written from stdin,
-// then copied to the router and imported.
-func (fd *fakeDocker) accessScript(c *fakeContainer, cmd []string, stdin string) (stdout, stderr string, err error) {
+var (
+	writeTo  = regexp.MustCompile(`cat >(\S+)$`)
+	copyFrom = regexp.MustCompile(`^scp -q (\S+) lab:`)
+	setting  = regexp.MustCompile(`([a-z-]+)="((?:[^"\\]|\\.)*)"`)
+)
+
+// privateScript is importPrivate's two shells: the script written from
+// stdin, then copied to the router and imported. The access script sets
+// admin's key and password, the registry script /container/config.
+func (fd *fakeDocker) privateScript(c *fakeContainer, cmd []string, stdin string) (stdout, stderr string, err error) {
 	r := fd.router
-	if strings.Contains(cmd[2], "cat >/run/lab/access.rsc") {
-		c.files["/run/lab/access.rsc"] = stdin
+	if m := writeTo.FindStringSubmatch(cmd[2]); m != nil {
+		c.files[m[1]] = stdin
 		return "", "", nil
 	}
-	script := c.files["/run/lab/access.rsc"]
+	src := copyFrom.FindStringSubmatch(cmd[2])
+	if src == nil {
+		return "", "unknown shell in the container", exitCodeError(127)
+	}
+	script := c.files[src[1]]
+	if strings.HasPrefix(script, "/container/config/set ") {
+		if r.registryFails {
+			return "", "failure: " + strings.TrimSpace(script) + "\r\n", exitCodeError(1)
+		}
+		for _, kv := range setting.FindAllStringSubmatch(script, -1) {
+			v := unescapeRouterOS(fd.t, kv[2])
+			switch kv[1] {
+			case "registry-url":
+				r.registryURL = v
+			case "username":
+				r.registryUser = v
+			case "password":
+				r.registryPassword = v
+			}
+		}
+		r.registrySets++
+		return "\r\nScript file loaded and executed successfully\r\n", "", nil
+	}
 	if r.importFails {
 		return "", "failure: " + strings.TrimSpace(script) + "\r\n", exitCodeError(1)
 	}
@@ -428,6 +463,35 @@ func (fd *fakeDocker) accessScript(c *fakeContainer, cmd []string, stdin string)
 		r.keys++
 	}
 	return "\r\nScript file loaded and executed successfully\r\n", "", nil
+}
+
+// unescapeRouterOS reads the inside of a RouterOS string literal as the
+// router does, for the escapes the lab writes: \HH, and a backslash before
+// a quote, a backslash or a dollar sign.
+func unescapeRouterOS(t *testing.T, s string) string {
+	t.Helper()
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		if s[i] != '\\' {
+			b.WriteByte(s[i])
+			continue
+		}
+		if i+1 < len(s) && strings.IndexByte(`"\$`, s[i+1]) >= 0 {
+			b.WriteByte(s[i+1])
+			i++
+			continue
+		}
+		if i+2 >= len(s) {
+			t.Fatalf("a short escape at the end of %q", s)
+		}
+		v, err := strconv.ParseUint(s[i+1:i+3], 16, 8)
+		if err != nil || strings.ToUpper(s[i+1:i+3]) != s[i+1:i+3] {
+			t.Fatalf("%q in %q is not an escape RouterOS reads as a byte", s[i:i+3], s)
+		}
+		b.WriteByte(byte(v))
+		i += 2
+	}
+	return b.String()
 }
 
 // bash is the device-mode update started in the background, or conType.

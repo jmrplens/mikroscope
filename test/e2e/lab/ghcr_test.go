@@ -19,9 +19,12 @@ import (
 // began. The scenario asserts that result from here on.
 //
 // The image is the GHCR twin of LAB_REMOTE_IMAGE (the last release tag);
-// LAB_GHCR_IMAGE names another.
+// LAB_GHCR_IMAGE names another. The reset boots without the lab's registry
+// credential (startAnonymous), which is Docker Hub's: whether RouterOS would
+// present it to ghcr.io, whose host differs from registry-url's, is not what
+// S18 measures.
 func TestS18GHCRPullWithoutCredential(t *testing.T) {
-	l, dir, base := start(t, "doctor-lists")
+	l, dir, base := startAnonymous(t, "doctor-lists")
 	ref := os.Getenv("LAB_GHCR_IMAGE")
 	if ref == "" {
 		ref = "ghcr.io/" + strings.TrimPrefix(l.RemoteImage, "docker.io/")

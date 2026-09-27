@@ -376,7 +376,8 @@ func TestEnvSaysWhereNotWhat(t *testing.T) {
 	r.mustMain("env")
 	want := "credentials: " + filepath.Join(r.state, ".env") + " (LAB_ADMIN_USER, LAB_ADMIN_PASSWORD, LAB_AGENT_TOKEN)\n" +
 		"ssh key:     " + filepath.Join(r.state, ".cache", "ssh", "id_ed25519") + "\n" +
-		"from the host: ssh -i " + filepath.Join(r.state, ".cache", "ssh", "id_ed25519") + " -p 2241 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null admin@127.0.0.1\n"
+		"from the host: ssh -i " + filepath.Join(r.state, ".cache", "ssh", "id_ed25519") + " -p 2241 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null admin@127.0.0.1\n" +
+		"registry:    anonymous pulls (no LAB_REGISTRY_USER and LAB_REGISTRY_TOKEN in the environment)\n"
 	if r.stdout.String() != want {
 		t.Errorf("env:\n%s\nwant\n%s", r.stdout.String(), want)
 	}

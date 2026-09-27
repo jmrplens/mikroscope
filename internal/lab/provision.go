@@ -333,31 +333,51 @@ func (l *Lab) grantAccess(ctx context.Context) error {
 		return err
 	}
 	script := AccessScript(strings.TrimSpace(string(pub)), creds.Password)
-	if err = l.run(ctx, Command{
-		Args:  []string{"docker", "exec", "-i", l.cfg.Name, "sh", "-c", "umask 077; cat >/run/lab/access.rsc"},
-		Stdin: strings.NewReader(script), Stderr: l.o.Stderr,
-	}); err != nil {
-		return die("writing the lab's access script into the container failed: %v", err)
-	}
-	var out strings.Builder
-	_ = l.run(ctx, Command{
-		Args: []string{
-			"docker", "exec", "-i", l.cfg.Name, "sh", "-c",
-			`scp -q /run/lab/access.rsc lab:lab-access.rsc && ssh lab '/import file-name=lab-access.rsc; /file/remove [find name="lab-access.rsc"]'; rm -f /run/lab/access.rsc`,
-		},
-		Stdout: &out, Stderr: &out,
-	})
-	said := strings.ReplaceAll(out.String(), "\r", "")
-	if !strings.Contains(said, "executed successfully") {
-		_, _ = l.inlabQuiet(ctx, "ssh", "lab", `/file/remove [find name="lab-access.rsc"]`)
-		fmt.Fprintln(l.o.Stderr, strings.TrimRight(Redact(said, creds.Password, "<LAB_ADMIN_PASSWORD>"), "\n"))
-		return die("giving the router the lab's key and password failed")
+	redact := func(s string) string { return Redact(s, creds.Password, "<LAB_ADMIN_PASSWORD>") }
+	if importErr := l.importPrivate(ctx, "access.rsc", script, "access", "the lab's key and password", redact); importErr != nil {
+		return importErr
 	}
 	keys, _ = l.ros(ctx, keyCount)
 	if k := strings.TrimSpace(keys); k != "1" {
 		return die("admin has %s ssh key(s) after the lab's was added", k)
 	}
 	l.sayf("admin has this lab's key and password")
+	return nil
+}
+
+// importPrivate runs a RouterOS script that carries a secret: it is written
+// to docker exec's stdin, which stores it in the lab container as
+// /run/lab/<name> (mode 0600); scp copies it to the router as lab-<name>,
+// /import runs it and the file is removed on both. No process table, the
+// host's or the container's, shows what is in it. RouterOS's ssh exits 0
+// whether the script failed or not, so success is read from its message;
+// on a failure the file is removed from the router all the same, and what
+// RouterOS said is printed through redact. kind names the script in the
+// message of a failed write ("the lab's <kind> script"), what the thing
+// it gives the router ("giving the router <what> failed").
+func (l *Lab) importPrivate(ctx context.Context, name, script, kind, what string, redact func(string) string) error {
+	local, remote := "/run/lab/"+name, "lab-"+name
+	if err := l.run(ctx, Command{
+		Args:  []string{"docker", "exec", "-i", l.cfg.Name, "sh", "-c", "umask 077; cat >" + local},
+		Stdin: strings.NewReader(script), Stderr: l.o.Stderr,
+	}); err != nil {
+		return die("writing the lab's %s script into the container failed: %v", kind, err)
+	}
+	removeRemote := `/file/remove [find name="` + remote + `"]`
+	var out strings.Builder
+	_ = l.run(ctx, Command{
+		Args: []string{
+			"docker", "exec", "-i", l.cfg.Name, "sh", "-c",
+			"scp -q " + local + " lab:" + remote + " && ssh lab '/import file-name=" + remote + "; " + removeRemote + "'; rm -f " + local,
+		},
+		Stdout: &out, Stderr: &out,
+	})
+	said := strings.ReplaceAll(out.String(), "\r", "")
+	if !strings.Contains(said, "executed successfully") {
+		_, _ = l.inlabQuiet(ctx, "ssh", "lab", removeRemote)
+		fmt.Fprintln(l.o.Stderr, strings.TrimRight(redact(said), "\n"))
+		return die("giving the router %s failed", what)
+	}
 	return nil
 }
 
