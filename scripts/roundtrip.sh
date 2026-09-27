@@ -8,8 +8,11 @@
 # `make roundtrip` runs it in the virtual lab, which is what the defaults
 # below are: the CLI through `mikroscope-lab cli`, from the lab's LAN side,
 # RouterOS through `mikroscope-lab ssh`, and first the lab profiles that give
-# CHR the tmpfs disk --ephemeral installs into and the lists 1.3.1's doctor
-# demands. bin/mikroscope-lab is the lab's driver (make lab-tool builds it).
+# CHR the tmpfs disk --ephemeral installs into and the interface list LAN that
+# doctor demands (doctor-lists also gives the address list LANs the entry
+# 1.3.1's doctor demanded; doctor's check of LANs now passes with no entry,
+# since install adds the /30).
+# bin/mikroscope-lab is the lab's driver (make lab-tool builds it).
 # `make roundtrip-device ROUTER=<ssh target> CONFIRM_WRITES=yes` runs the same
 # steps against a real router over ssh and imports nothing into it.
 #
@@ -60,13 +63,14 @@ echo "== status"
 echo "== upgrade"
 "${cli[@]}" upgrade --yes "${flags[@]}"
 echo "== uninstall"
-if ! "${cli[@]}" uninstall --yes "${flags[@]}"; then
-	# 1.3.1's uninstall stops the container, waits a fixed 4 s and removes
-	# it; a container slower to stop is refused ("cannot remove running"),
-	# and a second run cleans up. Anything else fails the second run too.
-	echo "== uninstall failed; once more, for 1.3.1's stop/remove race"
-	"${cli[@]}" uninstall --yes "${flags[@]}"
-fi
+# One attempt, and a failed one fails the round trip. 1.3.1's uninstall
+# stopped the container, waited a fixed 4 s and removed it; RouterOS refuses
+# to remove one still stopping ("cannot remove running"; CHR 7.24.4,
+# 2026-09-26), and a second run cleaned up. The removal now waits, up to 30 s,
+# while RouterOS reports the container running or stopping, and the lab
+# suite's S9 requires the first attempt to verify clean with a client holding
+# /stream.
+"${cli[@]}" uninstall --yes "${flags[@]}"
 echo "== export hash after"
 after=$(export_hash)
 echo "   $after"
