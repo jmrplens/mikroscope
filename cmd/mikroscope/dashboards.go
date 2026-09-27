@@ -14,14 +14,20 @@ import (
 )
 
 // runDashboards: `dashboards gen --out dir` writes one JSON file per store in
-// dashboards.Stores, and the alert rules of the stores that have them;
-// `dashboards import|check --store influxdb|prometheus|postgres|graphite|elasticsearch
-// --grafana URL --datasource-uid X` use the Grafana API (token in GRAFANA_TOKEN).
+// dashboards.Stores, and the alert rules of the stores that have them, into
+// dir, making it when it is not there; `dashboards publish` is forward
+// --grafana once, with no collector (dashboardsPublish); `dashboards
+// import|check --store influxdb|prometheus|postgres|graphite|elasticsearch
+// --grafana URL --datasource-uid X` use the Grafana API (token in
+// GRAFANA_TOKEN).
 func runDashboards(args []string) error {
 	if len(args) == 0 {
-		return errors.New("dashboards needs gen, import or check")
+		return errors.New("dashboards needs gen, publish, import or check")
 	}
 	sub := args[0]
+	if sub == "publish" {
+		return dashboardsPublish(args[1:], os.Stdout)
+	}
 	fs := flag.NewFlagSet("mikroscope dashboards "+sub, flag.ContinueOnError)
 	var outDir, store, grafanaURL, dsUID, endAt string
 	// Dashboard variables, for the stores whose queries carry them: Graphite's
@@ -31,8 +37,12 @@ func runDashboards(args []string) error {
 	var noProbe bool
 	fs.StringVar(&outDir, "out", "dashboards", "gen: output directory")
 	fs.StringVar(&store, "store", "influxdb", "import/check: influxdb, prometheus, postgres, graphite or elasticsearch")
-	fs.Func("var", "check: set a dashboard variable, `name=value` (repeatable): --var host=rb5009", setVar(vars))
-	fs.StringVar(&grafanaURL, "grafana", os.Getenv("GRAFANA_URL"), "import/check: Grafana base URL (GRAFANA_URL); token from GRAFANA_TOKEN")
+	fs.Func("var", "check: set a dashboard variable, `name=value` (repeatable): --var host=router", setVar(vars))
+	// GRAFANA_URL first, as these two have always read it, and then the
+	// MIKROSCOPE_GRAFANA_URL that `dashboards publish`, `forward` and
+	// `uninstall` read: one Grafana named for the one verb reaches the others.
+	fs.StringVar(&grafanaURL, "grafana", firstNonEmpty(os.Getenv("GRAFANA_URL"), env("GRAFANA_URL", "")),
+		"import/check: Grafana base URL (GRAFANA_URL, then MIKROSCOPE_GRAFANA_URL); token from GRAFANA_TOKEN")
 	fs.StringVar(&dsUID, "datasource-uid", "", "import/check: the datasource uid to bind DS_MIKROSCOPE to")
 	fs.DurationVar(&window, "window", 15*time.Minute, "check: length of the query window")
 	fs.StringVar(&endAt, "end", "", "check: instant the window ends at, RFC3339 (default: now) — point it at a finished capture to check panels against data that exists")
@@ -47,6 +57,11 @@ func runDashboards(args []string) error {
 		if grafanaURL == "" || os.Getenv("GRAFANA_TOKEN") == "" || dsUID == "" {
 			return errors.New("import/check need --grafana, GRAFANA_TOKEN and --datasource-uid")
 		}
+		// Without the trailing slash, as publish and uninstall take it: every
+		// API path starts with one, so a URL given with a slash sent `//api/…`
+		// and printed the imported dashboard's address with the same doubled
+		// slash.
+		grafanaURL = strings.TrimRight(grafanaURL, "/")
 		g := &dashboards.Grafana{URL: grafanaURL, Token: os.Getenv("GRAFANA_TOKEN")}
 		// Ask the store what it holds before generating, so "not available on
 		// this device" is measured here rather than compiled in. A probe that
@@ -101,7 +116,14 @@ func setVar(into map[string]string) func(string) error {
 	}
 }
 
+// dashboardsGen writes the files into outDir, making it first: `--out
+// dashboards` in a fresh directory is the ordinary first run, and refusing it
+// because the directory is not there yet sent the operator to mkdir for a
+// directory the command had just been told to write into.
 func dashboardsGen(outDir string) error {
+	if err := os.MkdirAll(outDir, 0o750); err != nil {
+		return err
+	}
 	for _, st := range dashboards.Stores {
 		b, err := dashboards.Generate(st)
 		if err != nil {

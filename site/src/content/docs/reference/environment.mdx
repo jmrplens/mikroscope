@@ -144,35 +144,58 @@ is read from the environment only.
 | `MIKROSCOPE_OTLP_TOKEN`     | the OTLP endpoint                                 |
 | `MIKROSCOPE_ELASTIC_AUTH`   | Elasticsearch or OpenSearch                       |
 | `MIKROSCOPE_TELEGRAF_TOKEN` | the Telegraf HTTP listener                        |
-| `GRAFANA_TOKEN`             | `dashboards import`, `dashboards check` and `forward --grafana` |
+| `GRAFANA_TOKEN`             | `dashboards publish`, `import` and `check`, `forward --grafana`, `uninstall --targets dashboard` |
 
 </ScrollTable>
 
 ## Grafana
 
-`dashboards import` and `dashboards check` read `GRAFANA_URL` (the default of
-`--grafana`) and `GRAFANA_TOKEN`. Neither has the `MIKROSCOPE_` prefix. The
-file <Src path=".env.example" /> carries both, commented out, in its Grafana block.
+`GRAFANA_TOKEN` is the one Grafana token every verb uses, with no prefix, and no flag takes it.
+The Grafana itself is `--grafana`, and each verb looks for a default in a different order:
 
-`forward` has its own `--grafana`, which publishes at start, and its variables
-**do** carry the prefix, because they are collector settings rather than the
-`dashboards` verb's:
+<ScrollTable label="Where each verb finds its Grafana URL">
 
-<ScrollTable label="MIKROSCOPE_* variables for forward --grafana">
-
-| Variable                           | Flag                       | Default in the code | Meaning                                                    |
-| ---------------------------------- | -------------------------- | ------------------- | ---------------------------------------------------------- |
-| `MIKROSCOPE_GRAFANA_URL`           | `--grafana`                | empty               | publish to this Grafana at start; empty publishes nothing  |
-| `MIKROSCOPE_GRAFANA_FOLDER`        | `--grafana-folder`         | `mikroscope`        | folder to publish into; empty is Grafana's General folder  |
-| `MIKROSCOPE_GRAFANA_DATASOURCE_UID` | `--grafana-datasource-uid` | empty               | adopt this datasource instead of creating one              |
-| `MIKROSCOPE_GRAFANA_DATASOURCE_URL` | `--grafana-datasource-url` | empty               | the address Grafana queries, for the sinks that cannot know it |
-| `MIKROSCOPE_GRAFANA_DATASOURCE_SSLMODE` | `--grafana-datasource-sslmode` | empty        | sslmode for the PostgreSQL datasource                      |
+| Verb                                                  | Reads, after `--grafana`                     |
+| ----------------------------------------------------- | -------------------------------------------- |
+| `dashboards publish`, `uninstall --targets dashboard` | `MIKROSCOPE_GRAFANA_URL`, then `GRAFANA_URL` |
+| `dashboards import`, `dashboards check`               | `GRAFANA_URL`, then `MIKROSCOPE_GRAFANA_URL` |
+| `forward`                                             | `MIKROSCOPE_GRAFANA_URL` only                |
 
 </ScrollTable>
 
-The token is `GRAFANA_TOKEN`, the same one, with no prefix. `forward --grafana`
-refuses to publish without it: some Grafanas accept an anonymous request, and
-one that did would write as whoever the server thinks is asking.
+`forward` never reads `GRAFANA_URL`, so a `GRAFANA_URL` on its own does not make the collector
+publish. Other Grafana tools read that name and `GRAFANA_TOKEN` too, and a collector started from a
+shell set up for one of them would start writing a folder, a datasource and a dashboard into that
+Grafana without anyone asking it to. The file <Src path=".env.example" /> carries every Grafana
+variable, commented out, in its two Grafana blocks.
+
+`forward`, `dashboards publish` and `uninstall` take `--grafana` and the flags below, and their
+variables **do** carry the prefix, because they are collector settings rather than the
+`dashboards import` and `check` ones:
+
+<ScrollTable label="MIKROSCOPE_* variables for forward, dashboards publish and uninstall">
+
+| Variable                                | Flag                           | Default in the code | Meaning                                                                                                   |
+| --------------------------------------- | ------------------------------ | ------------------- | --------------------------------------------------------------------------------------------------------- |
+| `MIKROSCOPE_GRAFANA_URL`                | `--grafana`                    | empty               | the Grafana to publish to; empty publishes nothing                                                        |
+| `MIKROSCOPE_GRAFANA_FOLDER`             | `--grafana-folder`             | `mikroscope`        | folder to publish into; an empty variable is ignored, so the General folder takes `--grafana-folder ""`  |
+| `MIKROSCOPE_GRAFANA_DATASOURCE_UID`     | `--grafana-datasource-uid`     | empty               | adopt this datasource instead of creating one; one store per run                                          |
+| `MIKROSCOPE_GRAFANA_DATASOURCE_URL`     | `--grafana-datasource-url`     | empty               | the address Grafana queries, for the sinks that cannot know it; one store per run                         |
+| `MIKROSCOPE_GRAFANA_DATASOURCE_SSLMODE` | `--grafana-datasource-sslmode` | empty               | sslmode for the PostgreSQL datasource: `disable`, `require`, `verify-ca` or `verify-full`, nothing else |
+
+</ScrollTable>
+
+`uninstall` reads only `MIKROSCOPE_GRAFANA_URL` and `MIKROSCOPE_GRAFANA_DATASOURCE_UID` of these,
+and ignores the others.
+
+A run that publishes more than one store and sets `MIKROSCOPE_GRAFANA_DATASOURCE_UID` or
+`MIKROSCOPE_GRAFANA_DATASOURCE_URL` is refused before any request: each names one datasource.
+Publish the store that needs one on its own with `dashboards publish` ([Grafana
+publishing](/mikroscope/reference/cli/#publishing-to-grafana)).
+
+Publishing refuses to write without `GRAFANA_TOKEN`: some Grafanas accept an anonymous request, and
+one that did would write as whoever the server thinks is asking. `--grafana-dry-run` writes nothing
+and sends no request, so it runs without the token.
 
 ## Agent envlist {#the-agents-envlist}
 

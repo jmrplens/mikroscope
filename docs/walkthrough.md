@@ -29,6 +29,9 @@ Every object carries the comment `mikroscope:<name> (managed by mikroscope)`
 
 `uninstall` removes by exact tag plus identity, never by pattern, and fails naming the step if anything remains.
 
+`install` writes nothing outside the router: the collector and the Grafana dashboards are a
+separate, optional step ([See it in Grafana](https://jmrp.io/docs/mikroscope/start/#see-it-in-grafana)).
+
 ### Requirements
 
 | Need                | Value                                                           |
@@ -60,7 +63,7 @@ release published. [Install the CLI](https://jmrp.io/docs/mikroscope/install/cli
 ### Check the router
 
 ```sh
-mikroscope doctor --router admin@192.168.88.1 --remote-image jmrplens/mikroscope-agent:1.4.0
+mikroscope doctor --router admin@192.168.88.1 --remote-image jmrplens/mikroscope-agent:1.5.0
 ```
 
 `doctor` reads the router and writes nothing. It prints one line per check, marked `ok`, `MISSING`
@@ -92,7 +95,7 @@ again until nothing is `MISSING`. A `WARN` line does not stop the install.
 ### Install the agent
 
 ```sh
-mikroscope install --router admin@192.168.88.1 --remote-image jmrplens/mikroscope-agent:1.4.0
+mikroscope install --router admin@192.168.88.1 --remote-image jmrplens/mikroscope-agent:1.5.0
 ```
 
 `install` runs the same checks, reads the router's architecture, and prints every RouterOS command
@@ -103,7 +106,7 @@ computer:
 ```text
 install done: 6 step(s) created
 probing http://172.30.10.2:9123/healthz from this host …
-  direct transport ok: agent 1.4.0 (<commit>) built <time>, 10 Hz, seq 7, 0 slipped, 2ms round trip
+  direct transport ok: agent 1.5.0 (<commit>) built <time>, 10 Hz, seq 7, 0 slipped, 2ms round trip
 ```
 
 The router pulls the image from Docker Hub itself: nothing is uploaded, and nothing is set in
@@ -120,10 +123,50 @@ mikroscope status --router admin@192.168.88.1
 probes the agent:
 
 ```text
-agent: 1.4.0 (<commit>) built <time>, 10 Hz, seq 14 (oldest 1), up 1s, 0 slipped, 1ms round trip
+agent: 1.5.0 (<commit>) built <time>, 10 Hz, seq 14 (oldest 1), up 1s, 0 slipped, 1ms round trip
 ```
 
 From a host on the router's LAN, `curl http://172.30.10.2:9123/healthz` answers `{"ok":true,…}`.
+
+### See it in Grafana
+
+Optional, and nothing here writes to the router. The dashboards read a store, and the collector,
+`mikroscope forward`, is what fills it: it pulls the samples from the agent and writes them to the
+sinks you name. With an InfluxDB 3 and a Grafana already running, start it and leave it running:
+
+```sh
+export MIKROSCOPE_INFLUX_TOKEN=…   # the store's token; leave it out for a store without auth
+mikroscope forward --influx http://localhost:8181 --influx-db mikroscope
+```
+
+Once samples have arrived, run `dashboards publish` from another shell with the same
+`MIKROSCOPE_INFLUX_TOKEN`, the collector's sink flags and your Grafana. It creates the store's
+datasource, publishes its dashboard and exits:
+
+```sh
+export GRAFANA_TOKEN=…   # a Grafana service-account token with the Admin role
+mikroscope dashboards publish --influx http://localhost:8181 --influx-db mikroscope --grafana http://localhost:3000
+```
+
+```text
+folder "mikroscope" (<uid>) created
+influxdb: datasource mikroscope-influxdb (influxdb) created
+influxdb: dashboard http://localhost:3000/d/mikroscope-influxdb/…
+```
+
+- **Too early.** Run before the store holds a sample, it publishes the compiled defaults and prints
+  `could not ask the datasource which measurements it holds`. Run it again once data has arrived
+  and it replaces the dashboard.
+- **From the collector.** Add `--grafana http://localhost:3000` to `forward`, with `GRAFANA_TOKEN` in
+  its environment, and it publishes the same way at every start, before collecting.
+- **Another address.** When Grafana reaches InfluxDB by another address than the collector does,
+  pass that address in `--grafana-datasource-url`. With Grafana in a container, `localhost` is the
+  container itself: use InfluxDB's name on the Docker network, such as `http://influxdb:8181`, or
+  the host's LAN address.
+- The interface panels also need the [RouterOS API tier](https://jmrp.io/docs/mikroscope/sinks/api-tier/).
+
+[Set up in Grafana](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/) covers Prometheus and the other
+stores, importing by hand, and checking every panel.
 
 ### Other ways to install
 
@@ -146,7 +189,9 @@ From a host on the router's LAN, `curl http://172.30.10.2:9123/healthz` answers 
 - [First recording](https://jmrp.io/docs/mikroscope/start/walkthrough/): record a window, mark it and plot it.
 - [Run the collector](https://jmrp.io/docs/mikroscope/sinks/): send the samples to Prometheus, InfluxDB 3 or nine
   other sinks.
-- [Dashboards](https://jmrp.io/docs/mikroscope/dashboards/): the Grafana dashboards for each store.
+- [Set up in Grafana](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/): the dashboards for Prometheus and
+  the other stores, from the collector, the CLI or by hand.
+- [Dashboards](https://jmrp.io/docs/mikroscope/dashboards/): what every section and panel shows.
 
 ### Limitations
 
@@ -257,8 +302,9 @@ variable.
    heading and `--svg` another path. The same recording always gives the same bytes.
 
 5. **Keep collecting (optional).** To keep the samples rather than a window,
-   [run the collector](https://jmrp.io/docs/mikroscope/sinks/) into Prometheus, InfluxDB 3 or another sink, and
-   [import the dashboards](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/).
+   [run the collector](https://jmrp.io/docs/mikroscope/sinks/) into Prometheus, InfluxDB 3 or another sink; with
+   `--grafana` it also publishes the dashboard
+   ([Set up in Grafana](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/)).
 
 ### Read the chart
 

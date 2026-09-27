@@ -50,12 +50,15 @@ database (<TestedOn of="not-tested">not run against PostgreSQL</TestedOn>).
 
 Each file is `apiVersion: 1` with one rule group, `mikroscope`, in a folder named `mikroscope`,
 organisation 1, evaluated every minute. The rules are provisioned rather than built into the
-dashboards, so an operator who wants none copies nothing.
+dashboards, so an operator who wants none copies nothing. `forward --grafana`,
+`dashboards publish` and `dashboards import` install none of them, and
+`uninstall --targets dashboard` removes none.
 
 ## Install the rules {#installing-them}
 
-1. Replace the datasource placeholder with your datasource's UID and write the file into Grafana's
-   provisioning directory. Provisioning files do not resolve a dashboard's `${DS_MIKROSCOPE}` input,
+1. Replace the datasource placeholder with your datasource's UID (`mikroscope-<store>` when the
+   collector or `dashboards publish` created it) and write the file into Grafana's provisioning
+   directory. Provisioning files do not resolve a dashboard's `${DS_MIKROSCOPE}` input,
    so the datasource is a literal placeholder, `DS_UID_PLACEHOLDER`:
 
    ```sh
@@ -169,7 +172,7 @@ Each rule's title, and under it its `summary` annotation, shortened:
 
 All <DashboardCount store="prometheus" of="rules" /> read the collector's `/metrics`, which is the
 only exposition there is —
-[Import and check](/mikroscope/dashboards/import-and-check/#prometheus-one-scrape-job) has the one
+[Set up in Grafana](/mikroscope/dashboards/import-and-check/#prometheus-one-scrape-job) has the one
 scrape job. `mikroscope_slipped_total` is among them: the agent owns the ticker and is the only
 thing that can count a slipped tick, and it reports the number over `/sampler`, which the collector
 reads every minute and renders. So the rule fires on a figure that is at most a minute old rather
@@ -279,7 +282,7 @@ tried, is on <TestedOn of="alert-rules">Tested on</TestedOn>.
 
 - [Detection rules](/mikroscope/sinks/detections/): the eleven rules behind the detections alert,
   and what each may not claim.
-- [Import and check](/mikroscope/dashboards/import-and-check/): the datasource UID these files need,
+- [Set up in Grafana](/mikroscope/dashboards/import-and-check/): the datasource UID these files need,
   and the Prometheus scrape job.
 - [Dashboards](/mikroscope/dashboards/): the panels whose fault counters these rules are built from.
 - [Prometheus metrics](/mikroscope/reference/metrics/): the families the Prometheus queries read.

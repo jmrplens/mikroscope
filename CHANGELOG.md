@@ -4,7 +4,7 @@ Notable changes per release. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the versions
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.5.0] - 2026-09-27
 
 ### Added
 
@@ -20,8 +20,221 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Expressive Code's colours character by character in both themes over
   276,003 characters of the golden scripts; an unknown code-block language
   now fails the build. GitHub colours no fence name as RouterOS, so `docs/`
-  shows these blocks plain as before. Measured on 2026-09-27 with shiki
-  4.4.3 and Expressive Code 0.44.2.
+  shows these blocks plain as before. The pages' markdown twins fence them
+  `routeros` too, and the generator's commands that run on the reader's
+  machine `sh`, where every one of them was `text`. Measured on 2026-09-27
+  with shiki 4.4.3 and Expressive Code 0.44.2.
+- **`mikroscope dashboards publish`.** What `forward --grafana` does when the
+  collector starts, done once, with no collector and no router: it takes the
+  collector's sink flags and the same `--grafana` flags, reconciles one
+  datasource and one dashboard per store those sinks write to, prints what it
+  did to each, and exits. A refusal from Grafana is its error and its exit
+  status, where the collector warns and carries on. `--grafana-dry-run`
+  prints the same list and writes nothing. Checked against a fake Grafana in
+  the unit tests, and against Grafana 13.2.1 by the stores suite on
+  2026-09-27 for InfluxDB, Elasticsearch, PostgreSQL, Prometheus and
+  Graphite, one store per run, after `forward --grafana` with the same sink
+  and Grafana flags had created that store's datasource and published its
+  dashboard (see Changed): each run exited 0, found the folder and the
+  datasource `unchanged` and printed the dashboard's address. Creating or
+  updating a datasource through `dashboards publish`, `--grafana-dry-run`, a
+  refusal from Grafana and a run of more than one store were not run against
+  a real Grafana.
+
+### Changed
+
+- **`--grafana-datasource-url` and `--grafana-datasource-uid` take one store
+  per run.** Each names a single datasource, and every store of the run was
+  given it: a collector writing to InfluxDB and Prometheus with
+  `--grafana-datasource-url` pointed at Prometheus built an InfluxDB
+  datasource that queried Prometheus. A run that publishes more than one
+  store and sets either flag (or `MIKROSCOPE_GRAFANA_DATASOURCE_URL` or
+  `_UID`) is now refused before anything is sent, dry run included, with
+  ``--grafana-datasource-url names one datasource for every store, and this
+  run has 2 (influxdb, prometheus): publish them one at a time with
+  `mikroscope dashboards publish`…``. `dashboards publish` exits 1 on it;
+  `forward` logs it as its `grafana: could not publish, carrying on without
+  it:` warning and collects, as with every other publishing failure. The
+  refusal: unit tests only, against fake Grafanas. A run of one store that
+  sets `--grafana-datasource-url` is still accepted: the stores suite on
+  2026-09-27 (Grafana 13.2.1) passed it to `forward --grafana` and to
+  `dashboards publish` for Prometheus and for Graphite, one store per run,
+  and both published. `--grafana-datasource-uid` on one store was not run
+  against a real Grafana.
+- **Publishing carries on past a store that fails.** `forward --grafana`
+  stopped at the first store whose datasource or dashboard failed, and the
+  stores after it were neither published nor mentioned. Every store is now
+  tried, by the collector and by `dashboards publish`; each one that fails is
+  reported on a line of its own that names it (`the datasource for influxdb:
+  …`, `the dashboard for postgres: …`), and `forward` logs one warning per
+  failed store. `dashboards publish` exits 1 when any store failed. A run
+  interrupted between stores stops there (`elasticsearch: not published:
+  context canceled`). The folder still comes first, and a folder Grafana
+  refuses still stops the run. Unit tests only, against fake Grafanas.
+- **The publishing flags are checked before the token.** A run that sets
+  flags no store could be published with, or has no sink with a dashboard,
+  says so before it says that `GRAFANA_TOKEN` is missing. Unit tests only.
+- **`--grafana-datasource-sslmode` takes only the four modes Grafana's
+  PostgreSQL datasource has**, `disable`, `require`, `verify-ca` and
+  `verify-full`, and refuses anything else (`prefer`, a typo, a capital)
+  instead of writing it into the datasource. Unit tests only.
+- **The Grafana URL is found in either variable, except by the collector.**
+  `dashboards publish` and `uninstall` read `MIKROSCOPE_GRAFANA_URL` and then
+  `GRAFANA_URL`; `dashboards import` and `check` read `GRAFANA_URL` and then
+  `MIKROSCOPE_GRAFANA_URL`. `forward` still reads only
+  `MIKROSCOPE_GRAFANA_URL`: `GRAFANA_URL` and `GRAFANA_TOKEN` are unprefixed
+  names other Grafana tooling may use, and a collector must not start
+  writing to a Grafana because the shell it was started from was set up for
+  something else. Unit tests only.
+- **`dashboards gen` makes `--out`**, parents included, where it refused a
+  directory that was not there yet. Unit tests only.
+- **`forward --grafana-dry-run` needs a Grafana.** Without `--grafana` or
+  `MIKROSCOPE_GRAFANA_URL` there is no publish to preview, and the dry run
+  was ignored: the collector started and wrote into every sink named. It now
+  stops with `--grafana-dry-run needs --grafana (or MIKROSCOPE_GRAFANA_URL)`
+  before the agent or a sink is touched. Unit tests only.
+- **`uninstall` refuses `--grafana-dry-run`.** It takes forward's Grafana
+  flags so a collector's flags can be passed as they are, and ignores the
+  ones it has no use for; it ignored this one too, so `--grafana-dry-run
+  --yes` removed everything. Its dry run is leaving out `--yes`, and the
+  refusal says so. Unit tests only.
+- **`uninstall` lists the Grafana and store targets before it touches the
+  router.** `--targets all --yes` without `--grafana`, without
+  `GRAFANA_TOKEN`, or against a store it could not read, removed the router
+  objects first and then stopped on the dashboard or data target, half
+  done. A Grafana it could not read did not stop it: its dashboard and
+  datasources read as not there, and the run went on and left them in place
+  (see Fixed). A target that cannot be listed, an unreadable Grafana now
+  included, stops the verb before anything is removed. Unit tests for no
+  `--grafana` and an unreadable Grafana; a missing token and an unreadable
+  store are listed before the router by the same ordering and have no test
+  of their own. With no sink flag there is no store whose dashboard could
+  have been published, so the dashboard target looks for nothing and needs
+  no Grafana, and `--targets all` goes on to the router objects alone, as
+  the reference already said (a unit test).
+- **The help says who needs which datasource flag.**
+  `--grafana-datasource-uid` is required only for `--sql`; `--prom` and
+  `--graphite` can be given `--grafana-datasource-url` instead. The `--var`
+  example of `dashboards check` is `host=router`.
+- **The documentation takes the reader from install to Grafana.** Quick
+  install says that `install` writes only to the router, and gains an
+  optional last step after Verify, See it in Grafana: the collector, then
+  `dashboards publish` with its sink flags, or `--grafana` on `forward`.
+  Import and check is now Set up in Grafana, at the same address. It follows
+  the order of the task: choose a route, the Grafana token and what each verb
+  needs it to be allowed to do, publish from the collector or once, import
+  with the CLI, import by hand, each store's datasource, the store probe,
+  check every panel, update and remove. New sections:
+  - the dashboards overview gains Get them into Grafana;
+  - the FAQ gains whether `install` sets up the dashboards;
+  - Upgrade gains what to publish again after a new CLI or collector image;
+  - Run the collector gains Dashboard in Grafana;
+  - Troubleshooting gains the publishing errors and One store per run.
+
+  The CLI and environment references document `dashboards publish`, the
+  one-store rule, which Grafana variable each verb reads first, and the new
+  refusals; `.env.example` gains the first three. The security page says that
+  `forward --grafana` and `dashboards publish` copy the InfluxDB token,
+  which can write, and `MIKROSCOPE_ELASTIC_AUTH` into the datasources they
+  create, and that `--grafana-datasource-uid` is the way to give Grafana a
+  read-only credential. 18 pages and their Spanish twins changed. No page
+  changed address, and `site/scripts/anchors.txt` gained 22 ids and lost
+  none.
+- **The stores suite runs `dashboards publish` as well.**
+  `TestForwardPublishesFiveWorkingDatasources` lets `forward --grafana`
+  create each store's datasource and dashboard, runs `dashboards check`
+  against that datasource, and then runs `dashboards publish` with the same
+  sink and Grafana flags; that step must exit 0 and print the store's
+  datasource and dashboard lines. It passed on 2026-09-27 for InfluxDB,
+  Elasticsearch, PostgreSQL, Prometheus and Graphite (`e2e.yml` run
+  36344009521, on a commit whose `cmd`, `internal`, `test` and `deploy` are
+  this release's; Grafana 13.2.1, InfluxDB 3.11.2 Core, Elasticsearch 9.5.3,
+  PostgreSQL 18.6, Prometheus 3.14.0, graphite-statsd 1.1.10-5):
+  `dashboards publish` found the folder and each datasource `unchanged` and
+  printed each dashboard's address. Not exercised there: a store that fails,
+  the one-store refusal, `--grafana-dry-run`, and an Elasticsearch that
+  requires authentication (the suite's runs without it).
+
+### Fixed
+
+- **The Elasticsearch datasource the collector builds names `@timestamp` as
+  its time field.** It named `time`, a field no document has: the sink
+  stamps `@timestamp`, and the panels, the annotations and the stores suite's
+  hand-built datasource all read that. What `time` did to the panels was not
+  asserted: at 1.4.0 the stores suite's `dashboards check` against the
+  collector's datasource could fail only on two InfluxDB strings (see "The
+  stores suite fails on any panel error" below), and a range over a field
+  no document has is expected to match nothing, which is no error. On
+  2026-09-27 the stores suite (Grafana 13.2.1, Elasticsearch 9.5.3 without
+  authentication, this release's Go code) had the collector build the
+  datasource with `@timestamp` and ran every panel of the Elasticsearch
+  dashboard through it with `dashboards check`, which exited 0: each panel
+  returned rows or is one of the known-empty ones. That does
+  not tell the two fields apart: every query's date histogram keeps its
+  empty buckets (`min_doc_count` 0), so a panel is expected to answer with
+  rows whether or not a document falls in the range. That the field matches
+  the documents rests on the unit test.
+- **The Elasticsearch datasource the collector builds sends the credential
+  the way the sink does.** It copied `MIKROSCOPE_ELASTIC_AUTH` into the
+  datasource's `Authorization` header as written, so `elastic:…` went out as
+  `Authorization: elastic:…` and an API key without its `ApiKey` scheme,
+  neither of which Elasticsearch accepts. The datasource now sends basic auth
+  for `user:password` and `ApiKey <key>` otherwise, from the one function
+  the sink uses. Found by reading both; unit tests only, and not run against
+  an Elasticsearch that requires authentication.
+- **`deploy/compose.influxdb-grafana.yaml` gives the datasource an address
+  Grafana can reach.** The collector runs on the host's network and writes
+  to `http://127.0.0.1:8181`, and the datasource took that address, which
+  inside the bridged Grafana container is its own loopback. The collector
+  now gets `MIKROSCOPE_GRAFANA_DATASOURCE_URL: http://influxdb:8181`, the
+  counterpart of the `http://prometheus:9090` the Prometheus stack's
+  comments say to pass. Found by reading the file; the stack was validated
+  with `docker compose config` and not brought up.
+- **`uninstall --targets dashboard` reports a Grafana it could not read.**
+  An unreachable server, a rejected token or a server error read as "not
+  there", and the verb printed `nothing of this is here to remove` with the
+  dashboard still in place. Only a 404 means not there now; anything else
+  stops the verb with `asking Grafana whether dashboard mikroscope-influxdb
+  is there: …` and exit status 1. Unit tests only.
+- **`dashboards import` and `check` drop a trailing slash from `--grafana`**,
+  as `publish` and `uninstall` do, where they sent `//api/…` and printed the
+  imported dashboard's address with the same doubled slash. Unit tests only.
+- **The stores suite fails on any panel error against the collector's
+  datasource.** `checkAgainstWhatItBuilt` looked for ` err `, which
+  `dashboards check` never prints, so only its two InfluxDB trap strings
+  could fail it; it now fails on every `FAIL` line that carries a reason.
+  The line parser has a unit test. The stores suite ran with the new rule on
+  2026-09-27 (Grafana 13.2.1; see Changed) and passed: against the five
+  datasources the collector built, `dashboards check` printed no `FAIL` line
+  with an error. It counted 5 `FAIL` panels on InfluxDB, 20 on PostgreSQL,
+  33 on Prometheus, 4 on Graphite and none on Elasticsearch, each with no
+  rows and no error, which the suite does not fail on; known-empty panels
+  are tolerated, with or without an error, by `check` and by the suite
+  alike. The rule has not been seen to catch an error against a real store;
+  only the unit test shows it would.
+- **Five statements the documentation made at 1.4.0 were wrong, and are
+  corrected**, in the English page and its Spanish twin where it has one:
+  - Troubleshooting said that `dashboards check` sorts the panels a device
+    does not produce into "Not available on this device". `check` asks the
+    datasource the same question (unless `--no-probe`), but only to generate
+    the copy of the dashboard whose queries it runs, and writes nothing to
+    Grafana. The sorting that reaches Grafana is done by `dashboards import`
+    (`cmd/mikroscope/dashboards.go`) and by `dashboards publish` and
+    `forward --grafana` (`cmd/mikroscope/publish.go`), and only on InfluxDB
+    and Prometheus, the two stores the probe can ask
+    (`internal/dashboards/grafana.go`).
+  - How it works said that the collector image runs `forward` only. `forward`
+    is its default command, and `dashboards` runs in it too
+    (`Dockerfile.collector`).
+  - The troubleshooting section headed Empty PostgreSQL panels, and its row
+    in the table, described Grafana's InfluxDB SQL plugin. The section is now
+    Empty panels with valid SQL, under the same id.
+  - The environment reference said that an empty `MIKROSCOPE_GRAFANA_FOLDER`
+    means Grafana's General folder. An empty variable is ignored and the
+    folder stays `mikroscope` (`env` in `cmd/mikroscope/main.go`);
+    `--grafana-folder ""` selects the General folder.
+  - `docs/README.md` (from `site/scripts/gen-docs.mjs`) said there were two
+    committed dashboards. There are five.
 
 ## [1.4.0] - 2026-09-27
 

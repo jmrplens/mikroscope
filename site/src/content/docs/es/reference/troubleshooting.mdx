@@ -262,7 +262,7 @@ Eso imprime los recuentos de propiedad y, si alcanza al agente, su salud.
 | ----------------------------------------------------- | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
 | Ningún `events`, nunca                                | el contenedor corre sin privilegios, y `/dev/kmsg` necesita `privileged=yes`     | instala o actualiza sin `-privileged=false`                                                                                                     |
 | Ningún panel de PMU, ni ciclos ni instrucciones       | `perf_event_open` no está disponible en ese kernel o placa                       | ninguno; el dashboard mueve esos paneles a «Not available on this device»                                                                       |
-| Un panel dice **No data** y los demás están bien      | esa medida no se produce en este equipo                                          | `mikroscope dashboards check` coloca esos paneles en su fila                                                                                    |
+| Un panel dice **No data** y los demás están bien      | esa medida no se produce en este equipo                                          | `dashboards import` o `dashboards publish`, o un colector con `--grafana` en su siguiente arranque, mueven esos paneles a su fila (InfluxDB, Prometheus); `dashboards check` los enumera |
 | Un panel muestra una insignia roja de error           | la consulta falló: la fuente de datos, no los datos                              | [Almacenes y dashboards](/mikroscope/es/reference/troubleshooting/#el-almacén-y-el-dashboard)                                                                                            |
 | `forward` imprime `… dropped` para un destino         | el destino no pudo seguir el ritmo                                               | [Descartes de un destino](/mikroscope/es/reference/troubleshooting/#un-destino-está-descartando)                                                                                         |
 | Loki lo aceptó todo y una consulta no devuelve nada   | un envío no es consultable hasta que se vuelca el trozo                          | vuelve a consultar tras el volcado                                                                                                              |
@@ -274,9 +274,10 @@ Eso imprime los recuentos de propiedad y, si alcanza al agente, su salud.
 
 Los dashboards llevan una fila llamada **«Not available on this device»** justamente para esto: los
 paneles cuya medida no produce el kernel o la placa se mueven allí en vez de dejarlos dibujando una
-gráfica vacía entre los demás. `mikroscope dashboards check` le pregunta a la fuente de datos qué
-medidas tiene de verdad y hace esa separación para tu almacén: [Importar y
-comprobar](/mikroscope/es/dashboards/import-and-check/).
+gráfica vacía entre los demás. `mikroscope dashboards import` le pregunta a la fuente de datos qué
+medidas tiene de verdad y hace esa separación para tu almacén, en InfluxDB y Prometheus, y
+`dashboards publish` y un colector con `--grafana` hacen lo mismo. `dashboards check` informa de lo
+que está vacío pero no cambia nada en Grafana: [Sondeo del almacén](/mikroscope/es/dashboards/import-and-check/#el-sondeo).
 
 ### Kernel parado tras reinicio {#el-agente-se-reinició-y-el-tier-de-kernel-se-paró}
 
@@ -339,9 +340,21 @@ perdería más de lo que pierde el almacén.
 
 | Ves                                                                    | Causa                                                                                  | Arreglo                                                                                                                                 |
 | ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Ningún dashboard de mikroscope en Grafana después de `install`         | `install` solo escribe en el router                                                    | ejecuta el colector con `--grafana`, o `dashboards publish` ([Configurar en Grafana](/mikroscope/es/dashboards/import-and-check/#elegir-un-camino)) |
+| `forward` no imprime ninguna línea `grafana:`                          | no se nombró ningún Grafana: `forward` lee `--grafana` o `MIKROSCOPE_GRAFANA_URL`, nunca `GRAFANA_URL` | pasa `--grafana` ([Variables de Grafana](/mikroscope/es/reference/environment/#grafana))     |
+| `--grafana needs GRAFANA_TOKEN`                                        | no hay token en el entorno de `forward` o de `dashboards publish`                      | un token de cuenta de servicio en `GRAFANA_TOKEN` ([Token de Grafana](/mikroscope/es/dashboards/import-and-check/#token-de-grafana))  |
+| `dashboards publish needs --grafana …`                                 | no se nombró ningún Grafana, ni en la opción ni en `MIKROSCOPE_GRAFANA_URL` o `GRAFANA_URL` | pasa `--grafana`                                                                                   |
+| `dashboards publish needs the sink flags the collector runs with`      | no se dio ninguna opción de destino: cada fuente de datos se describe a partir de su destino | las opciones de destino del colector                                                           |
+| `no sink this builds a dashboard for is configured`                    | solo destinos sin dashboard                                                            | añade `--influx`, `--prom`, `--postgres`, `--graphite` o `--elastic` ([Dashboard en Grafana](/mikroscope/es/sinks/#dashboard-en-grafana)) |
+| `--grafana-datasource-url names one datasource for every store` (o `…-uid names`, o las dos opciones con `name`) | una ejecución de varios almacenes que fija `--grafana-datasource-url` o `-uid`, o su variable | publica ese almacén aparte ([detalles](/mikroscope/es/reference/troubleshooting/#un-almacén-por-ejecución))           |
+| `--grafana-datasource-sslmode "…" is not a mode Grafana's PostgreSQL datasource has` | un modo que la fuente de datos no tiene, como `prefer`                   | `disable`, `require`, `verify-ca` o `verify-full`, en minúsculas                                      |
+| `--grafana-dry-run needs --grafana`                                    | una ejecución de prueba de `forward` sin ningún Grafana: no hay publicación que mostrar | añade `--grafana`, o quita la ejecución de prueba                                                 |
+| `import/check need --grafana, GRAFANA_TOKEN and --datasource-uid`      | falta uno de los tres                                                                  | pasa `--grafana` (o define `GRAFANA_URL`) y `--datasource-uid` ([Importar con la CLI](/mikroscope/es/dashboards/import-and-check/#importar-desde-la-cli)) |
+| `could not ask … which measurements it holds`                          | el motivo entre paréntesis: un almacén todavía sin datos (`the datasource reported no mikroscope measurements`), una fuente de datos a la que Grafana no llega o que no puede consultar, o un almacén que no se puede sondear (`cannot probe a "…" datasource`: PostgreSQL, Graphite, Elasticsearch) | sin datos aún: vuelve a publicar cuando los tenga; inalcanzable: la dirección por la que Grafana llega al almacén, en `--grafana-datasource-url` si la fuente de datos la creó el colector; sin sondeo: nada ([Sondeo del almacén](/mikroscope/es/dashboards/import-and-check/#el-sondeo)) |
+| marcas rojas `table … not found` en un dashboard de InfluxDB subido a mano | el fichero lleva los valores compilados por defecto                               | `dashboards import` o `dashboards publish` ([Importar a mano](/mikroscope/es/dashboards/import-and-check/#importar-a-mano))                 |
 | `flightsql: Unauthenticated` en todos los paneles de InfluxDB          | la fuente de datos tiene puesto solo uno de sus dos campos de credencial               | pon los dos, o deja que la construya `forward --grafana` ([detalles](#flightsql-unauthenticated-de-una-fuente-de-datos-de-influxdb))    |
 | `tls: first record does not look like a TLS handshake`                | el lado de FlightSQL intenta TLS contra un InfluxDB en HTTP plano                      | `insecureGrpc` ([detalles](#tls-first-record-does-not-look-like-a-tls-handshake))                                                       |
-| Paneles de PostgreSQL vacíos, y el SQL funciona en `psql`              | un resultado sin ninguna columna de tipo tiempo                                        | una columna `time` ([detalles](/mikroscope/es/reference/troubleshooting/#los-paneles-están-vacíos-y-el-sql-funciona-en-psql))                                                    |
+| Paneles vacíos, y el SQL funciona bien fuera de Grafana                | un resultado sin ninguna columna de tipo tiempo                                        | una columna `time` ([detalles](/mikroscope/es/reference/troubleshooting/#los-paneles-están-vacíos-y-el-sql-funciona-en-psql))                                                    |
 | `the <name> sink does not know the address Grafana would query`        | `--prom` y `--graphite` no pueden describir su propia fuente de datos                  | `--grafana-datasource-url` o `--grafana-datasource-uid` ([detalles](#the-nombre-sink-does-not-know-the-address-grafana-would-query))     |
 | `--influx is a write URL this cannot take apart`                       | una URL de escritura que no es la de InfluxDB 3                                        | el servidor y `--influx-db`, o adopta una fuente de datos ([detalles](#--influx-is-a-write-url-this-cannot-take-apart))                 |
 | `standard_conforming_strings = off`                                    | el servidor interpretaría mal las sentencias                                           | enciéndelo para la conexión, o usa `--sql` ([detalles](#standard_conforming_strings--off))                                              |
@@ -350,6 +363,8 @@ perdería más de lo que pierde el almacén.
 | `uninstall` lista las mismas tablas cada vez                           | InfluxDB 3 renombra una tabla borrada                                                  | nada: se filtran ([detalles](#uninstall-lista-las-mismas-tablas-cada-vez))                                                              |
 | `uninstall --targets data` dice que un destino no guarda nada que pueda borrar | `--prom`, `--graphite` y `--sql` no guardan nada que esto pueda borrar         | bórralo donde vive ([detalles](#uninstall---targets-data-dice-que-un-destino-no-guarda-nada-que-pueda-borrar))                          |
 | `--targets dashboard` dejó la fuente de datos                          | estaba adoptada                                                                        | nada ([detalles](/mikroscope/es/reference/troubleshooting/#--targets-dashboard-dejó-la-fuente-de-datos))                                                                         |
+| `uninstall takes no --grafana-dry-run`                                 | la ejecución de prueba de `uninstall` es dejar fuera `--yes`                           | quita la opción: sin `--yes` lista lo que se iría y no borra nada                                     |
+| `uninstall`: `asking Grafana whether dashboard … is there`             | no se pudo leer Grafana: inalcanzable, el token rechazado o un error del servidor      | corrige la URL o el token y vuelve a ejecutarlo; no se borró nada                                     |
 
 </ScrollTable>
 
@@ -368,9 +383,9 @@ intenta TLS salvo que esté `insecureGrpc`, así que una fuente de datos apuntad
 **HTTP plano** responde esto en todos los paneles. Pon `insecureGrpc` en la fuente de datos, o usa
 `forward --grafana`, que sigue el esquema de la URL a la que escribe el destino.
 
-### Paneles de PostgreSQL vacíos {#los-paneles-están-vacíos-y-el-sql-funciona-en-psql}
+### Paneles vacíos con SQL válido {#los-paneles-están-vacíos-y-el-sql-funciona-en-psql}
 
-El plugin de InfluxDB rechaza un resultado cuyas columnas son todas numéricas y ninguna es de tipo
+El plugin de InfluxDB SQL de Grafana rechaza un resultado cuyas columnas son todas numéricas y ninguna es de tipo
 tiempo, así que un panel cuya consulta devuelve una fila de números pinta su texto de «sin valor»,
 que es exactamente lo que parece un equipo tranquilo. Si estás escribiendo un panel, dale una columna
 `time` aunque el panel no la dibuje; `mikroscope dashboards check` pasa la consulta de cada panel por
@@ -382,8 +397,28 @@ la propia API de Grafana y es la forma más rápida de distinguir una consulta r
 `--elastic` y `--postgres`. A `--prom` lo raspan y `--graphite` escribe al puerto de ingesta de
 carbon, así que ninguno sabe dónde consultaría Grafana: pasa esa dirección en
 `--grafana-datasource-url`, o crea la fuente de datos en Grafana y nómbrala en
-`--grafana-datasource-uid`, que además le dice a `forward` que no la toque. `--sql` nunca conecta y
-falla con su propio mensaje, que apunta a `--postgres`.
+`--grafana-datasource-uid`, que además le dice a `forward` que no la toque. Cualquiera de las dos
+opciones vale solo para ese almacén: una ejecución de varios almacenes que fija una se rechaza
+([Un almacén por ejecución](/mikroscope/es/reference/troubleshooting/#un-almacén-por-ejecución)). `--sql`
+nunca conecta y falla con su propio mensaje, que apunta a `--postgres` o a una fuente de datos
+nombrada en `--grafana-datasource-uid`.
+
+### Un almacén por ejecución {#un-almacén-por-ejecución}
+
+`--grafana-datasource-url` y `--grafana-datasource-uid` nombran cada una una sola fuente de datos, y
+dos almacenes son dos servidores, consultados por dos plugins distintos, así que una ejecución que publica más de un
+almacén y fija cualquiera de las dos, o su variable `MIKROSCOPE_GRAFANA_DATASOURCE_*`, se rechaza
+antes de hacer ninguna petición, también en una ejecución de prueba. Publica aparte el almacén que la
+necesita, con solo su opción de destino:
+
+```sh
+mikroscope dashboards publish --prom :9124 --grafana http://grafana:3000 \
+  --grafana-datasource-url http://prometheus:9090
+```
+
+y ejecuta el colector sin la opción de fuente de datos. Con `--grafana` sigue publicando los
+almacenes de `--influx`, `--elastic` y `--postgres`, que describen su propia fuente de datos, y en
+cada arranque avisa del que no puede describir.
 
 ### `--influx is a write URL this cannot take apart`
 
@@ -415,6 +450,14 @@ Eso es el comportamiento diseñado, no un fallo a medias que perseguir. Negarse 
 las muestras de la hora que pasó sin funcionar, que no se recuperan, por un dashboard publicado en el
 siguiente arranque, que sí. La línea lleva lo que dijo el servidor. `--grafana-dry-run` imprime lo
 que escribiría sin escribir nada, y se ejecuta antes de tocar el router.
+
+Cada almacén que falló tiene una línea propia que lo nombra, `the datasource for <store>: …` o
+`the dashboard for <store>: …`, y los que venían detrás se publicaron igual. Los motivos que más
+imprime: `--grafana needs GRAFANA_TOKEN`, `no sink this builds a dashboard for is configured`,
+`the <name> sink does not know the address Grafana would query`, `--grafana-datasource-url names
+one datasource for every store`, y lo que dijo el servidor cuando rechazó una escritura ([Token de
+Grafana](/mikroscope/es/dashboards/import-and-check/#token-de-grafana)). `dashboards publish`
+imprime los mismos motivos tras `mikroscope:`, uno por almacén que falló, y sale con 1.
 
 ### Tablas repetidas en uninstall {#uninstall-lista-las-mismas-tablas-cada-vez}
 

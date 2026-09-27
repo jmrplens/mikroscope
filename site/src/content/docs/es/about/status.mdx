@@ -24,7 +24,9 @@ RouterOS, la fecha y las condiciones, lo que encontró cada ejecución y lo que 
 guías dicen lo que hace la herramienta y enlazan aquí la prueba. Los veredictos de las funciones se
 contrastaron con el código de la 1.2.0 y de la 1.2.2 el 2026-09-24, los apartados que vinieron de
 las guías con el código de la 1.3.1 el 2026-09-26, y lo que esta página dice del código posterior a
-la 1.3.1, que es el que publica la 1.4.0, con ese código el 2026-09-27; la versión actual es la <Version link />.
+la 1.3.1, que es el que publica la 1.4.0, con ese código el 2026-09-27, y sus apartados sobre la
+publicación en Grafana, `uninstall` y las baterías de pruebas con el código de la 1.5.0 el mismo día;
+la versión actual es la <Version link />.
 
 ## Hardware de referencia {#reference-hardware}
 
@@ -216,7 +218,8 @@ En la máquina de arriba, desde la instantánea limpia. Cómo se ejecuta cada ba
   34 s en x86_64 en tres ejecuciones y de 40 a 45 s en arm64 en cuatro, con el export idéntico byte a
   byte todas las veces. Con el código de la 1.4.0, que hace un solo intento de `uninstall`, el
   2026-09-27: 20 s en x86_64 y 35 s en arm64, una ejecución de cada una con los pasos de compilación
-  de make incluidos, con el export idéntico byte a byte.
+  de make incluidos, con el export idéntico byte a byte. Con el código de la 1.5.0 el mismo día:
+  21 s en x86_64 y 30 s en arm64, medidos igual, con el export idéntico byte a byte.
 - **`make test-lab` con los escenarios de la 1.3.1**, 2026-09-26: de 7 min 21 s a 9 min 49 s en
   x86_64 en seis ejecuciones y de 12 min 12 s a 16 min 48 s en arm64 en tres, las más lentas de cada
   una con las dos baterías en paralelo en un anfitrión ocupado. Ninguna instalación falló.
@@ -286,6 +289,12 @@ En el commit de la publicación 1.4.0 (`79b7c2f`, una ejecución a petición el 
 31 min 38 s, y 3 042,6 s en arm64, emulado, en un trabajo de 54 min 52 s. La imagen del agente 1.4.0
 aún no estaba publicada, así que los trece casos de referencia que descargan su imagen descargaron la
 de la 1.3.1, como hace S5 antes de una etiqueta y dice en su registro.
+
+En el commit de la publicación 1.5.0 (`e61ffb6`, una ejecución a petición el 2026-09-27, run
+36344788569) la batería entera volvió a pasar en las dos arquitecturas: 1 573,2 s en x86_64 en un
+trabajo de 31 min 38 s, y 3 065,8 s en arm64, emulado, en un trabajo de 54 min 55 s. Los trece casos
+de referencia que descargan su imagen descargaron la de la 1.4.0, porque la de la 1.5.0 aún no
+estaba publicada, como registró S5.
 
 ## Equipos y versiones {#un-equipo-dos-versiones-de-routeros}
 
@@ -360,11 +369,14 @@ colector.
 ### Órdenes de despliegue {#la-cli-de-despliegue}
 
 **Las seis órdenes de despliegue se han ejecutado en el RB5009 con RouterOS 7.24.4, las seis a más
-tardar el 2026-09-23, cada una con la CLI de su fecha. Las de la 1.4.0 no se han ejecutado allí: el código
-posterior a la 1.3.1, que es el que publica la 1.4.0, solo se ha ejecutado en el laboratorio virtual
-(2026-09-27).** `doctor`, `plan`, `install`, `status`, `upgrade` y `uninstall` instalan, actualizan
-y retiran el agente, listando cada escritura antes de hacerla y verificando cada retirada por
-recuento de propiedad.
+tardar el 2026-09-23, cada una con la CLI de su fecha. Las de la 1.4.0 y la 1.5.0 no se han
+ejecutado allí: el código posterior a la 1.3.1, que es el que publica la 1.4.0, solo se ha ejecutado
+en el laboratorio virtual (2026-09-27). Según su código, la 1.5.0 no cambia ningún paso de las seis
+órdenes en el router; su `uninstall` rechaza `--grafana-dry-run` y lista los objetivos de Grafana y
+de los almacenes antes de tocar el router, ambas cosas comprobadas solo en pruebas unitarias
+([`uninstall --targets`](#uninstall---targets)).** `doctor`, `plan`, `install`, `status`, `upgrade`
+y `uninstall` instalan, actualizan y retiran el agente, listando cada escritura antes de hacerla y
+verificando cada retirada por recuento de propiedad.
 
 - **Ida y vuelta, 2026-09-12**: `doctor` → `install` → `status` → `upgrade` → `uninstall` dejó el
   `/export` del router idéntico byte a byte (<TestedOn of="export-identical">verificado</TestedOn>).
@@ -673,23 +685,52 @@ y <DashboardCount store="postgres" of="rules" /> para PostgreSQL.
 ### `forward --grafana`
 
 **`forward --grafana` se ha ejecutado contra el Grafana del mantenedor (2026-09-19, InfluxDB 3) y
-contra el de la batería de contenedores para los cinco almacenes (2026-09-20).** El 2026-09-20 se
-apuntó el colector a un Grafana real y a cada uno de los cinco almacenes por turno, se le dejó crear
-la fuente de datos, y después `dashboards check` pasó la consulta de cada panel por la API de Grafana
-contra la fuente de datos que había construido el colector. Los cinco respondieron sin error de
-fuente de datos. La misma ejecución encontró un defecto que ninguna prueba unitaria tenía: un colector
-que escribía en un PostgreSQL vivo por `--postgres` y en nada más no publicaba nada y decía «there is
-nothing to publish», porque la lista de almacenes solo conocía `--sql`. Contra un almacén InfluxDB en
-HTTP plano, una fuente de datos sin `insecureGrpc` respondía a todos los paneles
+contra el de la batería de contenedores para los cinco almacenes (2026-09-20, y con el código de la
+1.5.0 el 2026-09-27). `dashboards publish` solo se ha ejecutado allí, el 2026-09-27, sobre lo que
+`forward --grafana` acababa de crear.** El 2026-09-20 se apuntó el colector a un Grafana real y a
+cada uno de los cinco almacenes por turno, se le dejó crear la fuente de datos, y después
+`dashboards check` pasó la consulta de cada panel por la API de Grafana contra la fuente de datos
+que había construido el colector. Los cinco respondieron sin error de fuente de datos tal como lo
+leía la prueba de esa fecha: buscaba `flightsql: Unauthenticated`, el error de TLS que se cita más
+abajo y `err` con un espacio a cada lado, que no es ninguna marca que imprima `check`, así que un
+error redactado de cualquier otra forma la pasaba. La misma ejecución encontró un defecto que
+ninguna prueba unitaria tenía: un colector que escribía en un PostgreSQL vivo por `--postgres` y en
+nada más no publicaba nada y decía «there is nothing to publish», porque la lista de almacenes solo
+conocía `--sql`. Contra un almacén InfluxDB en HTTP plano, una fuente de datos sin `insecureGrpc`
+respondía a todos los paneles
 `tls: first record does not look like a TLS handshake` mientras el almacén estaba perfectamente
 (medido el 2026-09-19).
+
+El 2026-09-27 la prueba se ejecutó con el código de la 1.5.0 (el commit `ffb934e`, cuyo código Go es
+el de la publicación; la ejecución 36344009521 de `e2e.yml`) contra Grafana 13.2.1, InfluxDB 3.11.2
+Core, Elasticsearch 9.5.3, PostgreSQL 18.6, Prometheus 3.14.0 y graphite-statsd 1.1.10-5, y para
+entonces fallaba con cualquier línea `FAIL` de `check` que llevara un error. Para cada almacén por
+turno, `forward --grafana` creó la fuente de datos y publicó el dashboard, `check` pasó cada panel
+contra esa fuente de datos sobre una ventana de 15 minutos, y `dashboards publish`, con las mismas
+opciones de almacén y de Grafana, salió con código 0, dio la fuente de datos como `unchanged` e
+imprimió la dirección del dashboard. Ningún panel que `check` cuenta como fallido llevaba un error;
+un panel que se espera vacío se marca `none` cuando no devuelve filas o devuelve un error, y la
+prueba solo lee esas líneas en busca de los dos errores de InfluxDB de arriba. La fuente de datos de
+Elasticsearch fue la del colector, con `@timestamp` como campo de tiempo (la de la 1.4.0 nombraba
+`time`, un campo que no lleva ningún documento), y su `check` salió con código 0; en InfluxDB,
+PostgreSQL, Prometheus y Graphite, 5, 20, 33 y 4 paneles no devolvieron filas en la ventana, sin
+error. No se ha probado en la batería: la cabecera `Authorization` que envía la fuente de datos de
+Elasticsearch, porque su Elasticsearch funciona sin autenticación; una fuente de datos que lleve un
+token o una contraseña, que ningún almacén de allí tiene; ni una ejecución que publique más de un
+almacén, porque cada ejecución publicó uno.
 
 ### `uninstall --targets`
 
 **`uninstall --targets` retiró solo lo que escribió este proyecto en la batería de contenedores
-(2026-09-20), y no se ha ejecutado contra el almacén de producción del mantenedor.** La batería
-comprueba que una tabla que este proyecto no escribió, en la misma base de datos y el mismo esquema,
-ni se lista ni se borra.
+(2026-09-20, y `--targets data` de nuevo con el código de la 1.5.0 el 2026-09-27), y no se ha
+ejecutado contra el almacén de producción del mantenedor.** La batería comprueba que una tabla que
+este proyecto no escribió, en la misma base de datos y el mismo esquema, ni se lista ni se borra.
+Ejecuta la orden solo con `--targets data`, contra PostgreSQL e InfluxDB 3, sin router y sin
+Grafana. Lo que la 1.5.0 cambió en la orden fuera de ese camino solo tiene pruebas unitarias:
+rechaza `--grafana-dry-run`, lista los objetivos de Grafana y de los almacenes antes de tocar el
+router, se detiene ante un Grafana que no pudo leer, que la 1.4.0 contaba como uno sin nada que
+retirar, y lee la dirección de Grafana de `GRAFANA_URL` cuando
+`MIKROSCOPE_GRAFANA_URL` no está definida.
 
 ### Baterías de pruebas {#las-baterías-de-pruebas}
 
@@ -712,9 +753,12 @@ runners de GitHub el mismo día.** Qué demuestra cada una y cómo ejecutarla es
   Telegraf 1.39 por HTTP, PostgreSQL 18 (con `--sql`, y con `--postgres` desde que ese destino llegó el
   2026-09-21), InfluxDB 3 y Prometheus, con el destino de fichero como el oráculo contra el que se
   comparan los demás. Cada almacén se vuelve a leer por su propia API, después se importan los cinco
-  dashboards en Grafana y la consulta de cada panel pasa por la API de Grafana; la batería publica las
-  cinco fuentes de datos y comprueba sus dashboards contra ellas, y vuelve a vaciar los almacenes con
-  `uninstall --targets data`. Necesita Docker y ningún router: las muestras son enlatadas, así que la
+  dashboards en Grafana y la consulta de cada panel pasa por la API de Grafana; la batería hace que
+  `forward --grafana` publique las cinco fuentes de datos y comprueba sus dashboards contra ellas,
+  después, desde el 2026-09-27, ejecuta `dashboards publish` con las mismas opciones de almacén y de
+  Grafana, que tiene que salir con código 0 y nombrar la fuente de datos y el dashboard de cada
+  almacén, y vuelve a vaciar los almacenes con `uninstall --targets data`. Necesita Docker y ningún
+  router: las muestras son enlatadas, así que la
   ejecución es reproducible en cualquier máquina. La primera ejecución completa, el 2026-09-16,
   encontró un panel que nombraba dos columnas que el almacén solo tiene cuando se ejecutó la capa de la
   API: la tabla de eventos de puerto nombra `label` y `role`, que el destino escribe en una fila del
@@ -1241,6 +1285,14 @@ como comportamiento esperado enlaza esta lista.
   TimescaleDB no han recibido muestras del router en ninguna ejecución registrada. OpenSearch, las
   hypertables de TimescaleDB y la salida estándar nunca se han probado contra un almacén real; solo
   los cubren las pruebas de contrato de bytes.
+- Un Elasticsearch u OpenSearch que exija autenticación. El Elasticsearch de la batería de
+  contenedores funciona con la seguridad desactivada, así que la cabecera `Authorization` que se
+  construye a partir de `MIKROSCOPE_ELASTIC_AUTH`, autenticación básica para `user:password` y
+  `ApiKey` en otro caso, no tiene ninguna ejecución registrada contra uno: ni desde el destino ni
+  desde la fuente de datos de Elasticsearch que construyen `--grafana` y `dashboards publish`, que
+  envía la misma cabecera desde la 1.5.0. Las pruebas unitarias fijan ambas formas, y la batería de
+  extremo a extremo el `ApiKey` del destino contra un receptor simulado. Esa fuente de datos tampoco
+  se ha ejecutado contra un OpenSearch, con autenticación o sin ella.
 - Un TimescaleDB real: las llamadas a `create_hypertable` siguen la firma documentada de TimescaleDB
   2.x y no están verificadas.
 - El tamaño del destino SQL en un router. Las cifras del fixture (1 375 B de SQL para un evento del
@@ -1293,6 +1345,14 @@ como comportamiento esperado enlaza esta lista.
 
 - Cualquier Grafana que no sea 12.3.0, 12.3.2, 13.2.1 o 13.2.2. En 12.3.0 los únicos renderizados son
   los del 2026-09-25; el resto del dashboard se comprobó allí solo por consulta.
+- `dashboards publish` contra cualquier Grafana que no sea 13.2.1, y sobre algo que no sea lo que
+  `forward --grafana` acababa de crear allí: en la batería de contenedores, el 2026-09-27, se ejecutó
+  una vez por almacén, después del colector, sin credenciales en ninguna fuente de datos, y encontró
+  la carpeta y cada fuente de datos tal como las había dejado el colector, y las dio como
+  `unchanged`. Con `dashboards publish`, una ejecución de más de un almacén, un almacén que falla
+  mientras los demás siguen, una fuente de datos que lleva un token o una contraseña (se escribe de
+  nuevo en cada ejecución y se da como `updated`) y `--grafana-dry-run` solo se han ejecutado en las
+  pruebas unitarias, contra Grafanas simulados.
 - La altura del Overview de trece paneles en un navegador; el JSON del repositorio le da 31 unidades
   de cuadrícula.
 - La regeneración byte a byte de los ficheros de dashboard añadidos después del 2026-09-15.

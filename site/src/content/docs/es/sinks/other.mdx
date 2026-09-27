@@ -141,7 +141,7 @@ Lo que puede la conexión y no puede un fichero:
   mensaje del kernel terminado en barra invertida escaparía su propia comilla de cierre y
   todo lo que viniera detrás se interpretaría como contenido de cadena.
 - **Sabe describir su propia fuente de datos de Grafana**, cosa que el destino de fichero
-  no podrá nunca: ver [importar y comprobar](/mikroscope/es/dashboards/import-and-check/).
+  no podrá nunca: ver [Fuente de datos por destino](/mikroscope/es/dashboards/import-and-check/#cinco-de-cinco-por-dos-caminos-distintos).
 
 A diferencia de `--sql`, `--postgres` va en cola como los destinos remotos: un lote por
 segundo, 64 KiB × `--queue-seconds` de presupuesto descartando primero el lote más antiguo,
@@ -479,6 +479,12 @@ tick de cuatro núcleos con todas las fuentes presentes se renderiza en 6 411 B
 líneas en el fixture de pruebas del destino, no en un router, así que 10 Hz son unos
 63 KiB/s. Por encima de 10 Hz <TestedOn of="not-tested">no se ha medido</TestedOn>.
 
+El dashboard de Graphite lee estas rutas. Grafana pregunta a la API web de Graphite, no al puerto
+de carbon en el que escribe el destino, así que `--grafana` necesita esa dirección en
+`--grafana-datasource-url`, o una fuente de datos de Graphite que ya tengas en
+`--grafana-datasource-uid`
+([Fuente de datos de Graphite](/mikroscope/es/dashboards/import-and-check/#la-fuente-de-datos-de-graphite)).
+
 ## Elasticsearch y OpenSearch
 
 ```sh
@@ -532,6 +538,12 @@ se cierran una vez por segundo o al llegar a 1 MiB, lo que ocurra primero.
 Tamaños según el fixture de dos núcleos del destino, no según un router: 1 077 B de NDJSON
 para una muestra del kernel sin fuentes opcionales, 1 952 B repartidos en dos documentos con
 las fuentes opcionales y un registro del log del kernel. Una muestra de cuatro núcleos <TestedOn of="not-tested">no se ha renderizado</TestedOn> en este formato.
+
+`--grafana` construye una fuente de datos de Elasticsearch de Grafana (tipo `elasticsearch`) a
+partir de `--elastic`: `@timestamp` como campo de tiempo, un patrón de índice que abarca cada índice
+que genera `--elastic-index`, y `MIKROSCOPE_ELASTIC_AUTH` enviada igual que la envía el destino
+([Fuente de datos de Elasticsearch](/mikroscope/es/dashboards/import-and-check/#la-fuente-de-datos-de-elasticsearch)).
+Contra OpenSearch esa fuente de datos <TestedOn of="not-tested">no se ha probado</TestedOn>.
 
 ## Telegraf
 

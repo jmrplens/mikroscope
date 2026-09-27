@@ -8,7 +8,7 @@ The current mikroscope release and its date, read at build from VERSION and CHAN
 
 Source: <https://jmrp.io/docs/mikroscope/about/changelog/>
 
-The current release of mikroscope is [1.4.0](https://github.com/jmrplens/mikroscope/releases/tag/v1.4.0), released on 2026-09-27. Both are
+The current release of mikroscope is [1.5.0](https://github.com/jmrplens/mikroscope/releases/tag/v1.5.0), released on 2026-09-27. Both are
 read at build from the repository's [`VERSION`](https://github.com/jmrplens/mikroscope/blob/main/VERSION) file and from the dated heading that
 version has in [`CHANGELOG.md`](https://github.com/jmrplens/mikroscope/blob/main/CHANGELOG.md), and the site does not build when that heading is missing.
 The version is compiled into both binaries and reported by `mikroscope version`, and the install
@@ -50,16 +50,16 @@ A `v*` tag runs the GoReleaser configuration, [`.goreleaser.yaml`](https://githu
   `mikroscope-agent-armv5.tar`, `mikroscope-agent-armv7.tar` and `mikroscope-agent-amd64.tar`.
   32-bit ARM is two because EN7562CT boards take only v5. `install --agent-tar` uploads one to the
   router.
-- **The agent image in two registries**, `jmrplens/mikroscope-agent:1.4.0` on
-  Docker Hub and `ghcr.io/jmrplens/mikroscope-agent:1.4.0` on GHCR (each also
+- **The agent image in two registries**, `jmrplens/mikroscope-agent:1.5.0` on
+  Docker Hub and `ghcr.io/jmrplens/mikroscope-agent:1.5.0` on GHCR (each also
   tagged `latest`), each one manifest over `linux/amd64`, `linux/arm64`, `linux/arm/v7` and
   `linux/arm/v5`, which `install --remote-image` makes the router pull. mikroscope sends the whole
   reference, registry host included (`registry-1.docker.io/…` for Docker Hub), so the global
   `/container/config registry-url` is neither needed nor written, and Docker Hub serves the image
   with no registry login. Up to 1.2.2 the host was left to `registry-url`, whose RouterOS default
   has not always been Docker Hub.
-- **The collector image**, from 1.1.0 on, `jmrplens/mikroscope:1.4.0` on Docker
-  Hub and `ghcr.io/jmrplens/mikroscope:1.4.0` on GHCR (each also tagged
+- **The collector image**, from 1.1.0 on, `jmrplens/mikroscope:1.5.0` on Docker
+  Hub and `ghcr.io/jmrplens/mikroscope:1.5.0` on GHCR (each also tagged
   `latest`), over `linux/amd64` and `linux/arm64`, for the compose stacks
   under [`deploy/`](https://github.com/jmrplens/mikroscope/tree/main/deploy).
 - **`checksums.txt`**, covering every archive and every agent image tar, a keyless cosign

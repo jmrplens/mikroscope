@@ -36,7 +36,7 @@ se desactiva con `-privileged=false`.
 | Estado | Cuándo                                                                                                                                                                                                                                                                                     |
 | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `0`    | el verbo terminó                                                                                                                                                                                                                                                                           |
-| `1`    | el verbo se ejecutó y falló (un requisito que falta, un error del router, un destino que no se pudo construir, un panel sin datos), el verbo es desconocido, o una opción de `uninstall`, `record`, `mark`, `plot`, `forward` o `dashboards` no se pudo analizar o validar                 |
+| `1`    | el verbo se ejecutó y falló (un requisito que falta, un error del router, un destino que no se pudo construir, un panel sin datos, un almacén que `dashboards publish` no pudo publicar), el verbo es desconocido, o una opción de `uninstall`, `record`, `mark`, `plot`, `forward` o `dashboards` no se pudo analizar o validar                 |
 | `2`    | no se dio ningún verbo, o una opción de `doctor`, `plan`, `install`, `upgrade`, `status` o `image` no se pudo analizar o validar; no se envió nada al router                                                                                                                              |
 
 </ScrollTable>
@@ -183,17 +183,31 @@ partir de las opciones. `--targets` lo amplía más allá del router:
 | Objetivo    | Qué se va                                                                                                                                                                                                                                         |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `router`    | todo lo que creó `install`: los objetos del manifiesto de la instalación, cualquier otro objeto con su etiqueta, la raíz del contenedor, el manifiesto y el directorio `mikroscope` si no queda nada más en él. El valor por defecto              |
-| `dashboard` | el dashboard y la fuente de datos que publicó `forward --grafana`, por cada store al que escribe este colector                                                                                                                                  |
+| `dashboard` | por cada almacén que nombran las opciones de destino: el dashboard `mikroscope-<almacén>`, se importara como se importara, y la fuente de datos `mikroscope-<almacén>`. Ni la carpeta, ni una fuente de datos adoptada, ni las reglas de alerta provisionadas |
 | `data`      | las tablas e índices que escribieron los destinos, y los ficheros que escribieron los de fichero                                                                                                                                                |
 | `all`       | los tres de arriba                                                                                                                                                                                                                                |
 
 </ScrollTable>
 
 Los objetivos `dashboard` y `data` toman las opciones de [destino](#destinos) y de
-[Grafana](#publicar-en-grafana) de `forward`, para encontrar los almacenes.
+[Grafana](#publicar-en-grafana) de `forward`, para encontrar los almacenes. De las de Grafana, `uninstall`
+lee `--grafana` y `--grafana-datasource-uid`, ignora las demás y rechaza `--grafana-dry-run`: su
+ejecución de prueba es dejar fuera `--yes`. Cuando una opción de destino nombra un almacén,
+`dashboard` necesita además `--grafana` (o
+`MIKROSCOPE_GRAFANA_URL`, y después `GRAFANA_URL`) y `GRAFANA_TOKEN`, y se detiene con
+`--targets dashboard needs --grafana …` sin un Grafana y con
+`--targets dashboard needs GRAFANA_TOKEN` sin el token. Sin ninguna opción de destino,
+`--targets dashboard` o `data` no encuentra ningún almacén e imprime
+`nothing of this is here to remove`; `all` actúa entonces solo sobre los objetos del router.
 
 - **No se borra nada sin `--yes`**, el mismo `--yes` que toman los verbos de despliegue. Una tabla
   borrada no se puede reponer como `install` repone un objeto del router.
+- **Los almacenes se listan antes de tocar el router.** Los objetivos `dashboard` y `data` se
+  listan primero, así que uno que no se puede listar detiene el verbo antes de borrar nada, también
+  los objetos del router de `all`.
+- **Un Grafana que no puede leer lo detiene.** Solo un 404 cuenta como que no está. Un Grafana
+  inalcanzable, un token rechazado o un error del servidor detienen el verbo con `asking Grafana
+  whether dashboard mikroscope-<almacén> is there: …` y estado de salida 1, antes de borrar nada.
 - **Las tablas se le preguntan al almacén, nunca van compiladas.** Una lista dentro del binario
   serían las medidas que escribe esta versión, y las que merece la pena borrar son las que ya nadie
   escribe: lo que recogía una versión anterior, o una fuente apagada desde entonces. Se reclama todo
@@ -521,44 +535,97 @@ constante.
 
 ### Publicación en Grafana {#publicar-en-grafana}
 
-`forward` puede conciliar una fuente de datos y un dashboard por cada store al que escribe, una vez,
-al arrancar, antes de la primera muestra. Está apagado si no se da `--grafana`, y el token es
-`GRAFANA_TOKEN`: publicar sin uno escribiría como aquel por quien el servidor tome a quien pregunta.
+`forward` puede crear una fuente de datos y publicar un dashboard por cada almacén al que escribe,
+una vez, al arrancar, antes de la primera muestra. [`dashboards publish`](#dashboards) hace lo mismo
+una vez, con las mismas opciones, y termina sin recoger nada. Está apagado si no se da `--grafana`, y
+el token es `GRAFANA_TOKEN`: publicar sin uno escribiría como aquel por quien el servidor tome a
+quien pregunta.
 
-<ScrollTable label="Opciones de Grafana de forward">
+En cada ejecución, y en `forward` antes de tocar el router:
 
-| Opción                         | Por defecto  | Variable                                | Significado                                                                                     |
-| ------------------------------ | ------------ | --------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `--grafana`                    | vacío        | `MIKROSCOPE_GRAFANA_URL`                | publicar en este Grafana al arrancar; vacío no publica nada                                     |
-| `--grafana-folder`             | `mikroscope` | `MIKROSCOPE_GRAFANA_FOLDER`             | la carpeta donde publicar; vacío es la carpeta General de Grafana                               |
-| `--grafana-datasource-uid`     | vacío        | `MIKROSCOPE_GRAFANA_DATASOURCE_UID`     | adoptar una fuente de datos existente por uid en vez de crear una, y dejarla intacta            |
-| `--grafana-datasource-url`     | vacío        | `MIKROSCOPE_GRAFANA_DATASOURCE_URL`     | la dirección que consulta Grafana, para `--prom` y `--graphite`; también sustituye una derivada |
-| `--grafana-datasource-sslmode` | vacío        | `MIKROSCOPE_GRAFANA_DATASOURCE_SSLMODE` | `disable`, `require`, `verify-ca` o `verify-full` para la fuente de datos de PostgreSQL         |
-| `--grafana-dry-run`            | `false`      | ninguna                                 | imprimir lo que escribiría, no escribir nada y parar antes de recoger                           |
+1. Comprueba las opciones antes de hacer ninguna petición, también en una ejecución de prueba.
+   Rechaza una ejecución sin ningún destino que tenga dashboard, un `--grafana-datasource-sslmode`
+   que no sea uno de los cuatro modos de Grafana, y una ejecución de más de un almacén que fije
+   `--grafana-datasource-url` o `--grafana-datasource-uid`. Después, salvo en una ejecución de
+   prueba, necesita `GRAFANA_TOKEN`.
+2. Busca la carpeta `--grafana-folder` por su título, o la crea:
+   `folder "<title>" (<uid>) unchanged|created`.
+3. Para cada almacén al que escriben sus destinos, en el orden InfluxDB, Elasticsearch, Prometheus,
+   PostgreSQL, Graphite, crea la fuente de datos `mikroscope-<almacén>`, la corrige (`updated`) o la
+   deja `unchanged`, o adopta la nombrada en `--grafana-datasource-uid` y la deja como está. Después
+   pregunta al almacén qué medidas tiene e importa el dashboard `mikroscope-<almacén>` encima de sí
+   mismo, en la carpeta.
+
+`forward` registra cada línea en la salida de error tras un prefijo `grafana:`; `dashboards publish`
+las imprime en la salida estándar.
+
+Se intenta con todos los almacenes. Uno que falla se informa en una línea propia que lo nombra,
+`the datasource for <store>: …` o `the dashboard for <store>: …`, y los que vienen detrás se
+publican igual; solo una carpeta que Grafana rechaza detiene la ejecución. `forward` registra
+`grafana: could not publish, carrying on without it: <motivo>` una vez por cada almacén que falló y
+sigue recogiendo; `dashboards publish` sale con 1. Solo `--influx`, `--elastic`, `--prom`,
+`--postgres` o `--sql`, y `--graphite` tienen dashboard: sin ninguno de ellos `dashboards publish`
+se detiene con `no sink this builds a dashboard for is configured, so there is nothing to publish`,
+y `forward` lo registra como su aviso `grafana: could not publish…` y sigue recogiendo.
+
+<ScrollTable label="Opciones de Grafana de forward, dashboards publish y uninstall">
+
+| Opción                         | Por defecto  | Variable                                                                    | Significado                                                                                                                                                                   |
+| ------------------------------ | ------------ | --------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--grafana`                    | vacío        | `MIKROSCOPE_GRAFANA_URL`; en `dashboards publish` y `uninstall`, después `GRAFANA_URL` | el Grafana en el que publicar; vacío no publica nada                                                                                                          |
+| `--grafana-folder`             | `mikroscope` | `MIKROSCOPE_GRAFANA_FOLDER`                                                 | la carpeta donde publicar; `--grafana-folder ""` es la carpeta General de Grafana, y una variable vacía se ignora                                                           |
+| `--grafana-datasource-uid`     | vacío        | `MIKROSCOPE_GRAFANA_DATASOURCE_UID`                                         | adoptar una fuente de datos existente por uid en vez de crear una, y dejarla intacta; la única forma de publicar `--sql`. Un almacén por ejecución                            |
+| `--grafana-datasource-url`     | vacío        | `MIKROSCOPE_GRAFANA_DATASOURCE_URL`                                         | la dirección que consulta Grafana, `host:puerto` para PostgreSQL y una URL para los demás: hace falta para `--prom` y `--graphite`, y sustituye la que darían `--influx`, `--elastic` o `--postgres`. Un almacén por ejecución |
+| `--grafana-datasource-sslmode` | vacío        | `MIKROSCOPE_GRAFANA_DATASOURCE_SSLMODE`                                     | `disable`, `require`, `verify-ca` o `verify-full` para la fuente de datos de PostgreSQL, y nada más; vacío toma el modo que nombra `--postgres` si Grafana lo tiene, y `disable` si no |
+| `--grafana-dry-run`            | `false`      | ninguna                                                                     | con `--grafana`, imprimir lo que escribiría, sin contactar con ningún Grafana ni necesitar token; `forward` se detiene entonces, antes de recoger, y la rechaza sin un Grafana; `uninstall` la rechaza |
 
 </ScrollTable>
 
-Un fallo aquí es un aviso y no una negativa a arrancar: las muestras de una hora sin funcionar no se
-recuperan, y un dashboard se puede publicar en el siguiente arranque. Nunca se borra nada.
-`--grafana-dry-run` se ejecuta antes de tocar el router, así que se puede contestar sin router
-delante. [Importar y comprobar](/mikroscope/es/dashboards/import-and-check/) dice qué destinos saben
-describir su propia fuente de datos y a cuáles hay que decírselo.
+[`uninstall`](/mikroscope/es/reference/cli/#uninstall---targets) solo lee `--grafana` y `--grafana-datasource-uid` de estas.
+
+**Un almacén por ejecución** para las dos opciones de fuente de datos: cada una nombra una sola
+fuente de datos, y dos almacenes son dos servidores, consultados por dos plugins distintos. Un colector que escribe en
+varios almacenes, uno de los cuales necesita una de ellas, se ejecuta sin ella; ese almacén se
+publica aparte con `dashboards publish`, con solo su opción de destino y su propio
+`--grafana-datasource-url` o `--grafana-datasource-uid`.
+
+Un fallo aquí es un aviso para `forward` y no una negativa a arrancar: las muestras de una hora sin
+funcionar no se recuperan, y un dashboard se puede publicar en el siguiente arranque. No borra nada;
+lo hace `uninstall --targets dashboard`. `--grafana-dry-run` se ejecuta antes de tocar el router, así
+que se puede contestar sin router delante. [Configurar en
+Grafana](/mikroscope/es/dashboards/import-and-check/#que-lo-haga-el-colector-forward---grafana) dice
+qué destinos saben describir su propia fuente de datos y a cuáles hay que decírselo.
 
 ## dashboards
 
 ```sh
 mikroscope dashboards gen
+mikroscope dashboards publish --influx http://influx:8181 --influx-db mikroscope --grafana http://grafana:3000
 mikroscope dashboards import --store influxdb --datasource-uid <uid>
 mikroscope dashboards check  --store influxdb --datasource-uid <uid> --window 1h --end <instante RFC 3339>
 ```
 
-<ScrollTable label="Opciones de mikroscope dashboards">
+<ScrollTable label="Subórdenes de mikroscope dashboards">
 
-| Opción             | Por defecto        | Variable      | La lee            | Significado                                                                                           |
-| ------------------ | ------------------ | ------------- | ----------------- | ----------------------------------------------------------------------------------------------------- |
-| `--out`            | `dashboards`       | ninguna       | `gen`             | directorio de salida para `mikroscope-<store>.json` (cinco) y `mikroscope-alerts-<store>.yaml` (tres) |
-| `--store`          | `influxdb`         | ninguna       | `import`, `check` | `influxdb`, `prometheus`, `postgres`, `graphite` o `elasticsearch`                                    |
-| `--grafana`        | vacío              | `GRAFANA_URL` | `import`, `check` | URL base de Grafana; el token sale solo de `GRAFANA_TOKEN`                                            |
+| Suborden  | Qué hace |
+| --------- | -------- |
+| `gen`     | escribe los cinco dashboards y los tres ficheros de alertas en `--out`, que crea si no existe; los ficheros solo los puedes leer tú. No contacta con nada |
+| `publish` | lo que hace `forward --grafana` al arrancar, una vez, sin router y sin colector: toma las opciones de [destino](#destinos) y de [publicación en Grafana](#publicar-en-grafana), crea, corrige o adopta la fuente de datos de cada almacén e importa su dashboard, imprime una línea por objeto, y sale con 1 cuando falla algún almacén |
+| `import`  | pregunta a la fuente de datos qué medidas tiene, genera el dashboard y lo envía a `/api/dashboards/import` con la sobrescritura activada, a la carpeta General; imprime `imported: <url>`. No crea ninguna fuente de datos |
+| `check`   | pregunta y genera como `import`, ejecuta la consulta de cada panel por `/api/ds/query`, imprime una línea por panel y sale con 1 cuando falla algún panel. No escribe nada en Grafana |
+
+</ScrollTable>
+
+`gen`, `import` y `check` admiten las opciones de abajo. `publish` no admite ninguna de ellas, ni
+tampoco argumentos: sus opciones son las de destino y de publicación en Grafana de `forward`.
+
+<ScrollTable label="Opciones de dashboards gen, import y check">
+
+| Opción             | Por defecto        | Variable                                     | La lee            | Significado                                                                                                                         |
+| ------------------ | ------------------ | -------------------------------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `--out`            | `dashboards`       | ninguna                                      | `gen`             | directorio de salida para `mikroscope-<almacén>.json` (cinco) y `mikroscope-alerts-<almacén>.yaml` (tres), que se crea con sus padres |
+| `--store`          | `influxdb`         | ninguna                                      | `import`, `check` | `influxdb`, `prometheus`, `postgres`, `graphite` o `elasticsearch`                                                                  |
+| `--grafana`        | vacío              | `GRAFANA_URL`, y después `MIKROSCOPE_GRAFANA_URL` | `import`, `check` | URL base de Grafana; el token sale solo de `GRAFANA_TOKEN`                                                                     |
 | `--datasource-uid` | vacío, obligatoria | ninguna       | `import`, `check` | el UID de la fuente de datos asociada a `DS_MIKROSCOPE`                                               |
 | `--no-probe`       | `false`            | ninguna       | `import`, `check` | no pregunta a la fuente de datos qué medidas contiene; usa los valores compilados por defecto         |
 | `--window`         | `15m`              | ninguna       | `check`           | longitud de la ventana de consulta                                                                    |
@@ -567,11 +634,19 @@ mikroscope dashboards check  --store influxdb --datasource-uid <uid> --window 1h
 
 </ScrollTable>
 
-`import` y `check` se niegan a ejecutarse sin `--grafana` (o `GRAFANA_URL`), `GRAFANA_TOKEN` y
-`--datasource-uid`. Salvo que se dé `--no-probe`, primero preguntan a la fuente de datos qué medidas
-contiene; si esa pregunta falla, avisan y siguen con los valores compilados por defecto. `check`
-imprime una línea por panel (`ok`, `none` para un panel que se sabe vacío, `FAIL`) y sale con 1 si
-falla algún panel. Las variables son `GRAFANA_URL` y `GRAFANA_TOKEN`, sin el prefijo `MIKROSCOPE_`.
+`import` y `check` se detienen con `import/check need --grafana, GRAFANA_TOKEN and --datasource-uid`
+cuando falta alguno de los tres. Salvo que se dé `--no-probe`, primero preguntan a la fuente de datos
+qué medidas contiene; si esa pregunta falla, avisan y siguen con los valores compilados por defecto.
+`check` imprime una línea por panel (`ok`, `none` para un panel que se sabe vacío, `FAIL`) y sale con
+1 si falla algún panel.
+
+`publish` se detiene con `dashboards publish needs --grafana (or MIKROSCOPE_GRAFANA_URL or
+GRAFANA_URL), with the token in GRAFANA_TOKEN` cuando no se nombra ningún Grafana, y con
+`dashboards publish needs the sink flags the collector runs with (…)` cuando no se da ninguna opción
+de destino, porque cada fuente de datos se describe a partir del destino que escribe en ella. Qué
+variable de Grafana lee primero cada suborden está en [Variables de
+entorno](/mikroscope/es/reference/environment/#grafana). [Configurar en
+Grafana](/mikroscope/es/dashboards/import-and-check/) pone las cuatro en práctica.
 
 ## version
 

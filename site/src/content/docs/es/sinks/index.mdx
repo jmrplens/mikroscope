@@ -133,12 +133,12 @@ mikroscope encaje con lo que ya tienes.
 
 <ScrollTable label="Para qué sirve cada destino, qué lleva y si trae dashboard">
 
-| Si…                                                          | Usa            | Lleva                                             | Dashboard |
+| Si…                                                          | Usa            | Lleva                                             | [Dashboard](#dashboard-en-grafana) |
 | -------------------------------------------------------------- | -------------- | -------------------------------------------------- | --------- |
 | quieres todo, con los dashboards, y no tienes nada montado    | `--influx`     | todas las medidas, como protocolo de línea          | **sí**, generado |
 | ya tienes Prometheus                                          | `--prom`       | todas las familias, recalculadas de las muestras    | **sí**, generado |
 | quieres capturar una ventana y mirarla después                | `--file`       | la línea temporal unida como JSONL, sin instalar nada | no      |
-| guardas datos a largo plazo en PostgreSQL o TimescaleDB       | `--sql`        | DDL e INSERTs para `psql`, sin driver               | **sí**, generado |
+| guardas datos a largo plazo en PostgreSQL o TimescaleDB       | `--sql`        | DDL e INSERTs para `psql`, sin driver               | **sí**, generado, sobre una fuente de datos que creas tú |
 | quieres escribir directamente en un PostgreSQL en marcha      | `--postgres`   | las sentencias de `--sql`, por una conexión         | **sí**, generado |
 | quieres el registro del kernel y las detecciones con tus logs | `--loki`       | **solo eventos**: kmsg, detecciones, huecos, disparos, errores de la API, registros del equipo | no |
 | ya tienes una tubería de OpenTelemetry                        | `--otlp`       | métricas como OTLP/HTTP                             | no        |
@@ -159,6 +159,45 @@ mikroscope encaje con lo que ya tienes.
 - **`--prom` se consulta, no se envía**: `forward` sirve `/metrics` y
   Prometheus viene a por él, así que el colector tiene que ser alcanzable desde
   la máquina de Prometheus.
+
+## Dashboard en Grafana {#dashboard-en-grafana}
+
+Seis destinos alimentan los cinco dashboards: `--influx`, `--prom`, `--postgres` y `--sql` (que
+comparten el de PostgreSQL), `--graphite` y `--elastic`. Añade `--grafana <url>` y pon un token de cuenta de servicio de
+Grafana, con el rol Admin, en `GRAFANA_TOKEN`: en cada arranque, antes de llegar al router, el
+colector crea o corrige una fuente de datos y publica el dashboard de cada uno de ellos en el que
+escribe:
+
+```sh
+export GRAFANA_TOKEN=…
+mikroscope forward --influx http://influx:8181 --influx-db mikroscope --grafana http://grafana:3000
+```
+
+- **Tres describen su propia fuente de datos.** `--influx`, `--elastic` y `--postgres` escriben
+  en el servidor al que pregunta Grafana, así que la fuente de datos se construye con sus opciones,
+  en la dirección que usa el colector. Cuando Grafana llega a ese almacén por otra dirección,
+  pásala en `--grafana-datasource-url`.
+- **A los otros tres hay que decírselo.** A `--prom` lo consulta Prometheus y `--graphite`
+  escribe en el puerto de ingesta de carbon, así que cada uno necesita en
+  `--grafana-datasource-url` la dirección a la que pregunta Grafana, o en
+  `--grafana-datasource-uid` una fuente de datos que ya tengas. `--sql` nunca se conecta, así que
+  solo admite `--grafana-datasource-uid`.
+- **Un almacén por ejecución con esas dos opciones.** Cada una nombra una sola fuente de datos,
+  así que una ejecución que escribe en dos almacenes con dashboard y fija cualquiera de ellas se
+  rechaza antes de escribir nada. Quítalas del colector, que entonces publica los almacenes que se
+  describen solos y avisa de los demás, y publica cada uno de los demás una vez con
+  `mikroscope dashboards publish`, con la opción de destino de ese almacén y su propio valor.
+- **Un fallo no detiene el colector.** Imprime
+  `grafana: could not publish, carrying on without it: <motivo>`, una línea por fallo, y sigue
+  recogiendo.
+- **El Grafana sale de `--grafana` o de `MIKROSCOPE_GRAFANA_URL`**, nunca de `GRAFANA_URL`,
+  que pueden fijar otras herramientas de Grafana
+  ([Token de Grafana](/mikroscope/es/dashboards/import-and-check/#token-de-grafana)).
+
+Los otros cinco destinos no tienen dashboard. `mikroscope dashboards publish`, con las mismas
+opciones de destino y `--grafana`, publica una sola vez sin recoger.
+[Configurar en Grafana](/mikroscope/es/dashboards/import-and-check/) tiene lo que crea, los otros
+caminos y la comprobación.
 
 ## Destinos {#los-once-destinos}
 
@@ -241,8 +280,9 @@ forma:
 
 ## Salida en consola {#lo-que-imprime-forward}
 
-Al arrancar, por la salida de error: una línea `sink: <name>` por destino, la
-configuración de la capa de la API, y la versión, cadencia, número de secuencia,
+Al arrancar, por la salida de error: con `--grafana`, primero las líneas `grafana:` de la
+publicación ([Dashboard en Grafana](#dashboard-en-grafana)); después una línea `sink: <name>` por
+destino, la configuración de la capa de la API, y la versión, cadencia, número de secuencia,
 desfase, transporte y lote efectivo del agente. Cada minuto, por la salida de error, un
 informe en curso:
 
@@ -282,6 +322,8 @@ ocupado de un dispositivo de bloques es `io_s`.
   scrape que espera el panel.
 - [InfluxDB 3](/mikroscope/es/sinks/influxdb/): la URL de escritura, las medidas y lo que rechaza
   InfluxDB 3 Core.
+- [Configurar en Grafana](/mikroscope/es/dashboards/import-and-check/): el dashboard de cada
+  almacén, desde el colector o importado.
 - [Capa de la API de RouterOS](/mikroscope/es/sinks/api-tier/): lo que el colector sigue
   preguntando al router, y cómo preguntar menos.
 - [Acceso por red](/mikroscope/es/install/reaching-the-agent/): los transportes directo y por relay

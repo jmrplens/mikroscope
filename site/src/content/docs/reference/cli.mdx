@@ -35,7 +35,7 @@ The verbs fall into five groups, each with its own flag set: the deployment verb
 | Status | When                                                                                                                                                                                                                                                                                |
 | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `0`    | the verb finished                                                                                                                                                                                                                                                                   |
-| `1`    | the verb ran and failed (a missing prerequisite, a router error, a sink that could not be built, a panel with no data), the verb is unknown, or a flag of `uninstall`, `record`, `mark`, `plot`, `forward` or `dashboards` failed to parse or validate                             |
+| `1`    | the verb ran and failed (a missing prerequisite, a router error, a sink that could not be built, a panel with no data, a store `dashboards publish` could not publish), the verb is unknown, or a flag of `uninstall`, `record`, `mark`, `plot`, `forward` or `dashboards` failed to parse or validate |
 | `2`    | no verb was given, or a flag of `doctor`, `plan`, `install`, `upgrade`, `status` or `image` failed to parse or validate; nothing was sent to the router                                                                                                                             |
 
 </ScrollTable>
@@ -175,17 +175,29 @@ from the flags alone. `--targets` widens it past the router:
 | Target      | What goes                                                                                                                                                                                                                        |
 | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `router`    | everything `install` created: the objects in the install manifest, any other object with the install's tag, the container root, the manifest, and the `mikroscope` directory when nothing else is in it. The default            |
-| `dashboard` | the dashboard and the datasource `forward --grafana` published, per store this collector writes to                                                                                                                               |
+| `dashboard` | per store the sink flags name: the dashboard `mikroscope-<store>`, however it was imported, and the datasource `mikroscope-<store>`. Not the folder, an adopted datasource or provisioned alert rules |
 | `data`      | the tables and indices the sinks wrote, and the files the file sinks wrote                                                                                                                                                       |
 | `all`       | the three above                                                                                                                                                                                                                  |
 
 </ScrollTable>
 
 The `dashboard` and `data` targets take the [sink](#sinks) and [Grafana](#publishing-to-grafana)
-flags of `forward`, to find the stores.
+flags of `forward`, to find the stores. Of the Grafana flags, `uninstall` reads `--grafana` and
+`--grafana-datasource-uid`, ignores the others, and refuses `--grafana-dry-run`: its dry run is
+leaving out `--yes`. When a sink flag names a store, `dashboard` also needs `--grafana` (or
+`MIKROSCOPE_GRAFANA_URL`, then `GRAFANA_URL`) and `GRAFANA_TOKEN`, and stops with `--targets dashboard needs --grafana …` without
+a Grafana and `--targets dashboard needs GRAFANA_TOKEN` without the token. Given no sink flag,
+`--targets dashboard` or `data` finds no store and prints `nothing of this is here to remove`; `all`
+then acts on the router objects alone.
 
 - **Nothing is removed without `--yes`**, the same `--yes` the deployment verbs take. A dropped
   table cannot be put back the way `install` puts back a router object.
+- **The stores are listed before the router is touched.** The `dashboard` and `data` targets are
+  listed first, so one that cannot be listed stops the verb before anything is removed, the router
+  objects of `all` included.
+- **A Grafana it cannot read stops it.** Only a 404 counts as not there. An unreachable Grafana, a
+  refused token or a server error stops the verb with `asking Grafana whether dashboard
+  mikroscope-<store> is there: …` and exit status 1, before anything is removed.
 - **The tables are asked of the store, never compiled in.** A list inside the binary would be the
   measurements this version writes, and the ones worth removing are the ones nobody writes any
   more: what an earlier version collected, or a source switched off since. Everything under the
@@ -507,44 +519,95 @@ metrics](/mikroscope/reference/metrics/) says what else follows from that consta
 
 ### Grafana publishing {#publishing-to-grafana}
 
-`forward` can reconcile a datasource and a dashboard per store it writes to, once, at start, before
-the first sample. It is off unless `--grafana` is given, and the token is `GRAFANA_TOKEN`:
-publishing without one would write as whoever an anonymous request is to that server.
+`forward` can create a datasource and publish a dashboard for each store it writes to, once, at
+start, before the first sample. [`dashboards publish`](#dashboards) does the same once, with the
+same flags, and exits without collecting. It is off unless `--grafana` is given, and the token is
+`GRAFANA_TOKEN`: publishing without one would write as whoever an anonymous request is to that
+server.
 
-<ScrollTable label="Grafana flags of forward">
+Each run, and in `forward` before the router is touched:
 
-| Flag                           | Default      | Variable                                | Meaning                                                                                  |
-| ------------------------------ | ------------ | --------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `--grafana`                    | empty        | `MIKROSCOPE_GRAFANA_URL`                | publish to this Grafana at start; empty publishes nothing                                |
-| `--grafana-folder`             | `mikroscope` | `MIKROSCOPE_GRAFANA_FOLDER`             | the folder to publish into; empty is Grafana's General folder                            |
-| `--grafana-datasource-uid`     | empty        | `MIKROSCOPE_GRAFANA_DATASOURCE_UID`     | adopt an existing datasource by uid instead of creating one, and leave it untouched      |
-| `--grafana-datasource-url`     | empty        | `MIKROSCOPE_GRAFANA_DATASOURCE_URL`     | the address Grafana queries, for `--prom` and `--graphite`; also overrides a derived one |
-| `--grafana-datasource-sslmode` | empty        | `MIKROSCOPE_GRAFANA_DATASOURCE_SSLMODE` | `disable`, `require`, `verify-ca` or `verify-full` for the PostgreSQL datasource         |
-| `--grafana-dry-run`            | `false`      | none                                    | print what it would write, write nothing, and stop before collecting                     |
+1. It checks the flags before any request, in a dry run too. It refuses a run with no sink that has
+   a dashboard, a `--grafana-datasource-sslmode` outside Grafana's four modes, and a run of more than one
+   store that sets `--grafana-datasource-url` or `--grafana-datasource-uid`. Then, unless it is a
+   dry run, it needs `GRAFANA_TOKEN`.
+2. It finds the folder `--grafana-folder` by title, or creates it:
+   `folder "<title>" (<uid>) unchanged|created`.
+3. For each store its sinks write to, in the order InfluxDB, Elasticsearch, Prometheus, PostgreSQL,
+   Graphite, it creates the datasource `mikroscope-<store>`, corrects it (`updated`) or leaves it
+   `unchanged`, or adopts the one named in `--grafana-datasource-uid` and leaves it as it is. It then
+   asks the store which measurements it holds and imports the dashboard `mikroscope-<store>` over
+   itself, into the folder.
+
+`forward` logs each line on standard error behind a `grafana:` prefix; `dashboards publish` prints
+them on standard output.
+
+Every store is tried. One that fails is reported on a line of its own that names it,
+`the datasource for <store>: …` or `the dashboard for <store>: …`, and the stores after it are
+still published; only a folder Grafana refuses stops the run. `forward` logs
+`grafana: could not publish, carrying on without it: <reason>` once per failed store and collects;
+`dashboards publish` exits 1. Only `--influx`, `--elastic`, `--prom`, `--postgres` or `--sql`, and
+`--graphite` have a dashboard: with none of them `dashboards publish` stops with `no sink this
+builds a dashboard for is configured, so there is nothing to publish`, and `forward` logs it as its
+`grafana: could not publish…` warning and collects.
+
+<ScrollTable label="Grafana flags of forward, dashboards publish and uninstall">
+
+| Flag                           | Default      | Variable                                                                  | Meaning                                                                                                                                                              |
+| ------------------------------ | ------------ | ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--grafana`                    | empty        | `MIKROSCOPE_GRAFANA_URL`; for `dashboards publish` and `uninstall`, then `GRAFANA_URL` | the Grafana to publish to; empty publishes nothing                                                                                                      |
+| `--grafana-folder`             | `mikroscope` | `MIKROSCOPE_GRAFANA_FOLDER`                                               | the folder to publish into; `--grafana-folder ""` is Grafana's General folder, and an empty variable is ignored                                                     |
+| `--grafana-datasource-uid`     | empty        | `MIKROSCOPE_GRAFANA_DATASOURCE_UID`                                       | adopt an existing datasource by uid instead of creating one, and leave it untouched; the only way to publish `--sql`. One store per run                             |
+| `--grafana-datasource-url`     | empty        | `MIKROSCOPE_GRAFANA_DATASOURCE_URL`                                       | the address Grafana queries, `host:port` for PostgreSQL and a URL for the others: needed for `--prom` and `--graphite`, and it replaces the address `--influx`, `--elastic` or `--postgres` would give. One store per run |
+| `--grafana-datasource-sslmode` | empty        | `MIKROSCOPE_GRAFANA_DATASOURCE_SSLMODE`                                   | `disable`, `require`, `verify-ca` or `verify-full` for the PostgreSQL datasource, and nothing else; empty takes the mode `--postgres` names when Grafana has it, and `disable` otherwise |
+| `--grafana-dry-run`            | `false`      | none                                                                      | with `--grafana`, print what it would write, contact no Grafana and need no token; `forward` then stops before collecting, and refuses it without a Grafana; `uninstall` refuses it |
 
 </ScrollTable>
 
-A failure here is a warning and not a refusal to start: the samples of an hour spent not running
-cannot be recovered, and a dashboard can be published on the next restart. Nothing is ever deleted.
-`--grafana-dry-run` runs before the router is touched, so it is answerable with no router in front
-of it. [Import and check](/mikroscope/dashboards/import-and-check/) says which sinks can describe
-their own datasource and which have to be told.
+[`uninstall`](/mikroscope/reference/cli/#uninstall---targets) reads only `--grafana` and `--grafana-datasource-uid` of these.
+
+**One store per run** for the two datasource flags: each names a single datasource, and two stores
+are two servers read by two plugins. A collector that writes to several stores, one of which needs
+a flag, runs without it; that store is published on its own with `dashboards publish`, given only
+its sink flag and its own `--grafana-datasource-url` or `--grafana-datasource-uid`.
+
+A failure here is a warning to `forward` and not a refusal to start: the samples of an hour spent
+not running cannot be recovered, and a dashboard can be published on the next restart. It deletes
+nothing; `uninstall --targets dashboard` does. `--grafana-dry-run` runs before the router is
+touched, so it is answerable with no router in front of it. [Set up in
+Grafana](/mikroscope/dashboards/import-and-check/#letting-the-collector-do-it-forward---grafana)
+says which sinks can describe their own datasource and which have to be told.
 
 ## dashboards
 
 ```sh
 mikroscope dashboards gen
+mikroscope dashboards publish --influx http://influx:8181 --influx-db mikroscope --grafana http://grafana:3000
 mikroscope dashboards import --store influxdb --datasource-uid <uid>
 mikroscope dashboards check  --store influxdb --datasource-uid <uid> --window 1h --end <RFC 3339 time>
 ```
 
-<ScrollTable label="Flags of mikroscope dashboards">
+<ScrollTable label="Subcommands of mikroscope dashboards">
 
-| Flag               | Default         | Variable      | Read by           | Meaning                                                                                            |
-| ------------------ | --------------- | ------------- | ----------------- | -------------------------------------------------------------------------------------------------- |
-| `--out`            | `dashboards`    | none          | `gen`             | output directory for `mikroscope-<store>.json` (five) and `mikroscope-alerts-<store>.yaml` (three) |
-| `--store`          | `influxdb`      | none          | `import`, `check` | `influxdb`, `prometheus`, `postgres`, `graphite` or `elasticsearch`                                |
-| `--grafana`        | empty           | `GRAFANA_URL` | `import`, `check` | Grafana base URL; the token comes only from `GRAFANA_TOKEN`                                        |
+| Subcommand | What it does                                                                                                                                                                                                                                                              |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `gen`      | writes the five dashboards and the three alert files into `--out`, creating it when missing; the files are readable only by you. Contacts nothing                                                                                                                                     |
+| `publish`  | what `forward --grafana` does at start, once, with no router and no collector: it takes the [sink](#sinks) and [Grafana publishing](#publishing-to-grafana) flags, creates, corrects or adopts each store's datasource and imports its dashboard, prints a line per object, and exits 1 when any store failed |
+| `import`   | asks the datasource which measurements it holds, generates the dashboard and posts it to `/api/dashboards/import` with overwrite on, into the General folder; prints `imported: <url>`. Creates no datasource                                                            |
+| `check`    | asks and generates as `import` does, runs every panel's query through `/api/ds/query`, prints one line per panel and exits 1 when any panel fails. Writes nothing to Grafana                                                                                             |
+
+</ScrollTable>
+
+`gen`, `import` and `check` take the flags below. `publish` takes none of them, and no argument
+either: its flags are `forward`'s sink and Grafana publishing flags.
+
+<ScrollTable label="Flags of dashboards gen, import and check">
+
+| Flag               | Default         | Variable                                   | Read by           | Meaning                                                                                                                         |
+| ------------------ | --------------- | ------------------------------------------ | ----------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `--out`            | `dashboards`    | none                                       | `gen`             | output directory for `mikroscope-<store>.json` (five) and `mikroscope-alerts-<store>.yaml` (three), created with its parents |
+| `--store`          | `influxdb`      | none                                       | `import`, `check` | `influxdb`, `prometheus`, `postgres`, `graphite` or `elasticsearch`                                                             |
+| `--grafana`        | empty           | `GRAFANA_URL`, then `MIKROSCOPE_GRAFANA_URL` | `import`, `check` | Grafana base URL; the token comes only from `GRAFANA_TOKEN`                                                                  |
 | `--datasource-uid` | empty, required | none          | `import`, `check` | the datasource UID bound to `DS_MIKROSCOPE`                                                        |
 | `--no-probe`       | `false`         | none          | `import`, `check` | do not ask the datasource which measurements it holds; use the compiled defaults                   |
 | `--window`         | `15m`           | none          | `check`           | length of the query window                                                                         |
@@ -553,11 +616,18 @@ mikroscope dashboards check  --store influxdb --datasource-uid <uid> --window 1h
 
 </ScrollTable>
 
-`import` and `check` refuse to run without `--grafana` (or `GRAFANA_URL`), `GRAFANA_TOKEN` and
-`--datasource-uid`. Unless `--no-probe` is given, they first ask the datasource which measurements
-it holds; if that question fails they warn and continue with the compiled defaults. `check` prints
-one line per panel (`ok`, `none` for a known-empty panel, `FAIL`) and exits 1 if any panel fails.
-The variables are `GRAFANA_URL` and `GRAFANA_TOKEN`, without the `MIKROSCOPE_` prefix.
+`import` and `check` stop with `import/check need --grafana, GRAFANA_TOKEN and --datasource-uid`
+when one of the three is missing. Unless `--no-probe` is given, they first ask the datasource which
+measurements it holds; if that question fails they warn and continue with the compiled defaults.
+`check` prints one line per panel (`ok`, `none` for a known-empty panel, `FAIL`) and exits 1 if any
+panel fails.
+
+`publish` stops with `dashboards publish needs --grafana (or MIKROSCOPE_GRAFANA_URL or
+GRAFANA_URL), with the token in GRAFANA_TOKEN` when no Grafana is named, and with
+`dashboards publish needs the sink flags the collector runs with (…)` when no sink flag is given,
+because each datasource is described from the sink that writes to it. Which Grafana variable each
+subcommand reads first is in [Environment variables](/mikroscope/reference/environment/#grafana).
+[Set up in Grafana](/mikroscope/dashboards/import-and-check/) puts the four to use.
 
 ## version
 

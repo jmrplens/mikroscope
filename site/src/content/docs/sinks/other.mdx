@@ -135,7 +135,7 @@ What the connection can do that a file cannot:
   ending in a backslash would escape its own closing quote and everything after it would
   be parsed as string content.
 - **It can describe its own Grafana datasource**, which the file sink can never do: see
-  [import and check](/mikroscope/dashboards/import-and-check/).
+  [Datasource per sink](/mikroscope/dashboards/import-and-check/#five-of-five-by-two-different-routes).
 
 Unlike `--sql`, `--postgres` is queued like the remote sinks: one batch a second,
 64 KiB × `--queue-seconds` of budget with the oldest batch dropped first, each batch one
@@ -462,6 +462,11 @@ The byte budget is 256 KiB per queued second, four times the others: a four-core
 with every source present renders to 6 411 B in 131 lines in the sink's test fixture,
 not on a router, so 10 Hz is about 63 KiB/s. Above 10 Hz it is <TestedOn of="not-tested">not measured</TestedOn>.
 
+The Graphite dashboard reads these paths. Grafana queries Graphite's web API, not the carbon port
+the sink writes to, so `--grafana` needs that address in `--grafana-datasource-url`, or a
+Graphite datasource you already have in `--grafana-datasource-uid`
+([Graphite datasource](/mikroscope/dashboards/import-and-check/#the-graphite-datasource)).
+
 ## Elasticsearch and OpenSearch
 
 ```sh
@@ -515,6 +520,12 @@ an unreachable cluster call for different actions. Batches close once a second o
 Sizes from the sink's two-core fixture, not from a router: 1 077 B of NDJSON for a kernel
 sample with no optional source, 1 952 B across two documents with the optional sources
 and one kernel-log record. A four-core sample is <TestedOn of="not-tested">not rendered</TestedOn> in this format.
+
+`--grafana` builds a Grafana Elasticsearch datasource (type `elasticsearch`) from `--elastic`:
+`@timestamp` as its time field, an index pattern that covers every index `--elastic-index` makes,
+and `MIKROSCOPE_ELASTIC_AUTH` sent the way the sink sends it
+([Elasticsearch datasource](/mikroscope/dashboards/import-and-check/#the-elasticsearch-datasource)).
+Against OpenSearch that datasource is <TestedOn of="not-tested">not tried</TestedOn>.
 
 ## Telegraf
 

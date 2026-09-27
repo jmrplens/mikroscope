@@ -16,7 +16,10 @@ import TestedOn from "../../../../components/TestedOn.astro";
 líneas](https://docs.influxdata.com/influxdb3/core/reference/line-protocol/) de InfluxDB en el
 [`/api/v3/write_lp`](https://docs.influxdata.com/influxdb3/core/write-data/http-api/v3-write-lp/)
 de InfluxDB 3. Conserva cada muestra a la cadencia del agente, y es el destino que lee el
-panel de InfluxDB.
+panel de InfluxDB. Añade `--grafana <url>` y el colector crea además la fuente de datos de
+InfluxDB y publica el dashboard al arrancar; `mikroscope dashboards publish` con las mismas
+opciones lo hace una sola vez, sin recoger ([Publicar desde el
+colector](/mikroscope/es/dashboards/import-and-check/#que-lo-haga-el-colector-forward---grafana)).
 
 ## URL y token {#la-url-de-escritura-y-el-token}
 
@@ -221,8 +224,10 @@ transmitidos (<TestedOn of="fp-tx-zero">observado</TestedOn>).
   cualquier respuesta vacía con un `count(*)` simple. Los paneles y las reglas que se
   distribuyen no usan ese patrón.
 
-El datasource de Grafana para InfluxDB 3 necesita dos campos seguros, no uno; consulta
-[importar y comprobar](/mikroscope/es/dashboards/import-and-check/).
+`forward --grafana` y `dashboards publish` construyen la fuente de datos de Grafana, con el token
+del destino, en la dirección en la que escribe el colector salvo que `--grafana-datasource-url`
+indique la que alcanza Grafana. Una creada a mano necesita dos campos seguros, no uno ([Fuente de
+datos de InfluxDB 3](/mikroscope/es/dashboards/import-and-check/#la-fuente-de-datos-de-influxdb-3)).
 
 Las ediciones y versiones de InfluxDB 3 en las que ha escrito el destino están en el estado de las <TestedOn of="feature-status">funciones</TestedOn>.
 
@@ -232,8 +237,8 @@ Las ediciones y versiones de InfluxDB 3 en las que ha escrito el destino están 
 
 - [Esquema de los almacenes](/mikroscope/es/reference/measurements/): cada campo de cada medida,
   con su unidad.
-- [Importar y comprobar](/mikroscope/es/dashboards/import-and-check/): el panel de InfluxDB, su
-  datasource y la sonda del almacén.
+- [Configurar en Grafana](/mikroscope/es/dashboards/import-and-check/): el dashboard de InfluxDB, su
+  fuente de datos y el sondeo del almacén.
 - [Ejecutar el colector](/mikroscope/es/sinks/): la cola, la espera entre reintentos y los contadores que
   comparten todos los destinos en cola.
 - [Datos del equipo](/mikroscope/es/sinks/device-info/): lo que guardan las cuatro

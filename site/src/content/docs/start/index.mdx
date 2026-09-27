@@ -20,6 +20,9 @@ answers over HTTP on the router's side of a /30. The CLI on your computer instal
 
 <RouterWrites command="install" />
 
+`install` writes nothing outside the router: the collector and the Grafana dashboards are a
+separate, optional step ([See it in Grafana](#see-it-in-grafana)).
+
 <Anchor name="four-limits-stated-before-anything-else" />
 
 ## Requirements
@@ -120,6 +123,46 @@ agent: {{MIKROSCOPE_VERSION}} (<commit>) built <time>, 10 Hz, seq 14 (oldest 1),
 
 From a host on the router's LAN, `curl http://172.30.10.2:9123/healthz` answers `{"ok":true,…}`.
 
+## See it in Grafana {#see-it-in-grafana}
+
+Optional, and nothing here writes to the router. The dashboards read a store, and the collector,
+`mikroscope forward`, is what fills it: it pulls the samples from the agent and writes them to the
+sinks you name. With an InfluxDB 3 and a Grafana already running, start it and leave it running:
+
+```sh
+export MIKROSCOPE_INFLUX_TOKEN=…   # the store's token; leave it out for a store without auth
+mikroscope forward --influx http://localhost:8181 --influx-db mikroscope
+```
+
+Once samples have arrived, run `dashboards publish` from another shell with the same
+`MIKROSCOPE_INFLUX_TOKEN`, the collector's sink flags and your Grafana. It creates the store's
+datasource, publishes its dashboard and exits:
+
+```sh
+export GRAFANA_TOKEN=…   # a Grafana service-account token with the Admin role
+mikroscope dashboards publish --influx http://localhost:8181 --influx-db mikroscope --grafana http://localhost:3000
+```
+
+```text
+folder "mikroscope" (<uid>) created
+influxdb: datasource mikroscope-influxdb (influxdb) created
+influxdb: dashboard http://localhost:3000/d/mikroscope-influxdb/…
+```
+
+- **Too early.** Run before the store holds a sample, it publishes the compiled defaults and prints
+  `could not ask the datasource which measurements it holds`. Run it again once data has arrived
+  and it replaces the dashboard.
+- **From the collector.** Add `--grafana http://localhost:3000` to `forward`, with `GRAFANA_TOKEN` in
+  its environment, and it publishes the same way at every start, before collecting.
+- **Another address.** When Grafana reaches InfluxDB by another address than the collector does,
+  pass that address in `--grafana-datasource-url`. With Grafana in a container, `localhost` is the
+  container itself: use InfluxDB's name on the Docker network, such as `http://influxdb:8181`, or
+  the host's LAN address.
+- The interface panels also need the [RouterOS API tier](/mikroscope/sinks/api-tier/).
+
+[Set up in Grafana](/mikroscope/dashboards/import-and-check/) covers Prometheus and the other
+stores, importing by hand, and checking every panel.
+
 ## Other ways to install
 
 - [Script generator](/mikroscope/install/generator/): fill in a form and paste the script into the
@@ -141,7 +184,9 @@ From a host on the router's LAN, `curl http://172.30.10.2:9123/healthz` answers 
 - [First recording](/mikroscope/start/walkthrough/): record a window, mark it and plot it.
 - [Run the collector](/mikroscope/sinks/): send the samples to Prometheus, InfluxDB 3 or nine
   other sinks.
-- [Dashboards](/mikroscope/dashboards/): the Grafana dashboards for each store.
+- [Set up in Grafana](/mikroscope/dashboards/import-and-check/): the dashboards for Prometheus and
+  the other stores, from the collector, the CLI or by hand.
+- [Dashboards](/mikroscope/dashboards/): what every section and panel shows.
 
 <Anchor name="what-it-does-not-do" />
 

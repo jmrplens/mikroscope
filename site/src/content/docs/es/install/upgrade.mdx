@@ -68,6 +68,14 @@ Una instalación hecha con un script de RouterOS, con el generador o a mano se a
 un ordenador con la CLI. Sin la CLI, retírala ([Desinstalar](#uninstall)) y ejecuta el script de la
 versión nueva.
 
+### La CLI y los dashboards {#dashboards-after-an-upgrade}
+
+`upgrade` solo sustituye el agente. La CLI se actualiza volviendo a ejecutar su [script de
+instalación](/mikroscope/es/install/cli/#una-orden), y la imagen del colector volviendo a
+descargarla. Los dashboards van dentro de la CLI y de la imagen del colector, así que vuelve a
+publicarlos cuando cambie cualquiera de las dos: reinicia el colector con `--grafana`, o vuelve a
+ejecutar `dashboards publish` o `dashboards import` ([Actualizar y quitar](/mikroscope/es/dashboards/import-and-check/#actualizar-y-quitar)).
+
 ## Notas de actualización {#upgrade-notes}
 
 Cuando la instalación o tu configuración vienen de una versión anterior:
@@ -93,7 +101,8 @@ Cuando la instalación o tu configuración vienen de una versión anterior:
 - **Un trabajo de Prometheus que lee el agente.** El agente no sirve `/metrics`: un agente de la
   1.0.4 o anterior sí. Apunta el trabajo a la dirección `--prom` del colector
   ([Prometheus](/mikroscope/es/sinks/prometheus/)).
-- **Dashboards importados de la 1.3.0 o anteriores.** Vuelve a importarlos: la fila «Not available
+- **Dashboards importados de la 1.3.0 o anteriores.** Vuelve a publicarlos o a importarlos ([La CLI
+  y los dashboards](#dashboards-after-an-upgrade)): la fila «Not available
   on this device» muestra marcas `table … not found` en InfluxDB, el dashboard de Elasticsearch se
   abre con el Host vacío y seis marcas rojas, y uno importado con sondeo en Grafana 12.3.0 muestra
   marcas `No SQL statements were provided in the query string` en esa fila.
@@ -172,7 +181,7 @@ Sin la CLI, ejecuta las órdenes de retirada a mano:
 | Objetivo    | Lo que se va                                                                              |
 | ----------- | ----------------------------------------------------------------------------------------- |
 | `router`    | todo lo que creó la instalación en el router, el valor por defecto                        |
-| `dashboard` | el dashboard y el origen de datos que publicó `forward --grafana`, por almacén            |
+| `dashboard` | por cada almacén que nombran las opciones de destino: el dashboard `mikroscope-<almacén>`, se importara como se importara, y la fuente de datos `mikroscope-<almacén>`. Ni la carpeta, ni una fuente de datos adoptada, ni las reglas de alerta provisionadas |
 | `data`      | las tablas e índices que escribieron los destinos, y los ficheros de los destinos fichero |
 | `all`       | los tres anteriores                                                                       |
 
@@ -184,10 +193,19 @@ mikroscope uninstall --targets all --influx "$MIKROSCOPE_INFLUX_URL" --influx-db
 mikroscope uninstall --targets all --influx "$MIKROSCOPE_INFLUX_URL" --influx-db mikroscope --grafana http://grafana:3000 --yes
 ```
 
-Pasa las mismas opciones de destino que a `forward`. No se va nada sin `--yes`. Un origen de datos
-adoptado con `--grafana-datasource-uid` nunca se retira, y `--prom`, `--graphite` y `--sql` no
-guardan nada que esto pueda retirar, y cada uno dice por qué:
+Pasa las mismas opciones de destino que a `forward`. Con `--targets dashboard` o `data` y sin
+ninguna opción de destino no encuentra ningún almacén e imprime `nothing of this is here to remove`;
+`all` actúa entonces solo sobre los objetos del router. No se va nada sin `--yes`. Una fuente de
+datos adoptada con `--grafana-datasource-uid` nunca se retira, y `--prom`, `--graphite` y `--sql` no guardan nada
+que esto pueda retirar, y cada uno dice por qué:
 [`uninstall --targets`](/mikroscope/es/reference/cli/#uninstall---targets).
+
+`--targets dashboard` necesita además `--grafana` (o `MIKROSCOPE_GRAFANA_URL`, y después
+`GRAFANA_URL`) y `GRAFANA_TOKEN`, de una cuenta de servicio que pueda borrar fuentes de datos
+([Token de Grafana](/mikroscope/es/dashboards/import-and-check/#token-de-grafana)). A Grafana y a
+los almacenes se les pregunta antes de tocar el router: un Grafana que no puede leer, porque no
+responde o rechaza el token, lo detiene con `asking Grafana whether dashboard mikroscope-<almacén>
+is there: …` antes de borrar nada, también los objetos del router.
 
 <SeeAlso>
 

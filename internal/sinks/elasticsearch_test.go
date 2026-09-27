@@ -419,3 +419,26 @@ func TestElasticsearchSinkWriteDoesNotEvictUnderAnInFlightPost(t *testing.T) {
 		t.Fatalf("queued went negative: %d", s.queued)
 	}
 }
+
+// ElasticAuthorization is the header the sink sends and the one the
+// collector's Grafana datasource carries, so both forms are pinned against
+// what net/http itself writes for basic auth, a password with a colon in it
+// included.
+func TestElasticAuthorizationIsTheHeaderTheSinkSends(t *testing.T) {
+	for _, c := range []struct{ auth, user, pass string }{
+		{"elastic:changeme", "elastic", "changeme"},
+		{"reader:pa:ss", "reader", "pa:ss"},
+	} {
+		req, _ := http.NewRequestWithContext(t.Context(), http.MethodPost, "http://es:9200/_bulk", nil)
+		req.SetBasicAuth(c.user, c.pass)
+		if got, want := ElasticAuthorization(c.auth), req.Header.Get("Authorization"); got != want {
+			t.Errorf("ElasticAuthorization(%q) = %q, want %q, what SetBasicAuth writes", c.auth, got, want)
+		}
+	}
+	if got := ElasticAuthorization("a2V5MTIz"); got != "ApiKey a2V5MTIz" {
+		t.Errorf("an API key = %q, want it behind the ApiKey scheme", got)
+	}
+	if got := ElasticAuthorization(""); got != "" {
+		t.Errorf("no credential = %q, want no header at all", got)
+	}
+}

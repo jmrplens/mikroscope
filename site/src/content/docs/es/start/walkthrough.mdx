@@ -105,8 +105,9 @@ cárgalo con `set -a; . ./.env; set +a`.
    `--svg` otra ruta. La misma grabación da siempre los mismos bytes.
 
 5. **Sigue recogiendo (opcional).** Para guardar las muestras y no solo una ventana,
-   [ejecuta el colector](/mikroscope/es/sinks/) hacia Prometheus, InfluxDB 3 u otro destino, e
-   [importa los dashboards](/mikroscope/es/dashboards/import-and-check/).
+   [ejecuta el colector](/mikroscope/es/sinks/) hacia Prometheus, InfluxDB 3 u otro destino; con
+   `--grafana` también publica el dashboard
+   ([Configurar en Grafana](/mikroscope/es/dashboards/import-and-check/)).
 
 </Steps>
 

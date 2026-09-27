@@ -16,7 +16,10 @@ import TestedOn from "../../../components/TestedOn.astro";
 protocol](https://docs.influxdata.com/influxdb3/core/reference/line-protocol/) to InfluxDB 3's
 [`/api/v3/write_lp`](https://docs.influxdata.com/influxdb3/core/write-data/http-api/v3-write-lp/).
 It keeps every sample at the agent's rate, and it is the sink the InfluxDB dashboard
-reads.
+reads. Add `--grafana <url>` and the collector also creates the InfluxDB datasource and
+publishes the dashboard at start; `mikroscope dashboards publish` with the same flags does it
+once, without collecting ([Publish from the
+collector](/mikroscope/dashboards/import-and-check/#letting-the-collector-do-it-forward---grafana)).
 
 ## URL and token {#the-write-url-and-the-token}
 
@@ -213,8 +216,10 @@ hundreds of GB transmitted (<TestedOn of="fp-tx-zero">observed</TestedOn>).
   empty answer with a plain `count(*)`. The shipped panels and rules do not use the
   pattern.
 
-The Grafana datasource for InfluxDB 3 needs two secure fields, not one; see [import and
-check](/mikroscope/dashboards/import-and-check/).
+`forward --grafana` and `dashboards publish` build the Grafana datasource, with the sink's token,
+at the address the collector writes to unless `--grafana-datasource-url` names the one Grafana
+reaches. One made by hand needs two secure fields, not one ([InfluxDB 3
+datasource](/mikroscope/dashboards/import-and-check/#the-influxdb-3-datasource)).
 
 The InfluxDB 3 editions and versions the sink has written to are under <TestedOn of="feature-status">Feature status</TestedOn>.
 
@@ -224,7 +229,7 @@ The InfluxDB 3 editions and versions the sink has written to are under <TestedOn
 
 - [Store schema](/mikroscope/reference/measurements/): every field of every
   measurement, with its unit.
-- [Import and check](/mikroscope/dashboards/import-and-check/): the InfluxDB dashboard, its
+- [Set up in Grafana](/mikroscope/dashboards/import-and-check/): the InfluxDB dashboard, its
   datasource and the store probe.
 - [Run the collector](/mikroscope/sinks/): the queue, the backoff and the counters every queued sink
   shares.

@@ -105,12 +105,12 @@ receives a gap line instead of the samples, and every sink records the gap.
 `forward` writes to eleven sinks. Most setups need one of
 the first two rows; the rest exist so mikroscope fits what you already run.
 
-| If you…                                                    | Use            | It carries                                     | Dashboard |
+| If you…                                                    | Use            | It carries                                     | [Dashboard](https://jmrp.io/docs/mikroscope/sinks/#dashboard-in-grafana) |
 | ----------------------------------------------------------- | -------------- | ----------------------------------------------- | --------- |
 | want the whole thing, with the dashboards, and have nothing yet | `--influx`  | every measurement, as line protocol              | **yes**, generated |
 | already run Prometheus                                      | `--prom`       | every family, recomputed from the samples        | **yes**, generated |
 | want to capture a window and look at it later               | `--file`       | the merged timeline as JSONL, nothing to install | no        |
-| keep long-term data in PostgreSQL or TimescaleDB            | `--sql`        | DDL and INSERTs for `psql`, no driver            | **yes**, generated |
+| keep long-term data in PostgreSQL or TimescaleDB            | `--sql`        | DDL and INSERTs for `psql`, no driver            | **yes**, generated, on a datasource you create |
 | write straight into a running PostgreSQL                    | `--postgres`   | the `--sql` statements, down a connection        | **yes**, generated |
 | want the kernel log and the detections where your logs are  | `--loki`       | **events only** — kmsg, detections, gaps, triggers, API errors, device records | no |
 | already run an OpenTelemetry pipeline                       | `--otlp`       | metrics as OTLP/HTTP                             | no        |
@@ -127,6 +127,43 @@ the first two rows; the rest exist so mikroscope fits what you already run.
 - **`--prom` is scraped, not pushed**: `forward` serves `/metrics` and
   Prometheus comes to it, so the collector has to be reachable from the
   Prometheus host.
+
+### Dashboard in Grafana
+
+Six sinks feed the five dashboards: `--influx`, `--prom`, `--postgres` and `--sql` (which share the
+PostgreSQL one), `--graphite` and `--elastic`. Add `--grafana <url>` and put a Grafana service-account token,
+Admin role, in `GRAFANA_TOKEN`: at every start, before it reaches the router, the collector
+creates or corrects a datasource and publishes the dashboard for each of them it writes to:
+
+```sh
+export GRAFANA_TOKEN=…
+mikroscope forward --influx http://influx:8181 --influx-db mikroscope --grafana http://grafana:3000
+```
+
+- **Three describe their own datasource.** `--influx`, `--elastic` and `--postgres` write to the
+  server Grafana queries, so the datasource is built from their flags, at the address the
+  collector uses. When Grafana reaches that store by another address, pass it in
+  `--grafana-datasource-url`.
+- **The other three need to be told.** `--prom` is scraped and `--graphite` writes to carbon's
+  ingest port, so each needs the address Grafana queries in `--grafana-datasource-url`, or a
+  datasource you already have in `--grafana-datasource-uid`. `--sql` never connects, so it takes
+  `--grafana-datasource-uid` only.
+- **One store per run for those two flags.** Each names one datasource, so a run that writes to
+  two stores with a dashboard and sets either is refused before anything is written. Leave them
+  off the collector, which then publishes the stores that describe themselves and warns about the
+  rest, and publish each of the rest once with `mikroscope dashboards publish`, given that store's
+  sink flag and its own value.
+- **A failure does not stop the collector.** It prints
+  `grafana: could not publish, carrying on without it: <reason>`, one line per failure, and
+  collects.
+- **The Grafana comes from `--grafana` or `MIKROSCOPE_GRAFANA_URL`**, never from `GRAFANA_URL`,
+  which other Grafana tools may set
+  ([Grafana token](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/#grafana-token)).
+
+The other five sinks have no dashboard. `mikroscope dashboards publish`, given the same sink flags
+and `--grafana`, publishes once without collecting.
+[Set up in Grafana](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/) has what it creates, the other
+routes and the check.
 
 ### Sinks
 
@@ -202,9 +239,10 @@ shape:
 
 ### Console output
 
-At start, on standard error: one `sink: <name>` line per sink, the API tier's
-settings, and the agent's version, rate, sequence number, skew, transport and
-effective batch. Every minute, on standard error, a running report:
+At start, on standard error: with `--grafana`, the `grafana:` lines of the publish first
+([Dashboard in Grafana](https://jmrp.io/docs/mikroscope/sinks/#dashboard-in-grafana)); then one `sink: <name>` line per sink, the API
+tier's settings, and the agent's version, rate, sequence number, skew, transport and effective
+batch. Every minute, on standard error, a running report:
 
 ```text
 forwarded <n> kernel, <n> api, <n> gap(s), <n> trigger(s), <n> detection(s), <n> agent restart(s), last seq <n>; <sink>: <n> written, <n> dropped, <n> errors
@@ -238,6 +276,8 @@ is `celsius` beside `critical_celsius`, and block-device busy time is `io_s`.
   the dashboard expects.
 - [InfluxDB 3](https://jmrp.io/docs/mikroscope/sinks/influxdb/): the write URL, the measurements and what InfluxDB 3
   Core refuses.
+- [Set up in Grafana](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/): the dashboard for each store,
+  from the collector or imported.
 - [RouterOS API tier](https://jmrp.io/docs/mikroscope/sinks/api-tier/): what the collector still asks the router,
   and how to ask less.
 - [Network access](https://jmrp.io/docs/mikroscope/install/reaching-the-agent/): the direct and relay transports
@@ -296,6 +336,22 @@ every tick ride in the sample itself, and `GET /sampler` answers the counters
 that are not per-tick. There is nothing to double-count and no keep list to
 maintain. The scrape intervals and Prometheus versions that have been run are
 under [Feature status](https://jmrp.io/docs/mikroscope/about/status/#what-works-end-to-end).
+
+Then the dashboard. The collector is scraped, so it cannot know the address Grafana queries:
+give it in `--grafana-datasource-url`, or name a Prometheus datasource you already have in
+`--grafana-datasource-uid`. Once Prometheus has scraped a few times:
+
+```sh
+export GRAFANA_TOKEN=…
+mikroscope dashboards publish --prom :9124 --grafana http://grafana:3000 \
+  --grafana-datasource-url http://prometheus:9090   # Prometheus as Grafana reaches it
+```
+
+The same `--grafana` flags on the collector publish at every start, as long as `--prom` is its
+only sink with a dashboard: beside `--influx` or another, the datasource flags are refused, so
+publish Prometheus this way. Or import it with `dashboards import --store prometheus` against a
+datasource you already have ([Datasource per
+sink](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/#five-of-five-by-two-different-routes)).
 
 #### Family sources
 
@@ -421,7 +477,7 @@ info](https://jmrp.io/docs/mikroscope/sinks/device-info/).
 
 - [Prometheus metrics](https://jmrp.io/docs/mikroscope/reference/metrics/): every family the agent and the
   collector render, with its labels.
-- [Import and check](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/): the dashboards this scrape job
+- [Set up in Grafana](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/): the dashboards this scrape job
   feeds, and how to check them panel by panel.
 - [Derived values](https://jmrp.io/docs/mikroscope/sinks/derive/): what the `mikroscope_derived_*` gauges
   mean and when they are absent.
@@ -438,7 +494,10 @@ Source: <https://jmrp.io/docs/mikroscope/sinks/influxdb/>
 protocol](https://docs.influxdata.com/influxdb3/core/reference/line-protocol/) to InfluxDB 3's
 [`/api/v3/write_lp`](https://docs.influxdata.com/influxdb3/core/write-data/http-api/v3-write-lp/).
 It keeps every sample at the agent's rate, and it is the sink the InfluxDB dashboard
-reads.
+reads. Add `--grafana <url>` and the collector also creates the InfluxDB datasource and
+publishes the dashboard at start; `mikroscope dashboards publish` with the same flags does it
+once, without collecting ([Publish from the
+collector](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/#letting-the-collector-do-it-forward---grafana)).
 
 ### URL and token
 
@@ -623,8 +682,10 @@ hundreds of GB transmitted ([observed](https://jmrp.io/docs/mikroscope/about/sta
   empty answer with a plain `count(*)`. The shipped panels and rules do not use the
   pattern.
 
-The Grafana datasource for InfluxDB 3 needs two secure fields, not one; see [import and
-check](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/).
+`forward --grafana` and `dashboards publish` build the Grafana datasource, with the sink's token,
+at the address the collector writes to unless `--grafana-datasource-url` names the one Grafana
+reaches. One made by hand needs two secure fields, not one ([InfluxDB 3
+datasource](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/#the-influxdb-3-datasource)).
 
 The InfluxDB 3 editions and versions the sink has written to are under [Feature status](https://jmrp.io/docs/mikroscope/about/status/#what-works-end-to-end).
 
@@ -632,7 +693,7 @@ The InfluxDB 3 editions and versions the sink has written to are under [Feature 
 
 - [Store schema](https://jmrp.io/docs/mikroscope/reference/measurements/): every field of every
   measurement, with its unit.
-- [Import and check](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/): the InfluxDB dashboard, its
+- [Set up in Grafana](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/): the InfluxDB dashboard, its
   datasource and the store probe.
 - [Run the collector](https://jmrp.io/docs/mikroscope/sinks/): the queue, the backoff and the counters every queued sink
   shares.
@@ -766,7 +827,7 @@ What the connection can do that a file cannot:
   ending in a backslash would escape its own closing quote and everything after it would
   be parsed as string content.
 - **It can describe its own Grafana datasource**, which the file sink can never do: see
-  [import and check](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/).
+  [Datasource per sink](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/#five-of-five-by-two-different-routes).
 
 Unlike `--sql`, `--postgres` is queued like the remote sinks: one batch a second,
 64 KiB × `--queue-seconds` of budget with the oldest batch dropped first, each batch one
@@ -1077,6 +1138,11 @@ The byte budget is 256 KiB per queued second, four times the others: a four-core
 with every source present renders to 6 411 B in 131 lines in the sink's test fixture,
 not on a router, so 10 Hz is about 63 KiB/s. Above 10 Hz it is [not measured](https://jmrp.io/docs/mikroscope/about/status/#not-tested).
 
+The Graphite dashboard reads these paths. Grafana queries Graphite's web API, not the carbon port
+the sink writes to, so `--grafana` needs that address in `--grafana-datasource-url`, or a
+Graphite datasource you already have in `--grafana-datasource-uid`
+([Graphite datasource](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/#the-graphite-datasource)).
+
 ### Elasticsearch and OpenSearch
 
 ```sh
@@ -1130,6 +1196,12 @@ an unreachable cluster call for different actions. Batches close once a second o
 Sizes from the sink's two-core fixture, not from a router: 1 077 B of NDJSON for a kernel
 sample with no optional source, 1 952 B across two documents with the optional sources
 and one kernel-log record. A four-core sample is [not rendered](https://jmrp.io/docs/mikroscope/about/status/#not-tested) in this format.
+
+`--grafana` builds a Grafana Elasticsearch datasource (type `elasticsearch`) from `--elastic`:
+`@timestamp` as its time field, an index pattern that covers every index `--elastic-index` makes,
+and `MIKROSCOPE_ELASTIC_AUTH` sent the way the sink sends it
+([Elasticsearch datasource](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/#the-elasticsearch-datasource)).
+Against OpenSearch that datasource is [not tried](https://jmrp.io/docs/mikroscope/about/status/#not-tested).
 
 ### Telegraf
 

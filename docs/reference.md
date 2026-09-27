@@ -26,7 +26,7 @@ The verbs fall into five groups, each with its own flag set: the deployment verb
 | Status | When                                                                                                                                                                                                                                                                                |
 | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `0`    | the verb finished                                                                                                                                                                                                                                                                   |
-| `1`    | the verb ran and failed (a missing prerequisite, a router error, a sink that could not be built, a panel with no data), the verb is unknown, or a flag of `uninstall`, `record`, `mark`, `plot`, `forward` or `dashboards` failed to parse or validate                             |
+| `1`    | the verb ran and failed (a missing prerequisite, a router error, a sink that could not be built, a panel with no data, a store `dashboards publish` could not publish), the verb is unknown, or a flag of `uninstall`, `record`, `mark`, `plot`, `forward` or `dashboards` failed to parse or validate |
 | `2`    | no verb was given, or a flag of `doctor`, `plan`, `install`, `upgrade`, `status` or `image` failed to parse or validate; nothing was sent to the router                                                                                                                             |
 
 Every deployment and connection flag is validated before anything connects, by one function,
@@ -127,7 +127,7 @@ exit status.
 
 ```sh
 mikroscope plan
-mikroscope plan --rsc --remote-image jmrplens/mikroscope-agent:1.4.0 --out mikroscope.rsc
+mikroscope plan --rsc --remote-image jmrplens/mikroscope-agent:1.5.0 --out mikroscope.rsc
 ```
 
 - Without `--rsc` it prints the listing `install` would print, the same as `install --dry-run`,
@@ -142,7 +142,7 @@ mikroscope plan --rsc --remote-image jmrplens/mikroscope-agent:1.4.0 --out mikro
 #### `install`
 
 ```sh
-mikroscope install --remote-image jmrplens/mikroscope-agent:1.4.0
+mikroscope install --remote-image jmrplens/mikroscope-agent:1.5.0
 ```
 
 1. `doctor`, in one connect, unless `--no-doctor`. A missing prerequisite stops it with nothing
@@ -160,7 +160,7 @@ mikroscope install --remote-image jmrplens/mikroscope-agent:1.4.0
 #### `upgrade`
 
 ```sh
-mikroscope upgrade --remote-image jmrplens/mikroscope-agent:1.4.0
+mikroscope upgrade --remote-image jmrplens/mikroscope-agent:1.5.0
 ```
 
 - One connect reads how the install was made, whether each step is there, the router's architecture
@@ -189,15 +189,27 @@ from the flags alone. `--targets` widens it past the router:
 | Target      | What goes                                                                                                                                                                                                                        |
 | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `router`    | everything `install` created: the objects in the install manifest, any other object with the install's tag, the container root, the manifest, and the `mikroscope` directory when nothing else is in it. The default            |
-| `dashboard` | the dashboard and the datasource `forward --grafana` published, per store this collector writes to                                                                                                                               |
+| `dashboard` | per store the sink flags name: the dashboard `mikroscope-<store>`, however it was imported, and the datasource `mikroscope-<store>`. Not the folder, an adopted datasource or provisioned alert rules |
 | `data`      | the tables and indices the sinks wrote, and the files the file sinks wrote                                                                                                                                                       |
 | `all`       | the three above                                                                                                                                                                                                                  |
 
 The `dashboard` and `data` targets take the [sink](https://jmrp.io/docs/mikroscope/reference/cli/#sinks) and [Grafana](https://jmrp.io/docs/mikroscope/reference/cli/#publishing-to-grafana)
-flags of `forward`, to find the stores.
+flags of `forward`, to find the stores. Of the Grafana flags, `uninstall` reads `--grafana` and
+`--grafana-datasource-uid`, ignores the others, and refuses `--grafana-dry-run`: its dry run is
+leaving out `--yes`. When a sink flag names a store, `dashboard` also needs `--grafana` (or
+`MIKROSCOPE_GRAFANA_URL`, then `GRAFANA_URL`) and `GRAFANA_TOKEN`, and stops with `--targets dashboard needs --grafana …` without
+a Grafana and `--targets dashboard needs GRAFANA_TOKEN` without the token. Given no sink flag,
+`--targets dashboard` or `data` finds no store and prints `nothing of this is here to remove`; `all`
+then acts on the router objects alone.
 
 - **Nothing is removed without `--yes`**, the same `--yes` the deployment verbs take. A dropped
   table cannot be put back the way `install` puts back a router object.
+- **The stores are listed before the router is touched.** The `dashboard` and `data` targets are
+  listed first, so one that cannot be listed stops the verb before anything is removed, the router
+  objects of `all` included.
+- **A Grafana it cannot read stops it.** Only a 404 counts as not there. An unreachable Grafana, a
+  refused token or a server error stops the verb with `asking Grafana whether dashboard
+  mikroscope-<store> is there: …` and exit status 1, before anything is removed.
 - **The tables are asked of the store, never compiled in.** A list inside the binary would be the
   measurements this version writes, and the ones worth removing are the ones nobody writes any
   more: what an earlier version collected, or a source switched off since. Everything under the
@@ -239,7 +251,7 @@ install on the router (manifest mikroscope/mikroscope.manifest.txt): veth veth-m
   1     install manifest mikroscope/mikroscope.manifest.txt
   1     veth interface veth-mikroscope
   …
-agent: 1.4.0 (<commit>) built <time>, 10 Hz, seq 19 (oldest 1), up 2s, 0 slipped, 1ms round trip
+agent: 1.5.0 (<commit>) built <time>, 10 Hz, seq 19 (oldest 1), up 2s, 0 slipped, 1ms round trip
 ```
 
 #### `image`
@@ -529,49 +541,103 @@ metrics](https://jmrp.io/docs/mikroscope/reference/metrics/) says what else foll
 
 #### Grafana publishing
 
-`forward` can reconcile a datasource and a dashboard per store it writes to, once, at start, before
-the first sample. It is off unless `--grafana` is given, and the token is `GRAFANA_TOKEN`:
-publishing without one would write as whoever an anonymous request is to that server.
+`forward` can create a datasource and publish a dashboard for each store it writes to, once, at
+start, before the first sample. [`dashboards publish`](https://jmrp.io/docs/mikroscope/reference/cli/#dashboards) does the same once, with the
+same flags, and exits without collecting. It is off unless `--grafana` is given, and the token is
+`GRAFANA_TOKEN`: publishing without one would write as whoever an anonymous request is to that
+server.
 
-| Flag                           | Default      | Variable                                | Meaning                                                                                  |
-| ------------------------------ | ------------ | --------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `--grafana`                    | empty        | `MIKROSCOPE_GRAFANA_URL`                | publish to this Grafana at start; empty publishes nothing                                |
-| `--grafana-folder`             | `mikroscope` | `MIKROSCOPE_GRAFANA_FOLDER`             | the folder to publish into; empty is Grafana's General folder                            |
-| `--grafana-datasource-uid`     | empty        | `MIKROSCOPE_GRAFANA_DATASOURCE_UID`     | adopt an existing datasource by uid instead of creating one, and leave it untouched      |
-| `--grafana-datasource-url`     | empty        | `MIKROSCOPE_GRAFANA_DATASOURCE_URL`     | the address Grafana queries, for `--prom` and `--graphite`; also overrides a derived one |
-| `--grafana-datasource-sslmode` | empty        | `MIKROSCOPE_GRAFANA_DATASOURCE_SSLMODE` | `disable`, `require`, `verify-ca` or `verify-full` for the PostgreSQL datasource         |
-| `--grafana-dry-run`            | `false`      | none                                    | print what it would write, write nothing, and stop before collecting                     |
+Each run, and in `forward` before the router is touched:
 
-A failure here is a warning and not a refusal to start: the samples of an hour spent not running
-cannot be recovered, and a dashboard can be published on the next restart. Nothing is ever deleted.
-`--grafana-dry-run` runs before the router is touched, so it is answerable with no router in front
-of it. [Import and check](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/) says which sinks can describe
-their own datasource and which have to be told.
+1. It checks the flags before any request, in a dry run too. It refuses a run with no sink that has
+   a dashboard, a `--grafana-datasource-sslmode` outside Grafana's four modes, and a run of more than one
+   store that sets `--grafana-datasource-url` or `--grafana-datasource-uid`. Then, unless it is a
+   dry run, it needs `GRAFANA_TOKEN`.
+2. It finds the folder `--grafana-folder` by title, or creates it:
+   `folder "<title>" (<uid>) unchanged|created`.
+3. For each store its sinks write to, in the order InfluxDB, Elasticsearch, Prometheus, PostgreSQL,
+   Graphite, it creates the datasource `mikroscope-<store>`, corrects it (`updated`) or leaves it
+   `unchanged`, or adopts the one named in `--grafana-datasource-uid` and leaves it as it is. It then
+   asks the store which measurements it holds and imports the dashboard `mikroscope-<store>` over
+   itself, into the folder.
+
+`forward` logs each line on standard error behind a `grafana:` prefix; `dashboards publish` prints
+them on standard output.
+
+Every store is tried. One that fails is reported on a line of its own that names it,
+`the datasource for <store>: …` or `the dashboard for <store>: …`, and the stores after it are
+still published; only a folder Grafana refuses stops the run. `forward` logs
+`grafana: could not publish, carrying on without it: <reason>` once per failed store and collects;
+`dashboards publish` exits 1. Only `--influx`, `--elastic`, `--prom`, `--postgres` or `--sql`, and
+`--graphite` have a dashboard: with none of them `dashboards publish` stops with `no sink this
+builds a dashboard for is configured, so there is nothing to publish`, and `forward` logs it as its
+`grafana: could not publish…` warning and collects.
+
+| Flag                           | Default      | Variable                                                                  | Meaning                                                                                                                                                              |
+| ------------------------------ | ------------ | ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--grafana`                    | empty        | `MIKROSCOPE_GRAFANA_URL`; for `dashboards publish` and `uninstall`, then `GRAFANA_URL` | the Grafana to publish to; empty publishes nothing                                                                                                      |
+| `--grafana-folder`             | `mikroscope` | `MIKROSCOPE_GRAFANA_FOLDER`                                               | the folder to publish into; `--grafana-folder ""` is Grafana's General folder, and an empty variable is ignored                                                     |
+| `--grafana-datasource-uid`     | empty        | `MIKROSCOPE_GRAFANA_DATASOURCE_UID`                                       | adopt an existing datasource by uid instead of creating one, and leave it untouched; the only way to publish `--sql`. One store per run                             |
+| `--grafana-datasource-url`     | empty        | `MIKROSCOPE_GRAFANA_DATASOURCE_URL`                                       | the address Grafana queries, `host:port` for PostgreSQL and a URL for the others: needed for `--prom` and `--graphite`, and it replaces the address `--influx`, `--elastic` or `--postgres` would give. One store per run |
+| `--grafana-datasource-sslmode` | empty        | `MIKROSCOPE_GRAFANA_DATASOURCE_SSLMODE`                                   | `disable`, `require`, `verify-ca` or `verify-full` for the PostgreSQL datasource, and nothing else; empty takes the mode `--postgres` names when Grafana has it, and `disable` otherwise |
+| `--grafana-dry-run`            | `false`      | none                                                                      | with `--grafana`, print what it would write, contact no Grafana and need no token; `forward` then stops before collecting, and refuses it without a Grafana; `uninstall` refuses it |
+
+[`uninstall`](https://jmrp.io/docs/mikroscope/reference/cli/#uninstall---targets) reads only `--grafana` and `--grafana-datasource-uid` of these.
+
+**One store per run** for the two datasource flags: each names a single datasource, and two stores
+are two servers read by two plugins. A collector that writes to several stores, one of which needs
+a flag, runs without it; that store is published on its own with `dashboards publish`, given only
+its sink flag and its own `--grafana-datasource-url` or `--grafana-datasource-uid`.
+
+A failure here is a warning to `forward` and not a refusal to start: the samples of an hour spent
+not running cannot be recovered, and a dashboard can be published on the next restart. It deletes
+nothing; `uninstall --targets dashboard` does. `--grafana-dry-run` runs before the router is
+touched, so it is answerable with no router in front of it. [Set up in
+Grafana](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/#letting-the-collector-do-it-forward---grafana)
+says which sinks can describe their own datasource and which have to be told.
 
 ### dashboards
 
 ```sh
 mikroscope dashboards gen
+mikroscope dashboards publish --influx http://influx:8181 --influx-db mikroscope --grafana http://grafana:3000
 mikroscope dashboards import --store influxdb --datasource-uid <uid>
 mikroscope dashboards check  --store influxdb --datasource-uid <uid> --window 1h --end <RFC 3339 time>
 ```
 
-| Flag               | Default         | Variable      | Read by           | Meaning                                                                                            |
-| ------------------ | --------------- | ------------- | ----------------- | -------------------------------------------------------------------------------------------------- |
-| `--out`            | `dashboards`    | none          | `gen`             | output directory for `mikroscope-<store>.json` (five) and `mikroscope-alerts-<store>.yaml` (three) |
-| `--store`          | `influxdb`      | none          | `import`, `check` | `influxdb`, `prometheus`, `postgres`, `graphite` or `elasticsearch`                                |
-| `--grafana`        | empty           | `GRAFANA_URL` | `import`, `check` | Grafana base URL; the token comes only from `GRAFANA_TOKEN`                                        |
+| Subcommand | What it does                                                                                                                                                                                                                                                              |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `gen`      | writes the five dashboards and the three alert files into `--out`, creating it when missing; the files are readable only by you. Contacts nothing                                                                                                                                     |
+| `publish`  | what `forward --grafana` does at start, once, with no router and no collector: it takes the [sink](https://jmrp.io/docs/mikroscope/reference/cli/#sinks) and [Grafana publishing](https://jmrp.io/docs/mikroscope/reference/cli/#publishing-to-grafana) flags, creates, corrects or adopts each store's datasource and imports its dashboard, prints a line per object, and exits 1 when any store failed |
+| `import`   | asks the datasource which measurements it holds, generates the dashboard and posts it to `/api/dashboards/import` with overwrite on, into the General folder; prints `imported: <url>`. Creates no datasource                                                            |
+| `check`    | asks and generates as `import` does, runs every panel's query through `/api/ds/query`, prints one line per panel and exits 1 when any panel fails. Writes nothing to Grafana                                                                                             |
+
+`gen`, `import` and `check` take the flags below. `publish` takes none of them, and no argument
+either: its flags are `forward`'s sink and Grafana publishing flags.
+
+| Flag               | Default         | Variable                                   | Read by           | Meaning                                                                                                                         |
+| ------------------ | --------------- | ------------------------------------------ | ----------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `--out`            | `dashboards`    | none                                       | `gen`             | output directory for `mikroscope-<store>.json` (five) and `mikroscope-alerts-<store>.yaml` (three), created with its parents |
+| `--store`          | `influxdb`      | none                                       | `import`, `check` | `influxdb`, `prometheus`, `postgres`, `graphite` or `elasticsearch`                                                             |
+| `--grafana`        | empty           | `GRAFANA_URL`, then `MIKROSCOPE_GRAFANA_URL` | `import`, `check` | Grafana base URL; the token comes only from `GRAFANA_TOKEN`                                                                  |
 | `--datasource-uid` | empty, required | none          | `import`, `check` | the datasource UID bound to `DS_MIKROSCOPE`                                                        |
 | `--no-probe`       | `false`         | none          | `import`, `check` | do not ask the datasource which measurements it holds; use the compiled defaults                   |
 | `--window`         | `15m`           | none          | `check`           | length of the query window                                                                         |
 | `--end`            | now             | none          | `check`           | RFC 3339 instant the window ends at, to check against a capture that has already finished          |
 | `--var`            | none            | none          | `check`           | set a dashboard variable, `name=value`, repeatable: `--var host=router`                            |
 
-`import` and `check` refuse to run without `--grafana` (or `GRAFANA_URL`), `GRAFANA_TOKEN` and
-`--datasource-uid`. Unless `--no-probe` is given, they first ask the datasource which measurements
-it holds; if that question fails they warn and continue with the compiled defaults. `check` prints
-one line per panel (`ok`, `none` for a known-empty panel, `FAIL`) and exits 1 if any panel fails.
-The variables are `GRAFANA_URL` and `GRAFANA_TOKEN`, without the `MIKROSCOPE_` prefix.
+`import` and `check` stop with `import/check need --grafana, GRAFANA_TOKEN and --datasource-uid`
+when one of the three is missing. Unless `--no-probe` is given, they first ask the datasource which
+measurements it holds; if that question fails they warn and continue with the compiled defaults.
+`check` prints one line per panel (`ok`, `none` for a known-empty panel, `FAIL`) and exits 1 if any
+panel fails.
+
+`publish` stops with `dashboards publish needs --grafana (or MIKROSCOPE_GRAFANA_URL or
+GRAFANA_URL), with the token in GRAFANA_TOKEN` when no Grafana is named, and with
+`dashboards publish needs the sink flags the collector runs with (…)` when no sink flag is given,
+because each datasource is described from the sink that writes to it. Which Grafana variable each
+subcommand reads first is in [Environment variables](https://jmrp.io/docs/mikroscope/reference/environment/#grafana).
+[Set up in Grafana](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/) puts the four to use.
 
 ### version
 
@@ -711,29 +777,48 @@ is read from the environment only.
 | `MIKROSCOPE_OTLP_TOKEN`     | the OTLP endpoint                                 |
 | `MIKROSCOPE_ELASTIC_AUTH`   | Elasticsearch or OpenSearch                       |
 | `MIKROSCOPE_TELEGRAF_TOKEN` | the Telegraf HTTP listener                        |
-| `GRAFANA_TOKEN`             | `dashboards import`, `dashboards check` and `forward --grafana` |
+| `GRAFANA_TOKEN`             | `dashboards publish`, `import` and `check`, `forward --grafana`, `uninstall --targets dashboard` |
 
 ### Grafana
 
-`dashboards import` and `dashboards check` read `GRAFANA_URL` (the default of
-`--grafana`) and `GRAFANA_TOKEN`. Neither has the `MIKROSCOPE_` prefix. The
-file [`.env.example`](https://github.com/jmrplens/mikroscope/blob/main/.env.example) carries both, commented out, in its Grafana block.
+`GRAFANA_TOKEN` is the one Grafana token every verb uses, with no prefix, and no flag takes it.
+The Grafana itself is `--grafana`, and each verb looks for a default in a different order:
 
-`forward` has its own `--grafana`, which publishes at start, and its variables
-**do** carry the prefix, because they are collector settings rather than the
-`dashboards` verb's:
+| Verb                                                  | Reads, after `--grafana`                     |
+| ----------------------------------------------------- | -------------------------------------------- |
+| `dashboards publish`, `uninstall --targets dashboard` | `MIKROSCOPE_GRAFANA_URL`, then `GRAFANA_URL` |
+| `dashboards import`, `dashboards check`               | `GRAFANA_URL`, then `MIKROSCOPE_GRAFANA_URL` |
+| `forward`                                             | `MIKROSCOPE_GRAFANA_URL` only                |
 
-| Variable                           | Flag                       | Default in the code | Meaning                                                    |
-| ---------------------------------- | -------------------------- | ------------------- | ---------------------------------------------------------- |
-| `MIKROSCOPE_GRAFANA_URL`           | `--grafana`                | empty               | publish to this Grafana at start; empty publishes nothing  |
-| `MIKROSCOPE_GRAFANA_FOLDER`        | `--grafana-folder`         | `mikroscope`        | folder to publish into; empty is Grafana's General folder  |
-| `MIKROSCOPE_GRAFANA_DATASOURCE_UID` | `--grafana-datasource-uid` | empty               | adopt this datasource instead of creating one              |
-| `MIKROSCOPE_GRAFANA_DATASOURCE_URL` | `--grafana-datasource-url` | empty               | the address Grafana queries, for the sinks that cannot know it |
-| `MIKROSCOPE_GRAFANA_DATASOURCE_SSLMODE` | `--grafana-datasource-sslmode` | empty        | sslmode for the PostgreSQL datasource                      |
+`forward` never reads `GRAFANA_URL`, so a `GRAFANA_URL` on its own does not make the collector
+publish. Other Grafana tools read that name and `GRAFANA_TOKEN` too, and a collector started from a
+shell set up for one of them would start writing a folder, a datasource and a dashboard into that
+Grafana without anyone asking it to. The file [`.env.example`](https://github.com/jmrplens/mikroscope/blob/main/.env.example) carries every Grafana
+variable, commented out, in its two Grafana blocks.
 
-The token is `GRAFANA_TOKEN`, the same one, with no prefix. `forward --grafana`
-refuses to publish without it: some Grafanas accept an anonymous request, and
-one that did would write as whoever the server thinks is asking.
+`forward`, `dashboards publish` and `uninstall` take `--grafana` and the flags below, and their
+variables **do** carry the prefix, because they are collector settings rather than the
+`dashboards import` and `check` ones:
+
+| Variable                                | Flag                           | Default in the code | Meaning                                                                                                   |
+| --------------------------------------- | ------------------------------ | ------------------- | --------------------------------------------------------------------------------------------------------- |
+| `MIKROSCOPE_GRAFANA_URL`                | `--grafana`                    | empty               | the Grafana to publish to; empty publishes nothing                                                        |
+| `MIKROSCOPE_GRAFANA_FOLDER`             | `--grafana-folder`             | `mikroscope`        | folder to publish into; an empty variable is ignored, so the General folder takes `--grafana-folder ""`  |
+| `MIKROSCOPE_GRAFANA_DATASOURCE_UID`     | `--grafana-datasource-uid`     | empty               | adopt this datasource instead of creating one; one store per run                                          |
+| `MIKROSCOPE_GRAFANA_DATASOURCE_URL`     | `--grafana-datasource-url`     | empty               | the address Grafana queries, for the sinks that cannot know it; one store per run                         |
+| `MIKROSCOPE_GRAFANA_DATASOURCE_SSLMODE` | `--grafana-datasource-sslmode` | empty               | sslmode for the PostgreSQL datasource: `disable`, `require`, `verify-ca` or `verify-full`, nothing else |
+
+`uninstall` reads only `MIKROSCOPE_GRAFANA_URL` and `MIKROSCOPE_GRAFANA_DATASOURCE_UID` of these,
+and ignores the others.
+
+A run that publishes more than one store and sets `MIKROSCOPE_GRAFANA_DATASOURCE_UID` or
+`MIKROSCOPE_GRAFANA_DATASOURCE_URL` is refused before any request: each names one datasource.
+Publish the store that needs one on its own with `dashboards publish` ([Grafana
+publishing](https://jmrp.io/docs/mikroscope/reference/cli/#publishing-to-grafana)).
+
+Publishing refuses to write without `GRAFANA_TOKEN`: some Grafanas accept an anonymous request, and
+one that did would write as whoever the server thinks is asking. `--grafana-dry-run` writes nothing
+and sends no request, so it runs without the token.
 
 ### Agent envlist
 
@@ -1952,7 +2037,7 @@ does not cover, are on [Tested on](https://jmrp.io/docs/mikroscope/about/status/
 - [Prometheus metrics](https://jmrp.io/docs/mikroscope/reference/metrics/): the same data as a scrape.
 - [Other sinks](https://jmrp.io/docs/mikroscope/sinks/other/): JSONL, SQL in practice, Loki, OTLP,
   Graphite, Elasticsearch, Telegraf.
-- [Import and check](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/): the dashboards that query these
+- [Set up in Grafana](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/): the dashboards that query these
   measurements.
 
 ## Derived values
@@ -3002,7 +3087,7 @@ That prints the ownership counts and, if it can reach the agent, its health.
 | ------------------------------------------------------ | ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
 | No `events` at all, ever                               | the container runs unprivileged, and `/dev/kmsg` needs `privileged=yes`      | install or upgrade without `-privileged=false`                                                                                                        |
 | No PMU panels, no cycles or instructions               | `perf_event_open` is unavailable on that kernel or board                     | none; the dashboard moves those panels to "Not available on this device"                                                                              |
-| A panel says **No data** and the others are fine       | that measurement is not produced on this device                              | `mikroscope dashboards check` sorts such panels into their row                                                                                        |
+| A panel says **No data** and the others are fine       | that measurement is not produced on this device                              | `dashboards import` or `dashboards publish`, or a collector run with `--grafana` at its next start, moves such panels into their row (InfluxDB, Prometheus); `dashboards check` lists them |
 | A panel shows a red error badge                        | the query failed: the datasource, not the data                               | [Stores and dashboards](https://jmrp.io/docs/mikroscope/reference/troubleshooting/#the-store-and-the-dashboard)                                                                                                 |
 | `forward` prints `… dropped` for a sink                | the sink could not keep up                                                   | [Sink drops](https://jmrp.io/docs/mikroscope/reference/troubleshooting/#a-sink-is-dropping)                                                                                                                     |
 | Loki accepted everything and a query returns nothing   | a push is not queryable until the chunk flushes                              | query again after the flush                                                                                                                           |
@@ -3012,9 +3097,10 @@ That prints the ownership counts and, if it can reach the agent, its health.
 
 The dashboards carry a row named **"Not available on this device"** for exactly this: panels whose
 measurement the kernel or the board does not produce are moved into it rather than left to draw an
-empty graph among the others. `mikroscope dashboards check` asks the datasource which measurements
-it really holds and does that sorting for your store: [Import and
-check](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/).
+empty graph among the others. `mikroscope dashboards import` asks the datasource which measurements
+it really holds and does that sorting for your store, on InfluxDB and Prometheus, and
+`dashboards publish` and a collector run with `--grafana` do the same. `dashboards check` reports
+what is empty but changes nothing in Grafana: [Store probe](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/#the-probe).
 
 #### Kernel tier stops after restart
 
@@ -3071,9 +3157,21 @@ protects the data, and a collector waiting on a slow store would lose more than 
 
 | You see                                                           | Cause                                                                                | Fix                                                                                                    |
 | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| No mikroscope dashboard in Grafana after `install`                | `install` writes only to the router                                                   | run the collector with `--grafana`, or `dashboards publish` ([Set up in Grafana](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/#choose-a-route)) |
+| `forward` prints no `grafana:` line                               | no Grafana named: `forward` reads `--grafana` or `MIKROSCOPE_GRAFANA_URL`, never `GRAFANA_URL` | pass `--grafana` ([Grafana variables](https://jmrp.io/docs/mikroscope/reference/environment/#grafana))           |
+| `--grafana needs GRAFANA_TOKEN`                                   | no token in the environment of `forward` or `dashboards publish`                      | a service-account token in `GRAFANA_TOKEN` ([Grafana token](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/#grafana-token))              |
+| `dashboards publish needs --grafana …`                            | no Grafana named, in the flag or in `MIKROSCOPE_GRAFANA_URL` or `GRAFANA_URL`         | pass `--grafana`                                                                                       |
+| `dashboards publish needs the sink flags the collector runs with` | no sink flag given: each datasource is described from its sink                        | the collector's sink flags                                                                             |
+| `no sink this builds a dashboard for is configured`               | only sinks with no dashboard                                                          | add `--influx`, `--prom`, `--postgres`, `--graphite` or `--elastic` ([Dashboard in Grafana](https://jmrp.io/docs/mikroscope/sinks/#dashboard-in-grafana)) |
+| `--grafana-datasource-url names one datasource for every store` (or `…-uid names`, or both flags `name`) | a run of several stores that sets `--grafana-datasource-url` or `-uid`, or its variable | publish that store on its own ([details](https://jmrp.io/docs/mikroscope/reference/troubleshooting/#one-store-per-run))                            |
+| `--grafana-datasource-sslmode "…" is not a mode Grafana's PostgreSQL datasource has` | a mode the datasource does not have, such as `prefer`          | `disable`, `require`, `verify-ca` or `verify-full`, in lower case                                     |
+| `--grafana-dry-run needs --grafana`                               | a dry run of `forward` with no Grafana named: there is no publish to preview          | add `--grafana`, or leave the dry run out                                                              |
+| `import/check need --grafana, GRAFANA_TOKEN and --datasource-uid` | one of the three is missing                                                           | pass `--grafana` (or set `GRAFANA_URL`) and `--datasource-uid` ([Import with the CLI](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/#importing-from-the-cli)) |
+| `could not ask … which measurements it holds`                     | the reason in brackets: a store with no data yet (`the datasource reported no mikroscope measurements`), a datasource Grafana cannot reach or query, or a store that cannot be probed (`cannot probe a "…" datasource`: PostgreSQL, Graphite, Elasticsearch) | no data yet: publish again once it holds data; unreachable: the address Grafana reaches the store at, in `--grafana-datasource-url` for a datasource the collector made; cannot probe: nothing ([Store probe](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/#the-probe)) |
+| red `table … not found` badges on an InfluxDB dashboard uploaded by hand | the file carries the compiled defaults                                          | `dashboards import` or `dashboards publish` ([Import manually](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/#importing-by-hand))               |
 | `flightsql: Unauthenticated` on every InfluxDB panel              | the datasource has only one of its two credential fields set                         | set both, or let `forward --grafana` build it ([details](https://jmrp.io/docs/mikroscope/reference/troubleshooting/#flightsql-unauthenticated-from-an-influxdb-datasource)) |
 | `tls: first record does not look like a TLS handshake`           | the FlightSQL side tries TLS against a plain-HTTP InfluxDB                           | `insecureGrpc` ([details](https://jmrp.io/docs/mikroscope/reference/troubleshooting/#tls-first-record-does-not-look-like-a-tls-handshake))                       |
-| Empty PostgreSQL panels, and the SQL is fine in `psql`            | a result with no time-typed column                                                    | a `time` column ([details](https://jmrp.io/docs/mikroscope/reference/troubleshooting/#the-panels-are-empty-and-the-sql-is-fine-in-psql))                         |
+| Empty panels, and the SQL runs fine outside Grafana               | a result with no time-typed column                                                    | a `time` column ([details](https://jmrp.io/docs/mikroscope/reference/troubleshooting/#the-panels-are-empty-and-the-sql-is-fine-in-psql))                         |
 | `the <name> sink does not know the address Grafana would query`   | `--prom` and `--graphite` cannot describe their own datasource                        | `--grafana-datasource-url` or `--grafana-datasource-uid` ([details](https://jmrp.io/docs/mikroscope/reference/troubleshooting/#the-name-sink-does-not-know-the-address-grafana-would-query)) |
 | `--influx is a write URL this cannot take apart`                  | a write URL that is not InfluxDB 3's                                                  | the server and `--influx-db`, or adopt a datasource ([details](https://jmrp.io/docs/mikroscope/reference/troubleshooting/#--influx-is-a-write-url-this-cannot-take-apart)) |
 | `standard_conforming_strings = off`                               | the server would misread the statements                                               | turn it on for the connection, or use `--sql` ([details](https://jmrp.io/docs/mikroscope/reference/troubleshooting/#standard_conforming_strings--off))           |
@@ -3082,6 +3180,8 @@ protects the data, and a collector waiting on a slow store would lose more than 
 | `uninstall` lists the same tables every time                      | InfluxDB 3 renames a deleted table                                                    | nothing: they are filtered ([details](https://jmrp.io/docs/mikroscope/reference/troubleshooting/#uninstall-lists-the-same-tables-every-time))                   |
 | `uninstall --targets data` says a sink stores nothing it can remove | `--prom`, `--graphite` and `--sql` store nothing this can delete                    | remove it where it lives ([details](https://jmrp.io/docs/mikroscope/reference/troubleshooting/#uninstall---targets-data-says-a-sink-stores-nothing-it-can-remove)) |
 | `--targets dashboard` left the datasource behind                  | it was adopted                                                                        | nothing ([details](https://jmrp.io/docs/mikroscope/reference/troubleshooting/#--targets-dashboard-left-the-datasource-behind))                                   |
+| `uninstall takes no --grafana-dry-run`                            | `uninstall`'s dry run is leaving out `--yes`                                          | drop the flag: without `--yes` it lists what would go and removes nothing                             |
+| `uninstall`: `asking Grafana whether dashboard … is there`        | Grafana could not be read: unreachable, the token refused, or a server error          | fix the URL or the token and run it again; nothing was removed                                        |
 
 #### `flightsql: Unauthenticated`, from an InfluxDB datasource
 
@@ -3098,9 +3198,9 @@ attempts TLS unless `insecureGrpc` is set, so a datasource pointed at a **plain-
 answers this on every panel. Set `insecureGrpc` on the datasource, or use `forward --grafana`, which
 follows the scheme of the URL the sink writes to.
 
-#### Empty PostgreSQL panels
+#### Empty panels with valid SQL
 
-The InfluxDB plugin rejects a result whose columns are all numeric and none is time-typed, so a
+Grafana's InfluxDB SQL plugin rejects a result whose columns are all numeric and none is time-typed, so a
 panel whose query returns one row of numbers renders its no-value text, which looks exactly like a
 quiet device. If you are writing a panel, give it a `time` column even when the panel does not plot
 one; `mikroscope dashboards check` runs every panel's query through Grafana's own API and is the
@@ -3112,7 +3212,26 @@ fastest way to tell a broken query from a quiet one.
 `--postgres`. `--prom` is scraped and `--graphite` writes to the carbon ingest port, so neither
 knows where Grafana would query: pass that address in `--grafana-datasource-url`, or create the
 datasource in Grafana and name it in `--grafana-datasource-uid`, which also tells `forward` to leave
-it alone. `--sql` never connects and fails with its own message, which points at `--postgres`.
+it alone. Either flag is for that store alone: a run of several stores that sets one is refused
+([One store per run](https://jmrp.io/docs/mikroscope/reference/troubleshooting/#one-store-per-run)). `--sql` never connects and fails
+with its own message, which points at `--postgres` or a datasource named in
+`--grafana-datasource-uid`.
+
+#### One store per run
+
+`--grafana-datasource-url` and `--grafana-datasource-uid` each name one datasource, and two stores
+are two servers read by two plugins, so a run that publishes more than one store and sets either,
+or its `MIKROSCOPE_GRAFANA_DATASOURCE_*` variable, is refused before any request, dry run included.
+Publish the store that needs one on its own, given only its sink flag:
+
+```sh
+mikroscope dashboards publish --prom :9124 --grafana http://grafana:3000 \
+  --grafana-datasource-url http://prometheus:9090
+```
+
+and run the collector without the datasource flag. With `--grafana` it still publishes the stores
+of `--influx`, `--elastic` and `--postgres`, which describe their own datasource, and warns at every
+start about the one it cannot describe.
 
 #### `--influx is a write URL this cannot take apart`
 
@@ -3142,6 +3261,14 @@ That is the designed behaviour, not a half-failure to chase. Refusing to start w
 samples of the hour spent not running, which cannot be recovered, for a dashboard published on the
 next restart, which can. The line carries what the server said. `--grafana-dry-run` prints what it
 would write without writing anything, and runs before the router is touched.
+
+Each store that failed has a line of its own that names it, `the datasource for <store>: …` or
+`the dashboard for <store>: …`, and the stores after it were still published. The reasons it prints
+most: `--grafana needs GRAFANA_TOKEN`, `no sink this builds a dashboard for is configured`,
+`the <name> sink does not know the address Grafana would query`, `--grafana-datasource-url names
+one datasource for every store`, and what the server said when it refused a write ([Grafana
+token](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/#grafana-token)). `dashboards publish` prints the
+same reasons after `mikroscope:`, one line per store that failed, and exits 1.
 
 #### Repeated tables on uninstall
 

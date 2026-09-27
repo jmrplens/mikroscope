@@ -1,6 +1,6 @@
 ---
 title: Preguntas frecuentes
-description: Respuestas cortas sobre mikroscope en MikroTik RouterOS, de MIPS y el mínimo de 7.24 al coste, el uso en producción y cpu-load, cada una enlazada a la página con el detalle.
+description: Respuestas cortas sobre mikroscope en MikroTik RouterOS, de MIPS y el mínimo de 7.24 al coste, el uso en producción, cpu-load y los dashboards de Grafana, cada una enlazada a la página con el detalle.
 docType: reference
 head:
   - tag: title
@@ -84,6 +84,18 @@ el tráfico por interfaz. Lo que añade es la vista del propio kernel, que ningu
 documenta leer: ticks por núcleo hasta a 100 Hz, softirqs, descartes y squeezes de softnet, y el log
 del kernel. Donde no se ejecuta ningún contenedor, la herramienta es SNMP o mktxp:
 [Comparado con alternativas](/mikroscope/es/start/compared/).
+
+## Dashboards de Grafana {#configura-install-los-dashboards-de-grafana}
+
+`install` no configura Grafana: solo escribe en el router. Lo hace el colector, cuando se ejecuta
+con `--grafana <url>` y un token de cuenta de servicio de Grafana en `GRAFANA_TOKEN`: en cada
+arranque crea o corrige la fuente de datos y publica el dashboard de cada almacén que sabe
+describir: InfluxDB, Elasticsearch y PostgreSQL (con `--postgres`) sin más, y Prometheus y Graphite
+cuando se les da la dirección en `--grafana-datasource-url`.
+`mikroscope dashboards publish`, con las opciones de destino del colector y `--grafana`, hace lo
+mismo una sola vez sin recoger, y `dashboards import` o la importación del propio Grafana asocian un
+dashboard a una fuente de datos que ya tienes:
+[Configurar en Grafana](/mikroscope/es/dashboards/import-and-check/).
 
 ## Conexiones salientes {#envía-el-agente-algo-fuera-del-router}
 

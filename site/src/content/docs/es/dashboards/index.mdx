@@ -1,6 +1,6 @@
 ---
 title: Dashboards
-description: "Los cinco dashboards de Grafana para telemetría de kernel de MikroTik RouterOS, uno por almacén y generados de una sola lista de paneles: cada sección, cada panel y lo que no puede llevar cada almacén."
+description: "Los cinco dashboards de Grafana para telemetría de kernel de MikroTik RouterOS, uno por almacén: cómo llegan a Grafana, cada sección y cada panel, y lo que no puede llevar cada almacén."
 docType: how-to
 head:
   - tag: title
@@ -19,55 +19,31 @@ import SeeAlso from "../../../../components/SeeAlso.astro";
 import Src from "../../../../components/Src.astro";
 import TestedOn from "../../../../components/TestedOn.astro";
 
-`mikroscope dashboards gen` escribe un dashboard de Grafana por almacén, cinco en total, a partir
-de una única lista de paneles en <Src path="internal/dashboards/" />, y un fichero de reglas de
-alerta junto a tres de ellos. Para cargarlos en Grafana y comprobar cada panel, consulta
-[Importar y comprobar](/mikroscope/es/dashboards/import-and-check/); para las reglas,
-[Reglas de alerta](/mikroscope/es/dashboards/alerts/).
+Cinco dashboards de Grafana, uno por cada almacén que Grafana puede consultar (InfluxDB 3,
+Prometheus, PostgreSQL, Graphite y Elasticsearch), generados a partir de una única lista de paneles
+en <Src path="internal/dashboards/" />, con un fichero de reglas de alerta junto a tres de ellos
+([Reglas de alerta](/mikroscope/es/dashboards/alerts/)). `install` no los pone en Grafana: solo
+escribe en el router.
 
 Los dashboards están en inglés. Los títulos de filas y paneles se citan aquí tal como los muestra
 Grafana, sin traducir, para que puedas encontrarlos.
 
-## Ficheros {#lo-que-escribe-gen}
+## Llevarlos a Grafana {#llevarlos-a-grafana}
 
-<FileTree>
+Un dashboard lee el almacén en el que escribe el colector
+([Ejecutar el colector](/mikroscope/es/sinks/)), y llega a Grafana de una de tres formas:
 
-- dashboards/
-  - mikroscope-influxdb.json <DashboardCount store="influxdb" of="panels" /> paneles, InfluxDB 3 (SQL)
-  - mikroscope-prometheus.json <DashboardCount store="prometheus" of="panels" /> paneles, Prometheus
-  - mikroscope-postgres.json <DashboardCount store="postgres" of="panels" /> paneles, PostgreSQL / TimescaleDB
-  - mikroscope-graphite.json <DashboardCount store="graphite" of="panels" /> paneles, Graphite
-  - mikroscope-elasticsearch.json <DashboardCount store="elasticsearch" of="panels" /> paneles, Elasticsearch
-  - mikroscope-alerts-influxdb.yaml <DashboardCount store="influxdb" of="rules" /> reglas
-  - mikroscope-alerts-prometheus.yaml <DashboardCount store="prometheus" of="rules" /> reglas
-  - mikroscope-alerts-postgres.yaml <DashboardCount store="postgres" of="rules" /> reglas
+- **Desde el colector**: `forward … --grafana <url>` crea la fuente de datos y publica el dashboard
+  en cada arranque, y `dashboards publish` hace lo mismo una sola vez
+  ([detalles](/mikroscope/es/dashboards/import-and-check/#que-lo-haga-el-colector-forward---grafana)).
+- **Con la CLI**: `dashboards import --store <almacén> --datasource-uid <uid>`, contra una fuente
+  de datos que ya tengas
+  ([detalles](/mikroscope/es/dashboards/import-and-check/#importar-desde-la-cli)).
+- **A mano**: sube el JSON en Grafana
+  ([detalles](/mikroscope/es/dashboards/import-and-check/#importar-a-mano)).
 
-</FileTree>
-
-```sh
-mikroscope dashboards gen                    # escribe los ocho ficheros en ./dashboards
-mikroscope dashboards gen --out /tmp/dash    # o en otro directorio
-```
-
-- **Formato.** El formato de exportación compartible de Grafana: la fuente de datos es un marcador
-  `${DS_MIKROSCOPE}` declarado en `__inputs`, no hay `id` y el `uid` es fijo,
-  `mikroscope-<almacén>`, uno por dashboard, así que una reimportación actualiza el mismo dashboard
-  en su sitio en vez de crear un segundo. Un test comprueba que dos generaciones del dashboard de
-  InfluxDB son idénticas.
-- **Versión de Grafana.** `__requires` declara Grafana 11.0.0. Las opciones de los paneles están
-  escritas según el esquema que espera Grafana 13.2.1: la marca del xychart, por ejemplo, cambió de
-  sitio entre Grafana 11 y 13. Las versiones en las que se han comprobado los dashboards están
-  en <TestedOn of="dashboards">Probado en</TestedOn>.
-- **InfluxDB 3.** Las consultas son SQL, y todas están acotadas por `$__timeFilter`, porque
-  InfluxDB 3 Core rechaza los recorridos sin límite. Donde una columna se llama `cluster` el SQL la
-  entrecomilla, porque `cluster` es una palabra reservada en DataFusion.
-- **Prometheus.** Las consultas leen un Prometheus que hace scrape del `/metrics` del colector, y de
-  nada más: el tier de kernel recalculado a partir de las muestras, las familias derivadas y de
-  detección propias del colector, y lo que solo el muestreador puede producir, que llega al colector
-  como dato porque el agente no sirve exposición propia. Prometheus 3 representa el borde del bucket
-  cero de un histograma como `le="0.0"`, así que una consulta que lee ese bucket casa con
-  `le=~"0|0.0"`. El trabajo de scrape está en
-  [Importar y comprobar](/mikroscope/es/dashboards/import-and-check/#prometheus-un-trabajo-de-scrape).
+[Configurar en Grafana](/mikroscope/es/dashboards/import-and-check/) tiene la fuente de datos de
+cada almacén y la comprobación que ejecuta cada panel.
 
 ## Capturas {#qué-aspecto-tiene}
 
@@ -105,9 +81,10 @@ está en un solo almacén dice en cuál.
 <DashboardCounts />
 
 Los recuentos son los de los ficheros del repositorio, que llevan los valores compilados por defecto.
-`import` y `check` preguntan primero a la fuente de datos qué contiene y pueden meter paneles en la
-última fila o sacarlos de ella; consulta [No disponible en este equipo](#no-disponible-en-este-equipo)
-más abajo.
+`dashboards import`, `dashboards publish` y `forward --grafana` preguntan primero a la fuente de
+datos qué contiene y pueden meter paneles en la última fila o sacarlos de ella, y `check` comprueba
+el dashboard que guardaría `import`; consulta
+[No disponible en este equipo](#no-disponible-en-este-equipo) más abajo.
 
 ## Orden de las secciones {#orden-de-lectura}
 
@@ -274,9 +251,9 @@ tranquilo siga tranquilo; actívala cuando estés trabajando con
 **Antes de la primera detección.** Un almacén InfluxDB no tiene la tabla `mikroscope_detection`
 hasta que el colector escribe su primera detección, e InfluxDB 3 rechaza una consulta que nombra
 una tabla que no existe; ninguna forma de la consulta lo evita
-(<TestedOn of="dashboards">formas probadas</TestedOn>). `mikroscope dashboards import` pregunta
-antes al almacén y, si la tabla no está, publica la capa de detecciones apagada, con su consulta,
-para que puedas encenderla más adelante. Los ficheros del repositorio y una
+(<TestedOn of="dashboards">formas probadas</TestedOn>). `dashboards import`, `dashboards publish`
+y `forward --grafana` preguntan antes al almacén y, si la tabla no está, publican la capa de
+detecciones apagada, con su consulta, para que puedas encenderla más adelante. Los ficheros del repositorio y una
 [importación a mano](/mikroscope/es/dashboards/import-and-check/#importar-a-mano) no tienen a quién
 preguntar, así que la capa sigue encendida: su consulta falla en cada carga y cada refresco sin
 mostrar nada en el dashboard, y Grafana escribe cada vez una línea de nivel error
@@ -411,8 +388,8 @@ En InfluxDB la tabla `mikroscope_kmsg` se crea con el primer registro del kernel
 columna `kind` con el primer registro de puerto que se escribe ya clasificado. En un router cuyo
 kernel no ha dicho nada desde que arrancó el colector, la tabla no existe e InfluxDB 3 rechaza la
 consulta al planificarla; la sección plegada impide que esa consulta se ejecute hasta que alguien la
-abre. El código lo llama una mitigación, no un arreglo. `import` con el sondeo lleva esos paneles a
-la fila de no disponibles.
+abre. El código lo llama una mitigación, no un arreglo. Una publicación con sondeo, la de
+`dashboards import` o la del colector, lleva esos paneles a la fila de no disponibles.
 
 ## Secciones de detalle {#los-niveles-profundos}
 
@@ -528,9 +505,10 @@ ninguna de las dos cosas (<TestedOn of="reference-hardware">qué equipo</TestedO
 **En InfluxDB todas las consultas de esta fila se publican apagadas** (ocultas, en el editor de
 consultas de Grafana), así que abrir la fila no ejecuta nada y cada panel muestra una nota breve en
 lugar de datos (<TestedOn of="dashboards">renderizado</TestedOn>). Si tu almacén sí tiene la
-medida, vuelve a encender las consultas del panel en su editor, o ejecuta `import` (InfluxDB y
-Prometheus; los otros tres no se pueden sondear), que pregunta al almacén y devuelve el panel a su
-propia sección.
+medida, vuelve a encender las consultas del panel en su editor, o publica de nuevo el dashboard con
+`dashboards import`, `dashboards publish` o reiniciando un colector que se ejecute con `--grafana`
+(InfluxDB y Prometheus; los otros tres no se pueden sondear), que pregunta al almacén y devuelve el
+panel a su propia sección.
 
 **En los otros cuatro almacenes la fila conserva sus consultas encendidas**, porque allí que falte
 una medida no es un error. El sink de PostgreSQL crea todas las tablas, `mikroscope_psi` y
@@ -548,14 +526,15 @@ consultas apagadas, como en InfluxDB.
 
 Para estos paneles hay declaradas dos secciones, **Pressure stall (PSI)** y **Block devices**, que no
 emiten fila mientras todos sus paneles estén ausentes. En un kernel compilado con PSI, o en una placa
-con almacenamiento USB o eMMC que se mueva, `import` encuentra la medida y la sección aparece en su
-sitio, con las consultas encendidas, sin tocar el generador. Eso requiere un almacén que `import`
+con almacenamiento USB o eMMC que se mueva, `import`, o el colector en su siguiente arranque,
+encuentra la medida y la sección aparece en su sitio, con las consultas encendidas, sin tocar el
+generador. Eso requiere un almacén que `import`
 pueda sondear, InfluxDB o Prometheus; los otros tres no se pueden sondear y conservan la fila
 compilada. `import` también funciona en el otro sentido: en un almacén al que le falta una medida
 que los valores compilados esperan — o un campo añadido después de que ese almacén se escribiera
 por primera vez — el panel pasa a esta fila con sus consultas apagadas, así que muestra su
 explicación y no una insignia roja de error. Cómo decide el sondeo está en
-[Importar y comprobar](/mikroscope/es/dashboards/import-and-check/#el-sondeo).
+[Configurar en Grafana](/mikroscope/es/dashboards/import-and-check/#el-sondeo).
 
 ## Cocientes, huecos y unidades {#cómo-tratan-los-dashboards-los-cocientes-los-huecos-y-las-cifras}
 
@@ -579,12 +558,53 @@ explicación y no una insignia roja de error. Cómo decide el sondeo está en
   núcleo, <Measured id="budget.rss" />). La descripción de un panel que cita una cifra medida
   nombra el equipo y la fecha en que se midió, y las tuyas serán distintas.
 
+## Ficheros {#lo-que-escribe-gen}
+
+<FileTree>
+
+- dashboards/
+  - mikroscope-influxdb.json <DashboardCount store="influxdb" of="panels" /> paneles, InfluxDB 3 (SQL)
+  - mikroscope-prometheus.json <DashboardCount store="prometheus" of="panels" /> paneles, Prometheus
+  - mikroscope-postgres.json <DashboardCount store="postgres" of="panels" /> paneles, PostgreSQL / TimescaleDB
+  - mikroscope-graphite.json <DashboardCount store="graphite" of="panels" /> paneles, Graphite
+  - mikroscope-elasticsearch.json <DashboardCount store="elasticsearch" of="panels" /> paneles, Elasticsearch
+  - mikroscope-alerts-influxdb.yaml <DashboardCount store="influxdb" of="rules" /> reglas
+  - mikroscope-alerts-prometheus.yaml <DashboardCount store="prometheus" of="rules" /> reglas
+  - mikroscope-alerts-postgres.yaml <DashboardCount store="postgres" of="rules" /> reglas
+
+</FileTree>
+
+```sh
+mikroscope dashboards gen                    # escribe los ocho ficheros en ./dashboards, y crea el directorio si no existe
+mikroscope dashboards gen --out /tmp/dash    # o en otro directorio
+```
+
+- **Formato.** El formato de exportación compartible de Grafana: la fuente de datos es un marcador
+  `${DS_MIKROSCOPE}` declarado en `__inputs`, no hay `id` y el `uid` es fijo,
+  `mikroscope-<almacén>`, uno por dashboard, así que una reimportación actualiza el mismo dashboard
+  en su sitio en vez de crear un segundo. Un test comprueba que dos generaciones del dashboard de
+  InfluxDB son idénticas.
+- **Versión de Grafana.** `__requires` declara Grafana 11.0.0. Las opciones de los paneles están
+  escritas según el esquema que espera Grafana 13.2.1: la marca del xychart, por ejemplo, cambió de
+  sitio entre Grafana 11 y 13. Las versiones en las que se han comprobado los dashboards están
+  en <TestedOn of="dashboards">Probado en</TestedOn>.
+- **InfluxDB 3.** Las consultas son SQL, y todas están acotadas por `$__timeFilter`, porque
+  InfluxDB 3 Core rechaza los recorridos sin límite. Donde una columna se llama `cluster` el SQL la
+  entrecomilla, porque `cluster` es una palabra reservada en DataFusion.
+- **Prometheus.** Las consultas leen un Prometheus que hace scrape del `/metrics` del colector, y de
+  nada más: el tier de kernel recalculado a partir de las muestras, las familias derivadas y de
+  detección propias del colector, y lo que solo el muestreador puede producir, que llega al colector
+  como dato porque el agente no sirve exposición propia. Prometheus 3 representa el borde del bucket
+  cero de un histograma como `le="0.0"`, así que una consulta que lee ese bucket casa con
+  `le=~"0|0.0"`. El trabajo de scrape está en
+  [Configurar en Grafana](/mikroscope/es/dashboards/import-and-check/#prometheus-un-trabajo-de-scrape).
+
 <SeeAlso>
 
 ## Véase también
 
-- [Importar y comprobar](/mikroscope/es/dashboards/import-and-check/): la fuente de datos, el trabajo
-  de scrape de Prometheus y lo que `check` verifica y lo que no.
+- [Configurar en Grafana](/mikroscope/es/dashboards/import-and-check/): publicarlos desde el
+  colector, importarlos con la CLI o a mano, y comprobar cada panel.
 - [Reglas de alerta](/mikroscope/es/dashboards/alerts/): las reglas que se generan junto a los
   dashboards, y de dónde sale cada umbral.
 - [Reglas de detección](/mikroscope/es/sinks/detections/): los sucesos detrás de la sección de

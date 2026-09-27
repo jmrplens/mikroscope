@@ -37,8 +37,9 @@ macOS y Windows en amd64 y arm64), y el agente como un tar de imagen por arquite
 de registro, `jmrplens/mikroscope-agent` en Docker Hub y `ghcr.io/jmrplens/mikroscope-agent` en
 GHCR. El colector también es una imagen, `jmrplens/mikroscope` y `ghcr.io/jmrplens/mikroscope`
 (linux/amd64, linux/arm64), y <Src path="deploy/" /> tiene dos pilas de compose que la combinan
-con InfluxDB 3 o Prometheus y Grafana. Esa imagen solo ejecuta `forward`: las órdenes de
-instalación necesitan ssh y scp, que deja fuera. Los dos programas tienen licencia MIT, en el
+con InfluxDB 3 o Prometheus y Grafana. La orden por defecto de esa imagen es `forward`, y
+`dashboards` también funciona en ella; las órdenes de instalación necesitan ssh y scp, que deja
+fuera. Los dos programas tienen licencia MIT, en el
 fichero <Src path="LICENSE" />.
 
 ## Ruta de los datos {#data-path}

@@ -3,6 +3,7 @@ package sinks
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -718,11 +719,8 @@ func (s *Elasticsearch) post(b []byte) (refused uint64, reason string, err error
 	// it.
 	req.GetBody = nil
 	req.Header.Set("Content-Type", "application/x-ndjson")
-	switch user, pass, ok := strings.Cut(s.Auth, ":"); {
-	case ok:
-		req.SetBasicAuth(user, pass)
-	case s.Auth != "":
-		req.Header.Set("Authorization", "ApiKey "+s.Auth)
+	if h := ElasticAuthorization(s.Auth); h != "" {
+		req.Header.Set("Authorization", h)
 	}
 	resp, err := s.Client.Do(req)
 	if err != nil {
@@ -735,6 +733,30 @@ func (s *Elasticsearch) post(b []byte) (refused uint64, reason string, err error
 	}
 	refused, reason = esRefused(resp.Body)
 	return refused, reason, nil
+}
+
+// ElasticAuthorization is the Authorization header the sink sends for auth
+// (MIKROSCOPE_ELASTIC_AUTH): "user:password" as basic auth, anything else as
+// an API key, and "" for none.
+//
+// ONE FUNCTION FOR THE SINK AND THE DATASOURCE. `forward --grafana` builds the
+// Grafana datasource that reads what this sink wrote, and it copied the
+// variable into the datasource's Authorization header as written, so
+// `elastic:…` reached Elasticsearch as `Authorization: elastic:…` and a bare
+// key without its `ApiKey` scheme: a header neither form of the credential is
+// accepted as. The datasource now sends what the sink sends. Found by reading
+// both; the datasource has not been run against an Elasticsearch that
+// requires authentication.
+func ElasticAuthorization(auth string) string {
+	if auth == "" {
+		return ""
+	}
+	if strings.Contains(auth, ":") {
+		// What net/http's SetBasicAuth writes for the user and the password
+		// on either side of the first colon: the base64 of both, colon kept.
+		return "Basic " + base64.StdEncoding.EncodeToString([]byte(auth))
+	}
+	return "ApiKey " + auth
 }
 
 // esBulkResponse is the part of a bulk response that says what went wrong.
