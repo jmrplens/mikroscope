@@ -81,6 +81,134 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   run on GitHub's runners: whether they give the job `/dev/kvm`, and how long
   it takes there, is for the first dispatch to measure.
 
+- **`uninstall` removes everything the install created, and nothing
+  else.** Every install route writes an install manifest first,
+  `<disk/>mikroscope/<name>.manifest.txt`: the install's name and tag, the
+  options its objects were made from under the CLI's flag names
+  (`token=yes|no`, never the value), and a line per directory, file and
+  object it creates. `install`, `upgrade` and the `plan --rsc` script write
+  it, and `spec.json` carries the same steps for the site's generator.
+  `uninstall` reads it and removes what it lists, whatever flags it was
+  given, the container root with the container; then it removes any object
+  that carries the install's exact tag in twelve menus (firewall, NAT,
+  routes, lists, addresses, veths, disks, container mounts) and in any other
+  menu the manifest lists, and last the manifest and the `mikroscope/`
+  directory when nothing else is in it. A path goes only on the word of the
+  tagged container or of the manifest, and a path the manifest lists beyond
+  its plan is checked, never removed. It verifies every step, the tagged
+  objects in each menu beyond what those steps counted, both paths and every
+  listed path, so it no longer prints "verified" over a live dst-nat. An
+  install made by 1.3.x has no manifest: the tag sweep and the known paths
+  remove it, and `upgrade` writes it one. What mikroscope did not create is
+  never touched: device-mode, the `container` package, `/container/config`,
+  and the lists, disks, rules and `mikroscope/` files that were there before;
+  an empty `mikroscope/` directory goes even if it was there before, since
+  nothing says whose it is. Checked in the
+  virtual lab (CHR 7.24.4, 2026-09-27, x86_64 and arm64): by the CLI's pull
+  and tar routes, a tar install then an upgrade, an imported `plan --rsc`
+  script, every golden script the lab can run, and installs made by the
+  released 1.3.1 CLI (with `--expose`, with `--ephemeral`, upgraded first),
+  `uninstall` left `/export` equal to the one taken before the install (the
+  lab's own route and RouterOS's `keymat-provider` line aside) and no
+  mikroscope path on `/file`; a user's `mikroscope/` directory and file, a
+  tmpfs disk, `registry-url` and an envlist of their own stayed.
+- **`status`, `upgrade` and `uninstall` read how the install was made.** From
+  its manifest, or, for an install made by 1.3.x, from the objects that carry
+  its tag. A flag left out takes the stored value, and one that contradicts
+  it is refused, naming both: `uninstall --name <n> --yes` removes an install
+  made with other lists, `--expose` or `--disk`. Without a manifest, a list
+  membership the router no longer holds is left to the flags rather than
+  read as `none`. `status` reads the shape and the counts in one connect,
+  and a second only when the shape changes the plan; `uninstall` reads the
+  manifest once, with the shape. `upgrade` creates any step
+  of the install the router no longer holds before it replaces the
+  container, and refuses to rewrite the envlist of an install that has a
+  token when no `--token` is given, where it used to drop the token. Checked
+  in the lab (CHR 7.24.4, 2026-09-27, S13 and S14 on both architectures): an
+  install with `--iface-list MYLAN --addr-list MYNETS` and one with
+  `--expose`, each removed whole by an uninstall given none of those flags.
+- **Install options.** `--iface-list none` and `--addr-list none` leave the
+  membership out (`all`, `dynamic` and `static` are refused, as RouterOS
+  refuses members on them: `cannot add to builtin list`, CHR 7.24.4,
+  2026-09-26);
+  `--container-name`; `--start-on-boot auto|yes|no`; `--restart-max-count`
+  and `--restart-interval`; `--extract-timeout` (10 to 600 s, 120 s by
+  default; ssh's own deadline for a command, 3 min, grows past it); and
+  `--ssh-option Key=value`, or `MIKROSCOPE_SSH_OPTIONS`, for
+  seven ssh_config keywords that run nothing (`StrictHostKeyChecking=accept-new`
+  reaches a fresh router). Every value is bounded before the first
+  connection.
+- **`--arch auto`, the default.** `install` and `upgrade` read the router's
+  architecture in doctor's one batch, before they build or load the image;
+  with `--no-doctor` that is one more connect, and the CLI says so. An
+  `--agent-tar` image's own architecture is compared with the router's.
+  `plan`, `--dry-run` and `image` connect to nothing and keep arm64. Checked
+  in the lab (2026-09-26 and 2026-09-27): install and upgrade without
+  `--arch` on both architectures, and the arm64 tar refused on x86_64 before
+  anything was listed.
+- **Doctor's new checks**, in the order an install meets them: RouterOS 7.24
+  or later; a container package for the architecture; room for a pull and
+  on `--disk`, and start-on-boot on a tmpfs root; a veth, envlist, container
+  name or file at the manifest's path that something else holds; a route
+  that overlaps the /30; and a firewall rule that drops the agent's replies,
+  found by walking raw prerouting and filter forward and input as RouterOS
+  does, first match wins, and naming the rule and the list memberships that
+  pass; with `--expose`, whether `--lan-address` is the router's (MISSING)
+  and whether it is on the uplink (WARN); and objects tagged for the install
+  that the flags' plan does not select (WARN). An empty address list is no
+  longer a failure, since install adds the /30, and the interface-list fix
+  offers `--iface-list none` when no rule needs a list. The free-space check
+  for a pull asks for the extracted root, not only the headroom. The
+  device-mode fix quotes both prompts RouterOS prints, a router's and CHR's,
+  and the container-package fix offers `/system/package/enable container`
+  only when the package is there. Checked against the lab's profiles (CHR 7.24.4, 2026-09-26
+  and 2026-09-27): RouterOS 7's default
+  firewall passes with no list; the "Building Advanced Firewall" raw rules
+  are MISSING without the lists and pass with them, and their range form is
+  MISSING with no list that fixes it; a foreign veth, a routed /30 and a
+  foreign envlist are each MISSING, and install writes nothing. On a 7.23.7
+  CHR (x86_64, 2026-09-27) doctor was MISSING `RouterOS 7.24 or later` and
+  read every other check.
+- **Every batched read is keyed.** Each query prints `@@<key>=<value>` and is
+  read by its key, so a warning or a query that fails no longer shifts every
+  answer after it, and a menu an older RouterOS lacks reads as "could not
+  read". A batch ends with a line that cannot fail: RouterOS's ssh takes its
+  exit status from the last command, and a batch whose last line failed
+  exited 1 in 6 and in 1 of 20 runs, which threw away every answer, while
+  the same batches with a good line after the failure exited 0 in 40 of 40
+  (CHR x86_64 7.24.4, 2026-09-27).
+- **The install script runs as one guarded block.** `plan --rsc` writes one
+  `{ … }` block that checks first, and stops with nothing written, when the
+  RouterOS version, the container package, device-mode, a foreign veth,
+  envlist or `--container-name` container, the interface list, the disk, the
+  tar or the manifest's path is wrong; then it
+  waits up to 120 s for the agent and says whether it runs. Its first line
+  carries the CLI's version. Checked in the lab (CHR 7.24.4, 2026-09-26):
+  `/import` and a paste into an interactive ssh terminal ran it as one block,
+  and a failing guard wrote nothing; on 2026-09-27 every golden script the
+  lab can run, fifteen, was imported, answered and was removed (S5). Not
+  checked: a paste into WebFig's terminal.
+- **The RouterOS commands are one steps spec.** `internal/router/stepspec.go`
+  holds every step as data; `plan`, `install`, `upgrade`, the script and the
+  manifest render it, and `make gen-rsc` (`cmd/gen_rsc`, never shipped)
+  exports it with a script per case to `site/src/data/rsc` for the site's
+  generator. Twenty golden cases pin the plan, the listings and the script
+  (`internal/router/testdata`); `make check-generated` fails when the site's
+  copy is stale. The command each case gives for its script carries no
+  `--token`: it names `MIKROSCOPE_TOKEN` to export instead, which the CLI
+  reads, so the token is on no command line.
+- **The lab suite asserts the fixed behaviour.** New scenarios: every golden
+  script imported and removed (S5), firewall traps (S10), foreign objects
+  (S11), the stored shape (S13, S14), a GHCR pull with no credential (S18),
+  the complete uninstall by every route and of a 1.3.1 install, the token on
+  no command line, RouterOS's words on an ssh error, and the probe's running
+  flag. No scenario tolerates a second uninstall or a mikroscope path left
+  on `/file` any more. On the development machine (CHR 7.24.4, 2026-09-27)
+  `make test-lab` took 29 min 2 s on x86_64 and 57 min 13 s on arm64 side
+  by side, every test passing, S9's twenty uninstalls with a client on
+  `/stream` each clean at the first attempt. S17, run on a 7.23.7 lab the
+  same day, passed.
+
 ### Changed
 
 - **`make roundtrip` runs in the lab.** The install round trip (`doctor`,
@@ -92,6 +220,65 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   refuses to start, before it builds anything, unless both are on the make
   command line: neither is read from the environment, and `ROUTER` has no
   default and must be one ssh target.
+- **`.env.example` leaves the install's shape unset.** `MIKROSCOPE_ARCH`,
+  the lists and the other shape variables are commented out, so they do not
+  override what the router holds when `status`, `upgrade` or `uninstall`
+  reads it.
+- **The plan listing and the script changed shape**, as the goldens show:
+  the install manifest is step 1; a pull or an upload is a line of the
+  container step rather than a step with the same number; `image=` names the
+  reference the router pulls; the upgrade listing names the steps it keeps;
+  and the script's closing comment selects the container by its tag rather
+  than by a name RouterOS may have picked (a pull is named after its image).
+
+### Fixed
+
+- **An uninstall while a client read `/stream` failed at its first
+  attempt.** The removal stopped the container, waited a fixed 4 s and
+  removed it, and RouterOS refuses to remove a container that is still
+  `stopping` (`failure: cannot remove running`): with a client on `/stream`
+  it stayed `stopping` for 6 s, with `running` already clear (CHR 7.24.4,
+  2026-09-26).
+  The removal now waits, up to 30 s, while the container is `running` or
+  `stopping`. In the lab on 2026-09-27 S9's ten uninstalls with a client on
+  `/stream` were each clean at the first attempt, on x86_64 twice and on
+  arm64 once, 8.2 to 11.2 s each.
+- **A tar install deleted the tar whether RouterOS had extracted it or
+  not.** It waited up to 15 s for the container and then a fixed 3 s. It now
+  waits for the container's `stopped` flag, which is when extraction is over
+  (a tar add returned already `stopped`, a pull showed
+  `downloading/extracting` for 2 s, CHR 7.24.4, 2026-09-26), up to
+  `--extract-timeout`,
+  and stops with the tar kept when the deadline passes; the CLI leaves that
+  tar in place too, where it used to delete it while RouterOS could still be
+  extracting it, and uninstall takes it with the container.
+- **install's probe asked for a `status` property `/container` does not
+  have**, so an agent that ran but could not be reached from this host was
+  reported as not running. It reads the `running` flag.
+- **install wrote the steps before a collision.** A step something else
+  held was refused only when install reached it, after the veth, address and
+  memberships were written. The refusal now comes before the first write,
+  and says nothing was written.
+- **The agent token travelled on ssh's command line**, where the host's
+  process table showed it while the command ran. A command that carries it
+  now goes to ssh on standard input; reading the process table every 2 ms
+  through an install and an upgrade with `--expose` found it on no command
+  line (lab, 2026-09-27, both architectures), where the 1.3.1 code showed it
+  on two (2026-09-26).
+- **RouterOS's words were lost when its ssh exited 1**: the error read
+  `ssh "<script>": exit status 1` and the message was on the lines after it,
+  which uninstall's skip line dropped. The error now starts with what
+  RouterOS printed. RouterOS's ssh exits 1 or 0 on the same failure (about
+  half and half in the lab, 2026-09-26), and the words now reach the output
+  either way.
+- **`uninstall` and `status --expose` asked for the token**, which no
+  selector reads. Only `install`, `upgrade` and `plan`, which write or render
+  the envlist, need it; `doctor` and `image` no longer do either.
+- **The listing numbered two steps alike and named a tar it never
+  uploaded** with `--remote-image`; see the listing under Changed.
+- **Fix texts named `mikroscope-agent-arm.tar`**, an asset no release
+  publishes. They name the armv5 or armv7 tar by `--goarm`, which is bounded
+  to 5, 6 or 7.
 
 ## [1.3.1] - 2026-09-25
 

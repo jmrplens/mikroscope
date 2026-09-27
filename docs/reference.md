@@ -2334,22 +2334,31 @@ and ends by comparing the two.
 
 | Scenario | What it does                                                                   | What it asserts                                                                                      |
 | -------- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
-| S1       | `doctor` with its defaults on a stock CHR                                      | exactly the checks the code on the branch is known to miss there                                     |
+| S1       | `doctor` on a stock CHR, with the lists `none` and with the defaults           | nothing missing with `none`; with the defaults only the interface list `LAN`, whose fix offers `--iface-list none` |
 | S2       | install by pulling the image from Docker Hub, `status`, `upgrade`, `uninstall` | the agent answers `/healthz` and `/capabilities`; the export is back to its baseline                 |
 | S3       | install and upgrade from the branch's own image tar                            | the agent reports the branch build's version, commit and date                                        |
 | S4       | `plan --rsc` for both image routes, run with `/import`                         | `status` recognises the script's objects; `uninstall` leaves the baseline                            |
+| S5       | every golden script the lab can run, imported as the site hands it over     | the agent answers on its own /30; `uninstall` with the case's flags leaves the baseline              |
 | S6       | `--ephemeral` on a tmpfs disk, then a power cut                                | the container is left stopped with its root gone; `uninstall --ephemeral` leaves nothing at all      |
 | S7       | a persistent install, 45 s for it to reach the disk, then a power cut          | the agent answers again within 90 s: start-on-boot works                                             |
 | S8       | `--expose` with a token                                                        | `/capabilities` answers 401 without the token and 200 with it; both firewall rules go with uninstall |
-| S9       | `uninstall` while a client reads `/stream`                                     | the known refusal, then a clean router                                                               |
+| S9       | `uninstall` while a client reads `/stream`, ten times                          | every first attempt verifies the router clean                                                        |
+| S10      | the raw rules of MikroTik's advanced firewall, in list and range form          | `doctor` names the rule that drops the agent's replies, and the list memberships that pass           |
+| S11      | a foreign veth, a routed /30, a foreign envlist                                | `doctor` names each; `install` writes nothing; the `plan --rsc` script stops at its guard for the veth and the envlist |
 | S12      | two installs side by side                                                      | removing one leaves the other running and untouched                                                  |
+| S13, S14 | installs with other lists, and with `--expose`, uninstalled with no flag       | everything they created is removed; a contradicting flag is refused                                  |
+| S17      | `doctor` on a RouterOS below 7.24 (`LAB_ROS=7.23.7`)                           | `RouterOS 7.24 or later` is missing, and every other check still reads                               |
+| S18      | a pull from GHCR with no registry credential                                   | the agent answers                                                                                    |
+| F4       | every install route, a 1.3.1 install, and objects the user made first          | `/export` equals the one before the install and `/file` holds no mikroscope path; the user's objects stay |
 | repeat   | 10 tar installs and uninstalls on x86_64, 3 on arm64                           | no install fails                                                                                     |
 
-The scenarios encode what the code on the branch does, its known bugs
-included, so a test fails when one of those bugs goes away without its
-scenario changing with it. Only S2 and one case of S4 pull from Docker Hub,
-three pulls a run; the rest install the branch's own tar, which also tests the
-branch's agent. The suite drops every `MIKROSCOPE_*` variable before it runs
+The scenarios assert the fixed behaviour: none runs a second uninstall, and
+none allows a mikroscope path left on `/file`. Three more assert the CLI's own
+faults stay fixed: the agent token on no command line of the host, RouterOS's
+words in every error, and the probe reading the `running` flag. S5 pulls from
+Docker Hub twelve times and from GHCR once, and a few other scenarios pull
+where the route is the point; the rest install the branch's own tar, which
+also tests the branch's agent. The suite drops every `MIKROSCOPE_*` variable before it runs
 anything, so a shell set up for a real router cannot steer it.
 
 S7 waits 45 s between the install and the cut. In the arm64 lab, three of
@@ -2360,7 +2369,11 @@ not yet written the install to its disk; that was not examined. A power loss tha
 close to an install is its own question, and S7 asks only whether
 start-on-boot works.
 
-Measured on 2026-09-26 with CHR 7.24.4 and the 1.3.1 code: the suite took
+Measured on 2026-09-27 with CHR 7.24.4 and the code with these scenarios and
+the fixes review asked for: the suite took 29 min 2 s on x86_64 and
+57 min 13 s on arm64 side by side, every test passing; S9's uninstalls took
+8.0 to 12.6 s each. Earlier that day, before those fixes, it took 28 min 32 s
+on x86_64 alone, and 28 min 17 s and 57 min 29 s side by side. Before them, on 2026-09-26 with the 1.3.1 code, the suite took
 7 min 21 s to 9 min 49 s on x86_64 over six runs and 12 min 12 s to
 16 min 48 s on arm64 over three, the slowest of each with both suites running
 side by side on a busy host, and no install failed. `make roundtrip` —
