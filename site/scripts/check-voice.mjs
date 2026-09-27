@@ -425,8 +425,11 @@ function words(text) {
  * A heading that lists things, "Sensors, slab caches and flash": items split
  * by commas, the last one joined by "and" (y, e, o, u) with no comma before
  * it. Its commas are the list's, not a clause's, so the comma rule lets it be.
+ * An item after a comma starts on a non-space, so the spaces between them
+ * split one way only and the pattern cannot backtrack exponentially.
  */
-const ENUMERATION = /^[^,]+(?:,\s+[^,]+)*(?<!,)\s+(?:and|or|y|e|o|u)\s+[^,]+$/;
+const ENUMERATION =
+	/^[^,]+(?:,\s+[^,\s][^,]*)*(?<!,)\s+(?:and|or|y|e|o|u)\s+[^,]+$/;
 
 /**
  * Checks one heading (or the title) against the label rules.
@@ -710,6 +713,20 @@ function elementEnd(html, start) {
 	return html.length;
 }
 
+/**
+ * Applies a global replacement until the text stops changing, so a match that
+ * one pass creates from what it removed, "<scr<b></b>ipt>", goes as well.
+ */
+function replaceUntilStable(text, pattern, replacement) {
+	let out = text;
+	let previous;
+	do {
+		previous = out;
+		out = out.replaceAll(pattern, replacement);
+	} while (out !== previous);
+	return out;
+}
+
 /** Removes every element whose opening tag matches `open`. */
 function removeElements(html, open) {
 	let out = html;
@@ -735,13 +752,16 @@ const decode = (text) =>
 /** The text of an HTML fragment, one line per block. */
 const textOf = (html) =>
 	decode(
-		html
-			.replaceAll(
-				/<\/(?:p|li|h[1-6]|td|th|tr|div|dt|dd|figcaption|caption)>/gi,
-				"\n",
-			)
-			.replaceAll(/<br\s*\/?>/gi, "\n")
-			.replaceAll(/<[^>]+>/g, ""),
+		replaceUntilStable(
+			html
+				.replaceAll(
+					/<\/(?:p|li|h[1-6]|td|th|tr|div|dt|dd|figcaption|caption)>/gi,
+					"\n",
+				)
+				.replaceAll(/<br\s*\/?>/gi, "\n"),
+			/<[^>]+>/g,
+			"",
+		),
 	)
 		.replaceAll(/[\t    ]+/g, " ")
 		.split("\n")
@@ -806,7 +826,7 @@ function checkBuild() {
 			start === -1 ? 0 : start,
 			footer === -1 ? main.length : footer,
 		);
-		body = body.replaceAll(/<(script|style)\b[\s\S]*?<\/\1>/gi, "");
+		body = replaceUntilStable(body, /<(script|style)\b[\s\S]*?<\/\1>/gi, "");
 		body = removeElements(body, /<[a-z]+\b[^>]*\sdata-voice-exempt\b[^>]*>/i);
 		body = removeElements(body, /<pre\b[^>]*>/i);
 		body = removeElements(body, /<span class="sr-only"[^>]*>/i);
