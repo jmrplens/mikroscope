@@ -70,7 +70,7 @@ before anything is written.
   (<TestedOn of="tmpfs-zero-writes">measured</TestedOn>), and nothing survives a reboot. A router
   without that disk fails `doctor`, whose fix adds one:
 
-  ```text
+  ```routeros
   /disk/add type=tmpfs tmpfs-max-size=64M slot=tmpfs
   ```
 

@@ -163,6 +163,16 @@ jobs:
       - name: Check the built layout in a browser
         run: pnpm run layout:check
 
+      # The script generator, driven through its own form in the browser:
+      # every golden case byte for byte, errors, the token, copy and download,
+      # and its RouterOS output in the colours a ```routeros block has on the
+      # built pages, which is the one check that holds the page's CSS and the
+      # site's real Expressive Code setup to the generator's palette
+      # (scripts/check-generator.mjs, step 9). Like the step above, it starts
+      # a preview of its own on a free port.
+      - name: Check the script generator in a browser
+        run: pnpm run test:generator
+
       # puppeteer's install script still downloads a Chrome of its own, which
       # nothing here launches. The script starts the preview on a free port and
       # audits the URL the preview announces, so a server already holding 4321

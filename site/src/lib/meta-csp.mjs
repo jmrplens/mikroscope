@@ -42,12 +42,16 @@
 //   'wasm-unsafe-eval'; 5 with the worker blocked; 0 with the worker blocked
 //   and no 'wasm-unsafe-eval', and a `script-src wasm-eval` violation. Other
 //   browsers were not tried.
-// - `style-src 'self' 'unsafe-inline'`. The 110 built pages carried 18,138
-//   style attributes (2026-09-24): the depth of each table-of-contents entry,
-//   Expressive Code's token colours and Starlight's icon sizes, in that order
-//   of count. Allowing them by hash would take 'unsafe-hashes' and one hash
-//   per distinct attribute. A CSS injection on a static site with no user
-//   input is not the threat a policy here is for.
+// - `style-src 'self' 'unsafe-inline'`. The 132 built HTML files carried
+//   34,788 style attributes (2026-09-27): 20,312 token colours, Expressive
+//   Code's and the script generator's; 9,140 depths of a table-of-contents
+//   entry; 4,364 Starlight icon sizes; and 972 others. Allowing them by hash
+//   would take 'unsafe-hashes' and one hash per distinct attribute. A CSS
+//   injection on a static site with no user input is not the threat a policy
+//   here is for. The script generator's RouterOS output carries its colours
+//   the same way as Expressive Code's tokens (src/lib/rsc-highlight.mjs): as
+//   style attributes in the build, and through CSSOM in the browser, which
+//   this directive does not govern.
 // - `img-src 'self' data:`: the stylesheets draw icons from data: SVGs.
 // - `object-src 'none'`, `base-uri 'self'`, `form-action 'self'`: nothing on
 //   the site uses a plugin, a <base> or a form that posts elsewhere, so none

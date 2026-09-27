@@ -236,7 +236,7 @@ and [Alert rules](https://jmrp.io/docs/mikroscope/dashboards/alerts/).
 Check RouterOS's log and port monitor explicitly; the answer decides where you
 look next:
 
-```text
+```routeros
 /log/print where topics~"bridge" or topics~"stp" or topics~"interface"
 /interface/bridge/port/monitor [find] once
 ```
@@ -279,7 +279,7 @@ Look for a second, independent observation outside the kernel log. The MAC in
 the message belonged to `sfp-sfpplus1`, which pointed at the SFP+ segment; the
 bridge's own tables pointed elsewhere. Count the hosts learned on each port:
 
-```text
+```routeros
 # hosts learned per port
 :foreach p in=[/interface/bridge/port/find] do={ \
   :local n [/interface/bridge/port/get $p interface]; \
@@ -446,7 +446,7 @@ Measured on RB5009UG+S+ · 4 × 1.4 GHz Cortex-A72 · RouterOS 7.24.2 · Lin
 A console loop that burns one core and ends on its own, with no configuration
 change and no external dependency:
 
-```text
+```routeros
 :local i 0; :while ($i < 4000000) do={ :set i ($i + 1) }
 ```
 
@@ -692,7 +692,7 @@ InfluxDB store (from 2026-09-19).
 
 Find the cause in the logging actions that write to disk:
 
-```text
+```routeros
 /system/logging/print where action="disk"
 #  TOPICS  ACTION
 30 dns     disk
@@ -1019,7 +1019,7 @@ measured changing at. It is stored on change, plus a heartbeat once every 60 s.
 
 Cross-check the slab count against the API once, so you can trust it afterwards:
 
-```text
+```routeros
 /ip/firewall/connection/print count-only
 ```
 

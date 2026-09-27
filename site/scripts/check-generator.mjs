@@ -7,7 +7,8 @@
  * never reaches the output, a button that copies the wrong text or a policy
  * that blocks the bundle would all pass that check and fail this one. It
  * needs a build (`pnpm build`) and Playwright's Chromium, like pa11y, and is
- * not part of `pnpm lint`: `pnpm test:generator` runs it.
+ * not part of `pnpm lint`: `pnpm test:generator` runs it, and
+ * .github/workflows/docs.yml runs that before it deploys the site.
  *
  * Against `astro preview` (scripts/preview-server.mjs), it checks:
  *
@@ -30,7 +31,17 @@
  *      console has no Content Security Policy line and no error;
  *   8. at 1280 and 390 px, light and dark, English and Spanish, the page
  *      does not scroll sideways. Screenshots of each go to
- *      $GENERATOR_SHOTS when it is set, for a person to look at.
+ *      $GENERATOR_SHOTS when it is set, for a person to look at;
+ *   9. the default install script is coloured as a ```routeros block is:
+ *      every visible character in the colour the browser computes for the
+ *      same character of the install/script page's Expressive Code block of
+ *      the same case. With JavaScript (the spans the script writes) in light
+ *      and in dark; without it (the spans the build writes) in dark only,
+ *      the one theme such a page has: the HTML is built with
+ *      data-theme="dark", and only Starlight's script changes it. That holds
+ *      the CSS and the site's real Expressive Code setup to the palette,
+ *      which scripts/check-rsc-highlight.mjs only holds to a replica of that
+ *      setup.
  *
  * Usage: node scripts/check-generator.mjs
  */
@@ -77,6 +88,69 @@ const out = (/** @type {Page} */ page, /** @type {string} */ name) =>
 		.locator(`[data-gen-out="${name}"]`)
 		.first()
 		.evaluate((el) => el.textContent ?? "");
+
+/**
+ * Each visible character of an element's text, with the colour the browser
+ * computes for it: ["/rgb(202, 236, 230)", …]. Whitespace has no colour to
+ * see and is left out.
+ * @param {import("playwright").Locator} locator
+ */
+const ink = (locator) =>
+	locator.evaluate((root) => {
+		/** @type {string[]} */
+		const out = [];
+		const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+		for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+			const colour = getComputedStyle(
+				/** @type {Element} */ (n.parentElement),
+			).color;
+			for (const ch of /** @type {Text} */ (n).data) {
+				if (!/\s/.test(ch)) out.push(`${ch}${colour}`);
+			}
+		}
+		return out;
+	});
+
+/**
+ * The generator's default install script against the install/script page's
+ * Expressive Code block of the same case (<ManualSteps variant="script"
+ * case="pull-dockerhub">), character by character.
+ * @param {import("playwright").BrowserContext} context
+ * @param {URL} origin
+ * @param {string} label
+ */
+async function sameColours(context, origin, label) {
+	const page = await context.newPage();
+	await page.goto(new URL("/mikroscope/install/generator/", origin).href, {
+		waitUntil: "networkidle",
+	});
+	const generated = await ink(page.locator('[data-gen-out="install"]'));
+	await page.goto(new URL("/mikroscope/install/script/", origin).href, {
+		waitUntil: "networkidle",
+	});
+	/** @type {string[] | null} */
+	let block = null;
+	const text = (/** @type {string[]} */ a) =>
+		a.map((c) => c.slice(0, 1)).join("");
+	for (const code of await page
+		.locator('.expressive-code pre[data-language="routeros"] code')
+		.all()) {
+		const candidate = await ink(code);
+		if (text(candidate) === text(generated)) block = candidate;
+	}
+	expect(
+		block !== null,
+		`${label}: no routeros block on install/script holds the generator's default script`,
+	);
+	if (block) {
+		const at = block.findIndex((c, i) => c !== generated[i]);
+		expect(
+			at < 0,
+			`${label}: character ${at + 1} of the default script, ${JSON.stringify(generated[at])}, is ${JSON.stringify(block[at])} in the Expressive Code block`,
+		);
+	}
+	await page.close();
+}
 
 /** Replace a text field's value the way a person does. */
 async function type(
@@ -567,6 +641,19 @@ await withPreview(async (origin) => {
 				await ctx.close();
 			}
 		}
+
+		// 9. The same colours as a ```routeros block.
+		for (const scheme of /** @type {const} */ (["light", "dark"])) {
+			const ctx = await browser.newContext({ colorScheme: scheme });
+			await sameColours(ctx, origin, `${scheme}, with JavaScript`);
+			await ctx.close();
+		}
+		{
+			// Dark, whatever the preference: see 9. above.
+			const ctx = await browser.newContext({ javaScriptEnabled: false });
+			await sameColours(ctx, origin, "without JavaScript (dark)");
+			await ctx.close();
+		}
 	} finally {
 		await browser.close();
 	}
@@ -580,5 +667,5 @@ if (problems.length > 0) {
 	process.exit(1);
 }
 console.log(
-	`test:generator: ${checks} checks passed: ${cases.length} cases through the form, byte for byte; errors, token, copy, download, keyboard; no request, no CSP line; 1280 and 390 px, light and dark, EN and ES`,
+	`test:generator: ${checks} checks passed: ${cases.length} cases through the form, byte for byte; errors, token, copy, download, keyboard; no request, no CSP line; 1280 and 390 px, light and dark, EN and ES; the default script in a routeros block's colours, light and dark with JavaScript, dark without`,
 );

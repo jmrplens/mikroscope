@@ -68,7 +68,7 @@ Se ejecuta como un único bloque `{ … }`, en este orden:
 1. Sube `install.rsc` en Files (WebFig o Winbox), o con `scp`.
 2. Ejecuta:
 
-   ```text
+   ```routeros
    /import file-name=install.rsc
    ```
 
@@ -102,7 +102,7 @@ Script Error: mikroscope: upload mikroscope.tar first (:error; line 20) (:import
 
 En el router:
 
-```text
+```routeros
 /container/print where comment="mikroscope:mikroscope (managed by mikroscope)"
 :put ([/tool/fetch url="http://172.30.10.2:9123/healthz" output=user as-value]->"data")
 ```
@@ -116,7 +116,7 @@ La primera muestra el contenedor con la marca `R` (en marcha); la segunda imprim
 El script escribe primero el manifiesto de la instalación, `mikroscope/<name>.manifest.txt` en el
 disco de la instalación. Léelo en el router:
 
-```text
+```routeros
 :put [/file/get [find name="mikroscope/mikroscope.manifest.txt"] contents]
 ```
 

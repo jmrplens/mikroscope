@@ -124,7 +124,7 @@ y [Reglas de alerta](/mikroscope/es/dashboards/alerts/).
 Revisa de forma explícita el log y el monitor de puertos de RouterOS; la
 respuesta decide dónde miras después:
 
-```text
+```routeros
 /log/print where topics~"bridge" or topics~"stp" or topics~"interface"
 /interface/bridge/port/monitor [find] once
 ```
@@ -168,7 +168,7 @@ del mensaje pertenecía a `sfp-sfpplus1`, lo que apuntaba al segmento SFP+; las
 propias tablas del bridge apuntaban a otro sitio. Cuenta los hosts aprendidos en
 cada puerto:
 
-```text
+```routeros
 # hosts aprendidos por puerto
 :foreach p in=[/interface/bridge/port/find] do={ \
   :local n [/interface/bridge/port/get $p interface]; \

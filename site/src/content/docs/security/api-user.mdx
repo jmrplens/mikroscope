@@ -63,7 +63,7 @@ there; it shows up as a failed login, `api <address>: …`.
 1. Create a group that grants `read`, `api` and `test` and denies by name every other policy
    [RouterOS defines](https://help.mikrotik.com/docs/spaces/ROS/pages/8978504/User):
 
-   ```text
+   ```routeros
    /user/group/add name=mikroscope policy=read,api,test,!write,!ftp,!local,!telnet,!ssh,!reboot,!policy,!winbox,!password,!web,!sniff,!sensitive,!romon,!rest-api
    ```
 
@@ -71,7 +71,7 @@ there; it shows up as a failed login, `api <address>: …`.
 
 2. Create the user in that group, restricted to the collector's address:
 
-   ```text
+   ```routeros
    /user/add name=mikroscope group=mikroscope password=<generate> address=<collector host>/32
    ```
 

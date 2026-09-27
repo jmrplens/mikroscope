@@ -76,7 +76,7 @@ lo calcula por ti.
 
 **Comprueba el router.** Lee la versión y la arquitectura, el paquete `container` y device mode:
 
-```text
+```routeros
 /system/resource/print
 /system/package/print where name="container"
 /system/device-mode/print
@@ -90,7 +90,7 @@ en CHR, apaga y enciende la máquina virtual.
 
 **Comprueba las colisiones.** Cada una de estas tiene que no imprimir nada, o una cuenta de 0:
 
-```text
+```routeros
 /interface/veth/print where name="VETH"
 /container/envs/print count-only where list="ENVLIST"
 /ip/address/print where address in NET/30
@@ -100,7 +100,7 @@ en CHR, apaga y enciende la máquina virtual.
 
 Y estas tienen que encontrar lo que nombras: la lista de interfaces, y el disco si usas uno.
 
-```text
+```routeros
 /interface/list/print where name="IFACE_LIST"
 /disk/print
 ```
@@ -245,7 +245,7 @@ Después añade las dos reglas:
 
 En el router:
 
-```text
+```routeros
 /container/print where comment="TAG"
 /log/print where topics~"container"
 :put ([/tool/fetch url="http://AGENT_IP:PORT/healthz" output=user as-value]->"data")
@@ -280,7 +280,7 @@ Después el resto:
 Si todavía queda un tar porque la extracción agotó el tiempo, retíralo también:
 `/file/remove [find name="IMAGE_FILE"]`. Después comprueba que no queda nada; esto imprime `0`:
 
-```text
+```routeros
 :put ([:len [/interface/veth/find comment="TAG"]] + [:len [/ip/address/find comment="TAG"]] + [:len [/interface/list/member/find comment="TAG"]] + [:len [/ip/firewall/address-list/find comment="TAG"]] + [:len [/ip/firewall/nat/find comment="TAG"]] + [:len [/ip/firewall/filter/find comment="TAG"]] + [:len [/container/find comment="TAG"]] + [:len [/container/envs/find list="ENVLIST"]] + [:len [/file/find name="MANIFEST_FILE"]])
 ```
 

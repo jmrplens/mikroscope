@@ -26,9 +26,17 @@
  * make them do anything. The script is bundled (src/lib/rsc-ui.mjs), not
  * inline, and it makes no request, stores nothing and logs nothing: the token
  * it generates exists in the page until the page is left.
+ *
+ * The three outputs that run on the router (install, the router verify
+ * commands, uninstall) are coloured as a ```routeros fence is, by
+ * src/lib/rsc-highlight.mjs: here for the defaults, and by the script on every
+ * change. `data-gen-hl` marks them. The four that run on the reader's machine
+ * stay plain. Either way the element's text is the script, byte for byte, and
+ * copy and download take the script itself, not the page's markup.
  */
 import spec from "../data/rsc/spec.json";
 import { AGENT_IMAGES, AGENT_TARS, EXAMPLE_ROUTER, generatorDefaults } from "../lib/rsc.mjs";
+import { highlightHtml, plainStyle } from "../lib/rsc-highlight.mjs";
 
 type Spec = import("../lib/rsc.mjs").Spec;
 
@@ -484,7 +492,7 @@ const describedBy = (key: string, hint = true) =>
 			<div data-gen-valid>
 				<p class="ms-gen-warning" data-gen-show="token" hidden>{t("ms.gen.tokenWarning")}</p>
 				<div class="ms-gen-out" role="region" aria-label={t("ms.gen.out.install")} tabindex="0">
-					<pre><code data-gen-out="install">{def.script}</code></pre>
+					<pre><code data-gen-out="install" data-gen-hl style={plainStyle} set:html={highlightHtml(def.script)} /></pre>
 				</div>
 				<div class="ms-gen-actions" data-gen-js hidden>
 					<button type="button" data-gen-copy="install">{t("ms.gen.copy")}</button>
@@ -530,7 +538,7 @@ const describedBy = (key: string, hint = true) =>
 			<div data-gen-valid>
 				<p class="ms-gen-label">{t("ms.gen.verify.router")}</p>
 				<div class="ms-gen-out ms-gen-out-short" role="region" aria-label={t("ms.gen.verify.router")} tabindex="0">
-					<pre><code data-gen-out="verify-router">{def.verify.router.join("\n")}</code></pre>
+					<pre><code data-gen-out="verify-router" data-gen-hl style={plainStyle} set:html={highlightHtml(def.verify.router.join("\n"))} /></pre>
 				</div>
 				<p class="ms-gen-label">{t("ms.gen.verify.lan")}</p>
 				<div class="ms-gen-out ms-gen-out-short" role="region" aria-label={t("ms.gen.verify.lan")} tabindex="0">
@@ -556,7 +564,7 @@ const describedBy = (key: string, hint = true) =>
 				</div>
 				<p class="ms-gen-label">{t("ms.gen.out.uninstall")}</p>
 				<div class="ms-gen-out" role="region" aria-label={t("ms.gen.out.uninstall")} tabindex="0">
-					<pre><code data-gen-out="uninstall">{def.uninstall}</code></pre>
+					<pre><code data-gen-out="uninstall" data-gen-hl style={plainStyle} set:html={highlightHtml(def.uninstall)} /></pre>
 				</div>
 				<div class="ms-gen-actions" data-gen-js hidden>
 					<button type="button" data-gen-copy="uninstall">{t("ms.gen.copyUninstall")}</button>
@@ -807,6 +815,19 @@ const describedBy = (key: string, hint = true) =>
 		background: none;
 		padding: 0;
 		white-space: pre;
+	}
+	/* The RouterOS outputs, in the colours Expressive Code gives a ```routeros
+	 * fence: every run carries both, --0 for the dark theme and --1 for the
+	 * light one, and these rules pick one with the selectors Expressive Code's
+	 * own stylesheet uses. The spans the browser writes carry no scope class,
+	 * hence :global. */
+	.ms-gen-out code[data-gen-hl],
+	.ms-gen-out code[data-gen-hl] :global(span) {
+		color: var(--0);
+	}
+	:global(:root:not([data-theme="dark"])) .ms-gen-out code[data-gen-hl],
+	:global(:root:not([data-theme="dark"])) .ms-gen-out code[data-gen-hl] :global(span) {
+		color: var(--1);
 	}
 	.ms-gen-actions {
 		display: flex;

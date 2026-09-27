@@ -113,6 +113,28 @@ function body(source) {
 		.join("\n");
 }
 
+/**
+ * The language of every fenced code block, in order, e.g. ["sh", "routeros"].
+ * body() blanks the fences, so this reads the source. The language decides
+ * which grammar colours the block, so a twin that says `text` where its
+ * source says `routeros` renders the same commands uncoloured.
+ */
+function fenceLanguages(source) {
+	const out = [];
+	let fence = null;
+	for (const line of source.replace(FRONTMATTER, "").split("\n")) {
+		const m = /^\s*(`{3,}|~{3,})\s*([^\s`]*)/.exec(line);
+		if (!m) continue;
+		if (fence === null) {
+			fence = m[1];
+			out.push(m[2] || "(none)");
+		} else if (m[1][0] === fence[0] && m[1].length >= fence.length && !m[2]) {
+			fence = null;
+		}
+	}
+	return out;
+}
+
 /** The sequence of heading levels, e.g. [2, 2, 3, 2]. */
 const headings = (text) =>
 	[...text.matchAll(/^(#{1,6})\s+\S/gm)].map((m) => m[1].length);
@@ -260,6 +282,7 @@ function main() {
 	const headingDiff = [];
 	const componentDiff = [];
 	const attributeDiff = [];
+	const fenceDiff = [];
 	const unreadable = [];
 	const markdownComponents = [];
 	const inlineStarts = [];
@@ -341,6 +364,17 @@ function main() {
 					);
 			}
 
+			const sourceFences = fenceLanguages(source);
+			const twinFences = fenceLanguages(twin);
+			if (sourceFences.join(" ") !== twinFences.join(" ")) {
+				const i = sourceFences.findIndex((l, k) => l !== twinFences[k]);
+				fenceDiff.push(
+					i < 0
+						? `${twinPath}: ${sourceFences.length} code blocks in en, ${twinFences.length} in ${locale}`
+						: `${twinPath}: code block #${i + 1} is ${sourceFences[i]} in en, ${twinFences[i] ?? "missing"} in ${locale}`,
+				);
+			}
+
 			const sourceAttrs = structuralAttributes(sourceBody);
 			const twinAttrs = structuralAttributes(twinBody);
 			// A tag count that differs is already reported above; here the
@@ -390,6 +424,11 @@ function main() {
 			"Component attribute mismatches",
 			attributeDiff,
 			"a twin cites the same measurement, campaign, runs, command, variant and run flags as its source",
+		],
+		[
+			"Code block language mismatches",
+			fenceDiff,
+			"a twin's code block is in its source's language, so the same grammar colours it",
 		],
 		[
 			"Inline components opening a line",

@@ -77,7 +77,7 @@ at least 16 and at most ¾ of `MEMORY_MAX` while that still leaves room for the 
 **Check the router.** Read the release and the architecture, the `container` package and device
 mode:
 
-```text
+```routeros
 /system/resource/print
 /system/package/print where name="container"
 /system/device-mode/print
@@ -91,7 +91,7 @@ machine off and on.
 
 **Check for collisions.** Each of these must print nothing, or a count of 0:
 
-```text
+```routeros
 /interface/veth/print where name="VETH"
 /container/envs/print count-only where list="ENVLIST"
 /ip/address/print where address in NET/30
@@ -101,7 +101,7 @@ machine off and on.
 
 And these must find what you name: the interface list, and the disk if you use one.
 
-```text
+```routeros
 /interface/list/print where name="IFACE_LIST"
 /disk/print
 ```
@@ -242,7 +242,7 @@ Then add the two rules:
 
 On the router:
 
-```text
+```routeros
 /container/print where comment="TAG"
 /log/print where topics~"container"
 :put ([/tool/fetch url="http://AGENT_IP:PORT/healthz" output=user as-value]->"data")
@@ -277,7 +277,7 @@ Then the rest:
 If a tar is still there because extraction timed out, remove it too:
 `/file/remove [find name="IMAGE_FILE"]`. Then check that nothing is left; this prints `0`:
 
-```text
+```routeros
 :put ([:len [/interface/veth/find comment="TAG"]] + [:len [/ip/address/find comment="TAG"]] + [:len [/interface/list/member/find comment="TAG"]] + [:len [/ip/firewall/address-list/find comment="TAG"]] + [:len [/ip/firewall/nat/find comment="TAG"]] + [:len [/ip/firewall/filter/find comment="TAG"]] + [:len [/container/find comment="TAG"]] + [:len [/container/envs/find list="ENVLIST"]] + [:len [/file/find name="MANIFEST_FILE"]])
 ```
 

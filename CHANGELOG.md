@@ -4,6 +4,25 @@ Notable changes per release. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the versions
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **RouterOS highlighting on the site.** RouterOS commands, scripts and the
+  script generator's output are coloured: 25 code blocks per language, every
+  `<ManualSteps>` block, and the generator's install, uninstall and router
+  verify scripts. The grammar (`site/src/languages/routeros.tmLanguage.json`)
+  is derived from jmrp.io's and extended for this project's scripts, where
+  jmrp.io's failed 108 of the 158 assertions of
+  `scripts/check-routeros-grammar.mjs`. The generator colours in the browser
+  with a small tokenizer that reads the same grammar (about 5.9 KB more
+  gzipped script), and `scripts/check-rsc-highlight.mjs` holds it to
+  Expressive Code's colours character by character in both themes over
+  276,003 characters of the golden scripts; an unknown code-block language
+  now fails the build. GitHub colours no fence name as RouterOS, so `docs/`
+  shows these blocks plain as before. Measured on 2026-09-27 with shiki
+  4.4.3 and Expressive Code 0.44.2.
+
 ## [1.4.0] - 2026-09-27
 
 ### Added

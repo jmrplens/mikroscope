@@ -34,13 +34,13 @@ one safe step: a dead port interrupts no traffic.
 1. Find a genuinely dead port, with zero packets in both directions for its
    whole life:
 
-   ```text
+   ```routeros
    /interface/print stats where name="ether6" or name="ether7"
    ```
 
 2. With the agent running, disable and enable it:
 
-   ```text
+   ```routeros
    /interface/ethernet/disable [find name="ether6"]
    :delay 4s
    /interface/ethernet/enable  [find name="ether6"]

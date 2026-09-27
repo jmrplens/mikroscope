@@ -120,7 +120,7 @@ and [Alert rules](/mikroscope/dashboards/alerts/).
 Check RouterOS's log and port monitor explicitly; the answer decides where you
 look next:
 
-```text
+```routeros
 /log/print where topics~"bridge" or topics~"stp" or topics~"interface"
 /interface/bridge/port/monitor [find] once
 ```
@@ -163,7 +163,7 @@ Look for a second, independent observation outside the kernel log. The MAC in
 the message belonged to `sfp-sfpplus1`, which pointed at the SFP+ segment; the
 bridge's own tables pointed elsewhere. Count the hosts learned on each port:
 
-```text
+```routeros
 # hosts learned per port
 :foreach p in=[/interface/bridge/port/find] do={ \
   :local n [/interface/bridge/port/get $p interface]; \
