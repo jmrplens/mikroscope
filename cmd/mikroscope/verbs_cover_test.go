@@ -63,7 +63,7 @@ func TestDashboardsGenWritesOneFilePerStoreAndItsAlerts(t *testing.T) {
 func TestRunDashboardsRefusesWhatItCannotDo(t *testing.T) {
 	// Not parallel: t.Setenv clears GRAFANA_TOKEN for this test, and the two
 	// cannot be combined.
-	if err := runDashboards(nil); err == nil || !strings.Contains(err.Error(), "gen, import or check") {
+	if err := runDashboards(nil); err == nil || !strings.Contains(err.Error(), "gen, publish, import or check") {
 		t.Errorf("no subcommand = %v", err)
 	}
 	if err := runDashboards([]string{"gen", "--no-such-flag"}); err == nil {

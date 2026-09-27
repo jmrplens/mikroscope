@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -471,5 +472,118 @@ func TestAnAdoptedDatasourceIsNeverWritten(t *testing.T) {
 	}
 	if bound != "someone-elses" {
 		t.Errorf("dashboard bound to %q, want the adopted uid", bound)
+	}
+}
+
+// clearPublishEnv empties the MIKROSCOPE_* variables the sink and --grafana
+// flags read their defaults from, so a test sees only the flags it passes.
+func clearPublishEnv(t *testing.T) {
+	t.Helper()
+	for _, k := range []string{
+		"GRAFANA_URL", "GRAFANA_FOLDER", "GRAFANA_DATASOURCE_UID", "GRAFANA_DATASOURCE_URL",
+		"GRAFANA_DATASOURCE_SSLMODE", "INFLUX_URL", "INFLUX_DB", "INFLUX_TOKEN", "LOKI_URL", "OTLP_URL",
+		"GRAPHITE_ADDR", "ELASTIC_URL", "POSTGRES_DSN", "TELEGRAF_URL",
+	} {
+		t.Setenv("MIKROSCOPE_"+k, "")
+	}
+}
+
+// `dashboards publish` needs a Grafana to publish to and a sink to describe
+// the datasource from, and says which is missing.
+func TestDashboardsPublishNeedsAGrafanaAndASink(t *testing.T) {
+	clearPublishEnv(t)
+	t.Setenv("GRAFANA_TOKEN", "t")
+	for _, c := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"--influx", "http://i:8181"}, "--grafana"},
+		{[]string{"--grafana", "http://g:3000"}, "sink flags"},
+		{[]string{"--grafana", "http://g:3000", "--influx", "http://i:8181", "extra"}, "flags only"},
+	} {
+		err := dashboardsPublish(c.args, io.Discard)
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("dashboards publish %q = %v, want an error naming %q", c.args, err, c.want)
+		}
+	}
+}
+
+// The whole of `dashboards publish` against a fake Grafana, through the verb:
+// the folder, the datasource described from --influx, and the dashboard.
+func TestDashboardsPublishDoesWhatForwardDoesAtStart(t *testing.T) {
+	clearPublishEnv(t)
+	t.Setenv("GRAFANA_TOKEN", "glsa_test")
+	t.Setenv("MIKROSCOPE_INFLUX_TOKEN", "apiv3_t")
+	var paths []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.Method+" "+r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.URL.Path == "/api/folders" && r.Method == http.MethodGet:
+			_, _ = w.Write([]byte(`[]`))
+		case r.URL.Path == "/api/folders":
+			_, _ = w.Write([]byte(`{"uid":"folder-uid","title":"mikroscope"}`))
+		case strings.HasPrefix(r.URL.Path, "/api/datasources/uid/") && r.Method == http.MethodGet:
+			w.WriteHeader(http.StatusNotFound)
+		case r.URL.Path == "/api/datasources":
+			_, _ = w.Write([]byte(`{"datasource":{"uid":"mikroscope-influxdb"}}`))
+		case r.URL.Path == "/api/ds/query":
+			_, _ = w.Write([]byte(`{"results":{"A":{"frames":[]}}}`))
+		case r.URL.Path == "/api/dashboards/import":
+			_, _ = w.Write([]byte(`{"importedUrl":"/d/mikroscope-influxdb/x"}`))
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+	var out strings.Builder
+	err := runDashboards([]string{"publish", "--grafana", srv.URL, "--influx", "http://store:8181", "--influx-db", "mikroscope"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = dashboardsPublish([]string{"--grafana", srv.URL, "--influx", "http://store:8181", "--influx-db", "mikroscope"}, &out); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`folder "mikroscope" (folder-uid)`, "influxdb: datasource mikroscope-influxdb", "influxdb: dashboard " + srv.URL + "/d/mikroscope-influxdb/x"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("said %q, want %q", out.String(), want)
+		}
+	}
+	if !slices.Contains(paths, "POST /api/dashboards/import") || !slices.Contains(paths, "POST /api/datasources") {
+		t.Errorf("requests %q, want the datasource and the dashboard written", paths)
+	}
+}
+
+// Where the collector carries on without its dashboard, `dashboards publish`
+// has nothing else to do: Grafana's refusal is its error.
+func TestDashboardsPublishFailsWhenGrafanaRefuses(t *testing.T) {
+	clearPublishEnv(t)
+	t.Setenv("GRAFANA_TOKEN", "t")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"message":"grafana is having a day"}`))
+	}))
+	defer srv.Close()
+	err := dashboardsPublish([]string{"--grafana", srv.URL, "--influx", "http://i:8181", "--influx-db", "mikroscope"}, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "having a day") {
+		t.Fatalf("dashboards publish against a refusing Grafana = %v, want the refusal as its error", err)
+	}
+}
+
+// --grafana-dry-run on `dashboards publish` prints the plan and sends nothing,
+// with no token needed.
+func TestDashboardsPublishDryRunSendsNoRequest(t *testing.T) {
+	clearPublishEnv(t)
+	t.Setenv("GRAFANA_TOKEN", "")
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		t.Errorf("a dry run reached the server: %s %s", r.Method, r.URL.Path)
+	}))
+	defer srv.Close()
+	var out strings.Builder
+	if err := dashboardsPublish([]string{"--grafana", srv.URL, "--grafana-dry-run", "--prom", ":9124", "--grafana-datasource-url", "http://prometheus:9090"}, &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "prometheus: would write datasource") || !strings.Contains(out.String(), "prometheus: would write dashboard") {
+		t.Errorf("dry run said %q, want the datasource and the dashboard it would write", out.String())
 	}
 }

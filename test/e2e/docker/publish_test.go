@@ -23,7 +23,8 @@ import (
 //
 // So this does not check what was written. It lets the collector create the
 // datasource, and then runs `dashboards check` — every panel's query, through
-// Grafana's own API — against the datasource the collector built.
+// Grafana's own API — against the datasource the collector built. Then
+// `dashboards publish`, the same reconcile without a collector, runs over it.
 func TestForwardPublishesFiveWorkingDatasources(t *testing.T) {
 	s := Sweep(t)
 	ctx := t.Context()
@@ -87,6 +88,7 @@ func TestForwardPublishesFiveWorkingDatasources(t *testing.T) {
 			env := append(os.Environ(), "GRAFANA_TOKEN="+token, "HTTP_PROXY=", "HTTPS_PROXY=", "NO_PROXY=*")
 			publishWith(ctx, t, s, store.name, append(sink, store.extra...), env)
 			checkAgainstWhatItBuilt(ctx, t, s, store.name, store.vars, env)
+			publishOnce(ctx, t, s, store.name, append(sink, store.extra...), env)
 		})
 	}
 }
@@ -118,6 +120,35 @@ func publishWith(ctx context.Context, t *testing.T, s *sweep, store string, extr
 		t.Fatalf("the collector did not publish a dashboard for %s:\n%s", store, said)
 	}
 	t.Logf("%s:\n%s", store, grafanaLines(said))
+}
+
+// publishOnce runs `dashboards publish` with the flags the collector was
+// given: the same reconcile, once, with no collector. It must exit 0 and write
+// both objects again over what `forward --grafana` made.
+func publishOnce(ctx context.Context, t *testing.T, s *sweep, store string, extra, env []string) {
+	t.Helper()
+	args := append([]string{
+		"dashboards", "publish",
+		"--grafana", "http://" + s.stack.Grafana,
+		"--grafana-folder", "mikroscope-e2e",
+		"--host-tag", sweepHostTag,
+	}, extra...)
+	runCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(runCtx, s.Bin, args...) // #nosec G204 -- constants above
+	cmd.Env = env
+	out, err := cmd.CombinedOutput()
+	said := string(out)
+	if err != nil {
+		t.Fatalf("dashboards publish for %s: %v\n%s", store, err, said)
+	}
+	if !strings.Contains(said, store+": datasource mikroscope-"+store) {
+		t.Fatalf("dashboards publish did not reconcile the datasource for %s:\n%s", store, said)
+	}
+	if !strings.Contains(said, store+": dashboard http://"+s.stack.Grafana) {
+		t.Fatalf("dashboards publish did not publish the dashboard for %s:\n%s", store, said)
+	}
+	t.Logf("dashboards publish, %s:\n%s", store, said)
 }
 
 // checkAgainstWhatItBuilt runs every panel's query through Grafana against the

@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/jmrplens/mikroscope/internal/dashboards"
 )
@@ -30,12 +32,41 @@ type publishFlags struct {
 }
 
 func (p *publishFlags) register(fs *flag.FlagSet) {
-	fs.StringVar(&p.url, "grafana", env("GRAFANA_URL", ""), "publish the dashboards to this Grafana at start; token from GRAFANA_TOKEN (MIKROSCOPE_GRAFANA_URL)")
+	fs.StringVar(&p.url, "grafana", env("GRAFANA_URL", ""), "publish the dashboards to this Grafana (forward: once, at start); token from GRAFANA_TOKEN (MIKROSCOPE_GRAFANA_URL)")
 	fs.StringVar(&p.folder, "grafana-folder", env("GRAFANA_FOLDER", "mikroscope"), "the Grafana folder to publish into; empty means the General folder")
 	fs.StringVar(&p.dsUID, "grafana-datasource-uid", env("GRAFANA_DATASOURCE_UID", ""), "adopt this existing datasource instead of creating one — required for the stores that cannot describe their own")
 	fs.StringVar(&p.dsURL, "grafana-datasource-url", env("GRAFANA_DATASOURCE_URL", ""), "the address Grafana queries, for the sinks that cannot know it: --prom, --graphite. It also overrides the address a sink does know")
 	fs.StringVar(&p.dsSSL, "grafana-datasource-sslmode", env("GRAFANA_DATASOURCE_SSLMODE", ""), "sslmode for the PostgreSQL datasource: disable, require, verify-ca or verify-full. Read from --postgres when it names one Grafana understands")
-	fs.BoolVar(&p.dryRun, "grafana-dry-run", false, "print the datasource and dashboard --grafana would write, write nothing, and stop before collecting")
+	fs.BoolVar(&p.dryRun, "grafana-dry-run", false, "print the datasource and dashboard --grafana would write and write nothing (forward: then stop before collecting)")
+}
+
+// dashboardsPublish is `dashboards publish`: what `forward --grafana` does at
+// start, done once, with no router and no collector, and then exit. It takes
+// the sink flags forward takes, because each datasource is described from the
+// sink that writes to it, and the same --grafana flags. The collector carries
+// on when Grafana refuses (publishOrCarryOn); here the publish is the whole
+// run, so a refusal is the command's error and its exit status.
+func dashboardsPublish(args []string, out io.Writer) error {
+	fs := flag.NewFlagSet("mikroscope dashboards publish", flag.ContinueOnError)
+	var sf sinkFlags
+	var pf publishFlags
+	sf.register(fs)
+	pf.register(fs)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() > 0 {
+		return fmt.Errorf("dashboards publish takes flags only, not %q", fs.Arg(0))
+	}
+	if !pf.asked() {
+		return errors.New("dashboards publish needs --grafana (or MIKROSCOPE_GRAFANA_URL), with the token in GRAFANA_TOKEN")
+	}
+	if !sf.any() {
+		return errors.New("dashboards publish needs the sink flags the collector runs with (--influx, --prom, --postgres, --sql, --graphite or --elastic): the datasource is described from them")
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return pf.publish(ctx, &sf, out)
 }
 
 // asked reports whether a Grafana was named at all.

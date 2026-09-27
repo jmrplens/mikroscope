@@ -15,13 +15,18 @@ import (
 
 // runDashboards: `dashboards gen --out dir` writes one JSON file per store in
 // dashboards.Stores, and the alert rules of the stores that have them;
-// `dashboards import|check --store influxdb|prometheus|postgres|graphite|elasticsearch
-// --grafana URL --datasource-uid X` use the Grafana API (token in GRAFANA_TOKEN).
+// `dashboards publish` is forward --grafana once, with no collector
+// (dashboardsPublish); `dashboards import|check --store
+// influxdb|prometheus|postgres|graphite|elasticsearch --grafana URL
+// --datasource-uid X` use the Grafana API (token in GRAFANA_TOKEN).
 func runDashboards(args []string) error {
 	if len(args) == 0 {
-		return errors.New("dashboards needs gen, import or check")
+		return errors.New("dashboards needs gen, publish, import or check")
 	}
 	sub := args[0]
+	if sub == "publish" {
+		return dashboardsPublish(args[1:], os.Stdout)
+	}
 	fs := flag.NewFlagSet("mikroscope dashboards "+sub, flag.ContinueOnError)
 	var outDir, store, grafanaURL, dsUID, endAt string
 	// Dashboard variables, for the stores whose queries carry them: Graphite's

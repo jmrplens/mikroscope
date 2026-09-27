@@ -22,6 +22,14 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   now fails the build. GitHub colours no fence name as RouterOS, so `docs/`
   shows these blocks plain as before. Measured on 2026-09-27 with shiki
   4.4.3 and Expressive Code 0.44.2.
+- **`mikroscope dashboards publish`.** What `forward --grafana` does when the
+  collector starts, done once, with no collector and no router: it takes the
+  collector's sink flags and the same `--grafana` flags, reconciles one
+  datasource and one dashboard per store those sinks write to, prints what it
+  did to each, and exits. A refusal from Grafana is its error and its exit
+  status, where the collector warns and carries on. `--grafana-dry-run`
+  prints the same list and writes nothing. Checked against a fake Grafana in
+  the unit tests; not run against a real Grafana yet.
 
 ## [1.4.0] - 2026-09-27
 
