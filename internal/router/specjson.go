@@ -151,13 +151,20 @@ func CLIArgs(g GenOptions) string {
 			case cliPlain.MatchString(x):
 				parts = append(parts, f.Flag, x)
 			default:
-				parts = append(parts, f.Flag, "'"+x+"'")
+				parts = append(parts, f.Flag, shellQuote(x))
 			}
 		default:
 			parts = append(parts, f.Flag, fmt.Sprint(x))
 		}
 	}
 	return strings.Join(parts, " ")
+}
+
+// shellQuote wraps x in single quotes for a POSIX shell. Each single quote
+// inside x closes the quoting, is written escaped with a backslash, and
+// reopens it, so no value can end the quoting early.
+func shellQuote(x string) string {
+	return "'" + strings.ReplaceAll(x, "'", `'\''`) + "'"
 }
 
 // CLIEnv names the variables CLIArgs' command needs set before it runs:
