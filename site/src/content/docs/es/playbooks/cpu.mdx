@@ -1,9 +1,10 @@
 ---
-title: Una carga limitada por CPU
+title: Núcleo saturado
 description: "Un núcleo saturado de un MikroTik RB5009 leído a 10 Hz: por qué el total del equipo lo esconde, la carga saltando entre núcleos y la temperatura."
 head:
   - tag: title
     content: "CPU por núcleo en un MikroTik RB5009 a 10 Hz | mikroscope"
+docType: evidence
 ---
 
 import FaultSignature from "../../../../components/FaultSignature.astro";
@@ -12,22 +13,19 @@ import NotClaimed from "../../../../components/NotClaimed.astro";
 import Provenance from "../../../../components/Provenance.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
 
-Esta página responde a qué aspecto tiene un cuello de botella de un solo hilo en
-los datos por núcleo, y por qué el total del equipo lo esconde. La carga se provocó a propósito.
-
-<Provenance of="playbooks-2026-09-12" />
-
 **En resumen:** un núcleo saturado en el RB5009 de cuatro núcleos se lee como
 cerca de un 29 % del equipo, así que es la fila por núcleo, y no el total, la que
 muestra un cuello de botella de un solo hilo: aquí un núcleo al 99,8 % mientras
 los otros tres estaban ociosos. A 10 Hz se ve al planificador mover la carga entre
 núcleos durante unos 20 s antes de asentarse; muestreado una vez por segundo, eso
-es una meseta difusa.
+es una meseta difusa. La carga se provocó a propósito.
 
-## Cómo se provocó
+<Provenance of="playbooks-2026-09-12" />
 
-Sin ningún cambio de configuración y sin dependencias externas — un bucle de
-consola que quema un núcleo y termina por sí solo:
+## Montaje {#cómo-se-provocó}
+
+Un bucle de consola que quema un núcleo y termina por sí solo, sin ningún cambio
+de configuración y sin dependencias externas:
 
 ```text
 :local i 0; :while ($i < 4000000) do={ :set i ($i + 1) }
@@ -35,12 +33,12 @@ consola que quema un núcleo y termina por sí solo:
 
 Duró 58,8 s.
 
-## Lo que registró el agente
+## Grabación {#lo-que-registró-el-agente}
 
 En tramos de 5 segundos. El agente envía deltas de ticks en bruto; los
-porcentajes de abajo se calcularon a partir de ellos después. No hay gráfico de
-esta ejecución: se leyó el 2026-09-12, antes de que empiece el historial del
-almacén InfluxDB de referencia, el 2026-09-19.
+porcentajes de abajo se calcularon a partir de ellos después. No hay gráfico: la
+ejecución es anterior al historial del almacén InfluxDB de referencia, que
+empieza el 2026-09-19.
 
 ```text
    t  busy%   per-core busy%          ctxt/s  temp   MHz
@@ -53,7 +51,7 @@ almacén InfluxDB de referencia, el 2026-09-19.
   11   33.0   11.8  11.2   9.0  99.7   12222  37.3  1400
 ```
 
-## Qué leer
+## Qué mirar {#qué-leer}
 
 - **Un total de ~29 % es un núcleo de cuatro.** El total del equipo es una trampa;
   mira siempre la fila por núcleo. "29 % de CPU" significa aquí "un núcleo está
@@ -62,7 +60,7 @@ almacén InfluxDB de referencia, el 2026-09-19.
 - **El planificador tardó ~20 s en asentarse.** Los tramos 0–3 muestran el trabajo
   moviéndose entre núcleos (40 % → 90 % → 76 % → 82 %) antes de fijarse en el
   núcleo 3 al 99,8 %. Si muestreas cada 1 s o más despacio ves una meseta difusa;
-  a 10 Hz ves la migración. Aquí es donde la resolución se gana lo que cuesta.
+  a 10 Hz ves la migración.
 - **La temperatura lo siguió: de 36,5 a 37,3 °C.** Un núcleo saturado vale ~0,8 °C
   en esta placa con refrigeración pasiva. Poco, pero sigue la carga, y se lee de
   `/sys/class/thermal` sin ninguna llamada a la API.
@@ -75,29 +73,36 @@ almacén InfluxDB de referencia, el 2026-09-19.
   más un latido cada 60 s, así que con un reloj fijo tienes una fila por minuto,
   y con un reloj que escala tienes cada escalón que dure al menos un tick.
 
-## Comprueba el muestreador antes que la CPU
+## Comprobar el muestreador {#comprueba-el-muestreador-antes-que-la-cpu}
 
 Antes de concluir nada de un número de CPU, confirma que
 `mikroscope_slipped_total` es 0. Un tick perdido es uno cuya lectura terminó
 después de que tocara el siguiente tick, y entonces la propia contabilidad del
 muestreador es lo primero de lo que deberías desconfiar.
 
-## Cuando los núcleos no están ocupados pero el kernel sí
+## Carga en el kernel {#cuando-los-núcleos-no-están-ocupados-pero-el-kernel-sí}
 
-La forma contraria llegó sola al RB5009 de referencia, con RouterOS 7.24.4, el 2026-09-23 a
-las 12:08:50 UTC: una integración MikroTik de Home Assistant desató una tormenta de
-despertares. Las interrupciones del temporizador pasaron de unas 2 500 a unas 35 000 por
-segundo, en ráfagas de 20–90 s en un núcleo cada vez, mientras el tiempo de usuario y el
-tráfico seguían planos, y apenas se vio en el propio profile de RouterOS. Las columnas de
-ocupación de arriba no la habrían recogido; la tasa de cambios de contexto, que en ese router
-se movió con las interrupciones del temporizador (r = 1,0), sí. Desactivar la integración el
-2026-09-24 devolvió el temporizador a unas 2 500 por segundo en 30 s. Es un solo evento en un
-solo router, leído del almacén InfluxDB de referencia, y aún no tiene página de lectura propia:
-la regla que la vigila es `mikroscope-wakeup-storm`, en [Reglas de
-alerta](/mikroscope/es/dashboards/alerts/), que compara la tasa de cambios de contexto de los
-últimos diez minutos con las 24 horas anteriores del propio router.
+La forma contraria: los núcleos no están ocupados, pero el kernel sí. Llegó sola
+al RB5009 de referencia, con RouterOS 7.24.4, el 2026-09-23 a las 12:08:50 UTC,
+cuando una integración MikroTik de Home Assistant desató una tormenta de
+despertares:
 
-## La firma
+- Las interrupciones del temporizador pasaron de unas 2 500 a unas 35 000 por
+  segundo, en ráfagas de 20–90 s en un núcleo cada vez, mientras el tiempo de
+  usuario y el tráfico seguían planos.
+- Apenas se vio en el propio profile de RouterOS, y las columnas de ocupación de
+  arriba no la habrían recogido. La tasa de cambios de contexto sí: en ese router
+  se movió con las interrupciones del temporizador (r = 1,0).
+- Desactivar la integración el 2026-09-24 devolvió el temporizador a unas 2 500
+  por segundo en 30 s.
+
+Es un solo evento en un solo router, leído del almacén InfluxDB de referencia, y
+aún no tiene caso propio. La regla que la vigila es `mikroscope-wakeup-storm`, en
+[Reglas de alerta](/mikroscope/es/dashboards/alerts/), que compara la tasa de
+cambios de contexto de los últimos diez minutos con las 24 horas anteriores del
+propio router.
+
+## Firma {#la-firma}
 
 <FaultSignature origin="provoked" date="2026-09-12">
 
@@ -119,11 +124,11 @@ alerta](/mikroscope/es/dashboards/alerts/), que compara la tasa de cambios de co
 
 ## Véase también
 
-- [El suelo de resolución es del kernel](/mikroscope/es/limits/): por qué una muestra de 100 ms
-  resuelve un núcleo en escalones del <Measured id="tick.stepOneCore" />, y los contadores de la PMU que leen por debajo.
-- [Cinco minutos con un router](/mikroscope/es/start/walkthrough/): un bucle de script grabado que fija
-  un núcleo, con marcadores que dicen qué más estaba haciendo el router.
-- [Cada fuente a su propio suelo](/mikroscope/es/limits/source-floors/): por qué la temperatura se lee al
+- [Límites de resolución](/mikroscope/es/limits/): por qué una muestra de 100 ms resuelve un núcleo
+  en escalones del <Measured id="tick.stepOneCore" />, y los contadores de la PMU que leen por debajo.
+- [Grabar, marcar y dibujar](/mikroscope/es/record/): graba una ventana como esta, con marcadores que
+  dicen qué más estaba haciendo el router.
+- [Cadencias de las fuentes](/mikroscope/es/limits/source-floors/): por qué la temperatura se lee al
   1 Hz que declara la zona y la frecuencia solo se guarda cuando cambia.
 
 </SeeAlso>

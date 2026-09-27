@@ -1,6 +1,7 @@
 ---
-title: Lo que aporta privileged
-description: Por qué el contenedor RouterOS del agente usa privileged=yes por defecto, qué fuentes hace legibles y a qué red, procesos y sensores sigue sin llegar.
+title: Modo privilegiado
+description: Qué hace legible privileged=yes en el contenedor RouterOS del agente, qué deja fuera de su alcance y qué cuesta funcionar sin él.
+docType: explanation
 head:
   - tag: title
     content: "privileged=yes en un contenedor RouterOS: lo que lee | mikroscope"
@@ -8,36 +9,35 @@ head:
 
 import { Aside } from "@astrojs/starlight/components";
 import Measured from "../../../../components/Measured.astro";
-import NotClaimed from "../../../../components/NotClaimed.astro";
-import Provenance from "../../../../components/Provenance.astro";
 import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
+import TestedOn from "../../../../components/TestedOn.astro";
 
-`install` crea el contenedor del agente con `privileged=yes`. Esta página responde qué cambia ese
-ajuste en el router, qué fuentes del agente dependen de él, qué no abre por mucho que se configure
-y a qué renuncias si lo desactivas.
+`install` crea el contenedor del agente con `privileged=yes`. El ajuste decide qué fuentes del
+agente le deja leer el kernel; no abre ningún acceso a la red ni ninguna vista de los procesos de
+RouterOS.
 
-## El valor por defecto, y por qué
+## Valor por defecto {#el-valor-por-defecto-y-por-qué}
 
 El contenedor se ejecuta con `privileged=yes` salvo que pases `--privileged=false` a `install` o a
 `upgrade`, que recrea el contenedor. Es una opción booleana, así que se escribe `=false`; un
-argumento `false` separado no se lee como su valor. El ajuste existe en RouterOS 7.24 y
-posteriores: RouterOS añadió el modo privilegiado para contenedores en la 7.24, como recoge su
+argumento `false` separado no se lee como su valor. El ajuste necesita RouterOS 7.24 o
+posterior: RouterOS añadió el modo privilegiado para contenedores en la 7.24, como recoge su
 [registro de cambios](https://download.mikrotik.com/routeros/7.24/CHANGELOG).
 
 Leer el estado interno del equipo es para lo que existe mikroscope, y privileged es lo que hace
 legibles los ficheros del kernel reservados a root. Un contenedor normal de RouterOS se coloca en
-un [espacio de nombres de usuario](https://man7.org/linux/man-pages/man7/user_namespaces.7.html) en el que su root corresponde al uid 32768 del host, así que
-`/proc/slabinfo` y `/dev/kmsg` devuelven `EACCES`. `privileged=yes` elimina ese espacio de nombres
-de usuario.
+un [espacio de nombres de usuario](https://man7.org/linux/man-pages/man7/user_namespaces.7.html) en el que su root corresponde al uid 32768 del host (<TestedOn of="not-tested">leído en una sola placa</TestedOn>),
+así que `/proc/slabinfo` y `/dev/kmsg` devuelven `EACCES`. `privileged=yes` elimina ese espacio de
+nombres de usuario.
 
 Sigue siendo una concesión real de privilegios, y por eso `plan` e `install --dry-run` lo
 muestran junto con el resto de ajustes del contenedor antes de escribir nada.
 
-## Lo que añade
+## Lo que habilita {#lo-que-añade}
 
-Encontrado legible en el RB5009 (RouterOS 7.24.2, kernel 5.6.3) el 2026-09-12, y leído por el
-agente salvo donde la tabla indica otra cosa:
+`privileged=yes` hace legibles estas fuentes, y el agente lee cada una salvo donde la tabla indica
+otra cosa:
 
 <ScrollTable label="Fuentes que privileged=yes hace legibles">
 
@@ -53,11 +53,11 @@ agente salvo donde la tabla indica otra cosa:
 
 La PMU necesita privileged por una razón distinta a la de los ficheros: sus contadores se abren a
 nivel de sistema (`pid = -1`), lo que según [`perf_event_open(2)`](https://man7.org/linux/man-pages/man2/perf_event_open.2.html) requiere
-`CAP_SYS_ADMIN` frente al host, `CAP_PERFMON` a partir de Linux 5.8 (el kernel de referencia es
-el 5.6.3) o un `perf_event_paranoid` menor que 1. `perf_event_paranoid` vale 2 en el equipo de
-referencia y no bloquea a un contenedor privilegiado.
-Lo que la PMU muestra y ningún contador de ticks puede mostrar está en
-[el suelo de resolución](/mikroscope/es/limits/).
+`CAP_SYS_ADMIN` frente al host, `CAP_PERFMON` en Linux 5.8 o posterior, o un `perf_event_paranoid`
+menor que 1. Un contenedor privilegiado conserva `CAP_SYS_ADMIN` frente al host, así que un
+`perf_event_paranoid` de 2 no lo bloquea (<TestedOn of="reference-hardware">medido</TestedOn>). Lo
+que la PMU muestra y ningún contador de ticks puede mostrar está en
+[Límites de resolución](/mikroscope/es/limits/).
 
 El log del kernel se lee sin bloquear y con un tope de 64 registros por tick. Se abre al final del
 búfer, así que un atasco de registros del arranque nunca se reproduce como si acabara de ocurrir.
@@ -74,43 +74,31 @@ La familia del log del kernel solo aparece cuando se ha visto un registro, así 
 sí sola no distingue un despliegue sin privilegios de un kernel tranquilo; el indicador
 `privileged` sí.
 
-## Lo que no añade
+## Lo que no habilita {#lo-que-no-añade}
 
 No añade **ningún** acceso a la red ni **ninguna** vista de los procesos de RouterOS. Privileged
-elimina el espacio de nombres de usuario y deja en su sitio los de red y de PID:
-
-<Provenance of="netns-2026-09-12" />
-
+elimina el espacio de nombres de usuario y deja en su sitio los de red y de PID (<TestedOn of="netns-2026-09-12">verificado</TestedOn>).
 Así que los contadores por interfaz siguen viniendo de la API de RouterOS, y la CPU por proceso
 queda fuera de alcance incluso con el `/proc` del host montado en el contenedor. Ambas cosas están
-medidas en [la CPU del router, la red del contenedor](/mikroscope/es/limits/namespaces/).
+en [Visibilidad del contenedor](/mikroscope/es/limits/namespaces/).
 
-Tampoco añade capacidades: un contenedor sin privilegios ya tiene las 38. Lo que cambia es el
+Tampoco añade capacidades: un contenedor sin privilegios ya tiene el conjunto completo que define
+el kernel (<TestedOn of="not-tested">leído en una sola placa</TestedOn>). Lo que cambia es el
 espacio de nombres de usuario al que esas capacidades quedan confinadas, no el conjunto.
 
-Y no puede darte más sensores de los que tiene la placa. En el RB5009, `/sys/class/hwmon` está
-vacío incluso con privilegios. Las dos zonas térmicas, `cpu-thermal` y `soc-thermal`, son todo el
-conjunto de sensores del modelo base, y ambas se leen sin privileged: no hay lectura de tensión,
-corriente ni ventilador que obtener. El propio `/system/health` de RouterOS en esa placa informa
-de exactamente un sensor, `cpu-temperature`, que es la zona `soc-thermal` truncada a grados
-enteros: un desfase medio de +0,55 °C durante los 8 minutos en que existieron ambas series
-(2026-09-14). En una placa que sí tenga sensores de tensión, corriente o ventilador, la API los
-sigue añadiendo.
+Y no puede darte más sensores de los que tiene la placa. El agente lee las zonas térmicas, que no
+necesitan privileged, y nada de `/sys/class/hwmon`. En la placa medida, `hwmon` está vacío incluso
+con privilegios, así que sus zonas térmicas son todo su conjunto de sensores del kernel (<TestedOn of="reference-hardware">medido</TestedOn>).
+En una placa que sí tenga sensores de tensión, corriente o ventilador, la capa de la API de
+RouterOS los sigue añadiendo.
 
-<NotClaimed variant="device-specific">
-	El conjunto de sensores, el número de capacidades y la correspondencia de uid se leyeron en un
-	único RB5009 con RouterOS 7.24.2. No se ha comprobado una placa con sensores hwmon, ni un RouterOS
-	posterior que construya los contenedores de otra manera.
-</NotClaimed>
-
-## Funcionar sin él
+## Ejecutar sin privilegios {#funcionar-sin-él}
 
 `--privileged=false` conserva todo lo que se puede leer desde un contenedor normal: todos los
 ficheros globales de `/proc` en las muestras, las zonas térmicas, `scaling_cur_freq`,
 `/proc/yaffs`, `/proc/buddyinfo`, `/proc/diskstats` y el coste del propio agente. Lo que se pierde:
 
-- El log del kernel. El [bucle de capa 2](/mikroscope/es/playbooks/loop/) que este proyecto
-  encontró en su propio router de referencia solo era visible ahí.
+- El log del kernel. Un [bucle de capa 2](/mikroscope/es/playbooks/loop/) puede verse solo ahí.
 - El número de conexiones del router desde la caché slab. El recorrido de tabla `count-only` de
   la API de RouterOS es la fuente que queda, y el colector solo lo ejecuta cuando se indica
   `--conntrack-every`.
@@ -127,17 +115,17 @@ silencio.
 
 <Aside type="caution" title="Privileged no es un montaje">
 	Un contenedor privilegiado con el `/` del host montado lee la configuración entera de RouterOS,
-	secretos incluidos (probado en el RB5009 el 2026-09-15). El instalador no monta ninguna ruta del
-	host en el contenedor del agente, y nada de lo que hay aquí la necesita.
+	secretos incluidos (<TestedOn of="host-mounts">probado</TestedOn>). El instalador no monta ninguna
+	ruta del host en el contenedor del agente, y nada de lo que hay aquí la necesita.
 </Aside>
 
 <SeeAlso>
 
 ## Véase también
 
-- [La CPU del router, la red del contenedor](/mikroscope/es/limits/namespaces/): los dos espacios
+- [Visibilidad del contenedor](/mikroscope/es/limits/namespaces/): los dos espacios
   de nombres que privileged deja en su sitio, fichero a fichero.
-- [Qué se ejecuta dónde](/mikroscope/es/security/): el contenedor del agente y lo que puede
+- [Modelo de seguridad](/mikroscope/es/security/): el contenedor del agente y lo que puede
   alcanzar, desde el lado de la seguridad.
 - [Conntrack sin la API](/mikroscope/es/playbooks/conntrack/): la cuenta del slab que privileged
   hace legible, y cómo comprobarla.

@@ -1,0 +1,122 @@
+---
+title: Generador de scripts
+description: Rellena un formulario y obtén el script de RouterOS que instala el agente, el mismo que imprime `mikroscope plan --rsc`, y el script que lo vuelve a quitar.
+docType: how-to
+head:
+  - tag: title
+    content: Generador del script de RouterOS para el agente | mikroscope
+---
+
+import { Steps } from "@astrojs/starlight/components";
+import RouterWrites from "../../../../components/RouterWrites.astro";
+import ScriptGenerator from "../../../../components/ScriptGenerator.astro";
+import SeeAlso from "../../../../components/SeeAlso.astro";
+
+Instala el agente sin la CLI: elige las opciones, copia el script y pégalo en
+el terminal del router. El script es el que imprime `mikroscope plan --rsc`
+con las mismas opciones, byte a byte. Todo ocurre en esta página: nada de lo
+que escribes o generas se envía a ningún sitio ni se guarda.
+
+## Antes de empezar
+
+- El router tiene RouterOS 7.24 o posterior, con el paquete `container` y
+  `device-mode container=yes`
+  ([Requisitos](/mikroscope/es/install/prerequisites/)). El script comprueba
+  las tres cosas primero y se detiene antes de escribir nada si falta alguna.
+- Para una descarga del registro, el router llega al registro. Si no tiene
+  salida, elige **Tar de la imagen subido**.
+- Un firewall que descarta lo que no está en una lista necesita al agente en
+  esa lista: [Listas del firewall](/mikroscope/es/install/firewall/).
+- En un CHR con la licencia gratuita, el router envía como mucho 1 Mbit/s, que
+  una frecuencia de 50 Hz alcanza
+  ([Probado en](/mikroscope/es/about/status/#virtual-lab)).
+
+## Ajustes
+
+<ScriptGenerator />
+
+## Script de instalación
+
+<ScriptGenerator part="script" />
+
+<RouterWrites command="install" />
+
+## Subir el tar de la imagen
+
+Solo con **Tar de la imagen subido**. Descarga el tar de la arquitectura del
+router, compruébalo con las sumas de la release y cópialo al router con el
+nombre que espera el script:
+
+<ScriptGenerator part="tar" />
+
+Sin `scp`, sube el fichero en WebFig o Winbox, en **Files**, y cámbiale el
+nombre a ese. El script borra el tar en cuanto RouterOS lo ha extraído.
+
+## Ejecutar el script
+
+<Steps>
+
+1. Abre un terminal en el router: **Terminal** en WebFig, **New Terminal** en
+   Winbox, o `ssh admin@192.168.88.1`.
+
+2. Espera al prompt `] >`. En el primer inicio de sesión RouterOS pregunta si
+   quieres ver la licencia del software: contesta eso antes. Un script pegado
+   en la pregunta de la licencia pierde sus primeras líneas.
+
+3. Pega el script y pulsa Intro. Espera hasta 120 s a que arranque el
+   contenedor e imprime `mikroscope: agent running, http://…/healthz`, o
+   `mikroscope: not running yet` y dónde mirar.
+
+</Steps>
+
+También puedes descargar el `.rsc`, subirlo en **Files** y ejecutar
+`/import file-name=mikroscope-install.rsc`.
+
+El script se ejecuta como un solo bloque. Una comprobación que falla lo detiene
+antes de escribir nada, con una línea que empieza por `mikroscope:` y dice qué
+falta. Un paso que falla detiene los siguientes; lo que ya creó lleva la
+etiqueta, y el script de desinstalación o `mikroscope uninstall` lo quitan.
+
+## Verificar
+
+<ScriptGenerator part="verify" />
+
+La descarga desde el router imprime la respuesta de `/healthz` del agente.
+`/healthz` no pide token.
+
+## Desinstalar
+
+Quita la instalación con la CLI, que lee el manifiesto que escribió el script y
+quita cada objeto que lista, o pega el script de desinstalación, que envía las
+mismas órdenes en el mismo orden. Genéralo con los ajustes con los que
+instalaste.
+
+<ScriptGenerator part="remove" />
+
+Los dos quitan el manifiesto al final y después el directorio `mikroscope`
+cuando queda vacío. Mientras quede algo etiquetado, el manifiesto se queda, así
+que el siguiente intento sigue encontrando la instalación. Ninguno de los dos
+toca lo que no creó la instalación: `device-mode`, el paquete `container`,
+`/container/config` o un disco en RAM que añadieras tú.
+
+<SeeAlso>
+## Véase también
+
+- [Métodos de instalación](/mikroscope/es/install/routes/): todas las formas
+  de instalar y cuándo usar cada una.
+- [Instalar con la CLI](/mikroscope/es/install/): la misma instalación desde un
+  ordenador, con `doctor` antes.
+- [Script de RouterOS](/mikroscope/es/install/script/): el mismo script desde
+  `mikroscope plan --rsc`, y qué hace cada parte.
+- [Instalación manual: terminal](/mikroscope/es/install/manual-cli/): las
+  mismas órdenes una a una, con marcadores.
+- [Instalación sin conexión](/mikroscope/es/install/offline/): elegir,
+  descargar y verificar el tar de la imagen.
+- [Almacenamiento y ajustes del contenedor](/mikroscope/es/install/layout/): el disco, la
+  raíz y los ajustes del contenedor.
+- [Acceso por red](/mikroscope/es/install/reaching-the-agent/): llegar al
+  agente desde el colector.
+- [Salvaguardas del instalador](/mikroscope/es/security/installer/): los
+  límites que pasa cada valor antes de llegar a una orden.
+
+</SeeAlso>

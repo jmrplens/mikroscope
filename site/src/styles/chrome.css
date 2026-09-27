@@ -96,11 +96,18 @@
 	 * `auto` each got its label's width plus half the room left, and "What it
 	 * costs" and "Download" came out 166 and 180 px at WebKit 390 px. The
 	 * widest label in either locale needs 136 px (Chromium, "Descargar"), and
-	 * half the row is 158 px at 360 px (2026-09-24). */
+	 * half the row is 158 px at 360 px (2026-09-24).
+	 *
+	 * A fifth action, "How it works", put the two secondaries without an icon
+	 * on a row of their own, and there they measured 33 px tall against 40 px
+	 * for the buttons with one (Chromium, 390 px, both locales, 2026-09-27):
+	 * the icon, not the label, set the height. So every action is at least
+	 * the height the icon gives. */
 	.hero .actions .sl-link-button {
 		flex: 1 1 0;
 		justify-content: center;
 		white-space: nowrap;
+		min-height: 2.5rem;
 	}
 	.hero .actions .sl-link-button:first-child,
 	.hero .actions .sl-link-button.minimal {

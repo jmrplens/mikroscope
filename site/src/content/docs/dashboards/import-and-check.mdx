@@ -1,21 +1,22 @@
 ---
 title: Import and check
-description: Binding the dashboards to a Grafana datasource, what import and check ask the store first, and what check proves against a live Grafana and what it cannot.
+description: "Bind the dashboards to a Grafana datasource, import them by hand, with the CLI or from the collector, and check every panel's query against a live Grafana."
+docType: how-to
 ---
 
 import { Aside, Tabs, TabItem } from "@astrojs/starlight/components";
+import Anchor from "../../../components/Anchor.astro";
 import DashboardCount from "../../../components/DashboardCount.astro";
-import NotClaimed from "../../../components/NotClaimed.astro";
 import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
 import Src from "../../../components/Src.astro";
+import TestedOn from "../../../components/TestedOn.astro";
 
-This page answers how to get the five dashboards into a Grafana, what the datasource needs before
-they can return anything, and what `mikroscope dashboards check` tells you once they are there. The
-short version of the last part: `check` proves that every panel's query returns rows through
-Grafana's own query API. It does not prove that a reader can read the result.
+Create the datasource for your store, import the dashboard, then run `mikroscope dashboards check`:
+it proves that every panel's query returns rows through Grafana's own query API. It does not prove
+that a reader can read the result.
 
-## The InfluxDB 3 datasource
+## InfluxDB 3 datasource {#the-influxdb-3-datasource}
 
 The database comes first: `influxdb3 create database mikroscope` on the InfluxDB 3 node, with a
 token that can read and write it — the same database and token the sink writes to, on
@@ -28,11 +29,11 @@ own provisioning example for InfluxDB 3 with SQL](https://grafana.com/docs/grafa
 - `httpHeaderValue1` = `Bearer <token>` (the HTTP path)
 - `token` = `<token>` (the FlightSQL path)
 
-Without the second, panels fail with `flightsql: Unauthenticated` (Grafana 12.3.2, 2026-09-12).
+Without the second, panels fail with `flightsql: Unauthenticated`.
 
-## Prometheus: one scrape job
+## Prometheus datasource {#prometheus-one-scrape-job}
 
-The collector's:
+Scrape the collector with one job, and point a Prometheus datasource at that Prometheus:
 
 ```yaml
 - job_name: "mikroscope"
@@ -41,12 +42,12 @@ The collector's:
 ```
 
 `mikroscope forward --prom :9124` carries every family: the kernel tier recomputed from the samples
-it received, the collector's own derived and detection families, and — since 1.0.5 — what only the
-sampler can produce. The agent serves no `/metrics` at all any more; its tick timing rides in the
-samples and its own counters come over `GET /sampler`, which the collector reads every minute. A
-second job would have nothing to add.
+it received, the collector's own derived and detection families, and what only the sampler can
+produce. The agent serves no `/metrics`; its tick timing rides in the samples and its own counters
+come over `GET /sampler`, which the collector reads every minute. A second job would have nothing to
+add.
 
-## The PostgreSQL datasource
+## PostgreSQL datasource {#the-postgresql-datasource}
 
 The SQL sink writes a **script**, not rows: `forward --sql out.sql` and then `psql -f out.sql`, or
 `--sql - | psql`. So the database has the schema and the data only after that script has been
@@ -67,7 +68,7 @@ cap rides on InfluxDB's `mikroscope_self` row and is a device fact in the SQL sc
 PostgreSQL dashboard therefore
 carries <DashboardCount store="postgres" of="panels" /> panels against InfluxDB's <DashboardCount store="influxdb" of="panels" />.
 
-## The Graphite datasource
+## Graphite datasource {#the-graphite-datasource}
 
 Graphite has no labels: every dimension is a path node, so a query IS a path — and the first two
 nodes are yours. `--graphite-prefix` (default `mikroscope`) and `--host-tag` are therefore
@@ -82,30 +83,25 @@ mikroscope dashboards check --store graphite --datasource-uid <uid> \
   --var prefix=mikroscope --var host=rb5009
 ```
 
-## The Elasticsearch datasource
+## Elasticsearch datasource {#the-elasticsearch-datasource}
 
 Type `elasticsearch`, with the index the `--elastic-index` you forwarded with produces and
 `@timestamp` as the time field.
 
 This dashboard is the smallest of the five, and the reason is in the documents rather than in the
 queries: the sink writes a sample's per-core and per-device readings as **arrays** — `cpu` is an
-array of four objects — and a dynamically mapped array is a multi-valued field with no
+array of one object per core — and a dynamically mapped array is a multi-valued field with no
 correspondence between its members. `avg(cpu.busy_ratio)` is the mean over the cores, which is a
 real number; "core 2's busy ratio" is not expressible at all without a nested mapping the sink does
 not declare. So the Elasticsearch panels are the scalar aggregates, and the per-core ones are
 absent rather than wrong.
 
 The dashboard has one variable, **Host**, filled by a terms lookup on `host.keyword`, because one
-index can hold several routers. Up to 1.3.0 that lookup was written as a JSON object, a form the
-datasource does not read: Grafana 13.2.1 and 13.2.2 sent it as an empty query and got 400
-`invalid query, missing metrics and aggregations`, 12.3.0 did not send it at all, and Host stayed
-empty. Opened without `?var-host=`, six Overview panels then failed with
-`Failed to parse query [host.keyword:]`, as red badges. It is now the JSON string the datasource
-parses, and on 2026-09-25, over Elasticsearch 9.5.3, Host filled from the index and no panel
-showed a badge on any of the three versions. `check` could not have caught it: it takes the value
-from `--var host=` and never runs the lookup.
+index can hold several routers. The lookup is the JSON string the datasource parses, so Host fills
+from the index (<TestedOn of="dashboards">rendered</TestedOn>). `check` never runs that lookup:
+it takes the value from `--var host=`.
 
-## Importing by hand
+## Import manually {#importing-by-hand}
 
 Grafana → Dashboards → New → Import, as [Grafana's own import
 guide](https://grafana.com/docs/grafana/latest/visualizations/dashboards/build-dashboards/import-dashboards/) describes it: upload the
@@ -113,17 +109,17 @@ guide](https://grafana.com/docs/grafana/latest/visualizations/dashboards/build-d
 prometheus, postgres, graphite or elasticsearch), and pick the datasource when Grafana asks for
 `DS_MIKROSCOPE`.
 
-A file uploaded this way carries the **compiled defaults**: the five panels the reference device
-cannot produce (three on Graphite and Elasticsearch) sit in the not-available row. On InfluxDB
-their queries are switched off; on the other four stores they stay on, because a missing
-measurement is not an error there ([why](/mikroscope/dashboards/#not-available-on-this-device)).
-Every other panel ships with its query on, whether your store holds its measurement or not. On InfluxDB a panel whose table or column is missing then shows InfluxDB 3's
-planning error, as a red badge, when its section is opened. `import` from the CLI avoids that. The
-detections annotation stays on in a file uploaded this way; before the first detection it fails
-without showing anything, as
+A file uploaded this way carries the **compiled defaults**: the PSI and block-device panels (five;
+three on Graphite and Elasticsearch) sit in the not-available row. On InfluxDB their queries are
+switched off; on the other four stores they stay on, because a missing measurement is not an error
+there ([why](/mikroscope/dashboards/#not-available-on-this-device)). Every other panel ships with
+its query on, whether your store holds its measurement or not. On InfluxDB a panel whose table or
+column is missing then shows InfluxDB 3's planning error, as a red badge, when its section is
+opened. `import` from the CLI avoids that. The detections annotation stays on in a file uploaded
+this way; before the first detection it fails without showing anything, as
 [the annotations section](/mikroscope/dashboards/#the-red-dashed-lines-on-every-panel) describes.
 
-## Importing from the CLI
+## Import with the CLI {#importing-from-the-cli}
 
 ```sh
 export GRAFANA_URL=http://grafana:3000 GRAFANA_TOKEN=…
@@ -156,10 +152,10 @@ GRAFANA_TOKEN and --datasource-uid`.
 resolved to your UID, `overwrite` on, into the General folder (`folderId` 0). The dashboard's `uid`
 is fixed, so importing again replaces the same dashboard at the same URL. It prints that URL.
 
-## Letting the collector do it: `forward --grafana`
+## Publish from the collector {#letting-the-collector-do-it-forward---grafana}
 
-Since 1.1.0 the collector can set Grafana up itself. Point `forward` at a Grafana and it reconciles
-one datasource and one dashboard per store it writes to, once, at start, before the first sample:
+Point `forward` at a Grafana and the collector sets it up itself: it reconciles one datasource and
+one dashboard per store it writes to, once, at start, before the first sample:
 
 ```sh
 export GRAFANA_TOKEN=…
@@ -187,20 +183,18 @@ grafana: influxdb: dashboard http://grafana:3000/d/mikroscope-influxdb/…
 
 </ScrollTable>
 
-**It is off unless you ask.** A collector that wrote to somebody's Grafana because it could is not
-a collector anyone should run. `GRAFANA_TOKEN` is required for the same reason: some Grafanas
-accept an anonymous request, and one that did would write as whoever the server thinks is asking.
+- **It is off unless you ask.** A collector that wrote to somebody's Grafana because it could is not
+  a collector anyone should run. `GRAFANA_TOKEN` is required for the same reason: some Grafanas
+  accept an anonymous request, and one that did would write as whoever the server thinks is asking.
+- **A failure here does not stop the collector.** An unreachable Grafana, a rejected token and a
+  datasource the server will not take are each one warning and a collector that goes on
+  collecting. Refusing to start would trade the samples of the hour spent not running, which cannot
+  be recovered, for a dashboard published on the next restart, which can.
+- **Nothing is ever deleted.** A dashboard or datasource under a uid nothing writes to any more is
+  left where it is. Removing somebody's dashboard unasked is not a thing a collector should do, even
+  one it made, because it may be the copy they are looking at.
 
-**A failure here does not stop the collector.** An unreachable Grafana, a rejected token and a
-datasource the server will not take are each one warning and a collector that goes on collecting.
-Refusing to start would trade the thing that cannot be recovered later — the samples of the hour
-spent not running — for the thing that can, a dashboard published on the next restart.
-
-**Nothing is ever deleted.** A dashboard or datasource under a uid nothing writes to any more is
-left where it is. Removing somebody's dashboard unasked is not a thing a collector should do, even
-one it made, because it may be the copy they are looking at.
-
-### Five of five, by two different routes
+### Datasource per sink {#five-of-five-by-two-different-routes}
 
 **Three sinks know the address Grafana queries**, because it is the address
 they write to or dial. **Two cannot know it**, and no amount of reading their
@@ -224,14 +218,13 @@ Graphite one.
 `--sql` is the one that can never be described, and it says so by naming
 `--postgres` — the sink that can — rather than sending you to Grafana. Any of
 them can still be adopted with `--grafana-datasource-uid`, and an adopted
-datasource is never corrected either: reconciling one this did not make would
-overwrite settings nobody asked it to have.
+datasource is never corrected either: reconciling one that `import` did not
+create would overwrite settings someone else chose.
 
 <Aside type="note" title="The PostgreSQL datasource, and two things it will not do">
   The connection string is parsed with **pgx's own parser**, the one the sink
-  dials with, rather than a second one written here — a parser of this
-  project's own would disagree with the sink about what the flag says on
-  exactly the inputs where being wrong matters. It takes the URL form and the
+  dials with, rather than a second one written here, so the datasource and the
+  sink never disagree about what the flag says. It takes the URL form and the
   keyword form alike.
 
   **It copies only a password the connection string itself carries.** pgx reads
@@ -251,25 +244,24 @@ overwrite settings nobody asked it to have.
   `--grafana-datasource-sslmode` decides it outright.
 </Aside>
 
-The InfluxDB one carries its own three, and they are the ones this project got
-wrong first:
+The InfluxDB datasource has settings of its own:
 
 <Aside type="note" title="What the created InfluxDB datasource carries">
-  Three settings that are easy to miss by hand, and each of them was missed here first. The token
-  goes in **both** `token` and `httpHeaderValue1` (`Bearer <token>`), because the plugin reads one
-  on the FlightSQL path and the other on the HTTP path. `insecureGrpc` follows the scheme: against
-  a plain-HTTP store, a datasource without it answers every panel `tls: first record does not look
-  like a TLS handshake` while the store itself is fine (measured 2026-09-19). And the database goes
-  in `jsonData.dbName`, not in the top-level `database` field, which this plugin ignores.
+  Three settings that are easy to miss by hand. The token goes in **both** `token` and
+  `httpHeaderValue1` (`Bearer <token>`), because the plugin reads one on the FlightSQL path and the
+  other on the HTTP path. `insecureGrpc` follows the scheme: against a plain-HTTP store, a datasource
+  without it answers every panel `tls: first record does not look like a TLS handshake` while the
+  store itself is fine. And the database goes in `jsonData.dbName`, not in the top-level `database`
+  field, which this plugin ignores.
 </Aside>
 
-### The URL, and the fields
+### InfluxDB URL fields {#the-url-and-the-fields}
 
-`--influx` used to be the whole write URL, query string and all. It still is, if that is what you
-pass: every 1.0.x deployment has one in `MIKROSCOPE_INFLUX_URL` and it keeps working byte for byte.
-But a write URL is the sink's shape and the wrong shape for everything else — Grafana wants the
-server and the database apart, and it will not take a write path at all. So the fields are the
-interface now:
+`--influx` takes the server and `--influx-db` the database, and the write URL is assembled from
+them. A whole write URL, query string and all, is still taken as it is — the form
+`MIKROSCOPE_INFLUX_URL` may already hold. But a write URL is the sink's shape and the wrong shape
+for everything else: Grafana wants the server and the database apart, and it will not take a write
+path at all.
 
 ```sh
 --influx http://influx:8181 --influx-db mikroscope   # the URL is assembled
@@ -282,7 +274,7 @@ worse than no datasource. A write URL this cannot take apart — a v2 `/api/v2/w
 writes fine and simply cannot describe a datasource, and `forward --grafana` says so instead of
 building one that answers nothing.
 
-## The probe
+## Store probe {#the-probe}
 
 Before generating, `import` and `check` ask the datasource which of mikroscope's measurements it
 holds, through Grafana's `/api/ds/query`:
@@ -315,20 +307,17 @@ It prints `datasource holds N measurements`; on InfluxDB, N counts tables plus `
 so it is larger than the number of measurements. It then generates against the answer:
 
 - A panel whose measurements and required fields are all present ships in its own section with its
-  query — including a panel the reference device could not produce.
+  query — including a panel the compiled defaults put in the not-available row.
 - A panel with anything missing moves into the collapsed "Not available on this device" row **with
   its queries hidden**. It runs nothing, so it cannot paint a red `table … not found` badge; its
   no-value text names what this store does not hold. The queries stay in the panel, so they can be
-  switched back on in its editor. Up to 1.3.0 they were removed instead, and Grafana 12.3.0 gives a
-  panel with no query a default one: on 2026-09-25 the InfluxDB plugin answered it with
-  `No SQL statements were provided in the query string`, as a red badge. Grafana 13.2.1 sent
-  nothing for the same panel.
+  switched back on in its editor.
 - On InfluxDB, a store with no `mikroscope_detection` (or no `mikroscope_trigger`) gets that
   annotation layer switched off, its query kept. Prometheus answers an absent counter with an empty
   result, so the probe leaves its layers as they are.
 - A probe that fails — an error from Grafana, or an answer with no `mikroscope_` names in it — is a
   warning, not an error. `import` and `check` print `warning: could not ask <store> which
-measurements it holds`, with the reason, and carry on with the compiled defaults, so you are told
+  measurements it holds`, with the reason, and carry on with the compiled defaults, so you are told
   which dashboard you got.
 
 `--no-probe` skips the question and uses the compiled defaults, which is also what plain `gen` does,
@@ -341,7 +330,7 @@ and the file <Src path="internal/dashboards/grafana.go" /> has one for those two
 `--no-probe`. That is a gap, not a design: those three stores get the dashboard the panel list
 declares rather than the one their data supports.
 
-## What `check` verifies
+## What check verifies {#what-check-verifies}
 
 `check` generates the dashboard exactly as `import` would — probe included — and then, for every
 panel, including every panel nested inside a collapsed row, sends each of its queries that is not
@@ -353,7 +342,7 @@ data points, raised to the panel's own minimum interval where it has one. Withou
 leaves fewer than two points in the range. Every InfluxDB panel that bins with `$__dateBin` has a
 minimum interval of at least 1 s: Grafana writes that macro's bin in whole seconds, so a step under
 1 s draws a bin 0 seconds wide and the panel comes back empty, in `check` and in a browser zoomed in
-to a few minutes (measured on 2026-09-25, Grafana 13.2.1 and 13.2.2).
+to a few minutes (<TestedOn of="dashboards">measured</TestedOn>).
 
 It prints one line per panel and a verdict:
 
@@ -376,16 +365,20 @@ every panel returns data (<k> known-empty tolerated)
 With one or more failures `check` exits non-zero with `N panel(s) return no data (K known-empty
 tolerated)`. A dashboard is not done until every panel that is not known-empty returns rows.
 
-## What `check` does not verify
+<Aside type="note" title="Empty by configuration is not known-empty">
+	Only panels marked in the generator, or moved into the not-available row by the probe, are
+	tolerated. A panel that is empty because of how the collector was run — the interface panels
+	under `--api-mode off`, the slab panels on an unprivileged agent — is not marked: on a store that
+	never held its measurement the probe moves it into the not-available row, and on a store that
+	held it earlier but not in the window, `check` fails it.
+</Aside>
 
-<NotClaimed variant="untested" title="Beyond the row count">
-	`check` counts rows. It does not see a legend, an axis, a unit, a colour, a threshold or the grid.
-	On 2026-09-12 `dashboards check --store influxdb --window 12h` passed on all 125 panels it walked
-	while about 90 of them were unreadable in a browser: legends reading "value core 0", two xycharts
-	stuck on "Loading plugin panel…", a continuity lane that stayed green over 2 170 missing ticks.
-	Readability is established by rendering the dashboard in Chromium; `check` passing says nothing
-	about it.
-</NotClaimed>
+## Check limitations {#what-check-does-not-verify}
+
+`check` counts rows. It does not see a legend, an axis, a unit, a colour, a threshold or the grid,
+and a passing `check` says nothing about whether the dashboard is readable
+(<TestedOn of="not-tested">an example</TestedOn>). Readability is established by rendering the
+dashboard in a browser.
 
 What else is outside its reach, from the code:
 
@@ -397,103 +390,37 @@ What else is outside its reach, from the code:
   run.
 - **Alert rules.** The provisioning files `gen` writes are not loaded or evaluated.
 - **A variable's own query.** `check` takes each variable's value from `--var` and never runs the
-  lookup that fills the picker. Up to 1.3.0 the Elasticsearch Host lookup failed on Grafana 12.3.0,
-  13.2.1 and 13.2.2 while `check` passed.
+  lookup that fills the picker, so a lookup that fails in the browser still passes.
 - **What the browser does to a query.** Some variables are substituted in the browser, not by the
-  server `check` talks to. On 2026-09-14 the InfluxDB datasource escaped `$__interval_ms` in five
-  panels, in the browser, into SQL InfluxDB 3 could not parse; the rendered dashboard showed it.
-- **The real panel width.** `check` pretends every panel is 900 data points wide, the value the
-  browser sent for this dashboard's graphs on 2026-09-12. A narrower panel gets a wider bin.
+  server `check` talks to. The InfluxDB datasource can escape a macro such as `$__interval_ms` in
+  the browser into SQL InfluxDB 3 cannot parse (<TestedOn of="dashboards">seen</TestedOn>);
+  only the rendered dashboard shows it.
+- **The real panel width.** `check` pretends every panel is 900 data points wide, the value a
+  browser sent for this dashboard's graphs. A narrower panel gets a wider bin.
 
-## Checking against a finished capture
+## Check a past window {#checking-against-a-finished-capture}
 
 `--window` is the length of the query window and `--end` moves its right edge, so the panels can be
 checked against a capture that has already finished rather than against an idle now:
 
 ```sh
 mikroscope dashboards check --store influxdb --datasource-uid <uid> \
-  --window 1h --end 2026-09-13T08:30:00Z
+  --window 1h --end <RFC 3339 time>
 ```
 
 A panel answers differently over a window with data than over one without, and a check is only
 as good as the window it is pointed at.
 
-## What has been verified
+<Anchor name="what-has-been-verified" />
 
-**2026-09-25**, on the owner's Grafana 13.2.2, against the reference InfluxDB 3 store, with a build
-of the change that hides the not-available queries: `dashboards check --window 1h`, with the probe
-and with `--no-probe`, gave 164 panels with rows, 12 known-empty tolerated and 1 failing, "Detections
-in the window", because the store held no detection in that hour. Without the probe the five
-not-available panels read `none … rows=0 frames=0` with no error text, where 1.3.0 printed
-`400 … table … not found` on each. The two trigger panels still answer `mikroscope_trigger not found`
-without the probe, because that store has no trigger table. The detections annotation's SQL, sent
-through `/api/ds/query`, returned 44 rows over 6 hours. Run again later that day, after the other
-four stores' unprobed files got their not-available queries back, it gave the same counts, and the
-detections layer 32 rows over 6 hours; the InfluxDB file it checked was byte-identical to the first
-run's. The same day, Grafana 12.3.0 and 13.2.1 over
-a throwaway InfluxDB 3.11.2 Core store were used for the renders on
-[Five dashboards](/mikroscope/dashboards/#not-available-on-this-device): the not-available row, a
-probed `import` from 1.3.0 and from 1.3.1, and the detections layer.
-
-**2026-09-16**, on the owner's Grafana 13.2.1, against the reference deployment: the agent on the
-reference RB5009 (RouterOS 7.24.2, privileged, the default triggers);
-`forward --prom :9124 --influx … --interfaces bridge,ether1,PPPoE_DIGI --counters-every 10s` for
-30 minutes into an isolated InfluxDB 3 Core; a Prometheus 3.14 scraping the collector every 5 s,
-plus the agent directly for the families the collector cannot recompute.
-
-<ScrollTable label="dashboards check results, 2026-09-16">
-
-| Store      | Window     | Panels | Failing | Known-empty tolerated                                                                                              |
-| ---------- | ---------- | -----: | ------: | -------------------------------------------------------------------------------------------------------------------- |
-| InfluxDB 3 | 30 minutes |    171 |       0 | 10 (the two port-event panels, the opt-in conntrack poll, the two trigger panels, PSI, the four idle block devices) |
-| Prometheus | 30 minutes |    133 |       0 | 9 (the two port-event panels, the two conntrack API panels, PSI, the four block devices)                            |
-
-</ScrollTable>
-
-The two port-event panels' SQL was validated the same day against a synthetic table in the same
-InfluxDB 3, because the live store holds no `kind` column until the first port record classified by
-kind is written to it.
-
-**2026-09-20**, in the docker end-to-end suite, for `forward --grafana` itself: the collector was
-pointed at a real Grafana and each of the five stores in turn, allowed to create the datasource,
-and then `dashboards check` was run **against the datasource the collector had just built** — every
-panel's query, through Grafana's own query API.
-
-That is the shape the check has to take here, because what goes wrong is never the JSON. Grafana
-accepts a datasource and the query path then refuses it: both InfluxDB traps this project has hit
-were exactly that, one answering `flightsql: Unauthenticated` and the other `tls: first record does
-not look like a TLS handshake` from a datasource the API had stored without complaint. All five
-stores' dashboards answered from what the collector built, with no datasource error on any panel.
-
-The same run found a defect no unit test had: a collector writing to a live PostgreSQL through
-`--postgres` and nothing else published nothing at all and reported "there is nothing to publish",
-because the store list still only knew `--sql`.
-
-The headless row-by-row walk of both dashboards in Chromium at 1600x1000 — 0 error badges, 0 "No
-data" — is from **2026-09-15** and covers 168 InfluxDB panels and 130 Prometheus ones. It has not
-been repeated, so no render pass is claimed for the three panels it did not cover: the two
-port-event panels and "What each interface is: type, role, bridge and label".
-
-**2026-09-12**, on the owner's Grafana 12.3.2. The InfluxDB dashboard against an isolated InfluxDB 3
-Core fed by `mikroscope forward` from an RB5009: every panel returned rows, 158–316 per panel over
-10 minutes. The Prometheus dashboard against a Prometheus 3.14 scraping the collector every 5 s:
-every panel returned rows, 228–2 052 over 5 minutes.
-
-<Aside type="note" title="Empty by configuration is not known-empty">
-	The 10 and 9 above are that deployment over that window. Only panels marked in the generator, or
-	moved into the not-available row by the probe, are tolerated. A panel that is empty because of how
-	the collector was run — the interface panels under `--api-mode off`, the slab panels on an
-	unprivileged agent — is not marked: on a store that never held its measurement the probe moves it
-	into the not-available row, and on a store that held it earlier but not in the window, `check`
-	fails it.
-</Aside>
+The Grafana versions, stores and windows that `check` and the browser renders have run against
+are on <TestedOn of="dashboards">Tested on</TestedOn>.
 
 <SeeAlso>
 
 ## See also
 
-- [Five dashboards, one panel list](/mikroscope/dashboards/): every section and panel, and which store
-  carries each.
+- [Dashboards](/mikroscope/dashboards/): every section and panel, and which store carries each.
 - [Alert rules](/mikroscope/dashboards/alerts/): the provisioning files `gen` writes, which `check`
   does not run.
 - [Prometheus](/mikroscope/sinks/prometheus/): the collector's `/metrics`, which the scrape job reads.

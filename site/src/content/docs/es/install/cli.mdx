@@ -1,6 +1,10 @@
 ---
-title: Tener la CLI en tu máquina
-description: La CLI `mikroscope` en Linux, macOS o Windows — qué archivo es para tu ordenador y no para el router, cómo verificarlo y dónde ponerlo.
+title: Instalar la CLI
+description: Instala la CLI `mikroscope` en Linux, macOS o Windows, elige el archivo de tu ordenador y no el del router, y verifícalo.
+docType: how-to
+head:
+  - tag: title
+    content: Instalar la CLI de mikroscope en Linux, macOS o Windows | mikroscope
 ---
 
 import { Aside, Steps, Tabs, TabItem } from "@astrojs/starlight/components";
@@ -18,9 +22,9 @@ Se publican dos programas a la vez y se ejecutan en máquinas distintas:
 
 Así que el archivo que quieres aquí lo decide **tu** sistema operativo y tu
 CPU, no los del router. La arquitectura del router decide otra cosa, y esa
-tabla está en [Lo que necesita el router](/mikroscope/es/install/prerequisites/).
+tabla está en [Requisitos](/mikroscope/es/install/prerequisites/).
 
-## Una orden
+## Script de instalación {#una-orden}
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/jmrplens/mikroscope/main/install.sh | bash
@@ -68,7 +72,7 @@ El resto de esta página es lo que hacen esos scripts, plataforma por plataforma
 para quien prefiera leer él mismo la suma de comprobación del archivo — o esté
 en una máquina donde `curl | bash` no es algo que se teclee.
 
-## Qué archivo
+## Elegir un archivo {#qué-archivo}
 
 <ScrollTable label="Qué archivo de la CLI descargar para tu propia máquina">
 
@@ -85,7 +89,7 @@ en una máquina donde `curl | bash` no es algo que se teclee.
 Están en la [última publicación](https://github.com/jmrplens/mikroscope/releases/latest).
 Todo lo que empiece por `mikroscope-agent` es el otro programa.
 
-## Instalarla
+## Instalación manual {#instalarla}
 
 <Tabs syncKey="os">
 
@@ -188,10 +192,10 @@ Todo lo que empiece por `mikroscope-agent` es el otro programa.
 </Steps>
 
 <Aside type="note" title="ssh en Windows">
-	Tres de las cuatro rutas de instalación llegan al router por ssh, y la CLI usa el `ssh` y el `scp`
-	que haya en tu `PATH`. Windows 10 y 11 traen OpenSSH: `Get-Command ssh` debería encontrarlo, y
-	**Configuración → Sistema → Características opcionales** lo instala si no. La cuarta ruta,
-	[un script de RouterOS](/mikroscope/es/install/routes/#un-script-de-routeros), no necesita ssh.
+	La CLI llega al router por ssh, con el `ssh` y el `scp` que haya en tu `PATH`. Windows 10 y 11
+	traen OpenSSH: `Get-Command ssh` debería encontrarlo, y **Configuración → Sistema →
+	Características opcionales** lo instala si no. Un [script de RouterOS](/mikroscope/es/install/script/)
+	no necesita ssh.
 </Aside>
 
 </TabItem>
@@ -223,25 +227,30 @@ make build-agent    # deja bin/mikroscope-agent-<goarch>
 
 </Tabs>
 
-## Comprobarla
+## Verificar la instalación {#comprobarla}
 
 ```sh
 mikroscope version
 ```
 
-Imprime la versión, el commit y la fecha de compilación. Después, con un router
-al que apuntar:
+Imprime la versión, el commit y la fecha de compilación:
+
+```text
+mikroscope {{MIKROSCOPE_VERSION}} (commit <commit>, built <time>)
+```
+
+Después, con un router al que apuntar:
 
 ```sh
-mikroscope doctor --router user@192.168.88.1
+mikroscope doctor --router admin@192.168.88.1
 ```
 
 `doctor` no escribe nada. Lee el equipo, imprime qué es y marca cada requisito
 como `ok` o `MISSING`, y como `WARN` la comprobación de aviso que encuentra algo,
 con la orden que lo arregla —incluido el que nadie puede hacer en remoto—, y
 después informa de lo que muestra un agente ya en marcha
-([Lo que muestra el agente en marcha](/mikroscope/es/install/prerequisites/#lo-que-muestra-el-agente-en-marcha)).
-Es lo primero que hay que ejecutar, antes de cualquier ruta de instalación.
+([Comprobaciones de salud](/mikroscope/es/install/prerequisites/#lo-que-muestra-el-agente-en-marcha)).
+Ejecútalo primero, antes de cualquier método de instalación.
 
 <Aside type="tip" title="Las opciones tienen variables de entorno">
 	`--router`, `--ssh-port`, `--ssh-key`, `--arch` y las demás opciones de conexión y de nombres toman
@@ -255,10 +264,12 @@ Es lo primero que hay que ejecutar, antes de cualquier ruta de instalación.
 
 ## Véase también
 
-- [Lo que necesita el router](/mikroscope/es/install/prerequisites/): los tres
-  requisitos en el equipo, y la tabla de arquitecturas **del router**.
-- [Cuatro formas de instalar](/mikroscope/es/install/routes/): cómo llega la
-  imagen del agente al router una vez tienes la CLI.
-- [Órdenes y opciones](/mikroscope/es/reference/cli/): cada verbo y cada opción.
+- [Requisitos](/mikroscope/es/install/prerequisites/): los requisitos en el
+  equipo, y la tabla de arquitecturas **del router**.
+- [Instalar con la CLI](/mikroscope/es/install/): lo que hace `install` una vez
+  tienes la CLI.
+- [Métodos de instalación](/mikroscope/es/install/routes/): las otras formas de
+  poner el agente en el router.
+- [CLI](/mikroscope/es/reference/cli/): cada verbo y cada opción.
 
 </SeeAlso>

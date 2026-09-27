@@ -1,23 +1,21 @@
 ---
-title: Qué se ejecuta dónde
+title: Modelo de seguridad
 description: Qué pieza de mikroscope corre en el router MikroTik y cuál en tu máquina, a qué llega cada una, dónde vive cada credencial y cómo informar de un fallo.
+docType: explanation
 head:
   - tag: title
     content: "Seguridad: qué se ejecuta en el router MikroTik | mikroscope"
 ---
 
 import EnvlistKeys from "../../../../components/EnvlistKeys.astro";
-import NotClaimed from "../../../../components/NotClaimed.astro";
 import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
 import Src from "../../../../components/Src.astro";
-import Verified from "../../../../components/Verified.astro";
+import TestedOn from "../../../../components/TestedOn.astro";
 
-Esta página responde a la pregunta que hay que hacerse antes de poner nada en un router de
-producción: qué ejecuta mikroscope en él, qué ejecuta en tu propia máquina, a qué puede llegar cada
-pieza y qué credencial está en cada sitio. En corto: el router aloja un agente que escucha y nunca
-abre conexiones hacia fuera, y toda credencial que abre algo distinto del agente se queda en tu
-máquina.
+El router aloja un agente que escucha y nunca abre conexiones hacia fuera, y toda credencial que
+abre algo distinto del agente se queda en tu máquina. La tabla de abajo es el mapa entero: qué se
+ejecuta dónde, a qué llega y qué credencial guarda.
 
 ## Qué se ejecuta dónde
 
@@ -49,13 +47,12 @@ La exposición Prometheus del propio colector, `forward --prom <dirección>`, es
 que le pases y sirve `/metrics` sin autenticación. Enlázala a una dirección a la que solo llegue tu
 Prometheus.
 
-## Las credenciales se quedan fuera del router
+## Credenciales en el router {#las-credenciales-se-quedan-fuera-del-router}
 
-**Por la API binaria, `/container/print` devolvió todas las propiedades de todos los contenedores,
-`cmd` y `envlist` incluidas, a un usuario con solo `read,api`** (<Verified of="read-user-envlist" />;
-solo se imprimieron los nombres de las propiedades). Leer los valores de las entradas de
-la envlist, en `/container/envs`, con un usuario así no se comprobó por separado. El diseño supone
-que también se pueden leer: lo que haya en una envlist se trata como legible por cualquier usuario
+**Por la API binaria, `/container/print` devuelve todas las propiedades de todos los contenedores,
+`cmd` y `envlist` incluidas, a un usuario con solo `read,api`** (<TestedOn of="read-user-envlist">verificado</TestedOn>).
+Si un usuario así puede leer también los valores de las entradas de la envlist, en `/container/envs`, está <TestedOn of="not-tested">sin probar</TestedOn>.
+El diseño supone que sí: lo que haya en una envlist se trata como legible por cualquier usuario
 `read` de ese router, no solo por los administradores.
 
 Por eso el agente no tiene destino push: un token de destino en el router lo podría leer cualquier
@@ -75,9 +72,9 @@ el log del router como `token=true`.
 `plan --rsc` es la excepción a ese enmascarado. Escribe la instalación como un script de RouterOS
 para ejecutarlo en el propio router, así que la línea de la envlist tiene que llevar el token real;
 el propio script lo dice en su cabecera. Un `.rsc` generado con un token dentro es una credencial:
-[lo que el instalador rechaza](/mikroscope/security/installer/) explica cómo tratarlo.
+[Salvaguardas del instalador](/mikroscope/es/security/installer/) explica cómo tratarlo.
 
-## Dónde viven las credenciales del colector
+## Credenciales del colector {#dónde-viven-las-credenciales-del-colector}
 
 En tu máquina, las credenciales que abren algo distinto del agente se leen solo del entorno, nunca
 de una opción, con una excepción: el DSN de PostgreSQL, abajo. El código da el motivo: una opción
@@ -100,7 +97,7 @@ mismo razonamiento vale para él, así que prefiere la variable.
 La CLI no lee `.env` por su cuenta. Exporta las variables a la shell que la ejecuta, por ejemplo con
 `set -a; . ./.env; set +a`.
 
-## De dónde sale la imagen del agente
+## Origen de la imagen del agente {#de-dónde-sale-la-imagen-del-agente}
 
 El contenedor ejecuta una imagen, y la vía que la pone ahí decide en qué estás confiando.
 
@@ -116,22 +113,23 @@ El contenedor ejecuta una imagen, y la vía que la pone ahí decide en qué est�
   `registry-1.docker.io` para Docker Hub; el ajuste global `/container/config registry-url` ni hace
   falta ni se escribe. Confías en ese registro y en el camino del router hasta él, y mikroscope no
   verifica nada de lo que llega. `/container/config` guarda además un único usuario y contraseña de
-  registro para todo el equipo, y un login de Docker Hub enviado a GHCR terminó una descarga en
-  `auth error`; [lo que el instalador rechaza](/mikroscope/es/security/installer/) explica qué
-  supone y qué comprueba `doctor`.
+  registro para todo el equipo, y un login de Docker Hub enviado a GHCR hace fallar la descarga con `auth error` (<TestedOn of="install-routes">probado</TestedOn>);
+  [Salvaguardas del instalador](/mikroscope/es/security/installer/) explica qué supone y qué
+  comprueba `doctor`.
 - `plan --rsc` escribe esas mismas órdenes como un script de RouterOS para pegarlo o hacerle
   `/import`; la imagen sigue teniendo que llegar por una de las dos vías anteriores que no necesitan
   una subida desde la CLI.
 
-## El contenedor
+## Ajustes del contenedor {#el-contenedor}
 
-`install` crea un contenedor con estos ajustes, todos impresos por `plan` antes de escribir nada:
+`install` crea un contenedor con estos ajustes, todos impresos por `plan` antes de escribir
+nada (<TestedOn of="devices-and-versions">dónde se verificaron</TestedOn>):
 
-- **`privileged=yes` por defecto**, `--privileged=false` para renunciar a ello. El ajuste necesita RouterOS 7.24 o posterior, cuyo [registro de cambios](https://download.mikrotik.com/routeros/7.24/CHANGELOG) añadió el modo privilegiado para contenedores. Quita el espacio de nombres de usuario del contenedor (verificado en <Verified of="privileged-namespaces" />), que es lo que hace legibles el log del
+- **`privileged=yes` por defecto**, `--privileged=false` para renunciar a ello. El ajuste necesita RouterOS 7.24 o posterior, cuyo [registro de cambios](https://download.mikrotik.com/routeros/7.24/CHANGELOG) añadió el modo privilegiado para contenedores. Quita el espacio de nombres de usuario del contenedor (<TestedOn of="privileged-namespaces">verificado</TestedOn>), que es lo que hace legibles el log del
   kernel, `/proc/slabinfo`, `/proc/pagetypeinfo` y los contadores ECC de la MTD. **No** quita el
   espacio de nombres de red ni el de PID: ni contadores de interfaz, ni la tabla conntrack del
-  router, ni vista de los procesos de RouterOS. [Lo que aporta privileged](/mikroscope/es/limits/privileged/)
-  tiene las medidas.
+  router, ni vista de los procesos de RouterOS. [Modo privilegiado](/mikroscope/es/limits/privileged/)
+  tiene lo que hace legible.
 - **`memory-max=64M`** (`--memory-max`), aplicado como límite cgroup del contenedor, con el límite
   blando de Go del agente (`--mem-limit-mb`) dentro de él. Si no pasas un número, se deriva del
   anillo (cadencia × búfer × línea, × 2,5, con un mínimo de 16 MiB y un máximo de tres cuartos de
@@ -139,12 +137,11 @@ El contenedor ejecuta una imagen, y la vía que la pone ahí decide en qué est�
 - **`restart-policy=on-failure`**, limitado a cinco reintentos separados diez segundos, para que una
   imagen rota no pueda entrar en bucle al arrancar.
 - **`start-on-boot=yes`**, o `no` con `--ephemeral`, cuya raíz vive en el disco tmpfs y no sobrevive
-  a un reinicio.
+  a un reinicio. Que la instalación sobreviva a un reinicio con `yes` está <TestedOn of="not-tested">sin probar</TestedOn>.
 - **`logging=yes`**, para que las líneas de ciclo de vida del agente lleguen al log del router.
 - **`ignore-remote-image-change=yes`**: con el valor por defecto, RouterOS vigila la imagen y, en
-  cuanto se borra el tar, detiene y elimina el contenedor y lo vuelve a extraer minutos después
-  (<Verified of="remote-image-change" />). `install` borra el tar justo después de la extracción, y
-  por eso fija este ajuste.
+  cuanto se borra el tar, detiene y elimina el contenedor y lo vuelve a extraer minutos después (<TestedOn of="remote-image-change">verificado</TestedOn>).
+  `install` borra el tar justo después de la extracción, y por eso fija este ajuste.
 - Raíz e imagen en el disco que elegiste con `--disk`: la flash interna por defecto.
 - **Ningún bind mount.** `install` no monta ninguna ruta del anfitrión dentro del contenedor.
 
@@ -153,19 +150,11 @@ El agente lee `/proc`, `/sys` (`/sys/fs/cgroup` para su propia contabilidad, `/s
 hardware. No escribe nada en su raíz durante la ejecución: el anillo y las capturas por disparo se
 guardan en memoria. Atrapa SIGTERM, porque RouterOS mata en el acto a un contenedor que no lo hace.
 
-El último ajuste de la lista es deliberado. El 2026-09-15 se le dieron a un contenedor privilegiado
-en el RB5009 de referencia `/proc`, `/sys` y `/` del anfitrión como bind mounts, para ver si un
-montaje da más acceso. El `/proc` del anfitrión se montó pero leyó cero PID, y el `/sys` del
-anfitrión no tenía `class/net`: los espacios de nombres aguantaron. El `/` del anfitrión sí
-funcionó, y expone el sistema de ficheros de la flash de RouterOS — configuración y ficheros,
-secretos incluidos. mikroscope no hace esto, y un contenedor que construyas tú tampoco debería.
-
-<NotClaimed variant="untested">
-	Que la instalación persistente sobreviva a un reinicio no está probado: el router de referencia es
-	de producción y no se reinicia para pruebas. Los ajustes del contenedor de arriba se verificaron
-	en un RB5009 con RouterOS 7.24.2 y se volvieron a ejercitar sobre 7.24.4; no se probó ninguna otra
-	placa.
-</NotClaimed>
+El último ajuste de la lista es deliberado. Montar `/proc` y `/sys` del anfitrión en un contenedor
+privilegiado no añade nada, porque los espacios de nombres aguantan, pero el `/` del anfitrión
+expone el sistema de ficheros de la flash de RouterOS, configuración y secretos incluidos
+([Montajes del host](/mikroscope/es/limits/namespaces/#montar-las-rutas-del-host-no-cruza-la-frontera)).
+mikroscope no hace esto, y un contenedor que construyas tú tampoco debería.
 
 ## Informar de una vulnerabilidad
 
@@ -194,13 +183,13 @@ vulnerabilidades.
 
 ## Véase también
 
-- [El usuario de la API](/mikroscope/es/security/api-user/): el usuario de RouterOS que necesita el
+- [Usuario de la API](/mikroscope/es/security/api-user/): el usuario de RouterOS que necesita el
   colector, y la política que recibe.
-- [Lo que abre `--expose`](/mikroscope/es/security/expose/): las dos reglas de cortafuegos, y por qué
+- [Exponer en la LAN](/mikroscope/es/security/expose/): las dos reglas de cortafuegos, y por qué
   el token pasa a ser obligatorio.
-- [Lo que el instalador rechaza](/mikroscope/es/security/installer/): los objetos sobre los que no
+- [Salvaguardas del instalador](/mikroscope/es/security/installer/): los objetos sobre los que no
   construye, y los valores que no mete en una orden.
-- [Lo que aporta privileged](/mikroscope/es/limits/privileged/): lo que lee la concesión de
+- [Modo privilegiado](/mikroscope/es/limits/privileged/): lo que lee la concesión de
   privilegio por defecto, y lo que no.
 
 </SeeAlso>

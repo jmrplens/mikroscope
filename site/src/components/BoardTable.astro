@@ -1,0 +1,39 @@
+---
+/**
+ * A table of boards and the architecture each one takes.
+ *
+ * A guide names no device (src/lib/voice.mjs), with one exception: the table
+ * that tells a reader which build their router needs has to name routers.
+ * Wrapping it here marks it `data-voice-exempt`, which scripts/check-voice.mjs
+ * skips in the source and in the build, and nothing else. Keep the table to
+ * compatibility facts: which board, which `architecture-name`, which image.
+ * What was run on which board, and when, is evidence and goes to Tested on.
+ *
+ * With `label` or `labelledby` it is also the ScrollTable that names and
+ * scrolls the table, so a table that was `<ScrollTable label="…">` becomes
+ * `<BoardTable label="…">` and nothing else changes.
+ */
+import ScrollTable from "./ScrollTable.astro";
+
+interface Props {
+	label?: string;
+	labelledby?: string;
+	nowrap?: boolean;
+	sticky?: boolean;
+}
+
+const { label, labelledby, nowrap, sticky } = Astro.props;
+const scroll = label !== undefined || labelledby !== undefined;
+---
+
+<div class="ms-board-table" data-voice-exempt="board-table">
+	{
+		scroll ? (
+			<ScrollTable label={label} labelledby={labelledby} nowrap={nowrap} sticky={sticky}>
+				<slot />
+			</ScrollTable>
+		) : (
+			<slot />
+		)
+	}
+</div>

@@ -1,95 +1,162 @@
 ---
-title: Cómo se prueba el proyecto a sí mismo
-description: "Tres capas de pruebas para los destinos (los bytes de cada uno, si un almacén real los acepta, si responden los paneles) y un laboratorio virtual de RouterOS para el instalador; qué prueba cada una y qué no prueba ninguna."
+title: Baterías de pruebas
+description: "Las cuatro baterías de pruebas, unitaria, de extremo a extremo, contra almacenes reales y el laboratorio virtual de RouterOS: qué demuestra cada una, cómo ejecutarla, qué necesita y cuándo la ejecuta la CI."
+docType: evidence
+head:
+  - tag: title
+    content: "Baterías de pruebas: unitaria, e2e, almacenes, RouterOS | mikroscope"
 ---
 
 import { Aside } from "@astrojs/starlight/components";
-import NotClaimed from "../../../../components/NotClaimed.astro";
 import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
 import Src from "../../../../components/Src.astro";
+import TestedOn from "../../../../components/TestedOn.astro";
 
-Un destino puede equivocarse en tres sitios, y cada uno pide una prueba
-distinta. Puede codificar los bytes equivocados. Puede codificar bytes que un
-almacén rechaza — algo que un servidor de captura nunca advierte, porque
-responde 204 a todo. Y puede escribir algo que el almacén guarda pero ningún
-panel puede volver a leer.
+Cuatro baterías prueban mikroscope, y ninguna necesita un router. Ejecuta la
+que cubre tu cambio antes de abrir un pull request. La CI ejecuta las tres
+primeras en cada pull request. El laboratorio se ejecuta cada semana y a
+petición, así que ejecútalo tú antes de un pull request que toque lo que
+instala el agente.
 
-El proyecto tiene por eso tres capas, y son tres órdenes.
+<ScrollTable label="Las cuatro baterías de pruebas: la orden, qué necesita cada una y qué demuestra">
 
-<ScrollTable label="Las tres capas de prueba, qué demuestra cada una y qué necesita">
-
-| Capa                | Orden                  | Docker | Qué demuestra                                                          |
-| ------------------- | ---------------------- | ------ | ----------------------------------------------------------------------- |
-| 1, el contrato      | `make test-e2e`        | no     | los bytes exactos que cada destino pone en el cable                     |
-| 2, los almacenes    | `make test-e2e-docker` | sí     | que un almacén real los acepta y los devuelve sin cambiarlos            |
-| 3, los paneles      | la misma orden         | sí     | que la consulta de cada panel responde contra lo que los destinos escribieron |
+| Batería                         | Orden                                  | Necesita                              | Qué demuestra                                                                                                  |
+| ------------------------------- | -------------------------------------- | ------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Unitaria                        | `go test ./cmd/... ./internal/...`     | Go                                    | cada paquete, contra árboles `/proc` capturados, simulaciones y ficheros de referencia                         |
+| De extremo a extremo            | `make test-e2e`                        | Go                                    | los dos binarios como procesos separados, y los bytes exactos que envía cada destino                           |
+| Almacenes                       | `make test-e2e-docker`                 | Linux, Docker                         | que un almacén real acepta esos bytes y los devuelve; que responde la consulta de cada panel de los dashboards |
+| Laboratorio virtual de RouterOS | `make lab-up` y después `make test-lab` | Linux, Docker, `/dev/kvm` para x86_64 | las órdenes de despliegue contra un RouterOS real, con el `/export` del router igual al inicial tras cada una  |
 
 </ScrollTable>
 
-Ninguna de las tres toca un router. Las capas 1 y 2 ejecutan el colector contra
-un agente simulado que sirve muestras enlatadas, y la capa 1 ejecuta además el
-binario real del agente contra <Src path="testdata/proc/rb5009/" />, un árbol `/proc` y
-`/sys` capturado del equipo de referencia. Eso es lo que hace que una ejecución
-sea reproducible en cualquier máquina, y lo que deja al router fuera del bucle.
+`make test` ejecuta juntas la batería unitaria y la de extremo a extremo. Las
+de almacenes y laboratorio van tras las etiquetas de compilación `dockere2e` y
+`labe2e`, así que `make test` no compila ninguna de las dos, y `make lint`
+comprueba los tipos de ambas para que no se pudran.
 
-Las órdenes que escriben en un router —`install`, `upgrade`, `uninstall` y el
-resto— se prueban aparte, contra un RouterOS real que no es el router de
-nadie: el [laboratorio virtual de RouterOS](#el-laboratorio-virtual-de-routeros).
+Cuándo se ejecutó cada batería por primera vez, cuánto tarda y qué encontró
+está en <TestedOn of="test-suites">Probado en</TestedOn>.
 
-## Capa 1 — el contrato
+## Elegir una batería
 
-`make test-e2e` compila los dos binarios y apunta cada destino a un receptor
-dentro del binario de prueba: servidores HTTP de captura para InfluxDB, Loki,
-OTLP, Elasticsearch y Telegraf, escuchas TCP y UDP para Graphite y los modos de
-socket de Telegraf, ficheros reales para los destinos de fichero y SQL, la
-salida estándar del propio proceso, y un scrape del `/metrics` del colector
-para Prometheus. Cada receptor comprueba lo que llegó, byte a byte.
+<ScrollTable label="Qué batería ejecutar para cada cambio">
+
+| Has cambiado                                                                       | Ejecuta                                                                          |
+| ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Cualquier código Go                                                                | `make test`                                                                      |
+| El muestreador, el anillo, el flujo o un destino                                   | además, `make test-race`                                                         |
+| Una prueba que podría haber empezado a depender de la red                          | `make test-e2e-offline` (Linux)                                                  |
+| Un destino, su codificación o su esquema, o un dashboard                           | `make test-e2e-docker`                                                           |
+| `internal/router`, una orden de despliegue, la imagen del agente o cómo arranca    | `make lab-up` y después `make test-lab`                                          |
+| El conductor del laboratorio (`cmd/mikroscope-lab`, `internal/lab`)                | `go test ./internal/lab/... ./cmd/mikroscope-lab/` y después `make test-lab`     |
+
+</ScrollTable>
+
+Las comprobaciones estáticas que también debe pasar un pull request (`make
+analyze`, el presupuesto de tamaño del agente, las puertas del sitio) están
+en <Src path="CONTRIBUTING.md" />.
+
+## Batería unitaria
+
+```sh
+go test ./cmd/... ./internal/...   # solo la batería unitaria
+make test                          # todos los paquetes sin etiqueta, incluida la batería de extremo a extremo
+make test-race                     # todas las baterías bajo el detector de carreras
+make cover-check                   # falla por debajo de COVERAGE_MIN sobre cmd/ e internal/
+```
+
+Cada paquete se prueba contra datos de prueba, nunca contra un router:
+
+- Los analizadores de `/proc` y `/sys` leen un árbol capturado de un router
+  real, <Src path="testdata/proc/rb5009/" />.
+- `plan`, el guion de instalación y los listados se comparan con ficheros de
+  referencia en <Src path="internal/router/testdata/" />, un juego por cada
+  caso de `cases.json`. `make check-generated` falla cuando la copia de esos
+  guiones que tiene el sitio está desfasada.
+- El conductor del laboratorio se prueba contra un Docker falso y un router
+  falso: el aprovisionamiento, el cerrojo, las descargas y sus sumas de
+  comprobación, la cadena de instantáneas, las reglas del cortafuegos, la línea
+  de órdenes de QEMU y los rechazos de la CLI.
+
+<ScrollTable label="Dónde ejecuta la CI la batería unitaria">
+
+| Trabajo                                 | Qué ejecuta                                                                    | Cuándo                                  |
+| --------------------------------------- | ------------------------------------------------------------------------------ | --------------------------------------- |
+| Multiplataforma, Linux, macOS, Windows  | la batería unitaria; en macOS y Windows, también la de extremo a extremo       | en cada pull request                    |
+| Cobertura                               | `make cover-check`                                                             | en cada pull request                    |
+| Detector de carreras                    | `make test-race`                                                               | cada semana, y antes de una publicación |
+
+</ScrollTable>
+
+## Batería de extremo a extremo {#capa-1--el-contrato}
+
+`make test-e2e` compila los dos binarios y los maneja como procesos
+separados. El agente lee el árbol capturado. El colector lee ese agente, o uno
+simulado que sirve muestras enlatadas, y escribe cada destino en un receptor
+dentro del binario de prueba, que comprueba lo que llegó byte a byte.
+
+<ScrollTable label="El receptor al que escribe cada destino en la batería de extremo a extremo">
+
+| Destino                                       | Receptor                                  |
+| --------------------------------------------- | ----------------------------------------- |
+| InfluxDB, Loki, OTLP, Elasticsearch, Telegraf | un servidor HTTP de captura               |
+| Graphite, los modos de socket de Telegraf     | escuchas TCP y UDP                        |
+| Fichero, SQL                                  | ficheros reales                           |
+| stdout                                        | la salida estándar del propio proceso     |
+| Prometheus                                    | un scrape del `/metrics` del colector     |
+
+</ScrollTable>
 
 No necesita router, ni Grafana, ni base de datos, ni contenedor, ni red: toda
 dirección que enlaza o marca está en loopback. `make test-e2e-offline` lo
-demuestra en vez de afirmarlo, ejecutando la batería entera dentro de un
-espacio de nombres de red que no tiene más que `lo`.
+demuestra en Linux ejecutando la batería en un espacio de nombres de red sin
+nada más que `lo`. Necesita `unshare` y `setpriv`, y ejecuta `unshare` con
+`sudo` salvo que ya tenga la capacidad.
 
-## Capa 2 — los almacenes
+La CI ejecuta la batería y su forma sin red en cada pull request, cada semana
+y antes de una publicación, y ejecuta la batería también en macOS y Windows,
+donde pueden cambiar el nombre del ejecutable, los ficheros que escriben los
+destinos de fichero y SQL y la forma de parar un proceso hijo.
 
+## Batería de almacenes {#capa-2--los-almacenes}
+
+Un servidor de captura responde 204 a todo; un almacén no.
 `make test-e2e-docker` levanta ocho almacenes y un Grafana con docker compose,
-nueve contenedores en total, ejecuta el
-mismo colector contra el mismo agente simulado con todos los destinos apuntando
-a ellos y luego le pregunta a cada almacén por su propia API. El JSONL del
-destino de fichero es el oráculo contra el que se compara cada almacén, valor a
-valor y no solo por recuento.
+ejecuta el mismo colector contra el mismo agente simulado con todos los
+destinos apuntando a ellos, y le hace a cada almacén su propia pregunta por su
+propia API. El JSONL del destino de fichero es el oráculo: cada almacén se
+compara con él valor a valor, no solo por recuento.
 
-<ScrollTable label="Qué se le pregunta a cada almacén en la batería de contenedores">
+<ScrollTable label="Qué se le pregunta a cada almacén en la batería de almacenes">
 
-| Almacén                 | La pregunta que se le hace                                                  |
-| ----------------------- | --------------------------------------------------------------------------- |
-| InfluxDB 3 Core         | SQL por HTTP: las tablas, un recuento de filas por tabla, cada valor `ctxt`  |
-| PostgreSQL 18           | el guion del destino SQL por `psql`, y el destino PostgreSQL con conexión en una segunda base de datos; recuentos, el rango de `ctxt` y si las dos bases de datos guardan las mismas filas (34 tablas idénticas byte a byte, 2026-09-20) |
-| Elasticsearch 9         | `_search` con una agregación por tipo, y un documento entero                |
-| Loki 3                  | `query_range` para las etiquetas de esta ejecución, y el texto de cada registro |
-| Graphite                | `metrics/find` para el árbol, `render` para los puntos y su orden            |
-| OpenTelemetry Collector | lo que decodificó, escrito de vuelta como OTLP/JSON                          |
-| Telegraf 1.39           | el protocolo de línea que analizó: medidas, etiquetas, tipos de campo, marcas de tiempo |
-| Prometheus 3            | un scrape del exportador, contra la exposición que sirvió                    |
+| Almacén                 | La pregunta que se le hace                                                                                                                                                    |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| InfluxDB 3 Core         | SQL por HTTP: las tablas, un recuento de filas por tabla, cada valor `ctxt`                                                                                                   |
+| PostgreSQL 18           | el guion del destino SQL por `psql`, y el destino PostgreSQL con conexión en una segunda base de datos: recuentos, el rango de `ctxt` y si las dos guardan las mismas filas |
+| Elasticsearch 9         | `_search` con una agregación por tipo, y un documento entero                                                                                                                  |
+| Loki 3                  | `query_range` para las etiquetas de esta ejecución, y el texto de cada registro                                                                                               |
+| Graphite                | `metrics/find` para el árbol, `render` para los puntos y su orden                                                                                                             |
+| OpenTelemetry Collector | lo que decodificó, escrito de vuelta como OTLP/JSON                                                                                                                           |
+| Telegraf 1.39           | el protocolo de línea que analizó: medidas, etiquetas, tipos de campo, marcas de tiempo                                                                                       |
+| Prometheus 3            | un scrape del exportador, contra la exposición que sirvió                                                                                                                     |
 
 </ScrollTable>
 
-La batería además publica las cinco fuentes de datos con `forward --grafana` y
-vuelve a vaciar todos los almacenes con `uninstall --targets data`.
+La batería además publica las cinco fuentes de datos con `forward --grafana`,
+y vuelve a vaciar todos los almacenes con `uninstall --targets data`.
 
-Cada uno está ahí porque ese producto rechaza algo que un servidor de captura
-acepta:
+### Fallos que solo muestra un almacén
 
 - **InfluxDB 3** fija una columna como etiqueta o como campo la primera vez que
-  ve la tabla y rechaza una escritura posterior que no coincida.
-- **Carbon** no responde nada en absoluto: un punto más viejo que su archivo más
-  largo, o un nombre del que whisper no puede hacer una ruta, se descarta en
-  silencio.
+  ve la tabla, y rechaza una escritura posterior que no coincida.
+- **Carbon** no responde nada en absoluto: un punto más viejo que su archivo
+  más largo, o un nombre del que whisper no puede hacer una ruta, se descarta
+  en silencio.
 - **Loki** responde 204 a un envío que no es consultable hasta que el trozo se
   vuelca, y rechaza entradas desordenadas por flujo, en el cuerpo.
 - **Elasticsearch** infiere un mapeo del primer documento que ve para un campo
-  y luego rechaza otro posterior que no encaje — por documento, dentro de una
+  y luego rechaza otro posterior que no encaje, por documento, dentro de una
   petición bulk que aun así responde 200.
 - **Telegraf** es un analizador real de protocolo de línea: un espacio sin
   escapar en el valor de una etiqueta, o un campo sin tipo, se descarta y el
@@ -98,50 +165,36 @@ acepta:
   válido, si los tipos que eligió aguantan los valores que emite y si sus
   claves primarias chocan en una ejecución real.
 
-## Capa 3 — los paneles
+### Paneles {#capa-3--los-paneles}
 
-La misma orden importa después los cinco dashboards en un Grafana real, cada uno
-apuntado al almacén que la ejecución acaba de llenar, y pasa la consulta de cada panel
-por la propia `/api/ds/query` de Grafana. Ahí es donde un panel falla por
-motivos a los que ninguna prueba unitaria llega: un tipo que devuelve una
-agregación y el complemento de la fuente de datos no sabe decodificar, una
-macro que el complemento escapa, una columna que el almacén no tiene.
+La misma ejecución importa los cinco dashboards en Grafana, cada uno apuntado
+al almacén que acaba de llenar, y pasa la consulta de cada panel por la propia
+`/api/ds/query` de Grafana: el `dashboards check` que puedes ejecutar contra tu
+almacén. Ahí un panel falla por motivos a los que no llega ninguna prueba
+unitaria: un tipo que devuelve una agregación y el complemento de la fuente de
+datos no sabe decodificar, una macro que el complemento escapa, una columna
+que el almacén no tiene. En InfluxDB 3 una columna que falta no es una columna
+vacía: la consulta falla con `Schema error: No field named <column>` y el
+panel no puede dibujarse (<TestedOn of="test-suites">encontrado así</TestedOn>).
 
-La primera ejecución completa, el 2026-09-16, encontró uno: la tabla de eventos
-de puerto nombra `label` y `role`, que el destino escribe en una fila del
-registro del kernel solo desde el inventario de la capa de la API. Una columna
-que no está en la tabla no es una columna vacía en InfluxDB 3 — es
-`Schema error: No field named label` y un panel que no puede dibujarse.
-
-## Cómo ejecutarlo
+### Ejecutar la batería de almacenes {#cómo-ejecutarlo}
 
 ```sh
-make test-e2e-docker   # todo; la pila se levanta y se apaga con la ejecución
-make e2e-docker-up     # deja la pila levantada, para una ejecución concreta
+make test-e2e-docker        # la batería entera; la pila se levanta y se apaga con ella
+make e2e-docker-up          # deja la pila levantada entre ejecuciones
 go test -v -tags dockere2e -run TestLoki ./test/e2e/docker/
-make e2e-docker-down
+make e2e-docker-down        # para la pila y borra sus volúmenes
+make test-e2e-docker-race   # la misma batería bajo el detector de carreras
 ```
 
-El paquete está tras la etiqueta de compilación `dockere2e`, así que `make
-test` y todos los trabajos por defecto de la CI no compilan nada de él: la
-etiqueta es la forma de pedir nueve contenedores. `make lint` lo comprueba de
-tipos para que no se pudra, y **lo ejecuta cada pull request**, además del flujo
-semanal y la puerta de publicación.
-
-No estuvo en la ruta de los pull requests hasta el 2026-09-18, con el argumento
-de que nueve contenedores son mucho pedirle a uno. Así es como 1.0.5 llegó a
-`main` con dos tests de esta suite leyendo todavía el `/metrics` del agente, que
-esa misma versión había quitado: todos los checks del pull request estaban en
-verde, y lo encontró la etiqueta. Tenerlo ahí cuesta **2 min 37 s**, medidos en
-la ejecución de release que falló — contenedores incluidos.
-
-Medido en la máquina de desarrollo el 2026-09-16: la pila se levanta en 55 a
-81 s con las imágenes ya descargadas, y la batería entera tarda de 75 a 100 s
-desde cero.
+El arnés reutiliza una pila que no levantó él, y la deja levantada al
+terminar. Por qué cada almacén es uno real y no una simulación está
+en <Src path="test/e2e/docker/README.md" />. La CI ejecuta la batería en cada pull
+request, cada semana, a petición y antes de una publicación.
 
 <Aside type="note" title="Linux, para dos de los nueve">
 	Prometheus y Grafana se ejecutan sobre la pila de red del anfitrión, porque
-	Prometheus es el único destino que se consulta en vez de recibir envíos y
+	Prometheus es el único destino que se consulta en vez de recibir envíos, y
 	tiene que alcanzar el exportador del colector en el anfitrión. Un contenedor
 	en una red puente llega al anfitrión por la pasarela del puente, y ese camino
 	pasa por la cadena INPUT del anfitrión, que un cortafuegos que deniega por
@@ -149,168 +202,170 @@ desde cero.
 	puente.
 </Aside>
 
-## El laboratorio virtual de RouterOS
+## Laboratorio virtual de RouterOS {#el-laboratorio-virtual-de-routeros}
 
 `doctor`, `plan`, `install`, `upgrade`, `status` y `uninstall` necesitan un
-router para poder probarse, y el laboratorio es uno que no pertenece a nadie:
-el Cloud Hosted Router (CHR) 7.24.4 de MikroTik bajo QEMU, dentro de un
-contenedor Docker, aprovisionado una vez en una instantánea limpia (con el
-paquete `container` instalado y `device-mode container=yes` confirmado) y
-devuelto a esa instantánea en segundos. Ninguna prueba necesita un router
-real. <Src path="test/lab/README.md" /> lo cuenta entero: cómo está montado,
-cuánto tardó cada paso y qué le enseñó CHR al instalador.
+RouterOS para poder probarse. El laboratorio es el Cloud Hosted Router (CHR)
+de MikroTik, un RouterOS real, bajo QEMU en un contenedor Docker. Se
+aprovisiona una vez en una instantánea limpia, con el paquete `container`
+instalado y `device-mode container=yes` confirmado, y vuelve a esa instantánea
+en segundos. El relato completo, cómo está montado y qué le enseñó CHR al
+instalador, está en <Src path="test/lab/README.md" />.
 
 <ScrollTable label="Los dos laboratorios, cómo se ejecuta cada uno y para qué sirve">
 
-| Laboratorio | Se ejecuta como        | De la instantánea a ssh | Para qué sirve                                                                                                       |
-| ----------- | ---------------------- | ----------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| x86_64      | CHR bajo KVM           | 7 s                     | todos los escenarios, rápido; el que ejecuta la CI en los pull requests y antes de una publicación                   |
-| arm64       | CHR emulado (QEMU TCG) | 26–28 s                 | la arquitectura, la versión del kernel y el núcleo del RB5009 (Cortex-A72): el paquete `container` y la imagen arm64 |
+| Laboratorio | Se ejecuta como                                          | Úsalo para                                                                                                   |
+| ----------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| x86_64      | CHR bajo KVM                                             | todos los escenarios, rápido; la CI lo ejecuta cada semana y a petición                                    |
+| arm64       | CHR emulado por QEMU (TCG), modelo de CPU `cortex-a72`   | el paquete `container` y la imagen del agente de arm64, y RouterOS eligiendo la imagen para arm64; lento     |
 
 </ScrollTable>
 
-Los tiempos de arranque se midieron el 2026-09-26 en la máquina de desarrollo
-(x86_64, 12 núcleos); el de arm64 es de la emulación, no de un router.
+Un tercer laboratorio, RouterOS x86 instalado desde la ISO de MikroTik
+(`make lab-up LAB_KIND=iso`, solo x86_64), es una receta opcional que la CI
+nunca ejecuta. Añade la vía de instalación de un PC, un nombre de placa `x86` y
+la licencia de x86 (una prueba de 24 horas, y después un registro de nivel 1 o
+una licencia de pago por equipo), y nada que el agente lea y CHR x86_64 no
+tenga.
 
 La CLI se ejecuta dentro de la LAN del laboratorio. `mikroscope-lab cli` la
 arranca en el espacio de nombres de red del contenedor del laboratorio, donde
 172.30.0.0/16 va al router del laboratorio, así que la dirección por defecto
 del agente, 172.30.10.2, llega al agente del laboratorio y a nada más. Desde
-la shell de una máquina de desarrollo, la misma dirección sale por su ruta por
-defecto, hacia la red que sea. Toda orden de despliegue, a mano
-(`make lab-cli`) o en la batería, pasa por `mikroscope-lab cli`, que rechaza
-`--router` y un `--subnet` fuera de las rutas del laboratorio. El espacio de
-nombres del laboratorio tiene su propio cortafuegos: no abre ninguna conexión
-nueva hacia una dirección privada fuera del laboratorio, ni acepta ninguna de
-otro contenedor.
+tu propia shell, la misma dirección sale por tu ruta por defecto, hacia la red
+que sea. Por eso toda orden de despliegue, a mano (`make lab-cli`) o en la
+batería, pasa por `mikroscope-lab cli`, que rechaza `--router` y un `--subnet`
+fuera de las rutas del laboratorio. El espacio de nombres del laboratorio
+tiene su propio cortafuegos: no abre ninguna conexión nueva hacia una
+dirección privada fuera del laboratorio, ni acepta ninguna de otro contenedor.
 
-### Qué ejecuta la batería del laboratorio
+### Batería del laboratorio {#qué-ejecuta-la-batería-del-laboratorio}
 
 `make test-lab` compila la CLI y los tar de la imagen del agente, y luego
-ejecuta la batería de <Src path="test/e2e/lab/" /> (etiqueta de compilación `labe2e`) contra
-el laboratorio en marcha, con el cerrojo del laboratorio tomado durante toda
-la ejecución. Cada escenario empieza con un reinicio a la instantánea y la
-preparación que nombra, toma ahí el `/export` del router como línea base, y
-termina comparando los dos.
+ejecuta la batería de <Src path="test/e2e/lab/" /> contra el laboratorio en
+marcha, con el cerrojo del laboratorio tomado durante toda la ejecución. Cada
+escenario empieza con un reinicio a la instantánea y el perfil que nombra, toma
+ahí el `/export` del router como línea base, y termina comparando los dos.
 
 <ScrollTable label="Los escenarios de la batería del laboratorio y qué comprueba cada uno">
 
-| Escenario  | Qué hace                                                                       | Qué comprueba                                                                                                      |
-| ---------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
-| S1         | `doctor` en un CHR de fábrica, con las listas `none` y con los valores por defecto | nada falta con `none`; con los valores por defecto solo la lista de interfaces `LAN`, cuyo arreglo ofrece `--iface-list none` |
-| S2         | instalar descargando la imagen de Docker Hub, `status`, `upgrade`, `uninstall` | el agente responde a `/healthz` y `/capabilities`; el export vuelve a su línea base                                |
-| S3         | instalar y actualizar desde el tar de la imagen de la propia rama              | el agente informa de la versión, el commit y la fecha de la compilación de la rama                                 |
-| S4         | `plan --rsc` para las dos vías de imagen, ejecutado con `/import`              | `status` reconoce los objetos del guion; `uninstall` deja la línea base                                            |
-| S5         | cada guion de referencia que el laboratorio puede ejecutar, importado tal como lo entrega el sitio | el agente responde en su propia /30; `uninstall` con las opciones del caso deja la línea base |
-| S6         | `--ephemeral` en un disco tmpfs, y luego un corte de corriente                 | el contenedor queda parado y sin su raíz; `uninstall --ephemeral` no deja nada en absoluto                         |
-| S7         | una instalación persistente, 45 s para que llegue al disco, y luego un corte de corriente | el agente vuelve a responder en menos de 90 s: `start-on-boot` funciona                                            |
-| S8         | `--expose` con un token                                                        | `/capabilities` responde 401 sin el token y 200 con él; las dos reglas de cortafuegos se van con la desinstalación |
-| S9         | `uninstall` mientras un cliente lee `/stream`, diez veces                      | cada primer intento verifica el router limpio                                                                      |
-| S10        | las reglas raw del cortafuegos avanzado de MikroTik, en forma de lista y de rango | `doctor` nombra la regla que descarta las respuestas del agente, y las pertenencias a listas que pasan          |
-| S11        | una veth ajena, una /30 enrutada, una envlist ajena                            | `doctor` nombra cada una; `install` no escribe nada; el guion de `plan --rsc` se detiene en su guarda para la veth y la envlist |
-| S12        | dos instalaciones una al lado de otra                                          | quitar una deja la otra en marcha e intacta                                                                        |
-| S13, S14   | instalaciones con otras listas, y con `--expose`, desinstaladas sin opciones   | se quita todo lo que crearon; una opción que contradice se rechaza                                                 |
-| S17        | `doctor` en un RouterOS anterior a 7.24 (`LAB_ROS=7.23.7`)                     | falta `RouterOS 7.24 or later`, y todas las demás comprobaciones se siguen leyendo                                 |
-| S18        | una descarga de GHCR sin credencial de registro                                | el agente responde                                                                                                 |
-| F4         | cada vía de instalación, una instalación de 1.3.1 y objetos que el usuario hizo antes | `/export` igual al de antes de instalar y `/file` sin ninguna ruta de mikroscope; los objetos del usuario se quedan |
-| repetición | 10 instalaciones y desinstalaciones desde el tar en x86_64, 3 en arm64         | ninguna instalación falla                                                                                          |
+| Escenario  | Qué hace                                                                                        | Qué comprueba                                                                                                             |
+| ---------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| S1         | `doctor` en un CHR de fábrica, con las listas `none` y con los valores por defecto              | nada falta con `none`; con los valores por defecto solo la lista de interfaces `LAN`, cuyo arreglo ofrece `--iface-list none` |
+| S2         | instalar descargando la imagen de Docker Hub, `status`, `upgrade`, `uninstall`                  | el agente responde a `/healthz` y `/capabilities`; el export vuelve a su línea base                                      |
+| S3         | instalar y actualizar desde el tar de la imagen de la propia rama                               | el agente informa de la versión, el commit y la fecha de la compilación de la rama                                       |
+| S4         | `plan --rsc` para las dos vías de imagen, ejecutado con `/import`                               | `status` reconoce los objetos del guion; `uninstall` deja la línea base                                                  |
+| S5         | cada guion de referencia que el laboratorio puede ejecutar, importado tal como lo entrega el sitio | el agente responde en su propia /30; `uninstall` con las opciones del caso deja la línea base                         |
+| S6         | `--ephemeral` en un disco tmpfs, y luego un corte de corriente                                  | el contenedor queda parado y sin su raíz; `uninstall --ephemeral` no deja nada en absoluto                               |
+| S7         | una instalación persistente, 45 s para que llegue al disco, y luego un corte de corriente       | el agente vuelve a responder en menos de 90 s: el arranque con el router funciona                                        |
+| S8         | `--expose` con un token                                                                         | `/capabilities` responde 401 sin el token y 200 con él; las dos reglas de cortafuegos se van con la desinstalación       |
+| S9         | `uninstall` mientras un cliente lee `/stream`, diez veces                                       | cada primer intento verifica el router limpio                                                                             |
+| S10        | las reglas raw del cortafuegos avanzado de MikroTik, en forma de lista y de rango               | `doctor` nombra la regla que descarta las respuestas del agente, y las pertenencias a listas que pasan                   |
+| S11        | una veth ajena, una /30 enrutada, una envlist ajena                                             | `doctor` nombra cada una; `install` no escribe nada; el guion de `plan --rsc` se detiene en su guarda para la veth y la envlist |
+| S12        | dos instalaciones una al lado de otra                                                           | quitar una deja la otra en marcha e intacta                                                                               |
+| S13, S14   | instalaciones con otras listas, y con `--expose`, desinstaladas sin opciones                    | se quita todo lo que crearon; una opción que contradice se rechaza                                                       |
+| S17        | `doctor` en un laboratorio por debajo del RouterOS mínimo                                       | falta `RouterOS 7.24 or later`, y todas las demás comprobaciones se siguen leyendo                                       |
+| S18        | una descarga de GHCR sin credencial de registro                                                 | el agente responde                                                                                                        |
+| F4         | cada vía de instalación, una instalación hecha por una CLI publicada, objetos que el usuario creó antes | `/export` igual al de antes de instalar y `/file` sin ninguna ruta de mikroscope; los objetos del usuario se quedan |
+| repetición | instalaciones y desinstalaciones desde el tar seguidas, diez en x86_64 y tres en arm64          | ninguna instalación falla                                                                                                 |
 
 </ScrollTable>
 
 Los escenarios comprueban el comportamiento corregido: ninguno ejecuta una
 segunda desinstalación y ninguno admite una ruta de mikroscope que quede en
-`/file`. Tres más comprueban que los fallos propios de la CLI siguen
-corregidos: el token del agente en ninguna línea de órdenes del anfitrión, las
-palabras de RouterOS en cada error y la sonda leyendo la marca `running`. S5
-descarga doce veces de Docker Hub y una de GHCR, y algunos otros escenarios
-descargan cuando la vía es lo que prueban; el resto instala el tar de la propia
-rama, lo que además prueba el agente de la rama. Esas descargas son anónimas
-salvo que el laboratorio reciba una cuenta
-([descargar con una cuenta](#descargar-con-una-cuenta)), y los escenarios
-sobre un router sin credencial —S1, S18 y los scripts de Docker Hub y de GHCR
-de S5— arrancan sin ella en cualquier caso. La batería quita
-toda variable `MIKROSCOPE_*` antes de ejecutar nada, así que una shell
-preparada para un router real no puede dirigirla.
+`/file`. Otras cuatro pruebas sostienen lo que la CLI debe seguir haciendo: el
+token del agente en ninguna línea de órdenes del anfitrión, las palabras de
+RouterOS en cada error, la sonda leyendo la marca `running` y el aviso de
+`doctor` para el arranque con el router con la raíz en un disco tmpfs.
 
-S7 espera 45 s entre la instalación y el corte. En el laboratorio arm64, tres
-de cuatro cortes hechos en cuanto el agente respondió no devolvieron ningún
-agente en 90 s, y los dos que se miraron tenían un contenedor que no podía
-arrancar (`Exec format error`, `Segmentation fault`), muy probablemente
-porque RouterOS aún no había escrito la instalación en su disco; eso no se
-examinó. Un corte de corriente tan cerca de una instalación es otra pregunta,
-y S7 solo pregunta si `start-on-boot` funciona.
+S7 espera 45 s entre la instalación y el corte de corriente. Un corte hecho en
+cuanto el agente responde puede devolver un contenedor que no arranca
+(<TestedOn of="virtual-lab">visto en el laboratorio</TestedOn>), que es otra
+pregunta; S7 solo pregunta si el arranque con el router funciona.
 
-Medido el 2026-09-27 con CHR 7.24.4 y el código con estos escenarios y las
-correcciones que pidió la revisión: la batería tardó 29 min 2 s en x86_64 y
-57 min 13 s en arm64 en paralelo, con todas las pruebas superadas; las
-desinstalaciones de S9 tardaron de 8,0 a 12,6 s cada una. Antes ese mismo
-día, sin esas correcciones, tardó 28 min 32 s en x86_64 sola, y 28 min 17 s y
-57 min 29 s en paralelo. Antes, el
-2026-09-26 con el código de 1.3.1, la batería tardó
-de 7 min 21 s a 9 min 49 s en x86_64 en seis ejecuciones, y de 12 min 12 s a
-16 min 48 s en arm64 en tres, las más lentas de cada una con las dos baterías
-en paralelo en un anfitrión ocupado, y ninguna instalación falló.
-`make roundtrip` —`doctor`, `install`, `status`, `upgrade` y `uninstall`, cada
-una con `--ephemeral`, y el `/export` del router resumido con un hash antes y
-después— tardó de 28 a 34 s en x86_64 en tres ejecuciones y de 40 a 45 s en
-arm64 en cuatro, y dejó el export
-idéntico byte a byte todas las veces.
+Solo los escenarios que prueban una descarga hacen que el router descargue.
+Docker Hub limita las descargas anónimas por dirección, y un runner de la CI
+comparte su dirección con todo lo demás que se ejecutó desde ella, así que
+todos los demás escenarios instalan el tar de la propia rama que genera `make
+agent-tars`, lo que además prueba el agente de la rama. Esas descargas son
+anónimas salvo que el laboratorio reciba una cuenta
+([Descargar con una cuenta](#descargar-con-una-cuenta)), y los escenarios sobre
+un router sin credencial, S1, S18 y los scripts de Docker Hub y de GHCR de S5,
+arrancan sin ella en cualquier caso. La batería quita toda
+variable `MIKROSCOPE_*` antes de ejecutar nada, así que una shell preparada
+para un router real no puede dirigirla.
 
-### Cómo usar el laboratorio
+### Usar el laboratorio {#cómo-usar-el-laboratorio}
 
 ```sh
-make lab-up                     # la primera vez descarga RouterOS y lo aprovisiona
-make test-lab                   # la batería, x86_64
-make test-lab LAB_RUN='S09'     # un escenario, por un patrón de -run
+make lab-up                   # arranca el laboratorio; la primera vez descarga RouterOS y lo aprovisiona
+make lab-status               # el contenedor, quién tiene el cerrojo, qué informa el router
+make test-lab                 # la batería entera, x86_64
+make test-lab LAB_RUN='S09'   # las pruebas que casan con un patrón de go test -run
 make lab-cli ARGS='doctor --arch amd64'
-make lab-reset                  # de vuelta a la instantánea limpia
-make lab-down
-make lab-up LAB_ARCH=arm64      # el emulado; luego los mismos objetivos con LAB_ARCH=arm64
+make lab-reset                # de vuelta a la instantánea limpia
+make roundtrip                # doctor, install, status, upgrade, uninstall; se compara /export
+make lab-down                 # lo para; los discos conservan su estado
+make lab-up LAB_ARCH=arm64    # el laboratorio emulado: todos los objetivos admiten LAB_ARCH=arm64
 ```
 
-Necesita Linux, Docker, Go para el conductor del laboratorio y para la CLI y
-el agente que se prueban, unos 910 MB de disco para las dos arquitecturas y
-`/dev/kvm` para x86_64: sin él, el valor por defecto `LAB_KVM=auto` cae a la
-emulación, muchas veces más lenta y sin medir, y `LAB_KVM=require` se detiene
-en su lugar. Sin un laboratorio en marcha, cada prueba de la batería se omite,
-y `MIKROSCOPE_LAB_REQUIRED=1` convierte eso en un fallo. Un solo conductor
-cada vez: cada verbo toma un cerrojo por laboratorio, así que dos copias del
-repositorio nunca manejan un laboratorio entre los pasos de la otra, y `LAB_STATE_DIR` apunta una segunda
-copia al laboratorio que ejecuta la primera; `LAB_INSTANCE=<nombre>` levanta
-un segundo laboratorio de una arquitectura junto al primero, con su propio
-contenedor, puertos, cerrojo y discos. La contraseña de administración del
-laboratorio y el token del agente se generan en `test/lab/.env` la primera
-vez, están en `.gitignore` y nunca se imprimen.
+S17 necesita un laboratorio por debajo del RouterOS mínimo, que es un
+laboratorio aparte:
 
-Cada objetivo ejecuta el conductor del laboratorio, `bin/mikroscope-lab`: una
-herramienta de compilación en Go, como la que dibuja la marca, que
+```sh
+make lab-up LAB_ROS=7.23.7
+make test-lab LAB_ROS=7.23.7 LAB_RUN=S17
+```
+
+El laboratorio necesita:
+
+- Linux, y un Docker que pueda dar a un contenedor `NET_ADMIN` y
+  `/dev/net/tun`.
+- Go, para el conductor del laboratorio y para la CLI y el agente que se
+  prueban.
+- Unos 910 MB de disco para las dos arquitecturas, 810 MB para una.
+- Los puertos de loopback 220N, 800N, 870N y 910N libres, con N = 1 para
+  x86_64 y 2 para arm64, más el desplazamiento de una instancia.
+- Acceso a la red: Docker Hub y las réplicas de Debian para la imagen del
+  laboratorio la primera vez, `download.mikrotik.com` una vez por versión de
+  RouterOS, y Docker Hub para lo que descarga el router.
+- `/dev/kvm` para x86_64. Sin él, `LAB_KVM=auto` recurre a la emulación, muchas
+  veces más lenta, y `LAB_KVM=require` se detiene. arm64 se emula en un
+  anfitrión x86 pongas lo que pongas.
+
+Sin un laboratorio en marcha, cada prueba de la batería se omite, y
+`MIKROSCOPE_LAB_REQUIRED=1` convierte eso en un fallo. La contraseña de
+administración del laboratorio y el token del agente se generan en
+`test/lab/.env` la primera vez, están en `.gitignore` y nunca se imprimen.
+
+Cada objetivo ejecuta el conductor del laboratorio, `bin/mikroscope-lab`, que
 `make lab-tool` compila desde <Src path="cmd/mikroscope-lab/" />
-e <Src path="internal/lab/" />, y que nada distribuye. El mismo binario
-estático es el primer proceso del contenedor del laboratorio, que prepara su
-red y ejecuta QEMU hasta que el invitado se apaga, y la batería llama al
-conductor en su propio proceso en lugar de como una orden. `test/lab/lab.sh`,
-el script de shell al que el conductor sustituyó el 2026-09-27, ahora solo lo
-compila y lo arranca. Las pruebas unitarias del conductor ponen un Docker
-falso y un router falso en lugar de los reales, así que el aprovisionamiento, el cerrojo, las
-descargas y sus sumas de comprobación, la cadena de instantáneas, las reglas
-del cortafuegos, la línea de órdenes de QEMU y los rechazos de la CLI se
-prueban en `go test`; lo que solo un RouterOS real muestra, lo muestra la
-batería del laboratorio.
+e <Src path="internal/lab/" />: una herramienta de compilación que nada
+distribuye. `bin/mikroscope-lab help` lista sus verbos, y `test/lab/lab.sh`
+solo lo compila y lo arranca, para una orden escrita para el script antiguo.
+El mismo binario estático es el primer proceso del contenedor del laboratorio,
+que prepara su red y ejecuta QEMU hasta que el router se apaga.
 
-Un tercer laboratorio, RouterOS x86 instalado desde la ISO de MikroTik
-(`make lab-up LAB_KIND=iso`), es una receta opcional que la CI nunca ejecuta.
-Añade la vía de instalación de un PC, un nombre de placa `x86` y la licencia
-de x86 —una prueba de 24 horas, y después un registro de nivel 1 o una
-licencia de pago por equipo— y nada que el agente lea y CHR x86_64 no tenga.
+Un solo conductor maneja un laboratorio cada vez: cada verbo toma el cerrojo
+del laboratorio, y `bin/mikroscope-lab lock <orden>` lo mantiene durante toda
+una sesión, como hacen `make test-lab` y `make roundtrip`. Los dos
+laboratorios funcionan a la vez, y sus baterías también, pero no como dos
+`make test-lab` en una misma copia del repositorio, porque cada una recompila
+los tar del agente que la otra puede estar leyendo. Compila una vez, y arranca
+cada batería con el cerrojo de su laboratorio:
 
-### Descargar con una cuenta
+```sh
+make build agent-tars lab-tool
+LAB_ARCH=x86_64 bin/mikroscope-lab lock go test -tags labe2e -count=1 -timeout 150m ./test/e2e/lab/ &
+LAB_ARCH=arm64 bin/mikroscope-lab lock go test -tags labe2e -count=1 -timeout 150m ./test/e2e/lab/
+```
+
+### Descargar con una cuenta {#descargar-con-una-cuenta}
 
 El router del laboratorio descarga él mismo la imagen del agente, una docena
-de veces por ejecución de la batería, y Docker Hub permite 100 descargas
-anónimas cada 6 horas por dirección (la página de uso de Docker, leída el
-2026-09-26); un runner de la CI comparte su dirección con todo lo que se
-ejecutó desde ella. Con una cuenta de Docker Hub, el router descarga como esa
-cuenta:
+de veces por ejecución de la batería, y Docker Hub limita las descargas
+anónimas por dirección. Con una cuenta de Docker Hub, el router descarga como
+esa cuenta:
 
 ```sh
 # en un archivo propio, modo 0600, fuera del repositorio
@@ -324,131 +379,134 @@ make lab-reset                  # cada up y cada reset dan la credencial al rout
 ```
 
 El laboratorio solo descarga, así que en tu máquina basta un token de solo
-lectura. El conductor del laboratorio escribe
+lectura. En cada `up` y cada `reset` el conductor del laboratorio escribe
 `/container/config/set registry-url=… username=… password=…` en un archivo,
-lo copia al router, lo ejecuta con `/import` y lo borra, en cada `up` y cada
-`reset`, así que la credencial no está en ninguna línea de órdenes y la
-instantánea en caché nunca la tiene. Exportada desde un archivo, como arriba,
-tampoco pasa por la línea de órdenes de `make`, que la tabla de procesos
-mostraría. Sin las dos variables no cambia nada y el router descarga de forma
-anónima; una sin la otra se rechaza. La batería imprime el usuario y el token
-como `<LAB_REGISTRY_USER>` y `<LAB_REGISTRY_TOKEN>`, y una de sus pruebas lee
-la tabla de procesos del anfitrión cada 2 ms durante un reset para que el
-conductor cumpla todo eso.
+lo copia al router, lo ejecuta con `/import` y lo borra, así que la credencial
+no está en ninguna línea de órdenes y la instantánea en caché nunca la tiene.
+Exportada desde un archivo, como arriba, tampoco pasa por la línea de órdenes
+de `make`, que la tabla de procesos mostraría. Sin las dos variables el router
+descarga de forma anónima; una sin la otra se rechaza. La batería imprime el
+usuario y el token como `<LAB_REGISTRY_USER>` y `<LAB_REGISTRY_TOKEN>`, y una
+de sus pruebas lee la tabla de procesos del anfitrión cada 2 ms durante un
+reset para que el conductor cumpla todo eso.
 
 `registry-url` es `registry-1.docker.io`, sin esquema (`LAB_REGISTRY_URL`
 nombra el host de otro registro). RouterOS presenta el usuario y la
 contraseña para una referencia cuyo host es `registry-url` tal como está
-escrito, y mikroscope escribe el host en cada referencia. Medido en el
-laboratorio x86_64 el 2026-09-27 (CHR 7.24.4) con una credencial errónea a
-propósito: la imagen del agente 1.3.1,
-`registry-1.docker.io/jmrplens/mikroscope-agent`, falló con `auth error` con
-`registry-url=registry-1.docker.io`, y se descargó de forma
-anónima con `https://registry-1.docker.io`, el valor de los ejemplos de
-MikroTik, y con el mismo terminado en barra. Un router al que se dio una
-credencial no volvió a intentar la descarga de forma anónima. Con esa
-credencial dada como la da el laboratorio, la instalación de S2 falló con
-`auth error`, mientras que S1, S18, los dos scripts de S5 y la prueba de la
-tabla de procesos pasaron; sin credencial, S2 pasó. No se probó un token
-válido: que Docker Hub cuente las descargas contra la cuenta es lo que dice su
-documentación, no una medida.
+escrito, y mikroscope escribe el host en cada referencia; con `https://`
+delante, la misma descarga sale de forma anónima
+(<TestedOn of="registry-url-host-match">verificado</TestedOn>).
 
-### El laboratorio en la CI
+### Ajustes del laboratorio
 
-<ScrollTable label="Cuándo ejecuta la CI el laboratorio, por arquitectura">
+Cada ajuste va en la línea de `make` o en el entorno.
 
-| Laboratorio | Pull request                         | Publicación                    | Semanal | A petición |
-| ----------- | ------------------------------------ | ------------------------------ | ------- | ---------- |
-| x86_64      | cuando toca lo que instala el agente | una puerta antes de GoReleaser | sí      | sí         |
-| arm64       | no                                   | no                             | sí      | sí         |
+<ScrollTable label="Los ajustes del laboratorio, sus valores por defecto y qué cambia cada uno">
+
+| Ajuste                                    | Por defecto                                    | Qué hace                                                                                                       |
+| ----------------------------------------- | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `LAB_ARCH`                                | `x86_64`                                       | qué laboratorio: `x86_64` o `arm64`                                                                            |
+| `LAB_ROS`                                 | el del Makefile                                | la versión de RouterOS que se descarga y ejecuta; una versión nueva es un aprovisionamiento nuevo              |
+| `LAB_KIND`                                | `chr`                                          | `iso` es RouterOS x86 desde la ISO de MikroTik, solo x86_64                                                    |
+| `LAB_KVM`                                 | `auto`                                         | `require` se detiene sin `/dev/kvm`, `off` nunca lo usa, `auto` lo usa cuando está                             |
+| `LAB_RUN`                                 | todas las pruebas                              | un patrón de `go test -run` para `make test-lab`, como `S09` o `F4`                                            |
+| `LAB_INSTALL_REPEAT`                      | 10 en x86_64, 3 en arm64                       | cuántas instalaciones hace la prueba de repetición                                                             |
+| `LAB_S5_CASES`                            | todos los casos que el laboratorio puede ejecutar | los casos de S5, por id, separados por comas                                                                |
+| `LAB_REMOTE_IMAGE`                        | la última publicación en Docker Hub            | la imagen que descargan los escenarios de descarga                                                             |
+| `LAB_GHCR_IMAGE`                          | la misma imagen en GHCR                        | la imagen que descarga S18                                                                                     |
+| `LAB_STATE_DIR`                           | el `test/lab` de esta copia                    | dónde viven `.cache/` y `.env` del laboratorio: apunta una segunda copia a un laboratorio que maneja otra      |
+| `LAB_INSTANCE`                            | ninguna                                        | un segundo laboratorio de una arquitectura, con su propio contenedor, puertos, cerrojo y discos                |
+| `LAB_LOCK_WAIT`                           | lo que haga falta                              | segundos de espera al cerrojo de otro conductor antes de fallar y nombrar a quien lo tiene                     |
+| `MIKROSCOPE_LAB_REQUIRED`                 | sin definir                                    | `1` convierte en fallo una omisión por falta de laboratorio                                                    |
+| `LAB_REGISTRY_USER`, `LAB_REGISTRY_TOKEN` | sin definir: el router descarga de forma anónima | una cuenta de registro con la que descarga el router del laboratorio, que recibe en cada `up` y cada reinicio, nunca en la instantánea |
+| `LAB_REGISTRY_URL`                        | `registry-1.docker.io`                         | el registro al que pertenece esa cuenta, escrito como el host que nombran las referencias                      |
 
 </ScrollTable>
 
-El flujo, <Src path=".github/workflows/lab.yml" />, ejecuta los mismos
-`make lab-up` y `make test-lab`, con `MIKROSCOPE_LAB_REQUIRED=1`. Qué cuenta como «lo que
-instala el agente» es una lista de rutas en el trabajo `changes` de `ci.yml`:
+### El laboratorio en la CI {#el-laboratorio-en-la-ci}
+
+El flujo <Src path=".github/workflows/lab.yml" /> ejecuta los mismos `make lab-up` y
+`make test-lab`, con `MIKROSCOPE_LAB_REQUIRED=1`, para las dos arquitecturas,
+cada semana en main y a petición. Nunca se ejecuta en un pull request ni antes
+de una publicación: una ejecución tarda media hora o más. Ejecuta tú
+`make test-lab` antes de un pull request que toque lo que instala el agente:
 `internal/router`, `internal/image`, `internal/agent`, `cmd/mikroscope`,
 `cmd/mikroscope-agent`, `Dockerfile.agent`, el `Makefile`, los guiones del tar
-del agente y del viaje de ida y vuelta, el laboratorio, su conductor
-(`cmd/mikroscope-lab`, `internal/lab`) y su batería, y el propio `lab.yml`.
-arm64 no es una puerta: bajo emulación tarda entre 25 y 35 minutos según una
-estimación, y depende de que el
-servidor de descargas de MikroTik y Docker Hub estén disponibles. En una
-publicación, los escenarios de descarga descargan la versión anterior, porque
-la imagen del agente de la nueva etiqueta solo se publica cuando las puertas
-han pasado.
+del agente y del viaje de ida y vuelta, los guiones de RouterOS que muestra el
+sitio, y el laboratorio, su conductor y su batería. Una ejecución a petición
+admite `ref`, `arch` (`both`, `x86_64` o `arm64`) y `ros`.
+
+arm64 se ejecuta bajo emulación, que es lenta, y depende de que el servidor de
+descargas de MikroTik y Docker Hub estén disponibles.
 
 La caché de Actions guarda las descargas de MikroTik por arquitectura y
 versión de RouterOS, comprobadas contra las sumas SHA-256 que el repositorio
-fija en <Src path="test/lab/SHA256SUMS" />, y el router aprovisionado. La
-instantánea no lleva ninguna credencial: admin tiene la contraseña vacía de
+fija en <Src path="test/lab/SHA256SUMS" />, y el router aprovisionado, con una
+clave que depende del conductor, de la imagen del laboratorio y de esas sumas.
+La instantánea no lleva ninguna credencial: admin tiene la contraseña vacía de
 CHR y ninguna clave hasta que el `make lab-up` de la ejecución le da las
 suyas, así que el `.env` y la clave ssh nunca salen del runner. Una ejecución
 fallida o que agota su tiempo sube el registro de la consola, el registro del
 contenedor, el estado del laboratorio, lo que una instalación dejó en el
-router y el registro de las pruebas, con cada credencial sustituida por su
-nombre, y nunca el `.env` ni la clave ssh.
+router y el registro de las pruebas, con cada credencial del laboratorio
+sustituida por su nombre, y nunca el `.env` ni la clave ssh.
 
-El router descarga como una cuenta cuando el repositorio tiene dos secretos:
+El router descarga como una cuenta cuando el repositorio tiene dos secretos,
 `DOCKERHUB_USERNAME` y `DOCKERHUB_TOKEN`, el token con el que la versión
-también publica las imágenes; el laboratorio solo descarga con él. Se convierten en `LAB_REGISTRY_USER` y
-`LAB_REGISTRY_TOKEN` para los pasos que levantan el laboratorio, ejecutan la
-batería y ocultan las credenciales del informe de fallo, y para ningún otro;
-`ci.yml` y `release.yml` pasan los dos por su nombre. Una pull request desde un fork no recibe secretos, y un
-repositorio sin `DOCKERHUB_TOKEN` no recibe ninguna de las dos
-variables: ambos descargan de forma anónima. También una ejecución a petición
-que extrae otra `ref`, que puede ser el commit de fusión de un fork: el
-laboratorio compila y ejecuta ese código, y el token queda fuera de su
-entorno.
+también publica las imágenes; el laboratorio solo descarga con él. Se
+convierten en `LAB_REGISTRY_USER` y `LAB_REGISTRY_TOKEN` para los pasos que
+levantan el laboratorio, ejecutan la batería y ocultan las credenciales del
+informe de fallo, y para ningún otro; `ci.yml` y `release.yml` pasan los dos
+por su nombre. Una pull request desde un fork no recibe secretos, y un
+repositorio sin `DOCKERHUB_TOKEN` no recibe ninguna de las dos variables:
+ambos descargan de forma anónima. También una ejecución a petición que extrae
+otra `ref`, que puede ser el commit de fusión de un fork: el laboratorio
+compila y ejecuta ese código, y el token queda fuera de su entorno.
 
-### Dónde deja de ser un router
+### Límites del laboratorio {#dónde-deja-de-ser-un-router}
 
 - **Virtual, no hardware.** Sin RouterBOARD, sin flash, sin sensores, sin chip
-  de switch, sin árbol de dispositivos. Medido con `/capabilities` del agente
-  el 2026-09-26: `cpufreq`, `mtd`, `psi`, `schedstat` y `thermal` faltan en los
-  dos laboratorios, y `status` no puede traducir los nombres de puerto del
-  kernel a los de RouterOS. Todo lo que dependa de una placa sigue necesitando
-  una real.
+  de switch y sin árbol de dispositivos. `cpufreq`, `mtd`, `psi`, `schedstat` y
+  `thermal` faltan en `/capabilities` del agente, y `status` no puede traducir
+  los nombres de puerto del kernel a los de RouterOS. Todo lo que dependa de
+  una placa sigue necesitando una real.
 - **La licencia gratuita de CHR limita lo que envía el router** a 1 Mbit/s por
-  interfaz: copiar 2 MiB desde el router del laboratorio por su LAN tardó
-  15,6 s. El `/stream` del agente midió ahí 0,21 Mbit/s a 10 Hz, así que por
-  aritmética 50 Hz queda en el límite y 100 Hz por encima, y una prueba de tasa
-  por encima de 10 Hz en el laboratorio mide la licencia y no el agente.
+  interfaz. Una prueba de tasa por encima de 10 Hz en el laboratorio mide la
+  licencia y no el agente (<TestedOn of="virtual-lab">la aritmética</TestedOn>).
 - **Las cifras del arm64 emulado no son costes.** Bajo emulación el reloj del
   invitado sigue al del anfitrión, así que toda duración, toda cifra de CPU
   (`cpu-load`, `self.cpu_us`, `read_ns`, `wake_ns`, la dispersión de `dt_ns`,
   `slipped`), toda tasa de interrupciones, softirqs y cambios de contexto y
   todo contador de la PMU del laboratorio arm64 mide la emulación del
-  anfitrión, no un Cortex-A72.
+  anfitrión, no el núcleo que emula.
+- **Sin ARM de 32 bits.** MikroTik publica CHR solo para x86_64 y arm64, así
+  que el agente armv5 y armv7 solo se encuentra con RouterOS en hardware.
+  `make agent-smoke` arranca su imagen bajo QEMU en modo usuario, que no es
+  RouterOS.
 
-<NotClaimed title="Lo que el laboratorio no ha demostrado">
-	Cuánto tardan los trabajos del laboratorio en los runners de GitHub, y si
-	esos runners le dan `/dev/kvm` a este repositorio: el flujo todavía no se ha
-	ejecutado allí, y la primera ejecución a petición es la medida. MikroTik
-	publica CHR solo para x86_64 y arm64, así que el agente arm de 32 bits
-	(armv5, armv7) solo se encuentra con RouterOS en hardware: `make agent-smoke`
-	arranca su imagen bajo QEMU en modo usuario, que no es RouterOS.
-</NotClaimed>
+## Comprobaciones manuales {#lo-que-las-tres-capas-siguen-dejando-a-una-persona}
 
-## Lo que las tres capas siguen dejando a una persona
+Ninguna batería muestra:
 
-<NotClaimed title="Qué no demuestra ninguna de ellas">
-	Que un destino funcione desde el router. Las muestras de las tres capas vienen
-	de un agente simulado o de un árbol `/proc` capturado, nunca de un equipo
-	vivo, y la pila de contenedores se ejecuta en la máquina de desarrollo y no a
-	través del veth del router. Fichero, Prometheus e InfluxDB 3 han llevado
-	muestras reales del RB5009 de extremo a extremo; los otros ocho —Loki, OTLP,
-	Graphite, Elasticsearch, SQL, PostgreSQL, Telegraf y stdout— no.
-</NotClaimed>
+- **Un destino alimentado desde un router.** Las muestras de todas las
+  baterías vienen de un agente simulado, de un árbol capturado o del CHR del
+  laboratorio, y los almacenes se ejecutan en el anfitrión de pruebas, no a
+  través del veth de un router. Qué destinos han llevado muestras de un router
+  está en <TestedOn of="feature-status">Estado de las funciones</TestedOn>.
+- **Nada sobre una placa**: su flash, sus sensores, su chip de switch y la
+  frecuencia de su CPU, ni lo que cuesta el agente en ella.
+  [Coste del agente](/mikroscope/es/cost/#medirlo-en-tu-propio-equipo) explica
+  cómo medirlo en el tuyo.
 
 <SeeAlso>
 
 ## Véase también
 
-- [Dónde está el proyecto](/mikroscope/es/about/status/): qué se ha ejecutado
-  contra el equipo de referencia y qué no.
-- [El colector y sus destinos](/mikroscope/es/sinks/): qué escribe cada destino.
-- [Importar y comprobar los dashboards](/mikroscope/es/dashboards/import-and-check/):
-  el mismo `dashboards check` que ejecuta la tercera capa, contra tu almacén.
+- [Probado en](/mikroscope/es/about/status/#las-baterías-de-pruebas): cuándo se
+  ejecutó cada batería por primera vez, cuánto tarda, qué encontró el
+  laboratorio y qué no se ha probado.
+- [Ejecutar el colector](/mikroscope/es/sinks/): qué escribe cada destino.
+- [Importar y comprobar](/mikroscope/es/dashboards/import-and-check/): el mismo
+  `dashboards check` que ejecuta la batería de almacenes, contra tu almacén.
 
 </SeeAlso>

@@ -1,22 +1,21 @@
 ---
-title: What runs where
+title: Security model
 description: Which piece of mikroscope runs on the MikroTik router and which on your host, what each reaches, where every credential lives, and how to report a flaw.
+docType: explanation
 head:
   - tag: title
     content: "Security: what runs on the MikroTik router | mikroscope"
 ---
 
 import EnvlistKeys from "../../../components/EnvlistKeys.astro";
-import NotClaimed from "../../../components/NotClaimed.astro";
 import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
 import Src from "../../../components/Src.astro";
-import Verified from "../../../components/Verified.astro";
+import TestedOn from "../../../components/TestedOn.astro";
 
-This page answers the question to ask before putting anything on a production router: what
-mikroscope runs on it, what it runs on your own machine, what each piece can reach, and which
-credential sits where. The short form is that the router holds an agent that listens and never
-connects out, and every credential that opens something other than the agent stays on your host.
+The router holds an agent that listens and never connects out, and every credential that opens
+something other than the agent stays on your host. The table below is the whole map: what runs
+where, what it reaches, and which credential it holds.
 
 ## What runs where
 
@@ -48,13 +47,13 @@ The collector's own Prometheus exposition, `forward --prom <address>`, listens o
 pass and serves `/metrics` with no authentication. Bind it to an address only your Prometheus
 reaches.
 
-## Credentials stay off the router
+## Credentials on the router {#credentials-stay-off-the-router}
 
-**Over the binary API, `/container/print` returned every property of every container, `cmd` and
-`envlist` included, to a user with only `read,api`** (<Verified of="read-user-envlist" />; only the
-property names were printed). Reading the envlist entries' values, in `/container/envs`, as such a
-user was not checked separately. The design assumes they are readable too: whatever is in an
-envlist is treated as readable by every `read` user on that router, not only by administrators.
+**Over the binary API, `/container/print` returns every property of every container, `cmd` and
+`envlist` included, to a user with only `read,api`** (<TestedOn of="read-user-envlist">verified</TestedOn>).
+Whether such a user can also read the envlist entries' values, in `/container/envs`, is <TestedOn of="not-tested">not tested</TestedOn>.
+The design assumes it can: whatever is in an envlist is treated as readable by every `read` user
+on that router, not only by administrators.
 
 That is why the agent has no push sink: a sink token on the router would be readable by every
 `read` user. If push ever comes, it will be agent → collector with the same NDJSON, never
@@ -73,10 +72,10 @@ line in the router log as `token=true`.
 
 `plan --rsc` is the exception to that masking. It writes the install as a RouterOS script to run on
 the router itself, so the envlist line has to carry the real token; the script says so in its own
-header. A generated `.rsc` with a token in it is a credential — [what the installer
-refuses](/mikroscope/security/installer/) has how to handle it.
+header. A generated `.rsc` with a token in it is a credential — [Installer
+safeguards](/mikroscope/security/installer/) has how to handle it.
 
-## Where the collector's credentials live
+## Collector credentials {#where-the-collectors-credentials-live}
 
 On your host, the credentials that open something other than the agent are read from the
 environment only, never from a flag, with one exception: the PostgreSQL DSN, below. The code gives
@@ -99,7 +98,7 @@ same reasoning applies to it, so prefer the variable.
 The CLI does not read `.env` itself. Export the variables into the shell that runs it, for example
 with `set -a; . ./.env; set +a`.
 
-## Where the agent image comes from
+## Agent image source {#where-the-agent-image-comes-from}
 
 The container runs an image, and which route puts it there decides what you are trusting.
 
@@ -114,21 +113,21 @@ The container runs an image, and which route puts it there decides what you are 
   `registry-1.docker.io` for Docker Hub; the global `/container/config registry-url` is neither
   needed nor written. You trust that registry and the router's path to it, and mikroscope verifies
   nothing about what arrives. `/container/config` also holds one registry username and password for
-  the whole device, and a Docker Hub login sent to GHCR ended a pull in `auth error`;
-  [what the installer refuses](/mikroscope/security/installer/) has what that means and what
-  `doctor` checks.
+  the whole device, and a Docker Hub login sent to GHCR fails the pull with `auth error` (<TestedOn of="install-routes">tested</TestedOn>);
+  [Installer safeguards](/mikroscope/security/installer/) has what that means and what `doctor`
+  checks.
 - `plan --rsc` writes the same commands as a RouterOS script for you to paste or `/import`; the
   image still has to come from one of the two routes above that need no upload from the CLI.
 
-## The container
+## Container settings {#the-container}
 
 `install` creates one container with these settings, all printed by `plan` before anything is
-written:
+written (<TestedOn of="devices-and-versions">where verified</TestedOn>):
 
-- **`privileged=yes` by default**, `--privileged=false` to opt out. The setting needs RouterOS 7.24 or later, whose [changelog](https://download.mikrotik.com/routeros/7.24/CHANGELOG) added privileged mode for containers. It drops the container's user namespace (verified on <Verified of="privileged-namespaces" />), which is what makes the kernel log, `/proc/slabinfo`,
+- **`privileged=yes` by default**, `--privileged=false` to opt out. The setting needs RouterOS 7.24 or later, whose [changelog](https://download.mikrotik.com/routeros/7.24/CHANGELOG) added privileged mode for containers. It drops the container's user namespace (<TestedOn of="privileged-namespaces">verified</TestedOn>), which is what makes the kernel log, `/proc/slabinfo`,
   `/proc/pagetypeinfo` and the MTD ECC counters readable. It does **not** drop the network or PID
   namespace: no interface counters, no router conntrack table, no view of RouterOS's processes.
-  [What privileged buys](/mikroscope/limits/privileged/) has the measurements.
+  [Privileged mode](/mikroscope/limits/privileged/) has what it makes readable.
 - **`memory-max=64M`** (`--memory-max`), enforced as the container's cgroup limit, with the agent's
   Go soft limit (`--mem-limit-mb`) inside it. Unless you pass a number, that limit is derived from
   the ring (rate × buffer × line, × 2.5, at least 16 MiB, at most three quarters of `memory-max`
@@ -136,12 +135,11 @@ written:
 - **`restart-policy=on-failure`**, bounded to five retries ten seconds apart, so a broken image
   cannot loop at boot.
 - **`start-on-boot=yes`**, or `no` with `--ephemeral`, whose root lives on the tmpfs disk and does
-  not survive a reboot.
+  not survive a reboot. Surviving a reboot with `yes` is <TestedOn of="not-tested">not tested</TestedOn>.
 - **`logging=yes`**, so the agent's lifecycle lines reach the router log.
 - **`ignore-remote-image-change=yes`**: with the default, RouterOS watches the image and, once the
-  tar is removed, stops and removes the container and re-extracts it minutes later
-  (<Verified of="remote-image-change" />). `install` removes the tar right after extraction, which is why it
-  sets this.
+  tar is removed, stops and removes the container and re-extracts it minutes later (<TestedOn of="remote-image-change">verified</TestedOn>).
+  `install` removes the tar right after extraction, which is why it sets this.
 - Root and image on the disk you chose with `--disk`: the internal flash by default.
 - **No bind mount.** `install` mounts no host path into the container.
 
@@ -150,20 +148,13 @@ The agent reads `/proc`, `/sys` (`/sys/fs/cgroup` for its own accounting, `/sys/
 counters. It writes nothing to its root at runtime: the ring and the triggered captures are held
 in memory. It catches SIGTERM, because RouterOS kills a container that does not, at once.
 
-The last setting in the list is deliberate. On 2026-09-15 a privileged container on the reference
-RB5009 was given host `/proc`, `/sys` and `/` as bind mounts, to see whether a mount buys more
-access. Host `/proc` mounted but read zero PIDs, and host `/sys` had no `class/net`: the namespaces
-held. Host `/` did work, and it exposes the RouterOS flash filesystem — configuration and files,
-including secrets. mikroscope does not do this, and a container you build yourself should not
-either.
+The last setting in the list is deliberate. Host `/proc` and `/sys` bind-mounted into a privileged
+container add nothing, because the namespaces hold, but host `/` exposes the RouterOS flash
+filesystem, configuration and secrets included ([Host
+mounts](/mikroscope/limits/namespaces/#mounting-the-hosts-paths-does-not-cross-the-boundary)).
+mikroscope does not do this, and a container you build yourself should not either.
 
-<NotClaimed variant="untested">
-	Reboot survival of the persistent install is untested: the reference router is production and is
-	not rebooted for tests. The container settings above were verified on one RB5009 running RouterOS
-	7.24.2 and re-exercised on 7.24.4; no other board was tried.
-</NotClaimed>
-
-## Reporting a vulnerability
+## Report a vulnerability {#reporting-a-vulnerability}
 
 Report a vulnerability privately, never with its details in a public issue or discussion: open the
 repository's [Security tab](https://github.com/jmrplens/mikroscope/security) and choose **Report a
@@ -190,13 +181,13 @@ not vulnerabilities.
 
 ## See also
 
-- [The API user](/mikroscope/security/api-user/): the RouterOS user the collector needs, and the
+- [API user](/mikroscope/security/api-user/): the RouterOS user the collector needs, and the
   policy it gets.
-- [What `--expose` opens](/mikroscope/security/expose/): the two firewall rules, and why the token
+- [Expose on the LAN](/mikroscope/security/expose/): the two firewall rules, and why the token
   becomes mandatory.
-- [What the installer refuses](/mikroscope/security/installer/): the objects it will not build on,
+- [Installer safeguards](/mikroscope/security/installer/): the objects it will not build on,
   and the values it will not put in a command.
-- [What privileged buys](/mikroscope/limits/privileged/): what the default privilege grant reads,
+- [Privileged mode](/mikroscope/limits/privileged/): what the default privilege grant reads,
   and what it does not.
 
 </SeeAlso>

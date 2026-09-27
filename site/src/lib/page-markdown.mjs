@@ -49,6 +49,7 @@ import * as dashboards from "../data/dashboards.ts";
 import * as home from "../data/home.ts";
 import { release } from "../data/release.ts";
 import figureMeta from "../data/figures/figures.json" with { type: "json" };
+import { manifestText, webfigCapture } from "./webfig.mjs";
 // The landing's own source, for the one thing its twin needs from the
 // frontmatter rather than the body: the hero tagline. See TAGLINES.
 import landingEn from "../content/docs/index.mdx?raw";
@@ -56,12 +57,20 @@ import landingEs from "../content/docs/es/index.mdx?raw";
 import { parse as parseYaml } from "yaml";
 
 import stats from "../data/stats.json" with { type: "json" };
+import rscSpec from "../data/rsc/spec.json" with { type: "json" };
+import rscCases from "../data/rsc/cases.json" with { type: "json" };
+import { generatorDefaults, manualCode } from "./rsc.mjs";
 import en from "../content/i18n/en.json" with { type: "json" };
 import es from "../content/i18n/es.json" with { type: "json" };
 import { formatNumber, formatQuantity, numberWord } from "./format.ts";
 import { withVersion } from "./release.mjs";
 import { ORIGIN, localeOf, pageUrl } from "./site.mjs";
 import { srcUrl } from "./src-link.mjs";
+import {
+	TESTED_ON_SECTIONS,
+	testedOnFragment,
+	testedOnHref,
+} from "./voice.mjs";
 
 /** The site's own UI strings, by locale: what `Astro.locals.t` hands a component. */
 const STRINGS = { en, es };
@@ -286,7 +295,9 @@ function renderSelfClosing(name, attributes, expressions, context) {
 	switch (name) {
 		// One measured figure, formatted by the same src/lib/format.ts the
 		// component calls: "2.85 %" in English, "2,85 %" in Spanish, thin space
-		// between thousands, and a range kept as a range.
+		// between thousands, and a range kept as a range. On a guide the page
+		// also links a reading to its campaign on Tested on; the text keeps the
+		// number alone, which is what the reader of a file came for.
 		case "Measured": {
 			const id = attributes.id;
 			if (!isMeasurementId(id)) {
@@ -343,6 +354,18 @@ function renderSelfClosing(name, attributes, expressions, context) {
 			}
 			return `*${attributes.caption}*`;
 		}
+		// A WebFig screen of the manual GUI install. The file has no
+		// pictures, so the reduction is the alt text: what the screen shows
+		// filled in, which is what a reader of the file can type. A URL in it
+		// goes in a code span, so the italic line carries no bare URL.
+		case "WebfigCapture":
+			return `*${webfigCapture(attributes.name).alt[
+				lang === "es" ? "es" : "en"
+			].replaceAll(/https?:\/\/[^\s,;)]+/g, (url) => `\`${url}\``)}*`;
+		// The install manifest's contents, from the golden case, as the
+		// component renders them.
+		case "InstallManifest":
+			return `\n\n\`\`\`text\n${manifestText(attributes.case).replace(/\n$/, "")}\n\`\`\`\n\n`;
 		// A count the Go source decides, written the way the page writes it:
 		// `as="word"` is prose ("ten"), anything else is digits, with the same
 		// table of words Stat.astro uses (numberWord in format.ts).
@@ -358,41 +381,23 @@ function renderSelfClosing(name, attributes, expressions, context) {
 		}
 		// The sentence every figure needs beside it: device · CPU · RouterOS ·
 		// [Linux ·] date · conditions, exactly as Provenance.astro composes it.
-		case "Provenance": {
-			const of = attributes.of;
-			if (!isCampaignId(of)) {
-				throw new Error(
-					`${context.file}: <Provenance of="${of}" /> is not a campaign; campaigns live in src/data/measurements.ts`,
-				);
-			}
-			if (of === "image" || of === "image-v100") {
-				throw new Error(
-					`${context.file}: <Provenance of="${of}" /> — the image size was not measured on a device`,
-				);
-			}
-			const c = campaigns[of];
-			const facts = [
-				c.device,
-				describeCpu(c, lang),
-				`RouterOS ${c.routeros}`,
-				...("kernel" in c ? [`Linux ${c.kernel}`] : []),
-				c.date === null ? t("ms.provenance.undated") : c.date,
-				c.conditions[lang],
-			];
-			return `\n\n${t("ms.provenance.measured")} ${facts.join(" · ")}\n\n`;
-		}
+		case "Provenance":
+			return `\n\n${provenanceLine(attributes.of, context)}\n\n`;
 		// "RB5009UG+S+, RouterOS 7.24.2, 2026-09-11", inline in the page's own
 		// sentence, which is where the verb ("verified on …") stays.
-		case "Verified": {
-			const of = attributes.of;
-			if (!isVerificationId(of)) {
-				throw new Error(
-					`${context.file}: <Verified of="${of}" /> is not a fact; facts live in src/data/verifications.ts`,
-				);
-			}
-			const v = verifications[of];
-			return `${v.device}, RouterOS ${v.routeros}, ${v.date}`;
-		}
+		case "Verified":
+			return verifiedLine(attributes.of, context);
+		// A heading id kept alive for links to it. Markdown has nowhere to put
+		// an id that is not a heading's, and a reader of the text has no use
+		// for one, so it reduces to nothing.
+		case "Anchor":
+			return "";
+		// The registers of Tested on: an entry per campaign or per verified
+		// fact, as the components draw them.
+		case "CampaignRegister":
+			return campaignRegister(expressions, context);
+		case "VerifiedRegister":
+			return verifiedRegister(expressions, context);
 		// The release this build documents, as Version.astro writes it: the
 		// number, the tag or the date, linked to the release page with `link`.
 		case "Version": {
@@ -462,6 +467,47 @@ function renderSelfClosing(name, attributes, expressions, context) {
 				],
 				rows,
 			);
+		}
+		// RouterOS commands of the manual install pages, as ManualSteps.astro
+		// renders them: manualCode() in src/lib/rsc.mjs, from the steps spec,
+		// with the values as placeholders.
+		case "ManualSteps":
+			return `\n\n\`\`\`text\n${manualCode(attributes, rscSpec, rscCases)}\n\`\`\`\n\n`;
+		// The script generator. A file cannot run the form, so the twin says
+		// so, in the page's own words, and shows each part as the page does
+		// before the form is touched: the defaults, a Docker Hub pull.
+		case "ScriptGenerator": {
+			const part = attributes.part ?? "form";
+			const def = generatorDefaults(rscSpec);
+			const fence = (/** @type {string} */ text) =>
+				`\`\`\`text\n${text.replace(/\n$/, "")}\n\`\`\``;
+			const blocks = {
+				form: () => [t("ms.gen.nojs")],
+				script: () => [
+					fence(def.script),
+					`${t("ms.gen.out.cli")}:`,
+					fence(def.cli),
+				],
+				tar: () => [fence(def.tar.join("\n"))],
+				verify: () => [
+					`${t("ms.gen.verify.router")}:`,
+					fence(def.verify.router.join("\n")),
+					`${t("ms.gen.verify.lan")}:`,
+					fence(def.verify.lan.join("\n")),
+				],
+				remove: () => [
+					`${t("ms.gen.remove.cli")}:`,
+					fence(def.uninstallCli),
+					`${t("ms.gen.out.uninstall")}:`,
+					fence(def.uninstall),
+				],
+			};
+			if (!Object.hasOwn(blocks, part)) {
+				throw new Error(
+					`${context.file}: <ScriptGenerator part="${part}" /> — part is form, script, tar, verify or remove`,
+				);
+			}
+			return `\n\n${blocks[/** @type {keyof typeof blocks} */ (part)]().join("\n\n")}\n\n`;
 		}
 		// What a command writes to the reader's router, from
 		// src/data/router-objects.ts, with the ownership tag and the two
@@ -723,6 +769,139 @@ function alertTable(context) {
 }
 
 /**
+ * A campaign's provenance line, as Provenance.astro composes it: device · CPU
+ * · RouterOS · [Linux ·] date · conditions, after the verb.
+ *
+ * @param {string} of a campaign id
+ * @param {Context} context
+ * @returns {string}
+ */
+function provenanceLine(of, context) {
+	const { lang, t } = context;
+	if (!isCampaignId(of)) {
+		throw new Error(
+			`${context.file}: <Provenance of="${of}" /> is not a campaign; campaigns live in src/data/measurements.ts`,
+		);
+	}
+	if (BUILD_CAMPAIGNS.has(of)) {
+		throw new Error(
+			`${context.file}: <Provenance of="${of}" /> — the image size was not measured on a device`,
+		);
+	}
+	const c = campaigns[of];
+	const facts = [
+		c.device,
+		describeCpu(c, lang),
+		`RouterOS ${c.routeros}`,
+		...("kernel" in c ? [`Linux ${c.kernel}`] : []),
+		c.date === null ? t("ms.provenance.undated") : c.date,
+		c.conditions[lang],
+	];
+	return `${t("ms.provenance.measured")} ${facts.join(" · ")}`;
+}
+
+/** The campaigns that measured a build artefact, not a device: see Provenance.astro. */
+const BUILD_CAMPAIGNS = new Set(["image", "image-v100"]);
+
+/**
+ * Where and when a fact was verified, as Verified.astro prints it.
+ *
+ * @param {string} of a verification id
+ * @param {Context} context
+ * @returns {string}
+ */
+function verifiedLine(of, context) {
+	if (!isVerificationId(of)) {
+		throw new Error(
+			`${context.file}: <Verified of="${of}" /> is not a fact; facts live in src/data/verifications.ts`,
+		);
+	}
+	const v = verifications[of];
+	return `${v.device}, RouterOS ${v.routeros}, ${v.date}`;
+}
+
+/** The ids a register's `only` names, checked, or every id of the data in its order. */
+function registerIds(all, isId, expressions, name, context) {
+	const only =
+		expressions.only === undefined
+			? null
+			: parseStringArray(expressions.only, context);
+	for (const id of only ?? []) {
+		if (!isId(id)) {
+			throw new Error(`${context.file}: <${name} only> names no entry "${id}"`);
+		}
+	}
+	return Object.keys(all).filter((id) => only === null || only.includes(id));
+}
+
+/** A register entry's heading marks, from its `level` (3 unless `level={4}`). */
+function registerLevel(expressions, name, context) {
+	const level = expressions.level === undefined ? 3 : Number(expressions.level);
+	if (level !== 3 && level !== 4) {
+		throw new Error(`${context.file}: <${name} level> is 3 or 4`);
+	}
+	return "#".repeat(level);
+}
+
+/**
+ * CampaignRegister.astro as text: per campaign, its heading, its provenance
+ * line (a date and what was measured, for a build artefact) and the readings
+ * taken from it.
+ */
+function campaignRegister(expressions, context) {
+	const { lang, t } = context;
+	const marks = registerLevel(expressions, "CampaignRegister", context);
+	const ids = registerIds(
+		campaigns,
+		isCampaignId,
+		expressions,
+		"CampaignRegister",
+		context,
+	);
+	const entries = ids.map((id) => {
+		const c = campaigns[id];
+		const line = BUILD_CAMPAIGNS.has(id)
+			? `${c.date === null ? t("ms.provenance.undated") : c.date} · ${c.conditions[lang]}`
+			: provenanceLine(id, context);
+		const readings = Object.entries(measurements)
+			.filter(([, m]) => m.kind === "reading" && m.campaign === id)
+			.map(([key, m]) => `- \`${key}\` ${formatQuantity(m, lang)}`);
+		return [
+			`${marks} ${c.title?.[lang] ?? `\`${id}\``}`,
+			"",
+			line,
+			...(readings.length > 0 ? ["", ...readings] : []),
+		].join("\n");
+	});
+	return `\n\n${entries.join("\n\n")}\n\n`;
+}
+
+/**
+ * VerifiedRegister.astro as text: per fact, its heading and one sentence, the
+ * fact and where and when it was verified.
+ */
+function verifiedRegister(expressions, context) {
+	const { lang } = context;
+	const marks = registerLevel(expressions, "VerifiedRegister", context);
+	const ids = registerIds(
+		verifications,
+		isVerificationId,
+		expressions,
+		"VerifiedRegister",
+		context,
+	);
+	const entries = ids.map((id) => {
+		const v = verifications[id];
+		return [
+			`${marks} ${v.title?.[lang] ?? `\`${id}\``}`,
+			"",
+			`${v.statement?.[lang] ?? v.fact} (${verifiedLine(id, context)}).`,
+		].join("\n");
+	});
+	return `\n\n${entries.join("\n\n")}\n\n`;
+}
+
+/**
  * One component that wraps content.
  *
  * @param {string} name
@@ -762,17 +941,43 @@ function renderWrapper(name, attributes, expressions, children, context) {
 				provoked: "ms.fault.provoked",
 				unprovoked: "ms.fault.unprovoked",
 			};
-			if (!Object.hasOwn(origins, attributes.origin)) {
+			const { origin, date } = attributes;
+			if (origin !== undefined && !Object.hasOwn(origins, origin)) {
 				throw new Error(
-					`${context.file}: <FaultSignature origin="${attributes.origin}"> is not an origin`,
+					`${context.file}: <FaultSignature origin="${origin}"> is not an origin`,
 				);
 			}
-			if (!/^\d{4}-\d{2}-\d{2}$/.test(attributes.date ?? "")) {
+			if (date !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
 				throw new Error(
-					`${context.file}: <FaultSignature date="${attributes.date}"> is not an ISO date`,
+					`${context.file}: <FaultSignature date="${date}"> is not an ISO date`,
 				);
 			}
-			return `\n\n**${t(origins[attributes.origin])}** · ${attributes.date}\n\n${children.trim()}\n\n`;
+			// Both are optional: a signature on Diagnose faults carries neither.
+			const legend = [
+				origin === undefined ? null : `**${t(origins[origin])}**`,
+				date ?? null,
+			].filter(Boolean);
+			return `\n\n${legend.length > 0 ? `${legend.join(" · ")}\n\n` : ""}${children.trim()}\n\n`;
+		}
+		// A link to the proof on Tested on, in the page's own words, to the
+		// entry the component links (src/lib/voice.mjs).
+		case "TestedOn": {
+			const of = attributes.of ?? "";
+			const fragment = testedOnFragment(of, lang, {
+				isCampaign: isCampaignId,
+				isVerified: isVerificationId,
+			});
+			if (fragment === undefined) {
+				throw new Error(
+					`${context.file}: <TestedOn of="${of}"> is not a campaign, a verified fact or a section of Tested on (${Object.keys(TESTED_ON_SECTIONS).join(", ")})`,
+				);
+			}
+			if (children.trim() === "") {
+				throw new Error(
+					`${context.file}: <TestedOn of="${of}"> has no link text`,
+				);
+			}
+			return `[${children.trim()}](${testedOnHref(lang, fragment ?? undefined)})`;
 		}
 		case "Aside": {
 			const type = attributes.type ?? "note";
@@ -794,6 +999,7 @@ function renderWrapper(name, attributes, expressions, children, context) {
 		// an unclassed one after it, and a third, empty one, so the line never
 		// took the muted small style its class names.
 		case "ScrollTable":
+		case "BoardTable":
 		case "SeeAlso":
 		case "Steps":
 		case "Tabs":
@@ -853,19 +1059,19 @@ const TAGLINES = Object.fromEntries(
  * The page itself is one component tag over a typed object: every heading,
  * paragraph, link and command below is in that object, and the figures come
  * from src/data/measurements.ts through it. Reducing the tag alone would
- * publish an empty page, so the object is walked here. The `<code>` spans the
- * copy carries become Markdown code, which is the same thing said the other
- * way round.
+ * publish an empty page, so the object is walked here. The `<code>` spans and
+ * `<a href>` links the copy carries become Markdown code and links, which is
+ * the same thing said the other way round.
  *
  * It says what the HTML says in the same order, with the hero's tagline first
- * because the hero is the first thing the page shows. The campaign under the
- * cost table is `home.LANDING_CAMPAIGN`, the constant `<Home>` renders too:
- * this function named its own until 2026-09-24 and kept the 2026-09-15 one
- * after the page had moved on.
+ * because the hero is the first thing the page shows. Like the page, it names
+ * no campaign: the landing is a guide, and its copy links Tested on.
  */
 function renderHome(content, context) {
-	const { t } = context;
-	const inline = (html) => html.replaceAll(/<\/?code>/g, "`");
+	const inline = (html) =>
+		html
+			.replaceAll(/<a href="([^"]+)">([^<]*)<\/a>/g, "[$2]($1)")
+			.replaceAll(/<\/?code>/g, "`");
 	const readout = content.readout.items.map(
 		(item) =>
 			`- [**${item.id === "run.gapsDrops" ? home.gapsDrops(content.lang) : formatQuantity(measurements[item.id], content.lang)}** — ${item.label}](${item.href})`,
@@ -887,14 +1093,7 @@ function renderHome(content, context) {
 		"",
 		`## ${content.cost.title}`,
 		"",
-		content.cost.lead,
-		"",
-		renderSelfClosing(
-			"Provenance",
-			{ of: home.LANDING_CAMPAIGN },
-			{},
-			context,
-		).trim(),
+		inline(content.cost.lead),
 		"",
 		renderSelfClosing(
 			"RunsTable",
@@ -930,14 +1129,11 @@ function renderHome(content, context) {
 			context,
 		).trim(),
 		"",
-		`## ${content.notClaimed.title}`,
+		`[${content.install.more.text}](${content.install.more.href})`,
 		"",
-		blockquote(
-			[
-				`**${t("ms.claim.notMeasured")}**`,
-				...content.notClaimed.paragraphs.map(inline),
-			].join("\n\n"),
-		),
+		`## ${content.testedOn.title}`,
+		"",
+		content.testedOn.paragraphs.map(inline).join("\n\n"),
 		"",
 		`## ${content.next.title}`,
 		"",

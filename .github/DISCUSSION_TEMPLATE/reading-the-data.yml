@@ -12,9 +12,9 @@ body:
         a Home Assistant MikroTik integration took the timer interrupts from
         about 2 500 to about 35 000 a second while user time stayed flat and
         RouterOS's own profile barely showed it. Both are written up in
-        [How to read what it shows](https://jmrp.io/docs/mikroscope/playbooks/),
-        which starts from an idle router; reading yours against it is the
-        fastest first step. [What it cannot see](https://jmrp.io/docs/mikroscope/limits/)
+        [Diagnose faults](https://jmrp.io/docs/mikroscope/playbooks/),
+        which starts from the idle shape; reading yours against it is the
+        fastest first step. [Resolution limits](https://jmrp.io/docs/mikroscope/limits/)
         covers the other kind of answer, a value at the edge of what a container
         can read.
 

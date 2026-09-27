@@ -1,30 +1,39 @@
 ---
-title: Detections
+title: Detection rules
 description: "The eleven detection rules mikroscope runs on MikroTik RouterOS kernel data: the exact condition of each, what it needs, and what it may not claim."
 head:
   - tag: title
     content: Fault detection rules for MikroTik RouterOS | mikroscope
+docType: reference
 ---
 
-import { Aside } from "@astrojs/starlight/components";
 import Measured from "../../../components/Measured.astro";
-import NotClaimed from "../../../components/NotClaimed.astro";
 import PrivilegedOnly from "../../../components/PrivilegedOnly.astro";
 import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
+import TestedOn from "../../../components/TestedOn.astro";
 
 A detection is a discrete event the collector puts on the timeline: a "look here", never a
-continuous series and never a verdict. This page answers, for each of the eleven rules,
-exactly when it fires, what the deployment has to provide for it to fire at all, and what
-it cannot tell you. The derived values some rules build on are on [what the collector
-derives](/mikroscope/sinks/derive/).
+continuous series and never a verdict. For each of the eleven rules: when it fires, what
+the deployment must provide for it to fire at all, and what it cannot tell you. The
+derived values some rules build on are on [Derived values](/mikroscope/sinks/derive/).
 
-## What a detection carries
+## Detection fields {#what-a-detection-carries}
 
-Every detection has the same fields: `rule`; `key` — the CPU, core, zone or port it is
-about, empty for a device-wide rule; `seq` and `wall_ns` of the sample that raised it;
-`value`, the quantity the rule compared; `threshold`, what it compared against; and a
-`message` in words. The thresholds are the rules' own and are written into every event.
+Every detection has the same fields:
+
+<ScrollTable label="The fields of a detection">
+
+| Field            | Meaning                                                                        |
+| ---------------- | ------------------------------------------------------------------------------ |
+| `rule`           | the rule that fired                                                            |
+| `key`            | the CPU, core, zone or port it is about; empty for a device-wide rule          |
+| `seq`, `wall_ns` | the sample that raised it                                                      |
+| `value`          | the quantity the rule compared                                                 |
+| `threshold`      | what it compared against: the rule's own threshold, written into every event   |
+| `message`        | the event in words                                                             |
+
+</ScrollTable>
 
 **Once per rule and key per 10 s.** After a rule fires for a key, the same rule and key are
 suppressed for 10 s of the samples' wall clock, so a condition that persists fires every
@@ -34,7 +43,7 @@ that count.
 The rules run in the collector process and their history lives there. A collector that
 restarts starts every trailing window, bin and previous value from nothing.
 
-## Where detections land
+## Destinations {#where-detections-land}
 
 <ScrollTable label="Where each sink writes detections">
 
@@ -56,7 +65,7 @@ rules](/mikroscope/dashboards/alerts/) fires on any detection except `microburst
 `ipc-collapse`: those two describe how a healthy router carries traffic, and they are drawn and
 stored but do not page.
 
-## The rules
+## Rules {#the-rules}
 
 <ScrollTable label="The eleven rules at a glance">
 
@@ -95,23 +104,10 @@ the new sequence number, `threshold` the previous one.
 
 **Needs** the collector to have seen at least one sample before the restart. The agent's
 sequence starts again from 1 on every launch, so this is what a restart looks like from the
-outside.
-
-<Aside type="note" title="Fixed in 1.0.4">
-	This used to be unreachable in a running collector. `forward` kept its pull cursor and never reset
-	it, so a restarted agent's ring answered `/snapshot?since=<old sequence>` with nothing — and no
-	gap — until its new sequence passed the old cursor: a day at 10 Hz for an agent that had run a
-	day. Since 1.0.4 `resync` rewinds the cursor to the new ring's oldest sample on the next health
-	read, one minute at most, and logs `agent restarted: its newest sample is N and the cursor was M;
-	resuming from 1`. The new agent's low sequence against the stage's previous one is exactly what
-	this rule matches, so it fires. `TestResyncAfterAgentRestart` covers the collector side. The
-	reference RB5009 exercised the resync for real on 2026-09-19, when a RouterOS upgrade rebooted the
-	router at 00:43:30 CEST (22:43:30 UTC the day before) and the kernel tier resumed at 00:45:03.
-	Whether a `mikroscope_detection` row for `agent-restart` was written then was not checked, and the
-	store that would hold it was replaced later that day: the current one starts at 11:13 UTC. That
-	store holds one `agent-restart` row, at 08:08:54 UTC on 2026-09-24, `value` 1 against `threshold`
-	4 338 037, when the agent was upgraded to 1.2.0.
-</Aside>
+outside. On its next health read, one minute at most, the collector rewinds its pull cursor
+to the new ring's oldest sample and logs `agent restarted: its newest sample is N and the
+cursor was M; resuming from K`; the new agent's low sequence against the previous one is what
+this rule matches (`TestResyncAfterAgentRestart` covers the collector side).
 
 **May not claim** why the agent restarted. A collector restarted at the same time has no
 previous sequence number and sees nothing.
@@ -141,15 +137,13 @@ and the trailing median.
 history per CPU before its first flag. The baselines span ten seconds of wall clock at any
 sampler rate.
 
-**False positives, measured.** Squeezing is this device's background, not an event. On the
-reference RB5009 `time_squeeze` is 0 in 87.3 % of per-CPU samples, 1 in <Measured id="squeeze.backgroundOne" />,
-2 in <Measured id="squeeze.backgroundTwo" /> and 3 in <Measured id="squeeze.exactlyThree" />, while softnet dropped nothing at all
-in those same 24 h. A trailing window of a distribution that is seven-eighths zeroes has a
-90th percentile of 1, so "above p90" is satisfied by any 2 — which is why the floor, and not
-the percentile, is what the rule runs on. Replayed over 6 h of stored samples, a floor of 2
-fires <Measured id="microburst.firesPerHourAtTwo" /> and a floor of 3 fires <Measured id="microburst.firesPerHourAtThree" />, still flagging 88
-samples for the burst counter and for `derived.burst`. A drop flags on its own, at any
-squeeze count.
+**False positives.** Squeezing can be a router's background, not an event. On the router
+measured, most per-CPU samples carry no squeeze, and `time_squeeze` is 1 in <Measured id="squeeze.backgroundOne" />,
+2 in <Measured id="squeeze.backgroundTwo" /> and 3 in <Measured id="squeeze.exactlyThree" />. A trailing window of a
+distribution that is mostly zeroes has a 90th percentile of 1, so "above p90" is satisfied
+by any 2 — which is why the floor of 3, and not the percentile, is what the rule runs on.
+Replayed over stored samples, a floor of 2 fires <Measured id="microburst.firesPerHourAtTwo" /> and a floor
+of 3 fires <Measured id="microburst.firesPerHourAtThree" />. A drop flags on its own, at any squeeze count.
 
 **May not claim** the size of the burst, the flow or the interface that caused it. It says
 the kernel ran out of budget more than it usually does while carrying fewer packets than
@@ -162,12 +156,11 @@ previous record's. `value` and `threshold` are the new and previous timestamps i
 
 **Needs** `privileged=yes`, which the kernel log requires, and a collector that keeps
 running across the reboot while the agent comes back. It needs no RouterOS API
-credentials. The agent that comes back after the reboot is a new process; since 1.0.4 the
-collector rewinds its cursor to the new ring within a minute (see
-[`agent-restart`](#agent-restart)), so its samples do reach `forward`. The rule then fires on
-a kernel-log record whose since-boot time is below the last one seen before the reboot.
-Whether it fired on the reference device's 2026-09-19 reboot was not checked; nothing in the
-tree records it either way.
+credentials. The agent that comes back after the reboot is a new process; the collector
+rewinds its cursor to the new ring within a minute (see [`agent-restart`](#agent-restart)),
+so its samples do reach `forward`. The rule then fires on a kernel-log record whose
+since-boot time is below the last one seen before the reboot. Whether it fires on a real
+reboot is not checked (<TestedOn of="not-tested">Tested on</TestedOn>).
 
 **May not claim** that every reboot is seen. The agent reads the kernel log from the end at
 start, so the first record after a reboot is one logged after the agent came up; if that
@@ -184,16 +177,13 @@ name where the agent's port table maps the kernel name, and the kernel name othe
 `value` is the number of records in the window, `threshold` 2.
 
 **Needs** `privileged=yes`. A RouterOS name needs the board to be in the agent's port
-table, and the current name needs the API tier as well; see [RouterOS ports and kernel
+table, and the current name needs the API tier as well; see [Port
 names](/mikroscope/reference/port-names/).
 
 **May not claim** a fault. A cable pulled and reseated within a minute is a down and an up
-record, and fires. No provoked flap has been captured with this rule running; the flaps
-measured for the port table on 2026-09-15 were not. Unprovoked ones were: between
-2026-09-19 11:13 UTC and 2026-09-24 08:26 UTC the reference deployment's store holds 11
-`link-flap` rows, on `ether1`, `ether2`, `ether4`, `ether6` and `ether7`, each at 2 to 6
-link records in 60 s. Which of them was a cable, a device at the other end or something
-else was not checked.
+record, and fires. The rule has fired on unprovoked flaps without saying whether the cable,
+the device at the other end or something else caused them; no provoked flap has been
+captured with it running (<TestedOn of="not-tested">Tested on</TestedOn>).
 
 ### `conntrack-cliff`
 
@@ -216,8 +206,8 @@ flush of the connection table fires it.
 samples within the last 60 s.
 
 **May not claim** when the table will be full: no time-to-full is attached, on purpose. For
-scale, the reference router's table sat at <Measured id="conntrack.slab" /> entries on 2026-09-12,
-0.65 % of the 966 656 ceiling that kernel reported on 2026-09-14.
+scale, a measured router's table held <Measured id="conntrack.slab" /> entries, 0.65 % of its
+kernel's ceiling.
 
 ### `thermal-high`
 
@@ -239,10 +229,10 @@ after it opened, and the rule is checked each time one closes, so the earliest i
 is after about four minutes of readings.
 
 **Needs** a thermal zone. The means are over the readings the samples carried; temperature
-is read at the zone's declared polling cadence, 1 Hz on the reference device.
+is read at the zone's declared polling cadence (`mikroscope_thermal_polling_seconds`).
 
-**Resolution.** The reference device's sensor quantises to about <Measured id="thermal.quantumC" />, so 1 °C per
-minute is 2.4 steps and resolvable.
+**Resolution.** A sensor that quantises to about <Measured id="thermal.quantumC" />, as the one measured
+does, resolves 1 °C per minute in 2.4 steps.
 
 **May not claim** a cause, or a rise slower than 1 °C per minute.
 
@@ -260,11 +250,11 @@ history holds up to sixty.
 separates a memory-stall regime from a core going quiet, and the rule is per core, never
 across cores.
 
-## Doctor's checks are not these rules
+## Doctor checks vs rules {#doctors-checks-are-not-these-rules}
 
-Since 1.2.0 standalone `doctor` reads the running agent's ring and runs four checks of its
-own: `layer2-loop`, `stp-churn`, `link-flap` and `softnet-drops`, described in [what the
-running agent shows](/mikroscope/install/prerequisites/#what-the-running-agent-shows). They
+Standalone `doctor` reads the running agent's ring and runs four checks of its own:
+`layer2-loop`, `stp-churn`, `link-flap` and `softnet-drops`, described in [Health
+checks](/mikroscope/install/prerequisites/#what-the-running-agent-shows). They
 are not detections: they run once, when `doctor` asks, over whatever the ring holds up to its
 newest 10 000 samples, 60 s by default, and write nothing to a sink.
 
@@ -275,28 +265,20 @@ and not the check. A layer-2 loop is none of the eleven rules: `doctor`'s `layer
 names it in the ring, and over history the `mikroscope-l2-loop` [alert
 rule](/mikroscope/dashboards/alerts/) watches the store for it.
 
-<NotClaimed variant="not-provoked">
-	Of the eleven rules, four have fired on the reference device, counted in its store between
-	2026-09-19 11:13 UTC and 2026-09-24 08:26 UTC: `microburst` 116 times, `ipc-collapse` 41 (on all
-	four cores), `link-flap` 11 and `agent-restart` once. Only `microburst` has had its behaviour
-	measured against the samples; the other three rows were counted, not checked against what the
-	router was doing. The remaining seven are exercised only by the derive stage's unit tests
-	against constructed samples. None of an OOM kill inside the container, a reboot, a link flap, a
-	conntrack flush or storm, a thermal excursion or an IPC collapse has been provoked on the RB5009
-	with these rules running: it is the owner's production router, reboots wait for a maintenance
-	window, and a provoked conntrack storm risks locking out the path being worked through.
-</NotClaimed>
+Four of the eleven rules have fired on a real router, and only `microburst` has had its
+behaviour measured against the samples. The other seven are exercised only by the derive
+stage's unit tests against constructed samples, and no fault has been provoked with the rules
+running (<TestedOn of="not-tested">Tested on</TestedOn>).
 
 <SeeAlso>
 
 ## See also
 
-- [What the collector derives](/mikroscope/sinks/derive/): the `burst` flag and the other values
+- [Derived values](/mikroscope/sinks/derive/): the `burst` flag and the other values
   written beside the samples.
 - [Alert rules](/mikroscope/dashboards/alerts/): the Grafana rules built on the detections and the
   fault counters.
-- [A loop only the kernel could see](/mikroscope/playbooks/loop/): what the kernel log caught on the
-  production router.
-- [What privileged buys](/mikroscope/limits/privileged/): the sources half of these rules depend on.
+- [Layer-2 loop](/mikroscope/playbooks/loop/): what the kernel log caught on a live router.
+- [Privileged mode](/mikroscope/limits/privileged/): the sources half of these rules depend on.
 
 </SeeAlso>

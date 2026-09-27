@@ -12,9 +12,9 @@ Released: 1.0.0. Go 1.27, one module, MIT.
    verified.
 2. The bilingual site under `site/src/content/docs` — every claim the project
    makes about itself lives there, and `docs/*.md` is generated from the
-   English pages. `about/status.mdx` is the honest state of things: what has
-   run against the reference device, what has only run against fakes or
-   containers, what is known and open.
+   English pages. `about/status.mdx` is **Tested on**, the single register of
+   devices (the RB5009 and the virtual lab), RouterOS versions, dates,
+   campaigns, what has not been tested, and known issues.
 3. `CONTRIBUTING.md` — the commands, and which one to run for which change.
 
 ## The three test suites, and what each proves
@@ -78,9 +78,10 @@ seconds. Writes, reboots, device-mode and power cuts need no consent there.
 - **Its limits.** No board, flash, sensors or switch chip; the free CHR licence
   caps what the router sends at 1 Mbit/s per interface. Arm64 lab timings and
   CPU figures are emulation, never costs.
-- **CI** (`.github/workflows/lab.yml`): x86_64 on a pull request that touches
-  the installer's paths and as a release gate; both architectures weekly and
-  on dispatch; the Actions cache keeps MikroTik's downloads (pinned in
+- **CI** (`.github/workflows/lab.yml`): both architectures weekly and on
+  dispatch, never on a pull request or as a release gate (a run takes half an
+  hour or more), so run `make test-lab` before a pull request that touches
+  the installer; the Actions cache keeps MikroTik's downloads (pinned in
   `test/lab/SHA256SUMS`) and the provisioned snapshot, which carries no
   credential. `LAB_KIND=iso`, RouterOS x86 from the installation ISO, is an
   opt-in recipe for x86_64 that CI never runs (a 24-hour trial licence).
@@ -114,12 +115,23 @@ hardware; then:
   `cmd/gen_brand` and `cmd/gen_rsc` are build-time tools that write `brand/`
   and `site/src/data/rsc/`; none of the three is shipped. The agent links
   only `procfs`, `sample`, `agent` and the standard library.
-- Voice, in code comments, CHANGELOG and docs: what was measured, on which
-  device and version, on what date, and what was not. Numbers carry their
-  spread. No claim without its evidence.
+- Voice. Guides, reference and explanation pages are tool documentation:
+  short, imperative, task-first; headings are TOC labels; no dates, RouterOS
+  versions (except a minimum requirement) or device models. Provenance —
+  device, version, date, conditions, spread, what was not tested — lives only
+  on the evidence pages (Tested on, the cost pages, the case studies, the test
+  suites), in code comments, test READMEs and the CHANGELOG. No claim without
+  evidence: the guide states the fact, the evidence page holds the proof.
+  `pnpm run voice:check` enforces it.
 - Commits: conventional prefixes (`feat`, `fix`, `docs`, `test`, `ci`,
   `refactor`, `chore`), no attribution lines, no session links. `main` takes
   pull requests only.
+- Nothing names the current release by hand. The binaries embed `VERSION`;
+  the site's pages, the golden case matrix, the goldens and
+  `site/src/data/rsc` write `{{MIKROSCOPE_VERSION}}`, which the site's build,
+  the tests and the lab replace with it (`version.Expand`,
+  `router.Templated`). A release changes `VERSION`, `CHANGELOG.md` and the
+  generated `docs/`.
 - The agent ships raw tick deltas, never percentages. `/metrics` stays
   independent of who scrapes and when.
 - **All documentation lives in the bilingual site** under

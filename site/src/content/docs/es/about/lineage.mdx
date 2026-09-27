@@ -1,22 +1,23 @@
 ---
 title: Linaje y licencia
 description: Qué partes de mikroscope vienen de cs-routeros-bouncer, ghchronicle y go-routeros, qué cambió por el camino y la licencia MIT con la que llegan.
+docType: about
 ---
 
 import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
 import Src from "../../../../components/Src.astro";
 
-Esta página responde de dónde viene el código de mikroscope: qué paquetes
-empezaron siendo de otro, qué se cambió al traerlos y bajo qué licencia. La
-atribución está también en el código, de modo que sobrevive a que se lea sin
+Partes de mikroscope empezaron como código de cs-routeros-bouncer, ghchronicle y
+go-routeros, todos con licencia MIT. Abajo: qué paquetes, qué cambió al traerlos
+y la licencia. La atribución está también en el código, de modo que sobrevive a que se lea sin
 este sitio: en el comentario de documentación del paquete de <Src path="internal/router/" />,
 del constructor de imágenes <Src path="internal/image/" />, del gráfico <Src path="internal/chart/" />
 y del generador de dashboards <Src path="internal/dashboards/" />; en los propios
 ficheros del cliente de la API, <Src path="internal/rosapi/README.md" /> y <Src path="internal/rosapi/LICENSE" />;
 y en la cabecera de <Src path=".golangci.yml" />.
 
-## De dónde vino el muestreador
+## Origen del muestreador {#de-dónde-vino-el-muestreador}
 
 El muestreador que demostró que esto funciona es `cmd/perfmon` en
 [cs-routeros-bouncer](https://github.com/jmrplens/cs-routeros-bouncer),
@@ -25,7 +26,7 @@ desarrollo. Los pasos de despliegue, el constructor de imágenes sin Docker, el
 gráfico determinista y el cliente de la API de RouterOS incorporado vienen de
 ese repositorio, bajo su licencia MIT.
 
-## Qué se tomó, paquete a paquete
+## Paquetes importados {#qué-se-tomó-paquete-a-paquete}
 
 <ScrollTable label="Paquetes tomados de otros repositorios y qué cambió">
 
@@ -43,13 +44,13 @@ ese repositorio, bajo su licencia MIT.
 Lo que trajo el PR #123, y lo que el instalador de mikroscope conserva de él, es
 la regla de contención: cada objeto creado lleva una única etiqueta exacta en
 el comentario, cada retirada selecciona por esa etiqueta más la identidad del
-objeto — nunca por patrón — y `uninstall` verifica por recuento de propiedad
+objeto (nunca por patrón), y `uninstall` verifica por recuento de propiedad
 antes de dar el éxito por bueno. No se escribe nada sin haberlo listado antes.
 
 La salida del gráfico es determinista: la misma entrada da siempre los mismos
 bytes.
 
-## Lo que se tomó como modelo, no como código
+## Diseños tomados como modelo {#lo-que-se-tomó-como-modelo-no-como-código}
 
 El modelo es [ghchronicle](https://github.com/jmrplens/ghchronicle), el otro
 proyecto de telemetría del mantenedor de mikroscope, José Manuel Requena Plens, que
@@ -68,7 +69,7 @@ batería de extremo a extremo de <Src path="test/e2e/" /> sigue
 que compila su binario y lo ejecuta contra un GitHub simulado, con un fichero de
 prueba por destino.
 
-## El cliente de la API de RouterOS
+## Cliente de la API de RouterOS {#el-cliente-de-la-api-de-routeros}
 
 `internal/rosapi` tiene dos generaciones de linaje. La copia de mikroscope es
 la de cs-routeros-bouncer, sin nada modificado en el código que se envía. Lo que ha
@@ -83,17 +84,17 @@ La copia del bouncer es a su vez una incorporación recortada de
 en **v3.0.1** (commit de upstream del 2025-02-16), MIT, copyright 2016 André
 Luiz dos Santos, cuyo fichero `LICENSE` sigue en el paquete.
 
-### Por qué está incorporado
+### Por qué se incorpora {#por-qué-está-incorporado}
 
 Upstream está en la práctica sin mantener: su último commit es dieciocho meses
 anterior a la copia, y las pull requests e issues abiertas contra el modo
 asíncrono a mediados de 2026 (#31–#34) no han tenido respuesta de ningún
-mantenedor. No existe una alternativa mantenida — `swoga/go-routeros` es una
+mantenedor. No existe una alternativa mantenida: `swoga/go-routeros` es una
 copia que solo recibe actualizaciones de dependabot para sus GitHub Actions, y
 `jda/routeros-api-go` se detuvo en 2016. Incorporarlo mantiene el código
 compilable y permite a la copia corregir y recortar lo que usa.
 
-### Qué difiere de upstream v3.0.1
+### Cambios respecto a upstream {#qué-difiere-de-upstream-v301}
 
 Estos cambios se hicieron en cs-routeros-bouncer y llegan sin tocar:
 
@@ -104,8 +105,8 @@ Estos cambios se hicieron en cs-routeros-bouncer y llegan sin tocar:
 2. **El lector y el escritor del protocolo leen y escriben directamente**, en
    vez de despachar cada llamada a una goroutine nueva con un canal y un búfer
    de copia; solo el modo asíncrono eliminado cancelaba alguna vez una lectura
-   en curso. A la escala de producción del bouncer — 22k entradas de
-   address-list obtenidas en cada ciclo — esa capa costaba ~294 000 goroutines
+   en curso. A la escala de producción del bouncer (22k entradas de
+   address-list obtenidas en cada ciclo) esa capa costaba ~294 000 goroutines
    lanzadas, ~62 MB de basura y ~76 % de todas las asignaciones por ciclo de
    reconciliación. La reescritura se comprobó contra upstream intacto con una
    prueba diferencial: la huella SHA-256 sobre las 22 037 sentencias analizadas
@@ -141,15 +142,13 @@ en <Src path="CHANGELOG.md" />.
 
 ## Véase también
 
-- [Lo que el instalador rechaza](/mikroscope/es/security/installer/): las reglas de contención que
+- [Salvaguardas del instalador](/mikroscope/es/security/installer/): las reglas de contención que
   heredó el código de despliegue, tal como están ahora.
-- [La capa de la API de RouterOS](/mikroscope/es/sinks/api-tier/): lo que lee el cliente
-  incorporado.
-- [Grabar, marcar, dibujar](/mikroscope/es/record/): el gráfico determinista que dibuja
+- [Capa de la API de RouterOS](/mikroscope/es/sinks/api-tier/): lo que lee el cliente incorporado.
+- [Grabar, marcar y dibujar](/mikroscope/es/record/): el gráfico determinista que dibuja
   `internal/chart`.
-- [En qué punto está](/mikroscope/es/about/status/): qué funciona hoy, y qué publica la versión
-  actual.
-- [Las versiones](/mikroscope/es/about/changelog/): la versión actual, y dónde se guarda la historia
-  de cada una, correcciones de esta página incluidas.
+- [Probado en](/mikroscope/es/about/status/): qué funciona hoy, y en qué ha corrido.
+- [Versiones](/mikroscope/es/about/changelog/): la versión actual, lo que publica y dónde se guarda
+  la historia de cada una, correcciones de esta página incluidas.
 
 </SeeAlso>

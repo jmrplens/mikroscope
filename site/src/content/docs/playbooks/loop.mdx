@@ -1,9 +1,10 @@
 ---
-title: A loop only the kernel could see
-description: "A layer-2 loop behind a MikroTik RB5009 bridge port that RouterOS's log never showed, found in the kernel log at the STP hello interval. It came back."
+title: Layer-2 loop
+description: "A layer-2 loop behind a MikroTik RB5009 bridge port that RouterOS's log never showed, found in the kernel log at the STP hello interval, and that came back later."
 head:
   - tag: title
     content: "MikroTik bridge loop the RouterOS log never showed | mikroscope"
+docType: evidence
 ---
 
 import FaultSignature from "../../../components/FaultSignature.astro";
@@ -13,16 +14,6 @@ import NotClaimed from "../../../components/NotClaimed.astro";
 import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
 import Src from "../../../components/Src.astro";
-
-This fault was not provoked. It was found by accident on 2026-09-12, while
-measuring something else, on the owner's production RB5009UG+S+ (RouterOS
-7.24.2, kernel 5.6.3), and it was diagnosed and gone the same day. A week later
-it [came back](#it-came-back). It is the clearest answer this project has to
-_"why not just poll the RouterOS API?"_: for its whole life RouterOS's log and
-port monitor reported a healthy device.
-
-The page follows the diagnosis in the order it happened, because the order is
-the method.
 
 **In short:** a layer-2 loop behind a port of a MikroTik bridge shows in the
 Linux kernel's log even while RouterOS's own log and port monitor stay clean, as
@@ -34,7 +25,16 @@ tx before you pull a cable. Here the stream fell
 from <Measured id="loop.eventsBefore" /> to <Measured id="loop.eventsAfter" /> after a
 firmware update on the mesh access points, and a week later the loop came back.
 
-## The symptom
+A real fault, not provoked. It was found by accident on 2026-09-12, while
+measuring something else, on the owner's production RB5009UG+S+ (RouterOS
+7.24.2, kernel 5.6.3), and was diagnosed and gone the same day. A week later it
+[came back](#it-came-back). For its whole life, RouterOS's log and port monitor
+reported a healthy device.
+
+Steps 1 to 6 are the diagnosis in the order it ran. Follow them in the same
+order on your own router.
+
+## Symptom {#the-symptom}
 
 `/snapshot` carried a steady stream of `events` — the agent's `kmsg` source — at **<Measured id="loop.eventsBefore" />**:
 
@@ -50,11 +50,11 @@ block [RFC 9542](https://www.rfc-editor.org/rfc/rfc9542.html#section-2.1.4) rese
 for documentation (it replaced RFC 7042 in 2024) — on your device it is your
 bridge's address, and that is how you recognise the line.
 
-## Step 1 — establish that it is real, and get a number
+## 1. Confirm and count {#step-1--establish-that-it-is-real-and-get-a-number}
 
-A single alarming log line is an anecdote. A _rate_ is a measurement, and a rate
-is what tells you later whether a fix worked. Count events per second over a
-window long enough to be stable:
+Count events per second over a window long enough to be stable. A single log
+line is an anecdote; a rate is a measurement, and it tells you later whether a
+fix worked:
 
 ```sh
 curl -s "http://172.30.10.2:9123/snapshot?seconds=120" \
@@ -72,16 +72,9 @@ for k,v in c.most_common(): print(f"  {v:5d}  {k}")'
 holds — 60 s at the default `BUFFER_S`. The window's length comes from summing
 each sample's own `dt_ns`, not from the number you asked for.
 
-## Step 2 — read the timing, not just the text
+## 2. Read the timing {#step-2--read-the-timing-not-just-the-text}
 
-The gaps between the reflected frames were **<Measured id="loop.helloGap" />**, every time. That is
-not a coincidence to be noted and moved past: 2 s is the STP _hello interval_,
-which is RouterOS's [default
-HelloTime](https://help.mikrotik.com/docs/spaces/ROS/pages/21725254/Spanning+Tree+Protocol#SpanningTreeProtocol-Defaultvalues).
-The mechanism was therefore "the router emits a BPDU and receives its own BPDU
-back", which is a loop, not a misbehaving client.
-
-Timing is usually where the diagnosis actually lives:
+Take the gaps between consecutive occurrences of one message:
 
 ```sh
 # gaps between consecutive occurrences of one message
@@ -93,27 +86,39 @@ print([round(ts[i+1]-ts[i],2) for i in range(len(ts)-1)][:12])'
 ```
 
 `us` is the kernel's own timestamp for the record, in microseconds since boot on
-the monotonic clock — not the time the agent read it — so the gaps are the
+the monotonic clock, not the time the agent read it, so the gaps are the
 kernel's, not the sampler's.
 
-Since 1.2.0 standalone `mikroscope doctor` does this counting
-for you, in <Src path="internal/health/health.go" />: it reads
-the running agent's ring once and prints `WARN  layer2-loop` with the port named
-when three or more frames in the window came back carrying the bridge's own
-address. A port that STP moved to learning at least three more times than it let
-forward is reported as `stp-churn`, but only when that port does not already
-carry the own-address finding. Two alert rules,
-defined in <Src path="internal/dashboards/alerts.go" />, watch the same fault over time:
-`mikroscope-l2-loop` fires on the first own-address record, from the agent's
-kernel log, and `mikroscope-bridge-port-dark` fires on a bridge port that has
-received for ten minutes while the bridge sent it nothing, and needs the API
-tier. See [What the running agent
-shows](/mikroscope/install/prerequisites/#what-the-running-agent-shows) and
-[Alert rules](/mikroscope/dashboards/alerts/).
+The gaps between the reflected frames were **<Measured id="loop.helloGap" />**, every time. 2 s is
+the STP _hello interval_, RouterOS's [default
+HelloTime](https://help.mikrotik.com/docs/spaces/ROS/pages/21725254/Spanning+Tree+Protocol#SpanningTreeProtocol-Defaultvalues).
+So the router was sending a BPDU and receiving its own BPDU back: a loop, not a
+misbehaving client.
 
-## Step 3 — confirm RouterOS's log and port monitor really are blind
+`mikroscope doctor`, run on its own, does this counting for you
+(<Src path="internal/health/health.go" />). It reads the running agent's ring
+once and reports:
 
-Worth doing explicitly, because it decides where you spend the next hour:
+- `WARN  layer2-loop`, with the port named, when three or more frames in the
+  window came back carrying the bridge's own address;
+- `stp-churn` for a port that STP moved to learning at least three more times
+  than it let forward, unless that port already carries the own-address finding.
+
+Two alert rules in <Src path="internal/dashboards/alerts.go" /> watch the same
+fault over time:
+
+- `mikroscope-l2-loop` fires on the first own-address record, from the agent's
+  kernel log;
+- `mikroscope-bridge-port-dark` fires on a bridge port that has received for ten
+  minutes while the bridge sent it nothing. It needs the API tier.
+
+See [Health checks](/mikroscope/install/prerequisites/#what-the-running-agent-shows)
+and [Alert rules](/mikroscope/dashboards/alerts/).
+
+## 3. Check RouterOS's view {#step-3--confirm-routeross-log-and-port-monitor-really-are-blind}
+
+Check RouterOS's log and port monitor explicitly; the answer decides where you
+look next:
 
 ```text
 /log/print where topics~"bridge" or topics~"stp" or topics~"interface"
@@ -121,14 +126,14 @@ Worth doing explicitly, because it decides where you spend the next hour:
 ```
 
 Both came back clean: zero log rows on those topics, every port
-`designated-port` / `in-bridge`. RouterOS was not hiding the fault; it genuinely
-does not surface this class of kernel event.
+`designated-port` / `in-bridge`. RouterOS was not hiding the fault; it does not
+surface this class of kernel event.
 
 That is the log and the port monitor, not every counter the API offers. When the
 loop returned on 2026-09-19..23, the per-port rx/tx counters the API tier reads
 did show it, as a bridge port that receives while the bridge sends it nothing.
-That is the `mikroscope-bridge-port-dark` rule added in 1.2.0, backtested over
-those four days. It was not checked against the 2026-09-12 episode.
+That is the `mikroscope-bridge-port-dark` rule, backtested over those four days.
+It was not checked against the 2026-09-12 episode.
 
 The line the `interface` topic would have carried is the one people search for
 when they meet this fault. RouterOS has printed it in its own log, under the topics
@@ -149,15 +154,14 @@ Besides STP, RouterOS's guard against a loop is [Loop
 Protect](https://help.mikrotik.com/docs/spaces/ROS/pages/23396469/Loop+Protect),
 which sends its own packets out of an interface, disables the interface when one
 of them comes back, and logs that. MikroTik's page recommends (R/M)STP over it on
-bridge ports. It played no part in this diagnosis, and this page does not claim
-it would have caught this loop.
+bridge ports. It played no part in this diagnosis, and it is not claimed that it
+would have caught this loop.
 
-## Step 4 — find corroborating evidence outside the kernel log
+## 4. Corroborate {#step-4--find-corroborating-evidence-outside-the-kernel-log}
 
-A single source, however convincing, is one source. Two independent observations
-pointing the same way is a diagnosis. The MAC in the message belonged to
-`sfp-sfpplus1`, so the obvious suspicion was the SFP+ segment — but the bridge's
-own tables said otherwise:
+Look for a second, independent observation outside the kernel log. The MAC in
+the message belonged to `sfp-sfpplus1`, which pointed at the SFP+ segment; the
+bridge's own tables pointed elsewhere. Count the hosts learned on each port:
 
 ```text
 # hosts learned per port
@@ -177,20 +181,20 @@ own tables said otherwise:
 </ScrollTable>
 
 `ether2` was passing 22 million packets on a healthy 1 Gbps link and the bridge
-had learned **nothing** behind it — which is what a bridge does on a port where
-it keeps seeing its own addresses. It was also the only port receiving BPDUs.
-Both anomalies on the same port.
+had learned **nothing** behind it, which is what a bridge does on a port where
+it keeps seeing its own addresses. It was also the only port receiving BPDUs:
+both anomalies on the same port.
 
-The kernel log had said `eth1`, not `ether2`. Establishing that those are the
-same port cost real time that day; [RouterOS ports and kernel
-names](/mikroscope/reference/port-names/) is how to do it in one safe step, and
-why the agent does it for you on this board.
+The kernel log had said `eth1`, not `ether2`: the kernel and RouterOS name the
+same port differently. [Port names](/mikroscope/reference/port-names/) maps one
+to the other in one safe step, and says why the agent does it for you on this
+board.
 
-## Step 5 — make a change that tests the hypothesis
+## 5. Test the hypothesis {#step-5--make-a-change-that-tests-the-hypothesis}
 
-The hypothesis was "the device on `ether2` has a second path to the router
-through the other APs, which hang off the switch". Two changes were made on the
-switch first, and the honest result is that **they did nothing**:
+The hypothesis: the device on `ether2` has a second path to the router through
+the other APs, which hang off the switch. Two changes on the switch came first,
+and **neither moved the rate**:
 
 <ScrollTable label="Event rate after each change on the switch">
 
@@ -205,12 +209,10 @@ switch first, and the honest result is that **they did nothing**:
 
 One further reading in the same series, 1.50 /s, was also inside that band.
 
-That is a useful outcome, not a wasted step: it ruled out the switch with
-evidence. The lesson for a playbook is to **always re-measure after a change,
-even one you expect to work**, and to know your noise band before you interpret
-a difference.
+That ruled out the switch with evidence. **Re-measure after every change, even
+one you expect to work**, and know your noise band before you read a difference.
 
-## Step 6 — the fix, and confirming it two ways
+## 6. Fix and confirm {#step-6--the-fix-and-confirming-it-two-ways}
 
 The firmware of the mesh APs (Deco units) was updated; the cabling was not
 touched. Then:
@@ -219,13 +221,13 @@ touched. Then:
 events 9 -> 0.03/s   (baseline 1.49/s)
 ```
 
-and of those nine, _none_ was the loop message — they were the APs coming back
+and of those nine, _none_ was the loop message: they were the APs coming back
 (`eth1: phy link up`, `eth1: set isolation from 0 to 1`). The loop message, which
 had appeared every 2 s (30 times a minute, with twice as many blocking/learning
 records around it), appeared **zero** times in 300 s.
 
-The second, independent confirmation is the one worth internalising: the bridge's
-view became _coherent_.
+Confirm with a second, independent measurement. Here the bridge's view became
+_coherent_:
 
 <ScrollTable label="The bridge before and after the firmware update">
 
@@ -240,8 +242,8 @@ view became _coherent_.
 The same 60 devices, redistributed 36/24 instead of 60/0. While the loop existed,
 the router was learning nearly every device on the wrong port; the Zigbee
 coordinator `00:4B:12:96:80:33`, for instance, moved from the SFP+ to `ether2`,
-where it actually lives. A _second_ unrelated measurement falling into place is
-what makes a fix more than a coincidence of timing. It confirms the fault was gone
+where it lives. A _second_ unrelated measurement falling into place is what
+makes a fix more than a coincidence of timing. It confirms the fault was gone
 when it was measured, not that it stays gone: a week later [it came
 back](#it-came-back).
 
@@ -252,23 +254,26 @@ back](#it-came-back).
 	had anything to do with either, is not established either.
 </NotClaimed>
 
-## It came back
+## Recurrence {#it-came-back}
 
-The same signature returned on 2026-09-19, again a layer-2 loop through a second
-path via a mesh access point, and lasted until that path was broken on
-2026-09-23. For its first 34 h the port the bridge had stopped delivering to was
+The same signature returned on 2026-09-19, on RouterOS 7.24.4, again a layer-2
+loop through a second path via a mesh access point, and lasted until that path
+was broken on 2026-09-23. For its first 34 h the port the bridge had stopped delivering to was
 `sfp-sfpplus1`, then `ether2` for 62 h. Between 12:07 and 18:55 UTC on 2026-09-21
 and 22, `ether2` received 12 and 13 packets a second and sent 1; over the same
 hours on 2026-09-23, after the second path went at 12:06, it received 192 and
 sent 178.
 
-Two things were different the second time. For most of the first phase the
-own-address records in the kernel log named `ether2`, while the port receiving
-and hearing nothing back was `sfp-sfpplus1`: the message names the port the
-reflected frame came in on, not the port the loop had cut off. And RouterOS's
-per-port counters did show it, read as receive without transmit; the backtest
-of `mikroscope-bridge-port-dark` over 2026-09-19 11:13 to 2026-09-23 22:44 UTC
-marks those two ports in those two stretches and no other port.
+Two things were different the second time:
+
+- For most of the first phase the own-address records in the kernel log named
+  `ether2`, while the port receiving and hearing nothing back was
+  `sfp-sfpplus1`: the message names the port the reflected frame came in on,
+  not the port the loop had cut off.
+- RouterOS's per-port counters did show it, read as receive without transmit.
+  The backtest of `mikroscope-bridge-port-dark` over 2026-09-19 11:13 to
+  2026-09-23 22:44 UTC marks those two ports in those two stretches and no other
+  port.
 
 The reference InfluxDB store kept both halves, and the chart below is drawn from
 it, hour by hour: the kernel's own-address records on top, then what each of the
@@ -278,7 +283,7 @@ records came a few an hour; once `ether2` was, they came every 2 s, as on
 
 <Figure name="loop-2026-09-19" />
 
-## The signature
+## Signature {#the-signature}
 
 <FaultSignature origin="real" date="2026-09-12">
 
@@ -297,7 +302,7 @@ records came a few an hour; once `ether2` was, they came every 2 s, as on
 
 </FaultSignature>
 
-## What to take from it
+## Takeaways {#what-to-take-from-it}
 
 - Alarming text is a lead; a rate is evidence; a rate before and after is a
   conclusion.
@@ -312,12 +317,12 @@ records came a few an hour; once `ether2` was, they came every 2 s, as on
 
 ## See also
 
-- [RouterOS ports and kernel names](/mikroscope/reference/port-names/): how `eth1` became `ether2`,
-  and what the agent ships to spare you the hour.
-- [The shape of an idle router](/mikroscope/playbooks/idle/): why zero events is the baseline this
-  stream stood out against.
-- [The router's CPU, the container's network](/mikroscope/limits/namespaces/): why the kernel log is
-  visible from the container and the interface counters are not.
+- [Port names](/mikroscope/reference/port-names/): how `eth1` became `ether2`, and what the agent
+  ships to spare you the hour.
+- [Idle baseline](/mikroscope/playbooks/idle/): why zero events is the baseline this stream stood out
+  against.
+- [Container visibility](/mikroscope/limits/namespaces/): why the kernel log is visible from the
+  container and the interface counters are not.
 - [Alert rules](/mikroscope/dashboards/alerts/): `mikroscope-l2-loop` and
   `mikroscope-bridge-port-dark`, the two rules that watch for this fault.
 

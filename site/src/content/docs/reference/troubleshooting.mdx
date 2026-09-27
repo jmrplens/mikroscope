@@ -1,194 +1,235 @@
 ---
-title: When something does not work
-description: Symptoms in the words you see (a RouterOS error, a container that exits, an empty panel, a sink that drops), what each means and where it is explained.
+title: Troubleshooting
+description: Symptoms in the words you see (a doctor line, a RouterOS error, a container that exits, an empty panel, a sink that drops), with the cause and the fix for each.
+docType: reference
+head:
+  - tag: title
+    content: When something does not work | mikroscope
 ---
 
 import { Aside } from "@astrojs/starlight/components";
+import BoardTable from "../../../components/BoardTable.astro";
 import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
 import Src from "../../../components/Src.astro";
 
-Find the line you are looking at: each row says what it means and where the
-explanation lives.
+Find the line you are looking at. Each row gives its cause and the fix; a link leads to the longer
+explanation below. `doctor` prints a check as `MISSING` (install stops) or `WARN` (install goes on),
+followed by a `fix:` line.
 
-## Installing
+## Installing {#installing}
 
-<ScrollTable label="What goes wrong while installing, and what each message means">
+**`doctor`'s checks**, in the order it prints them:
 
-| You see                                                              | It means                                                              |
-| --------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| `doctor`: `MISSING RouterOS 7.24 or later` | [RouterOS below 7.24](#routeros-version) |
-| `doctor`: `MISSING architecture has a container package` | No agent can run on this router: MikroTik publishes the `container` package for `arm`, `arm64` and `x86_64` only |
-| `doctor`: `device-mode container=no`                                  | [The one step nobody can do remotely](#device-mode-containeryes)       |
-| `doctor`: `container package installed and enabled … found=0`         | [The package is not on the router](#no-container-package)              |
-| `doctor`: `MISSING architecture matches --arch … router=arm` | Leave `--arch` out so that `install` reads it from the router, or pass the one it names |
-| `doctor`: `MISSING architecture matches the --agent-tar image` | The tar is for another board: download the asset the fix names |
-| RouterOS: `unknown parameter privileged`                              | [RouterOS older than 7.24](#unknown-parameter-privileged)              |
-| Container log: `exec format error`                                    | [The wrong image for the board](#exec-format-error)                    |
-| `no Go toolchain on PATH`                                             | Install with `--remote-image` or `--agent-tar` instead                 |
-| `--agent-tar …: this is not a mikroscope agent image`                 | The wrong asset — see [which tar](/mikroscope/install/routes/#which-tar) |
-| A CLI of 1.2.2 or earlier: `registry-url is https://… registry-url=…` | [Registry host](#the-registry-host) |
-| `doctor`: `free flash ≥ …` fails                                      | `--disk tmpfs` or `--ephemeral`, or free space on the flash            |
-| `doctor`: `MISSING disk … has ≥ … free` or `MISSING disk tmpfs is RAM` | Free space on the disk or give the tmpfs disk a larger `tmpfs-max-size`; `--ephemeral` needs the disk in slot `tmpfs` to be a tmpfs disk |
-| `doctor`: `WARN start-on-boot suits a root in RAM` | The root on a tmpfs disk is gone after a reboot: pass `--start-on-boot no`, or `--ephemeral` |
-| `doctor`: `WARN free memory leaves room for the pull` | Less than `--memory-max` plus 16 MiB is free; if the pull fails, install from a tar with `--agent-tar` |
-| `doctor`: `WARN the router picks the image's architecture` on `arm` | Which of the two 32-bit ARM images RouterOS pulls is not known; on `Exec format error`, install from `mikroscope-agent-armv5.tar` |
-| `doctor`: `MISSING --lan-address … is the router's` or `WARN --lan-address is not on the uplink` | Pass the address the router has on its LAN, as `/ip/address/print` lists it |
-| `doctor`: `MISSING veth name … is free or ours` | [Foreign veth](#foreign-veth) |
-| `doctor`: `MISSING envlist … is free or ours` or `container name … is free or ours` | Something else holds that name: pick another `--name` or `--container-name` |
-| `doctor`: `MISSING install manifest … is free or ours` | A file at that path is not this install's manifest: move it away, or pick another `--name` |
-| `doctor`: `MISSING subnet … does not overlap a route` | [Subnet overlap](#subnet-overlap) |
-| `doctor`: `MISSING interface list LAN exists` | `--iface-list none` when the fix offers it, or create the list |
-| `doctor`: `MISSING no firewall rule drops the agent's replies` | [Firewall trap](#firewall-traps) |
-| `doctor`: `WARN no registry credential meant for another registry`    | [One credential for every registry](#one-credential-for-every-registry) |
-| `doctor`: `WARN the installed agent published on the LAN asks for a token` | `upgrade` with the same `--name` and `--token`; or `uninstall --name … --yes`, which removes the agent and its LAN rules |
-| `doctor`: `WARN nothing tagged for … that these flags do not select` | An install made with other flags: run `status` and `uninstall` with no shape flag, and they read how it was made |
-| `the install named … on the router does not match the flags` | A flag or `MIKROSCOPE_*` variable contradicts the install on the router: drop it, and the verb uses what the router holds |
-| `doctor`: `WARN layer2-loop` in the `health` section                  | [A loop RouterOS does not show](#a-loop-routeros-does-not-show)        |
-| `doctor`: `WARN stp-churn` in the `health` section                    | A second path to the router, or a topology that keeps changing behind that port: [What the running agent shows](/mikroscope/install/prerequisites/#what-the-running-agent-shows) |
-| `doctor`: `WARN link-flap` in the `health` section                    | The cable, the connector, the device at the other end rebooting, or auto-negotiation failing |
-| `doctor`: `WARN softnet-drops` in the `health` section                | Packets lost inside the router, faster than the receive path could take them: [A packet flood](/mikroscope/playbooks/packet-flood/) |
-| `doctor`: `health … skipped: no agent answered`                       | The agent is not running, or this host cannot reach its /30: pass the `--subnet` and `--port` it was installed with, see [Reaching the agent](/mikroscope/install/reaching-the-agent/) |
-| `doctor`: `skipped: the agent answered /healthz but its ring could not be read` | Most often the agent has a `TOKEN`: pass `--token` |
+<ScrollTable label="doctor's MISSING and WARN lines, their cause and their fix">
+
+| You see                                                                        | Cause                                                                                                          | Fix                                                                                                                                                 |
+| ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MISSING RouterOS 7.24 or later`                                               | the router runs an older RouterOS                                                                              | upgrade RouterOS to 7.24 or later, and the `container` package with it ([details](#routeros-version))                                              |
+| `MISSING architecture has a container package`                                 | MikroTik publishes the `container` package for `arm`, `arm64` and `x86_64` only                                | none: no agent can run on this router                                                                                                               |
+| `MISSING architecture matches --arch <arch>`                                   | `--arch` names another architecture than the router's                                                          | re-run with the `--arch` the fix names, or leave `--arch` out and `install` reads it from the router                                               |
+| `MISSING architecture matches the --agent-tar image`                           | the tar is for another board                                                                                   | download `mikroscope-agent-<arch>.tar`, the asset the fix names                                                                                     |
+| `WARN the router picks the image's architecture`, on `arm`                     | which of the two 32-bit ARM images RouterOS pulls from the index on an EN7562CT board is not known             | if the container stops with `Exec format error`, install from `mikroscope-agent-armv5.tar` with `--agent-tar` ([details](#exec-format-error))      |
+| `MISSING container package installed and enabled`, `found=0`                   | the package is not on the router                                                                               | download it for the router's architecture and RouterOS version, upload it and reboot ([details](#no-container-package))                            |
+| `MISSING container package installed and enabled`, `found=1 enabled=0`         | the package is there and disabled                                                                              | `/system/package/enable container`, then reboot                                                                                                     |
+| `MISSING device-mode container=yes`                                            | containers are off, and only a confirmation at the device turns them on                                         | `/system/device-mode/update container=yes`, then confirm it as the console asks ([details](#device-mode-containeryes))                              |
+| `MISSING free memory ≥ <size>`                                                 | less free memory than `--memory-max`                                                                           | free memory on the router; the agent needs its `--memory-max` plus headroom                                                                         |
+| `WARN free memory leaves room for the pull`                                    | less than `--memory-max` plus 16 MiB free, and the router extracts a pulled image before the agent starts      | if the pull fails, install from a tar with `--agent-tar`                                                                                            |
+| `MISSING free flash ≥ <size>`                                                  | the flash cannot hold the tar and the root, or the root of a pulled image, with 4 MiB to spare                 | free space on the flash, or `--disk tmpfs` or `--ephemeral` where a tmpfs disk exists                                                               |
+| `MISSING disk <disk> exists`                                                   | no disk in that slot; with `--ephemeral`, no disk in slot `tmpfs`                                              | `/disk/add type=tmpfs tmpfs-max-size=64M slot=tmpfs` for a RAM disk, or name an existing disk with `--disk`                                         |
+| `MISSING disk <disk> has ≥ <size> free`                                        | not enough room on that disk                                                                                   | free space on it, or a larger `tmpfs-max-size`                                                                                                      |
+| `MISSING disk tmpfs is RAM`                                                    | `--ephemeral`, and slot `tmpfs` holds a disk that is not a RAM disk                                            | free the slot for a tmpfs disk, or install with `--disk <slot>` without `--ephemeral`                                                               |
+| `WARN start-on-boot suits a root in RAM`                                       | the root is on a tmpfs disk, which a reboot empties, and `start-on-boot=yes`                                   | `--start-on-boot no`, or `--ephemeral`                                                                                                              |
+| `MISSING veth name <veth> is free or ours`                                     | a veth of that name exists without this install's tag                                                          | another `--veth` and `--subnet`, or remove the veth by hand if it is yours ([details](#foreign-veth))                                              |
+| `MISSING envlist <name>-env is free or ours`                                   | an envlist of that name exists without this install's marker                                                   | another `--name`                                                                                                                                    |
+| `MISSING install manifest <path> is free or ours`                              | a file at the manifest's path is not this install's manifest                                                   | move it away, or pick another `--name`                                                                                                              |
+| `MISSING container name <name> is free or ours`                                | a container of that name exists without this install's tag                                                     | another `--container-name`                                                                                                                          |
+| `MISSING subnet <subnet> does not overlap a route`                             | a route or a network on the router collides with the /30                                                       | another /30 with `--subnet` ([details](#subnet-overlap))                                                                                            |
+| `MISSING interface list <list> exists`                                         | the list the veth would join does not exist                                                                    | `--iface-list none` when the fix offers it first; otherwise `/interface/list/add name=<list>`, or the `--iface-list` your drop rule uses            |
+| `MISSING no firewall rule drops the agent's replies`                           | a firewall rule drops the agent's replies with the plan's list memberships                                     | the `--iface-list` and `--addr-list` the fix names, or an accept rule before that rule ([details](#firewall-traps))                                 |
+| `WARN no firewall rule drops the agent's replies`, `… may drop them`           | a rule matches on something `doctor` does not judge: a destination, a mark, a rate                             | if the agent does not answer after `install`, look at that rule first                                                                               |
+| `MISSING --lan-address <address> is the router's`                              | with `--expose`, no interface of the router holds that address                                                 | the address the router has on its LAN, as `/ip/address/print` lists it                                                                              |
+| `WARN --lan-address is not on the uplink`                                      | that address's interface carries the default route or is in the `WAN` list                                     | the router's LAN address; the dst-nat would otherwise publish the agent on the Internet side                                                        |
+| `WARN no registry credential meant for another registry`                       | a `/container/config` username is set for another registry than the image's                                    | [Registry credentials](#one-credential-for-every-registry)                                                                                          |
+| `WARN the installed agent published on the LAN asks for a token`               | an install of this `--name` has a tagged dst-nat and no `TOKEN`                                                | `mikroscope upgrade --name <name> --token <secret>`, or `mikroscope uninstall --name <name> --yes`, which removes the agent and its LAN rules        |
+| `WARN nothing tagged for <name> that these flags do not select`                | an earlier install with other flags left tagged objects this plan does not name                                | `mikroscope status` and `mikroscope uninstall` with no shape flag: they read how the install was made                                               |
+| a fix that reads `doctor could not read …`                                     | the router printed something other than the answer, as an older RouterOS does for a menu it lacks              | run that read by hand on the router to see why                                                                                                      |
+
+</ScrollTable>
+
+**Other messages** of `install`, `upgrade` and `uninstall`:
+
+<ScrollTable label="Install, upgrade and uninstall messages, their cause and their fix">
+
+| You see                                                                            | Cause                                                                                   | Fix                                                                                                                  |
+| ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `iface-list "…" is a RouterOS built-in list, which takes no member`                | `--iface-list all`, `dynamic` or `static`                                               | the list your drop rule uses, or `none`                                                                              |
+| `the install named … on the router does not match the flags`                       | a flag or `MIKROSCOPE_*` variable contradicts the install on the router                 | drop it: the verb uses what the router holds                                                                         |
+| `the install named … asks for a token and upgrade would write its envlist without one` | the install has a token, and `upgrade` got none                                     | `--token`, or `MIKROSCOPE_TOKEN`                                                                                     |
+| `nothing to upgrade: run install first`                                            | no install of this `--name` on the router                                               | `install`, or the `--name` the install was made with                                                                 |
+| `no Go toolchain on PATH`                                                          | building the agent needs Go and a checkout                                              | `--remote-image` or `--agent-tar`                                                                                    |
+| `--agent-tar …: this is not a mikroscope agent image`                              | the wrong file                                                                          | the release's `mikroscope-agent-<arch>.tar` ([Offline install](/mikroscope/install/offline/#choose-the-image-tar))  |
+| `mikroscope: the image was not extracted within 120 s; mikroscope.tar stays`       | RouterOS took longer than `--extract-timeout` to extract the tar                        | a longer `--extract-timeout`, up to `600s`; `uninstall` removes the tar with the container                           |
+| RouterOS: `unknown parameter privileged`                                           | RouterOS older than 7.24, reached with `--no-doctor`                                    | upgrade RouterOS ([details](#unknown-parameter-privileged))                                                          |
+| Container log: `exec format error`                                                 | the image is for another architecture than the board                                   | the image for the board ([details](#exec-format-error))                                                              |
+| `registry-url is https://…`, from an older CLI                                     | an older CLI sent the reference without its registry host                               | upgrade the CLI, or install from the tar ([details](#the-registry-host))                                             |
+
+</ScrollTable>
+
+**`doctor`'s health section**, which reads the running agent's ring:
+
+<ScrollTable label="doctor's health findings, their cause and their fix">
+
+| You see                                                              | Cause                                                                                                  | Fix                                                                                                                                                 |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `WARN layer2-loop`                                                   | the bridge receives its own frames back on a port                                                      | find the second path and break it ([details](#a-loop-routeros-does-not-show))                                                                       |
+| `WARN stp-churn`                                                     | a second path to the router, or a topology that keeps changing behind that port                       | [Requirements](/mikroscope/install/prerequisites/#what-the-running-agent-shows)                                                                     |
+| `WARN link-flap`                                                     | the cable, the connector, the device at the other end rebooting, or auto-negotiation failing           | check the link at both ends                                                                                                                         |
+| `WARN softnet-drops`                                                 | packets lost inside the router, arriving faster than the receive path could take them                  | [Packet flood](/mikroscope/playbooks/packet-flood/)                                                                                                 |
+| `health … skipped: no agent answered`                                | the agent is not running, or this host cannot reach its /30                                            | pass the `--subnet` and `--port` it was installed with; see [Network access](/mikroscope/install/reaching-the-agent/)                               |
+| `skipped: the agent answered /healthz but its ring could not be read` | most often the agent has a `TOKEN`                                                                    | pass `--token`                                                                                                                                      |
 
 </ScrollTable>
 
 ### device-mode container=yes
 
-MikroTik gates containers behind a switch that cannot be flipped over the
-network. `/system/device-mode/update container=yes` starts it, and then the
-console asks for a physical confirmation — the reset button, or a power cycle —
-within five minutes. No flag, no script and no version of this tool can do that
-step for you. It is the first thing to arrange, because everything else waits
-on it: [What the router needs](/mikroscope/install/prerequisites/).
+MikroTik gates containers behind a switch that cannot be flipped over the network.
+`/system/device-mode/update container=yes` starts it, and the console then asks for a confirmation
+at the device within five minutes. `doctor`'s fix quotes both prompts:
+
+- A router prints `update: please activate by turning power off or pressing reset or mode button`:
+  press the reset or mode button, or cut the power.
+- CHR prints `update: turn off power in 5m to activate changes`: power the VM off and on again
+  within 5 minutes.
+
+No flag, no script and no version of this tool can do that step for you. Arrange it first, because
+everything else waits on it: [Requirements](/mikroscope/install/prerequisites/).
 
 ### No container package
 
-The `container` package is a separate download from mikrotik.com, per
-architecture and per RouterOS version. Upload it, reboot, then
-`/system/package/enable container`. `doctor` counts it as present only when it
-is installed **and** not disabled.
+The `container` package is a separate download from mikrotik.com, per architecture and per RouterOS
+version. Upload it and reboot. `doctor` counts it as present only when it is installed **and** not
+disabled; a disabled one takes `/system/package/enable container` and a reboot.
 
 ### unknown parameter privileged
 
-RouterOS 7.24 added `privileged=`, and the container step writes it, so an
-earlier 7.x fails there. `doctor` stops an install on such a router before it
-writes anything ([RouterOS below 7.24](#routeros-version)); with
-`--no-doctor` it fails at the container step, after the tar has been uploaded,
-which is why the install then takes it back with it. Upgrade RouterOS to 7.24 or later:
-`--privileged=false` does not help, because the step then writes
-`privileged=no`, the same unknown parameter
-(<Src path="internal/router/stepspec.go" />). Once on 7.24,
-[what privileged buys](/mikroscope/limits/privileged/) says what the setting
-changes: without it the agent cannot read `/dev/kmsg`, and the kernel log is
-where several of this project's playbooks start.
+RouterOS 7.24 added `privileged=`, and the container step writes it, so an earlier 7.x fails there.
+`doctor` stops an install on such a router before it writes anything ([RouterOS below
+7.24](#routeros-version)); with `--no-doctor` it fails at the container step, after the tar has been
+uploaded, which is why the install then takes it back with it. Upgrade RouterOS to 7.24 or later:
+`--privileged=false` does not help, because the step then writes `privileged=no`, the same unknown
+parameter (<Src path="internal/router/stepspec.go" />). [Privileged
+mode](/mikroscope/limits/privileged/) says what the setting changes: without it the agent cannot
+read `/dev/kmsg`, and the kernel log is where several of the fault signatures start.
 
 ### exec format error
 
-The container starts and dies immediately, and the log says `exec format
-error`. The image is for another architecture than the board — and on 32-bit
-ARM, "arm" is not one architecture.
+The container starts and dies immediately, and the log says `exec format error`. The image is for
+another architecture than the board, and on 32-bit ARM, "arm" is not one architecture. MikroTik's
+container documentation says that devices with an EN7562CT CPU support only arm32v5 container
+images, while its other 32-bit ARM boards run an ARMv7 userland:
 
-MikroTik's container documentation says "for devices with EN7562CT CPU like the
-hEX Refresh, only arm32v5 container images are supported"; its other 32-bit ARM
-boards run an ARMv7 userland. An ARMv5 image runs on both, an ARMv7 image does
-not run on the first. So:
+<BoardTable label="Which 32-bit ARM image a board takes">
 
-- With `--remote-image`, this cannot happen: the published index carries all
-  four platforms and the router matches its own.
-- With `--agent-tar`, take `mikroscope-agent-armv5.tar` when the board is
-  32-bit ARM and you are not certain which kind it is.
+| Board                                           | Image that runs                   | Release asset                                                 |
+| ----------------------------------------------- | --------------------------------- | ------------------------------------------------------------- |
+| hEX Refresh, hEX S (2025), any EN7562CT board   | `linux/arm/v5` only               | `mikroscope-agent-armv5.tar`                                  |
+| other 32-bit ARM                                | `linux/arm/v5` or `linux/arm/v7`  | `mikroscope-agent-armv5.tar` or `mikroscope-agent-armv7.tar`  |
+
+</BoardTable>
+
+- With `--remote-image`, the router picks from the image's index; on an EN7562CT board, which of the
+  two it pulls is not known, and `doctor` warns.
+- With `--agent-tar`, take `mikroscope-agent-armv5.tar` when the board is 32-bit ARM and you are
+  not certain which kind it is.
 - Building from a checkout, `--goarm 5` is the default for the same reason.
-
-[Which tar](/mikroscope/install/routes/#which-tar) is the table.
 
 ### RouterOS below 7.24 {#routeros-version}
 
 The agent needs RouterOS 7.24 or later, and `doctor` checks the version first:
-`MISSING RouterOS 7.24 or later (<version>)`, with the fix to upgrade
-RouterOS (`/system/package/update`) and the `container` package with it. The
-rest of the report still reads, so fix everything it names in one visit.
+`MISSING RouterOS 7.24 or later (<version>)`, with the fix to upgrade RouterOS
+(`/system/package/update`) and the `container` package with it. The rest of the report still reads,
+so fix everything it names in one visit.
 
 ### Foreign veth {#foreign-veth}
 
-`MISSING veth name veth-mikroscope is free or ours (found=1 ours=0)`: a veth
-with that name exists and does not carry the install's tag. mikroscope does not
-build on an object it did not create, and will not remove it either. Pick
-another `--veth`, and another `--subnet` with it, for a second install beside
-something else; or remove the veth by hand if it is a leftover of your own. The
+`MISSING veth name veth-mikroscope is free or ours (found=1 ours=0)`: a veth with that name exists
+and does not carry the install's tag. mikroscope does not build on an object it did not create, and
+will not remove it either. Pick another `--veth`, and another `--subnet` with it, for a second
+install beside something else; or remove the veth by hand if it is a leftover of your own. The
 envlist `<name>-env` and `--container-name` are checked the same way.
 
 ### Subnet overlap {#subnet-overlap}
 
-`MISSING subnet 172.30.10.0/30 does not overlap a route (routes=172.30.10.0/30 via ether2)`:
-a route of the main table lies inside the /30 (an inactive or disabled one too, which can become
-active), or a network on another interface holds its
-router end, so the agent's address would be ambiguous. Pick another /30 with
-`--subnet`, one no interface and no route of the router uses. A route that only
-contains the /30, such as a default route or a wider prefix to a VPN, is no
-overlap, and neither is a blackhole route.
+`MISSING subnet 172.30.10.0/30 does not overlap a route (routes=172.30.10.0/30 via ether2)`: a
+route of the main table lies inside the /30 (an inactive or disabled one too, which can become
+active), or a network on another interface holds its router end, so the agent's address would be
+ambiguous. Pick another /30 with `--subnet`, one no interface and no route of the router uses. A
+route that only contains the /30, such as a default route or a wider prefix to a VPN, is no overlap,
+and neither is a blackhole route.
 
 ### Firewall trap {#firewall-traps}
 
 `MISSING no firewall rule drops the agent's replies`, followed by the rule, as
-`/ip/firewall/raw rule 0 (chain=prerouting action=drop, …) "…" drops them`.
-`doctor` reads the raw prerouting and filter forward and input rules and follows
-the agent's replies through them with the list memberships the install would
-write. The fix names the `--iface-list` and `--addr-list` that let them through.
-When no list does, as for a rule written with `src-address=!192.168.88.0/24`
-instead of an address list, add an accept rule for `in-interface=<veth>` before
-it, or pick a `--subnet` inside the range. A `WARN` on the same line means a
-rule might drop them, because it matches on something `doctor` does not judge:
-if the agent does not answer after install, that rule is the first to look at.
-[Firewall lists](/mikroscope/install/firewall/) explains the two rules a
-default configuration has.
+`/ip/firewall/raw rule 0 (chain=prerouting action=drop, …) "…" drops them`. `doctor` reads the raw
+prerouting and filter forward and input rules and follows the agent's replies through them with the
+list memberships the install would write.
+
+- The fix names the `--iface-list` and `--addr-list` that let them through:
+  `install with --iface-list LAN --addr-list LANs: …`.
+- When no list does, as for a rule written with `src-address=!192.168.88.0/24` instead of an address
+  list, the fix says `add an accept rule for in-interface=<veth> before it, or pick a --subnet
+  inside 192.168.88.0/24`.
+- A `WARN` on the same line means a rule might drop them, because it matches on something `doctor`
+  does not judge: if the agent does not answer after install, that rule is the first to look at.
+
+[Firewall lists](/mikroscope/install/firewall/) explains the drop rules and the trap check.
 
 ### Registry host {#the-registry-host}
 
-mikroscope sends the whole reference in `remote-image=`, registry host
-included, so `/container/config registry-url`, one setting for the whole
-device, decides nothing about the pull, and Docker Hub and GHCR serve the
-agent with no registry login
-([Nothing to set on the router](/mikroscope/install/routes/#nothing-to-set-on-the-router)).
-A CLI of 1.2.2 or earlier sent the reference without its host, and RouterOS
-took the host from `registry-url`. With such a CLI, either set the setting as
-its fix line says, which changes it for every other container on the router
-too, or install from the tar with `--agent-tar`.
+mikroscope sends the whole reference in `remote-image=`, registry host included, so
+`/container/config registry-url`, one setting for the whole device, decides nothing about the pull,
+and Docker Hub and GHCR serve the agent with no registry login ([Registry
+settings](/mikroscope/install/routes/#nothing-to-set-on-the-router)). An older CLI sent the reference
+without its host, and RouterOS took the host from `registry-url` ([Upgrade
+notes](/mikroscope/install/upgrade/#upgrade-notes)). With such a CLI, upgrade it; or
+set the setting as its fix line says, which changes it for every other container on the router too;
+or install from the tar with `--agent-tar`.
 
 ### Registry credentials {#one-credential-for-every-registry}
 
-`/container/config` holds one username and password for the device. A Docker
-Hub account presented to GHCR fails, and the container stays in `error` with
-`auth error` in its log, for an image anyone can pull anonymously, when
-`registry-url` names the registry the pull goes to. Whether RouterOS also
-presents the username to a host named only in `remote-image=` is not known
-([Tested on](/mikroscope/about/status/)), so `doctor` warns whenever a username is set and the host `registry-url` names is not the
-host the image comes from, and `upgrade` prints the same check before it
-removes anything. Install from a tar with `--agent-tar`, which pulls
-nothing, or pull from the registry the username belongs to — the Docker Hub
-reference for a Docker Hub login — or clear the username if nothing else on the
-router needs it. The password cannot be read back once cleared, so do that only
-knowing where it lives. An empty `registry-url` with a username set warns too,
-because doctor cannot tell which registry the username is for; if you know it is
-a Docker Hub login and you pull the Docker Hub reference, the warning is advice
-you can ignore.
+`/container/config` holds one username and password for the device. A Docker Hub account presented
+to GHCR fails, and the container stays in `error` with `auth error` in its log, for an image anyone
+can pull anonymously, when `registry-url` names the registry the pull goes to. Whether RouterOS also
+presents the username to a host named only in `remote-image=` is not known ([Tested
+on](/mikroscope/about/status/#not-tested)), so `doctor` warns whenever a username is set and the
+host `registry-url` names is not the host the image comes from, and `upgrade` prints the same check
+before it removes anything.
+
+- Install from a tar with `--agent-tar`, which pulls nothing.
+- Or pull from the registry the username belongs to: the Docker Hub reference for a Docker Hub
+  login.
+- Or clear the username if nothing else on the router needs it. The password cannot be read back
+  once cleared, so do that only knowing where it lives.
+
+An empty `registry-url` with a username set warns too, because `doctor` cannot tell which registry
+the username is for; if you know it is a Docker Hub login and you pull the Docker Hub reference, the
+warning is advice you can ignore.
 
 ### Hidden layer-2 loop {#a-loop-routeros-does-not-show}
 
-The bridge is receiving its own frames back on that port: something behind it
-reaches the router by a second path. A mesh node with both a cable and a
-wireless backhaul is the usual cause, and so is a switch cabled twice. STP does
-its job and blocks the port, so nothing melts down, and RouterOS reports the
-port running and error-free — but whatever is behind it reaches the router
-some other way or not at all ([Layer-2 loop](/mikroscope/playbooks/loop/) is a
-case read end to end). Find the second path and break it; the finding goes away
-within one ring.
+The bridge is receiving its own frames back on that port: something behind it reaches the router by
+a second path. A mesh node with both a cable and a wireless backhaul is the usual cause, and so is a
+switch cabled twice. STP does its job and blocks the port, so nothing melts down, and RouterOS
+reports the port running and error-free, but whatever is behind it reaches the router some other way
+or not at all ([Layer-2 loop](/mikroscope/playbooks/loop/) is a case read end to end). Find the
+second path and break it; the finding goes away within one ring.
 
-`doctor` reads only the ring, about the last minute, so a loop that has already
-cleared or comes and goes can be gone by the time it runs. The alert
-[`mikroscope-bridge-port-dark`](/mikroscope/dashboards/alerts/#the-rules) reads
-the same fault from history: a bridge port that received packets for ten
-minutes while the bridge sent it neither a unicast nor a broadcast frame.
+`doctor` reads only the ring, about the last minute, so a loop that has already cleared or comes and
+goes can be gone by the time it runs. The alert
+[`mikroscope-bridge-port-dark`](/mikroscope/dashboards/alerts/#the-rules) reads the same fault from
+history: a bridge port that received packets for ten minutes while the bridge sent it neither a
+unicast nor a broadcast frame.
 
 ## Agent not reachable {#the-agent-is-installed-and-nothing-answers}
 
@@ -196,231 +237,221 @@ minutes while the bridge sent it neither a unicast nor a broadcast frame.
 mikroscope status
 ```
 
-That prints the ownership counts and, if it can reach the agent, its health. If
-the counts are there and the health is not, the container is running and
-something between you and it is not:
+That prints the ownership counts and, if it can reach the agent, its health.
 
-- **The firewall.** Two rules commonly eat this traffic, and neither is
-  obvious: [The two firewall traps](/mikroscope/install/firewall/) is that page,
-  and `doctor` follows the agent's replies through the router's rules
-  ([Firewall trap](#firewall-traps)).
-- **The route.** The agent answers on its `/30`, on the router's LAN side. A
-  collector elsewhere reaches it the ways
-  [Reaching the agent](/mikroscope/install/reaching-the-agent/) lists.
-- **The container never started.** `/container/print detail` on the router, and
-  `/log/print where topics~"container"`.
+<ScrollTable label="An installed agent that does not answer: cause and fix">
 
-## Missing data {#data-is-arriving-and-something-is-empty}
-
-<ScrollTable label="Empty or missing data, by where you are looking">
-
-| You see                                             | It means                                                                  |
-| ----------------------------------------------------- | -------------------------------------------------------------------------- |
-| No `events` at all, ever                            | `privileged=yes` is what `/dev/kmsg` needs                                 |
-| No PMU panels, no cycles or instructions            | `perf_event_open` is unavailable on that kernel or board                   |
-| A panel says **No data** and the others are fine    | That measurement is not produced on this device; the dashboard has a row for it |
-| A panel shows a red error badge                     | The query failed — the datasource, not the data                            |
-| `forward` prints `… dropped` for a sink             | [The sink could not keep up](#a-sink-is-dropping)                          |
-| Loki accepted everything and a query returns nothing | A push is not queryable until the chunk flushes                           |
-| Numbers stop at a round moment and resume           | A gap: the ring wrapped before the collector pulled it                     |
-| The kernel tier stops dead and the API tier carries on | [The agent restarted](#the-agent-restarted-and-the-kernel-tier-stopped)  |
-| The API panels are blank and the kernel panels are fine | [The API connection died](#the-api-panels-are-blank-and-the-kernel-panels-are-fine) |
+| You see                                                                   | Cause                                                                         | Fix                                                                                                                                                    |
+| ------------------------------------------------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| after `install`: `the container is not running on the router`             | the container never started, or stopped                                       | `/log/print where topics~"container"` on the router                                                                                                    |
+| after `install`: `the container runs; this host cannot reach …`            | a firewall rule, or no route from this host to the /30                        | `doctor`'s [trap check](#firewall-traps), then [Network access](/mikroscope/install/reaching-the-agent/): a static route, the relay or `--expose`      |
+| `status`: the counts, then `agent: not reachable from this host (…)`       | the container is not running, a firewall rule, or no route to the /30         | `/container/print` and `/log/print where topics~"container"` on the router; then as the row above                                                    |
 
 </ScrollTable>
 
-The dashboards carry a row named **"Not available on this device"** for exactly
-this: panels whose measurement the kernel or the board does not produce are
-moved into it rather than left to draw an empty graph among the others.
-`mikroscope dashboards check` asks the datasource which measurements it really
-holds and does that sorting for your store:
-[Import and check](/mikroscope/dashboards/import-and-check/).
+## Missing data {#data-is-arriving-and-something-is-empty}
+
+<ScrollTable label="Empty or missing data: cause and fix">
+
+| You see                                                | Cause                                                                        | Fix                                                                                                                                                   |
+| ------------------------------------------------------ | ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| No `events` at all, ever                               | the container runs unprivileged, and `/dev/kmsg` needs `privileged=yes`      | install or upgrade without `-privileged=false`                                                                                                        |
+| No PMU panels, no cycles or instructions               | `perf_event_open` is unavailable on that kernel or board                     | none; the dashboard moves those panels to "Not available on this device"                                                                              |
+| A panel says **No data** and the others are fine       | that measurement is not produced on this device                              | `mikroscope dashboards check` sorts such panels into their row                                                                                        |
+| A panel shows a red error badge                        | the query failed: the datasource, not the data                               | [Stores and dashboards](#the-store-and-the-dashboard)                                                                                                 |
+| `forward` prints `… dropped` for a sink                | the sink could not keep up                                                   | [Sink drops](#a-sink-is-dropping)                                                                                                                     |
+| Loki accepted everything and a query returns nothing   | a push is not queryable until the chunk flushes                              | query again after the flush                                                                                                                           |
+| Numbers stop at a round moment and resume              | a gap: the ring wrapped before the collector pulled it                       | keep the collector running, or a longer `--buffer`                                                                                                    |
+| The kernel tier stops dead and the API tier carries on | the agent restarted                                                          | [Kernel tier stops after restart](#the-agent-restarted-and-the-kernel-tier-stopped)                                                                   |
+| The API panels are blank and the kernel panels are fine | the API connection died                                                     | [API panels blank](#the-api-panels-are-blank-and-the-kernel-panels-are-fine)                                                                          |
+
+</ScrollTable>
+
+The dashboards carry a row named **"Not available on this device"** for exactly this: panels whose
+measurement the kernel or the board does not produce are moved into it rather than left to draw an
+empty graph among the others. `mikroscope dashboards check` asks the datasource which measurements
+it really holds and does that sorting for your store: [Import and
+check](/mikroscope/dashboards/import-and-check/).
 
 ### Kernel tier stops after restart {#the-agent-restarted-and-the-kernel-tier-stopped}
 
-The agent numbers its samples from 1 at every start, so an agent that restarts
-— an upgrade, a container restart, a reboot — has a newest sequence number far
-below the collector's cursor. The collector notices on its next health read,
-which is once a minute, logs
+The agent numbers its samples from 1 at every start, so an agent that restarts (an upgrade, a
+container restart, a reboot) has a newest sequence number far below the collector's cursor. The
+collector notices on its next health read, which is once a minute, logs
 
 ```text
 agent restarted: its newest sample is 571 and the cursor was 1737212; resuming from 1
 ```
 
-and resumes from the new ring's oldest sample, so what the agent took while
-nobody was collecting is picked up rather than skipped. The minute's worth of
-samples between the restart and the health read is lost with the container, not
-by the collector.
+and resumes from the new ring's oldest sample, so what the agent took while nobody was collecting is
+picked up rather than skipped. The minute's worth of samples between the restart and the health
+read is lost with the container, not by the collector.
 
-A collector that has not noticed keeps its cursor where it was, the agent's
-ring answers an empty batch to every pull, and the kernel tier stops while the
-API tier keeps counting, so the run looks healthy. Restarting the collector
-resets its cursor from the health read at start.
+A collector that has not noticed keeps its cursor where it was, the agent's ring answers an empty
+batch to every pull, and the kernel tier stops while the API tier keeps counting, so the run looks
+healthy. Restarting the collector resets its cursor from the health read at start.
 
 ### API panels blank {#the-api-panels-are-blank-and-the-kernel-panels-are-fine}
 
 The mirror image of the entry above, and it has the same cause: a reboot.
 
-The API tier holds **one** persistent RouterOS API connection. When the router
-goes away — a reboot, a RouterOS upgrade, an operator restarting the API
-service — that socket dies. While it is dead, everything the API feeds is
-blank: interface throughput and packet rate, the per-port counters, RouterOS
-`cpu-load`, and **"Reboots in the window"**, which reads `uptime_s` and so
-cannot count the very reboot that broke its own source.
+The API tier holds **one** persistent RouterOS API connection. When the router goes away (a reboot,
+a RouterOS upgrade, an operator restarting the API service) that socket dies. While it is dead,
+everything the API feeds is blank: interface throughput and packet rate, the per-port counters,
+RouterOS `cpu-load`, and **"Reboots in the window"**, which reads `uptime_s` and so cannot count the
+very reboot that broke its own source.
 
-The tier reconnects on its own. A transport failure — EOF, a broken
-pipe, a connection reset, a command timeout — reopens the connection, at most
-once every five seconds, and the round is retried on the new one. A `!trap`
-does not reconnect: that is a live router refusing a command, and asking it
-twice only spends the router's CPU. A `!fatal` does, because that is the word
-RouterOS sends as it closes the session. The inventory is re-read afterwards,
-since an upgrade is exactly when an interface can change its name, type or
-bridge. You will see
+The tier reconnects on its own. A transport failure (EOF, a broken pipe, a connection reset, a
+command timeout) reopens the connection, at most once every five seconds, and the round is retried
+on the new one. A `!trap` does not reconnect: that is a live router refusing a command, and asking
+it twice only spends the router's CPU. A `!fatal` does, because that is the word RouterOS sends as
+it closes the session. The inventory is re-read afterwards, since an upgrade is exactly when an
+interface can change its name, type or bridge. You will see
 
 ```text
 api tier: reconnected (1 since start)
 api tier: recovered after 137 failed round(s)
 ```
 
-and the minute report grows an `api: N failed round(s), N reconnect(s)` clause
-for as long as either is nonzero.
+and the minute report grows an `api: N failed round(s), N reconnect(s)` clause for as long as either
+is nonzero.
 
 ### Sink drops {#a-sink-is-dropping}
 
-Every network sink is queued, and the queue is bounded — `--queue-seconds`, 60
-by default. A destination that cannot keep up loses the oldest batch rather
-than stalling the pull loop, and the count is printed — in the minute report and
-again at the end of the run. There is no metric family for it. That is a deliberate choice, and
-[the collector](/mikroscope/sinks/) explains it: the agent's ring is what
-protects the data, and a collector waiting on a slow store would lose more than
-the store does.
+Every network sink is queued, and the queue is bounded: `--queue-seconds`, 60 by default. A
+destination that cannot keep up loses the oldest batch rather than stalling the pull loop, and the
+count is printed in the minute report and again at the end of the run. There is no metric family
+for it, on purpose: [Run the collector](/mikroscope/sinks/) explains that the agent's ring is what
+protects the data, and a collector waiting on a slow store would lose more than the store does.
 
 ## Stores and dashboards {#the-store-and-the-dashboard}
 
+<ScrollTable label="Store and dashboard errors: cause and fix">
+
+| You see                                                           | Cause                                                                                | Fix                                                                                                    |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| `flightsql: Unauthenticated` on every InfluxDB panel              | the datasource has only one of its two credential fields set                         | set both, or let `forward --grafana` build it ([details](#flightsql-unauthenticated-from-an-influxdb-datasource)) |
+| `tls: first record does not look like a TLS handshake`           | the FlightSQL side tries TLS against a plain-HTTP InfluxDB                           | `insecureGrpc` ([details](#tls-first-record-does-not-look-like-a-tls-handshake))                       |
+| Empty PostgreSQL panels, and the SQL is fine in `psql`            | a result with no time-typed column                                                    | a `time` column ([details](#the-panels-are-empty-and-the-sql-is-fine-in-psql))                         |
+| `the <name> sink does not know the address Grafana would query`   | `--prom` and `--graphite` cannot describe their own datasource                        | `--grafana-datasource-url` or `--grafana-datasource-uid` ([details](#the-name-sink-does-not-know-the-address-grafana-would-query)) |
+| `--influx is a write URL this cannot take apart`                  | a write URL that is not InfluxDB 3's                                                  | the server and `--influx-db`, or adopt a datasource ([details](#--influx-is-a-write-url-this-cannot-take-apart)) |
+| `standard_conforming_strings = off`                               | the server would misread the statements                                               | turn it on for the connection, or use `--sql` ([details](#standard_conforming_strings--off))           |
+| `database "…" does not exist`                                     | `--postgres` does not create databases                                                | `createdb mikroscope` ([details](#database--does-not-exist))                                           |
+| `grafana: could not publish, carrying on without it`             | the publish failed, and the collector keeps collecting                                | read what the server said; `--grafana-dry-run` ([details](#the-collector-says-grafana-could-not-publish-carrying-on-without-it)) |
+| `uninstall` lists the same tables every time                      | InfluxDB 3 renames a deleted table                                                    | nothing: they are filtered ([details](#uninstall-lists-the-same-tables-every-time))                   |
+| `uninstall --targets data` says a sink stores nothing it can remove | `--prom`, `--graphite` and `--sql` store nothing this can delete                    | remove it where it lives ([details](#uninstall---targets-data-says-a-sink-stores-nothing-it-can-remove)) |
+| `--targets dashboard` left the datasource behind                  | it was adopted                                                                        | nothing ([details](/mikroscope/reference/troubleshooting/#--targets-dashboard-left-the-datasource-behind))                                   |
+
+</ScrollTable>
+
 ### `flightsql: Unauthenticated`, from an InfluxDB datasource
 
-The InfluxDB plugin has two transports and reads the credential from a
-different place on each: the HTTP calls take the `Authorization` header, the
-FlightSQL ones take `token`. A datasource with only one of them set answers
-this on every panel while the store itself is perfectly healthy. Set **both**
-secure fields — `token` = the token, `httpHeaderValue1` = `Bearer <token>` —
-or let `forward --grafana` build the datasource, which sets both.
+The InfluxDB plugin has two transports and reads the credential from a different place on each: the
+HTTP calls take the `Authorization` header, the FlightSQL ones take `token`. A datasource with only
+one of them set answers this on every panel while the store itself is healthy. Set **both** secure
+fields, `token` = the token and `httpHeaderValue1` = `Bearer <token>`, or let `forward --grafana`
+build the datasource, which sets both.
 
 ### `tls: first record does not look like a TLS handshake`
 
-The same plugin, the same two transports, and the other half of the same trap:
-the FlightSQL side attempts TLS unless `insecureGrpc` is set, so a datasource
-pointed at a **plain-HTTP** InfluxDB answers this on every panel. Set
-`insecureGrpc` on the datasource, or use `forward --grafana`, which follows the
-scheme of the URL the sink writes to.
+The same plugin, the same two transports, and the other half of the same trap: the FlightSQL side
+attempts TLS unless `insecureGrpc` is set, so a datasource pointed at a **plain-HTTP** InfluxDB
+answers this on every panel. Set `insecureGrpc` on the datasource, or use `forward --grafana`, which
+follows the scheme of the URL the sink writes to.
 
 ### Empty PostgreSQL panels {#the-panels-are-empty-and-the-sql-is-fine-in-psql}
 
-The InfluxDB plugin rejects a result whose columns are all numeric and none is
-time-typed, so a panel whose query returns one row of numbers renders its
-no-value text — which looks exactly like a quiet device. If you are writing a
-panel, give it a `time` column even when the panel does not plot one;
-`mikroscope dashboards check` runs every panel's query through Grafana's own
-API and is the fastest way to tell a broken query from a quiet one.
+The InfluxDB plugin rejects a result whose columns are all numeric and none is time-typed, so a
+panel whose query returns one row of numbers renders its no-value text, which looks exactly like a
+quiet device. If you are writing a panel, give it a `time` column even when the panel does not plot
+one; `mikroscope dashboards check` runs every panel's query through Grafana's own API and is the
+fastest way to tell a broken query from a quiet one.
 
 ### `the <name> sink does not know the address Grafana would query`
 
-`forward --grafana` derives a datasource from the sink's own address for
-`--influx`, `--elastic` and `--postgres`. `--prom` is scraped and `--graphite`
-writes to the carbon ingest port, so neither knows where Grafana would query:
-pass that address in `--grafana-datasource-url`, or create the datasource in
-Grafana and name it in `--grafana-datasource-uid`, which also tells `forward` to
-leave it alone. `--sql` never connects and fails with its own message, which
-points at `--postgres`.
+`forward --grafana` derives a datasource from the sink's own address for `--influx`, `--elastic` and
+`--postgres`. `--prom` is scraped and `--graphite` writes to the carbon ingest port, so neither
+knows where Grafana would query: pass that address in `--grafana-datasource-url`, or create the
+datasource in Grafana and name it in `--grafana-datasource-uid`, which also tells `forward` to leave
+it alone. `--sql` never connects and fails with its own message, which points at `--postgres`.
 
 ### `--influx is a write URL this cannot take apart`
 
-`--influx` may be a server (`http://host:8181`, with `--influx-db`) or a full
-write URL, and a full one is used verbatim. A URL whose shape is not
-InfluxDB 3's `/api/v3/write_lp?db=…` — a v2 `/api/v2/write`, say — writes as
-well as ever and simply cannot describe a datasource, because nothing can read
-the database name back out of it. Pass the fields, or adopt a datasource by
-uid.
+`--influx` may be a server (`http://host:8181`, with `--influx-db`) or a full write URL, and a full
+one is used verbatim. A URL whose shape is not InfluxDB 3's `/api/v3/write_lp?db=…`, a v2
+`/api/v2/write` say, writes as well as ever and cannot describe a datasource, because nothing can
+read the database name back out of it. Pass the fields, or adopt a datasource by uid.
 
 ### `standard_conforming_strings = off`
 
-`--postgres` refuses a server that answers this, rather than writing to it.
-The statements quote by doubling the single quote and nothing else, so with the
-setting off a kernel-log message ending in a backslash escapes its own closing
-quote and every statement after it is parsed as string content. Turn it on for
-the connection — `ALTER ROLE … SET standard_conforming_strings = on` — or use
-`--sql` and apply the file, whose header sets it itself.
+`--postgres` refuses a server that answers this, rather than writing to it. The statements quote by
+doubling the single quote and nothing else, so with the setting off a kernel-log message ending in a
+backslash escapes its own closing quote and every statement after it is parsed as string content.
+Turn it on for the connection, `ALTER ROLE … SET standard_conforming_strings = on`, or use `--sql`
+and apply the file, whose header sets it itself.
 
 ### `database "…" does not exist`
 
-`--postgres` connects to a database; it does not create one. The sink declares
-its **tables** on the first batch and nothing else, because creating databases
-is not a collector's job. `createdb mikroscope` first. The collector goes on
-collecting meanwhile: the failure is counted against the sink and logged once a
-minute, and the other sinks are unaffected.
+`--postgres` connects to a database; it does not create one. The sink declares its **tables** on the
+first batch and nothing else, because creating databases is not a collector's job. Run
+`createdb mikroscope` first. The collector goes on collecting meanwhile: the failure is counted
+against the sink and logged once a minute, and the other sinks are unaffected.
 
 ### The collector says `grafana: could not publish, carrying on without it`
 
-That is the designed behaviour, not a half-failure to chase. Refusing to start
-would trade the samples of the hour spent not running, which cannot be
-recovered, for a dashboard published on the next restart, which can. The line
-carries what the server said. `--grafana-dry-run` prints what it would write
-without writing anything, and runs before the router is touched.
+That is the designed behaviour, not a half-failure to chase. Refusing to start would trade the
+samples of the hour spent not running, which cannot be recovered, for a dashboard published on the
+next restart, which can. The line carries what the server said. `--grafana-dry-run` prints what it
+would write without writing anything, and runs before the router is touched.
 
 ### Repeated tables on uninstall {#uninstall-lists-the-same-tables-every-time}
 
-InfluxDB 3 deletes a table by **renaming** it and leaving the entry in
-`information_schema` under a name carrying the deletion instant. `uninstall`
-filters those out; without the filter it would list them on every run, delete
-them successfully (the store accepts a delete of a name it has already retired)
-and never empty. If you are looking at
-`mikroscope_cpu-<timestamp>` in a query result, that table is already
-gone.
+InfluxDB 3 deletes a table by **renaming** it and leaving the entry in `information_schema` under a
+name carrying the deletion instant. `uninstall` filters those out; without the filter it would list
+them on every run, delete them successfully (the store accepts a delete of a name it has already
+retired) and never empty. If you are looking at `mikroscope_cpu-<timestamp>` in a query result, that
+table is already gone.
 
 ### `uninstall --targets data` says a sink stores nothing it can remove
 
-Three of them genuinely do not. `--prom` is scraped rather than written to, so
-the series live in a Prometheus this has never heard of; `--graphite` offers no
-delete at all, and its whisper files have to go by hand; `--sql` writes a file,
-and rows already loaded from it into a real database have to be removed there —
-or with `--postgres` pointed at that database. Each prints its own reason,
-because silence would read as nothing to remove.
+Three of them do not. `--prom` is scraped rather than written to, so the series live in a Prometheus
+this has never heard of; `--graphite` offers no delete at all, and its whisper files have to go by
+hand; `--sql` writes a file, and rows already loaded from it into a real database have to be removed
+there, or with `--postgres` pointed at that database. Each prints its own reason, because silence
+would read as nothing to remove.
 
 ### Datasource left behind {#--targets-dashboard-left-the-datasource-behind}
 
-It was adopted. A datasource named in `--grafana-datasource-uid` was somebody
-else's before the collector ran and is somebody else's after: publishing leaves
-it alone and so does removing.
+It was adopted. A datasource named in `--grafana-datasource-uid` was somebody else's before the
+collector ran and is somebody else's after: publishing leaves it alone and so does removing.
 
 ## Reading the data {#reading-what-it-shows}
 
-Once the data is arriving, the question changes from "why is this broken" to
-"what is this telling me". That is a different set of pages:
-[How to read what it shows](/mikroscope/playbooks/) — the shape of an idle
-router first, then seven faults read against it.
+Once the data is arriving, the question changes from "why is this broken" to "what is this telling
+me". [Diagnose faults](/mikroscope/playbooks/) has the fault signatures and the checks to make
+before you trust a reading.
 
 <Aside type="tip" title="Ask the tools before reading further">
 	`mikroscope doctor` names the fix for anything missing on the router and reads the running agent's
-	ring for a loop, STP churn, link flaps and softnet drops, `mikroscope status` says
-	what is installed and whether it answers, and `mikroscope dashboards check` runs every panel's
-	query and prints which ones came back with nothing. Between them they answer most of this page
-	for your own device rather than in general.
+	ring for a loop, STP churn, link flaps and softnet drops, `mikroscope status` says what is
+	installed and whether it answers, and `mikroscope dashboards check` runs every panel's query and
+	prints which ones came back with nothing. Between them they answer most of this page for your own
+	device.
 </Aside>
 
 <SeeAlso>
 
 ## See also
 
-- [What the router needs](/mikroscope/install/prerequisites/): the three
-  prerequisites, and what `doctor` checks.
-- [The two firewall traps](/mikroscope/install/firewall/): why the agent can be
-  running and unreachable.
-- [What privileged buys](/mikroscope/limits/privileged/): what is lost without
-  it, source by source.
-- [How the project tests itself](/mikroscope/reference/testing/): what has been
-  proven and how, if you are wondering whether it is you or the project.
-- [Discussions](https://github.com/jmrplens/mikroscope/discussions): a question
-  in Q&A, a reading nobody can place in Reading the data. A failure you can
-  reproduce is a [bug report](https://github.com/jmrplens/mikroscope/issues/new?template=1-bug-report.yml),
-  and it asks for the outputs this page names.
+- [Requirements](/mikroscope/install/prerequisites/): what the router needs, and every `doctor`
+  check.
+- [Firewall lists](/mikroscope/install/firewall/): why the agent can be running and unreachable.
+- [Privileged mode](/mikroscope/limits/privileged/): what is lost without it, source by source.
+- [Test suites](/mikroscope/reference/testing/): what has been proven and how, if you are wondering
+  whether it is you or the project.
+- [Discussions](https://github.com/jmrplens/mikroscope/discussions): a question in Q&A, a reading
+  nobody can place in Reading the data. A failure you can reproduce is a [bug
+  report](https://github.com/jmrplens/mikroscope/issues/new?template=1-bug-report.yml), and it asks
+  for the outputs this page names.
 
 </SeeAlso>

@@ -9,16 +9,22 @@ is not.
       the tag otherwise, and it is the first thing it checks.
 - [ ] CI is green on the commit being tagged, and `make analyze` and
       `make test-race` are green locally. The release runs the end-to-end
-      suite (with and without a network), the race detector and the virtual
-      RouterOS lab on x86_64 (`make test-lab`) again as gates, but a red gate
-      after the tag costs a patch number.
+      suite (with and without a network) and the race detector again as
+      gates, but a red gate after the tag costs a patch number. The virtual
+      RouterOS lab is not one of them: run `make test-lab` locally, or
+      dispatch `lab.yml` on the commit, before the tag. Until the tag's agent
+      image is published, the golden pull scripts pull the newest release's
+      image instead, and the run says so.
 - [ ] `make release-check` passes: `goreleaser check` on `.goreleaser.yaml`.
 - [ ] `make check-generated` writes nothing: the dashboards, the alert rules
       and the mark match their generators.
 - [ ] `cd site && pnpm run lint` is green, and `docs/` has been regenerated
       from the site rather than edited. The install commands in `docs/` carry
       the version from `VERSION`, so the bump itself makes `docs/` stale until
-      `pnpm run docs` runs.
+      `pnpm run docs` runs. Nothing else names the release by hand: the
+      binaries embed `VERSION`, and the golden scripts, their case matrix and
+      the site's script data keep `{{MIKROSCOPE_VERSION}}`, which the tests,
+      the site's build and the lab replace with it.
 - [ ] `CHANGELOG.md` has a section for this version that says what changed,
       what it was measured against (board, RouterOS version, date) and what
       was not measured. Its heading is `## [x.y.z] - YYYY-MM-DD`, in the same
@@ -43,9 +49,7 @@ git tag -a v1.0.0 -m "v1.0.0" && git push origin v1.0.0
 ```
 
 Only a three-part `vX.Y.Z` tag starts `.github/workflows/release.yml`. It runs
-the end-to-end and race suites and the x86_64 lab (`lab.yml`, CHR under KVM;
-its pull scenarios pull the previous release's agent image, because this
-tag's image is pushed only after the gates), then GoReleaser, which:
+the end-to-end and race suites, then GoReleaser, which:
 
 - builds the CLI for linux, darwin, windows and freebsd (arm at GOARM=7), and
   the agent for linux on amd64, arm64 and arm at both GOARM=5 and GOARM=7, all
@@ -74,6 +78,9 @@ and the collector on both of its platforms.
       the version. The workflow checks this too, and it is worth seeing once.
 - [ ] The ghcr.io package is public. A package ghcr.io creates on its first
       push is private, and a router cannot pull a private image.
+- [ ] The WebFig captures of `install/manual-gui` are taken again against
+      the lab (`site/scripts/gen-webfig-captures.mjs`): they are pictures, and
+      the pull route's form shows the agent image this release published.
 - [ ] The repository's `homepage` field points at
       <https://jmrp.io/docs/mikroscope/>, and the topics are set.
 

@@ -1,6 +1,7 @@
 ---
 title: Glosario
 description: Los términos que estas páginas usan sin definirlos, de envlist, veth y privileged a PMU, PSI, softnet, anillo y destino, una frase cada uno con su enlace.
+docType: reference
 head:
   - tag: title
     content: Glosario de contenedores RouterOS y del kernel | mikroscope
@@ -10,8 +11,7 @@ import Measured from "../../../../components/Measured.astro";
 import Src from "../../../../components/Src.astro";
 
 Una frase por término, en el sentido en que lo usan estas páginas, cada una enlazada a la página
-que lo explica entero. Cuando una frase afirma algo del RB5009 de referencia, da la fecha en que se
-estableció; un término del kernel enlaza además la documentación del propio kernel.
+que lo explica entero; un término del kernel enlaza además la documentación del propio kernel.
 
 ## anillo
 
@@ -68,9 +68,8 @@ dónde](/mikroscope/es/security/).
 
 ## `cpu-load`
 
-La cifra de CPU que da `/system/resource` de RouterOS para todos los núcleos juntos, que este
-proyecto midió en un RB5009 el 2026-09-15 como una media móvil de más o menos un segundo: [cuántos
-segundos
+La cifra de CPU que da `/system/resource` de RouterOS para todos los núcleos juntos, una media
+móvil de más o menos un segundo: [cuántos segundos
 promedia](/mikroscope/es/sinks/api-tier/#cuántos-segundos-promedia-el-cpu-load-de-routeros).
 
 ## destino
@@ -156,8 +155,8 @@ debajo](/mikroscope/es/limits/#la-única-fuente-por-debajo-los-contadores-de-la-
 
 El ajuste de contenedor `privileged=yes`, que RouterOS tiene desde la 7.24 y que quita el espacio
 de nombres de usuario del contenedor para que el log del kernel, `/proc/slabinfo`, los contadores
-ECC de la MTD y la PMU se puedan leer, sin ampliar su espacio de nombres de red ni de PID (RB5009,
-2026-09-12): [lo que aporta privileged](/mikroscope/es/limits/privileged/).
+ECC de la MTD y la PMU se puedan leer, sin ampliar su espacio de nombres de red ni de PID: [lo que
+aporta privileged](/mikroscope/es/limits/privileged/).
 
 ## proporción de ocupación
 
@@ -170,7 +169,7 @@ tiempo](/mikroscope/es/limits/#ticks-no-tiempo).
 La información de bloqueo por presión (pressure stall information), la parte del tiempo que las
 tareas pasan esperando CPU, memoria o E/S, en `/proc/pressure` ([documentación del
 kernel](https://docs.kernel.org/accounting/psi.html)), que el agente lee donde el kernel la tiene y
-que el Linux 5.6.3 del RB5009 no tiene (2026-09-11): [ningún reloj más fino desde el
+que algunos kernels de RouterOS no tienen: [ningún reloj más fino desde el
 kernel](/mikroscope/es/limits/#ningún-reloj-más-fino-desde-el-kernel).
 
 ## relay
@@ -184,7 +183,7 @@ RouterOS](/mikroscope/es/install/reaching-the-agent/#relay-a-través-de-la-api-d
 
 `/proc/schedstat`, las cuentas por CPU del planificador del tiempo pasado ejecutando y esperando
 para ejecutar ([documentación del kernel](https://docs.kernel.org/scheduler/sched-stats.html)),
-ausente en el kernel del RB5009 (2026-09-11) y leído donde existe: [ningún reloj más fino desde el
+ausente en algunos kernels de RouterOS y leído donde existe: [ningún reloj más fino desde el
 kernel](/mikroscope/es/limits/#ningún-reloj-más-fino-desde-el-kernel).
 
 ## slabinfo
@@ -206,7 +205,7 @@ interrupciones](/mikroscope/es/reference/metrics/#ruta-de-recepción-e-interrupc
 
 Las colas por CPU de paquetes entrantes del kernel, cuyo `/proc/net/softnet_stat` cuenta los
 paquetes procesados, descartados y los squeezes por CPU y sigue siendo el del router incluso dentro
-del contenedor (RB5009, 2026-09-11): [la CPU y la memoria son del
+del contenedor: [la CPU y la memoria son del
 router](/mikroscope/es/limits/namespaces/#la-cpu-y-la-memoria-son-del-router).
 
 ## suelo
@@ -224,16 +223,16 @@ configurada: [ticks, no tiempo](/mikroscope/es/limits/#ticks-no-tiempo).
 ## `time_squeeze`
 
 El contador de softnet de las veces que el softirq de recepción agotó su presupuesto con paquetes
-aún en cola, distinto de cero incluso con el RB5009 en reposo (2026-09-12) y digno de vigilar
+aún en cola, distinto de cero incluso con el router en reposo y digno de vigilar
 cuando sube con el caudal plano: [una inundación de
 paquetes](/mikroscope/es/playbooks/packet-flood/#qué-leer).
 
 ## USER_HZ
 
 La unidad en la que `/proc/stat` cuenta el tiempo de CPU ([documentación del
-kernel](https://docs.kernel.org/filesystems/proc.html)), un tick de <Measured id="tick.ms" /> en el
-kernel del RB5009 (2026-09-11), que fija el paso de CPU más fino que puede ver cualquiera que lea
-ese fichero: [ticks, no tiempo](/mikroscope/es/limits/#ticks-no-tiempo).
+kernel](https://docs.kernel.org/filesystems/proc.html)), un tick de <Measured id="tick.ms" /> con
+el `USER_HZ` habitual de 100, que fija el paso de CPU más fino que puede ver cualquiera que lea ese
+fichero: [ticks, no tiempo](/mikroscope/es/limits/#ticks-no-tiempo).
 
 ## veth
 

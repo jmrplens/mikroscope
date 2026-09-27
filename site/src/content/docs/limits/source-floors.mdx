@@ -1,42 +1,42 @@
 ---
-title: Each source at its own floor
-description: Which kernel sources the agent reads every tick and which less often, the named reason each reports, and FLOOR_HZ, which turns every floor off.
+title: Source cadences
+description: Which kernel sources the agent reads and stores every tick and which less often, the named reason each reports, and FLOOR_HZ, which turns every floor off.
+docType: explanation
 head:
   - tag: title
     content: "How often each RouterOS kernel source is read | mikroscope"
 ---
 
+import Anchor from "../../../components/Anchor.astro";
 import CadenceReasons from "../../../components/CadenceReasons.astro";
 import Measured from "../../../components/Measured.astro";
-import NotClaimed from "../../../components/NotClaimed.astro";
 import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
 import Src from "../../../components/Src.astro";
+import TestedOn from "../../../components/TestedOn.astro";
 
-Not every source changes as fast as the sampler ticks, and recording a value more often than
-the hardware refreshes it is storage for no information. This page answers which sources the
-agent reads and stores at the sampler rate and which it does not, the reason each one gives
-for the difference, where those cadences came from, and how to turn every one of them off to
-measure your own device.
+Not every source changes as fast as the sampler ticks, and storing a value more often than the
+hardware refreshes it is storage for no information. The agent reads every counter on every
+tick except the MTD ECC counters (every 10 s), slows a level source only for a reason it names,
+and publishes each cadence so a consumer never has to infer it. `FLOOR_HZ` turns every floor off at once.
 
-## Counters are never floored
+## Counters {#counters-are-never-floored}
 
-CPU ticks, interrupts, softirqs, the vmstat counters, the PMU and the memory levels (which
-moved about 24 times a second on the reference device) are read and shipped on every tick.
-For a counter a delta of zero is real information, the core was idle, so there is nothing to
-skip.
+CPU ticks, interrupts, softirqs, the vmstat counters, the PMU and the memory levels (which change
+many times a second, <TestedOn of="floors-overnight">measured</TestedOn>) are read and shipped on
+every tick. For a counter a delta of zero is real information, the core was idle, so there is
+nothing to skip.
 
 Three more are read every tick with their own rule:
 
 - **NAND wear (`/proc/yaffs`) and block I/O (`/proc/diskstats`)** are counters and cheap to
-  read. A device's row is stored only when its delta is non-zero, which on the reference
-  device is a few times a minute. The RB5009 also lists sixteen idle `nbd` devices, and a row
-  per tick for each would be payload and nothing else.
+  read. A device's row is stored only when its delta is non-zero: a router can list many idle
+  devices, `nbd` among them, and a row per tick for each would be payload and nothing else.
 - **The kernel log ([`/dev/kmsg`](https://docs.kernel.org/admin-guide/abi-testing.html#symbols-under-dev-kmsg))** is drained every tick and never slowed. An event's value
   is its timestamp, and a marker delayed by a second no longer lines up with the spike it
   explains.
 
-## A level source is slowed only for a named reason
+## Level sources {#a-level-source-is-slowed-only-for-a-named-reason}
 
 A level source (a temperature, a clock frequency, a cache population) may be read or stored
 less often than every tick, but only for a reason the agent names. It is never slowed because
@@ -52,7 +52,7 @@ a field instead of inferring it from the data.
 stored on change. The MTD counters report `budget` although no parse cost was measured for
 them. Both are how the code labels them, and neither matches the table above exactly.
 
-## Source by source
+## Cadence per source {#source-by-source}
 
 <ScrollTable label="How each level source is read and stored">
 
@@ -70,37 +70,43 @@ A slower cadence is a whole number of ticks: the sampler rate divided by the flo
 the nearest integer and never less than one. So the reported rate is what actually happens,
 not the nominal floor.
 
-**Temperature.** On the reference RB5009 both zones declare a [`polling_delay`](https://docs.kernel.org/driver-api/thermal/sysfs-api.html) of 1 000 ms
-(`polling-delay-passive` 250 ms, read 2026-09-14), so the kernel itself re-reads the sensor at
-1 Hz; at 10 Hz the agent reads every 10th tick. The sensor quantises to about <Measured id="thermal.quantumC" /> steps and the raw
-reading dithers across a boundary tens of times a second. Storing on change would store that
-dither as signal; sampling and holding at the declared cadence captures the real curve and
-drops the dither. On a board that declares no cadence the zones are read every tick.
+**Temperature.** A thermal zone declares its own [`polling_delay`](https://docs.kernel.org/driver-api/thermal/sysfs-api.html). At 1 000 ms the kernel
+itself re-reads the sensor at 1 Hz, and at 10 Hz the agent reads every 10th tick. The sensor
+quantises to steps of about <Measured id="thermal.quantumC" />, and the raw reading dithers across
+a step boundary tens of times a second. Storing on change would store that dither as signal;
+sampling and holding at the declared cadence captures the real curve and drops the dither. On a
+board that declares no cadence the zones are read every tick.
 
 **CPU frequency.** A frequency step is a real DVFS transition, not noise, so the frequency is
 read every tick and stored when any core moves. On a device with a pinned clock that stores
 nothing after the first reading but the heartbeat; on a scaling device it catches every move.
-The reference RB5009's [cpufreq governor](https://docs.kernel.org/admin-guide/pm/cpufreq.html#policy-interface-in-sysfs) read `userspace` on 2026-09-14, so by the rule above its
-reason reads `policy` there.
+Under a `userspace` [cpufreq governor](https://docs.kernel.org/admin-guide/pm/cpufreq.html#policy-interface-in-sysfs) the clock cannot move without a write, so the
+reason reads `policy`.
 
-**`/proc/slabinfo`** is the expensive one: 13 833 bytes and 129 lines per read on the
-reference device (2026-09-14), the largest per-tick parse by an order of magnitude. That cost
-is the reason it is slowed at all; the 6 Hz it is slowed to is the rate its fastest cache,
-`nf_conntrack`, was measured changing. It is stored on change. At 10 Hz that is every 2nd
+**`/proc/slabinfo`** is the expensive one, the largest per-tick parse by an order of magnitude,
+and that cost is the reason it is slowed at all. The 6 Hz it is slowed to is the rate its fastest
+cache, `nf_conntrack`, was measured changing. It is stored on change. At 10 Hz that is every 2nd
 tick (5 Hz); at 100 Hz, every 17th (about 5.9 Hz). How that amortisation shows in the per-sample cost is on
-[the rate ceiling](/mikroscope/cost/rate-ceiling/).
+[Rate ceiling](/mikroscope/cost/rate-ceiling/).
 
 **`/proc/buddyinfo`** is about 100 bytes, among the cheapest files the agent reads, and has no floor
 because none has been measured. The free lists churn with every allocation, so on a busy
 router it will be stored on most ticks, and that is the measurement rather than noise.
 
 **MTD ECC counters** are read every 10 seconds. That is not a measured floor: the counters
-move on the scale of a device's life (all zero on the reference board after years), and each
-read is six small sysfs files per partition, so ten seconds is an arbitrary but generous
-choice. The code still labels that cadence `budget`, although no parse cost was measured for
-it. They need `privileged=yes`.
+move on the scale of a device's life, and each read is six small sysfs files per partition, so
+ten seconds is an arbitrary but generous choice. The code still labels that cadence `budget`,
+although no parse cost was measured for it. They need `privileged=yes`.
 
-## The heartbeat, and why a gauge does not vanish
+<Anchor name="where-the-floors-come-from-and-what-they-are-not" />
+
+The 6 Hz of `/proc/slabinfo` is the one measured floor, and it comes from one device over one idle
+night (<TestedOn of="floors-overnight">Tested on</TestedOn>). A router with a scaling clock, a
+busy dirty-page workload or a different board has different floors, so re-measure with
+`FLOOR_HZ` equal to the sampler rate before trusting them on yours. The floors are named
+constants in <Src path="internal/agent/source.go" />.
+
+## Heartbeat {#the-heartbeat-and-why-a-gauge-does-not-vanish}
 
 Every source stored on change is also re-emitted about once every 60 seconds (on the first
 read due after 60 s), so a value that sits still for an hour still has a recent row in any
@@ -112,27 +118,11 @@ On `/metrics`, a floored gauge between emissions holds the last reading, because
 value between readings is the last one read, not nothing.
 `mikroscope_source_age_seconds{source}` says how old that held reading is.
 
-The change filter is re-armed once the sampler has taken its baseline reading. Measured
-against the fixture tree on 2026-09-15, the three floored families and
-`mikroscope_slab_limit_objects` were present in 6 of 6 scrapes from 5 s after start.
+The change filter is re-armed after the sampler's baseline read, so the first sample carries
+every source stored on change, and the floored gauge families reach `/metrics` with it rather
+than a heartbeat later.
 
-## Where the floors come from, and what they are not
-
-One floor comes from a 10.5 h capture at 50 Hz on the reference RB5009 that measured how
-often each source actually changes: the 6 Hz that `/proc/slabinfo` is slowed to. That capture
-is one board, one idle night, its clock pinned at the owner's setting. "cpufreq never changed"
-means it did not change _that night_. A router with a scaling clock, a busy dirty-page
-workload, or a different board has different floors.
-
-The floors are named constants in <Src path="internal/agent/source.go" /> rather than numbers buried
-in the logic.
-
-<NotClaimed variant="device-specific">
-	Every cadence on this page is the reference RB5009's, on RouterOS 7.24.2. Before trusting any of
-	them on another device or another workload, re-measure with `FLOOR_HZ` equal to the sampler rate.
-</NotClaimed>
-
-## `FLOOR_HZ`: every floor off at once
+## `FLOOR_HZ` override {#floor_hz-every-floor-off-at-once}
 
 Every floor is overridable at once, without a rebuild:
 
@@ -159,19 +149,19 @@ nothing because the delta was zero. And `scaling_cur_freq` and `/proc/buddyinfo`
 every tick with or without it; with `N` below `--rate` they are emitted every tick, but their
 reported cadence is the override's, not the sampler rate.
 
-What it costs to read everything every tick on the RB5009, at 50 and 100 Hz, is two of the
-runs on [the rate ceiling](/mikroscope/cost/rate-ceiling/).
+What it costs to read everything every tick, at 50 and 100 Hz, is on
+[Rate ceiling](/mikroscope/cost/rate-ceiling/).
 
 <SeeAlso>
 
 ## See also
 
-- [The rate ceiling](/mikroscope/cost/rate-ceiling/): the runs with and without `FLOOR_HZ`, and
+- [Rate ceiling](/mikroscope/cost/rate-ceiling/): the runs with and without `FLOOR_HZ`, and
   why per-sample cost falls as the rate rises.
-- [The device-info stream](/mikroscope/sinks/device-info/): where each source's cadence and
+- [Device info](/mikroscope/sinks/device-info/): where each source's cadence and
   reason reach a store.
 - [Environment variables](/mikroscope/reference/environment/): `FLOOR_HZ` beside the agent's
   other settings.
-- [The resolution floor is the kernel's](/mikroscope/limits/): the floor no setting can move.
+- [Resolution limits](/mikroscope/limits/): the floor no setting can move.
 
 </SeeAlso>

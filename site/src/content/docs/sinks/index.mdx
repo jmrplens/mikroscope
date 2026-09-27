@@ -1,38 +1,37 @@
 ---
-title: The collector
-description: "How mikroscope forward takes MikroTik RouterOS kernel telemetry to eleven sinks: pull, merge, derive, fan out, and what it drops when a store is slow."
+title: Run the collector
+description: "Run mikroscope forward to pull a MikroTik router's kernel telemetry, merge it with the RouterOS API tier, derive values and write the timeline to eleven sinks."
+docType: how-to
 head:
   - tag: title
     content: MikroTik RouterOS telemetry collector and its sinks | mikroscope
 ---
 
 import { Aside, Steps } from "@astrojs/starlight/components";
+import Anchor from "../../../components/Anchor.astro";
 import Figure from "../../../components/Figure.astro";
 import Measured from "../../../components/Measured.astro";
-import NotClaimed from "../../../components/NotClaimed.astro";
-import Provenance from "../../../components/Provenance.astro";
 import Stat from "../../../components/Stat.astro";
 import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
+import TestedOn from "../../../components/TestedOn.astro";
 
 <Figure name="data-path" />
 
 `mikroscope forward` is the collector. It pulls the kernel tier from the agent on
-the MikroTik router, samples the RouterOS API tier, stamps both in the agent's clock, runs the derive
-stage over them and writes the merged timeline to every sink you name. This page
-answers what one run does, how it keeps up with the agent, which clock each record
-carries, and what "dropped" means when a destination stops answering.
+the router, samples the RouterOS API tier, stamps both in the agent's clock, runs
+the derive stage over them and writes the merged timeline to every sink you name.
 
 ```sh
 mikroscope forward --prom :9124 --influx "$MIKROSCOPE_INFLUX_URL" --influx-db "$MIKROSCOPE_INFLUX_DB" --interfaces bridge,ether1
 ```
 
-`forward` with no sink is an error, not a silent no-op: it would read the router and
-throw the data away. At least one of `--file`, `--prom`, `--influx`, `--loki`,
-`--otlp`, `--graphite`, `--elastic`, `--sql`, `--postgres`, `--telegraf` or
-`--stdout` is required, and more than one at a time is the normal arrangement.
+Name at least one sink: `--file`, `--prom`, `--influx`, `--loki`, `--otlp`,
+`--graphite`, `--elastic`, `--sql`, `--postgres`, `--telegraf` or `--stdout`.
+`forward` with none is an error, because it would read the router and throw the
+data away. Several at once is the normal arrangement.
 
-## What one run does
+## Pipeline {#what-one-run-does}
 
 <Steps>
 
@@ -44,15 +43,14 @@ throw the data away. At least one of `--file`, `--prom`, `--influx`, `--loki`,
 2. **Hand every sink the device-info stream.** The agent's `/capabilities` — board,
    kernel, ceilings, cadences — goes out at start as its own record, again whenever
    the capability hash changes, and otherwise every five minutes, so the device
-   panels have a row inside any window. See [the device-info
-   stream](/mikroscope/sinks/device-info/).
+   panels have a row inside any window. See [Device info](/mikroscope/sinks/device-info/).
 
 3. **Pull the ring every `--poll`.** The first pull starts after the agent's newest
-   sample, so `forward` does not replay what the ring held before it started: it
-   always starts at the agent's newest sample. `forward` has no `--from-start` and
-   refuses it as an unknown flag; only `record` backfills the ring. Each pull asks for samples after the last
-   sequence number seen. A trigger marker rides among the samples in sequence order
-   and is forwarded as an annotation, never decoded as a sample.
+   sample: `forward` does not replay what the ring held before it started, and
+   refuses `--from-start` as an unknown flag (only `record` backfills). Each pull
+   asks for the samples after the last sequence number seen. A trigger marker
+   rides among the samples in sequence order and is forwarded as an annotation,
+   never decoded as a sample.
 
 4. **Derive, then fan out.** Every kernel sample goes through [the derive
    stage](/mikroscope/sinks/derive/), and the sample, its derived values and any
@@ -60,10 +58,10 @@ throw the data away. At least one of `--file`, `--prom`, `--influx`, `--loki`,
    same order.
 
 5. **Sample the API tier every `--api-every`** (1 s by default) when API
-   credentials are configured. See [the RouterOS API tier](/mikroscope/sinks/api-tier/).
+   credentials are configured. See [RouterOS API tier](/mikroscope/sinks/api-tier/).
 
-6. **Re-measure the skew every minute.** A jump of more than 50 ms is logged — a
-   router clock step, an NTP correction — and counted as a skew jump. The same
+6. **Re-measure the skew every minute.** A jump of more than 50 ms — a router
+   clock step, an NTP correction — is logged and counted as a skew jump. The same
    health read re-checks the capability hash.
 
 7. **On Ctrl-C or at the end of `--for`**, pull once more, close every sink with
@@ -71,40 +69,43 @@ throw the data away. At least one of `--file`, `--prom`, `--influx`, `--loki`,
 
 </Steps>
 
-No interpolation happens anywhere in that loop: every consumer sees the cadence
+Nothing is interpolated anywhere in that loop: every consumer sees the cadence
 each source really has.
 
-## Pulling fast enough
+## Pull rate and batch {#pulling-fast-enough}
 
-`--poll` (default 500 ms) is how often the ring is pulled and `--batch` how many
-samples one pull asks for. The default batch is twice what one poll interval
-produces at the agent's rate, and never under 20. A fixed 20 samples per 500 ms poll
-would cap a pull at 40 Hz and lose 1 − 40/50 of a 50 Hz agent's samples, which is why
-the batch is sized from the agent's rate. A pull is repeated while it comes
-back full — up to 100 times — so the cursor catches up within one poll instead of
-advancing one batch per poll. A short reply is the ring's edge.
+<ScrollTable label="Pull flags of forward">
 
-The relay transport caps a pull at <Measured id="relay.maxBatch" /> lines, and the cap is computed
-rather than chosen: `/tool fetch` returns <Measured id="relay.replyMaxBytes" /> at most, the ring
-line is charged at <Measured id="ring.lineChargedBytes" /> (the
-measured <Measured id="ring.lineBytes" />, rounded up to its allocator size class), and the cap allows 134 %
-of that so a batch of above-average lines still fits — about 45 kB. A reply that
-reaches the fetch limit anyway is refused with
-`relay reply hit the 64512-byte fetch limit; lower the batch` rather than parsed truncated. At the
-default 500 ms poll that is 26 samples/s, and above that the collector falls behind. `forward`
-computes what the effective batch and the poll allow per second and warns at start when that is
-below the agent's rate — for the relay against an agent at 100 Hz, the arithmetic gives:
+| Flag      | Default | What it sets                                                                                                                                     |
+| --------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--poll`  | `500ms` | How often the ring is pulled.                                                                                                                    |
+| `--batch` | `0`     | Samples one pull asks for. `0` is twice what one poll interval produces at the agent's rate, never under 20, so a 50 Hz agent is not capped at 40 Hz. |
+
+</ScrollTable>
+
+- A pull is repeated while it comes back full, up to 100 times, so the cursor
+  catches up within one poll instead of advancing one batch per poll. A short
+  reply is the ring's edge.
+- The relay transport caps a pull at <Measured id="relay.maxBatch" /> lines. The
+  cap is computed from the <Measured id="relay.replyMaxBytes" /> that
+  `/tool fetch` returns at most, a ring line charged at the allocator size class
+  of <Measured id="ring.lineChargedBytes" /> (the measured line of <Measured id="ring.lineBytes" />
+  rounded up) and 134 % headroom for above-average lines: about 45 kB.
+  A reply that reaches the fetch limit anyway is refused with
+  `relay reply hit the 64512-byte fetch limit; lower the batch` rather than
+  parsed truncated.
+- `forward` computes what the effective batch allows per `--poll` and warns at
+  start when that is below the agent's rate. For the relay against an agent at
+  100 Hz, 13 samples per 500 ms poll gives:
 
 ```text
 warning: at most 13 samples per pull every 500ms is 26/s, below the agent's 100 Hz; the collector will fall behind and report gaps. Raise --batch, lower --poll, or use the direct transport
 ```
 
-The cap and the warning are read from the code on 2026-09-15, not re-measured against a device.
-
 A collector that falls further behind than the agent's ring (60 s by default)
 receives a gap line instead of the samples, and every sink records the gap.
 
-## Whose clock each record carries
+## Timestamps {#whose-clock-each-record-carries}
 
 <ScrollTable label="The clock each record is stamped with">
 
@@ -119,11 +120,10 @@ receives a gap line instead of the samples, and every sink records the gap.
 
 </ScrollTable>
 
-## Which one should I use?
+## Choose a sink {#which-one-should-i-use}
 
-<Stat name="sinks" as="word" /> destinations, capitalised by the sentence it opens:
-the honest answer is that most readers want one of the first two. The rest exist so that mikroscope fits what you already run rather
-than asking you to run something new.
+`forward` writes to <Stat name="sinks" as="word" /> sinks. Most setups need one of
+the first two rows; the rest exist so mikroscope fits what you already run.
 
 <ScrollTable label="What each sink is for, what it carries and whether a dashboard comes with it">
 
@@ -142,19 +142,17 @@ than asking you to run something new.
 
 </ScrollTable>
 
-Nothing stops you naming several at once, and that is the normal arrangement:
-`--file` beside a store gives you a capture to go back to, and `--loki` beside
-`--influx` puts the kernel log where a log query can reach it while the numbers
-go to the store the dashboards read.
+- Name several at once: `--file` beside a store gives you a capture to go back
+  to, and `--loki` beside `--influx` puts the kernel log where a log query can
+  reach it while the numbers go to the store the dashboards read.
+- **Loki takes events, not metrics** — the kernel-log records, the detections,
+  the gaps, the triggers, the API tier's errors and the device records — so a
+  Loki-only run has no CPU or memory numbers at all.
+- **`--prom` is scraped, not pushed**: `forward` serves `/metrics` and
+  Prometheus comes to it, so the collector has to be reachable from the
+  Prometheus host.
 
-Two of these do not carry the same thing as the rest. **Loki takes events, not
-metrics** — the kernel-log records, the detections, the gaps, the triggers, the
-API tier's errors and the device records — so a Loki-only run has no CPU or memory
-numbers in it at all. **`--prom` is scraped, not
-pushed**: `forward` serves `/metrics` and Prometheus comes to it, which means
-the collector has to be reachable from the Prometheus host.
-
-## The eleven sinks
+## Sinks {#the-eleven-sinks}
 
 <ScrollTable label="The sinks forward can write to">
 
@@ -174,31 +172,35 @@ the collector has to be reachable from the Prometheus host.
 
 </ScrollTable>
 
-Sink credentials never come from a flag: a flag is visible in `ps` and in a shell
-history. Each sink token is read from its `MIKROSCOPE_*` variable only. The agent's own
-bearer token is the exception: `forward` takes it as `--token`, default
-`MIKROSCOPE_TOKEN`. `--host-tag`
-(`MIKROSCOPE_HOST_TAG`, default `router`) puts the same host tag or label on every
-point in every sink.
+- Sink credentials never come from a flag: a flag is visible in `ps` and in a
+  shell history. Each sink token is read from its `MIKROSCOPE_*` variable only.
+  The agent's own bearer token is the exception: `forward` takes it as
+  `--token`, default `MIKROSCOPE_TOKEN`.
+- `--host-tag` (`MIKROSCOPE_HOST_TAG`, default `router`) puts the same host tag
+  or label on every point in every sink.
+- A sink that was asked for and cannot be constructed — a port already bound, a
+  file that cannot be opened — fails the run rather than going silently absent.
 
-A sink that was asked for and cannot be constructed — a port already bound, a file
-that cannot be opened — fails the run. A sink silently absent is worse than no data,
-because the absence is invisible.
+<Anchor name="what-has-been-measured" />
 
-## A slow sink never stops the loop
+The runs the collector has made against a router and the sinks it has fed are on
+the <TestedOn of="rates-2026-09-15">evidence page</TestedOn>, and the stores each
+sink has been tested against under <TestedOn of="test-suites">Test suites</TestedOn>.
 
-The collector's pull loop must never wait on a destination. Every sink that talks to
-a remote renders into memory and hands the bytes to a bounded queue that a
-goroutine of its own drains once a second:
+## Queues and drops {#a-slow-sink-never-stops-the-loop}
+
+The pull loop never waits on a destination. Every sink that talks to a remote
+renders into memory and hands the bytes to a bounded queue that a goroutine of
+its own drains once a second:
 
 - The queue holds `--queue-seconds` (default 60) seconds' worth of a byte budget:
   64 KiB per second for InfluxDB, PostgreSQL (`--postgres`), Loki, OTLP,
   Elasticsearch, Telegraf and stdout, 256 KiB per second for Graphite, whose
   one-line-per-value format is bulkier.
-- Past the budget the **oldest** batch is evicted and counted; the newest is always
-  kept, because fresh telemetry beats stale.
-- A failed delivery backs off 2 s, doubling to 60 s, and logs at most one line per
-  minute. Everything else is in the counters.
+- Past the budget the **oldest** batch is evicted and counted; the newest is
+  always kept, because fresh telemetry beats stale.
+- A failed delivery backs off 2 s, doubling to 60 s, and logs at most one line
+  per minute. Everything else is in the counters.
 - Each HTTP post carries a 10 s timeout, and a dead pooled connection is an error
   that is retried and counted, not a silent resend. `--postgres` sends each batch
   as one transaction with a 30 s timeout.
@@ -211,11 +213,11 @@ under a lock and serves it on scrape.
 <Aside type="caution" title="A pipe into psql can block the collector">
 	The SQL sink has no queue, so with `--sql -` feeding `| psql`, a `psql` that falls behind fills
 	the pipe and the next write blocks the pull loop instead of dropping. Each `INSERT` is its own
-	transaction, which is the realistic way for `psql` to fall behind a 10 Hz agent. Not measured.
-	Write to a file and apply it afterwards.
+	transaction, which is the realistic way for `psql` to fall behind a 10 Hz agent
+	(<TestedOn of="not-tested">not measured</TestedOn>). Write to a file and apply it afterwards.
 </Aside>
 
-### What the counters count
+### Delivery counters {#what-the-counters-count}
 
 `forward` prints `written`, `dropped` and `errors` per sink, and the unit differs by
 shape:
@@ -228,7 +230,7 @@ shape:
 - **File, SQL and Prometheus count events**: one per sample, trigger, API read, gap,
   detection or device record accepted.
 
-## What `forward` prints
+## Console output {#what-forward-prints}
 
 At start, on standard error: one `sink: <name>` line per sink, the API tier's
 settings, and the agent's version, rate, sequence number, skew, transport and
@@ -245,47 +247,20 @@ forwarded <n> kernel samples, <n> api samples, <n> gap(s), <n> skew jump(s)
   <sink>: <n> written, <n> dropped, <n> errors
 ```
 
-Two properties of that output can surprise a consumer: the exit summary goes to the
-same stream the `--stdout` sink writes, so `forward --stdout=lp | telegraf` ends every
-run with lines the consumer cannot parse; and a wrong `--token` is logged per pull as
-`401 Unauthorized` while the run still ends at its `--for` deadline with exit status 0
-and `forwarded 0 kernel samples`.
+<Aside type="caution" title="Two things to know before piping it">
+	The exit summary goes to the same stream the `--stdout` sink writes, so
+	`forward --stdout=lp | telegraf` ends every run with lines the consumer cannot parse. And a
+	wrong `--token` is logged per pull as `401 Unauthorized`, while the run still ends at its `--for`
+	deadline with exit status 0 and `forwarded 0 kernel samples`.
+</Aside>
 
-## One dimension, one name
+## Label naming {#one-dimension-one-name}
 
 A processor is `cpu` everywhere — InfluxDB tag, SQL column, Prometheus label, OTLP
 attribute — never `core`. The wire carries the kernel's own unit and names it in the
 field (`_khz`, `_kb`, `_ticks`, `_pages`, `_sectors`); each sink converts once, to that
 store's convention, and converts a value and its ceiling identically. So temperature
 is `celsius` beside `critical_celsius`, and block-device busy time is `io_s`.
-
-## What has been measured
-
-On the reference RB5009 on 2026-09-12, this eight-minute run forwarded 4 800 kernel
-and 479 API samples with 0 gaps and 0 drops:
-
-```sh
-mikroscope forward --for 8m --prom :9124 --influx … --interfaces bridge,ether1,PPPoE_DIGI --conntrack-every 10s
-```
-
-In the five rate runs of 2026-09-15 the
-collector wrote to three sinks at once, and every one reported 0 gaps and 0 drops at
-10, 50 and 100 Hz:
-
-<Provenance of="rates-2026-09-15" />
-
-<NotClaimed>
-	Loki, OTLP, Graphite, Elasticsearch, OpenSearch, Telegraf, SQL and stdout are tested against
-	local receivers that assert the bytes each protocol accepts (development host, amd64, since
-	2026-09-12). Since 2026-09-17 the docker end-to-end suite also runs the collector, against a
-	canned agent and with the API tier off, into Loki 3, the OpenTelemetry Collector,
-	graphite-statsd, Elasticsearch 9, Telegraf 1.39 over HTTP and PostgreSQL 18 (through `--sql`,
-	and through `--postgres` since that sink landed on 2026-09-21), and reads the data back through
-	each store's own API. None of them has been fed from the RB5009 into a running backend, and
-	OpenSearch, TimescaleDB's hypertables and stdout have never run against a real store. The byte
-	sizes quoted for them on [the other sinks](/mikroscope/sinks/other/) come from test fixtures,
-	not from a device.
-</NotClaimed>
 
 <SeeAlso>
 
@@ -295,9 +270,9 @@ collector wrote to three sinks at once, and every one reported 0 gaps and 0 drop
   the dashboard expects.
 - [InfluxDB 3](/mikroscope/sinks/influxdb/): the write URL, the measurements and what InfluxDB 3
   Core refuses.
-- [The RouterOS API tier](/mikroscope/sinks/api-tier/): what the collector still asks the router,
+- [RouterOS API tier](/mikroscope/sinks/api-tier/): what the collector still asks the router,
   and how to ask less.
-- [Reaching the agent](/mikroscope/install/reaching-the-agent/): the direct and relay transports
+- [Network access](/mikroscope/install/reaching-the-agent/): the direct and relay transports
   the pull runs over.
 
 </SeeAlso>

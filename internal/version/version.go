@@ -8,6 +8,7 @@ package version
 
 import (
 	"runtime/debug"
+	"strings"
 
 	"github.com/jmrplens/mikroscope"
 )
@@ -86,4 +87,16 @@ func Line(program string) string {
 		d = "unknown"
 	}
 	return program + " " + Version + " (commit " + c + ", built " + d + ")"
+}
+
+// Placeholder stands for the release number in a checked-in file that has to
+// name it: the golden case matrix (internal/router/testdata/cases.json), whose
+// pull cases name the agent image of this release, and the site's pages, whose
+// build writes VERSION in its place. A file that writes Placeholder follows
+// VERSION on its own; one that writes the number goes stale at every release.
+const Placeholder = "{{MIKROSCOPE_VERSION}}"
+
+// Expand writes Version wherever s has Placeholder.
+func Expand(s string) string {
+	return strings.ReplaceAll(s, Placeholder, Version)
 }

@@ -18,10 +18,16 @@
  * are data strings the markdown pass never sees, so CodeText gives them the
  * same src/lib/nowrap-values.mjs rule ("a 60 s ring" broke as "60" / "s" on
  * six pages at WebKit 390 px, 2026-09-24).
+ *
+ * Evidence pages only (src/lib/voice.mjs): anywhere else it warns, or fails
+ * the build once MS_VOICE is "error". A guide links the campaign instead,
+ * with <TestedOn of="<campaign>">, or quotes the figure with <Measured>,
+ * which links it there by itself.
  */
 import { campaigns, describeCpu, isCampaignId } from "../data/measurements";
 import { unbreakable } from "../lib/format";
 import { langOf } from "../lib/lang";
+import { evidenceOnly } from "../lib/voice.mjs";
 import CodeText from "./CodeText.astro";
 
 interface Props {
@@ -36,6 +42,7 @@ if (!isCampaignId(of)) {
 if (of === "image" || of === "image-v100") {
 	throw new Error("Provenance: the image size was not measured on a device; say where it comes from in prose");
 }
+evidenceOnly("<Provenance>", Astro.locals.starlightRoute);
 const c = campaigns[of];
 const SEP = "\u00a0· ";
 const lang = langOf(Astro.locals.starlightRoute);

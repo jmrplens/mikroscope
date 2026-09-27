@@ -1,48 +1,42 @@
 ---
 title: Triggered capture
-description: How the agent keeps full-rate samples around a condition you set, what fires, how to fetch a capture, and why it samples events rather than counts them.
+description: Keep full-rate samples around a condition you set on the agent, fetch them over HTTP, and count the fires that were not captured.
+docType: how-to
 ---
 
 import { Aside } from "@astrojs/starlight/components";
 import Measured from "../../../components/Measured.astro";
-import NotClaimed from "../../../components/NotClaimed.astro";
 import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
+import TestedOn from "../../../components/TestedOn.astro";
 
-Everything on `/metrics` is a lossy summary, and a recording only exists if
-someone started it before the moment. This page answers what the agent does
-instead: which conditions make it keep the samples around a moment at full rate,
-how to configure them, how to fetch what it kept, what the collector does with
-the news, and what a capture cannot tell you.
+Set a condition on the agent, and it keeps the samples around the moment the
+condition fires, at full rate, without a recording running. Fetch the capture
+over HTTP and draw it with `plot`.
 
-## What a capture is, and what it is not
+## Captures {#what-a-capture-is-and-what-it-is-not}
 
-The one lossless thing the agent can do on its own is keep the samples that
-already exist, at full rate, around the moment they matter — and only the agent
-can, because only the agent has every sample. The ring already holds the last
-60 s by default, so the seconds before a fire cost nothing to keep; the seconds after cost
-only the wait. The default capture window is 5 s either side, so it fits with room; a longer
-`CAPTURE_PRE_S` than the ring holds is a window the ring cannot supply, and `--buffer` is what
-raises it.
+- **A capture is the samples that already exist**, kept at full rate around the
+  moment a condition fired. Only the agent can keep them, because only the agent
+  has every sample. The ring already holds the last 60 s by default, so the
+  seconds before a fire cost nothing; the seconds after cost only the wait. The
+  default window is 5 s either side. A `CAPTURE_PRE_S` longer than the ring
+  (`--buffer`) is a window the ring cannot supply.
+- **It decides nothing about meaning.** A condition is a comparison you
+  configured. The field it compared and the value that tripped it travel in the
+  capture's header. The capture is the same raw delta lines `/snapshot` ships;
+  nothing is turned into a percentage or a verdict.
+- **It does not copy lines.** The ring stores each sample as a pre-encoded,
+  immutable line, and a capture pins the lines it needs, so a fire costs a copy
+  of the entry headers once and nothing per tick. The design estimates that at
+  about 3 µs for a 10 s window at 10 Hz.
+- **Conditions run in the sampler's own loop**, between reading a sample and
+  pushing it into the ring, never in a second goroutine. There is no expression
+  language, on purpose: a parser is a dependency and an attack surface, and an
+  operator-writable expression on the sampler's hot path is a way to make the
+  router slow.
 
-It decides nothing about meaning. A condition is a comparison you configured.
-The field it compared and the value that tripped it travel in the capture's
-header, so you can see what was compared. The capture is the same raw delta
-lines `/snapshot` ships. Nothing is turned into a percentage or a verdict.
-
-A capture does not copy those lines. The ring stores each sample as a
-pre-encoded, immutable line, and a capture pins the lines it needs, so firing
-costs a copy of the entry headers once per fire and nothing per tick. The design
-estimates that at about 3 µs for a 10 s window at 10 Hz; it has not been
-measured on the device.
-
-Conditions are evaluated in the sampler's own loop, between reading a sample and
-pushing it into the ring, never in a second goroutine. There is no expression
-language, on purpose: a parser is a dependency and an attack surface, and an
-operator-writable expression on the sampler's hot path is a way to make the
-router slow.
-
-## Configuring it
+## Configuration {#configuring-it}
 
 The agent reads six variables from its container's envlist. Two of them have an
 `install` flag.
@@ -60,25 +54,23 @@ The agent reads six variables from its container's envlist. Two of them have an
 
 </ScrollTable>
 
-`install` always writes `CAPTURE_MB`, and writes `TRIGGERS` only when
-`--triggers` is given; without it the agent uses its default set. It writes none
-of the other four, so an installed agent runs with their defaults. `mikroscope
-plan` shows the envlist entries before anything is written.
+- `install` always writes `CAPTURE_MB`, and writes `TRIGGERS` only when
+  `--triggers` is given; without it the agent uses its default set. It writes
+  none of the other four, so an installed agent runs with their defaults.
+  `mikroscope plan` shows the envlist entries before anything is written.
+- `--triggers` goes through the agent's own parser before the first connection.
+  An unknown condition, a threshold out of range, a quote or a semicolon fails
+  the command with exit status 2 and writes nothing.
+- The agent parses the list again when it starts, because an envlist can be
+  edited by hand on the router. A value it rejects there makes it refuse to run,
+  with one line on its standard output, which RouterOS puts in its log.
 
-`--triggers` goes through the agent's own parser before the first connection:
-`Finish` hands it to `agent.ParseTriggers`, so an unknown condition, a threshold
-out of range, a quote or a semicolon fails the verb with exit status 2 and
-writes nothing. The agent parses the list again when it starts, because an
-envlist can be edited by hand on the router; a value it rejects there makes it
-refuse to run, with one line on its standard output, which RouterOS puts in its
-log.
+## Conditions {#the-conditions}
 
-## The conditions
-
-The default set is the conditions that take no threshold except `squeeze` —
-`softnet-drop`, `oom`, `reset`, `irq-err`, `flash-bad`, each firing when the kernel
-counts something it normally does not — plus `kmsg<=3`. The level conditions are
-not in it: their thresholds are yours to choose.
+The default set is every condition without a threshold except `squeeze` —
+`softnet-drop`, `oom`, `reset`, `irq-err` and `flash-bad`, each firing when the
+kernel counts something it normally does not — plus `kmsg<=3`. The level
+conditions are not in it: their thresholds are yours to choose.
 
 <ScrollTable label="Trigger conditions">
 
@@ -97,34 +89,33 @@ not in it: their thresholds are yours to choose.
 
 </ScrollTable>
 
-Where a condition covers several cores, queues or partitions, the header names
-the first one that matched. `memfall` compares `/proc/meminfo`'s kB divided by
-1 024, so its N is in MiB although the field calls it MB. `kmsg<=N` needs the
-kernel log, which the agent can read only in a privileged container ([what
-privileged buys](/mikroscope/limits/privileged/)); `flash-bad` needs a YAFFS
-partition. A condition whose source is absent never fires.
+- Where a condition covers several cores, queues or partitions, the header names
+  the first one that matched.
+- `memfall` compares `/proc/meminfo`'s kB divided by 1 024, so its N is in MiB
+  although the field calls it MB.
+- `kmsg<=N` needs the kernel log, which the agent reads only in a privileged
+  container ([Privileged mode](/mikroscope/limits/privileged/)); `flash-bad`
+  needs a YAFFS partition. A condition whose source is absent never fires.
+- `squeeze` is not a default because time squeezes can be background on a
+  healthy router (<TestedOn of="squeeze-2026-09-16">measured</TestedOn>), and a
+  rule that fires on any squeeze then fires constantly. The collector's
+  microburst rule asks for an episode of three deviations instead.
+- A capture can also be armed by hand, with `POST /capture` (below). Its cause
+  is `manual` and its `field` is the reason you gave.
 
-`squeeze` is available but not a default. On the reference RB5009 time squeezes
-are background: a rule that fires on any squeeze fires 92 times in twenty
-minutes there (RouterOS 7.24.2, 2026-09-15). The collector's microburst rule
-therefore asks for an episode of three deviations.
-
-A capture can also be armed by hand, with `POST /capture` (below). Its cause is
-`manual` and its `field` is the reason you gave.
-
-## How a fire becomes a capture
+## Capture lifecycle {#how-a-fire-becomes-a-capture}
 
 1. A condition is true on sample S. If that condition fired fewer than
    `TRIGGER_REFRACTORY_S` × rate samples ago (that many seconds at the nominal
-   rate), the fire is **suppressed** (reason `refractory`). If another capture is still collecting its window, the fire is
-   **suppressed** (reason `pending`): one capture collects at a time, whatever
-   condition armed it.
+   rate), the fire is **suppressed** (reason `refractory`). If another capture
+   is still collecting its window, the fire is **suppressed** (reason
+   `pending`): one capture collects at a time, whatever condition armed it.
 2. Otherwise a capture is armed for the window from S − `CAPTURE_PRE_S` × rate
    to S + `CAPTURE_POST_S` × rate, and a `{"trigger":{…}}` line is queued for
    the stream.
 3. When the sample at the end of the window is in the ring, the capture pins
-   the ring's lines for that window. If the ring no longer holds any of them, the
-   capture is **refused** (`empty`).
+   the ring's lines for that window. If the ring no longer holds any of them,
+   the capture is **refused** (`empty`).
 4. If the window's bytes alone exceed the budget, it is **refused** (`budget`).
    If the budget is full, `first` refuses it (`budget`) and `last` evicts the
    oldest captures until it fits.
@@ -139,12 +130,11 @@ memory, and the HTTP server stops with the agent.
 Captures live in the agent's memory. Nothing writes them to disk, so a restart
 of the container, an `upgrade` or a reboot loses the ones not yet downloaded.
 
-### What a capture weighs
+### Capture size {#what-a-capture-weighs}
 
-A capture's size is its window's sample count times the line size. The mean line
-measured on the RB5009 (RouterOS 7.24.2, 10 Hz, privileged, every source including the PMU,
-2026-09-17) was <Measured id="ring.lineBytes" />; lines at the default floors were not
-measured. That gives, by arithmetic and not by measuring captures:
+A capture's size is its window's sample count times the line size. A line with
+every source on, the PMU included, is <Measured id="ring.lineBytes" />. By
+arithmetic from that line:
 
 <ScrollTable label="Capture size by rate">
 
@@ -160,18 +150,22 @@ A bigger board — more cores, more interrupt lines — has longer lines. The
 `bytes` field of each capture is the real figure.
 
 The budget is memory the agent holds beyond its ring: a pinned line stays alive
-after the ring has moved past it. So the agent counts it at start in the same
-check as the ring. When the agent can read the container's `memory.max` and about
-`rate × buffer ×` <Measured id="ring.lineChargedBytes" /> plus `CAPTURE_MB` exceeds it, the agent
-refuses to start, naming the three settings to lower or `--memory-max` to raise. It also warns
-when twice that exceeds its Go soft memory limit, `MEM_LIMIT_MB` (8 to 1 024 MiB). The agent's own
-default for `MEM_LIMIT_MB` is 14; `install` derives it from the ring instead (rate × buffer × line,
-× 2.5, at least 16, at most three quarters of `--memory-max`), which writes 16 at the defaults, and
-`--mem-limit-mb` sets it by hand. That derivation does not count `CAPTURE_MB`, so a large capture
-budget can still draw the warning. [The cost of the observer](/mikroscope/cost/) explains why that
-second ratio matters.
+after the ring has moved past it, so the agent checks both together at start.
 
-## Reading captures over HTTP
+- When the agent can read the container's `memory.max` and about
+  `rate × buffer ×` <Measured id="ring.lineChargedBytes" /> plus `CAPTURE_MB`
+  exceeds it, the agent refuses to start, naming the three settings to lower or
+  `--memory-max` to raise.
+- It warns when twice that exceeds its Go soft memory limit, `MEM_LIMIT_MB`
+  (8 to 1 024 MiB). The agent's own default for `MEM_LIMIT_MB` is 14. `install`
+  derives it from the ring instead (rate × buffer × line, × 2.5, at least 16, at
+  most three quarters of `--memory-max`), which writes 16 at the defaults, and
+  `--mem-limit-mb` sets it by hand.
+- That derivation does not count `CAPTURE_MB`, so a large capture budget can
+  still draw the warning. [Agent cost](/mikroscope/cost/) explains why that
+  second ratio matters.
+
+## Read captures {#reading-captures-over-http}
 
 Four endpoints on the agent. Each needs the bearer token when the agent has one,
 and each answers `404` with `captures disabled (CAPTURE_MB=0)` when the feature
@@ -203,63 +197,79 @@ capture: `id`, `cause`, `condition`, `field`, `value`, `threshold`, `fire_seq`,
 
 The sample lines of `GET /captures/<id>` are byte-identical to what `/snapshot`
 serves for the same samples, so a tool that reads a snapshot needs no new parser;
-`plot` skips the header line. The CLI has no verb for captures: use any HTTP
+`plot` skips the header line. The CLI has no command for captures: use any HTTP
 client.
 
 <Aside type="note" title="Captures need the direct path">
 
 The relay transport pulls through `/tool fetch`, which returns at most <Measured id="relay.replyMaxBytes" /> and sends no token. A capture at the defaults is about 330 kB, five times the fetch limit. Fetch captures from a host that
-reaches the agent directly, or through `--expose`: [reaching the
-agent](/mikroscope/install/reaching-the-agent/) covers both.
+reaches the agent directly, or through `--expose`: [Network
+access](/mikroscope/install/reaching-the-agent/) covers both.
 
 </Aside>
 
-## The trigger line, and what the collector does with it
+## Collector handling {#the-trigger-line-and-what-the-collector-does-with-it}
 
-When a capture is armed, the agent places one line before the sample it fired on,
-in `/stream` and in `/snapshot?since=` (not in `/snapshot?seconds=`):
+When a capture is armed, the agent places one line before the sample it fired
+on, in `/stream` and in `/snapshot?since=` (not in `/snapshot?seconds=`):
 
 ```text
 {"trigger":{"id":3,"cause":"busy>=0.95","field":"cpu[2].busy_ratio","value":1,"threshold":0.95,"seq":48213,"wall_ns":1789000000000000000}}
 ```
 
-The values above are illustrative. The line is a kind of its own, like the
-`{"gap":…}` line, not a field on the sample, so the sample schema is unchanged.
-The agent keeps the last 64 of them for pullers, so a puller more than 64 fires
-behind never sees the older ones; a suppressed fire produces none. A manual
-capture fires on the newest sample already in the ring, so a puller that has
-already received that sample gets no trigger line for it; read `/captures`
-instead.
+- The values above are illustrative. The line is a kind of its own, like the
+  `{"gap":…}` line, not a field on the sample, so the sample schema is unchanged.
+- The agent keeps the last 64 trigger lines for pullers, so a puller more than
+  64 fires behind never sees the older ones. A suppressed fire produces none.
+- A manual capture fires on the newest sample already in the ring, so a puller
+  that has already received that sample gets no trigger line for it; read
+  `/captures` instead.
 
 `forward` recognises the line, never mistakes it for a sample, counts it, and
-hands it to every sink as an annotation: the `mikroscope_trigger` measurement in
-InfluxDB and table in SQL, `mikroscope_collector_triggers_total{cause}` on the
-collector's Prometheus exposition, a `trigger` document in Elasticsearch,
-`trigger.<cause>` in Graphite, a `source="trigger"` line in Loki, the
-`mikroscope.trigger.fired{cause}` sum in OTLP, and the line itself in the file sink.
-All five Grafana dashboards carry a `triggers` annotation, off by default in the
-toggle bar, beside a `detections` one that is on, and each reads its own store: on
-InfluxDB and PostgreSQL the `mikroscope_trigger` rows, on Prometheus the collector's
-`mikroscope_trigger_fired_total`. On Elasticsearch it is a Lucene filter,
-`kind:trigger AND host.keyword:$host`, that marks each `trigger` document with its
-`field` as text and its `cause` as tag (`kind:detection`, `message` and `rule` for
-detections). On Graphite it is `aliasByNode($prefix.$host.trigger.*, 3)`, one marker
-per point titled with the cause, with no text, because Graphite holds no string
-(`detection.*` and the rule for detections). Through 1.2.0 both of these dashboards
-carried the Prometheus expression instead and showed nothing. The Elasticsearch and
-Graphite forms are checked only as generated JSON; they have not been run in a real
-Grafana. The capture itself stays
-on the agent, under `/captures/<id>`.
+hands it to every sink as an annotation. The capture itself stays on the agent,
+under `/captures/<id>`.
 
-`record` does not recognise the line yet — [Record, mark,
+<ScrollTable label="What each sink writes for a trigger">
+
+| Sink                         | Trigger record                                   |
+| ---------------------------- | ------------------------------------------------ |
+| InfluxDB                     | the `mikroscope_trigger` measurement             |
+| SQL                          | the `mikroscope_trigger` table                   |
+| Prometheus (the collector's) | `mikroscope_collector_triggers_total{cause}`     |
+| Elasticsearch                | a `trigger` document                             |
+| Graphite                     | `trigger.<cause>`                                |
+| Loki                         | a `source="trigger"` line                        |
+| OTLP                         | the `mikroscope.trigger.fired{cause}` sum        |
+| file                         | the line itself                                  |
+
+</ScrollTable>
+
+All five Grafana dashboards carry a `triggers` annotation, off by default in the
+toggle bar, beside a `detections` one that is on. Each reads its own store:
+
+<ScrollTable label="Trigger annotation per dashboard">
+
+| Dashboard            | Annotation query                                                                                                                                                                                   |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| InfluxDB, PostgreSQL | the `mikroscope_trigger` rows                                                                                                                                                                      |
+| Prometheus           | the collector's `mikroscope_trigger_fired_total`                                                                                                                                                   |
+| Elasticsearch        | the Lucene filter `kind:trigger AND host.keyword:$host`, with the document's `field` as text and its `cause` as tag (`kind:detection`, `message` and `rule` for detections)                        |
+| Graphite             | `aliasByNode($prefix.$host.trigger.*, 3)`: one marker per point titled with the cause, with no text, because Graphite holds no string (`detection.*` and the rule for detections)                 |
+
+</ScrollTable>
+
+The Elasticsearch and Graphite annotations are checked as generated JSON; they
+have <TestedOn of="not-tested">not been run in Grafana</TestedOn>.
+
+`record` does not recognise the line: [Record, mark and
 plot](/mikroscope/record/#triggers-during-a-recording) says what it does with it.
 
-## Counting what was not captured
+## Suppressed fires {#counting-what-was-not-captured}
 
 The collector's `/metrics` carries the families that say how much the captures
-did not see, built from the agent's `GET /sampler` counters, which the collector reads at start and every
-minute. Every condition and reason pair is rendered from the start, at 0 until
-it happens, so a dashboard can show "0 so far".
+did not see, built from the agent's `GET /sampler` counters, which the collector
+reads at start and every minute. Every condition and reason pair is rendered from
+the start, at 0 until it happens, so a dashboard can show "0 so far".
 
 <ScrollTable label="Trigger and capture metric families">
 
@@ -280,18 +290,16 @@ agent's `GET /sampler` and renders them into its own exposition, so one scrape
 job on the collector carries them. [Prometheus](/mikroscope/sinks/prometheus/)
 has the detail.
 
-## What it cannot do
+## Limitations {#what-it-cannot-do}
 
-Stated because each of these will happen:
-
-- **The capture set is a sample of events, never a census.** The refractory window
-  and the byte budget bound a trigger storm, and one capture collects at a time.
-  `mikroscope_trigger_suppressed_total` and `mikroscope_capture_refused_total` are
-  how much was not seen.
-- **Full rate is not full detail.** A capture holds samples at the sampler's rate:
-  at 10 Hz nothing shorter than 100 ms is reliably visible, and a busy ratio still
-  moves in the kernel's tick steps. [The resolution floor](/mikroscope/limits/)
-  sets that limit, not the capture.
+- **The capture set is a sample of events, never a census.** The refractory
+  window and the byte budget bound a trigger storm, and one capture collects at a
+  time. `mikroscope_trigger_suppressed_total` and
+  `mikroscope_capture_refused_total` are how much was not seen.
+- **Full rate is not full detail.** A capture holds samples at the sampler's
+  rate: at 10 Hz nothing shorter than 100 ms is reliably visible, and a busy
+  ratio still moves in the kernel's tick steps. [Resolution
+  limits](/mikroscope/limits/) sets that limit, not the capture.
 - **A window can be short.** One the ring did not wholly hold is served with
   `complete: false`. One cut off by the agent stopping is collected but never
   served, because the captures stop with the agent.
@@ -299,23 +307,20 @@ Stated because each of these will happen:
   sampler, and is counted in `mikroscope_capture_bytes_served_total` the way any
   puller is charged.
 
-<NotClaimed>
-	The cost of a fire on the device — 3 µs is the design's estimate. How the agent behaves under a
-	sustained trigger storm. Any capture at 50 Hz or 100 Hz. The capture sizes in the table above,
-	which are arithmetic from the line size, not the sizes of captures taken on the RB5009.
-</NotClaimed>
+The cost of a fire on the device, a sustained trigger storm, captures at 50 or
+100 Hz and the sizes of real captures are listed under <TestedOn of="not-tested">Not tested</TestedOn>.
 
 <SeeAlso>
 
 ## See also
 
-- [Record, mark, plot](/mikroscope/record/): a recording you start, with markers,
-  and the chart `plot` draws from a capture too.
-- [The agent's HTTP endpoints](/mikroscope/reference/http/): `/captures`,
-  `/stream` and `/snapshot` beside the rest.
-- [Prometheus metric families](/mikroscope/reference/metrics/): the trigger and
-  capture families with every other family on the collector's exposition.
-- [The resolution floor is the kernel's](/mikroscope/limits/): what full rate
-  can and cannot resolve.
+- [Record, mark and plot](/mikroscope/record/): a recording you start, with
+  markers, and the chart `plot` draws from a capture too.
+- [HTTP endpoints](/mikroscope/reference/http/): `/captures`, `/stream` and
+  `/snapshot` beside the rest.
+- [Prometheus metrics](/mikroscope/reference/metrics/): the trigger and capture
+  families with every other family on the collector's exposition.
+- [Resolution limits](/mikroscope/limits/): what full rate can and cannot
+  resolve.
 
 </SeeAlso>

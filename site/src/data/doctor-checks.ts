@@ -39,8 +39,8 @@ export const doctorChecks: readonly DoctorCheck[] = [
 		id: "routeros-version",
 		printed: "RouterOS 7.24 or later",
 		passes: {
-			en: "`/system/resource` reports a `version` of 7.24 or later; `7.24.4 (stable)`, `7.24 (stable)` and `7.25rc1 (testing)` all read",
-			es: "`/system/resource` informa una `version` 7.24 o posterior; `7.24.4 (stable)`, `7.24 (stable)` y `7.25rc1 (testing)` se leen igual",
+			en: "`/system/resource` reports a `version` of 7.24 or later, read with or without a patch number and whatever the channel, as in `7.24 (stable)` or `7.25rc1 (testing)`",
+			es: "`/system/resource` informa una `version` 7.24 o posterior, que se lee con número de parche o sin él y sea cual sea el canal, como en `7.24 (stable)` o `7.25rc1 (testing)`",
 		},
 		fix: {
 			en: "upgrade RouterOS to 7.24 or later (`/system/package/update`), and the `container` package with it",

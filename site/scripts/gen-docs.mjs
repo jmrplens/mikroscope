@@ -17,10 +17,12 @@
  *
  * What this adds on top of the reduction, and why:
  *
- *   - Several pages per file. docs/limits.md is the four pages under /limits/
- *     and the three under /cost/; docs/install.md the six under /install/.
- *     Six of the names are the ones README.md and CLAUDE.md already link to,
- *     so the mapping is a manifest here rather than one file per page.
+ *   - Several pages per file, one file per sidebar group or less:
+ *     docs/limits.md is the four pages under /limits/, docs/evidence.md
+ *     Tested on, the three cost pages and the test suites. SECURITY.md links
+ *     security.md and limits.md by name, and Go comments and the dashboards
+ *     name others, so the mapping is a manifest here rather than one file per
+ *     page, and a file name, once published, is kept.
  *   - Links into the site become absolute. A page writes /mikroscope/sinks/
  *     because it is served from there; the same text read on GitHub is a link
  *     to GitHub's own root.
@@ -79,56 +81,58 @@ const publicUrl = (route) => (route ? `${PUBLIC}/${route}/` : `${PUBLIC}/`);
 
 // docs/<file> <- the site pages it holds, in the order they are read in.
 //
-// The first six names are the ones README.md and CLAUDE.md already link to and
-// keep their old scope; the others are the sections the site grew that the
-// hand-written docs/ never had. The grouping is by what a reader arrives with
-// a question about, which is how the sidebar is ordered too, so a file reads
-// as one document rather than as pages stapled together.
+// The grouping follows the sidebar's groups (astro.config.mjs), so a file
+// reads as one document rather than as pages stapled together: install and
+// configure, use, reference, explanation, evidence and about. A group too long
+// for one file is split where a reader's question changes (walkthrough.md and
+// questions.md; sinks.md and dashboards.md).
 const MANIFEST = [
-	// What the thing is, and the five minutes that show it working.
+	// The four commands that install it, and the first recording that shows it
+	// working.
 	{
 		file: "walkthrough.md",
-		title: "Five minutes with a router",
+		title: "Quick install and a first recording",
 		routes: ["start", "start/walkthrough"],
 	},
-	// What a reader asks before installing, answered in a paragraph each from
-	// the page that measured it, and the other tools set beside this one. Not
-	// in walkthrough.md, whose scope README.md and CLAUDE.md already name.
+	// What a reader asks before installing, answered in a paragraph each, and
+	// the other tools set beside this one. Not in walkthrough.md, whose scope
+	// README.md and CLAUDE.md already name.
 	{
 		file: "questions.md",
 		title: "Short answers, and the alternatives",
 		routes: ["start/questions", "start/compared"],
 	},
-	// Getting it onto a router: prerequisites, the four routes the image can
-	// take, the writes, the firewall, where things land, and how the CLI
-	// reaches the agent afterwards.
+	// Getting it onto a router: the methods, what the router needs, the CLI,
+	// the install with it, the script, by hand in the terminal and in WebFig,
+	// offline from the tar, and upgrading and removing it. The script
+	// generator is the one Install page not here (NOT_IN_DOCS).
 	{
 		file: "install.md",
-		title: "Installing the agent",
+		title: "Install, upgrade and uninstall",
 		routes: [
-			"install",
-			"install/cli",
-			"install/prerequisites",
 			"install/routes",
-			"install/firewall",
-			"install/layout",
-			"install/reaching-the-agent",
+			"install/prerequisites",
+			"install/cli",
+			"install",
+			"install/script",
+			"install/manual-cli",
+			"install/manual-gui",
+			"install/offline",
+			"install/upgrade",
 		],
 	},
-	// What the observer costs and what the figures cannot say, then the floors
-	// that produce them: one file, because "what it costs" and "what limits the
-	// number" are the same question asked from two ends.
+	// What to set once it is installed: how the host reaches the agent, the
+	// firewall lists, where things live on the router, the API user and
+	// exposing the agent on the LAN. The sidebar's Configure group.
 	{
-		file: "limits.md",
-		title: "What it costs and what it cannot see",
+		file: "configure.md",
+		title: "Configure",
 		routes: [
-			"cost",
-			"cost/rate-ceiling",
-			"cost/limits",
-			"limits",
-			"limits/namespaces",
-			"limits/privileged",
-			"limits/source-floors",
+			"install/reaching-the-agent",
+			"install/firewall",
+			"install/layout",
+			"security/api-user",
+			"security/expose",
 		],
 	},
 	// Recording a window by hand, and letting the agent record one for you.
@@ -137,7 +141,7 @@ const MANIFEST = [
 		title: "Recording and triggered capture",
 		routes: ["record", "record/triggers"],
 	},
-	// The collector and everything downstream of it.
+	// The collector and the stores it writes to.
 	{
 		file: "sinks.md",
 		title: "The collector and its sinks",
@@ -147,45 +151,23 @@ const MANIFEST = [
 			"sinks/influxdb",
 			"sinks/other",
 			"sinks/api-tier",
-			"sinks/derive",
-			"sinks/detections",
-			"sinks/device-info",
 		],
 	},
-	// The two committed dashboards, importing them, and the alert rules.
+	// The five dashboards, importing and checking them, the alert rules, and
+	// reading a fault off them.
 	{
 		file: "dashboards.md",
-		title: "Dashboards and alerts",
-		routes: ["dashboards", "dashboards/import-and-check", "dashboards/alerts"],
-	},
-	// How to read what it shows: the idle shape, and seven faults read against it.
-	{
-		file: "playbooks.md",
-		title: "How to read what it shows",
+		title: "Dashboards, alerts and fault diagnosis",
 		routes: [
+			"dashboards",
+			"dashboards/import-and-check",
+			"dashboards/alerts",
 			"playbooks",
-			"playbooks/idle",
-			"playbooks/loop",
-			"playbooks/cpu",
-			"playbooks/packet-flood",
-			"playbooks/flash-wear",
-			"playbooks/conntrack",
-			"playbooks/port-errors",
 		],
 	},
-	// What runs where, which credential lives where, and what the installer refuses.
-	{
-		file: "security.md",
-		title: "Security",
-		routes: [
-			"security",
-			"security/api-user",
-			"security/expose",
-			"security/installer",
-		],
-	},
-	// The tables: flags, variables, endpoints, metric families, measurements,
-	// and last the glossary of the terms all of them use.
+	// The tables: flags, variables, endpoints, metric families, the store
+	// schema, what the collector derives and detects, port names,
+	// troubleshooting, and last the glossary of the terms all of them use.
 	{
 		file: "reference.md",
 		title: "Reference",
@@ -195,22 +177,73 @@ const MANIFEST = [
 			"reference/http",
 			"reference/metrics",
 			"reference/measurements",
+			"sinks/derive",
+			"sinks/detections",
+			"sinks/device-info",
 			"reference/port-names",
-			"reference/testing",
 			"reference/troubleshooting",
 			"reference/glossary",
 		],
 	},
-	// Where the project stands, what each release publishes, what the mark is,
-	// and what it was built from.
+	// How the agent and the collector fit together, why the numbers have the
+	// resolution they have, and what a container on the router can and cannot
+	// see. SECURITY.md links this file by name.
+	{
+		file: "limits.md",
+		title: "How it works and its limits",
+		routes: [
+			"how-it-works",
+			"limits",
+			"limits/namespaces",
+			"limits/privileged",
+			"limits/source-floors",
+		],
+	},
+	// What runs where, which credential lives where, and what the installer
+	// refuses. SECURITY.md links this file by name.
+	{
+		file: "security.md",
+		title: "Security",
+		routes: ["security", "security/installer"],
+	},
+	// Where each claim was tested, what the agent costs and how the project
+	// tests itself: the pages that keep device, version and date
+	// (src/lib/voice.mjs EVIDENCE_SLUGS), apart from the case studies.
+	{
+		file: "evidence.md",
+		title: "Evidence: tested on, cost and test suites",
+		routes: [
+			"about/status",
+			"cost",
+			"cost/rate-ceiling",
+			"cost/limits",
+			"reference/testing",
+		],
+	},
+	// The idle shape, and seven faults read against it, each on the router it
+	// was measured on.
+	{
+		file: "playbooks.md",
+		title: "Case studies",
+		routes: [
+			"playbooks/idle",
+			"playbooks/loop",
+			"playbooks/cpu",
+			"playbooks/packet-flood",
+			"playbooks/flash-wear",
+			"playbooks/port-errors",
+			"playbooks/conntrack",
+		],
+	},
+	// What each release publishes, what it was built from, and what the mark is.
 	{
 		file: "about.md",
 		title: "About the project",
-		routes: ["about/status", "about/changelog", "about/brand", "about/lineage"],
+		routes: ["about/changelog", "about/lineage", "about/brand"],
 	},
 ];
 
-// The two pages that are not documentation, each with the reason it is not.
+// The pages that are not documentation, each with the reason it is not.
 const NOT_IN_DOCS = new Map([
 	[
 		"",
@@ -219,6 +252,10 @@ const NOT_IN_DOCS = new Map([
 	[
 		"404",
 		"the not-found page: a hero and two links, for a mistyped address on a served site, which a file in a checkout cannot have",
+	],
+	[
+		"install/generator",
+		"interactive: a form that renders `mikroscope plan --rsc`'s script in the browser, which a file cannot run; the script itself is documented with the RouterOS script route",
 	],
 ]);
 
@@ -319,6 +356,15 @@ const SCHEME = /^[a-z][a-z0-9+.-]*:/i;
 const TARGET =
 	/(!?)(\[(?:[^\]\n]|\n(?![ \t]*\n))*\])\(([^)\s]+)((?:\s+"[^"]*")?)\)/g;
 
+// An image that is itself the text of a link, [![alt](image)](target), the
+// form <a href={chart.src}><img src={chart.src} /></a> reduces to. TARGET
+// cannot see the outer link, because its text holds the image's own brackets,
+// so the outer target would keep the page-relative path that walks out of the
+// repository from docs/. It is matched first, as one unit, so the image inside
+// is rewritten exactly once.
+const LINKED_IMAGE =
+	/\[(!\[(?:[^\]\n]|\n(?![ \t]*\n))*\])\(([^)\s]+)\)\]\(([^)\s]+)((?:\s+"[^"]*")?)\)/g;
+
 /**
  * Rewrites one link or image target for a file read from the repository rather
  * than served from the site.
@@ -368,11 +414,23 @@ function retarget(target, isImage, context) {
  * @returns {string} the prose
  */
 function rewrite(prose, context) {
-	const out = prose.replaceAll(
-		TARGET,
-		(_, bang, text, target, title) =>
-			`${bang}${text}(${retarget(target, bang === "!", context)}${title})`,
-	);
+	const out = prose
+		.split(LINKED_IMAGE)
+		.map((part, i, parts) => {
+			// split() with capture groups interleaves each match's four groups
+			// between the runs of prose around it.
+			const k = i % 5;
+			if (k === 0)
+				return part.replaceAll(
+					TARGET,
+					(_, bang, text, target, title) =>
+						`${bang}${text}(${retarget(target, bang === "!", context)}${title})`,
+				);
+			if (k !== 1) return "";
+			const [alt, image, target, title] = parts.slice(i, i + 4);
+			return `[${alt}(${retarget(image, true, context)})](${retarget(target, false, context)}${title ?? ""})`;
+		})
+		.join("");
 	const missed = out.includes("](#")
 		? "a heading"
 		: out.includes(`](${BASE}/`)
@@ -426,7 +484,8 @@ function transplant(markdown, context) {
 	const out = [];
 	let prose = [];
 	const flush = () => {
-		if (prose.length > 0) out.push(rewrite(prose.join("\n"), context));
+		if (prose.length > 0)
+			out.push(separateQuotes(rewrite(prose.join("\n"), context)));
 		prose = [];
 	};
 	for (const line of markdown.split("\n")) {
@@ -452,6 +511,17 @@ function transplant(markdown, context) {
 	flush();
 	return out.join("\n");
 }
+
+/**
+ * Two asides in a row become two blockquotes with a blank line between them,
+ * which some renderers join into one quote (markdownlint's MD028). An empty
+ * HTML comment between them keeps them apart and shows nothing.
+ *
+ * @param {string} prose a run of lines with no fenced code in it
+ * @returns {string} the prose
+ */
+const separateQuotes = (prose) =>
+	prose.replaceAll(/^(>.*)\n\n(?=>)/gm, "$1\n\n<!-- -->\n\n");
 
 /**
  * One file of docs/.

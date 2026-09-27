@@ -1,4 +1,4 @@
-# mikroscope 1.3.1: install script for RouterOS 7.24 or later. Container name: mikroscope
+# mikroscope {{MIKROSCOPE_VERSION}}: install script for RouterOS 7.24 or later. Container name: mikroscope
 # Every object it creates carries the comment "mikroscope:mikroscope (managed by mikroscope)", which is how
 # `mikroscope status` and `uninstall` recognize them later. It lists them in
 # tmpfs/mikroscope/mikroscope.manifest.txt on the router, which `mikroscope uninstall` reads and deletes last.

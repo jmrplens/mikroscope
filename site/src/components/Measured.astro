@@ -7,12 +7,23 @@
  * The locale comes from the route, never a prop, so the two twins call it
  * identically and the parity gate can compare the ids they cite.
  *
+ * Where it may appear depends on what the figure is (`kind`):
+ *
+ * - `derived` and `budget` render as the number anywhere: arithmetic and a
+ *   design target carry no device and no date.
+ * - `reading`, a figure taken off a device, renders as the number on an
+ *   evidence page (src/lib/voice.mjs). On any other page it renders as a link
+ *   to its campaign's entry on Tested on (`about/status/#campaign-<id>`,
+ *   which <CampaignRegister> writes), so a guide can quote the figure and
+ *   leave the device, the version and the date to the page that holds them.
+ *
  * MDX props are not type-checked by `astro check`, so the id is checked here
  * and a typo fails the build instead of rendering nothing.
  */
 import { isMeasurementId, measurements } from "../data/measurements";
 import { formatQuantity } from "../lib/format";
 import { langOf } from "../lib/lang";
+import { campaignAnchor, pageOf, testedOnHref } from "../lib/voice.mjs";
 
 interface Props {
 	id: string;
@@ -28,6 +39,10 @@ const lang = langOf(Astro.locals.starlightRoute);
 // precision the source does not have. The element stays on one line, because a
 // line break inside it is a space before the full stop that follows it in prose.
 const machine = m.max === undefined ? String(m.value) : `${m.value}/${m.max}`;
+const href =
+	m.kind === "reading" && pageOf(Astro.locals.starlightRoute).kind !== "evidence"
+		? testedOnHref(lang, campaignAnchor(m.campaign))
+		: undefined;
 ---
 
-<data class="ms-measured" value={machine}>{formatQuantity(m, lang)}</data>
+{href === undefined && <data class="ms-measured" value={machine}>{formatQuantity(m, lang)}</data>}{href !== undefined && <a class="ms-measured-link" href={href} data-evidence="campaign"><data class="ms-measured" value={machine}>{formatQuantity(m, lang)}</data></a>}

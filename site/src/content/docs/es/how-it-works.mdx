@@ -1,0 +1,128 @@
+---
+title: Cómo funciona
+description: El agente en un contenedor de RouterOS, la veth en la que responde, el colector en tu máquina y los destinos en los que escribe, y lo que el diseño no puede hacer.
+docType: explanation
+head:
+  - tag: title
+    content: Cómo lee mikroscope el kernel de un router MikroTik | mikroscope
+---
+
+import Figure from "../../../components/Figure.astro";
+import Measured from "../../../components/Measured.astro";
+import SeeAlso from "../../../components/SeeAlso.astro";
+import Src from "../../../components/Src.astro";
+
+mikroscope son dos programas. Un agente se ejecuta en un contenedor del router y muestrea el kernel
+que comparte con RouterOS; una CLI en tu máquina lo instala, graba de él y ejecuta el colector que
+escribe en tus almacenes.
+
+## Componentes {#components}
+
+- **`mikroscope-agent`** es un binario estático de Go en un
+  [contenedor scratch](/mikroscope/es/reference/glossary/#contenedor-scratch). Muestrea con un
+  temporizador fijo de 1 a 100 Hz, 10 Hz por defecto, guarda los últimos 60 s en un
+  [anillo](/mikroscope/es/reference/glossary/#anillo) y los sirve por HTTP en la dirección de su
+  [veth](/mikroscope/es/reference/glossary/#veth). No abre ninguna conexión saliente y guarda como
+  mucho un secreto: el token que exige a quien lo lea, que vive en la
+  [envlist](/mikroscope/es/reference/glossary/#envlist) del contenedor.
+- **`mikroscope`**, la CLI, se ejecuta en tu máquina. Instala, actualiza y retira el agente por
+  ssh; graba una ventana con marcas y la dibuja como SVG; y ejecuta `forward`, el colector.
+- **Los objetos del propio router**: una veth con una /30, la dirección del router en ella, dos
+  pertenencias a listas, una envlist, el contenedor y un manifiesto de instalación que los enumera.
+  Todos llevan la etiqueta `mikroscope:<name> (managed by mikroscope)`, y `uninstall` los retira
+  todos.
+
+Cada versión publica la CLI como un archivo por plataforma (Linux y FreeBSD en amd64, arm64 y arm;
+macOS y Windows en amd64 y arm64), y el agente como un tar de imagen por arquitectura y como imagen
+de registro, `jmrplens/mikroscope-agent` en Docker Hub y `ghcr.io/jmrplens/mikroscope-agent` en
+GHCR. El colector también es una imagen, `jmrplens/mikroscope` y `ghcr.io/jmrplens/mikroscope`
+(linux/amd64, linux/arm64), y <Src path="deploy/" /> tiene dos pilas de compose que la combinan
+con InfluxDB 3 o Prometheus y Grafana. Esa imagen solo ejecuta `forward`: las órdenes de
+instalación necesitan ssh y scp, que deja fuera. Los dos programas tienen licencia MIT, en el
+fichero <Src path="LICENSE" />.
+
+## Ruta de los datos {#data-path}
+
+<Figure name="data-path" />
+
+1. El agente lee el kernel en cada tick y añade una muestra a su anillo.
+2. `forward`, o `record`, trae las muestras nuevas del agente por HTTP: directamente a la dirección
+   de la veth a través del router, por el relé de la API de RouterOS, o en la dirección LAN del
+   router con `--expose` ([Acceso por red](/mikroscope/es/install/reaching-the-agent/)).
+3. El colector pregunta a la API de RouterOS, una vez por segundo, lo que el kernel no le enseña al
+   contenedor, y marca las dos capas con el reloj del agente.
+4. Deriva proporciones, tasas y detecciones de las muestras fusionadas y las escribe en cada
+   destino que indiques ([Ejecutar el colector](/mikroscope/es/sinks/)).
+
+ssh nunca está en esta ruta. La CLI lo usa para instalar y comprobar, y agrupa cada lectura en una
+sola conexión, porque cada conexión le cuesta CPU al router mientras dura
+([Coste de SSH](/mikroscope/es/cost/#ssh-cost)).
+
+## Lo que lee el agente {#what-the-agent-reads}
+
+Un contenedor de RouterOS comparte el kernel del router, así que su `/proc` es el del propio router:
+
+- `/proc/stat` por núcleo, `/proc/interrupts`, `/proc/softirqs` y
+  [`/proc/net/softnet_stat`](/mikroscope/es/reference/glossary/#softnet);
+- `/proc/meminfo`, `/proc/vmstat`, `/proc/diskstats` y `/proc/loadavg`;
+- con el contenedor en modo privilegiado: `/dev/kmsg`, el log del kernel; `/proc/slabinfo`, que
+  contiene el número real de conexiones del router; los contadores ECC de la flash; y los contadores
+  [PMU](/mikroscope/es/reference/glossary/#pmu) de la CPU, de todo el sistema, mediante
+  `perf_event_open`.
+
+El contenedor es privilegiado por defecto; [Modo privilegiado](/mikroscope/es/limits/privileged/)
+enumera lo que da cada opción. El agente envía deltas de contadores en bruto, el tiempo de CPU en
+ticks, nunca un porcentaje, así que quien lee elige la ventana. Al arrancar informa de qué fuentes
+tiene este kernel, y una fuente que el kernel no tiene falta en la salida en lugar de valer cero.
+[Métricas de Prometheus](/mikroscope/es/reference/metrics/) enumera cada serie.
+
+## Lo que añade el colector {#what-the-collector-adds}
+
+- **La capa de la API de RouterOS**: contadores de tráfico y de errores por interfaz, `cpu-load`
+  por núcleo, `/system/health`, y qué es cada interfaz (su comentario, tipo, listas, bridge y MTU).
+  El contenedor no puede leerlos: su espacio de nombres de red es propio.
+  [Capa de la API de RouterOS](/mikroscope/es/sinks/api-tier/) tiene los modos.
+- **Un solo reloj**: cada registro se marca con el reloj del agente, así que las muestras del
+  kernel y de la API coinciden.
+- **Valores derivados**: proporciones de ocupación, tasas y cuotas, calculadas de los deltas en
+  bruto ([Valores derivados](/mikroscope/es/sinks/derive/)).
+- **Detecciones**: un bucle de capa 2, un enlace que oscila, una microrráfaga y las demás reglas,
+  cada una escrita como un evento ([Reglas de detección](/mikroscope/es/sinks/detections/)).
+- **Destinos**: fichero, Prometheus, InfluxDB 3, Loki, OTLP, Graphite, Elasticsearch y OpenSearch,
+  SQL, PostgreSQL, Telegraf y la salida estándar.
+
+## Limitaciones {#limitations}
+
+- **RouterOS 7.24 o posterior, con contenedor.** El agente necesita el paquete `container` y
+  `device-mode container=yes`, que exige pulsar un botón o cortar la alimentación junto al router.
+  Los routers MIPS, TILE y PPC no tienen paquete `container`.
+- **La resolución es la del kernel, no la de la herramienta.** `/proc/stat` cuenta el tiempo de CPU
+  en [ticks de `USER_HZ`](https://docs.kernel.org/filesystems/proc.html#miscellaneous-kernel-statistics-in-proc-stat),
+  100 por segundo, así que una ventana de 100 ms resuelve un núcleo en pasos
+  de <Measured id="tick.stepOneCore" /> ([Límites de resolución](/mikroscope/es/limits/)).
+- **PSI y schedstat solo donde el kernel los tiene.** El agente lee los dos cuando existen; un
+  kernel de RouterOS puede estar compilado sin ellos.
+- **La red del contenedor es la suya.** `/proc/net/dev`, `/proc/net/snmp` y `nf_conntrack_count`
+  describen el contenedor, no el router; el número de conexiones del slab, en modo privilegiado, es
+  la excepción. Los contadores de interfaz vienen de la API de RouterOS y se fusionan, nunca se
+  estiman ([Visibilidad del contenedor](/mikroscope/es/limits/namespaces/)).
+- **Se suma a la API de RouterOS y no la sustituye.** Sin usuario de la API la capa del kernel
+  sigue funcionando, y los paneles de interfaces se quedan vacíos.
+- **El agente no da porcentajes.** Nunca calcula uno, así que nunca decide qué significa un
+  porcentaje; los derivan el colector y los dashboards.
+- **El observador tiene un coste.** A 10 Hz el agente consume <Measured id="run.10hz.cpu" /> de un
+  núcleo; [Coste del agente](/mikroscope/es/cost/) tiene la tabla y cómo medirlo en tu router.
+
+<SeeAlso>
+
+## Véase también
+
+- [Instalación rápida](/mikroscope/es/start/): las cuatro órdenes que ponen el agente en un router.
+- [Modelo de seguridad](/mikroscope/es/security/): qué se ejecuta dónde, y qué credenciales se
+  quedan en tu máquina.
+- [Límites de resolución](/mikroscope/es/limits/): ticks, contadores PMU y cuánto recuerda el
+  anillo.
+- [Comparado con alternativas](/mikroscope/es/start/compared/): lo que leen SNMP, mktxp y The Dude
+  en su lugar.
+
+</SeeAlso>

@@ -1,6 +1,7 @@
 ---
 title: Glossary
 description: The terms these pages use without defining them, from envlist, veth and privileged to PMU, PSI, softnet, ring and sink, one sentence each with a link.
+docType: reference
 head:
   - tag: title
     content: Glossary of RouterOS container and kernel terms | mikroscope
@@ -10,8 +11,7 @@ import Measured from "../../../components/Measured.astro";
 import Src from "../../../components/Src.astro";
 
 One sentence per term, in the sense these pages use it, each linked to the page that explains it
-in full. Where a sentence states a fact about the reference RB5009, it gives the date that fact was
-established; a kernel term also links the kernel's own documentation.
+in full; a kernel term also links the kernel's own documentation.
 
 ## API tier
 
@@ -44,8 +44,8 @@ under `privileged=yes`: [conntrack without the API](/mikroscope/playbooks/conntr
 
 ## `cpu-load`
 
-The CPU figure RouterOS's `/system/resource` reports for all cores combined, which this project
-measured on an RB5009 on 2026-09-15 as a trailing mean of about one second: [how many seconds it
+The CPU figure RouterOS's `/system/resource` reports for all cores combined, a trailing mean of
+about one second: [how many seconds it
 averages over](/mikroscope/sinks/api-tier/#how-many-seconds-does-routeros-cpu-load-average-over).
 
 ## derive stage
@@ -129,14 +129,14 @@ it](/mikroscope/limits/#the-one-source-beneath-it-the-cpus-own-counters).
 
 The container setting `privileged=yes`, which RouterOS has from 7.24 and which drops the container's
 user namespace so the kernel log, `/proc/slabinfo`, the MTD ECC counters and the PMU become readable
-without widening its network or PID namespace (RB5009, 2026-09-12): [what privileged
+without widening its network or PID namespace: [what privileged
 buys](/mikroscope/limits/privileged/).
 
 ## PSI
 
 Pressure stall information, the share of time tasks stalled waiting for CPU, memory or I/O, in
 `/proc/pressure` ([kernel documentation](https://docs.kernel.org/accounting/psi.html)), which the
-agent reads where a kernel has it and the RB5009's Linux 5.6.3 does not (2026-09-11): [no finer
+agent reads where a kernel has it and some RouterOS kernels do not: [no finer
 clock from the kernel](/mikroscope/limits/#no-finer-clock-from-the-kernel).
 
 ## relay
@@ -161,8 +161,8 @@ files: [the router's CPU, the container's network](/mikroscope/limits/namespaces
 ## schedstat
 
 `/proc/schedstat`, the scheduler's per-CPU counts of time spent running and waiting to run ([kernel
-documentation](https://docs.kernel.org/scheduler/sched-stats.html)), absent from the RB5009's
-kernel (2026-09-11) and read where present: [no finer clock from the
+documentation](https://docs.kernel.org/scheduler/sched-stats.html)), absent from some RouterOS
+kernels and read where present: [no finer clock from the
 kernel](/mikroscope/limits/#no-finer-clock-from-the-kernel).
 
 ## scratch container
@@ -194,8 +194,8 @@ interrupts](/mikroscope/reference/metrics/#receive-path-and-interrupts).
 ## softnet
 
 The kernel's per-CPU queues of incoming packets, whose `/proc/net/softnet_stat` counts packets
-processed, dropped and squeezed per CPU and stays the router's even inside the container (RB5009,
-2026-09-11): [CPU and memory are the router's](/mikroscope/limits/namespaces/#cpu-and-memory-are-the-routers).
+processed, dropped and squeezed per CPU and stays the router's even inside the container: [CPU and
+memory are the router's](/mikroscope/limits/namespaces/#cpu-and-memory-are-the-routers).
 
 ## tag
 
@@ -212,14 +212,14 @@ not time](/mikroscope/limits/#ticks-not-time).
 ## `time_squeeze`
 
 The softnet counter of times the receive softirq ran out of budget with packets still queued,
-nonzero even on the idle RB5009 (2026-09-12) and worth watching when it rises with flat throughput:
+nonzero even on an idle router and worth watching when it rises with flat throughput:
 [a packet flood](/mikroscope/playbooks/packet-flood/#what-to-read).
 
 ## USER_HZ
 
 The unit `/proc/stat` counts CPU time in ([kernel
 documentation](https://docs.kernel.org/filesystems/proc.html)), one tick of <Measured id="tick.ms" />
-on the RB5009's kernel (2026-09-11), which sets the finest CPU step any reader of that file can see:
+at the usual `USER_HZ` of 100, which sets the finest CPU step any reader of that file can see:
 [ticks, not time](/mikroscope/limits/#ticks-not-time).
 
 ## veth

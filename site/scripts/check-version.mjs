@@ -79,18 +79,7 @@ const PINS = [
  * its Spanish twin, and each one must still match something: an entry that
  * matches nothing fails, so the list cannot outlive what it excuses.
  */
-const HISTORICAL = [
-	{
-		page: "install/routes.mdx",
-		pin: "mikroscope-agent:1.0.1",
-		why: "the tag the router pulled in the measured run of 2026-09-17, which the sentence keeps rather than following the release",
-	},
-	{
-		page: "install/routes.mdx",
-		pin: "mikroscope-agent:1.2.2",
-		why: "the tag in the three references RouterOS was given in the measured runs of 2026-09-24 (a host in remote-image=, docker.io, the anonymous pull), which the list keeps rather than following the release",
-	},
-];
+const HISTORICAL = [];
 
 const problems = [];
 const fail = (message) => problems.push(message);

@@ -70,7 +70,7 @@
       "tag": "mikroscope:mikroscope (managed by mikroscope)",
       "token": "",
       "triggers": "",
-      "version": "1.3.1",
+      "version": "{{MIKROSCOPE_VERSION}}",
       "veth": "veth-mikroscope"
     }
   },
@@ -148,7 +148,7 @@
       "tag": "mikroscope:mikroscope (managed by mikroscope)",
       "token": "",
       "triggers": "",
-      "version": "1.3.1",
+      "version": "{{MIKROSCOPE_VERSION}}",
       "veth": "veth-mikroscope"
     }
   },
@@ -226,7 +226,7 @@
       "tag": "mikroscope:mikroscope (managed by mikroscope)",
       "token": "",
       "triggers": "",
-      "version": "1.3.1",
+      "version": "{{MIKROSCOPE_VERSION}}",
       "veth": "veth-mikroscope"
     }
   },
@@ -306,7 +306,7 @@
       "tag": "mikroscope:mikroscope (managed by mikroscope)",
       "token": "",
       "triggers": "",
-      "version": "1.3.1",
+      "version": "{{MIKROSCOPE_VERSION}}",
       "veth": "veth-mikroscope"
     }
   },
@@ -314,7 +314,7 @@
     "id": "pull-dockerhub",
     "args": [
       "--remote-image",
-      "jmrplens/mikroscope-agent:1.3.1"
+      "jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}"
     ],
     "lab": true,
     "profiles": [
@@ -339,7 +339,7 @@
       "captureMB": 4,
       "triggers": "",
       "token": "",
-      "remoteImage": "jmrplens/mikroscope-agent:1.3.1",
+      "remoteImage": "jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}",
       "expose": false,
       "lanAddress": "",
       "privileged": true,
@@ -349,7 +349,7 @@
       "containerName": "",
       "extractTimeout": "120s"
     },
-    "cliArgs": "mikroscope plan --rsc --remote-image jmrplens/mikroscope-agent:1.3.1",
+    "cliArgs": "mikroscope plan --rsc --remote-image jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}",
     "values": {
       "addrList": "LANs",
       "bufferS": "60",
@@ -364,7 +364,7 @@
       "ifaceList": "LAN",
       "imageFile": "mikroscope.tar",
       "lanAddress": "",
-      "manifest": "mikroscope-manifest=1\\nname=mikroscope\\ntag=mikroscope:mikroscope (managed by mikroscope)\\ndisk=\\nveth=veth-mikroscope\\nsubnet=172.30.10.0/30\\nport=9123\\niface-list=LAN\\naddr-list=LANs\\nexpose=\\ncontainer-name=\\nremote-image=registry-1.docker.io/jmrplens/mikroscope-agent:1.3.1\\ntoken=no\\ndir=mikroscope\\nfile=mikroscope/mikroscope.manifest.txt\\nobject=/interface/veth name=veth-mikroscope\\nobject=/ip/address interface=veth-mikroscope\\nobject=/interface/list/member interface=veth-mikroscope list=LAN\\nobject=/ip/firewall/address-list list=LANs address=172.30.10.0/30\\nobject=/container/envs list=mikroscope-env\\nobject=/container interface=veth-mikroscope\\ndir=mikroscope/mikroscope\\n",
+      "manifest": "mikroscope-manifest=1\\nname=mikroscope\\ntag=mikroscope:mikroscope (managed by mikroscope)\\ndisk=\\nveth=veth-mikroscope\\nsubnet=172.30.10.0/30\\nport=9123\\niface-list=LAN\\naddr-list=LANs\\nexpose=\\ncontainer-name=\\nremote-image=registry-1.docker.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}\\ntoken=no\\ndir=mikroscope\\nfile=mikroscope/mikroscope.manifest.txt\\nobject=/interface/veth name=veth-mikroscope\\nobject=/ip/address interface=veth-mikroscope\\nobject=/interface/list/member interface=veth-mikroscope list=LAN\\nobject=/ip/firewall/address-list list=LANs address=172.30.10.0/30\\nobject=/container/envs list=mikroscope-env\\nobject=/container interface=veth-mikroscope\\ndir=mikroscope/mikroscope\\n",
       "manifestDir": "mikroscope",
       "manifestFile": "mikroscope/mikroscope.manifest.txt",
       "memLimitMB": "16",
@@ -374,7 +374,7 @@
       "privileged": "yes",
       "rateHz": "10",
       "registryHost": "registry-1.docker.io",
-      "remoteRef": "registry-1.docker.io/jmrplens/mikroscope-agent:1.3.1",
+      "remoteRef": "registry-1.docker.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}",
       "restartInterval": "10s",
       "restartMaxCount": "5",
       "rootDir": "mikroscope/mikroscope",
@@ -384,7 +384,7 @@
       "tag": "mikroscope:mikroscope (managed by mikroscope)",
       "token": "",
       "triggers": "",
-      "version": "1.3.1",
+      "version": "{{MIKROSCOPE_VERSION}}",
       "veth": "veth-mikroscope"
     }
   },
@@ -392,7 +392,7 @@
     "id": "pull-ghcr",
     "args": [
       "--remote-image",
-      "ghcr.io/jmrplens/mikroscope-agent:1.3.1"
+      "ghcr.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}"
     ],
     "lab": true,
     "profiles": [
@@ -417,7 +417,7 @@
       "captureMB": 4,
       "triggers": "",
       "token": "",
-      "remoteImage": "ghcr.io/jmrplens/mikroscope-agent:1.3.1",
+      "remoteImage": "ghcr.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}",
       "expose": false,
       "lanAddress": "",
       "privileged": true,
@@ -427,7 +427,7 @@
       "containerName": "",
       "extractTimeout": "120s"
     },
-    "cliArgs": "mikroscope plan --rsc --remote-image ghcr.io/jmrplens/mikroscope-agent:1.3.1",
+    "cliArgs": "mikroscope plan --rsc --remote-image ghcr.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}",
     "values": {
       "addrList": "LANs",
       "bufferS": "60",
@@ -442,7 +442,7 @@
       "ifaceList": "LAN",
       "imageFile": "mikroscope.tar",
       "lanAddress": "",
-      "manifest": "mikroscope-manifest=1\\nname=mikroscope\\ntag=mikroscope:mikroscope (managed by mikroscope)\\ndisk=\\nveth=veth-mikroscope\\nsubnet=172.30.10.0/30\\nport=9123\\niface-list=LAN\\naddr-list=LANs\\nexpose=\\ncontainer-name=\\nremote-image=ghcr.io/jmrplens/mikroscope-agent:1.3.1\\ntoken=no\\ndir=mikroscope\\nfile=mikroscope/mikroscope.manifest.txt\\nobject=/interface/veth name=veth-mikroscope\\nobject=/ip/address interface=veth-mikroscope\\nobject=/interface/list/member interface=veth-mikroscope list=LAN\\nobject=/ip/firewall/address-list list=LANs address=172.30.10.0/30\\nobject=/container/envs list=mikroscope-env\\nobject=/container interface=veth-mikroscope\\ndir=mikroscope/mikroscope\\n",
+      "manifest": "mikroscope-manifest=1\\nname=mikroscope\\ntag=mikroscope:mikroscope (managed by mikroscope)\\ndisk=\\nveth=veth-mikroscope\\nsubnet=172.30.10.0/30\\nport=9123\\niface-list=LAN\\naddr-list=LANs\\nexpose=\\ncontainer-name=\\nremote-image=ghcr.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}\\ntoken=no\\ndir=mikroscope\\nfile=mikroscope/mikroscope.manifest.txt\\nobject=/interface/veth name=veth-mikroscope\\nobject=/ip/address interface=veth-mikroscope\\nobject=/interface/list/member interface=veth-mikroscope list=LAN\\nobject=/ip/firewall/address-list list=LANs address=172.30.10.0/30\\nobject=/container/envs list=mikroscope-env\\nobject=/container interface=veth-mikroscope\\ndir=mikroscope/mikroscope\\n",
       "manifestDir": "mikroscope",
       "manifestFile": "mikroscope/mikroscope.manifest.txt",
       "memLimitMB": "16",
@@ -452,7 +452,7 @@
       "privileged": "yes",
       "rateHz": "10",
       "registryHost": "ghcr.io",
-      "remoteRef": "ghcr.io/jmrplens/mikroscope-agent:1.3.1",
+      "remoteRef": "ghcr.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}",
       "restartInterval": "10s",
       "restartMaxCount": "5",
       "rootDir": "mikroscope/mikroscope",
@@ -462,7 +462,7 @@
       "tag": "mikroscope:mikroscope (managed by mikroscope)",
       "token": "",
       "triggers": "",
-      "version": "1.3.1",
+      "version": "{{MIKROSCOPE_VERSION}}",
       "veth": "veth-mikroscope"
     }
   },
@@ -538,7 +538,7 @@
       "tag": "mikroscope:mikroscope (managed by mikroscope)",
       "token": "",
       "triggers": "",
-      "version": "1.3.1",
+      "version": "{{MIKROSCOPE_VERSION}}",
       "veth": "veth-mikroscope"
     }
   },
@@ -616,7 +616,7 @@
       "tag": "mikroscope:mikroscope (managed by mikroscope)",
       "token": "",
       "triggers": "",
-      "version": "1.3.1",
+      "version": "{{MIKROSCOPE_VERSION}}",
       "veth": "veth-mikroscope"
     }
   },
@@ -625,7 +625,7 @@
     "args": [
       "--ephemeral",
       "--remote-image",
-      "jmrplens/mikroscope-agent:1.3.1"
+      "jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}"
     ],
     "lab": true,
     "profiles": [
@@ -651,7 +651,7 @@
       "captureMB": 4,
       "triggers": "",
       "token": "",
-      "remoteImage": "jmrplens/mikroscope-agent:1.3.1",
+      "remoteImage": "jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}",
       "expose": false,
       "lanAddress": "",
       "privileged": true,
@@ -661,7 +661,7 @@
       "containerName": "",
       "extractTimeout": "120s"
     },
-    "cliArgs": "mikroscope plan --rsc --ephemeral --remote-image jmrplens/mikroscope-agent:1.3.1",
+    "cliArgs": "mikroscope plan --rsc --ephemeral --remote-image jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}",
     "values": {
       "addrList": "LANs",
       "bufferS": "60",
@@ -676,7 +676,7 @@
       "ifaceList": "LAN",
       "imageFile": "tmpfs/mikroscope.tar",
       "lanAddress": "",
-      "manifest": "mikroscope-manifest=1\\nname=mikroscope\\ntag=mikroscope:mikroscope (managed by mikroscope)\\ndisk=tmpfs\\nveth=veth-mikroscope\\nsubnet=172.30.10.0/30\\nport=9123\\niface-list=LAN\\naddr-list=LANs\\nexpose=\\ncontainer-name=\\nremote-image=registry-1.docker.io/jmrplens/mikroscope-agent:1.3.1\\ntoken=no\\ndir=tmpfs/mikroscope\\nfile=tmpfs/mikroscope/mikroscope.manifest.txt\\nobject=/interface/veth name=veth-mikroscope\\nobject=/ip/address interface=veth-mikroscope\\nobject=/interface/list/member interface=veth-mikroscope list=LAN\\nobject=/ip/firewall/address-list list=LANs address=172.30.10.0/30\\nobject=/container/envs list=mikroscope-env\\nobject=/container interface=veth-mikroscope\\ndir=tmpfs/mikroscope/mikroscope\\n",
+      "manifest": "mikroscope-manifest=1\\nname=mikroscope\\ntag=mikroscope:mikroscope (managed by mikroscope)\\ndisk=tmpfs\\nveth=veth-mikroscope\\nsubnet=172.30.10.0/30\\nport=9123\\niface-list=LAN\\naddr-list=LANs\\nexpose=\\ncontainer-name=\\nremote-image=registry-1.docker.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}\\ntoken=no\\ndir=tmpfs/mikroscope\\nfile=tmpfs/mikroscope/mikroscope.manifest.txt\\nobject=/interface/veth name=veth-mikroscope\\nobject=/ip/address interface=veth-mikroscope\\nobject=/interface/list/member interface=veth-mikroscope list=LAN\\nobject=/ip/firewall/address-list list=LANs address=172.30.10.0/30\\nobject=/container/envs list=mikroscope-env\\nobject=/container interface=veth-mikroscope\\ndir=tmpfs/mikroscope/mikroscope\\n",
       "manifestDir": "tmpfs/mikroscope",
       "manifestFile": "tmpfs/mikroscope/mikroscope.manifest.txt",
       "memLimitMB": "16",
@@ -686,7 +686,7 @@
       "privileged": "yes",
       "rateHz": "10",
       "registryHost": "registry-1.docker.io",
-      "remoteRef": "registry-1.docker.io/jmrplens/mikroscope-agent:1.3.1",
+      "remoteRef": "registry-1.docker.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}",
       "restartInterval": "10s",
       "restartMaxCount": "5",
       "rootDir": "tmpfs/mikroscope/mikroscope",
@@ -696,7 +696,7 @@
       "tag": "mikroscope:mikroscope (managed by mikroscope)",
       "token": "",
       "triggers": "",
-      "version": "1.3.1",
+      "version": "{{MIKROSCOPE_VERSION}}",
       "veth": "veth-mikroscope"
     }
   },
@@ -772,7 +772,7 @@
       "tag": "mikroscope:mikroscope (managed by mikroscope)",
       "token": "",
       "triggers": "",
-      "version": "1.3.1",
+      "version": "{{MIKROSCOPE_VERSION}}",
       "veth": "veth-mikroscope"
     }
   },
@@ -784,7 +784,7 @@
       "--addr-list",
       "MYNETS",
       "--remote-image",
-      "jmrplens/mikroscope-agent:1.3.1"
+      "jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}"
     ],
     "lab": true,
     "profiles": [
@@ -809,7 +809,7 @@
       "captureMB": 4,
       "triggers": "",
       "token": "",
-      "remoteImage": "jmrplens/mikroscope-agent:1.3.1",
+      "remoteImage": "jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}",
       "expose": false,
       "lanAddress": "",
       "privileged": true,
@@ -819,7 +819,7 @@
       "containerName": "",
       "extractTimeout": "120s"
     },
-    "cliArgs": "mikroscope plan --rsc --iface-list MYLAN --addr-list MYNETS --remote-image jmrplens/mikroscope-agent:1.3.1",
+    "cliArgs": "mikroscope plan --rsc --iface-list MYLAN --addr-list MYNETS --remote-image jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}",
     "values": {
       "addrList": "MYNETS",
       "bufferS": "60",
@@ -834,7 +834,7 @@
       "ifaceList": "MYLAN",
       "imageFile": "mikroscope.tar",
       "lanAddress": "",
-      "manifest": "mikroscope-manifest=1\\nname=mikroscope\\ntag=mikroscope:mikroscope (managed by mikroscope)\\ndisk=\\nveth=veth-mikroscope\\nsubnet=172.30.10.0/30\\nport=9123\\niface-list=MYLAN\\naddr-list=MYNETS\\nexpose=\\ncontainer-name=\\nremote-image=registry-1.docker.io/jmrplens/mikroscope-agent:1.3.1\\ntoken=no\\ndir=mikroscope\\nfile=mikroscope/mikroscope.manifest.txt\\nobject=/interface/veth name=veth-mikroscope\\nobject=/ip/address interface=veth-mikroscope\\nobject=/interface/list/member interface=veth-mikroscope list=MYLAN\\nobject=/ip/firewall/address-list list=MYNETS address=172.30.10.0/30\\nobject=/container/envs list=mikroscope-env\\nobject=/container interface=veth-mikroscope\\ndir=mikroscope/mikroscope\\n",
+      "manifest": "mikroscope-manifest=1\\nname=mikroscope\\ntag=mikroscope:mikroscope (managed by mikroscope)\\ndisk=\\nveth=veth-mikroscope\\nsubnet=172.30.10.0/30\\nport=9123\\niface-list=MYLAN\\naddr-list=MYNETS\\nexpose=\\ncontainer-name=\\nremote-image=registry-1.docker.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}\\ntoken=no\\ndir=mikroscope\\nfile=mikroscope/mikroscope.manifest.txt\\nobject=/interface/veth name=veth-mikroscope\\nobject=/ip/address interface=veth-mikroscope\\nobject=/interface/list/member interface=veth-mikroscope list=MYLAN\\nobject=/ip/firewall/address-list list=MYNETS address=172.30.10.0/30\\nobject=/container/envs list=mikroscope-env\\nobject=/container interface=veth-mikroscope\\ndir=mikroscope/mikroscope\\n",
       "manifestDir": "mikroscope",
       "manifestFile": "mikroscope/mikroscope.manifest.txt",
       "memLimitMB": "16",
@@ -844,7 +844,7 @@
       "privileged": "yes",
       "rateHz": "10",
       "registryHost": "registry-1.docker.io",
-      "remoteRef": "registry-1.docker.io/jmrplens/mikroscope-agent:1.3.1",
+      "remoteRef": "registry-1.docker.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}",
       "restartInterval": "10s",
       "restartMaxCount": "5",
       "rootDir": "mikroscope/mikroscope",
@@ -854,7 +854,7 @@
       "tag": "mikroscope:mikroscope (managed by mikroscope)",
       "token": "",
       "triggers": "",
-      "version": "1.3.1",
+      "version": "{{MIKROSCOPE_VERSION}}",
       "veth": "veth-mikroscope"
     }
   },
@@ -866,7 +866,7 @@
       "--addr-list",
       "none",
       "--remote-image",
-      "jmrplens/mikroscope-agent:1.3.1"
+      "jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}"
     ],
     "lab": true,
     "profiles": [],
@@ -889,7 +889,7 @@
       "captureMB": 4,
       "triggers": "",
       "token": "",
-      "remoteImage": "jmrplens/mikroscope-agent:1.3.1",
+      "remoteImage": "jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}",
       "expose": false,
       "lanAddress": "",
       "privileged": true,
@@ -899,7 +899,7 @@
       "containerName": "",
       "extractTimeout": "120s"
     },
-    "cliArgs": "mikroscope plan --rsc --iface-list none --addr-list none --remote-image jmrplens/mikroscope-agent:1.3.1",
+    "cliArgs": "mikroscope plan --rsc --iface-list none --addr-list none --remote-image jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}",
     "values": {
       "addrList": "none",
       "bufferS": "60",
@@ -914,7 +914,7 @@
       "ifaceList": "none",
       "imageFile": "mikroscope.tar",
       "lanAddress": "",
-      "manifest": "mikroscope-manifest=1\\nname=mikroscope\\ntag=mikroscope:mikroscope (managed by mikroscope)\\ndisk=\\nveth=veth-mikroscope\\nsubnet=172.30.10.0/30\\nport=9123\\niface-list=none\\naddr-list=none\\nexpose=\\ncontainer-name=\\nremote-image=registry-1.docker.io/jmrplens/mikroscope-agent:1.3.1\\ntoken=no\\ndir=mikroscope\\nfile=mikroscope/mikroscope.manifest.txt\\nobject=/interface/veth name=veth-mikroscope\\nobject=/ip/address interface=veth-mikroscope\\nobject=/container/envs list=mikroscope-env\\nobject=/container interface=veth-mikroscope\\ndir=mikroscope/mikroscope\\n",
+      "manifest": "mikroscope-manifest=1\\nname=mikroscope\\ntag=mikroscope:mikroscope (managed by mikroscope)\\ndisk=\\nveth=veth-mikroscope\\nsubnet=172.30.10.0/30\\nport=9123\\niface-list=none\\naddr-list=none\\nexpose=\\ncontainer-name=\\nremote-image=registry-1.docker.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}\\ntoken=no\\ndir=mikroscope\\nfile=mikroscope/mikroscope.manifest.txt\\nobject=/interface/veth name=veth-mikroscope\\nobject=/ip/address interface=veth-mikroscope\\nobject=/container/envs list=mikroscope-env\\nobject=/container interface=veth-mikroscope\\ndir=mikroscope/mikroscope\\n",
       "manifestDir": "mikroscope",
       "manifestFile": "mikroscope/mikroscope.manifest.txt",
       "memLimitMB": "16",
@@ -924,7 +924,7 @@
       "privileged": "yes",
       "rateHz": "10",
       "registryHost": "registry-1.docker.io",
-      "remoteRef": "registry-1.docker.io/jmrplens/mikroscope-agent:1.3.1",
+      "remoteRef": "registry-1.docker.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}",
       "restartInterval": "10s",
       "restartMaxCount": "5",
       "rootDir": "mikroscope/mikroscope",
@@ -934,7 +934,7 @@
       "tag": "mikroscope:mikroscope (managed by mikroscope)",
       "token": "",
       "triggers": "",
-      "version": "1.3.1",
+      "version": "{{MIKROSCOPE_VERSION}}",
       "veth": "veth-mikroscope"
     }
   },
@@ -952,7 +952,7 @@
       "--container-name",
       "b",
       "--remote-image",
-      "jmrplens/mikroscope-agent:1.3.1"
+      "jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}"
     ],
     "lab": true,
     "profiles": [
@@ -977,7 +977,7 @@
       "captureMB": 4,
       "triggers": "",
       "token": "",
-      "remoteImage": "jmrplens/mikroscope-agent:1.3.1",
+      "remoteImage": "jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}",
       "expose": false,
       "lanAddress": "",
       "privileged": true,
@@ -987,7 +987,7 @@
       "containerName": "b",
       "extractTimeout": "120s"
     },
-    "cliArgs": "mikroscope plan --rsc --name b --veth veth-b --subnet 172.30.11.0/30 --remote-image jmrplens/mikroscope-agent:1.3.1 --port 9200 --container-name b",
+    "cliArgs": "mikroscope plan --rsc --name b --veth veth-b --subnet 172.30.11.0/30 --remote-image jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}} --port 9200 --container-name b",
     "values": {
       "addrList": "LANs",
       "bufferS": "60",
@@ -1002,7 +1002,7 @@
       "ifaceList": "LAN",
       "imageFile": "b.tar",
       "lanAddress": "",
-      "manifest": "mikroscope-manifest=1\\nname=b\\ntag=mikroscope:b (managed by mikroscope)\\ndisk=\\nveth=veth-b\\nsubnet=172.30.11.0/30\\nport=9200\\niface-list=LAN\\naddr-list=LANs\\nexpose=\\ncontainer-name=b\\nremote-image=registry-1.docker.io/jmrplens/mikroscope-agent:1.3.1\\ntoken=no\\ndir=mikroscope\\nfile=mikroscope/b.manifest.txt\\nobject=/interface/veth name=veth-b\\nobject=/ip/address interface=veth-b\\nobject=/interface/list/member interface=veth-b list=LAN\\nobject=/ip/firewall/address-list list=LANs address=172.30.11.0/30\\nobject=/container/envs list=b-env\\nobject=/container interface=veth-b\\ndir=mikroscope/b\\n",
+      "manifest": "mikroscope-manifest=1\\nname=b\\ntag=mikroscope:b (managed by mikroscope)\\ndisk=\\nveth=veth-b\\nsubnet=172.30.11.0/30\\nport=9200\\niface-list=LAN\\naddr-list=LANs\\nexpose=\\ncontainer-name=b\\nremote-image=registry-1.docker.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}\\ntoken=no\\ndir=mikroscope\\nfile=mikroscope/b.manifest.txt\\nobject=/interface/veth name=veth-b\\nobject=/ip/address interface=veth-b\\nobject=/interface/list/member interface=veth-b list=LAN\\nobject=/ip/firewall/address-list list=LANs address=172.30.11.0/30\\nobject=/container/envs list=b-env\\nobject=/container interface=veth-b\\ndir=mikroscope/b\\n",
       "manifestDir": "mikroscope",
       "manifestFile": "mikroscope/b.manifest.txt",
       "memLimitMB": "16",
@@ -1012,7 +1012,7 @@
       "privileged": "yes",
       "rateHz": "10",
       "registryHost": "registry-1.docker.io",
-      "remoteRef": "registry-1.docker.io/jmrplens/mikroscope-agent:1.3.1",
+      "remoteRef": "registry-1.docker.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}",
       "restartInterval": "10s",
       "restartMaxCount": "5",
       "rootDir": "mikroscope/b",
@@ -1022,7 +1022,7 @@
       "tag": "mikroscope:b (managed by mikroscope)",
       "token": "",
       "triggers": "",
-      "version": "1.3.1",
+      "version": "{{MIKROSCOPE_VERSION}}",
       "veth": "veth-b"
     }
   },
@@ -1035,7 +1035,7 @@
       "--token",
       "0123456789abcdefghijABCDEFGHIJ01",
       "--remote-image",
-      "jmrplens/mikroscope-agent:1.3.1"
+      "jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}"
     ],
     "lab": true,
     "profiles": [
@@ -1060,7 +1060,7 @@
       "captureMB": 4,
       "triggers": "",
       "token": "0123456789abcdefghijABCDEFGHIJ01",
-      "remoteImage": "jmrplens/mikroscope-agent:1.3.1",
+      "remoteImage": "jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}",
       "expose": true,
       "lanAddress": "192.168.88.1",
       "privileged": true,
@@ -1070,7 +1070,7 @@
       "containerName": "",
       "extractTimeout": "120s"
     },
-    "cliArgs": "mikroscope plan --rsc --remote-image jmrplens/mikroscope-agent:1.3.1 --expose --lan-address 192.168.88.1",
+    "cliArgs": "mikroscope plan --rsc --remote-image jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}} --expose --lan-address 192.168.88.1",
     "cliEnv": [
       "MIKROSCOPE_TOKEN"
     ],
@@ -1088,7 +1088,7 @@
       "ifaceList": "LAN",
       "imageFile": "mikroscope.tar",
       "lanAddress": "192.168.88.1",
-      "manifest": "mikroscope-manifest=1\\nname=mikroscope\\ntag=mikroscope:mikroscope (managed by mikroscope)\\ndisk=\\nveth=veth-mikroscope\\nsubnet=172.30.10.0/30\\nport=9123\\niface-list=LAN\\naddr-list=LANs\\nexpose=192.168.88.1\\ncontainer-name=\\nremote-image=registry-1.docker.io/jmrplens/mikroscope-agent:1.3.1\\ntoken=yes\\ndir=mikroscope\\nfile=mikroscope/mikroscope.manifest.txt\\nobject=/interface/veth name=veth-mikroscope\\nobject=/ip/address interface=veth-mikroscope\\nobject=/interface/list/member interface=veth-mikroscope list=LAN\\nobject=/ip/firewall/address-list list=LANs address=172.30.10.0/30\\nobject=/ip/firewall/nat chain=dstnat dst-address=192.168.88.1 dst-port=9123 protocol=tcp\\nobject=/ip/firewall/filter chain=forward dst-address=172.30.10.2 dst-port=9123 protocol=tcp\\nobject=/container/envs list=mikroscope-env\\nobject=/container interface=veth-mikroscope\\ndir=mikroscope/mikroscope\\n",
+      "manifest": "mikroscope-manifest=1\\nname=mikroscope\\ntag=mikroscope:mikroscope (managed by mikroscope)\\ndisk=\\nveth=veth-mikroscope\\nsubnet=172.30.10.0/30\\nport=9123\\niface-list=LAN\\naddr-list=LANs\\nexpose=192.168.88.1\\ncontainer-name=\\nremote-image=registry-1.docker.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}\\ntoken=yes\\ndir=mikroscope\\nfile=mikroscope/mikroscope.manifest.txt\\nobject=/interface/veth name=veth-mikroscope\\nobject=/ip/address interface=veth-mikroscope\\nobject=/interface/list/member interface=veth-mikroscope list=LAN\\nobject=/ip/firewall/address-list list=LANs address=172.30.10.0/30\\nobject=/ip/firewall/nat chain=dstnat dst-address=192.168.88.1 dst-port=9123 protocol=tcp\\nobject=/ip/firewall/filter chain=forward dst-address=172.30.10.2 dst-port=9123 protocol=tcp\\nobject=/container/envs list=mikroscope-env\\nobject=/container interface=veth-mikroscope\\ndir=mikroscope/mikroscope\\n",
       "manifestDir": "mikroscope",
       "manifestFile": "mikroscope/mikroscope.manifest.txt",
       "memLimitMB": "16",
@@ -1098,7 +1098,7 @@
       "privileged": "yes",
       "rateHz": "10",
       "registryHost": "registry-1.docker.io",
-      "remoteRef": "registry-1.docker.io/jmrplens/mikroscope-agent:1.3.1",
+      "remoteRef": "registry-1.docker.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}",
       "restartInterval": "10s",
       "restartMaxCount": "5",
       "rootDir": "mikroscope/mikroscope",
@@ -1108,7 +1108,7 @@
       "tag": "mikroscope:mikroscope (managed by mikroscope)",
       "token": "0123456789abcdefghijABCDEFGHIJ01",
       "triggers": "",
-      "version": "1.3.1",
+      "version": "{{MIKROSCOPE_VERSION}}",
       "veth": "veth-mikroscope"
     }
   },
@@ -1118,7 +1118,7 @@
       "--token",
       "0123456789abcdefghijABCDEFGHIJ01",
       "--remote-image",
-      "jmrplens/mikroscope-agent:1.3.1"
+      "jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}"
     ],
     "lab": true,
     "profiles": [
@@ -1143,7 +1143,7 @@
       "captureMB": 4,
       "triggers": "",
       "token": "0123456789abcdefghijABCDEFGHIJ01",
-      "remoteImage": "jmrplens/mikroscope-agent:1.3.1",
+      "remoteImage": "jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}",
       "expose": false,
       "lanAddress": "",
       "privileged": true,
@@ -1153,7 +1153,7 @@
       "containerName": "",
       "extractTimeout": "120s"
     },
-    "cliArgs": "mikroscope plan --rsc --remote-image jmrplens/mikroscope-agent:1.3.1",
+    "cliArgs": "mikroscope plan --rsc --remote-image jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}",
     "cliEnv": [
       "MIKROSCOPE_TOKEN"
     ],
@@ -1171,7 +1171,7 @@
       "ifaceList": "LAN",
       "imageFile": "mikroscope.tar",
       "lanAddress": "",
-      "manifest": "mikroscope-manifest=1\\nname=mikroscope\\ntag=mikroscope:mikroscope (managed by mikroscope)\\ndisk=\\nveth=veth-mikroscope\\nsubnet=172.30.10.0/30\\nport=9123\\niface-list=LAN\\naddr-list=LANs\\nexpose=\\ncontainer-name=\\nremote-image=registry-1.docker.io/jmrplens/mikroscope-agent:1.3.1\\ntoken=yes\\ndir=mikroscope\\nfile=mikroscope/mikroscope.manifest.txt\\nobject=/interface/veth name=veth-mikroscope\\nobject=/ip/address interface=veth-mikroscope\\nobject=/interface/list/member interface=veth-mikroscope list=LAN\\nobject=/ip/firewall/address-list list=LANs address=172.30.10.0/30\\nobject=/container/envs list=mikroscope-env\\nobject=/container interface=veth-mikroscope\\ndir=mikroscope/mikroscope\\n",
+      "manifest": "mikroscope-manifest=1\\nname=mikroscope\\ntag=mikroscope:mikroscope (managed by mikroscope)\\ndisk=\\nveth=veth-mikroscope\\nsubnet=172.30.10.0/30\\nport=9123\\niface-list=LAN\\naddr-list=LANs\\nexpose=\\ncontainer-name=\\nremote-image=registry-1.docker.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}\\ntoken=yes\\ndir=mikroscope\\nfile=mikroscope/mikroscope.manifest.txt\\nobject=/interface/veth name=veth-mikroscope\\nobject=/ip/address interface=veth-mikroscope\\nobject=/interface/list/member interface=veth-mikroscope list=LAN\\nobject=/ip/firewall/address-list list=LANs address=172.30.10.0/30\\nobject=/container/envs list=mikroscope-env\\nobject=/container interface=veth-mikroscope\\ndir=mikroscope/mikroscope\\n",
       "manifestDir": "mikroscope",
       "manifestFile": "mikroscope/mikroscope.manifest.txt",
       "memLimitMB": "16",
@@ -1181,7 +1181,7 @@
       "privileged": "yes",
       "rateHz": "10",
       "registryHost": "registry-1.docker.io",
-      "remoteRef": "registry-1.docker.io/jmrplens/mikroscope-agent:1.3.1",
+      "remoteRef": "registry-1.docker.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}",
       "restartInterval": "10s",
       "restartMaxCount": "5",
       "rootDir": "mikroscope/mikroscope",
@@ -1191,7 +1191,7 @@
       "tag": "mikroscope:mikroscope (managed by mikroscope)",
       "token": "0123456789abcdefghijABCDEFGHIJ01",
       "triggers": "",
-      "version": "1.3.1",
+      "version": "{{MIKROSCOPE_VERSION}}",
       "veth": "veth-mikroscope"
     }
   },
@@ -1205,7 +1205,7 @@
       "--memory-max",
       "128M",
       "--remote-image",
-      "jmrplens/mikroscope-agent:1.3.1"
+      "jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}"
     ],
     "lab": true,
     "profiles": [
@@ -1230,7 +1230,7 @@
       "captureMB": 4,
       "triggers": "",
       "token": "",
-      "remoteImage": "jmrplens/mikroscope-agent:1.3.1",
+      "remoteImage": "jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}",
       "expose": false,
       "lanAddress": "",
       "privileged": true,
@@ -1240,7 +1240,7 @@
       "containerName": "",
       "extractTimeout": "120s"
     },
-    "cliArgs": "mikroscope plan --rsc --remote-image jmrplens/mikroscope-agent:1.3.1 --rate 50 --buffer 300 --memory-max 128M",
+    "cliArgs": "mikroscope plan --rsc --remote-image jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}} --rate 50 --buffer 300 --memory-max 128M",
     "values": {
       "addrList": "LANs",
       "bufferS": "300",
@@ -1255,7 +1255,7 @@
       "ifaceList": "LAN",
       "imageFile": "mikroscope.tar",
       "lanAddress": "",
-      "manifest": "mikroscope-manifest=1\\nname=mikroscope\\ntag=mikroscope:mikroscope (managed by mikroscope)\\ndisk=\\nveth=veth-mikroscope\\nsubnet=172.30.10.0/30\\nport=9123\\niface-list=LAN\\naddr-list=LANs\\nexpose=\\ncontainer-name=\\nremote-image=registry-1.docker.io/jmrplens/mikroscope-agent:1.3.1\\ntoken=no\\ndir=mikroscope\\nfile=mikroscope/mikroscope.manifest.txt\\nobject=/interface/veth name=veth-mikroscope\\nobject=/ip/address interface=veth-mikroscope\\nobject=/interface/list/member interface=veth-mikroscope list=LAN\\nobject=/ip/firewall/address-list list=LANs address=172.30.10.0/30\\nobject=/container/envs list=mikroscope-env\\nobject=/container interface=veth-mikroscope\\ndir=mikroscope/mikroscope\\n",
+      "manifest": "mikroscope-manifest=1\\nname=mikroscope\\ntag=mikroscope:mikroscope (managed by mikroscope)\\ndisk=\\nveth=veth-mikroscope\\nsubnet=172.30.10.0/30\\nport=9123\\niface-list=LAN\\naddr-list=LANs\\nexpose=\\ncontainer-name=\\nremote-image=registry-1.docker.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}\\ntoken=no\\ndir=mikroscope\\nfile=mikroscope/mikroscope.manifest.txt\\nobject=/interface/veth name=veth-mikroscope\\nobject=/ip/address interface=veth-mikroscope\\nobject=/interface/list/member interface=veth-mikroscope list=LAN\\nobject=/ip/firewall/address-list list=LANs address=172.30.10.0/30\\nobject=/container/envs list=mikroscope-env\\nobject=/container interface=veth-mikroscope\\ndir=mikroscope/mikroscope\\n",
       "manifestDir": "mikroscope",
       "manifestFile": "mikroscope/mikroscope.manifest.txt",
       "memLimitMB": "96",
@@ -1265,7 +1265,7 @@
       "privileged": "yes",
       "rateHz": "50",
       "registryHost": "registry-1.docker.io",
-      "remoteRef": "registry-1.docker.io/jmrplens/mikroscope-agent:1.3.1",
+      "remoteRef": "registry-1.docker.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}",
       "restartInterval": "10s",
       "restartMaxCount": "5",
       "rootDir": "mikroscope/mikroscope",
@@ -1275,7 +1275,7 @@
       "tag": "mikroscope:mikroscope (managed by mikroscope)",
       "token": "",
       "triggers": "",
-      "version": "1.3.1",
+      "version": "{{MIKROSCOPE_VERSION}}",
       "veth": "veth-mikroscope"
     }
   },
@@ -1289,7 +1289,7 @@
       "--triggers",
       "busy\u003e=0.9,slip\u003e=2,oom",
       "--remote-image",
-      "jmrplens/mikroscope-agent:1.3.1"
+      "jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}"
     ],
     "lab": true,
     "profiles": [
@@ -1314,7 +1314,7 @@
       "captureMB": 0,
       "triggers": "busy\u003e=0.9,slip\u003e=2,oom",
       "token": "",
-      "remoteImage": "jmrplens/mikroscope-agent:1.3.1",
+      "remoteImage": "jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}",
       "expose": false,
       "lanAddress": "",
       "privileged": true,
@@ -1324,7 +1324,7 @@
       "containerName": "",
       "extractTimeout": "120s"
     },
-    "cliArgs": "mikroscope plan --rsc --remote-image jmrplens/mikroscope-agent:1.3.1 --floor-hz 10 --capture-mb 0 --triggers 'busy\u003e=0.9,slip\u003e=2,oom'",
+    "cliArgs": "mikroscope plan --rsc --remote-image jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}} --floor-hz 10 --capture-mb 0 --triggers 'busy\u003e=0.9,slip\u003e=2,oom'",
     "values": {
       "addrList": "LANs",
       "bufferS": "60",
@@ -1339,7 +1339,7 @@
       "ifaceList": "LAN",
       "imageFile": "mikroscope.tar",
       "lanAddress": "",
-      "manifest": "mikroscope-manifest=1\\nname=mikroscope\\ntag=mikroscope:mikroscope (managed by mikroscope)\\ndisk=\\nveth=veth-mikroscope\\nsubnet=172.30.10.0/30\\nport=9123\\niface-list=LAN\\naddr-list=LANs\\nexpose=\\ncontainer-name=\\nremote-image=registry-1.docker.io/jmrplens/mikroscope-agent:1.3.1\\ntoken=no\\ndir=mikroscope\\nfile=mikroscope/mikroscope.manifest.txt\\nobject=/interface/veth name=veth-mikroscope\\nobject=/ip/address interface=veth-mikroscope\\nobject=/interface/list/member interface=veth-mikroscope list=LAN\\nobject=/ip/firewall/address-list list=LANs address=172.30.10.0/30\\nobject=/container/envs list=mikroscope-env\\nobject=/container interface=veth-mikroscope\\ndir=mikroscope/mikroscope\\n",
+      "manifest": "mikroscope-manifest=1\\nname=mikroscope\\ntag=mikroscope:mikroscope (managed by mikroscope)\\ndisk=\\nveth=veth-mikroscope\\nsubnet=172.30.10.0/30\\nport=9123\\niface-list=LAN\\naddr-list=LANs\\nexpose=\\ncontainer-name=\\nremote-image=registry-1.docker.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}\\ntoken=no\\ndir=mikroscope\\nfile=mikroscope/mikroscope.manifest.txt\\nobject=/interface/veth name=veth-mikroscope\\nobject=/ip/address interface=veth-mikroscope\\nobject=/interface/list/member interface=veth-mikroscope list=LAN\\nobject=/ip/firewall/address-list list=LANs address=172.30.10.0/30\\nobject=/container/envs list=mikroscope-env\\nobject=/container interface=veth-mikroscope\\ndir=mikroscope/mikroscope\\n",
       "manifestDir": "mikroscope",
       "manifestFile": "mikroscope/mikroscope.manifest.txt",
       "memLimitMB": "16",
@@ -1349,7 +1349,7 @@
       "privileged": "yes",
       "rateHz": "10",
       "registryHost": "registry-1.docker.io",
-      "remoteRef": "registry-1.docker.io/jmrplens/mikroscope-agent:1.3.1",
+      "remoteRef": "registry-1.docker.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}",
       "restartInterval": "10s",
       "restartMaxCount": "5",
       "rootDir": "mikroscope/mikroscope",
@@ -1359,7 +1359,7 @@
       "tag": "mikroscope:mikroscope (managed by mikroscope)",
       "token": "",
       "triggers": "busy\u003e=0.9,slip\u003e=2,oom",
-      "version": "1.3.1",
+      "version": "{{MIKROSCOPE_VERSION}}",
       "veth": "veth-mikroscope"
     }
   },
@@ -1369,7 +1369,7 @@
       "--mem-limit-mb",
       "40",
       "--remote-image",
-      "jmrplens/mikroscope-agent:1.3.1"
+      "jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}"
     ],
     "lab": true,
     "profiles": [
@@ -1394,7 +1394,7 @@
       "captureMB": 4,
       "triggers": "",
       "token": "",
-      "remoteImage": "jmrplens/mikroscope-agent:1.3.1",
+      "remoteImage": "jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}",
       "expose": false,
       "lanAddress": "",
       "privileged": true,
@@ -1404,7 +1404,7 @@
       "containerName": "",
       "extractTimeout": "120s"
     },
-    "cliArgs": "mikroscope plan --rsc --remote-image jmrplens/mikroscope-agent:1.3.1 --mem-limit-mb 40",
+    "cliArgs": "mikroscope plan --rsc --remote-image jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}} --mem-limit-mb 40",
     "values": {
       "addrList": "LANs",
       "bufferS": "60",
@@ -1419,7 +1419,7 @@
       "ifaceList": "LAN",
       "imageFile": "mikroscope.tar",
       "lanAddress": "",
-      "manifest": "mikroscope-manifest=1\\nname=mikroscope\\ntag=mikroscope:mikroscope (managed by mikroscope)\\ndisk=\\nveth=veth-mikroscope\\nsubnet=172.30.10.0/30\\nport=9123\\niface-list=LAN\\naddr-list=LANs\\nexpose=\\ncontainer-name=\\nremote-image=registry-1.docker.io/jmrplens/mikroscope-agent:1.3.1\\ntoken=no\\ndir=mikroscope\\nfile=mikroscope/mikroscope.manifest.txt\\nobject=/interface/veth name=veth-mikroscope\\nobject=/ip/address interface=veth-mikroscope\\nobject=/interface/list/member interface=veth-mikroscope list=LAN\\nobject=/ip/firewall/address-list list=LANs address=172.30.10.0/30\\nobject=/container/envs list=mikroscope-env\\nobject=/container interface=veth-mikroscope\\ndir=mikroscope/mikroscope\\n",
+      "manifest": "mikroscope-manifest=1\\nname=mikroscope\\ntag=mikroscope:mikroscope (managed by mikroscope)\\ndisk=\\nveth=veth-mikroscope\\nsubnet=172.30.10.0/30\\nport=9123\\niface-list=LAN\\naddr-list=LANs\\nexpose=\\ncontainer-name=\\nremote-image=registry-1.docker.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}\\ntoken=no\\ndir=mikroscope\\nfile=mikroscope/mikroscope.manifest.txt\\nobject=/interface/veth name=veth-mikroscope\\nobject=/ip/address interface=veth-mikroscope\\nobject=/interface/list/member interface=veth-mikroscope list=LAN\\nobject=/ip/firewall/address-list list=LANs address=172.30.10.0/30\\nobject=/container/envs list=mikroscope-env\\nobject=/container interface=veth-mikroscope\\ndir=mikroscope/mikroscope\\n",
       "manifestDir": "mikroscope",
       "manifestFile": "mikroscope/mikroscope.manifest.txt",
       "memLimitMB": "40",
@@ -1429,7 +1429,7 @@
       "privileged": "yes",
       "rateHz": "10",
       "registryHost": "registry-1.docker.io",
-      "remoteRef": "registry-1.docker.io/jmrplens/mikroscope-agent:1.3.1",
+      "remoteRef": "registry-1.docker.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}",
       "restartInterval": "10s",
       "restartMaxCount": "5",
       "rootDir": "mikroscope/mikroscope",
@@ -1439,7 +1439,7 @@
       "tag": "mikroscope:mikroscope (managed by mikroscope)",
       "token": "",
       "triggers": "",
-      "version": "1.3.1",
+      "version": "{{MIKROSCOPE_VERSION}}",
       "veth": "veth-mikroscope"
     }
   },
@@ -1448,7 +1448,7 @@
     "args": [
       "--privileged=false",
       "--remote-image",
-      "jmrplens/mikroscope-agent:1.3.1"
+      "jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}"
     ],
     "lab": true,
     "profiles": [
@@ -1473,7 +1473,7 @@
       "captureMB": 4,
       "triggers": "",
       "token": "",
-      "remoteImage": "jmrplens/mikroscope-agent:1.3.1",
+      "remoteImage": "jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}",
       "expose": false,
       "lanAddress": "",
       "privileged": false,
@@ -1483,7 +1483,7 @@
       "containerName": "",
       "extractTimeout": "120s"
     },
-    "cliArgs": "mikroscope plan --rsc --remote-image jmrplens/mikroscope-agent:1.3.1 --privileged=false",
+    "cliArgs": "mikroscope plan --rsc --remote-image jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}} --privileged=false",
     "values": {
       "addrList": "LANs",
       "bufferS": "60",
@@ -1498,7 +1498,7 @@
       "ifaceList": "LAN",
       "imageFile": "mikroscope.tar",
       "lanAddress": "",
-      "manifest": "mikroscope-manifest=1\\nname=mikroscope\\ntag=mikroscope:mikroscope (managed by mikroscope)\\ndisk=\\nveth=veth-mikroscope\\nsubnet=172.30.10.0/30\\nport=9123\\niface-list=LAN\\naddr-list=LANs\\nexpose=\\ncontainer-name=\\nremote-image=registry-1.docker.io/jmrplens/mikroscope-agent:1.3.1\\ntoken=no\\ndir=mikroscope\\nfile=mikroscope/mikroscope.manifest.txt\\nobject=/interface/veth name=veth-mikroscope\\nobject=/ip/address interface=veth-mikroscope\\nobject=/interface/list/member interface=veth-mikroscope list=LAN\\nobject=/ip/firewall/address-list list=LANs address=172.30.10.0/30\\nobject=/container/envs list=mikroscope-env\\nobject=/container interface=veth-mikroscope\\ndir=mikroscope/mikroscope\\n",
+      "manifest": "mikroscope-manifest=1\\nname=mikroscope\\ntag=mikroscope:mikroscope (managed by mikroscope)\\ndisk=\\nveth=veth-mikroscope\\nsubnet=172.30.10.0/30\\nport=9123\\niface-list=LAN\\naddr-list=LANs\\nexpose=\\ncontainer-name=\\nremote-image=registry-1.docker.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}\\ntoken=no\\ndir=mikroscope\\nfile=mikroscope/mikroscope.manifest.txt\\nobject=/interface/veth name=veth-mikroscope\\nobject=/ip/address interface=veth-mikroscope\\nobject=/interface/list/member interface=veth-mikroscope list=LAN\\nobject=/ip/firewall/address-list list=LANs address=172.30.10.0/30\\nobject=/container/envs list=mikroscope-env\\nobject=/container interface=veth-mikroscope\\ndir=mikroscope/mikroscope\\n",
       "manifestDir": "mikroscope",
       "manifestFile": "mikroscope/mikroscope.manifest.txt",
       "memLimitMB": "16",
@@ -1508,7 +1508,7 @@
       "privileged": "no",
       "rateHz": "10",
       "registryHost": "registry-1.docker.io",
-      "remoteRef": "registry-1.docker.io/jmrplens/mikroscope-agent:1.3.1",
+      "remoteRef": "registry-1.docker.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}",
       "restartInterval": "10s",
       "restartMaxCount": "5",
       "rootDir": "mikroscope/mikroscope",
@@ -1518,7 +1518,7 @@
       "tag": "mikroscope:mikroscope (managed by mikroscope)",
       "token": "",
       "triggers": "",
-      "version": "1.3.1",
+      "version": "{{MIKROSCOPE_VERSION}}",
       "veth": "veth-mikroscope"
     }
   },
@@ -1532,7 +1532,7 @@
       "--start-on-boot",
       "no",
       "--remote-image",
-      "jmrplens/mikroscope-agent:1.3.1"
+      "jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}"
     ],
     "lab": true,
     "profiles": [
@@ -1557,7 +1557,7 @@
       "captureMB": 4,
       "triggers": "",
       "token": "",
-      "remoteImage": "jmrplens/mikroscope-agent:1.3.1",
+      "remoteImage": "jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}",
       "expose": false,
       "lanAddress": "",
       "privileged": true,
@@ -1567,7 +1567,7 @@
       "containerName": "",
       "extractTimeout": "120s"
     },
-    "cliArgs": "mikroscope plan --rsc --remote-image jmrplens/mikroscope-agent:1.3.1 --restart-max-count 3 --restart-interval 5s --start-on-boot no",
+    "cliArgs": "mikroscope plan --rsc --remote-image jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}} --restart-max-count 3 --restart-interval 5s --start-on-boot no",
     "values": {
       "addrList": "LANs",
       "bufferS": "60",
@@ -1582,7 +1582,7 @@
       "ifaceList": "LAN",
       "imageFile": "mikroscope.tar",
       "lanAddress": "",
-      "manifest": "mikroscope-manifest=1\\nname=mikroscope\\ntag=mikroscope:mikroscope (managed by mikroscope)\\ndisk=\\nveth=veth-mikroscope\\nsubnet=172.30.10.0/30\\nport=9123\\niface-list=LAN\\naddr-list=LANs\\nexpose=\\ncontainer-name=\\nremote-image=registry-1.docker.io/jmrplens/mikroscope-agent:1.3.1\\ntoken=no\\ndir=mikroscope\\nfile=mikroscope/mikroscope.manifest.txt\\nobject=/interface/veth name=veth-mikroscope\\nobject=/ip/address interface=veth-mikroscope\\nobject=/interface/list/member interface=veth-mikroscope list=LAN\\nobject=/ip/firewall/address-list list=LANs address=172.30.10.0/30\\nobject=/container/envs list=mikroscope-env\\nobject=/container interface=veth-mikroscope\\ndir=mikroscope/mikroscope\\n",
+      "manifest": "mikroscope-manifest=1\\nname=mikroscope\\ntag=mikroscope:mikroscope (managed by mikroscope)\\ndisk=\\nveth=veth-mikroscope\\nsubnet=172.30.10.0/30\\nport=9123\\niface-list=LAN\\naddr-list=LANs\\nexpose=\\ncontainer-name=\\nremote-image=registry-1.docker.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}\\ntoken=no\\ndir=mikroscope\\nfile=mikroscope/mikroscope.manifest.txt\\nobject=/interface/veth name=veth-mikroscope\\nobject=/ip/address interface=veth-mikroscope\\nobject=/interface/list/member interface=veth-mikroscope list=LAN\\nobject=/ip/firewall/address-list list=LANs address=172.30.10.0/30\\nobject=/container/envs list=mikroscope-env\\nobject=/container interface=veth-mikroscope\\ndir=mikroscope/mikroscope\\n",
       "manifestDir": "mikroscope",
       "manifestFile": "mikroscope/mikroscope.manifest.txt",
       "memLimitMB": "16",
@@ -1592,7 +1592,7 @@
       "privileged": "yes",
       "rateHz": "10",
       "registryHost": "registry-1.docker.io",
-      "remoteRef": "registry-1.docker.io/jmrplens/mikroscope-agent:1.3.1",
+      "remoteRef": "registry-1.docker.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}",
       "restartInterval": "5s",
       "restartMaxCount": "3",
       "rootDir": "mikroscope/mikroscope",
@@ -1602,7 +1602,7 @@
       "tag": "mikroscope:mikroscope (managed by mikroscope)",
       "token": "",
       "triggers": "",
-      "version": "1.3.1",
+      "version": "{{MIKROSCOPE_VERSION}}",
       "veth": "veth-mikroscope"
     }
   }

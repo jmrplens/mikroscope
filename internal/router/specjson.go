@@ -360,6 +360,21 @@ func placeholderNames() []string {
 	return slices.Sorted(maps.Keys(values(&o, version.Version)))
 }
 
+// Templated writes version.Placeholder where s names this build's release:
+// a script's header (mikroscope <version>:), an agent image's tag
+// (mikroscope-agent:<version>) and a "version" field of the JSON cmd/gen_rsc
+// writes. The goldens and the site's script data are kept in that form, so a
+// new VERSION rewrites none of them; the site's build and the lab write the
+// release back in with version.Expand.
+func Templated(s string) string {
+	v, p := version.Version, version.Placeholder
+	return strings.NewReplacer(
+		"mikroscope "+v+":", "mikroscope "+p+":",
+		"mikroscope-agent:"+v, "mikroscope-agent:"+p,
+		`"version": "`+v+`"`, `"version": "`+p+`"`,
+	).Replace(s)
+}
+
 // CaseValues are the values a case renders with, for the site's check to
 // compare its own derivations with.
 func CaseValues(o Options) map[string]string {

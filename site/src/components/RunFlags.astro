@@ -7,8 +7,13 @@
  * the same in both locales and live beside the figures they produced: a
  * repeated run with other limits changes the table and this sentence together.
  * `run` is a structural attribute to the parity gate, like `<Measured id>`.
+ *
+ * Evidence pages only (src/lib/voice.mjs): the flags belong to one measured
+ * run. A guide states the rule and links the run's page; anywhere else this
+ * warns, or fails the build once MS_VOICE is "error".
  */
 import { isRunKey, runs } from "../data/measurements";
+import { evidenceOnly } from "../lib/voice.mjs";
 import InlineCode from "./InlineCode.astro";
 
 interface Props {
@@ -16,6 +21,7 @@ interface Props {
 }
 
 const { run } = Astro.props;
+evidenceOnly("<RunFlags>", Astro.locals.starlightRoute);
 const r = isRunKey(run) ? runs.find((x) => x.key === run) : undefined;
 if (r === undefined) {
 	throw new Error(

@@ -1,22 +1,25 @@
 ---
-title: What the numbers do not say
+title: Limits of the evidence
 description: The questions the measurements on this site cannot answer, and which metric to reach for instead of guessing.
+docType: evidence
+head:
+  - tag: title
+    content: What the numbers do not say | mikroscope
 ---
 
 import Measured from "../../../components/Measured.astro";
 import NotClaimed from "../../../components/NotClaimed.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
 
-Every router measurement on this site was taken on one device, the reference
-RB5009UG+S+, under that router's own traffic and the few events
-[provoked on purpose](/mikroscope/playbooks/). They were not taken on one day:
-the oldest, the cost of an ssh connect, dates from 2026-08-26 on RouterOS
-7.24.1, and the others that carry a date from 2026-09-11 on, on 7.24.2 and later
-7.24.4, and each says which. This page is the list of things they therefore do
-not tell you — kept here, in the documentation, rather than left for a reader
-to discover by being wrong.
+Every router measurement on this site was taken on one device, an RB5009UG+S+, under that router's
+own traffic and the few events [provoked on purpose](/mikroscope/playbooks/). They were not taken on
+one day: the oldest, the cost of an SSH connect, dates from 2026-08-26 on RouterOS 7.24.1, and the
+others from 2026-09-11 on, on 7.24.2 and later 7.24.4; [Tested on](/mikroscope/about/status/) dates
+each one. The virtual lab's CHR adds correctness, not cost: it is not a board, and none of its
+durations or CPU figures measures a router. What follows is what these measurements do not tell you, kept here
+rather than left for a reader to discover by being wrong.
 
-## What `/metrics` can recover, and what it cannot
+## Histogram limits {#what-metrics-can-recover-and-what-it-cannot}
 
 The histogram `mikroscope_cpu_busy_ticks` (integer busy ticks per sample and core, which keeps
 timing jitter out of the bucket choice) recovers **time above a threshold** to one sample. It cannot recover **contiguity**: a 2 s plateau at 30 % and twenty
@@ -32,7 +35,7 @@ show the peak whatever your scrape interval is, because the collector computes t
 over the agent's own sample timestamps rather than over your scrape times. To see the _shape_ of a transient
 rather than its envelope, `record` it, or let a trigger capture it.
 
-## The sampler's own smear is published, not hidden
+## Sampler timing {#the-samplers-own-smear-is-published-not-hidden}
 
 How late the sampler woke after its ticker and how long the read took are
 `mikroscope_tick_wake_latency_seconds` and `mikroscope_tick_read_seconds`, with
@@ -40,7 +43,7 @@ the interval actually achieved in `mikroscope_tick_interval_seconds`. If you
 suspect the sampler rather than the router, those three are where to look
 first.
 
-## Gaps are reported, never papered over
+## Gaps {#gaps-are-reported-never-papered-over}
 
 The agent keeps 60 s by default. A collector outage shorter than that is
 backfilled on reconnect through `since=<seq>`; a longer one is reported as a gap
@@ -48,7 +51,7 @@ of known length — a marker in a recording, a counter on the collector. A chart
 with a hole in it is a chart telling the truth.
 
 <NotClaimed>
-	Any board that is not the RB5009 described on [the rate ceiling](/mikroscope/cost/rate-ceiling/).
+	Any board that is not the RB5009 described on [Rate ceiling](/mikroscope/cost/rate-ceiling/).
 	Traffic heavier than about <Measured id="load.ordinary" />. A 32-bit RouterOS build, which is
 	coming on a hEX S but has not arrived. Sustained operation beyond the windows stated. None of
 	these are claims this project is making, and none of them should be inferred from the ones it is.
@@ -58,9 +61,10 @@ with a hole in it is a chart telling the truth.
 
 ## See also
 
-- [The rate ceiling](/mikroscope/cost/rate-ceiling/): the six runs and the conditions they were
-  taken under.
-- [The cost of the observer](/mikroscope/cost/): the budget, and how to measure the cost on a device
-  that is not this one.
+- [Rate ceiling](/mikroscope/cost/rate-ceiling/): the six runs and the conditions they were taken
+  under.
+- [Agent cost](/mikroscope/cost/): the budget, and how to measure the cost on a device that is not
+  this one.
+- [Tested on](/mikroscope/about/status/#not-tested): everything else that has not been tested.
 
 </SeeAlso>

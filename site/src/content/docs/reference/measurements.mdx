@@ -1,22 +1,26 @@
 ---
-title: InfluxDB and SQL measurements
+title: Store schema
 description: Every InfluxDB measurement and SQL table mikroscope writes, with tags, fields, columns, keys, units, and whether each value is a delta or a level.
+docType: reference
+head:
+  - tag: title
+    content: InfluxDB and SQL measurements | mikroscope
 ---
 
-import NotClaimed from "../../../components/NotClaimed.astro";
 import PrivilegedOnly from "../../../components/PrivilegedOnly.astro";
 import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
 import Src from "../../../components/Src.astro";
+import TestedOn from "../../../components/TestedOn.astro";
 
-This page answers what a row in the store holds: which measurement or table,
-which tags or key columns identify it, which fields it carries, in what unit,
-and whether a value is a delta over the sample's interval or a level. It is
-read from <Src path="internal/sinks/influx.go" />, <Src path="internal/sinks/device.go" />
-and <Src path="internal/sinks/sql.go" />. The two stores do not hold the same set;
-[where they differ](#where-the-two-stores-differ) is the last section.
+What a row in the store holds: the InfluxDB measurement or SQL table, the tags
+or key columns that identify it, the fields it carries and their units, and
+whether each value is a delta over the sample's interval or a level. Read
+from <Src path="internal/sinks/influx.go" />, <Src path="internal/sinks/device.go" />
+and <Src path="internal/sinks/sql.go" />. The two stores do not hold the same set:
+[InfluxDB vs SQL](#where-the-two-stores-differ) lists the differences.
 
-## Which sinks write these
+## Writing sinks {#which-sinks-write-these}
 
 - `forward --influx` posts the InfluxDB line protocol below.
 - `forward --stdout lp` and `forward --telegraf` render with the same encoder,
@@ -24,7 +28,7 @@ and <Src path="internal/sinks/sql.go" />. The two stores do not hold the same se
   `mikroscope_api_health`, `mikroscope_softirq` and `mikroscope_slab` lines
   within a batch is not stable: the encoder walks Go maps for them, and the
   file <Src path="internal/sinks/telegraf.go" /> records 12 renders of an 8-name map giving 7
-  distinct orders (2026-09-12).
+  distinct orders.
 - `forward --sql` writes its own PostgreSQL tables, listed further down.
 
 Loki, OTLP, Graphite and Elasticsearch shape the same timeline differently;
@@ -62,11 +66,11 @@ In [line protocol](https://docs.influxdata.com/influxdb3/core/reference/line-pro
 `u` is an unsigned integer, `i` a signed one, a bare number a float,
 `true`/`false` a boolean, and a quoted value a string.
 
-## InfluxDB: the kernel tier
+## InfluxDB kernel tier {#influxdb-the-kernel-tier}
 
 One set of rows per kernel sample, all at that sample's `wall_ns`.
 
-### CPU, interrupts and the sample itself
+### CPU, interrupts and sample {#cpu-interrupts-and-the-sample-itself}
 
 <ScrollTable label="InfluxDB kernel-tier measurements: CPU, interrupts, sample">
 
@@ -157,7 +161,7 @@ Because a query naming a column the store has never received fails at planning
 time, `kind` can be queried only after the first port record has been written
 with it.
 
-## InfluxDB: the RouterOS API tier
+## InfluxDB API tier {#influxdb-the-routeros-api-tier}
 
 One set per API poll, stamped in the agent's time.
 
@@ -194,13 +198,11 @@ instead; the list and bridge reads are best effort.
 `type` is what keeps two rows from being added together, because RouterOS
 counts different things on different interfaces. A switch port counts its wire,
 including the frames the switch chip forwarded in hardware; a bridge counts its
-CPU side; a VLAN or a PPPoE counts what the CPU sent and received. On the
-reference RB5009 (RouterOS 7.24.2, 2026-09-16) ether1 received 255.8 GB on the
-wire and 29.7 GB of that reached the CPU: the `ether` row and the `bridge` row
-are different planes, neither a subset of the other, and summing them counts
-nothing that exists.
+CPU side; a VLAN or a PPPoE counts what the CPU sent and received. The `ether`
+row and the `bridge` row are different planes, neither a subset of the other,
+and summing them counts nothing that exists.
 
-## InfluxDB: derived values, annotations and device facts
+## InfluxDB derived and device {#influxdb-derived-values-annotations-and-device-facts}
 
 <ScrollTable label="InfluxDB measurements from the collector">
 
@@ -227,41 +229,40 @@ not a share of the wire: `fp-rx-byte` over `driver-rx-byte` on a switch port,
 whose `rx-byte` is the wire total, and over `rx-byte` on a software interface,
 which has no driver counters. Hardware-switched frames are in neither number.
 `rx_bytes` and `tx_bytes` are the share's denominators, not wire totals.
-Measured on the reference RB5009 (2026-09-16): switch ports read ~100 %
-(`fp-rx-byte` equals `driver-rx-byte` within a few kB), the bridge fast-pathed
-211.9 GB of 663.0 GB since boot, PPPoE_DIGI 99.97 %. `fp-tx-byte` stayed 0 on
-every interface after hundreds of GB transmitted, so the tx share and its
-deltas are withheld while the cumulative `fp-tx-byte` is 0: `fp_tx_share` is
-absent and `tx_bytes`, `fp_tx_bytes` are 0.
+While an interface's cumulative `fp-tx-byte` is 0, the tx share and its deltas
+are withheld: `fp_tx_share` is absent and `tx_bytes`, `fp_tx_bytes` are 0.
+[Derived values](/mikroscope/sinks/derive/#beside-every-counter-poll) says what
+the share reads on switch ports and on software interfaces.
 
-A derived value is written beside its inputs and never instead of them, so the
-store can recompute it. `suspect` marks a sample with a counter reset, where a
-per-packet figure would be a lower bound, so the per-packet fields are left
-out. The `board` and `kernel` tags read `unknown` when the agent could not
-establish them. The four `mikroscope_device*` measurements are written when
-`forward` starts, again within a minute of the agent's capability hash changing
-(the collector re-reads `/healthz` once a minute), and otherwise repeated every
-five minutes so that any dashboard window holds them. A transport
-that cannot fetch `/capabilities` writes no device rows at all.
-The last four are the agent's [`/sampler`](/mikroscope/reference/http/#get-sampler), read when
-`forward` starts and then once a minute. `ticks`, `slipped`, `capture_served_bytes`, `fired` and
-the two `count` fields are running totals since the agent started, not deltas: a rate is the
-difference between two rows, and an agent restart takes them back to 0. `captures_held`,
-`capture_bytes` and `capture_budget_bytes` are levels. The capture fields and the three capture
-measurements are written only when captures are enabled (`CAPTURE_MB` above 0).
-What each value and rule means is on [what the collector
-derives](/mikroscope/sinks/derive/), [detections](/mikroscope/sinks/detections/)
-and [the device-info stream](/mikroscope/sinks/device-info/).
+- **Derived values** are written beside their inputs, never instead of them, so the store can
+  recompute them. `suspect` marks a sample with a counter reset, where a per-packet figure would be
+  a lower bound, so the per-packet fields are left out.
+- **`board` and `kernel`** read `unknown` when the agent could not establish them.
+- **The four `mikroscope_device*` measurements** are written when `forward` starts, again within a
+  minute of the agent's capability hash changing (the collector re-reads `/healthz` once a minute),
+  and otherwise repeated every five minutes so that any dashboard window holds them. A transport
+  that cannot fetch `/capabilities` writes no device rows at all.
+- **The last four rows**, `mikroscope_sampler` and the three capture measurements, are the agent's
+  [`/sampler`](/mikroscope/reference/http/#get-sampler), read when `forward` starts and then once a
+  minute. `ticks`, `slipped`, `capture_served_bytes`, `fired` and the two `count` fields are running
+  totals since the agent started, not deltas: a rate is the difference between two rows, and an
+  agent restart takes them back to 0. `captures_held`, `capture_bytes` and `capture_budget_bytes`
+  are levels. The capture fields and the three capture measurements are written only when captures
+  are enabled (`CAPTURE_MB` above 0).
 
-## What InfluxDB 3 Core requires
+What each value and rule means is on [Derived
+values](/mikroscope/sinks/derive/), [Detection
+rules](/mikroscope/sinks/detections/) and [Device
+info](/mikroscope/sinks/device-info/).
+
+## InfluxDB 3 Core requirements {#what-influxdb-3-core-requires}
 
 - A node holds at most five databases. A write to a sixth fails with `422`;
   the sink backs off and keeps trying.
 - Every query must be time-bounded.
 - A column's type is immutable once written.
 - A query naming a field the store has never received fails at planning time,
-  exactly as a missing table does: `No field named limit. Valid fields are …`
-  (verified through the Grafana datasource proxy, 2026-09-14).
+  exactly as a missing table does: `No field named limit. Valid fields are …`.
 - The write URL holds `&`; quote it when it lives in a file you `source`.
 
 The sink sends one batch per second and queues up to `--queue-seconds` ×
@@ -270,7 +271,7 @@ drops the oldest. A batch larger than 64 KiB, at 50 or 100 Hz or with the
 privileged sources, means fewer than `--queue-seconds` batches fit; [InfluxDB 3](/mikroscope/sinks/influxdb/) covers
 delivery.
 
-## SQL: the file
+## SQL script file {#sql-the-file}
 
 `--sql out.sql` writes PostgreSQL text: a header, then one `INSERT` per record.
 There is no database driver; `psql` owns the connection.
@@ -283,7 +284,8 @@ mikroscope forward --sql out.sql --for 10m && psql -f out.sql
   `CREATE TABLE IF NOT EXISTS` per table, so every file re-states the schema
   harmlessly. `--sql-hypertable` adds one
   `SELECT create_hypertable('<table>', 'time', if_not_exists => TRUE);` per
-  table.
+  table, in TimescaleDB 2.x's documented signature
+  (<TestedOn of="not-tested">not run against TimescaleDB</TestedOn>).
 - Every table's primary key starts with `time, host`, and every `INSERT` ends
   in `ON CONFLICT DO NOTHING`: applying the same file twice is a no-op, because
   a row is one immutable instant, never a total a later sweep revises.
@@ -294,7 +296,8 @@ mikroscope forward --sql out.sql --for 10m && psql -f out.sql
   dropped, and bytes that are not valid UTF-8 become U+FFFD, because PostgreSQL
   refuses both.
 - `--sql -` writes to standard output. With no queue in this sink, a `psql`
-  that falls behind blocks the collector's pull loop instead of dropping.
+  that falls behind blocks the collector's pull loop instead of dropping
+  (<TestedOn of="not-tested">not measured</TestedOn>).
 - The sink counts events it wrote to the file, not rows the server stored.
 
 `dt_ns` is on `mikroscope_sample`, one row per sample, and on every
@@ -302,7 +305,7 @@ mikroscope forward --sql out.sql --for 10m && psql -f out.sql
 (or `mikroscope_cpu`) on `(time, host)` for the real interval rather than
 assuming the nominal period.
 
-## SQL: kernel-tier tables
+## SQL kernel tables {#sql-kernel-tier-tables}
 
 <ScrollTable label="SQL kernel-tier tables">
 
@@ -338,7 +341,7 @@ The column names avoid quoting in PostgreSQL: the tick columns are
 `BIGINT`, since PostgreSQL has no unsigned 64-bit type and no delta a router
 produces in one sample comes near 2^63.
 
-## SQL: API-tier, collector and device tables
+## SQL API and device tables {#sql-api-tier-collector-and-device-tables}
 
 <ScrollTable label="SQL API-tier, collector and device tables">
 
@@ -368,7 +371,7 @@ produces in one sample comes near 2^63.
 
 </ScrollTable>
 
-## Where the two stores differ
+## InfluxDB vs SQL {#where-the-two-stores-differ}
 
 <ScrollTable label="Differences between the InfluxDB measurements and the SQL tables">
 
@@ -388,22 +391,8 @@ produces in one sample comes near 2^63.
 
 </ScrollTable>
 
-<NotClaimed>
-	The SQL sink has never been run against a live TimescaleDB in this repository: the
-	`create_hypertable` calls follow TimescaleDB 2.x's documented signature and are not verified. Its
-	size was measured on 2026-09-12 on the package's own test fixture (2 cores, one softnet queue, one
-	interrupt line, no privileged sources), not on a router: a kernel event renders to 1 375 B of SQL
-	against 716 B of line protocol, an API event to 1 138 B against 608 B, and 10 Hz plus the 1 Hz API
-	tier writes about 14 KiB/s after a 5.6 KiB header; with the privileged sources the same kernel
-	event grows to 2 749 B. The figures cover eighteen of the forty-three tables the sink now
-	writes: the fixture is from 2026-09-12 and eleven tables were added after it, in 1.0.3 and 1.0.5,
-	and it did not exercise `load`, `stat`, `buddy`, `mtd`, `api_ifcounter`, `api_ifinfo`, `trigger`,
-	`derived`, `derived_iface`, `detection` or the four `device` tables. They have not been
-	re-measured, so they also predate the `port` and `kind` columns of `mikroscope_event`. The header
-	for all forty-three, rendered by the sink's own `header()` on 2026-09-19, is 10 482 B, about
-	10.2 KiB. How `--sql - | psql` behaves when `psql` falls behind a 10 Hz agent is not
-	measured.
-</NotClaimed>
+The measured size of this SQL against line protocol, and the tables that figure
+does not cover, are on <TestedOn of="not-tested">Tested on</TestedOn>.
 
 <SeeAlso>
 
@@ -411,8 +400,8 @@ produces in one sample comes near 2^63.
 
 - [InfluxDB 3](/mikroscope/sinks/influxdb/): pointing `forward` at InfluxDB and what delivery
   guarantees it has.
-- [Prometheus metric families](/mikroscope/reference/metrics/): the same data as a scrape.
-- [The file and the other sinks](/mikroscope/sinks/other/): JSONL, SQL in practice, Loki, OTLP,
+- [Prometheus metrics](/mikroscope/reference/metrics/): the same data as a scrape.
+- [Other sinks](/mikroscope/sinks/other/): JSONL, SQL in practice, Loki, OTLP,
   Graphite, Elasticsearch, Telegraf.
 - [Import and check](/mikroscope/dashboards/import-and-check/): the dashboards that query these
   measurements.

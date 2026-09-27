@@ -1,21 +1,22 @@
 ---
 title: Importar y comprobar
-description: Enlazar los dashboards a una fuente de datos de Grafana, qué preguntan antes import y check al almacén, y qué demuestra check en un Grafana real y qué no.
+description: "Enlaza los dashboards a una fuente de datos de Grafana, impórtalos a mano, con la CLI o desde el colector, y comprueba la consulta de cada panel contra un Grafana en marcha."
+docType: how-to
 ---
 
 import { Aside, Tabs, TabItem } from "@astrojs/starlight/components";
+import Anchor from "../../../../components/Anchor.astro";
 import DashboardCount from "../../../../components/DashboardCount.astro";
-import NotClaimed from "../../../../components/NotClaimed.astro";
 import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
 import Src from "../../../../components/Src.astro";
+import TestedOn from "../../../../components/TestedOn.astro";
 
-Esta página responde a cómo meter los cinco dashboards en un Grafana, qué necesita la fuente de datos
-antes de que puedan devolver algo y qué te dice `mikroscope dashboards check` una vez están allí. La
-versión corta de lo último: `check` demuestra que la consulta de cada panel devuelve filas a través
-de la propia API de consultas de Grafana. No demuestra que un lector pueda leer el resultado.
+Crea la fuente de datos de tu almacén, importa el dashboard y ejecuta después
+`mikroscope dashboards check`: demuestra que la consulta de cada panel devuelve filas a través de la
+propia API de consultas de Grafana. No demuestra que un lector pueda leer el resultado.
 
-## La fuente de datos de InfluxDB 3
+## Fuente de datos de InfluxDB 3 {#la-fuente-de-datos-de-influxdb-3}
 
 Lo primero es la base de datos: `influxdb3 create database mikroscope` en el nodo de InfluxDB 3, con
 un token que pueda leerla y escribirla — la misma base de datos y el mismo token en los que escribe
@@ -28,11 +29,12 @@ con **los dos** campos seguros rellenos:
 - `httpHeaderValue1` = `Bearer <token>` (la ruta HTTP)
 - `token` = `<token>` (la ruta FlightSQL)
 
-Sin el segundo, los paneles fallan con `flightsql: Unauthenticated` (Grafana 12.3.2, 2026-09-12).
+Sin el segundo, los paneles fallan con `flightsql: Unauthenticated`.
 
-## Prometheus: un trabajo de scrape
+## Fuente de datos de Prometheus {#prometheus-un-trabajo-de-scrape}
 
-El del colector:
+Haz scrape del colector con un solo trabajo y apunta una fuente de datos de Prometheus a ese
+Prometheus:
 
 ```yaml
 - job_name: "mikroscope"
@@ -41,12 +43,12 @@ El del colector:
 ```
 
 `mikroscope forward --prom :9124` lleva todas las familias: el tier de kernel recalculado desde las
-muestras que recibió, las familias propias de derivación y detección del colector, y —desde 1.0.5—
-lo que solo el muestreador puede producir. El agente ya no sirve ningún `/metrics`; su cronometraje
-de tick viaja en las muestras y sus contadores llegan por `GET /sampler`, que el colector lee cada
-minuto. Un segundo trabajo no tendría nada que añadir.
+muestras que recibió, las familias propias de derivación y detección del colector, y lo que solo el
+muestreador puede producir. El agente no sirve ningún `/metrics`; su cronometraje de tick viaja en
+las muestras y sus contadores llegan por `GET /sampler`, que el colector lee cada minuto. Un segundo
+trabajo no tendría nada que añadir.
 
-## La fuente de datos de PostgreSQL
+## Fuente de datos de PostgreSQL {#la-fuente-de-datos-de-postgresql}
 
 El destino SQL escribe un **guion**, no filas: `forward --sql out.sql` y después `psql -f out.sql`,
 o `--sql - | psql`. Así que la base de datos tiene el esquema y los datos solo después de aplicar
@@ -67,7 +69,7 @@ va en la fila `mikroscope_self` de InfluxDB y en el esquema SQL es un dato del e
 de PostgreSQL del repositorio lleva por
 tanto <DashboardCount store="postgres" of="panels" /> paneles frente a los <DashboardCount store="influxdb" of="panels" /> de InfluxDB.
 
-## La fuente de datos de Graphite
+## Fuente de datos de Graphite {#la-fuente-de-datos-de-graphite}
 
 Graphite no tiene etiquetas: cada dimensión es un nodo de la ruta, así que una consulta ES una ruta
 —y los dos primeros nodos son tuyos—. `--graphite-prefix` (por defecto `mikroscope`) y `--host-tag`
@@ -82,31 +84,26 @@ mikroscope dashboards check --store graphite --datasource-uid <uid> \
   --var prefix=mikroscope --var host=rb5009
 ```
 
-## La fuente de datos de Elasticsearch
+## Fuente de datos de Elasticsearch {#la-fuente-de-datos-de-elasticsearch}
 
 De tipo `elasticsearch`, con el índice que produzca el `--elastic-index` con el que reenvíes y
 `@timestamp` como campo de tiempo.
 
 Este dashboard es el más pequeño de los cinco, y la razón está en los documentos y no en las
 consultas: el destino escribe las lecturas por núcleo y por dispositivo de una muestra como
-**arrays** —`cpu` es un array de cuatro objetos— y un array mapeado dinámicamente es un campo
-multivaluado sin correspondencia entre sus miembros. `avg(cpu.busy_ratio)` es la media entre los
-núcleos, que es un número real; «la proporción de ocupación del núcleo 2» no es expresable sin un
-mapeo nested que el destino no declara. Así que los paneles de Elasticsearch son los agregados
+**arrays** —`cpu` es un array con un objeto por núcleo— y un array mapeado dinámicamente es un
+campo multivaluado sin correspondencia entre sus miembros. `avg(cpu.busy_ratio)` es la media entre
+los núcleos, que es un número real; «la proporción de ocupación del núcleo 2» no es expresable sin
+un mapeo nested que el destino no declara. Así que los paneles de Elasticsearch son los agregados
 escalares, y los de por núcleo están ausentes en vez de equivocados.
 
 El dashboard tiene una variable, **Host**, que se llena con una búsqueda de términos sobre
-`host.keyword`, porque un índice puede contener varios routers. Hasta 1.3.0 esa búsqueda se
-escribía como un objeto JSON, una forma que la fuente de datos no lee: Grafana 13.2.1 y 13.2.2 la
-enviaban como una consulta vacía y recibían 400
-`invalid query, missing metrics and aggregations`, 12.3.0 ni la enviaba, y Host se quedaba vacía.
-Abierto sin `?var-host=`, seis paneles del Overview fallaban entonces con
-`Failed to parse query [host.keyword:]`, como insignias rojas. Ahora es la cadena JSON que la
-fuente de datos analiza, y el 2026-09-25, sobre Elasticsearch 9.5.3, Host se llenó desde el índice
-y ningún panel mostró insignia en ninguna de las tres versiones. `check` no podía detectarlo: toma
-el valor de `--var host=` y nunca ejecuta la búsqueda.
+`host.keyword`, porque un índice puede contener varios routers. La búsqueda es la cadena JSON que
+la fuente de datos analiza, así que Host se llena desde el índice
+(<TestedOn of="dashboards">renderizado</TestedOn>). `check` nunca ejecuta esa búsqueda: toma el
+valor de `--var host=`.
 
-## Importar a mano
+## Importar a mano {#importar-a-mano}
 
 Grafana → Dashboards → New → Import, como lo describe la [guía de importación del propio
 Grafana](https://grafana.com/docs/grafana/latest/visualizations/dashboards/build-dashboards/import-dashboards/): sube el
@@ -114,18 +111,19 @@ Grafana](https://grafana.com/docs/grafana/latest/visualizations/dashboards/build
 (influxdb, prometheus, postgres, graphite o elasticsearch) y elige la fuente de datos cuando
 Grafana pida `DS_MIKROSCOPE`.
 
-Un fichero subido así lleva los **valores compilados por defecto**: los cinco paneles que el equipo
-de referencia no puede producir (tres en Graphite y Elasticsearch) están en la fila de no
+Un fichero subido así lleva los **valores compilados por defecto**: los paneles de PSI y de
+dispositivos de bloques (cinco; tres en Graphite y Elasticsearch) están en la fila de no
 disponibles. En InfluxDB sus consultas van apagadas; en los otros cuatro almacenes siguen
 encendidas, porque allí que falte una medida no es un error
 ([por qué](/mikroscope/es/dashboards/#no-disponible-en-este-equipo)). Todos los demás paneles se
-publican con su consulta encendida, tenga o no tu almacén su medida. En InfluxDB, un panel al que le falta la tabla o la
-columna muestra entonces el error de planificación de InfluxDB 3, como una insignia roja, cuando se
-abre su sección. `import` desde la CLI lo evita. La anotación de detecciones sigue encendida en un
-fichero subido así; antes de la primera detección falla sin mostrar nada, como cuenta
+publican con su consulta encendida, tenga o no tu almacén su medida. En InfluxDB, un panel al que
+le falta la tabla o la columna muestra entonces el error de planificación de InfluxDB 3, como una
+insignia roja, cuando se abre su sección. `import` desde la CLI lo evita. La anotación de
+detecciones sigue encendida en un fichero subido así; antes de la primera detección falla sin
+mostrar nada, como cuenta
 [el apartado de anotaciones](/mikroscope/es/dashboards/#las-rayas-rojas-discontinuas-de-todos-los-paneles).
 
-## Importar desde la CLI
+## Importar con la CLI {#importar-desde-la-cli}
 
 ```sh
 export GRAFANA_URL=http://grafana:3000 GRAFANA_TOKEN=…
@@ -159,11 +157,10 @@ datos resuelta a tu UID, `overwrite` activado, a la carpeta General (`folderId` 
 dashboard es fijo, así que importar de nuevo sustituye el mismo dashboard en la misma URL. Imprime esa
 URL.
 
-## Que lo haga el colector: `forward --grafana`
+## Publicar desde el colector {#que-lo-haga-el-colector-forward---grafana}
 
-Desde 1.1.0 el colector puede configurar Grafana por su cuenta. Apunta `forward` a un Grafana y
-concilia una fuente de datos y un dashboard por cada store al que escribe, una vez, al arrancar,
-antes de la primera muestra:
+Apunta `forward` a un Grafana y el colector lo configura por su cuenta: concilia una fuente de datos
+y un dashboard por cada store al que escribe, una vez, al arrancar, antes de la primera muestra:
 
 ```sh
 export GRAFANA_TOKEN=…
@@ -191,21 +188,19 @@ grafana: influxdb: dashboard http://grafana:3000/d/mikroscope-influxdb/…
 
 </ScrollTable>
 
-**Está apagado si no lo pides.** Un colector que escribiera en el Grafana de alguien porque puede no
-es un colector que nadie deba ejecutar. `GRAFANA_TOKEN` es obligatorio por lo mismo: hay Grafanas
-que aceptan una petición anónima, y uno que lo hiciera escribiría como aquel por quien el servidor
-tome a quien pregunta.
+- **Está apagado si no lo pides.** Un colector que escribiera en el Grafana de alguien porque puede
+  no es un colector que nadie deba ejecutar. `GRAFANA_TOKEN` es obligatorio por lo mismo: hay
+  Grafanas que aceptan una petición anónima, y uno que lo hiciera escribiría como aquel por quien el
+  servidor tome a quien pregunta.
+- **Un fallo aquí no detiene al colector.** Un Grafana inalcanzable, un token rechazado o una fuente
+  de datos que el servidor no acepta son cada uno un aviso y un colector que sigue recogiendo.
+  Negarse a arrancar cambiaría las muestras de la hora que pasó sin funcionar, que no se pueden
+  recuperar, por un dashboard publicado en el siguiente arranque, que sí.
+- **Nunca se borra nada.** Un dashboard o una fuente de datos bajo un uid en el que ya no escribe
+  nadie se quedan donde están. Borrar el dashboard de alguien sin que lo pida no es algo que deba
+  hacer un colector, ni siquiera con uno que hizo él, porque puede ser la copia que está mirando.
 
-**Un fallo aquí no detiene al colector.** Un Grafana inalcanzable, un token rechazado o una fuente
-de datos que el servidor no acepta son cada uno un aviso y un colector que sigue recogiendo.
-Negarse a arrancar cambiaría lo que no se puede recuperar después — las muestras de la hora que
-pasó sin funcionar — por lo que sí, un dashboard publicado en el siguiente arranque.
-
-**Nunca se borra nada.** Un dashboard o una fuente de datos bajo un uid en el que ya no escribe
-nadie se quedan donde están. Borrar el dashboard de alguien sin que lo pida no es algo que deba
-hacer un colector, ni siquiera con uno que hizo él, porque puede ser la copia que está mirando.
-
-### Cinco de cinco, por dos caminos distintos
+### Fuente de datos por destino {#cinco-de-cinco-por-dos-caminos-distintos}
 
 **Tres destinos conocen la dirección que consulta Grafana**, porque es la
 dirección a la que escriben o a la que marcan. **Dos no pueden conocerla**, y
@@ -229,15 +224,14 @@ de Prometheus es una URL, y una de Graphite también.
 `--sql` es el único que no se puede describir jamás, y lo dice nombrando
 `--postgres` —el destino que sí puede— en vez de mandarte a Grafana. Cualquiera
 de ellos se puede adoptar con `--grafana-datasource-uid`, y una fuente de datos
-adoptada tampoco se corrige: conciliar una que no hizo él sobrescribiría
-ajustes que nadie le pidió tener.
+adoptada tampoco se corrige: conciliar una que `import` no creó sobrescribiría
+ajustes que eligió otra persona.
 
 <Aside type="note" title="La fuente de datos de PostgreSQL, y dos cosas que no hará">
   La cadena de conexión se analiza con **el propio parser de pgx**, el mismo con
-  el que marca el destino, y no con un segundo escrito aquí — un parser propio
-  discreparía del destino sobre lo que dice la opción justo en las entradas
-  donde equivocarse importa. Acepta igual la forma URL y la forma de palabras
-  clave.
+  el que marca el destino, y no con un segundo escrito aquí, así que la fuente
+  de datos y el destino nunca discrepan sobre lo que dice la opción. Acepta igual
+  la forma URL y la forma de palabras clave.
 
   **Solo copia una contraseña que lleve la propia cadena de conexión.** pgx lee
   `PGPASSWORD`, `~/.pgpass` y el fichero de servicio igual que libpq, que es
@@ -256,25 +250,24 @@ ajustes que nadie le pidió tener.
   `--grafana-datasource-sslmode` lo decide de plano.
 </Aside>
 
-La de InfluxDB lleva sus propios tres, y son los que este proyecto se dejó
-primero:
+La fuente de datos de InfluxDB tiene ajustes propios:
 
 <Aside type="note" title="Qué lleva la fuente de datos de InfluxDB que crea">
-  Tres ajustes fáciles de olvidar a mano, y aquí se olvidaron los tres primero. El token va en
-  `token` **y** en `httpHeaderValue1` (`Bearer <token>`), porque el plugin lee uno en el camino de
-  FlightSQL y el otro en el de HTTP. `insecureGrpc` sigue al esquema: contra un store en HTTP
-  plano, una fuente de datos sin él responde a todos los paneles `tls: first record does not look
-  like a TLS handshake` mientras el store está perfectamente (medido el 2026-09-19). Y la base de
-  datos va en `jsonData.dbName`, no en el campo `database` de arriba, que este plugin ignora.
+  Tres ajustes fáciles de olvidar a mano. El token va en `token` **y** en `httpHeaderValue1`
+  (`Bearer <token>`), porque el plugin lee uno en el camino de FlightSQL y el otro en el de HTTP.
+  `insecureGrpc` sigue al esquema: contra un store en HTTP plano, una fuente de datos sin él responde
+  a todos los paneles `tls: first record does not look like a TLS handshake` mientras el store está
+  perfectamente. Y la base de datos va en `jsonData.dbName`, no en el campo `database` de arriba, que
+  este plugin ignora.
 </Aside>
 
-### La URL, y los campos
+### Campos de la URL de InfluxDB {#la-url-y-los-campos}
 
-`--influx` era la URL de escritura entera, con su query string. Lo sigue siendo si es lo que le
-pasas: todos los despliegues de 1.0.x tienen una en `MIKROSCOPE_INFLUX_URL` y siguen funcionando
-byte a byte. Pero una URL de escritura es la forma que quiere el sink y la forma equivocada para
-todo lo demás — Grafana quiere el servidor y la base de datos por separado, y no acepta una ruta de
-escritura. Así que ahora la interfaz son los campos:
+`--influx` toma el servidor y `--influx-db` la base de datos, y la URL de escritura se monta a
+partir de ellos. Una URL de escritura entera, con su query string, se sigue tomando tal cual — la
+forma que puede tener ya `MIKROSCOPE_INFLUX_URL`. Pero una URL de escritura es la forma que quiere
+el sink y la forma equivocada para todo lo demás: Grafana quiere el servidor y la base de datos por
+separado, y no acepta una ruta de escritura.
 
 ```sh
 --influx http://influx:8181 --influx-db mikroscope   # la URL se monta
@@ -287,7 +280,7 @@ peor que ninguna. Una URL de escritura que esto no sabe desmontar — un `/api/v
 ejemplo — escribe igual de bien y sencillamente no puede describir una fuente de datos, y
 `forward --grafana` lo dice en vez de construir una que no responda a nada.
 
-## El sondeo
+## Sondeo del almacén {#el-sondeo}
 
 Antes de generar, `import` y `check` preguntan a la fuente de datos cuáles de las medidas de
 mikroscope contiene, a través de `/api/ds/query` de Grafana:
@@ -322,20 +315,17 @@ Imprime `datasource holds N measurements`; en InfluxDB, N cuenta las tablas más
 `tabla.columna`, así que es mayor que el número de medidas. Después genera según la respuesta:
 
 - Un panel cuyas medidas y campos obligatorios están todos presentes se publica en su propia sección
-  con su consulta — incluido un panel que el equipo de referencia no podía producir.
+  con su consulta — incluido un panel que los valores compilados ponen en la fila de no disponibles.
 - Un panel al que le falta cualquier cosa pasa a la fila plegada "Not available on this device" **con
   sus consultas ocultas**. No ejecuta nada, así que no puede pintar una insignia roja `table … not
-found`; su texto de sin valor nombra lo que este almacén no contiene. Las consultas siguen en el
-  panel, así que se pueden volver a encender en su editor. Hasta 1.3.0 se eliminaban, y Grafana
-  12.3.0 le da a un panel sin consultas una por defecto: el 2026-09-25 el plugin de InfluxDB le
-  respondió `No SQL statements were provided in the query string`, como una insignia roja. Grafana
-  13.2.1 no envió nada por ese mismo panel.
+  found`; su texto de sin valor nombra lo que este almacén no contiene. Las consultas siguen en el
+  panel, así que se pueden volver a encender en su editor.
 - En InfluxDB, un almacén sin `mikroscope_detection` (o sin `mikroscope_trigger`) recibe esa capa
   de anotaciones apagada, con su consulta. Prometheus responde a un contador que no existe con un
   resultado vacío, así que el sondeo deja sus capas como están.
 - Un sondeo que falla — un error de Grafana, o una respuesta sin ningún nombre `mikroscope_` — es un
   aviso, no un error. `import` y `check` imprimen `warning: could not ask <store> which
-measurements it holds`, con el motivo, y siguen con los valores compilados por defecto, de modo que
+  measurements it holds`, con el motivo, y siguen con los valores compilados por defecto, de modo que
   se te dice qué dashboard has recibido.
 
 `--no-probe` se salta la pregunta y usa los valores compilados por defecto, que es también lo que hace
@@ -348,7 +338,7 @@ sondeo falla siempre, avisa siempre y entrega siempre los valores compilados: el
 pasar `--no-probe`. Es una carencia, no una decisión de diseño: esos tres almacenes reciben el
 dashboard que declara la lista de paneles, no el que sus datos admiten.
 
-## Lo que verifica `check`
+## Lo que verifica `check` {#lo-que-verifica-check}
 
 `check` genera el dashboard exactamente como lo haría `import` — sondeo incluido — y después, para
 cada panel, incluidos todos los paneles anidados dentro de una fila plegada, envía cada una de sus
@@ -360,8 +350,8 @@ ese paso, un objetivo `increase(x[$__interval])` devuelve un frame vacío, porqu
 intervalo de scrape deja menos de dos puntos en el rango. Todo panel de InfluxDB que agrupa con
 `$__dateBin` tiene un intervalo mínimo de al menos 1 s: Grafana escribe el bin de esa macro en
 segundos enteros, así que un paso por debajo de 1 s dibuja un bin de 0 segundos y el panel vuelve
-vacío, en `check` y en un navegador con el zoom en unos pocos minutos (medido el 2026-09-25, Grafana
-13.2.1 y 13.2.2).
+vacío, en `check` y en un navegador con el zoom en unos pocos minutos
+(<TestedOn of="dashboards">medido</TestedOn>).
 
 Imprime una línea por panel y un veredicto:
 
@@ -386,16 +376,20 @@ Con uno o más fallos `check` sale con código distinto de cero y
 `N panel(s) return no data (K known-empty tolerated)`. Un dashboard no está terminado hasta que cada
 panel que no es un vacío conocido devuelve filas.
 
-## Lo que `check` no verifica
+<Aside type="note" title="Vacío por configuración no es vacío conocido">
+	Solo se toleran los paneles marcados en el generador o los que el sondeo lleva a la fila de no
+	disponibles. Un panel vacío por cómo se ejecutó el colector — los paneles de interfaces con
+	`--api-mode off`, los paneles de slab en un agente sin privilegios — no está marcado: en un
+	almacén que nunca tuvo su medida el sondeo lo lleva a la fila de no disponibles, y en un almacén
+	que la tuvo antes pero no dentro de la ventana, `check` lo da por fallido.
+</Aside>
 
-<NotClaimed variant="untested" title="Más allá del recuento de filas">
-	`check` cuenta filas. No ve una leyenda, un eje, una unidad, un color, un umbral ni la cuadrícula.
-	El 2026-09-12 `dashboards check --store influxdb --window 12h` pasó en los 125 paneles que
-	recorrió mientras unos 90 de ellos eran ilegibles en un navegador: leyendas que decían "value core
-	0", dos xycharts atascados en "Loading plugin panel…", una franja de continuidad que seguía en
-	verde sobre 2 170 ticks perdidos. La legibilidad se establece renderizando el dashboard en
-	Chromium; que `check` pase no dice nada de ella.
-</NotClaimed>
+## Límites de `check` {#lo-que-check-no-verifica}
+
+`check` cuenta filas. No ve una leyenda, un eje, una unidad, un color, un umbral ni la cuadrícula,
+y que `check` pase no dice nada de si el dashboard se puede leer
+(<TestedOn of="not-tested">un ejemplo</TestedOn>). La legibilidad se establece renderizando el
+dashboard en un navegador.
 
 Qué más queda fuera de su alcance, según el código:
 
@@ -409,107 +403,39 @@ Qué más queda fuera de su alcance, según el código:
 - **Las reglas de alerta.** Los ficheros de aprovisionamiento que escribe `gen` no se cargan ni se
   evalúan.
 - **La consulta propia de una variable.** `check` toma el valor de cada variable de `--var` y nunca
-  ejecuta la búsqueda que llena el selector. Hasta 1.3.0 la búsqueda de Host de Elasticsearch fallaba
-  en Grafana 12.3.0, 13.2.1 y 13.2.2 mientras `check` pasaba.
+  ejecuta la búsqueda que llena el selector, así que una búsqueda que falla en el navegador sigue
+  aprobando.
 - **Lo que el navegador le hace a una consulta.** Algunas variables se sustituyen en el navegador, no
-  en el servidor con el que habla `check`. El 2026-09-14 la fuente de datos de InfluxDB escapó
-  `$__interval_ms` en cinco paneles, en el navegador, convirtiéndolo en un SQL que InfluxDB 3 no podía
-  analizar; el dashboard renderizado lo mostró.
+  en el servidor con el que habla `check`. La fuente de datos de InfluxDB puede escapar en el
+  navegador una macro como `$__interval_ms` y convertirla en un SQL que InfluxDB 3 no puede analizar
+  (<TestedOn of="dashboards">visto</TestedOn>); solo el dashboard renderizado lo muestra.
 - **La anchura real del panel.** `check` supone que todo panel tiene 900 puntos de datos de ancho, el
-  valor que el navegador envió para las gráficas de este dashboard el 2026-09-12. Un panel más
-  estrecho recibe un intervalo más ancho.
+  valor que un navegador envió para las gráficas de este dashboard. Un panel más estrecho recibe un
+  intervalo más ancho.
 
-## Comprobar contra una captura terminada
+## Comprobar una ventana pasada {#comprobar-contra-una-captura-terminada}
 
 `--window` es la longitud de la ventana de consulta y `--end` mueve su borde derecho, así que los
 paneles pueden comprobarse contra una captura que ya ha terminado en vez de contra un ahora en reposo:
 
 ```sh
 mikroscope dashboards check --store influxdb --datasource-uid <uid> \
-  --window 1h --end 2026-09-13T08:30:00Z
+  --window 1h --end <instante RFC 3339>
 ```
 
 Un panel responde de forma distinta sobre una ventana con datos que sobre una sin ellos, y una
 comprobación vale lo que vale la ventana a la que apunta.
 
-## Lo que se ha verificado
+<Anchor name="lo-que-se-ha-verificado" />
 
-**2026-09-25**, en el Grafana 13.2.2 del propietario, contra el almacén InfluxDB 3 de referencia,
-con una compilación del cambio que oculta las consultas de la fila no disponible:
-`dashboards check --window 1h`, con el sondeo y con `--no-probe`, dio 164 paneles con filas, 12
-vacíos tolerados y 1 fallo, "Detections in the window", porque el almacén no tenía ninguna detección
-en esa hora. Sin el sondeo, los cinco paneles no disponibles salen como `none … rows=0 frames=0` sin
-texto de error, donde 1.3.0 imprimía `400 … table … not found` en cada uno. Los dos paneles de
-disparos siguen respondiendo `mikroscope_trigger not found` sin el sondeo, porque ese almacén no
-tiene tabla de disparos. El SQL de la anotación de detecciones, enviado por `/api/ds/query`, devolvió
-44 filas en 6 horas. Repetido más tarde ese día, después de que los ficheros sin sondeo de los
-otros cuatro almacenes recuperaran sus consultas de la fila no disponible, dio los mismos recuentos,
-y la capa de detecciones 32 filas en 6 horas; el fichero de InfluxDB comprobado era idéntico byte a
-byte al de la primera vez. Ese mismo día, Grafana 12.3.0 y 13.2.1 sobre un almacén InfluxDB 3.11.2 Core
-desechable sirvieron para los renderizados de
-[Cinco dashboards](/mikroscope/es/dashboards/#no-disponible-en-este-equipo): la fila no disponible, un
-`import` con sondeo desde 1.3.0 y desde 1.3.1, y la capa de detecciones.
-
-**2026-09-16**, en el Grafana 13.2.1 del propietario, contra el despliegue de referencia: el agente en
-el RB5009 de referencia (RouterOS 7.24.2, privilegiado, los disparadores por defecto);
-`forward --prom :9124 --influx … --interfaces bridge,ether1,PPPoE_DIGI --counters-every 10s` durante
-30 minutos hacia un InfluxDB 3 Core aislado; un Prometheus 3.14 haciendo scrape del colector cada 5 s,
-y del agente directamente para las familias que el colector no puede recalcular.
-
-<ScrollTable label="Resultados de dashboards check, 2026-09-16">
-
-| Almacén    | Ventana    | Paneles | Fallan | Vacíos conocidos tolerados                                                                                                            |
-| ---------- | ---------- | ------: | -----: | --------------------------------------------------------------------------------------------------------------------------------------- |
-| InfluxDB 3 | 30 minutos |     171 |      0 | 10 (los dos paneles de eventos de puerto, la consulta opcional de conntrack, los dos paneles de disparos, PSI, los cuatro dispositivos de bloques en reposo) |
-| Prometheus | 30 minutos |     133 |      0 | 9 (los dos paneles de eventos de puerto, los dos paneles de conntrack de la API, PSI, los cuatro dispositivos de bloques)               |
-
-</ScrollTable>
-
-El SQL de los dos paneles de eventos de puerto se validó ese mismo día contra una tabla sintética en
-ese mismo InfluxDB 3, porque el almacén en vivo no tiene columna `kind` hasta que se le escribe el
-primer registro de puerto ya clasificado.
-
-**2026-09-20**, en la suite de extremo a extremo con docker, para el propio `forward --grafana`: se
-apuntó el colector a un Grafana real y a cada uno de los cinco stores por turno, se le dejó crear la
-fuente de datos, y luego se ejecutó `dashboards check` **contra la fuente de datos que el colector
-acababa de construir** — la consulta de cada panel, por la propia API de consultas de Grafana.
-
-Esa es la forma que tiene que tomar la comprobación aquí, porque lo que sale mal nunca es el JSON.
-Grafana acepta una fuente de datos y el camino de consulta la rechaza después: las dos trampas de
-InfluxDB con las que ha tropezado este proyecto fueron exactamente eso, una respondiendo
-`flightsql: Unauthenticated` y la otra `tls: first record does not look like a TLS handshake` desde
-una fuente de datos que la API había guardado sin queja. Los dashboards de los cinco stores
-respondieron desde lo que construyó el colector, sin error de fuente de datos en ningún panel.
-
-La misma ejecución encontró un defecto que ninguna prueba unitaria tenía: un colector que escribe a
-un PostgreSQL vivo por `--postgres` y a nada más no publicaba nada y decía «no hay nada que
-publicar», porque la lista de stores todavía solo conocía `--sql`.
-
-El recorrido fila a fila sin interfaz de los dos dashboards en Chromium a 1600x1000 — 0 insignias de
-error y 0 "No data" — es del **2026-09-15** y cubre 168 paneles de InfluxDB y 130 de Prometheus. No
-se ha repetido, así que no se afirma nada del renderizado de los tres paneles que no cubre: los dos
-de eventos de puerto y "What each interface is: type, role, bridge and label".
-
-**2026-09-12**, en el Grafana 12.3.2 del propietario. El dashboard de InfluxDB contra un InfluxDB 3
-Core aislado alimentado por `mikroscope forward` desde un RB5009: todos los paneles devolvieron filas,
-entre 158 y 316 por panel en 10 minutos. El dashboard de Prometheus contra un Prometheus 3.14 haciendo
-scrape del colector cada 5 s: todos los paneles devolvieron filas, entre 228 y 2 052 en 5 minutos.
-
-<Aside type="note" title="Vacío por configuración no es vacío conocido">
-	Los 10 y 9 de arriba son ese despliegue sobre esa ventana. Solo se toleran los paneles marcados en
-	el generador o los que el sondeo lleva a la fila de no disponibles. Un panel vacío por cómo se
-	ejecutó el colector — los paneles de interfaces con `--api-mode off`, los paneles de slab en un
-	agente sin privilegios — no está marcado: en un almacén que nunca tuvo su medida el sondeo lo
-	lleva a la fila de no disponibles, y en un almacén que la tuvo antes pero no dentro de la ventana,
-	`check` lo da por fallido.
-</Aside>
+Las versiones de Grafana, los almacenes y las ventanas contra los que se han ejecutado `check` y los
+renderizados en navegador están en <TestedOn of="dashboards">Probado en</TestedOn>.
 
 <SeeAlso>
 
 ## Véase también
 
-- [Cinco dashboards, una sola lista](/mikroscope/es/dashboards/): cada sección y cada panel, y qué almacén
-  lleva cada uno.
+- [Dashboards](/mikroscope/es/dashboards/): cada sección y cada panel, y qué almacén lleva cada uno.
 - [Reglas de alerta](/mikroscope/es/dashboards/alerts/): los ficheros de aprovisionamiento que
   escribe `gen`, que `check` no ejecuta.
 - [Prometheus](/mikroscope/es/sinks/prometheus/): el `/metrics` del colector, que es lo que lee el trabajo

@@ -1,105 +1,167 @@
 ---
-title: What it is
-description: An agent in a MikroTik RouterOS 7.24+ container reads the router's kernel at 1 to 100 Hz; a CLI installs, records and forwards. Four limits, stated first.
+title: Quick install
+description: Install the CLI, check the router and run the agent in a RouterOS container, in four commands.
+docType: how-to
 head:
   - tag: title
-    content: "What it is: an agent inside a MikroTik router | mikroscope"
+    content: Install mikroscope on a MikroTik router | mikroscope
 ---
 
-import { Steps } from "@astrojs/starlight/components";
+import { Aside } from "@astrojs/starlight/components";
+import Anchor from "../../../components/Anchor.astro";
 import Measured from "../../../components/Measured.astro";
-import Provenance from "../../../components/Provenance.astro";
 import RouterWrites from "../../../components/RouterWrites.astro";
+import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
-import Src from "../../../components/Src.astro";
 
-mikroscope is open-source, MIT-licensed kernel telemetry for MikroTik routers
-that run RouterOS 7.24 or later: a static Go agent that runs in a RouterOS
-container and samples the router's own kernel counters at 1 to 100 Hz, and a
-CLI that installs it, records a window, plots it and forwards the samples to
-eleven sinks. It is two programs and one container.
-
-The **agent** is a static Go binary in a [scratch container](/mikroscope/reference/glossary/#scratch-container) on the router. A
-RouterOS container shares the host kernel, so `/proc` inside it is the router's
-own `/proc`: `/proc/stat` per core, `/proc/interrupts`, `/proc/softirqs`,
-[`/proc/net/softnet_stat`](/mikroscope/reference/glossary/#softnet), `/proc/meminfo`, `/proc/vmstat`, `/proc/diskstats`,
-`/dev/kmsg`. The container runs privileged by default, which also lets the agent open the CPU's
-[PMU](/mikroscope/reference/glossary/#pmu) counters system-wide through `perf_event_open`. It samples them on a ticker at 1 to 100 Hz (10 Hz by default; 10, 20, 50 and 100 Hz measured), keeps the last 60 seconds in a [ring](/mikroscope/reference/glossary/#ring), and serves them over HTTP on its
-[veth](/mikroscope/reference/glossary/#veth) address. It has no outbound connection and presents no credential; the only secret it holds is the optional token it requires of whoever reads it, which `install` writes into the container's
-[envlist](/mikroscope/reference/glossary/#envlist).
-
-The **CLI** runs on your machine. It installs and removes the agent, records a
-window with markers, draws a deterministic SVG of it, and runs as a collector
-that pulls from the agent, merges a RouterOS [API tier](/mikroscope/reference/glossary/#api-tier) at 1 Hz, and writes to eleven
-[sinks](/mikroscope/reference/glossary/#sink) — file, Prometheus and InfluxDB 3 among them. It is released as an archive per platform —
-linux and FreeBSD on amd64, arm64 and arm; macOS and Windows on amd64 and arm64 — and the agent
-beside it as one image tar per architecture and as a registry image, on Docker
-Hub as `jmrplens/mikroscope-agent` and on GHCR as
-`ghcr.io/jmrplens/mikroscope-agent`, so installing needs a Go toolchain only
-when you want the agent built from your own tree. Since 1.1.0 the collector is
-also an image, `jmrplens/mikroscope` and `ghcr.io/jmrplens/mikroscope`
-(linux/amd64, linux/arm64), and <Src path="deploy/" /> has two compose stacks that pair it
-with InfluxDB 3 or Prometheus and a Grafana. That image is for `forward`: the
-install verbs shell out to ssh and scp, which it leaves out on purpose. Both
-programs are under the MIT licence, in <Src path="LICENSE" />.
-
-## Four limits, stated before anything else
-
-<Steps>
-
-1. **The prerequisites the tool cannot remove.** RouterOS 7.24 or later with the
-   [`container` package](https://help.mikrotik.com/docs/spaces/ROS/pages/84901929/Container) and
-   [`device-mode container=yes`](https://help.mikrotik.com/docs/spaces/ROS/pages/93749258/Device-mode) — which MikroTik gates
-   behind a physical reset-button press or a power cycle. 7.24 is the floor
-   because the container step writes `privileged=`, an attribute MikroTik
-   [added in that release](https://download.mikrotik.com/routeros/7.24/CHANGELOG);
-   `--privileged=false` changes its value, not whether it is
-   written. arm64, arm and x86_64; not MIPS, not TILE.
-
-2. **The resolution floor is the kernel's, not the tool's.** `/proc/stat` counts CPU time in
-   [`USER_HZ` ticks](https://docs.kernel.org/filesystems/proc.html#miscellaneous-kernel-statistics-in-proc-stat),
-   100 a second, so a 100 ms window resolves one core to <Measured id="tick.stepOneCore" /> steps.
-   The agent ships raw ticks so you choose the window. Do not expect
-   [PSI](/mikroscope/reference/glossary/#psi): the RB5009's kernel has neither PSI nor
-   [schedstat](/mikroscope/reference/glossary/#schedstat).
-
-   <Provenance of="kernel-2026-09-11" />
-
-3. **The container sees the router's CPU and memory, but its own network.**
-   `/proc/net/dev`, `/proc/net/snmp` and `nf_conntrack_count` are per network namespace and describe the container; the conntrack count from the slab under `privileged` is the exception, and describes the router. Interface counters come from the
-   RouterOS API and are merged, not faked.
-
-4. **The observer costs something, and it is written down.** <Measured id="run.10hz.cpu" /> of
-   one core at 10 Hz on an RB5009, <Measured id="run.100hz.cpu" /> at 100 Hz. [What it
-   costs](/mikroscope/cost/) has the full table and the conditions. Every figure
-   on this site comes from that one device, an RB5009UG+S+, arm64: the cost
-   figures on RouterOS 7.24.2, later ones on 7.24.4, and each says which. The
-   arm and x86_64 builds are cross-built and checked in CI and have never run on
-   hardware.
-
-</Steps>
+mikroscope runs an agent in a RouterOS container that samples the router's kernel at 10 Hz and
+answers over HTTP on the router's side of a /30. The CLI on your computer installs it, and
+`install` writes these objects, which `uninstall` removes:
 
 <RouterWrites command="install" />
 
-## What it does not do
+<Anchor name="four-limits-stated-before-anything-else" />
 
-It does not replace the RouterOS API — it merges with it. It does not claim a
-number it did not measure: where a source is absent on a board, the metric is
-absent rather than zero. And it does not decide for you what a percentage means,
-because it never computes one.
+## Requirements
+
+<ScrollTable label="What the router needs before the first install">
+
+| Need                | Value                                                           |
+| ------------------- | --------------------------------------------------------------- |
+| RouterOS            | 7.24 or later                                                   |
+| Architecture        | `arm64`, `arm` or `x86_64`; not MIPS, TILE or PPC               |
+| `container` package | installed and enabled                                           |
+| Device mode         | `container=yes`, confirmed with a button press or a power cycle |
+
+</ScrollTable>
+
+You also need a computer with ssh access to the router as an admin user, with a key or an ssh
+agent: the CLI runs ssh in batch mode and cannot answer a password prompt.
+[Requirements](/mikroscope/install/prerequisites/) has the details and what `doctor` checks.
+
+## Install the CLI
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/jmrplens/mikroscope/main/install.sh | bash
+```
+
+In PowerShell on Windows:
+
+```powershell
+irm https://raw.githubusercontent.com/jmrplens/mikroscope/main/install.ps1 | iex
+```
+
+The script installs the newest release and refuses an archive whose SHA-256 is not the one the
+release published. [Install the CLI](/mikroscope/install/cli/) has the same steps by hand.
+
+## Check the router
+
+```sh
+mikroscope doctor --router admin@192.168.88.1 --remote-image jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}
+```
+
+`doctor` reads the router and writes nothing. It prints one line per check, marked `ok`, `MISSING`
+or `WARN`, and ends with `doctor: every prerequisite is met`. A `MISSING` line is followed by its
+fix:
+
+```text
+  MISSING interface list LAN exists (found=0)
+          fix: --iface-list none: no firewall rule here needs the veth in an interface list. Or create it: `/interface/list/add name=LAN`
+```
+
+Apply the fix, or add the flag it names to this command and to `install` below, and run `doctor`
+again until nothing is `MISSING`. A `WARN` line does not stop the install.
+
+<Aside type="caution" title="Device mode needs you at the router">
+	After `/system/device-mode/update container=yes`, press the reset or mode button, or cut the
+	power, within 5 minutes. On CHR, power the virtual machine off and on. No ssh session or API call
+	can do this step.
+</Aside>
+
+<Aside type="tip" title="A router ssh has never seen">
+	The CLI runs ssh in batch mode, so a host key that is not in `known_hosts` yet stops it. Add
+	`--ssh-option StrictHostKeyChecking=accept-new` to the first command, or connect once with `ssh`
+	yourself.
+</Aside>
+
+## Install the agent
+
+```sh
+mikroscope install --router admin@192.168.88.1 --remote-image jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}
+```
+
+`install` runs the same checks, reads the router's architecture, and prints every RouterOS command
+it will run, ending with `nothing above has been written yet`. It then asks
+`write the objects above to the router? [y/N]`. After the writes it probes the agent from your
+computer:
+
+```text
+install done: 6 step(s) created
+probing http://172.30.10.2:9123/healthz from this host …
+  direct transport ok: agent {{MIKROSCOPE_VERSION}} (<commit>) built <time>, 10 Hz, seq 7, 0 slipped, 2ms round trip
+```
+
+The router pulls the image from Docker Hub itself: nothing is uploaded, and nothing is set in
+`/container/config`. If the probe cannot reach the agent, it says whether the container runs;
+[Network access](/mikroscope/install/reaching-the-agent/) has the three ways to reach it.
+
+## Verify
+
+```sh
+mikroscope status --router admin@192.168.88.1
+```
+
+`status` reads the install manifest on the router, prints how many objects each step holds, and
+probes the agent:
+
+```text
+agent: {{MIKROSCOPE_VERSION}} (<commit>) built <time>, 10 Hz, seq 14 (oldest 1), up 1s, 0 slipped, 1ms round trip
+```
+
+From a host on the router's LAN, `curl http://172.30.10.2:9123/healthz` answers `{"ok":true,…}`.
+
+## Other ways to install
+
+- [Script generator](/mikroscope/install/generator/): fill in a form and paste the script into the
+  router's terminal. No CLI.
+- [RouterOS script](/mikroscope/install/script/): `mikroscope plan --rsc` writes the same install as
+  one script.
+- [Manual install: terminal](/mikroscope/install/manual-cli/): every command, one at a time.
+- [Manual install: WebFig and Winbox](/mikroscope/install/manual-gui/): the same objects, through
+  the menus.
+- [Offline install](/mikroscope/install/offline/): the image tar, for a router that cannot reach a
+  registry.
+- [From source](/mikroscope/install/routes/#a-checkout-with-go): an agent built from your checkout.
+- [Upgrade and uninstall](/mikroscope/install/upgrade/): a new release, or removing everything.
+
+[Install methods](/mikroscope/install/routes/) compares them.
+
+## Next steps
+
+- [First recording](/mikroscope/start/walkthrough/): record a window, mark it and plot it.
+- [Run the collector](/mikroscope/sinks/): send the samples to Prometheus, InfluxDB 3 or nine
+  other sinks.
+- [Dashboards](/mikroscope/dashboards/): the Grafana dashboards for each store.
+
+<Anchor name="what-it-does-not-do" />
+
+## Limitations
+
+- It merges with the RouterOS API and does not replace it: per-interface traffic comes from the
+  API, because the container sees only its own network.
+- The kernel counts CPU time in ticks of 10 ms, so one 100 ms sample resolves one core in steps
+  of <Measured id="tick.stepOneCore" />.
+- A source a board does not have is absent from the output, never zero.
+
+[How it works](/mikroscope/how-it-works/#limitations) has the full list.
 
 <SeeAlso>
 
 ## See also
 
-- [The cost of the observer](/mikroscope/cost/): the budget, the measured result and how to
-  measure it on your own device.
-- [The rate ceiling](/mikroscope/cost/rate-ceiling/): the six runs behind the figures in point 4.
-- [What the numbers do not say](/mikroscope/cost/limits/): what one device, under its own traffic,
-  cannot tell you.
-- [Short answers](/mikroscope/start/questions/): ten common questions, each answered from a page
-  that has the evidence.
-- [Compared with the alternatives](/mikroscope/start/compared/): SNMP, mktxp, The Dude and the
-  rest, what each reads, and when not to use mikroscope.
+- [How it works](/mikroscope/how-it-works/): the agent, the veth, the collector and the sinks.
+- [Agent cost](/mikroscope/cost/): what the agent costs the router, and how to measure it on yours.
+- [FAQ](/mikroscope/start/questions/): short answers, each linked to the page with the detail.
+- [Compared with alternatives](/mikroscope/start/compared/): SNMP, mktxp, The Dude and the rest.
 
 </SeeAlso>

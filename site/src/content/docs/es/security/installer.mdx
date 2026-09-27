@@ -1,6 +1,7 @@
 ---
-title: Lo que el instalador rechaza
+title: Salvaguardas del instalador
 description: Los objetos sobre los que install no construye, los valores que no mete en una orden de RouterOS y cómo demuestra uninstall que no dejó nada atrás.
+docType: explanation
 head:
   - tag: title
     content: "Lo que el instalador rechaza en un router MikroTik | mikroscope"
@@ -210,8 +211,8 @@ una tiene su propia comprobación antes de que se escriba nada.
   `registry-1.docker.io/…`, y cualquier otro host se conserva. Después el router necesita alcanzar
   ese registro por su propia red. **mikroscope nunca escribe `/container/config`**, el ajuste global
   que guarda el `registry-url` del equipo y su único usuario y contraseña de registro, y no necesita
-  nada de él: el host dentro de `remote-image=` manda sobre `registry-url` ([Nada que ajustar en el
-  router](/mikroscope/es/install/routes/#nada-que-ajustar-en-el-router)). Confiar en la imagen es
+  nada de él: el host dentro de `remote-image=` manda sobre `registry-url` ([Ajustes del
+  registro](/mikroscope/es/install/routes/#nada-que-ajustar-en-el-router)). Confiar en la imagen es
   confiar en ese registro: nada en la CLI verifica lo que el router se descarga. Cuando hay un
   usuario puesto, RouterOS lo presenta al registro que nombra `registry-url`, y una credencial
   pensada para otro registro puede terminar en `auth error` la descarga de una imagen pública. `doctor` avisa cuando hay un usuario puesto y `registry-url` está vacío o nombra
@@ -231,11 +232,13 @@ detienen antes de su primera escritura en un router que no puede recibirlo: por 
 7.24, sin el paquete container o sin device-mode, sin el tar en la vía del tar, o con una veth, una
 envlist, un contenedor de `--container-name` o un fichero en la ruta del manifiesto con los nombres
 de la instalación que no son de mikroscope. Una envlist sin la marca de mikroscope recibiría si no
-la marca, y `uninstall` retiraría después con ella las entradas de su dueño. Y, cuando `--token` o
+la marca, y `uninstall` retiraría después con ella las entradas que guarda. Y, cuando `--token` o
 `MIKROSCOPE_TOKEN` está fijado, la línea de la envlist lleva el token en claro, porque el router lo necesita. El propio script lo dice en su cabecera. Trata el
 fichero como tratas el token: no lo subas a un repositorio, no lo pegues donde quede registrado y
 bórralo de los Files del router después del `/import`. Sin token no guarda ningún secreto, solo el
-plan.
+plan. Pégalo solo en el indicador `] >`: un script pegado mientras RouterOS pregunta por la licencia
+pierde sus primeras líneas. [Script de RouterOS](/mikroscope/es/install/script/) y el [Generador de
+scripts](/mikroscope/es/install/generator/) muestran las dos formas de ejecutarlo.
 
 `plan`, `install --dry-run` y `upgrade --dry-run` enmascaran el token en lo que imprimen por el
 terminal (`value="(token)"`); `--rsc` no puede, porque el script tiene que ejecutarse.
@@ -251,8 +254,8 @@ mantiene también fuera de la línea de órdenes de la propia CLI.
 
 1. Lee el manifiesto de la instalación, `mikroscope/<name>.manifest.txt`, en la conexión que lee la
    forma de la instalación, y toma de él la forma con que se hizo; rechaza una opción que la
-   contradiga, nombrando los dos valores. Una instalación hecha por 1.3.x no tiene manifiesto, y su
-   forma se lee de sus objetos etiquetados.
+   contradiga, nombrando los dos valores. Una instalación hecha antes de que existiera el manifiesto
+   no tiene ninguno, y su forma se lee de sus objetos etiquetados.
 2. Ejecuta cada eliminación de la más reciente a la más antigua, ignorando lo que ya no está. El
    paso del contenedor, una vez retirado el contenedor de esta instalación, retira la raíz del
    contenedor `mikroscope/<name>` si RouterOS la dejó.
@@ -304,13 +307,12 @@ mikroscope.
 
 ## Véase también
 
-- [Instalar el agente](/mikroscope/es/install/): las órdenes, y lo que comprueba `doctor` antes de
+- [Instalar con la CLI](/mikroscope/es/install/): las órdenes, y lo que comprueba `doctor` antes de
   todo esto.
-- [Dónde va cada cosa](/mikroscope/es/install/layout/): cada objeto que crea `install`, y la opción
-  que lo mueve.
-- [Lo que abre `--expose`](/mikroscope/es/security/expose/): las dos reglas de cortafuegos opcionales y
+- [Almacenamiento y ajustes del contenedor](/mikroscope/es/install/layout/): cada objeto que crea `install`, y
+  la opción que lo mueve.
+- [Exponer en la LAN](/mikroscope/es/security/expose/): las dos reglas de cortafuegos opcionales y
   sus selectores.
-- [Órdenes y opciones](/mikroscope/es/reference/cli/): cada opción con su valor por defecto y su
-  variable.
+- [CLI](/mikroscope/es/reference/cli/): cada opción con su valor por defecto y su variable.
 
 </SeeAlso>

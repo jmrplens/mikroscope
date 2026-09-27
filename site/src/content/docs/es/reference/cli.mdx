@@ -1,6 +1,10 @@
 ---
-title: Órdenes y opciones
-description: Cada verbo y opción de la CLI de mikroscope, con su valor por defecto, su rango aceptado y la variable MIKROSCOPE_* que la fija, leídos del código Go.
+title: CLI
+description: Cada verbo de la CLI de mikroscope y sus opciones, agrupadas por verbo, con el valor por defecto de cada opción, los valores que admite y la variable MIKROSCOPE_* que la fija, leídos del código Go.
+docType: reference
+head:
+  - tag: title
+    content: Órdenes y opciones | mikroscope
 ---
 
 import { Aside } from "@astrojs/starlight/components";
@@ -11,11 +15,9 @@ import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
 import Src from "../../../../components/Src.astro";
 
-`mikroscope` recibe un verbo y sus opciones. Cada opción de abajo lleva qué hace,
-su valor por defecto, el rango que acepta y la variable de entorno que la fija,
-tal como las definen los ficheros de <Src path="cmd/mikroscope/" /> y
-de <Src path="internal/router/options.go" />; donde el texto de ayuda dice otra
-cosa, se señala la diferencia.
+`mikroscope` recibe un verbo y sus opciones. Las tablas de abajo dan el valor por defecto de cada
+opción, los valores que admite y la variable de entorno que la fija, tal como las
+definen <Src path="cmd/mikroscope/" /> y <Src path="internal/router/options.go" />.
 
 ## Uso y códigos de salida {#uso-y-estado-de-salida}
 
@@ -23,155 +25,232 @@ cosa, se señala la diferencia.
 mikroscope <verb> [flags]
 ```
 
-Los verbos se reparten en cinco grupos, cada uno con su propio juego de
-opciones: los verbos de despliegue (`doctor`, `plan`, `install`, `upgrade`,
-`uninstall`, `status`, `image`), los de grabación (`record`, `mark`, `plot`),
-el colector (`forward`), `dashboards` y `version`. Las opciones son opciones
-del paquete `flag` de Go: `-rate 50` y `--rate 50` son lo mismo, y un booleano
+Los verbos se reparten en cinco grupos, cada uno con su propio juego de opciones: los verbos de
+despliegue (`doctor`, `plan`, `install`, `upgrade`, `uninstall`, `status`, `image`), los de
+grabación (`record`, `mark`, `plot`), el colector (`forward`), `dashboards` y `version`. Las
+opciones son opciones del paquete `flag` de Go: `-rate 50` y `--rate 50` son lo mismo, y un booleano
 se desactiva con `-privileged=false`.
 
 <ScrollTable label="Estado de salida de la CLI">
 
-| Estado | Cuándo                                                                                                                                                                                                                                                        |
-| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `0`    | el verbo terminó                                                                                                                                                                                                                                              |
-| `1`    | el verbo se ejecutó y falló (un requisito que falta, un error del router, un destino que no se pudo construir, un panel sin datos), el verbo es desconocido, o una opción de `uninstall`, `record`, `mark`, `plot`, `forward` o `dashboards` no se pudo analizar o validar |
-| `2`    | no se dio ningún verbo, o una opción de `doctor`, `plan`, `install`, `upgrade`, `status` o `image` no se pudo analizar o validar; no se envió nada al router                                                                                                                                      |
+| Estado | Cuándo                                                                                                                                                                                                                                                                                     |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `0`    | el verbo terminó                                                                                                                                                                                                                                                                           |
+| `1`    | el verbo se ejecutó y falló (un requisito que falta, un error del router, un destino que no se pudo construir, un panel sin datos), el verbo es desconocido, o una opción de `uninstall`, `record`, `mark`, `plot`, `forward` o `dashboards` no se pudo analizar o validar                 |
+| `2`    | no se dio ningún verbo, o una opción de `doctor`, `plan`, `install`, `upgrade`, `status` o `image` no se pudo analizar o validar; no se envió nada al router                                                                                                                              |
 
 </ScrollTable>
 
-mikroscope valida las opciones de despliegue y de conexión antes de conectarse a
-nada, así que un valor malo detiene el verbo sin enviar nada al router: estado
-de salida 2 para `doctor`, `plan`, `install`, `upgrade`, `status` e `image`, y
-1 para `uninstall`, `record`, `mark`, `plot` y `forward`. La comprobación es
-`Finish` en <Src path="internal/router/options.go" />, una sola función para los
-once verbos: `install --rate 500`, `image --rate 500` y
-`doctor --name bad/name` salen con 2, y `uninstall --rate 500`,
-`record --port 0` y `forward --port 0` con 1, cada uno mostrando el valor que
-rechaza. `--triggers` pasa por el `ParseTriggers` del propio agente, así que
-una condición desconocida, un umbral mal escrito, una comilla o un punto y coma hacen fallar el
-verbo, con estado 2 para `doctor`, `plan`, `install`, `upgrade`, `status` e `image` y 1 para
-`uninstall`, y no se envía nada. El agente vuelve a analizar `TRIGGERS` al
-arrancar, que es lo que detecta una envlist editada a mano en el router: un
-valor malo ahí aparece como un contenedor que sale con estado `2` tras una
-línea `mikroscope-agent: bad configuration:` en el log del router, y que
-`restart-policy=on-failure` vuelve a arrancar.
+Cada opción de despliegue y de conexión se valida antes de conectarse a nada, en una sola función,
+`FinishFor` en <Src path="internal/router/options.go" />, así que un valor malo detiene el verbo sin
+enviar nada al router y nombra el valor que rechaza:
+
+```text
+$ mikroscope install --rate 500
+mikroscope: rate must be 1-100 Hz, got 500
+```
+
+Eso sale con 2; `uninstall --rate 500`, `record --port 0` y `forward --port 0` salen con 1.
+`--triggers` pasa por el `ParseTriggers` del propio agente, así que una condición desconocida, un
+umbral mal escrito, una comilla o un punto y coma hacen fallar el verbo de la misma forma. El agente
+vuelve a analizar `TRIGGERS` al arrancar, que es lo que detecta una envlist editada a mano en el
+router: el contenedor sale con estado `2` tras una línea `mikroscope-agent: bad configuration:` en
+el log del router, y `restart-policy=on-failure` lo vuelve a arrancar.
 
 ### Valores por defecto {#de-dónde-sale-un-valor-por-defecto}
 
-Una opción que nombra una variable en las tablas de abajo lee su valor por
-defecto de `MIKROSCOPE_<KEY>`; una variable con la cadena vacía cuenta como no
-definida, y una opción en la línea de órdenes gana siempre. **Solo tienen
-variable las opciones que la nombran.** `--rate`, `--buffer`, `--port`,
-`--memory-max`, `--mem-limit-mb`, `--capture-mb`, `--triggers`, `--floor-hz`,
-`--privileged`, `--ephemeral`, `--expose`, `--restart-max-count`,
-`--restart-interval`, `--start-on-boot`, `--container-name` y
-`--extract-timeout` son solo opciones. `status`, `upgrade` y `uninstall` toman
-de la instalación del router las opciones que describen su forma cuando no se
-les dan ([Forma de la
-instalación](#pasa-la-misma-forma-a-status-upgrade-y-uninstall)). La CLI no lee
-`.env` por sí misma; expórtalo antes con `set -a; . ./.env; set +a`. [Variables
-de entorno](/mikroscope/es/reference/environment/) enumera todas las variables,
-incluidas las credenciales que no tienen ninguna opción.
+- Una opción que nombra una variable en las tablas de abajo lee su valor por defecto de
+  `MIKROSCOPE_<KEY>`. Una variable con la cadena vacía cuenta como no definida, y una opción en la
+  línea de órdenes gana siempre.
+- **Solo tienen variable las opciones que la nombran.** `--rate`, `--buffer`, `--port`,
+  `--memory-max`, `--mem-limit-mb`, `--capture-mb`, `--triggers`, `--floor-hz`, `--privileged`,
+  `--ephemeral`, `--expose`, `--restart-max-count`, `--restart-interval`, `--start-on-boot`,
+  `--container-name` y `--extract-timeout` son solo opciones.
+- `status`, `upgrade` y `uninstall` toman de la instalación del router las opciones que describen su
+  forma cuando no se les dan ([Forma de la
+  instalación](#pasa-la-misma-forma-a-status-upgrade-y-uninstall)).
+- La CLI no lee `.env` por sí misma; expórtalo antes con `set -a; . ./.env; set +a`. [Variables de
+  entorno](/mikroscope/es/reference/environment/) enumera todas las variables, incluidas las
+  credenciales que no tienen ninguna opción.
 
 ## Órdenes de despliegue {#los-verbos-de-despliegue}
 
-<ScrollTable label="Verbos de despliegue y lo que hace cada uno">
+Los siete verbos de despliegue comparten las [opciones de
+despliegue](#opciones-de-los-verbos-de-despliegue); una opción que a un verbo no le sirve se acepta,
+se comprueba y se ignora. Las opciones propias de cada verbo son estas:
 
-| Verbo       | Qué hace                                                                                                                                             | Escribe en el router |
-| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
-| `doctor`    | Comprobación previa de solo lectura en una conexión ssh; cada comprobación que falla nombra su arreglo. Después lee el anillo del agente en marcha en busca de un bucle, churn de STP, flaps de enlace y descartes softnet. Sale con 1 si falta algún requisito; los avisos y hallazgos no. | no                   |
-| `plan`      | Imprime cada objeto que crearía `install` y se detiene. Igual que `install --dry-run`; con `--rsc` escribe en su lugar un script de RouterOS.        | no                   |
-| `install` | Ejecuta `doctor`, consigue la imagen de la arquitectura del router, imprime el listado, pide confirmación, escribe el manifiesto de la instalación y después cada objeto, y sondea el agente desde este equipo. | sí |
-| `upgrade` | Lee la forma de la instalación, consigue una imagen nueva, lista el manifiesto de la instalación, el paso del contenedor y cualquier otro paso que el router ya no tenga, pregunta, escribe el manifiesto y los pasos que faltan, borra y vuelve a crear el paso del contenedor, y sondea. | sí |
-| `uninstall` | Lee el manifiesto de la instalación, borra todo lo que creó la instalación del más reciente al más antiguo y el manifiesto el último, verifica después por recuento de propiedad y por etiqueta, y falla nombrando lo que quede. `--targets` lo amplía más allá del router; nada se va sin `--yes`. | sí |
-| `status` | Lee la forma de la instalación e imprime el recuento de propiedad de cada paso; si hay algo instalado, sondea el agente e imprime su salud y su placa. | no |
-| `image`     | Construye el tar de la imagen del agente y lo escribe en `--out`, para cargarlo a mano.                                                              | no                   |
+<ScrollTable label="Verbos de despliegue, lo que hace cada uno y sus opciones propias">
+
+| Verbo       | Qué hace                                                                                                                                                                                                                        | Escribe en el router | Sus opciones propias                                   |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- | ------------------------------------------------------ |
+| `doctor`    | Comprobación previa de solo lectura en una conexión ssh; cada comprobación que falla nombra su arreglo. Después lee el anillo del agente en marcha en busca de un bucle, churn de STP, flaps de enlace y descartes softnet.     | no                   | ninguna                                                |
+| `plan`      | Imprime cada objeto que crearía `install` y se detiene; no se conecta a nada. Con `--rsc` escribe en su lugar un script de RouterOS.                                                                                            | no                   | `--rsc`, `--out`                                       |
+| `install`   | Ejecuta `doctor`, consigue la imagen de la arquitectura del router, imprime el listado, pregunta, escribe el manifiesto de la instalación y después cada objeto, y sondea el agente desde este equipo.                          | sí                   | `--dry-run`, `--yes`, `--no-doctor`                    |
+| `upgrade`   | Lee la forma de la instalación, consigue una imagen nueva, lista el manifiesto, el paso del contenedor y cualquier paso que el router ya no tenga, pregunta, los escribe, vuelve a crear el paso del contenedor y sondea.       | sí                   | `--dry-run`, `--yes`                                   |
+| `uninstall` | Lee el manifiesto de la instalación, borra todo lo que creó la instalación, del más reciente al más antiguo y el manifiesto el último, y verifica por recuento y por etiqueta. No lista ni borra nada sin `--yes`.            | sí                   | `--yes`, `--targets`, las opciones de destino y de Grafana |
+| `status`    | Lee la forma de la instalación e imprime el recuento de propiedad de cada paso; si hay algo instalado, sondea el agente e imprime su salud y su placa.                                                                          | no                   | ninguna                                                |
+| `image`     | Construye el tar de la imagen del agente y lo escribe en `--out`, para cargarlo a mano; no se conecta a nada.                                                                                                                  | no                   | `--out`                                                |
 
 </ScrollTable>
 
-`doctor` ejecuta estas comprobaciones, en este orden:
+### `doctor` {#doctor}
+
+```sh
+mikroscope doctor
+```
+
+Ejecuta estas comprobaciones, en este orden, y sale con 1 con `N prerequisite(s) missing; nothing
+was written` cuando imprime una línea `MISSING`; una línea `WARN` no cambia nada:
 
 <DoctorChecks />
 
 El `doctor` suelto, pero no el que ejecuta `install`, lee después una vez el anillo del agente por
 HTTP desde la dirección .2 de `--subnet` en `--port`, enviando `--token`, y desiste a los 3 s. Pasa
 el mismo `--subnet`, `--port` y `--token` con los que se instaló el agente. Los hallazgos se definen
-en [Lo que muestra el agente en
-marcha](/mikroscope/es/install/prerequisites/#lo-que-muestra-el-agente-en-marcha) y nunca cambian
-el estado de salida.
+en [Requisitos](/mikroscope/es/install/prerequisites/#lo-que-muestra-el-agente-en-marcha) y nunca
+cambian el estado de salida.
 
-<Aside type="note" title="Tres maneras de conseguir la imagen del agente, a una opción de distancia">
-	`plan`, `install`, `upgrade` e `image` necesitan una imagen del agente, y `buildImage` en
-	el fichero <Src path="cmd/mikroscope/main.go" /> la consigue por la vía que pidan las opciones. Sin ninguna de las dos
-	ejecutan `go build -trimpath ./cmd/mikroscope-agent` con `CGO_ENABLED=0`, `GOOS=linux` y el
-	`--arch` como `GOARCH` (<Src path="internal/image/image.go" />), que necesita una copia del repositorio y una
-	cadena de herramientas de Go en el `PATH`. Con `--agent-tar` leen el tar publicado, comprueban
-	que es una imagen del agente mikroscope para `--arch` y suben ese. Con `--remote-image` no se
-	compila ni se sube nada: el router se descarga la imagen él mismo, e `image` se niega, porque no
-	hay ningún tar que escribir. Sin cadena de herramientas de Go y sin ninguna de las dos opciones
-	la compilación falla nombrando ambas opciones y la versión de Go, antes de que se liste nada. La
-	cuarta vía de instalación no consigue ninguna imagen en esta máquina: `plan --rsc` escribe un
-	script que corre en el router, así que necesita `--remote-image` o un tar que ya esté en el
-	equipo. [Cuatro formas de instalar](/mikroscope/es/install/routes/) pone las cuatro una al lado
-	de otra, y [Instalar el agente](/mikroscope/es/install/) recorre lo que hace `install`.
-</Aside>
+### `plan` {#plan}
 
-### Opciones de despliegue {#opciones-de-los-verbos-de-despliegue}
+```sh
+mikroscope plan
+mikroscope plan --rsc --remote-image jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}} --out mikroscope.rsc
+```
 
-<ScrollTable label="Opciones comunes a doctor, plan, install, upgrade, uninstall, status e image">
+- Sin `--rsc` imprime el listado que imprimiría `install`, igual que `install --dry-run`, con el
+  token enmascarado como `(token)`.
+- Con `--rsc` escribe la instalación entera como un script de RouterOS, en `--out` o en la salida
+  estándar. Con `--out` imprime `<out>: N lines; review it, then paste it into the router's
+  terminal or /import it`. Pégalo solo en el indicador `] >`: un script pegado mientras RouterOS
+  pregunta por la licencia pierde sus primeras líneas ([Script de
+  RouterOS](/mikroscope/es/install/script/#run-on-the-router)). Con un token puesto, el script lo lleva en
+  claro ([Salvaguardas del
+  instalador](/mikroscope/es/security/installer/#un-script-rsc-generado-es-una-credencial)).
+- Aquí `--arch auto` es `arm64`, porque no se le pregunta nada al router.
 
-| Opción           | Por defecto                                | Variable                  | Acepta                                                       | Significado                                                                                                                                                                                                                                                                                                                                                               |
-| ---------------- | ------------------------------------------ | ------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--router`       | ninguno, obligatoria                       | `MIKROSCOPE_ROUTER`       | `user@host` o un alias de la configuración de ssh            | destino de ssh; todos los verbos salvo `plan`, `install --dry-run`, `upgrade --dry-run`, `image` y un `uninstall` sin `--yes` (o sin el objetivo `router`) fallan sin ella                                                                                                                                                                                                                                                                              |
-| `--ssh-port`     | vacío (configuración de ssh)               | `MIKROSCOPE_SSH_PORT`     |                                                              | puerto de ssh                                                                                                                                                                                                                                                                                                                                                             |
-| `--ssh-key`      | vacío (agente o configuración de ssh)      | `MIKROSCOPE_SSH_KEY`      |                                                              | fichero de identidad de ssh                                                                                                                                                                                                                                                                                                                                               |
-| `--ssh-option` | ninguno | `MIKROSCOPE_SSH_OPTIONS`, separadas por comas | `Clave=valor`, repetible; la clave, una de `StrictHostKeyChecking`, `UserKnownHostsFile`, `ConnectTimeout`, `HostKeyAlgorithms`, `PubkeyAcceptedAlgorithms`, `IdentitiesOnly`, `ServerAliveInterval`; el valor, `^[A-Za-z0-9_./~+:-]{1,256}$` | una opción de ssh y scp, que va antes de las propias de la CLI, `-o BatchMode=yes -o ConnectTimeout=15`; la primera opción sustituye la lista entera de la variable. Un router que aún no está en `known_hosts` necesita `StrictHostKeyChecking=accept-new`, porque la CLI ejecuta ssh en modo batch |
-| `--name`         | `mikroscope`                               | `MIKROSCOPE_NAME`         | `^[A-Za-z0-9][A-Za-z0-9_.-]{0,31}$`                          | nombre del contenedor; etiqueta cada objeto como `mikroscope:<name> (managed by mikroscope)`                                                                                                                                                                                                                                                                              |
-| `--veth`         | `veth-mikroscope`                          | `MIKROSCOPE_VETH`         | `^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`                          | nombre de la interfaz veth en el router                                                                                                                                                                                                                                                                                                                                   |
-| `--subnet`       | `172.30.10.0/30`                           | `MIKROSCOPE_SUBNET`       | una /30 IPv4 en su dirección de red                          | el router toma `.1`, el agente `.2`                                                                                                                                                                                                                                                                                                                                       |
-| `--iface-list` | `LAN` | `MIKROSCOPE_IFACE_LIST` | el mismo patrón que `--veth`, o `none`; ni `all`, ni `dynamic`, ni `static` | lista de interfaces a la que se une la veth; `none` no escribe ninguna pertenencia, para un cortafuegos sin reglas que descarten por lista de interfaces |
-| `--addr-list` | `LANs` | `MIKROSCOPE_ADDR_LIST` | el mismo patrón que `--veth`, o `none` | lista de direcciones a la que se une la /30, que la entrada crea si la lista no tiene ninguna; `none` no escribe ninguna entrada |
-| `--disk`         | vacío (flash interna)                      | `MIKROSCOPE_DISK`         | `^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$`                           | disco de RouterOS para el tar de la imagen y la raíz: `tmpfs`, `disk1`, `usb1` …                                                                                                                                                                                                                                                                                          |
-| `--ephemeral`    | `false`                                    | ninguna                   |                                                              | fuerza `--disk tmpfs`, y `start-on-boot=no` salvo que `--start-on-boot` diga otra cosa: nada se escribe en la flash, nada sobrevive a un reinicio                                                                                                                                                                                                                                                                     |
-| `--arch` | `auto` | `MIKROSCOPE_ARCH` | `arm64`, `arm`, `amd64` o `auto` | arquitectura del equipo, usada como `GOARCH` y en el manifiesto de la imagen. `auto` la lee del router: `doctor`, `install` y `upgrade` la toman del lote de doctor (`install --no-doctor` hace una conexión para ella, y ninguna con `--remote-image`, donde el router elige la arquitectura del índice de la imagen); `plan`, `--dry-run` e `image`, que no se conectan a nada, toman `arm64` |
-| `--goarm`        | `5`                                        | ninguna                   | `5`, `6` o `7`                                               | nivel de `GOARM`, usado solo con `--arch arm`: 5 arranca en todos los ARM de 32 bits que vende MikroTik, 7 no arranca en las placas EN7562CT (hEX Refresh)                                                                                                                                                                                                                                                                                                                             |
-| `--agent-tar`    | vacío (compilar el agente aquí)            | `MIKROSCOPE_AGENT_TAR`    | una ruta a un tar de imagen del agente                       | `plan`, `install`, `upgrade`, `image`: sube este tar en vez de compilar uno, así no hace falta ni cadena de herramientas de Go ni una copia del repositorio. El tar se comprueba antes: uno que no sea una imagen del agente mikroscope, o que esté compilado para una arquitectura distinta de `--arch`, hace fallar el verbo nombrando el recurso que hay que descargar |
-| `--remote-image` | vacío (subir un tar)                       | `MIKROSCOPE_REMOTE_IMAGE` | una referencia de registro, `owner/name:tag`, o con host, `host/owner/name:tag`         | `plan`, `install`, `upgrade`: el router se descarga la imagen él mismo, así que no se compila ni se sube nada, y no queda ningún tar en el equipo. La referencia entera va en `remote-image=`, con el host del registro incluido: sin host, `docker.io`, `index.docker.io` o `registry.hub.docker.com` pasan a ser `registry-1.docker.io`, y cualquier otro host se conserva. El ajuste global `/container/config registry-url` ni hace falta ni se escribe, y la imagen publicada no necesita login de registro                                      |
-| `--rsc`          | `false`                                    | ninguna                   |                                                              | `plan`: escribe un script de RouterOS que instala desde el propio router, en vez del listado                                                                                                                                                                                                                                                                              |
-| `--port`         | `9123`                                     | ninguna                   | 1–65535                                                      | puerto HTTP del agente en la veth                                                                                                                                                                                                                                                                                                                                         |
-| `--rate` | `10` | ninguna | 1–100 | cadencia del muestreador en Hz (envlist `RATE_HZ`); 10, 50 y 100 Hz van sin pérdidas ([techo de muestreo](/mikroscope/es/cost/rate-ceiling/)) |
-| `--buffer`       | `60`                                       | ninguna                   | 10–3600                                                      | búfer circular en segundos (envlist `BUFFER_S`)                                                                                                                                                                                                                                                                                                                           |
-| `--memory-max`   | `64M`                                      | ninguna                   | `^\d{1,6}[KMG]?$`                                            | `memory-max` del cgroup del contenedor, en sintaxis de RouterOS                                                                                                                                                                                                                                                                                                           |
-| `--mem-limit-mb` | `0` (derivado)                             | ninguna                   | `0`, u 8–1024                                                | límite blando de memoria de Go del agente en MiB (envlist `MEM_LIMIT_MB`). `0` lo deriva del anillo: cadencia × búfer × <Measured id="ring.lineChargedBytes" /> × 2,5, redondeado hacia arriba, con un mínimo de 16 MiB y un máximo de ¾ de `--memory-max` mientras ese máximo aún deje sitio al anillo. Eso da 16 con los valores por defecto. Un número que pases se usa tal cual                                                                                                                                                                     |
-| `--capture-mb`   | `4`                                        | ninguna                   | 0–256                                                        | presupuesto de captura por disparo en MiB (envlist `CAPTURE_MB`); `0` desactiva las capturas                                                                                                                                                                                                                                                                              |
-| `--triggers`     | vacío (el conjunto por defecto del agente) | ninguna                   | véase [captura por disparo](/mikroscope/es/record/triggers/) | condiciones de disparo, separadas por comas (envlist `TRIGGERS`)                                                                                                                                                                                                                                                                                                          |
-| `--floor-hz`     | `0`                                        | ninguna                   | 0–1000                                                       | una cadencia única para todas las fuentes de nivel, en Hz (envlist `FLOOR_HZ`); `0` mantiene los suelos por fuente; igual a `--rate` lee y emite cada fuente en cada tick                                                                                                                                                                                                 |
-| `--privileged`   | `true`                                     | ninguna                   |                                                              | ejecuta el contenedor con `privileged=yes`; `-privileged=false` lo desactiva                                                                                                                                                                                                                                                                                              |
-| `--container-name` | vacío (lo nombra RouterOS) | ninguna | `^[A-Za-z0-9][A-Za-z0-9_.-]{0,31}$` | el `name=` del contenedor; `doctor` comprueba que ningún otro contenedor lo tenga |
-| `--restart-max-count` | `5` | ninguna | 0–100 | `restart-max-count` de la política de reinicio on-failure del contenedor |
-| `--restart-interval` | `10s` | ninguna | `^\d{1,4}[smh]$` | `restart-interval` entre esos reinicios |
-| `--start-on-boot` | `auto` | ninguna | `auto`, `yes` o `no` | `start-on-boot` del contenedor; `auto` es `no` con `--ephemeral` y `yes` sin ella. `doctor` avisa con `yes` si la raíz está en un disco tmpfs |
-| `--extract-timeout` | `120s` | ninguna | `^\d{1,4}[smh]$`, 10–600 s | vía del tar: cuánto espera el paso del contenedor a que RouterOS extraiga la imagen antes de borrar el tar; si se agota, se detiene y lo dice, y el tar se queda. El plazo de ssh para una orden, 3 minutos, crece hasta este valor y un minuto más cuando eso es mayor |
-| `--token` | vacío | `MIKROSCOPE_TOKEN` | `^[A-Za-z0-9_.-]{0,128}$` | token bearer que exige el agente (envlist `TOKEN`); `install`, `upgrade` y `plan` lo necesitan con `--expose`, y `upgrade` rechaza una instalación que lo tenga si no recibe ninguno; `doctor` también lo envía para leer el anillo del agente. Le llega a ssh por la entrada estándar, nunca en una línea de órdenes |
-| `--expose` | `false` | ninguna | necesita `--lan-address`; `install`, `upgrade` y `plan` necesitan además `--token` | hace dst-nat del puerto del agente en la dirección LAN del router; añade dos reglas de cortafuegos etiquetadas |
-| `--lan-address`  | vacío                                      | `MIKROSCOPE_LAN_ADDRESS`  | una dirección IPv4                                           | la dirección LAN del router para `--expose`                                                                                                                                                                                                                                                                                                                               |
-| `--dry-run`      | `false`                                    | ninguna                   |                                                              | `install` y `upgrade`: imprimen el listado y no escriben nada                                                                                                                                                                                                                                                                                                                           |
-| `--yes`          | `false`                                    | ninguna                   |                                                              | `install`, `upgrade`: no pregunta antes de escribir. `uninstall`: borra lo que lista, cosa que sin esta opción no hace                                                                                                                                                                                                                                                                                                                       |
-| `--no-doctor` | `false` | ninguna |  | `install`: se salta las comprobaciones previas; con `--arch` sin fijar y sin `--remote-image`, una conexión lee la arquitectura del router |
-| `--out`          | `mikroscope-agent-<arch>.tar`              | ninguna                   |                                                              | `image`: ruta de salida del tar. `plan --rsc`: dónde se escribe el script; vacío lo escribe en la salida estándar                                                                                                                                                                                                                                                         |
+### `install` {#install}
+
+```sh
+mikroscope install --remote-image jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}
+```
+
+1. `doctor`, en una conexión, salvo con `--no-doctor`. Un requisito que falta la detiene sin
+   escribir nada.
+2. Con `--arch auto`, la arquitectura que leyó doctor; `--no-doctor` sin `--remote-image` hace una
+   conexión más para leerla, y lo dice.
+3. La imagen: compilada, leída de `--agent-tar`, o ninguna con `--remote-image`.
+4. El listado, y después `write the objects above to the router? [y/N]` salvo con `--yes`.
+   Cualquier cosa que no sea `y` la detiene con `not confirmed; nothing written`.
+5. El manifiesto de la instalación, después cada objeto, e `install done: N step(s) created`.
+6. El sondeo desde este equipo ([Acceso por
+   red](/mikroscope/es/install/reaching-the-agent/#lo-que-te-dice-el-sondeo-tras-install)).
+
+`--dry-run` se detiene tras el listado y no abre ninguna conexión.
+
+### `upgrade` {#upgrade}
+
+```sh
+mikroscope upgrade --remote-image jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}
+```
+
+- Una conexión lee cómo se hizo la instalación, si está cada paso, la arquitectura del router y,
+  con `--remote-image`, la comprobación de credenciales de registro de doctor. `upgrade` no ejecuta
+  `doctor`.
+- Rechaza un router sin instalación (`nothing to upgrade: run install first`), y una instalación con
+  token cuando no recibe ninguno.
+- Lista el manifiesto de la instalación, el paso del contenedor y cualquier paso que el router ya no
+  tenga, pregunta, escribe el manifiesto y los pasos que faltan, borra y vuelve a crear el paso del
+  contenedor, y sondea. Los objetos de red se quedan.
+- La envlist se escribe a partir de las opciones que recibe `upgrade`: una opción de ajuste que
+  falte vuelve a su valor por defecto ([Forma de la
+  instalación](#pasa-la-misma-forma-a-status-upgrade-y-uninstall)).
+- `--dry-run` se detiene tras el listado y no abre ninguna conexión.
+
+### `uninstall` {#uninstall---targets}
+
+```sh
+mikroscope uninstall                                             # lista los objetos del router
+mikroscope uninstall --yes                                       # y los borra
+mikroscope uninstall --targets all --influx … --grafana …        # lista todo
+mikroscope uninstall --targets all --influx … --grafana … --yes  # y lo borra
+```
+
+Sin `--yes` lista: con `--router` lee antes la forma de la instalación, y sin ella lista solo a
+partir de las opciones. `--targets` lo amplía más allá del router:
+
+<ScrollTable label="objetivos de uninstall">
+
+| Objetivo    | Qué se va                                                                                                                                                                                                                                         |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `router`    | todo lo que creó `install`: los objetos del manifiesto de la instalación, cualquier otro objeto con su etiqueta, la raíz del contenedor, el manifiesto y el directorio `mikroscope` si no queda nada más en él. El valor por defecto              |
+| `dashboard` | el dashboard y la fuente de datos que publicó `forward --grafana`, por cada store al que escribe este colector                                                                                                                                  |
+| `data`      | las tablas e índices que escribieron los destinos, y los ficheros que escribieron los de fichero                                                                                                                                                |
+| `all`       | los tres de arriba                                                                                                                                                                                                                                |
 
 </ScrollTable>
 
-Dos ajustes del contenedor no son opciones: `logging=yes` e
-`ignore-remote-image-change=yes`. `restart-policy=on-failure` tampoco; su número
-e intervalo son `--restart-max-count` y `--restart-interval`.
+Los objetivos `dashboard` y `data` toman las opciones de [destino](#destinos) y de
+[Grafana](#publicar-en-grafana) de `forward`, para encontrar los almacenes.
+
+- **No se borra nada sin `--yes`**, el mismo `--yes` que toman los verbos de despliegue. Una tabla
+  borrada no se puede reponer como `install` repone un objeto del router.
+- **Las tablas se le preguntan al almacén, nunca van compiladas.** Una lista dentro del binario
+  serían las medidas que escribe esta versión, y las que merece la pena borrar son las que ya nadie
+  escribe: lo que recogía una versión anterior, o una fuente apagada desde entonces. Se reclama todo
+  lo que lleva el prefijo `mikroscope_`; nada más se toca.
+- **Una fuente de datos adoptada no se borra.** Una nombrada en `--grafana-datasource-uid` era de
+  otro antes de esto y es de otro después.
+- **Una que no se va no detiene a las demás.** Cada fallo se imprime con lo que dijo el almacén y el
+  borrado continúa.
+
+<Aside type="caution" title="Tres destinos no guardan nada que esto pueda borrar">
+	A `--prom` lo raspan en vez de escribirle, así que las series viven en un Prometheus del que esto
+	no ha oído hablar y caducan con su retención. `--graphite` no ofrece borrado en absoluto: quita a
+	mano los ficheros whisper. `--sql` escribe un fichero, y las filas ya cargadas en una base de datos
+	real desde él hay que borrarlas allí, o con `--postgres` apuntado a esa base. Cada uno imprime su
+	propio motivo en lugar de faltar en silencio.
+</Aside>
+
+<Aside type="note" title="InfluxDB 3 borra una tabla renombrándola">
+	Una tabla borrada por `/api/v3/configure/table` se queda en `information_schema` con un nombre
+	que lleva el instante del borrado, `mikroscope_cpu-<timestamp>`. Esas están fuera y no se vuelven
+	a ofrecer; sin ese filtro, un uninstall listaría las mismas tablas en cada ejecución, las borraría
+	con éxito y no se vaciaría nunca. El borrado pide `hard_delete_at=now`, que el servidor acepta y
+	programa.
+</Aside>
+
+### `status` {#status}
+
+```sh
+mikroscope status
+```
+
+Imprime lo que leyó de la instalación, el recuento de propiedad de cada paso y, cuando hay algo
+instalado, la salud del agente, leída directamente con un plazo de 3 s:
+
+```text
+install on the router (manifest mikroscope/mikroscope.manifest.txt): veth veth-mikroscope, subnet 172.30.10.0/30, lists LAN/LANs, port 9123, …
+  1     install manifest mikroscope/mikroscope.manifest.txt
+  1     veth interface veth-mikroscope
+  …
+agent: {{MIKROSCOPE_VERSION}} (<commit>) built <time>, 10 Hz, seq 19 (oldest 1), up 2s, 0 slipped, 1ms round trip
+```
+
+### `image` {#image}
+
+```sh
+mikroscope image --arch arm64 --out mikroscope-agent-arm64.tar
+```
+
+Construye el tar de la imagen del agente para `--arch`, `arm64` con `auto`, y lo escribe en `--out`,
+por defecto `mikroscope-agent-<arch>.tar`. Rechaza `--remote-image`, porque no hay ningún tar que
+escribir.
 
 ### Forma de la instalación {#pasa-la-misma-forma-a-status-upgrade-y-uninstall}
 
 `status`, `upgrade` y `uninstall` leen cómo se hizo la instalación del router antes de construir su
-plan: de su manifiesto, `mikroscope/<name>.manifest.txt` en su disco, o, para una instalación hecha
-por 1.3.x, que no lo tiene, de los objetos que llevan su etiqueta.
+plan: de su manifiesto, `mikroscope/<name>.manifest.txt` en su disco, o, para una instalación sin
+manifiesto, de los objetos que llevan su etiqueta.
 
 - Una opción de forma que no se da toma el valor con que se hizo la instalación: `--veth`,
   `--subnet`, `--iface-list`, `--addr-list`, `--disk` (y `--ephemeral`), `--port`, `--expose` con
@@ -185,15 +264,16 @@ por 1.3.x, que no lo tiene, de los objetos que llevan su etiqueta.
   router does not match the flags: installed with --iface-list MYLAN, given LAN`. Así ocurre con
   `--veth`, `--subnet`, `--iface-list`, `--addr-list`, `--disk` y `--ephemeral`, `--port`, y
   `--expose` con `--lan-address`. `--container-name`, `--start-on-boot` y `--remote-image` se
-  rellenan si no se dan y nunca se rechazan: gana la opción dada, y `upgrade` toma su imagen solo
-  de sus propias opciones.
+  rellenan si no se dan y nunca se rechazan: gana la opción dada, y `upgrade` toma su imagen solo de
+  sus propias opciones.
 - `--name` selecciona la instalación, y nunca se lee del router.
 - `upgrade` vuelve a escribir la envlist a partir de sus propias opciones: un `upgrade` sin el
   `--rate`, `--buffer`, `--mem-limit-mb`, `--capture-mb`, `--triggers` o `--floor-hz` con los que
   instalaste escribe en su lugar los valores por defecto, y `--memory-max`, `--privileged`,
   `--restart-max-count` y `--restart-interval` vuelven igualmente a los suyos. Rechaza una
-  instalación cuya envlist tiene un `TOKEN` si no recibe `--token`, así que un agente expuesto
-  nunca pierde su autenticación en un upgrade.
+  instalación cuya envlist tiene un `TOKEN` si no recibe `--token`: `the install named mikroscope
+  asks for a token and upgrade would write its envlist without one: pass --token (or
+  MIKROSCOPE_TOKEN)`.
 
 ### Escrituras en el router {#lo-que-escriben-los-verbos-que-escriben}
 
@@ -205,76 +285,123 @@ por 1.3.x, que no lo tiene, de los objetos que llevan su etiqueta.
 
 <RouterWrites command="uninstall" />
 
-### `uninstall --targets`
+## Opciones de despliegue {#opciones-de-los-verbos-de-despliegue}
 
-`uninstall` significa «todo lo que creó `install` en el router» cuando no se le
-da nada más. `--targets` lo amplía.
+`doctor`, `plan`, `install`, `upgrade`, `uninstall`, `status` e `image` admiten todas las opciones de
+abajo.
 
-<ScrollTable label="objetivos de uninstall">
+### Conexión {#conexión}
 
-| Objetivo    | Qué se va                                                                                          |
-| ----------- | ---------------------------------------------------------------------------------------------------- |
-| `router` | todo lo que creó `install`: los objetos del manifiesto de la instalación, cualquier otro objeto con su etiqueta, la raíz del contenedor, el manifiesto y el directorio `mikroscope` si no queda nada más en él — el valor por defecto |
-| `dashboard` | el dashboard y la fuente de datos que publicó `forward --grafana`, por cada store al que escribe      |
-| `data`      | las tablas e índices que escribieron los destinos, y los ficheros que escribieron los de fichero      |
-| `all`       | los tres de arriba                                                                                    |
+<ScrollTable label="Opciones de conexión de los verbos de despliegue">
+
+| Opción         | Por defecto                           | Variable                                        | Admite                                                                                                                                                                                                                                  | Significado                                                                                                                                                                                                                                              |
+| -------------- | ------------------------------------- | ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--router`     | ninguno, obligatoria                  | `MIKROSCOPE_ROUTER`                             | `user@host` o un alias de la configuración de ssh                                                                                                                                                                                       | destino de ssh; todos los verbos salvo `plan`, `install --dry-run`, `upgrade --dry-run`, `image` y un `uninstall` sin `--yes` fallan sin ella                                                                                                              |
+| `--ssh-port`   | vacío (configuración de ssh)          | `MIKROSCOPE_SSH_PORT`                           |                                                                                                                                                                                                                                         | puerto de ssh                                                                                                                                                                                                                                            |
+| `--ssh-key`    | vacío (agente o configuración de ssh) | `MIKROSCOPE_SSH_KEY`                            |                                                                                                                                                                                                                                         | fichero de identidad de ssh                                                                                                                                                                                                                              |
+| `--ssh-option` | ninguno                               | `MIKROSCOPE_SSH_OPTIONS`, separadas por comas   | `Clave=valor`, repetible; la clave, una de `StrictHostKeyChecking`, `UserKnownHostsFile`, `ConnectTimeout`, `HostKeyAlgorithms`, `PubkeyAcceptedAlgorithms`, `IdentitiesOnly`, `ServerAliveInterval`; el valor, `^[A-Za-z0-9_./~+:-]{1,256}$` | una opción de ssh y scp, que va antes de las propias de la CLI, `-o BatchMode=yes -o ConnectTimeout=15`; la primera opción sustituye la lista entera de la variable. Un router que aún no está en `known_hosts` necesita `StrictHostKeyChecking=accept-new`, porque la CLI ejecuta ssh en modo batch |
 
 </ScrollTable>
 
-```sh
-mikroscope uninstall                                  # lista los objetos del router
-mikroscope uninstall --yes                            # y los borra
-mikroscope uninstall --targets all --influx … --grafana …        # lista todo
-mikroscope uninstall --targets all --influx … --grafana … --yes  # y lo borra
-```
+### Objetos del router {#objetos-del-router}
 
-**No se borra nada sin `--yes`**, y es el mismo `--yes` que toman los verbos de
-despliegue. Por defecto se lista, porque la alternativa es una orden mal escrita
-que vacía un almacén — y al contrario que los objetos del router, que `install`
-vuelve a poner, una tabla borrada es una tabla borrada.
+<ScrollTable label="Opciones que nombran y colocan los objetos del router">
 
-**Las tablas se le preguntan al almacén, nunca van compiladas.** Una lista dentro
-del binario serían las medidas que escribe *esta* versión, y las que merece la
-pena borrar son justamente las que ya nadie escribe: lo que recogía una versión
-anterior, o una fuente apagada desde entonces. Se reclama todo lo que lleva el
-prefijo `mikroscope_`; nada más se toca, nunca.
+| Opción          | Por defecto           | Variable                 | Admite                                                                              | Significado                                                                                                                                                                     |
+| --------------- | --------------------- | ------------------------ | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--name`        | `mikroscope`          | `MIKROSCOPE_NAME`        | `^[A-Za-z0-9][A-Za-z0-9_.-]{0,31}$`                                                 | el nombre de la instalación; etiqueta cada objeto como `mikroscope:<name> (managed by mikroscope)` y da nombre a la envlist, la raíz y el manifiesto                             |
+| `--veth`        | `veth-mikroscope`     | `MIKROSCOPE_VETH`        | `^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`                                                 | nombre de la interfaz veth en el router                                                                                                                                         |
+| `--subnet`      | `172.30.10.0/30`      | `MIKROSCOPE_SUBNET`      | una /30 IPv4 en su dirección de red                                                 | el router toma `.1`, el agente `.2`                                                                                                                                             |
+| `--port`        | `9123`                | ninguna                  | 1–65535                                                                             | puerto HTTP del agente en la veth                                                                                                                                               |
+| `--iface-list`  | `LAN`                 | `MIKROSCOPE_IFACE_LIST`  | el mismo patrón que `--veth`, o `none`; ni `all`, ni `dynamic`, ni `static`         | lista de interfaces a la que se une la veth; `none` no escribe ninguna pertenencia ([Listas del firewall](/mikroscope/es/install/firewall/))                                     |
+| `--addr-list`   | `LANs`                | `MIKROSCOPE_ADDR_LIST`   | el mismo patrón que `--veth`, o `none`                                              | lista de direcciones a la que se une la /30, que la entrada crea si la lista no tiene ninguna; `none` no escribe ninguna entrada                                                 |
+| `--disk`        | vacío (flash interna) | `MIKROSCOPE_DISK`        | `^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$`                                                  | disco de RouterOS para el manifiesto, el tar de la imagen y la raíz: `tmpfs`, `disk1`, `usb1` …                                                                                 |
+| `--ephemeral`   | `false`               | ninguna                  |                                                                                     | fuerza `--disk tmpfs`, y `start-on-boot=no` salvo que `--start-on-boot` diga otra cosa: nada se escribe en la flash, nada sobrevive a un reinicio                                |
+| `--expose`      | `false`               | ninguna                  | necesita `--lan-address`; `install`, `upgrade` y `plan` necesitan además `--token`  | hace dst-nat del puerto del agente en la dirección LAN del router; añade dos reglas de cortafuegos etiquetadas ([Exponer en la LAN](/mikroscope/es/security/expose/))           |
+| `--lan-address` | vacío                 | `MIKROSCOPE_LAN_ADDRESS` | una dirección IPv4                                                                  | la dirección LAN del router para `--expose`                                                                                                                                     |
 
-**Una fuente de datos adoptada no se borra.** Una nombrada en
-`--grafana-datasource-uid` era de otro antes de esto y es de otro después:
-publicar la deja en paz y esto también.
+</ScrollTable>
 
-**Una que no se va no detiene a las demás.** Cada fallo se imprime con lo que
-dijo el almacén y el borrado continúa, porque parar en el primero lo dejaría a
-medias y sin lista de lo que queda.
+### Imagen del agente {#imagen-del-agente}
 
-<Aside type="caution" title="Tres destinos no guardan nada que esto pueda borrar">
-  A `--prom` lo raspan en vez de escribirle, así que las series viven en un
-  Prometheus del que esto no ha oído hablar y caducan con su retención.
-  `--graphite` no ofrece borrado en absoluto: quita a mano los ficheros whisper.
-  `--sql` escribe un fichero, y las filas ya cargadas en una base de datos real
-  desde él hay que borrarlas allí — o con `--postgres` apuntado a esa base. Cada
-  uno imprime su propio motivo en lugar de faltar en silencio, porque el
-  silencio se leería como que no hay nada que borrar.
+<ScrollTable label="Opciones que eligen la imagen del agente">
+
+| Opción           | Por defecto                     | Variable                  | Admite                                                                  | Significado                                                                                                                                                                                                                                                                                                                                              |
+| ---------------- | ------------------------------- | ------------------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--arch`         | `auto`                          | `MIKROSCOPE_ARCH`         | `arm64`, `arm`, `amd64` o `auto`                                        | arquitectura del equipo, usada como `GOARCH` y en el manifiesto de la imagen. `auto` la lee del router: `doctor`, `install` y `upgrade` la toman del lote de doctor (`install --no-doctor` hace una conexión para ella, y ninguna con `--remote-image`, donde el router elige la arquitectura del índice de la imagen); `plan`, `--dry-run` e `image`, que no se conectan a nada, toman `arm64` |
+| `--goarm`        | `5`                             | ninguna                   | `5`, `6` o `7`                                                          | nivel de `GOARM`, usado solo con `--arch arm`: 5 arranca en todos los ARM de 32 bits que vende MikroTik, 7 no arranca en las placas EN7562CT ([Requisitos](/mikroscope/es/install/prerequisites/) las enumera)                                                                                                                                         |
+| `--agent-tar`    | vacío (compilar el agente aquí) | `MIKROSCOPE_AGENT_TAR`    | una ruta a un tar de imagen del agente                                  | `plan`, `install`, `upgrade`, `image`: sube este tar en vez de compilar uno, así no hace falta ni cadena de herramientas de Go ni una copia del repositorio. El tar se comprueba antes: uno que no sea una imagen del agente mikroscope, o que esté compilado para otra arquitectura que la del router o `--arch`, hace fallar el verbo nombrando el recurso que hay que descargar |
+| `--remote-image` | vacío (subir un tar)            | `MIKROSCOPE_REMOTE_IMAGE` | una referencia de registro, `owner/name:tag` o `host/owner/name:tag`    | `plan`, `install`, `upgrade`: el router se descarga la imagen él mismo, así que no se compila ni se sube nada y no queda ningún tar en el equipo. La referencia entera va en `remote-image=`, con el host del registro incluido: sin host, `docker.io`, `index.docker.io` o `registry.hub.docker.com` pasan a ser `registry-1.docker.io`, y cualquier otro host se conserva. `/container/config registry-url` ni hace falta ni se escribe, y la imagen publicada no necesita login de registro |
+
+</ScrollTable>
+
+<Aside type="note" title="Tres maneras de conseguir la imagen del agente, a una opción de distancia">
+	Sin `--agent-tar` ni `--remote-image`, `plan`, `install`, `upgrade` e `image` ejecutan
+	`go build -trimpath ./cmd/mikroscope-agent` con `CGO_ENABLED=0`, `GOOS=linux` y la arquitectura
+	como `GOARCH` (<Src path="internal/image/image.go" />), que necesita una copia del repositorio y
+	una cadena de herramientas de Go en el `PATH`; sin ella la compilación falla nombrando ambas
+	opciones y la versión de Go, antes de que se liste nada. Con `--agent-tar` leen y comprueban el
+	tar publicado. Con `--remote-image` no se compila ni se sube nada. `plan --rsc` no consigue
+	ninguna imagen en esta máquina: su script necesita `--remote-image` o un tar que ya esté en el
+	router. [Métodos de instalación](/mikroscope/es/install/routes/) pone las vías una al lado de otra.
 </Aside>
 
-Un almacén necesita una palabra sobre qué significa «borrada» para él:
+### Ajustes del agente {#ajustes-del-agente}
 
-<Aside type="note" title="InfluxDB 3 borra una tabla renombrándola">
-  Una tabla borrada por `/api/v3/configure/table` se queda en
-  `information_schema` con un nombre que lleva el instante del borrado —
-  `mikroscope_cpu-<timestamp>`. Esas están fuera y no
-  se vuelven a ofrecer; sin ese filtro, un uninstall listaría las mismas tablas
-  en cada ejecución, las borraría con éxito y no se vaciaría nunca. El borrado
-  pide `hard_delete_at=now`, que el servidor acepta y programa.
-</Aside>
+<ScrollTable label="Opciones que se escriben en la envlist del agente">
+
+| Opción           | Por defecto                                | Variable           | Admite                                                          | Significado                                                                                                                                                                                                                                                                                                                              |
+| ---------------- | ------------------------------------------ | ------------------ | --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--rate`         | `10`                                       | ninguna            | 1–100                                                           | cadencia del muestreador en Hz (envlist `RATE_HZ`); 10, 50 y 100 Hz van sin pérdidas ([Techo de muestreo](/mikroscope/es/cost/rate-ceiling/))                                                                                                                                                                                           |
+| `--buffer`       | `60`                                       | ninguna            | 10–3600                                                         | búfer circular en segundos (envlist `BUFFER_S`)                                                                                                                                                                                                                                                                                          |
+| `--mem-limit-mb` | `0` (derivado)                             | ninguna            | `0`, u 8–1024                                                   | límite blando de memoria de Go del agente en MiB (envlist `MEM_LIMIT_MB`). `0` lo deriva del anillo: cadencia × búfer × <Measured id="ring.lineChargedBytes" /> × 2,5, redondeado hacia arriba, con un mínimo de 16 MiB y un máximo de ¾ de `--memory-max` mientras ese máximo aún deje sitio al anillo. Eso da 16 con los valores por defecto. Un número que pases se usa tal cual |
+| `--capture-mb`   | `4`                                        | ninguna            | 0–256                                                           | presupuesto de captura por disparo en MiB (envlist `CAPTURE_MB`); `0` desactiva las capturas                                                                                                                                                                                                                                             |
+| `--triggers`     | vacío (el conjunto por defecto del agente) | ninguna            | véase [Captura por disparo](/mikroscope/es/record/triggers/)    | condiciones de disparo, separadas por comas (envlist `TRIGGERS`)                                                                                                                                                                                                                                                                         |
+| `--floor-hz`     | `0`                                        | ninguna            | 0–1000                                                          | una cadencia única para todas las fuentes de nivel, en Hz (envlist `FLOOR_HZ`); `0` mantiene los suelos por fuente; igual a `--rate` lee y emite cada fuente en cada tick                                                                                                                                                                |
+| `--token`        | vacío                                      | `MIKROSCOPE_TOKEN` | `^[A-Za-z0-9_.-]{0,128}$`                                       | token bearer que exige el agente (envlist `TOKEN`); `install`, `upgrade` y `plan` lo necesitan con `--expose`, y `upgrade` rechaza una instalación que lo tenga si no recibe ninguno; `doctor` también lo envía para leer el anillo del agente. Le llega a ssh por la entrada estándar, nunca en una línea de órdenes                  |
+
+</ScrollTable>
+
+### Ajustes del contenedor {#ajustes-del-contenedor}
+
+<ScrollTable label="Opciones que fijan los ajustes propios del contenedor">
+
+| Opción                | Por defecto                | Variable | Admite                                | Significado                                                                                                                                                                                                                                                    |
+| --------------------- | -------------------------- | -------- | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--container-name`    | vacío (lo nombra RouterOS) | ninguna  | `^[A-Za-z0-9][A-Za-z0-9_.-]{0,31}$`   | el `name=` del contenedor; `doctor` comprueba que ningún otro contenedor lo tenga. Los borrados seleccionan por la etiqueta, no por este nombre                                                                                                                |
+| `--memory-max`        | `64M`                      | ninguna  | `^\d{1,6}[KMG]?$`                     | `memory-max` del cgroup del contenedor, en sintaxis de RouterOS                                                                                                                                                                                                |
+| `--privileged`        | `true`                     | ninguna  |                                       | ejecuta el contenedor con `privileged=yes`; `-privileged=false` lo desactiva ([Modo privilegiado](/mikroscope/es/limits/privileged/))                                                                                                                          |
+| `--start-on-boot`     | `auto`                     | ninguna  | `auto`, `yes` o `no`                  | `start-on-boot` del contenedor; `auto` es `no` con `--ephemeral` y `yes` sin ella. `doctor` avisa con `yes` si la raíz está en un disco tmpfs                                                                                                                  |
+| `--restart-max-count` | `5`                        | ninguna  | 0–100                                 | `restart-max-count` de la `restart-policy=on-failure` del contenedor                                                                                                                                                                                           |
+| `--restart-interval`  | `10s`                      | ninguna  | `^\d{1,4}[smh]$`                      | `restart-interval` entre esos reinicios                                                                                                                                                                                                                        |
+| `--extract-timeout`   | `120s`                     | ninguna  | `^\d{1,4}[smh]$`, de 10 a 600 s       | vía del tar: cuánto espera el paso del contenedor a que RouterOS extraiga la imagen antes de borrar el tar; si se agota, se detiene y lo dice, y el tar se queda. El plazo de ssh para una orden, 3 minutos, crece hasta este valor y un minuto más cuando eso es mayor |
+
+</ScrollTable>
+
+Dos ajustes del contenedor no son opciones: `logging=yes` e `ignore-remote-image-change=yes`.
+[Almacenamiento y ajustes del contenedor](/mikroscope/es/install/layout/#los-ajustes-del-contenedor) los tiene
+todos.
+
+### Control de la ejecución {#control-de-la-ejecución}
+
+<ScrollTable label="Opciones que controlan cómo se ejecuta un verbo de despliegue">
+
+| Opción        | Por defecto                   | Variable | Significado                                                                                                                                             |
+| ------------- | ----------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--dry-run`   | `false`                       | ninguna  | `install` y `upgrade`: imprimen el listado y no escriben nada; no se abre ninguna conexión                                                              |
+| `--yes`       | `false`                       | ninguna  | `install`, `upgrade`: no pregunta antes de escribir. `uninstall`: borra lo que lista, cosa que sin esta opción no hace                                 |
+| `--no-doctor` | `false`                       | ninguna  | `install`: se salta las comprobaciones previas; con `--arch auto` y sin `--remote-image`, una conexión lee la arquitectura del router                   |
+| `--out`       | `mikroscope-agent-<arch>.tar` | ninguna  | `image`: ruta de salida del tar. `plan --rsc`: dónde se escribe el script; vacío lo escribe en la salida estándar                                       |
+| `--rsc`       | `false`                       | ninguna  | `plan`: escribe un script de RouterOS que instala desde el propio router, en vez del listado                                                            |
+
+</ScrollTable>
 
 ## record, mark y plot
 
-Los tres verbos comparten un juego de opciones con `forward`, así que una opción
-que significa algo para un hermano se acepta y se ignora: `plot --for 5m` se
-analiza y no hace nada. La tabla marca qué verbo lee cada opción. `--from-start`
-es la excepción: solo `record` la registra, y `forward`, `mark` y `plot` la
-rechazan como opción desconocida. `forward` empieza siempre por la muestra más
+Los tres verbos comparten un juego de opciones con `forward`, así que una opción que significa algo
+para un hermano se acepta y se ignora: `plot --for 5m` se analiza y no hace nada. La tabla marca qué
+verbo lee cada opción. `--from-start` es la excepción: solo `record` la registra, y `forward`,
+`mark` y `plot` la rechazan como opción desconocida. `forward` empieza siempre por la muestra más
 reciente del agente (<Src path="internal/forward/" />).
 
 <ScrollTable label="Opciones de record, mark y plot">
@@ -285,8 +412,8 @@ reciente del agente (<Src path="internal/forward/" />).
 | `--for`         | `0` (hasta Ctrl-C)           | ninguna               | `record`, `forward`         | funciona este tiempo y se detiene                                                                                                                                                                                                                                                                                              |
 | `--from-start`  | `false`                      | ninguna               | `record`                    | rellena con todo lo que guarda el anillo del agente antes de pasar a directo                                                                                                                                                                                                                                                   |
 | `--poll`        | `500ms`                      | ninguna               | `record`, `forward`         | cada cuánto se tira del anillo del agente                                                                                                                                                                                                                                                                                      |
-| `--batch`       | `0`                          | ninguna               | `record`, `forward`         | muestras por petición; `0` es el doble de lo que produce un `--poll` a la cadencia del agente, nunca menos de 20. El relay limita una petición a <Measured id="relay.maxBatch" />. Una petición se repite hasta que vuelve corta                                                                                                                             |
-| `--transport`   | `auto`                       | ninguna               | `record`, `forward`         | `auto` (directo, luego relay), `direct` (HTTP a la veth) o `relay` (`/tool fetch` sobre la API de RouterOS; cada llamada devuelve como mucho <Measured id="relay.replyMaxBytes" /> y tarda unos 3 ms o 1 s; consulta [llegar al agente](/mikroscope/es/install/reaching-the-agent/)) |
+| `--batch`       | `0`                          | ninguna               | `record`, `forward`         | muestras por petición; `0` es el doble de lo que produce un `--poll` a la cadencia del agente, nunca menos de 20. El relay limita una petición a <Measured id="relay.maxBatch" />. Una petición se repite hasta que vuelve corta                                                                                              |
+| `--transport`   | `auto`                       | ninguna               | `record`, `forward`         | `auto` (directo, luego relay), `direct` (HTTP a la veth) o `relay` (`/tool fetch` sobre la API de RouterOS; cada llamada devuelve como mucho <Measured id="relay.replyMaxBytes" /> y tarda unos 3 ms o alrededor de 1 s; consulta [Acceso por red](/mikroscope/es/install/reaching-the-agent/)) |
 | `--log-markers` | `false`                      | ninguna               | `record`, `mark`            | `record`: tras grabar, trae el log del router por la API y añade las líneas que casan a `<out>.markers.csv`. `mark`: añade las líneas del log de la ventana de la grabación                                                                                                                                                    |
 | `--topics`      | `system,interface,container` | ninguna               | `record`, `mark`            | temas del log que se conservan como marcadores con `--log-markers`                                                                                                                                                                                                                                                             |
 | `--router-tz`   | `Local`                      | ninguna               | `record`, `mark`            | zona IANA que muestra el reloj del router; las horas del log de RouterOS no llevan zona                                                                                                                                                                                                                                        |
@@ -302,25 +429,23 @@ reciente del agente (<Src path="internal/forward/" />).
 </ScrollTable>
 
 `mark` toma el texto del marcador de los argumentos restantes,
-`mikroscope mark --out cap "queue tree applied"`, o `--log-markers` en lugar
-de texto. `record` convierte en marcador cada línea que se escribe en un
-terminal; cuando la entrada estándar no es un terminal, no la lee.
+`mikroscope mark --out cap "queue tree applied"`, o `--log-markers` en lugar de texto. `record`
+convierte en marcador cada línea que se escribe en un terminal; cuando la entrada estándar no es un
+terminal, no la lee.
 
-`auto` prueba primero `/healthz` por el transporte directo. Si no responde,
-necesita `--api`, `--api-user` y `MIKROSCOPE_API_PASSWORD` para probar el relay,
-y falla nombrando `install --expose` cuando el transporte directo no responde y
-el relay no está configurado; un relay configurado que falla informa
-`relay transport:` y su error. El relay no lleva el token: `/tool fetch` en el router no envía cabecera
-`Authorization`, así que de un agente con token solo se puede tirar por el
+`auto` prueba primero `/healthz` por el transporte directo. Si no responde, necesita `--api`,
+`--api-user` y `MIKROSCOPE_API_PASSWORD` para probar el relay, y falla nombrando `install --expose`
+cuando el transporte directo no responde y el relay no está configurado; un relay configurado que
+falla informa `relay transport:` y su error. El relay no lleva el token: `/tool fetch` en el router
+no envía cabecera `Authorization`, así que de un agente con token solo se puede tirar por el
 transporte directo.
 
 ## forward
 
-`forward` ejecuta el colector: tira de la capa del kernel desde el agente,
-consulta la capa de la API de RouterOS y escribe ambas en cada destino
-nombrado. Lee `--for`, `--poll`, `--batch`, `--transport`, `--api`,
-`--api-user`, `--token`, `--port` y `--subnet` de la tabla de arriba, además de
-sus propias opciones de abajo. Se niega a arrancar sin al menos un destino.
+`forward` ejecuta el colector: tira de la capa del kernel desde el agente, consulta la capa de la API
+de RouterOS y escribe ambas en cada destino nombrado. Lee `--for`, `--poll`, `--batch`,
+`--transport`, `--api`, `--api-user`, `--token`, `--port` y `--subnet` de la tabla de arriba, además
+de sus propias opciones de abajo. Se niega a arrancar sin al menos un destino.
 
 ### Capa de la API
 
@@ -331,17 +456,16 @@ sus propias opciones de abajo. Se niega a arrancar sin al menos un destino.
 | `--api-mode`        | `full`      | ninguna                 | preajuste. `off` pone `--api-every 0` salvo que la fijes tú, así que el colector no abre ninguna sesión de la capa de la API; el transporte de relay sigue usando la API. `slow` ejecuta la capa cada 10 s sin `/system/health` y sin recuento de conntrack; se siguen leyendo `/system/resource`, `/system/resource/cpu`, `monitor-traffic` sobre `--interfaces` y los contadores de puerto de `--counters-every`. `full` (los valores por defecto de las opciones) lo lee todo. Una opción explícita de las de abajo gana sobre él |
 | `--api-every`       | `1s`        | ninguna                 | cadencia de la capa de la API; `0` desactiva la capa. `off` la pone a `0`, `slow` a `10s`                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `--interfaces`      | vacío       | `MIKROSCOPE_INTERFACES` | interfaces separadas por comas para `monitor-traffic`, una sola llamada para todas                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `--conntrack-every` | `0`         | ninguna                 | pregunta el recuento de conntrack con esta frecuencia; `0` nunca, porque es un recorrido de tabla. Un recorrido tardó <Measured id="api.conntrackMs" /> con <Measured id="conntrack.api" /> entradas. `slow` la pone a `0` salvo que se dé explícitamente                                                                                                                                                                                                                                         |
+| `--conntrack-every` | `0`         | ninguna                 | pregunta el recuento de conntrack con esta frecuencia; `0` nunca, porque es un recorrido de tabla. Un recorrido tardó <Measured id="api.conntrackMs" /> con <Measured id="conntrack.api" /> entradas. `slow` la pone a `0` salvo que se dé explícitamente                                                                                                                                                                                                                                                                           |
 | `--counters-every`  | `10s`       | ninguna                 | lee los contadores acumulados de cada puerto (errores por tipo, reparto de fast-path, caídas de enlace, tamaños de trama) con esta frecuencia; `0` nunca                                                                                                                                                                                                                                                                                                                                                                             |
 | `--labels-every`    | `5m`        | ninguna                 | vuelve a leer qué es cada interfaz (etiqueta a partir de su comentario, tipo, listas de interfaces, bridge, MTU); se lee una vez antes del primer tirón del kernel y luego con esta frecuencia; `0` toma el valor por defecto de 5 min                                                                                                                                                                                                                                                                                               |
 | `--no-health`       | `false`     | ninguna                 | se salta `/system/health`. `slow` la activa                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 
 </ScrollTable>
 
-Sin `--api` ni `--api-user`, `forward` ejecuta solo la capa del kernel. Con ellos,
-una primera marcación fallida registra `api tier: not connected yet, will keep
-trying: …` y la capa conecta en la primera ronda que el router responda; no queda
-deshabilitada en toda la vida del proceso.
+Sin `--api` ni `--api-user`, `forward` ejecuta solo la capa del kernel. Con ellos, una primera
+marcación fallida registra `api tier: not connected yet, will keep trying: …` y la capa conecta en
+la primera ronda que el router responda; no queda deshabilitada en toda la vida del proceso.
 
 ### Destinos
 
@@ -362,7 +486,7 @@ deshabilitada en toda la vida del proceso.
 | `--elastic-index`   | `mikroscope-%Y.%m.%d` | ninguna                    | nombre del índice; `%Y`, `%m`, `%d` se expanden a la fecha del evento                                                                          |
 | `--sql`             | vacío                 | ninguna                    | escribe sentencias de PostgreSQL/TimescaleDB en esta ruta, o en la salida estándar con `-`; no hay driver de base de datos                     |
 | `--sql-hypertable`  | `false`               | ninguna                    | emite también llamadas `create_hypertable` de TimescaleDB en la cabecera SQL; se aplica también a `--postgres`                                 |
-| `--postgres`        | vacío                 | `MIKROSCOPE_POSTGRES_DSN`  | envía las mismas sentencias a un PostgreSQL en marcha. La única opción de destino que puede llevar una credencial: ver más abajo               |
+| `--postgres`        | vacío                 | `MIKROSCOPE_POSTGRES_DSN`  | envía las mismas sentencias a un PostgreSQL en marcha. La única opción de destino que puede llevar una credencial; ver más abajo               |
 | `--telegraf`        | vacío                 | `MIKROSCOPE_TELEGRAF_URL`  | receptor de Telegraf: `http://host:8186/telegraf`, `tcp://host:8094` o `udp://host:8094`                                                       |
 | `--stdout`          | vacío                 | ninguna                    | escribe en la salida estándar como `lp` (line protocol de InfluxDB) o `json` (NDJSON); cualquier otro valor se rechaza                         |
 | `--host-tag`        | `router`              | `MIKROSCOPE_HOST_TAG`      | etiqueta o label de host en cada punto, en todos los destinos                                                                                  |
@@ -370,63 +494,55 @@ deshabilitada en toda la vida del proceso.
 
 </ScrollTable>
 
-Ningún **token** de destino es una opción, porque una opción se ve en `ps` y en
-el historial de la shell: salen de `MIKROSCOPE_INFLUX_TOKEN`,
-`MIKROSCOPE_LOKI_TOKEN`, `MIKROSCOPE_OTLP_TOKEN`, `MIKROSCOPE_ELASTIC_AUTH` y
-`MIKROSCOPE_TELEGRAF_TOKEN`. Un destino pedido que no se puede construir
+Ningún **token** de destino es una opción, porque una opción se ve en `ps` y en el historial de la
+shell: salen de `MIKROSCOPE_INFLUX_TOKEN`, `MIKROSCOPE_LOKI_TOKEN`, `MIKROSCOPE_OTLP_TOKEN`,
+`MIKROSCOPE_ELASTIC_AUTH` y `MIKROSCOPE_TELEGRAF_TOKEN`. Un destino pedido que no se puede construir
 detiene `forward` antes de que tire de nada.
 
-`--postgres` es la excepción, y lo es a propósito. Una cadena de conexión de
-PostgreSQL es la forma que toma cualquier cliente de PostgreSQL, y pgx lee
-`PGPASSWORD`, `~/.pgpass` y el fichero de servicio igual que `psql` — así que
-un DSN **sin** contraseña funciona como un operador ya espera. La opción existe
-para que el DSN pueda decir host, base de datos, usuario y `sslmode` en la línea
-de órdenes; la contraseña va en uno de esos tres sitios, o en
-`MIKROSCOPE_POSTGRES_DSN` dentro de un fichero de entorno. Una contraseña
-escrita en la opción la puede leer cualquier proceso de la máquina.
+`--postgres` es la excepción, a propósito. Una cadena de conexión de PostgreSQL es la forma que toma
+cualquier cliente de PostgreSQL, y pgx lee `PGPASSWORD`, `~/.pgpass` y el fichero de servicio igual
+que `psql`, así que un DSN **sin** contraseña funciona como un operador ya espera. La opción existe
+para que el DSN pueda decir host, base de datos, usuario y `sslmode` en la línea de órdenes; la
+contraseña va en uno de esos tres sitios, o en `MIKROSCOPE_POSTGRES_DSN` dentro de un fichero de
+entorno. Una contraseña escrita en la opción la puede leer cualquier proceso de la máquina.
 
-Al salir, `forward` imprime el número de muestras del kernel, muestras de la
-API, huecos y saltos de desfase, y para cada destino cuántos eventos escribió,
-descartó y en cuántos falló. Mientras funciona, registra en la salida de error
-una línea por minuto con los recuentos de kernel, API, huecos, disparos y
-detecciones, el recuento de reinicios del agente, el último número de secuencia, y
-los escritos, descartados y
-errores de cada destino. Cuando la capa de la API ha fallado o ha reconectado añade
-`api: N failed round(s), N reconnect(s)`.
+Al salir, `forward` imprime el número de muestras del kernel, muestras de la API, huecos y saltos de
+desfase, y para cada destino cuántos eventos escribió, descartó y en cuántos falló. Mientras
+funciona, registra en la salida de error una línea por minuto con los recuentos de kernel, API,
+huecos, disparos y detecciones, el recuento de reinicios del agente, el último número de secuencia,
+y los escritos, descartados y errores de cada destino. Cuando la capa de la API ha fallado o ha
+reconectado añade `api: N failed round(s), N reconnect(s)`.
 
-El destino Prometheus del colector dimensiona su histograma de ticks ocupados
-para 10 Hz sea cual sea la cadencia del agente (`promHistogramRateHz` en
-el fichero <Src path="cmd/mikroscope/sinkflags.go" />), así que la disposición de los buckets no cambia
-cuando se reconecta a un agente configurado de otra forma. [Familias de
-métricas de Prometheus](/mikroscope/es/reference/metrics/) cuenta qué más se
-sigue de esa constante.
+El destino Prometheus del colector dimensiona su histograma de ticks ocupados para 10 Hz sea cual sea
+la cadencia del agente (`promHistogramRateHz` en <Src path="cmd/mikroscope/sinkflags.go" />), así
+que la disposición de los buckets no cambia cuando se reconecta a un agente configurado de otra
+forma. [Métricas de Prometheus](/mikroscope/es/reference/metrics/) cuenta qué más se sigue de esa
+constante.
 
-### Publicar en Grafana
+### Publicación en Grafana {#publicar-en-grafana}
 
-`forward` puede conciliar una fuente de datos y un dashboard por cada store al
-que escribe, una vez, al arrancar, antes de la primera muestra. Está apagado si
-no se da `--grafana`, y el token es `GRAFANA_TOKEN` — publicar sin uno
-escribiría como aquel por quien el servidor tome a quien pregunta.
+`forward` puede conciliar una fuente de datos y un dashboard por cada store al que escribe, una vez,
+al arrancar, antes de la primera muestra. Está apagado si no se da `--grafana`, y el token es
+`GRAFANA_TOKEN`: publicar sin uno escribiría como aquel por quien el servidor tome a quien pregunta.
 
 <ScrollTable label="Opciones de Grafana de forward">
 
-| Opción                     | Por defecto  | Variable                            | Significado                                                                               |
-| -------------------------- | ------------ | ----------------------------------- | ------------------------------------------------------------------------------------------ |
-| `--grafana`                | vacío        | `MIKROSCOPE_GRAFANA_URL`            | publicar en este Grafana al arrancar; vacío no publica nada                               |
-| `--grafana-folder`         | `mikroscope` | `MIKROSCOPE_GRAFANA_FOLDER`         | la carpeta donde publicar; vacío es la carpeta General de Grafana                         |
-| `--grafana-datasource-uid` | vacío        | `MIKROSCOPE_GRAFANA_DATASOURCE_UID` | adoptar una fuente de datos existente por uid en vez de crear una, y dejarla intacta      |
-| `--grafana-datasource-url` | vacío        | `MIKROSCOPE_GRAFANA_DATASOURCE_URL` | la dirección que consulta Grafana, para `--prom` y `--graphite`; también sustituye una derivada |
-| `--grafana-datasource-sslmode` | vacío    | `MIKROSCOPE_GRAFANA_DATASOURCE_SSLMODE` | `disable`, `require`, `verify-ca` o `verify-full` para la fuente de datos de PostgreSQL |
-| `--grafana-dry-run`        | `false`      | ninguna                             | imprimir lo que escribiría, no escribir nada y parar antes de recoger                     |
+| Opción                         | Por defecto  | Variable                                | Significado                                                                                     |
+| ------------------------------ | ------------ | --------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `--grafana`                    | vacío        | `MIKROSCOPE_GRAFANA_URL`                | publicar en este Grafana al arrancar; vacío no publica nada                                     |
+| `--grafana-folder`             | `mikroscope` | `MIKROSCOPE_GRAFANA_FOLDER`             | la carpeta donde publicar; vacío es la carpeta General de Grafana                               |
+| `--grafana-datasource-uid`     | vacío        | `MIKROSCOPE_GRAFANA_DATASOURCE_UID`     | adoptar una fuente de datos existente por uid en vez de crear una, y dejarla intacta            |
+| `--grafana-datasource-url`     | vacío        | `MIKROSCOPE_GRAFANA_DATASOURCE_URL`     | la dirección que consulta Grafana, para `--prom` y `--graphite`; también sustituye una derivada |
+| `--grafana-datasource-sslmode` | vacío        | `MIKROSCOPE_GRAFANA_DATASOURCE_SSLMODE` | `disable`, `require`, `verify-ca` o `verify-full` para la fuente de datos de PostgreSQL         |
+| `--grafana-dry-run`            | `false`      | ninguna                                 | imprimir lo que escribiría, no escribir nada y parar antes de recoger                           |
 
 </ScrollTable>
 
-Un fallo aquí es un aviso y no una negativa a arrancar: las muestras de una hora
-sin funcionar no se recuperan, y un dashboard se puede publicar en el siguiente
-arranque. Nunca se borra nada. `--grafana-dry-run` se ejecuta antes de tocar el
-router, así que se puede contestar sin router delante.
-[Importar y comprobar](/mikroscope/es/dashboards/import-and-check/) dice qué
-destinos saben describir su propia fuente de datos y a cuáles hay que decírselo.
+Un fallo aquí es un aviso y no una negativa a arrancar: las muestras de una hora sin funcionar no se
+recuperan, y un dashboard se puede publicar en el siguiente arranque. Nunca se borra nada.
+`--grafana-dry-run` se ejecuta antes de tocar el router, así que se puede contestar sin router
+delante. [Importar y comprobar](/mikroscope/es/dashboards/import-and-check/) dice qué destinos saben
+describir su propia fuente de datos y a cuáles hay que decírselo.
 
 ## dashboards
 
@@ -438,26 +554,24 @@ mikroscope dashboards check  --store influxdb --datasource-uid <uid> --window 1h
 
 <ScrollTable label="Opciones de mikroscope dashboards">
 
-| Opción             | Por defecto        | Variable      | La lee            | Significado                                                                                                  |
-| ------------------ | ------------------ | ------------- | ----------------- | ------------------------------------------------------------------------------------------------------------ |
+| Opción             | Por defecto        | Variable      | La lee            | Significado                                                                                           |
+| ------------------ | ------------------ | ------------- | ----------------- | ----------------------------------------------------------------------------------------------------- |
 | `--out`            | `dashboards`       | ninguna       | `gen`             | directorio de salida para `mikroscope-<store>.json` (cinco) y `mikroscope-alerts-<store>.yaml` (tres) |
-| `--store`          | `influxdb`         | ninguna       | `import`, `check` | `influxdb`, `prometheus`, `postgres`, `graphite` o `elasticsearch`                                                                                    |
-| `--grafana`        | vacío              | `GRAFANA_URL` | `import`, `check` | URL base de Grafana; el token sale solo de `GRAFANA_TOKEN`                                                   |
-| `--datasource-uid` | vacío, obligatoria | ninguna       | `import`, `check` | el UID de la fuente de datos asociada a `DS_MIKROSCOPE`                                                      |
-| `--no-probe`       | `false`            | ninguna       | `import`, `check` | no pregunta a la fuente de datos qué medidas contiene; usa los valores compilados por defecto                |
-| `--window`         | `15m`              | ninguna       | `check`           | longitud de la ventana de consulta                                                                           |
-| `--end`            | ahora              | ninguna       | `check`           | instante RFC 3339 en el que termina la ventana, para comprobar contra una captura que ya ha terminado        |
-| `--var`            | ninguno            | ninguna       | `check`           | fija una variable del dashboard, `nombre=valor`, repetible: `--var host=rb5009`                              |
+| `--store`          | `influxdb`         | ninguna       | `import`, `check` | `influxdb`, `prometheus`, `postgres`, `graphite` o `elasticsearch`                                    |
+| `--grafana`        | vacío              | `GRAFANA_URL` | `import`, `check` | URL base de Grafana; el token sale solo de `GRAFANA_TOKEN`                                            |
+| `--datasource-uid` | vacío, obligatoria | ninguna       | `import`, `check` | el UID de la fuente de datos asociada a `DS_MIKROSCOPE`                                               |
+| `--no-probe`       | `false`            | ninguna       | `import`, `check` | no pregunta a la fuente de datos qué medidas contiene; usa los valores compilados por defecto         |
+| `--window`         | `15m`              | ninguna       | `check`           | longitud de la ventana de consulta                                                                    |
+| `--end`            | ahora              | ninguna       | `check`           | instante RFC 3339 en el que termina la ventana, para comprobar contra una captura que ya ha terminado |
+| `--var`            | ninguno            | ninguna       | `check`           | fija una variable del dashboard, `nombre=valor`, repetible: `--var host=router`                       |
 
 </ScrollTable>
 
-`import` y `check` se niegan a ejecutarse sin `--grafana` (o `GRAFANA_URL`),
-`GRAFANA_TOKEN` y `--datasource-uid`. Salvo que se dé `--no-probe`, primero
-preguntan a la fuente de datos qué medidas contiene; si esa pregunta falla,
-avisan y siguen con los valores compilados por defecto. `check` imprime una
-línea por panel (`ok`, `none` para un panel que se sabe vacío, `FAIL`) y sale
-con 1 si falla algún panel. Las variables son `GRAFANA_URL` y `GRAFANA_TOKEN`,
-sin el prefijo `MIKROSCOPE_`.
+`import` y `check` se niegan a ejecutarse sin `--grafana` (o `GRAFANA_URL`), `GRAFANA_TOKEN` y
+`--datasource-uid`. Salvo que se dé `--no-probe`, primero preguntan a la fuente de datos qué medidas
+contiene; si esa pregunta falla, avisan y siguen con los valores compilados por defecto. `check`
+imprime una línea por panel (`ok`, `none` para un panel que se sabe vacío, `FAIL`) y sale con 1 si
+falla algún panel. Las variables son `GRAFANA_URL` y `GRAFANA_TOKEN`, sin el prefijo `MIKROSCOPE_`.
 
 ## version
 
@@ -470,9 +584,10 @@ paquete <Src path="internal/version/" />. No admite opciones.
 
 - [Variables de entorno](/mikroscope/es/reference/environment/): cada variable `MIKROSCOPE_*`, las
   credenciales sin opción y la envlist propia del agente.
-- [Instalar el agente](/mikroscope/es/install/): los verbos de despliegue en el orden en que se usan.
-- [Grabar, marcar, dibujar](/mikroscope/es/record/): qué es una grabación y cómo le llegan los
+- [Instalar con la CLI](/mikroscope/es/install/): los verbos de despliegue en el orden en que se
+  usan.
+- [Grabar, marcar y dibujar](/mikroscope/es/record/): qué es una grabación y cómo le llegan los
   marcadores.
-- [El colector](/mikroscope/es/sinks/): qué hace `forward` con las opciones de arriba.
+- [Ejecutar el colector](/mikroscope/es/sinks/): qué hace `forward` con las opciones de arriba.
 
 </SeeAlso>

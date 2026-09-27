@@ -1,9 +1,10 @@
 ---
-title: A packet flood
+title: Packet flood
 description: "A 10 s ICMP flood at a MikroTik RB5009, read from inside its container: the switch interrupt standing in for a port counter, one core paying, time_squeeze."
 head:
   - tag: title
     content: "A packet flood seen from a RouterOS container | mikroscope"
+docType: evidence
 ---
 
 import FaultSignature from "../../../components/FaultSignature.astro";
@@ -12,20 +13,16 @@ import NotClaimed from "../../../components/NotClaimed.astro";
 import Provenance from "../../../components/Provenance.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
 
-This page answers what traffic the router's CPU has to handle looks like from
-inside a container that cannot see the router's interfaces. The flood was
-provoked on purpose.
-
-<Provenance of="playbooks-2026-09-12" />
-
 **In short:** from inside the container, a flood aimed at the router shows as
 one interrupt line rising several-fold, here `switch0` from 5.5 k to 34 k per
 5 s bucket, with its cost on the one core that interrupt is pinned to, and with
 softirq counts and `time_squeeze` rising together. The container cannot see the
 router's interface counters, so the interrupt stands in for them: it gives onset,
-offset and the core that paid, not bytes.
+offset and the core that paid, not bytes. The flood was provoked on purpose.
 
-## How it was provoked
+<Provenance of="playbooks-2026-09-12" />
+
+## Setup {#how-it-was-provoked}
 
 ICMP at the router's own LAN address, from a LAN host, bounded to 10 s. This is
 traffic the router's CPU must handle, unlike LAN-to-LAN traffic, which the switch
@@ -37,11 +34,10 @@ ping -f -w 10 192.168.0.1     # 67 793 packets, ~6.8 kpps, 0 % loss
 
 `192.168.0.1` is the reference router's LAN address; use your own router's.
 
-## What the agent recorded
+## Recording {#what-the-agent-recorded}
 
-In 5-second buckets, before and during. There is no chart of this flood: it was
-provoked on 2026-09-12, before the history of the reference InfluxDB store
-begins on 2026-09-19.
+In 5-second buckets, before and during. There is no chart: the flood predates
+the history of the reference InfluxDB store, which begins on 2026-09-19.
 
 ```text
    t  busy%  per-core busy%           sirq  squeeze  top IRQ
@@ -51,7 +47,7 @@ begins on 2026-09-19.
    5   14.3  24.9  19.6   3.5   9.2    153      136  switch0=33832
 ```
 
-## What to read
+## What to look at {#what-to-read}
 
 - **`switch0` interrupts went 5.5 k → 34 k per bucket**, a 6× rise. This is the
   closest thing to a per-interface counter that exists inside the container: the
@@ -60,17 +56,17 @@ begins on 2026-09-19.
   core paid.
 - **The cost landed on one core** (core 0 at 23–25 %) because that IRQ is
   pinned. A flood that saturates a single core while three idle is a common and
-  confusing shape — the total says 14 %, the router feels wedged.
+  confusing shape: the total says 14 %, the router feels wedged.
 - **softirq counts tripled (50 → 150)**, and `time_squeeze` rose with them.
   `time_squeeze` is the one to watch: it counts times the softirq handler ran out
   of budget with work still queued. Rising squeeze with flat throughput is the
   signature of a router at its packet-rate ceiling.
 - **Hard-IRQ time does not appear in `/proc/stat`'s `irq` column** on this
-  kernel — it is always 0 (no `IRQ_TIME_ACCOUNTING`). That work is inside
+  kernel: it is always 0 (no `IRQ_TIME_ACCOUNTING`). That work is inside
   `system`. Do not read the `irq` field and conclude the router has no interrupt
   load.
 
-## Where these signals live
+## Signal sources {#where-these-signals-live}
 
 - The interrupt lines are `mikroscope_irq_total{irq,name,cpu}` on `/metrics`,
   per core, for the sources that appeared in any sample's top-K;
@@ -95,21 +91,21 @@ at least 3), in a sample whose packet count was at or below its trailing median 
 sample interval. Read [the idle shape](/mikroscope/playbooks/idle/) for why "any
 squeeze" is not that rule.
 
-## Your instrument is part of the system
+## Observer effect {#your-instrument-is-part-of-the-system}
 
-An aside that demonstrates it: running
-`/system/routerboard/settings/print` over SSH produced kernel events of its own —
+Running `/system/routerboard/settings/print` over SSH produced kernel events of
+its own:
 
 ```text
 [4] rb_ioctl, cmd: 0x5212, arg: 0x0
 [4] rb: RB_GET_CF_INFO
 ```
 
-Reading RouterOS configuration leaves a trace in the kernel log. When you are
-correlating events with your own actions, remember your instrument is part of the
-system. On this device each SSH connect also costs <Measured id="ssh.connectCpu" /> CPU for its duration.
+Reading RouterOS configuration leaves a trace in the kernel log, so set your own
+actions apart before you correlate events with a cause. On this device each SSH
+connect also costs <Measured id="ssh.connectCpu" /> CPU for its duration.
 
-## The signature
+## Signature {#the-signature}
 
 <FaultSignature origin="provoked" date="2026-09-12">
 
@@ -132,10 +128,10 @@ system. On this device each SSH connect also costs <Measured id="ssh.connectCpu"
 
 ## See also
 
-- [The shape of an idle router](/mikroscope/playbooks/idle/): the squeeze and interrupt baseline this
-  flood rose from.
-- [The router's CPU, the container's network](/mikroscope/limits/namespaces/): why the interrupt is
-  visible and the interface counters are not.
-- [What the collector derives](/mikroscope/sinks/derive/): the `burst` flag and the per-packet costs.
+- [Idle baseline](/mikroscope/playbooks/idle/): the squeeze and interrupt baseline this flood rose
+  from.
+- [Container visibility](/mikroscope/limits/namespaces/): why the interrupt is visible and the
+  interface counters are not.
+- [Derived values](/mikroscope/sinks/derive/): the `burst` flag and the per-packet costs.
 
 </SeeAlso>

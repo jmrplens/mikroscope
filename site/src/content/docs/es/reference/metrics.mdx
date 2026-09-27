@@ -1,31 +1,29 @@
 ---
-title: Familias de métricas de Prometheus
+title: Métricas de Prometheus
 description: Cada familia de métricas Prometheus que expone el colector de mikroscope para un MikroTik RouterOS, por fuente, con su tipo, sus labels y cuándo falta.
+docType: reference
 head:
   - tag: title
     content: Familias de métricas Prometheus de MikroTik RouterOS | mikroscope
 ---
 
 import { Aside } from "@astrojs/starlight/components";
-import NotClaimed from "../../../../components/NotClaimed.astro";
-import Provenance from "../../../../components/Provenance.astro";
 import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
 import Src from "../../../../components/Src.astro";
+import TestedOn from "../../../../components/TestedOn.astro";
 
-Esta página enumera todas las familias de métricas que mikroscope expone en el
-[formato de texto de
-Prometheus](https://prometheus.io/docs/instrumenting/exposition_formats/): su
-nombre, su tipo, sus labels, qué cuenta y cuándo no está. Está leída
+Todas las familias de métricas que mikroscope expone en el [formato de texto de
+Prometheus](https://prometheus.io/docs/instrumenting/exposition_formats/), con
+su tipo, sus labels, qué cuenta y cuándo no está, leídas
 de <Src path="internal/expo/expo.go" />, <Src path="internal/agent/capture.go" />
 y <Src path="internal/sinks/prometheus.go" />. Cada familia aparece bajo la fuente de la
 que sale, porque eso es lo que decide si una placa concreta la tiene.
 
-## Una exposición, y de dónde sale cada familia
+## Familias por fuente {#una-exposición-y-de-dónde-sale-cada-familia}
 
 Hay una exposición: la del colector, servida por `forward --prom :9124`. El
-agente servía otra hasta 1.0.4; desde 1.0.5 no, y todo lo de abajo es lo que
-lleva el colector.
+agente no sirve ninguna; todo lo de abajo es lo que lleva el colector.
 
 <ScrollTable label="De dónde sale cada familia">
 
@@ -50,19 +48,16 @@ depende de hacer scrape al router.
   static_configs: [{ targets: ["<equipo del colector>:9124"] }]
 ```
 
-Con la exposición del agente cambiaron dos cosas. `mikroscope_slipped_total`
-ya no se omite — el colector lo dejaba fuera en vez de escribir un 0 sobre un
-muestreador que nunca corrió, y ahora informa del número que le da el agente. Y
-los contadores que no son por tick están tan frescos como esa lectura de un
-minuto, no como el scrape.
+`mikroscope_slipped_total` es el número que el agente da en `/sampler`. Los
+contadores que no son por tick están tan frescos como esa lectura de un minuto,
+no como el scrape.
 
-### Lo que hace distinto la copia del colector
+### Diferencias del colector {#lo-que-hace-distinto-la-copia-del-colector}
 
 El destino del colector está construido para 10 Hz nominales sea cual sea la
 cadencia del agente (`promHistogramRateHz` en <Src path="cmd/mikroscope/sinkflags.go" />),
 para que la disposición de sus buckets no cambie cuando se reconecta a un
-agente configurado de otra forma. De esa constante se siguen cinco cosas,
-leídas del código:
+agente configurado de otra forma. De esa constante se siguen cinco cosas:
 
 - `mikroscope_info{rate_hz}` en el colector marca `10`, no la cadencia del
   agente. `/healthz` tiene la del agente.
@@ -85,22 +80,13 @@ Los contadores del colector cuentan desde que arrancó el colector, y
 `mikroscope_self_*` siguen describiendo el agente: salen de las muestras del
 agente.
 
-Las tres primeras se comprobaron contra un agente real el 2026-09-21,
-ejecutado a 100 Hz y otra vez a 50 Hz con el colector tirando de él: `/healthz`
-daba `rate_hz` 100 y 50 y el propio registro del colector repetía esa misma
-cadencia, mientras que `mikroscope_info{rate_hz}` valía `10` en los dos casos;
-`mikroscope_cpu_busy_ticks` llevaba los cubos `le="0"` a `le="11"` más `+Inf` en
-los dos; y `window="1s"`, `window="10s"` y `window="60s"` estaban los tres
-presentes en los dos.
-
-<NotClaimed variant="untested">
-	Las dos últimas siguen siendo aritmética, de <Src path="internal/expo/expo.go" />: el `Totals` del colector se
-	dimensiona una sola vez con los 10 Hz nominales y `SetSamplerRate` solo redimensiona el anillo,
-	nunca rehace los cubos, así que el peso de 1/600 y el desalojo a las 36 000 muestras valen sea
-	cual sea la cadencia del agente. No se ha visto ocurrir ninguna de las dos: el desalojo necesita
-	que una línea de interrupción se caiga del top-K y siga fuera, y ninguna ejecución lo ha
-	provocado.
-</NotClaimed>
+Las tres primeras se cumplen con un agente en marcha a 100 Hz y a 50 Hz
+(<TestedOn of="feature-status">comprobado</TestedOn>). Las dos últimas se siguen
+de <Src path="internal/expo/expo.go" />: el `Totals` del colector se dimensiona
+una sola vez con los 10 Hz nominales y `SetSamplerRate` solo redimensiona el
+anillo, nunca rehace los cubos, así que el peso de 1/600 y el desalojo a las
+36 000 muestras valen sea cual sea la cadencia del agente
+(<TestedOn of="not-tested">no observado</TestedOn>).
 
 ## Convenciones
 
@@ -146,9 +132,9 @@ presentes en los dos.
 </ScrollTable>
 
 Un tick está ocupado cuando es `user`, `nice`, `system`, `irq`, `softirq` o
-`steal`. En el RB5009 con RouterOS 7.24.2 la columna `irq` es siempre 0
-(medido el 2026-09-11), así que el tiempo de IRQ hardware está dentro de
-`system`: lee ahí el modo `irq` como ausente, no como un router sin carga de
+`steal`. Un kernel que deja la columna `irq` a 0 cuenta el tiempo de IRQ
+hardware dentro de `system` (<TestedOn of="kernel-2026-09-11">medido</TestedOn>):
+lee ahí el modo `irq` como ausente, no como un router sin carga de
 interrupciones.
 
 ## Ventanas móviles y rachas de ocupación
@@ -172,7 +158,7 @@ Una meseta de 2 s es una observación de 2 en `mikroscope_cpu_busy_run_seconds`
 y veinte picos sueltos de 100 ms son veinte de 0,1; el histograma de ticks
 ocupados no puede distinguirlos.
 
-## Los tiempos del propio muestreador
+## Tiempos del muestreador {#los-tiempos-del-propio-muestreador}
 
 Los tres histogramas los representa el colector a partir del `dt_ns` y del
 bloque `self` de cada muestra; los dos contadores salen del `/sampler` del
@@ -232,10 +218,9 @@ placa y de su driver.
 
 </ScrollTable>
 
-Tanto las familias de PSI como las de schedstat faltan en el RB5009, cuyo
-kernel de RouterOS 7.24.2 no tiene ninguno de los dos ficheros:
-
-<Provenance of="kernel-2026-09-11" />
+Tanto las familias de PSI como las de schedstat faltan en un kernel sin esos
+ficheros, y algunos kernels de RouterOS lo son
+(<TestedOn of="kernel-2026-09-11">medido</TestedOn>).
 
 ## Memoria
 
@@ -281,7 +266,7 @@ proporción.
 
 | Familia                          | Tipo  | Labels  | Falta cuando                          | Significado                                                                                                                                              |
 | -------------------------------- | ----- | ------- | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `mikroscope_thermal_celsius`     | gauge | `zone`  | no hay zona térmica                   | temperatura bajo el propio nombre de zona del kernel, por ejemplo `cpu-thermal`, `soc-thermal` en el RB5009                                              |
+| `mikroscope_thermal_celsius`     | gauge | `zone`  | no hay zona térmica                   | temperatura bajo el propio nombre de zona del kernel, por ejemplo `cpu-thermal` o `soc-thermal`                                                          |
 | `mikroscope_slab_active_objects` | gauge | `cache` | sin privileged                        | objetos activos por caché slab; `nf_conntrack` es el recuento real de conexiones del router, aunque el espacio de nombres del contenedor informe de cero |
 | `mikroscope_slab_limit_objects`  | gauge | `cache` | sin privileged, o sin techo publicado | el techo de las cachés que lo tienen, hoy `nf_conntrack` a partir de `nf_conntrack_max`; se lee una vez al arrancar el agente                            |
 
@@ -313,12 +298,9 @@ Un cambio en `nf_conntrack_max` se ve después de reiniciar el agente.
 </ScrollTable>
 
 Un dispositivo de bloques que no hizo nada no está en la muestra, y por tanto
-tampoco aquí; en el RB5009 de referencia (RouterOS 7.24.2, kernel 5.6.3) el
-2026-09-12, `nbd0`–`nbd15` estaban presentes e inactivos y `mtdblock0`–`2`
-daban todo ceros (<Src path="internal/dashboards/panels.go" />, el panel de E/S en curso de
-disco). A diferencia de las fuentes con suelo de las convenciones de arriba,
-los niveles de flash y `mikroscope_disk_inflight` no se arrastran, así que
-faltan en la mayoría de los scrapes de una placa tranquila.
+tampoco aquí. A diferencia de las fuentes con suelo de las convenciones de
+arriba, los niveles de flash y `mikroscope_disk_inflight` no se arrastran, así
+que faltan en la mayoría de los scrapes de una placa tranquila.
 
 ## Log del kernel
 
@@ -355,7 +337,7 @@ fallos: `link-up` y después `stp-blocking`, `stp-learning` y `stp-forwarding` e
 su puerto del bridge. `own-address` es el único tipo que ya es un fallo por sí
 solo.
 
-## El propio observador
+## Métricas propias del agente {#el-propio-observador}
 
 <ScrollTable label="Familias sobre el agente y el exportador">
 
@@ -377,9 +359,8 @@ solo.
 </ScrollTable>
 
 El coste del agente son dos lecturas de `mikroscope_self_cpu_usec_total`
-separadas 60 s en régimen estacionario, divididas entre 60 000 000. [El coste
-del observador](/mikroscope/es/cost/) tiene el procedimiento y las cifras
-medidas.
+separadas 60 s en régimen estacionario, divididas entre 60 000 000. [Coste del
+agente](/mikroscope/es/cost/) tiene el procedimiento y las cifras medidas.
 
 ## Hechos del equipo
 
@@ -396,7 +377,7 @@ Cada familia falta cuando el equipo no publica ese dato.
 | `mikroscope_cpu_frequency_limit_hertz`    | gauge | `cpu`, `bound`: `min`, `max`                                             | el rango del reloj hardware                                                                                                         |
 | `mikroscope_cpu_frequency_step_hertz`     | gauge | `cpu`, `step`                                                            | cada frecuencia que usa el driver; `step` cuenta desde la más lenta                                                                 |
 | `mikroscope_cpu_frequency_governor_info`  | gauge | `cpu`, `governor`                                                        | siempre 1; `userspace` es un reloj fijo, `ondemand` o `schedutil` uno que escala                                                    |
-| `mikroscope_cpu_frequency_cluster`        | gauge | `cpu`                                                                    | el núcleo de número más bajo que cambia de frecuencia con este; `{0,1}` y `{2,3}` en el RB5009                                      |
+| `mikroscope_cpu_frequency_cluster`        | gauge | `cpu`                                                                    | el núcleo de número más bajo que cambia de frecuencia con este                                                                         |
 | `mikroscope_self_cgroup_memory_max_bytes` | gauge | ninguna                                                                  | el propio `memory.max` del contenedor, tal como lo fijó el operador                                                                 |
 | `mikroscope_source_cadence_hz`            | gauge | `source`, `reason`                                                       | la cadencia a la que se lee y guarda cada fuente de nivel, y por qué: `declared`, `policy`, `budget`, `change`, `override` o `rate` |
 | `mikroscope_source_age_seconds`           | gauge | `source`                                                                 | segundos desde la última lectura real de cada fuente con suelo (`thermal`, `cpufreq`, `slabinfo`, `buddyinfo`, `mtd`)               |
@@ -425,7 +406,7 @@ par de condición y motivo se escribe desde el principio a 0.
 
 </ScrollTable>
 
-## Solo el colector: la etapa de derivación
+## Valores derivados {#solo-el-colector-la-etapa-de-derivación}
 
 <ScrollTable label="Familias de la etapa de derivación y del colector">
 
@@ -446,20 +427,17 @@ par de condición y motivo se escribe desde el principio a 0.
 
 La fracción de fast path no es una fracción del cable: una trama que el chip del
 switch reenvía por hardware no está en ninguno de sus dos números. En un puerto
-del switch los dos van juntos —medido el 2026-09-16 en el RB5009 de referencia,
-`fp-rx-byte` coincide con `driver-rx-byte` con unos pocos kB de diferencia, así
-que todos los puertos leen en torno al 100 %—. Donde el número se mueve es en
-las interfaces software: el bridge pasó por fast path 211,9 GB de los 663,0 GB
-que llevó a la CPU desde el arranque (32 %), y `PPPoE_DIGI` un 99,97 %.
-`fp-tx-byte` está a 0 en todas las interfaces de ese router tras cientos de GB
-transmitidos, así que `direction="tx"` se retiene mientras el `fp-tx-byte`
-acumulado sea 0, en lugar de publicar un 0 % inventado.
+del switch cuyo `fp-rx-byte` coincide con su `driver-rx-byte` la fracción lee en
+torno al 100 % y dice poco; se mueve en las interfaces software, como un bridge
+o un cliente PPPoE (<TestedOn of="counters-2026-09-16">medido</TestedOn>).
+`direction="tx"` se retiene mientras el `fp-tx-byte` acumulado de la interfaz
+sea 0, en lugar de publicar un 0 % inventado.
 
-Las reglas y lo que cada una no puede afirmar están en
-[detecciones](/mikroscope/es/sinks/detections/); los valores derivados, en [lo
-que deriva el colector](/mikroscope/es/sinks/derive/).
+Las reglas y lo que cada una no puede afirmar están en [Reglas de
+detección](/mikroscope/es/sinks/detections/); los valores derivados, en
+[Valores derivados](/mikroscope/es/sinks/derive/).
 
-## Solo el colector: la capa de la API de RouterOS
+## Capa de la API {#solo-el-colector-la-capa-de-la-api-de-routeros}
 
 Faltan hasta que la capa de la API ha entregado una muestra, y faltan del todo
 con `--api-mode off` salvo que también se dé `--api-every` explícitamente.
@@ -495,10 +473,8 @@ mikroscope_api_interface_counter_total * on(interface) group_left(label, type, r
 Merece la pena unirla porque RouterOS cuenta cosas distintas según el tipo, y
 `type` es quien dice cuál: un puerto `ether` dentro de un bridge cuenta su
 cable, incluidas las tramas que el chip del switch reenvió por hardware,
-mientras que el `bridge` cuenta su lado de CPU. Medido el 2026-09-16 en el
-RB5009 de referencia, `ether1` había recibido 255,8 GB en el cable y 29,7 GB en
-el driver. Son dos planos distintos y ninguno es un subconjunto del otro: nunca
-sumes un puerto y su bridge.
+mientras que el `bridge` cuenta su lado de CPU. Son dos planos distintos y
+ninguno es un subconjunto del otro: nunca sumes un puerto y su bridge.
 
 Los tamaños y la configuración que resultan analizarse como enteros —`mtu`,
 `actual-mtu`, `l2mtu`, `max-l2mtu` y `sfp-shutdown-temperature`— no están en
@@ -506,9 +482,9 @@ Los tamaños y la configuración que resultan analizarse como enteros —`mtu`,
 cuenta nada. La MTU viaja en el inventario de interfaces, que los sinks de filas
 escriben como campo.
 
-En el RB5009 con RouterOS 7.24.2, `monitor-traffic` devolvió `rx-drops`,
-`tx-drops` y `tx-queue-drops` por segundo y ninguna clave de errores
-(2026-09-15), así que ahí faltan los tipos `rx_errors` y `tx_errors`;
+Donde `monitor-traffic` devuelve `rx-drops`, `tx-drops` y `tx-queue-drops` por
+segundo y ninguna clave de errores, faltan los tipos `rx_errors` y `tx_errors`
+(<TestedOn of="monitor-traffic-keys">observado</TestedOn>);
 `mikroscope_api_interface_counter_total` lleva en su lugar los errores por tipo
 del puerto.
 
@@ -524,10 +500,10 @@ del puerto.
 
 - [Prometheus](/mikroscope/es/sinks/prometheus/): poner en marcha la exposición del colector y
   hacerle scrape.
-- [Medidas de InfluxDB y SQL](/mikroscope/es/reference/measurements/): los mismos datos como filas.
-- [Los endpoints HTTP del agente](/mikroscope/es/reference/http/): `/healthz`, `/capabilities`,
+- [Esquema de los almacenes](/mikroscope/es/reference/measurements/): los mismos datos como filas.
+- [Endpoints HTTP](/mikroscope/es/reference/http/): `/healthz`, `/capabilities`,
   `/snapshot`, `/stream`, `/sampler` y las rutas de capturas.
-- [Lo que los números no dicen](/mikroscope/es/cost/limits/): lo que estas familias pueden y no
+- [Límites de la evidencia](/mikroscope/es/cost/limits/): lo que estas familias pueden y no
   pueden recuperar.
 
 </SeeAlso>

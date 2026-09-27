@@ -1,6 +1,10 @@
 ---
-title: The agent’s HTTP endpoints
+title: HTTP endpoints
 description: Every path the agent serves on the veth, its query parameters, what it returns, how the token guards it, and the line formats of /snapshot and /stream.
+docType: reference
+head:
+  - tag: title
+    content: The agent’s HTTP endpoints | mikroscope
 ---
 
 import { Aside } from "@astrojs/starlight/components";
@@ -10,20 +14,19 @@ import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
 import Src from "../../../components/Src.astro";
 
-The agent is an HTTP server and nothing else: it has no outbound connection.
-This page answers what each path returns, which query parameters it takes,
-which status codes it answers with, and what one line of its NDJSON looks
-like. It is read from <Src path="internal/agent/http.go" />, <Src path="internal/agent/capture.go" />, <Src path="internal/agent/source.go" />
+The agent is an HTTP server and nothing else: it opens no outbound connection.
+Every path, parameter, status code and line format below is read
+from <Src path="internal/agent/http.go" />, <Src path="internal/agent/capture.go" />, <Src path="internal/agent/source.go" />
 and <Src path="internal/sample/sample.go" />.
 
-## Where it listens
+## Listen address {#where-it-listens}
 
 The agent binds `ADDR:PORT`. `install` writes the agent's own veth address
 into `ADDR` and `9123` into `PORT`, so the default is
 `http://172.30.10.2:9123`. An agent started with `ADDR` unset binds `:PORT`,
 every address inside its container's network namespace. How a host reaches
 that address, directly, through the relay or through `--expose`, is on
-[reaching the agent](/mikroscope/install/reaching-the-agent/).
+[Network access](/mikroscope/install/reaching-the-agent/).
 
 The server gives a client 5 s to send its request headers and 30 s to take a
 response (`ReadHeaderTimeout` and `WriteTimeout` in <Src path="internal/agent/agent.go" />).
@@ -47,10 +50,10 @@ board has no port map, and a token should not be needed for that.
 The relay transport cannot present a token. `/tool fetch` runs on the router
 and sends no `Authorization` header (<Src path="internal/transport/transport.go" />), so
 the relay reaches `/healthz` and nothing else on an agent that has one.
-`--expose` makes the token mandatory; [what `--expose`
-opens](/mikroscope/security/expose/) says why.
+`--expose` makes the token mandatory; [Expose on the
+LAN](/mikroscope/security/expose/) says why.
 
-## The paths
+## Endpoints {#the-paths}
 
 <ScrollTable label="Every path the agent serves">
 
@@ -87,26 +90,34 @@ router with `405`.
 | `slipped`           | integer | ticks whose read finished after the next tick was due                          |
 | `capabilities_hash` | string  | eight hex digits over the kernel, the core count and the enabled sources       |
 | `version`           | string  | the agent's build identity                                                     |
-| `board`             | string  | the device tree's model, for example `RB5009`; omitted when the board has none |
+| `board`             | string  | the device tree's model string; omitted when the board has none                |
 
 </ScrollTable>
 
-The CLI uses `wall_ns` against its own clock to measure skew, `seq` and
-`oldest_seq` to plan a backfill, and `capabilities_hash` to notice that the
-kernel or the source set under it changed; `doctor` reads `board` to classify
-kernel-log records and `seq` with `oldest_seq` to read the whole ring, or its newest 10 000
-samples when it holds more. No CLI code reads
-`mono_ns`. The
-probe after `install` prints this reply as
-`direct transport ok: agent <version>, <rate> Hz, seq <n>, <n> slipped, <rtt> round trip`,
-where `<version>` is the CLI's own version, which it stamps into the agent it
-builds (`dev` when the CLI itself was built without one). The round trip recorded on the RB5009 on 2026-09-12 has two probes, 7 ms after `install` and 5 ms after `upgrade`; the first printed `direct transport ok: agent 4857d0a-dirty, 10 Hz, seq 29, 0 slipped, 7ms round trip`.
+What the CLI reads from it:
+
+- `wall_ns`, against its own clock, to measure the skew;
+- `seq` and `oldest_seq`, to plan a backfill;
+- `capabilities_hash`, to notice that the kernel or the source set under it
+  changed;
+- in `doctor`, `board` to classify kernel-log records, and `seq` with
+  `oldest_seq` to read the whole ring, or its newest 10 000 samples when it
+  holds more.
+
+No CLI code reads `mono_ns`. The probe after `install` prints this reply as:
+
+```text
+direct transport ok: agent <version>, <rate> Hz, seq <n>, <n> slipped, <rtt> round trip
+```
+
+`<version>` is the CLI's own version, which it stamps into the agent it builds
+(`dev` when the CLI itself was built without one).
 
 ## `GET /capabilities`
 
 What the agent established at start about the kernel and the board, with no
-RouterOS API. [The device-info stream](/mikroscope/sinks/device-info/) is this
-object as the collector hands it to every sink.
+RouterOS API. [Device info](/mikroscope/sinks/device-info/) is this object as
+the collector hands it to every sink.
 
 <ScrollTable label="Fields of the /capabilities body">
 
@@ -141,9 +152,8 @@ A cadence's `reason` is one of `rate` (read at the sampler rate), `declared`
 cpufreq governor means the clock cannot move without a write), `budget` (a
 measured parse cost), `change` (read every tick, stored on change) or
 `override` (`FLOOR_HZ`). Counters never appear here, because counters are
-never floored. [Each source at its own
-floor](/mikroscope/limits/source-floors/) has the measurements behind the
-floors.
+never floored. [Source cadences](/mikroscope/limits/source-floors/) explains
+each floor.
 
 ## `GET /snapshot`
 
@@ -167,13 +177,13 @@ transport only, with the bearer token when `TOKEN` is set). It adds two line
 kinds the `seconds` form does not: a gap line first when `since` is older than
 the ring, and a trigger line before each sample a capture condition fired on.
 `max` exists for the relay, because `/tool fetch output=user` returns at
-most <Measured id="relay.replyMaxBytes" /> on RouterOS 7.24.2 and truncates the rest silently; the relay
+most <Measured id="relay.replyMaxBytes" /> and truncates the rest silently; the relay
 asks for at most <Measured id="relay.maxBatch" /> lines.
 
 <Aside type="caution" title="A large /snapshot is not a free way to read the cost">
 	A 60 s `/snapshot` at 10 Hz makes the agent hand over about 600 lines, around 1.9 MB, and the
 	`self.cpu_us` inside those samples includes the cost of serving them. Read the agent's cost from
-	the collector's `/metrics` instead: [the cost of the observer](/mikroscope/cost/) has the procedure.
+	the collector's `/metrics` instead: [Agent cost](/mikroscope/cost/) has the procedure.
 </Aside>
 
 ## `GET /stream`
@@ -195,15 +205,14 @@ A `since` that is not a number is `400`.
 
 The server's 30 s `WriteTimeout` applies to every response, and Go's HTTP
 server does not lift it for a handler that keeps writing, so a `/stream`
-connection ends about 30 s after it opens however much it still has to say.
-Measured on the reference RB5009 (RouterOS 7.24.4, agent 1.0.9 at 10 Hz) on
-2026-09-21: three connections lived <Measured id="stream.lifetime" /> and
-carried <Measured id="stream.lines" /> lines each. **A consumer of `/stream`
-has to reconnect**, with the last `seq` it saw as `since` so the gap is
-backfilled. The CLI does not depend on `/stream`: `record` and `forward` pull
+connection ends about 30 s after it opens however much it still has to say: a
+connection lives <Measured id="stream.lifetime" /> and carries <Measured id="stream.lines" />
+lines at 10 Hz. **A consumer of `/stream` has to reconnect**, with the last `seq`
+it saw as `since` so the gap is backfilled.
+The CLI does not depend on `/stream`: `record` and `forward` pull
 `/snapshot?since=`.
 
-## The line kinds
+## Line types {#the-line-kinds}
 
 Apart from `/stream`'s heartbeat comment, every line `/snapshot`, `/stream`
 and `/captures/{id}` write is one JSON object and a newline. Four kinds exist,
@@ -223,7 +232,7 @@ told apart by their first key:
 A consumer that does not know a kind skips it, so a line kind it has never
 seen costs it nothing.
 
-### A sample line
+### Sample line {#a-sample-line}
 
 Every numeric field is a **delta since the previous sample** unless the table
 says it is a level. A source the kernel does not have, or that the
@@ -290,16 +299,14 @@ counter that appears with its first event reads as a gap in the series rather
 than as a quiet router.
 
 The collector reads it at start and then on the same one-minute cadence it
-re-measures the clock skew on, and hands it to every sink. That is what makes
-these figures reachable at all: they are not per-tick, so they cannot ride in
-a sample, and until 1.0.5 the only way to see them was to scrape the agent.
+re-measures the clock skew on, and hands it to every sink. These figures are
+not per-tick, so they cannot ride in a sample.
 
-**The agent serves no `/metrics`.** It did until 1.0.4, and a Prometheus
-deployment was documented as scraping the agent as well as the collector. It
-no longer does: the exposition is the collector's, built from the samples and
-from this endpoint, and it carries every family the dashboards ask for. The
-agent is a sampler and a ring — rendering is not its job, and not folding
-every sample into counters and histograms is memory it does not spend.
+**The agent serves no `/metrics`.** The Prometheus exposition is the
+collector's, built from the samples and from this endpoint, and it carries
+every family the dashboards ask for: [Prometheus
+metrics](/mikroscope/reference/metrics/). The agent is a sampler and a ring; it
+folds no sample into counters or histograms, which is memory it does not spend.
 
 ## Captures
 
@@ -367,17 +374,17 @@ curl -X POST "http://172.30.10.2:9123/capture?reason=queue-tree-applied"
 `reason` defaults to `operator`. The reply is `{"id":N,"armed":true}`. If
 another capture is still collecting its window, or a manual capture fired
 within the refractory window, the reply is `409` and nothing is armed. The
-conditions, the budget and what a capture cannot show are on [triggered
+conditions, the budget and what a capture cannot show are on [Triggered
 capture](/mikroscope/record/triggers/).
 
 <SeeAlso>
 
 ## See also
 
-- [Reaching the agent](/mikroscope/install/reaching-the-agent/): the three ways a host gets to
+- [Network access](/mikroscope/install/reaching-the-agent/): the three ways a host gets to
   these paths.
-- [Prometheus metric families](/mikroscope/reference/metrics/): what the collector's `/metrics` carries.
+- [Prometheus metrics](/mikroscope/reference/metrics/): what the collector's `/metrics` carries.
 - [Triggered capture](/mikroscope/record/triggers/): the conditions behind `/captures`.
-- [What `--expose` opens](/mikroscope/security/expose/): when the token becomes mandatory.
+- [Expose on the LAN](/mikroscope/security/expose/): when the token becomes mandatory.
 
 </SeeAlso>

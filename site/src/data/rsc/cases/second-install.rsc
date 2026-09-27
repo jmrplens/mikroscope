@@ -1,9 +1,9 @@
-# mikroscope 1.3.1: install script for RouterOS 7.24 or later. Container name: b
+# mikroscope {{MIKROSCOPE_VERSION}}: install script for RouterOS 7.24 or later. Container name: b
 # Every object it creates carries the comment "mikroscope:b (managed by mikroscope)", which is how
 # `mikroscope status` and `uninstall` recognize them later. It lists them in
 # mikroscope/b.manifest.txt on the router, which `mikroscope uninstall` reads and deletes last.
 #
-# The router pulls registry-1.docker.io/jmrplens/mikroscope-agent:1.3.1 itself.
+# The router pulls registry-1.docker.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}} itself.
 # The registry host is part of remote-image= (RouterOS 7.18 and later take it
 # there), so this script neither reads nor changes the device-wide registry-url.
 # A registry username set on the device for a registry other than registry-1.docker.io
@@ -22,7 +22,7 @@
 :if ([:len [/interface/list/find name="LAN"]] = 0) do={ :error "mikroscope: interface list LAN does not exist" }
 :if ([:len [/file/find name="mikroscope/b.manifest.txt"]] > 0) do={ :if (!([:typeof [:find [/file/get [find name="mikroscope/b.manifest.txt"] contents] "\ntag=mikroscope:b (managed by mikroscope)\n"]] = "num")) do={ :error "mikroscope: mikroscope/b.manifest.txt exists and is not this install's manifest" } }
 # install manifest mikroscope/b.manifest.txt
-:local m "mikroscope-manifest=1\nname=b\ntag=mikroscope:b (managed by mikroscope)\ndisk=\nveth=veth-b\nsubnet=172.30.11.0/30\nport=9200\niface-list=LAN\naddr-list=LANs\nexpose=\ncontainer-name=b\nremote-image=registry-1.docker.io/jmrplens/mikroscope-agent:1.3.1\ntoken=no\ndir=mikroscope\nfile=mikroscope/b.manifest.txt\nobject=/interface/veth name=veth-b\nobject=/ip/address interface=veth-b\nobject=/interface/list/member interface=veth-b list=LAN\nobject=/ip/firewall/address-list list=LANs address=172.30.11.0/30\nobject=/container/envs list=b-env\nobject=/container interface=veth-b\ndir=mikroscope/b\n"; :if ([:len [/file/find name="mikroscope/b.manifest.txt"]] > 0) do={ /file/set [find name="mikroscope/b.manifest.txt"] contents=$m } else={ /file/add name="mikroscope/b.manifest.txt" contents=$m }
+:local m "mikroscope-manifest=1\nname=b\ntag=mikroscope:b (managed by mikroscope)\ndisk=\nveth=veth-b\nsubnet=172.30.11.0/30\nport=9200\niface-list=LAN\naddr-list=LANs\nexpose=\ncontainer-name=b\nremote-image=registry-1.docker.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}\ntoken=no\ndir=mikroscope\nfile=mikroscope/b.manifest.txt\nobject=/interface/veth name=veth-b\nobject=/ip/address interface=veth-b\nobject=/interface/list/member interface=veth-b list=LAN\nobject=/ip/firewall/address-list list=LANs address=172.30.11.0/30\nobject=/container/envs list=b-env\nobject=/container interface=veth-b\ndir=mikroscope/b\n"; :if ([:len [/file/find name="mikroscope/b.manifest.txt"]] > 0) do={ /file/set [find name="mikroscope/b.manifest.txt"] contents=$m } else={ /file/add name="mikroscope/b.manifest.txt" contents=$m }
 # veth interface veth-b
 /interface/veth/add name="veth-b" address=172.30.11.2/30 gateway=172.30.11.1 comment="mikroscope:b (managed by mikroscope)"
 # router address 172.30.11.1
@@ -32,7 +32,7 @@
 # address-list membership LANs
 /ip/firewall/address-list/add list="LANs" address=172.30.11.0/30 comment="mikroscope:b (managed by mikroscope)"
 # container b
-:if ([:len [/container/envs/find list="b-env" key="MIKROSCOPE_TAG" value="mikroscope:b (managed by mikroscope)"]] > 0) do={ /container/envs/remove [find list="b-env"] }; /container/envs/add list="b-env" key=MIKROSCOPE_TAG value="mikroscope:b (managed by mikroscope)"; /container/envs/add list="b-env" key=RATE_HZ value="10"; /container/envs/add list="b-env" key=BUFFER_S value="60"; /container/envs/add list="b-env" key=PORT value="9200"; /container/envs/add list="b-env" key=ADDR value="172.30.11.2"; /container/envs/add list="b-env" key=MEM_LIMIT_MB value="16"; /container/envs/add list="b-env" key=CAPTURE_MB value="4"; /container/add name="b" remote-image="registry-1.docker.io/jmrplens/mikroscope-agent:1.3.1" interface="veth-b" root-dir=mikroscope/b envlist="b-env" logging=yes start-on-boot=yes restart-policy=on-failure restart-max-count=5 restart-interval=10s memory-max=64M privileged=yes ignore-remote-image-change=yes comment="mikroscope:b (managed by mikroscope)"; /container/start [find comment="mikroscope:b (managed by mikroscope)"]
+:if ([:len [/container/envs/find list="b-env" key="MIKROSCOPE_TAG" value="mikroscope:b (managed by mikroscope)"]] > 0) do={ /container/envs/remove [find list="b-env"] }; /container/envs/add list="b-env" key=MIKROSCOPE_TAG value="mikroscope:b (managed by mikroscope)"; /container/envs/add list="b-env" key=RATE_HZ value="10"; /container/envs/add list="b-env" key=BUFFER_S value="60"; /container/envs/add list="b-env" key=PORT value="9200"; /container/envs/add list="b-env" key=ADDR value="172.30.11.2"; /container/envs/add list="b-env" key=MEM_LIMIT_MB value="16"; /container/envs/add list="b-env" key=CAPTURE_MB value="4"; /container/add name="b" remote-image="registry-1.docker.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}" interface="veth-b" root-dir=mikroscope/b envlist="b-env" logging=yes start-on-boot=yes restart-policy=on-failure restart-max-count=5 restart-interval=10s memory-max=64M privileged=yes ignore-remote-image-change=yes comment="mikroscope:b (managed by mikroscope)"; /container/start [find comment="mikroscope:b (managed by mikroscope)"]
 :local k 0; :while ([:len [/container/find comment="mikroscope:b (managed by mikroscope)" running]] = 0 && $k < 120) do={ :delay 1s; :set k ($k + 1) }
 :if ([:len [/container/find comment="mikroscope:b (managed by mikroscope)" running]] > 0) do={ :put "mikroscope: agent running, http://172.30.11.2:9200/healthz" } else={ :put "mikroscope: not running yet; see /log/print where topics~\"container\"" }
 }

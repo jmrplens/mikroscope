@@ -141,10 +141,10 @@ type SidebarEntry = (typeof starlightRoute.sidebar)[number];
 
 /**
  * The label of the sidebar group that holds the current page, in the page's
- * language: "Collector and sinks" for /sinks/prometheus/, "Colector y
- * destinos" for its twin. The group, not the first path segment, so
- * /reference/testing/ is "For contributors", where the sidebar puts it. A page
- * the sidebar does not list has no section.
+ * language: "Use" for /sinks/prometheus/, "Uso" for its twin. The group, not
+ * the first path segment, so /reference/testing/ is "Evidence", where the
+ * sidebar puts it, and /install/firewall/ is "Configure". A page the sidebar
+ * does not list has no section.
  */
 function sectionOf(sidebar: SidebarEntry[], group?: string): string | undefined {
 	for (const entry of sidebar) {
@@ -510,6 +510,9 @@ const head = starlightHead.flatMap((entry): HeadEntry[] => {
 	}
 });
 
+// The index that covers this page, as llmstxt.org v2 names the relation
+// (`describedby`, which jmrp.io uses too); the two bundles are other forms of
+// the documentation, so they stay `alternate`.
 const llmsPath = locale === "es" ? `${BASE}/es/llms.txt` : `${BASE}/llms.txt`;
 const llmsFullPath = locale === "es" ? `${BASE}/es/llms-full.txt` : `${BASE}/llms-full.txt`;
 // The core bundle beside the full one: a tool that stops reading the full
@@ -525,7 +528,7 @@ const llmsCorePath = locale === "es" ? `${BASE}/es/llms-core.txt` : `${BASE}/llm
 {isNotFound && <meta name="robots" content="noindex, follow" />}
 <script type="application/ld+json" is:inline set:html={safeJsonLd(graph)} />
 {!isNotFound && <link rel="alternate" type="text/markdown" href={twinPath(route)} title={title} />}
-<link rel="alternate" type="text/plain" href={llmsPath} title="llms.txt" />
+<link rel="describedby" href={llmsPath} title="llms.txt" />
 <link rel="alternate" type="text/plain" href={llmsCorePath} title="llms-core.txt" />
 <link rel="alternate" type="text/plain" href={llmsFullPath} title="llms-full.txt" />
 {

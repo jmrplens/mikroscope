@@ -1,0 +1,350 @@
+---
+title: "Manual install: WebFig and Winbox"
+description: Install the agent from the router's WebFig or Winbox menus, form by form, with no CLI; then start it, check it and remove it.
+docType: how-to
+head:
+  - tag: title
+    content: Install mikroscope from MikroTik WebFig or Winbox | mikroscope
+---
+
+import { Aside, Tabs, TabItem } from "@astrojs/starlight/components";
+import InstallManifest from "../../../components/InstallManifest.astro";
+import ScrollTable from "../../../components/ScrollTable.astro";
+import SeeAlso from "../../../components/SeeAlso.astro";
+import TestedOn from "../../../components/TestedOn.astro";
+import WebfigCapture from "../../../components/WebfigCapture.astro";
+
+Install the agent from the router's own menus, with no computer that runs the CLI. Each step is a
+form: its menu, the fields to fill in, and the form as it looks filled in. The values are the ones
+`mikroscope install` writes, so `mikroscope status`, `upgrade` and `uninstall` treat the result as
+their own. Winbox has the same menus and fields as WebFig, though no install has run in Winbox
+(<TestedOn of="not-tested">not tested</TestedOn>); the pictures, and the run behind them, are
+WebFig's (<TestedOn of="install-routes">Tested on</TestedOn>).
+
+## Before you start {#before-you-start}
+
+- The router runs RouterOS 7.24 or later, has the `container` package and has device mode with
+  containers enabled: [Requirements](/mikroscope/install/prerequisites/). Device mode has no page
+  in WebFig; it is a terminal command ([Device mode](/mikroscope/install/prerequisites/#device-mode-containeryes)).
+- For the list memberships: the interface list and the address list your firewall drops by (`LAN`
+  and `LANs` in MikroTik's default configuration): [Firewall lists](/mikroscope/install/firewall/).
+- For the image tar: the tar for the router's architecture, renamed `mikroscope.tar`
+  ([Offline install](/mikroscope/install/offline/#choose-the-image-tar) names each one).
+
+The steps use the defaults below. To change one, change it in every step it appears in, the
+manifest included. [Manual install: terminal](/mikroscope/install/manual-cli/#before-you-start)
+lists every value and how the others follow from it.
+
+<ScrollTable label="The values the steps use">
+
+| Value                            | Default                                                                  |
+| -------------------------------- | ------------------------------------------------------------------------ |
+| Tag, the Comment of every object | `mikroscope:mikroscope (managed by mikroscope)`                          |
+| veth                             | `veth-mikroscope`                                                        |
+| Router's address                 | `172.30.10.1/30`                                                         |
+| Agent's address and port         | `172.30.10.2/30`, `9123`                                                 |
+| Envlist                          | `mikroscope-env`                                                         |
+| Root dir                         | `mikroscope/mikroscope`                                                  |
+| Manifest                         | `mikroscope/mikroscope.manifest.txt`                                     |
+| Image, registry pull             | `registry-1.docker.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}` |
+| Image, tar                       | `mikroscope.tar`                                                         |
+
+</ScrollTable>
+
+Keep the tag as it is, character for character: it is how the CLI recognises every object as the
+install's.
+
+**Log in.** Open `http://<router address>/` and log in as an admin user. Then pick **Advanced** at
+the top: the steps use the full menu tree, which Quick Set hides.
+
+<WebfigCapture name="login" />
+
+**Filling in a form.** A field shown only as a **+** button is unset: press **+** to open it. When
+RouterOS refuses an object, the form stays open with the reason under its buttons.
+
+<Aside type="caution" title="The terminal, for two settings">
+	Two settings have no field in WebFig: device mode and `ignore-remote-image-change`
+	(<TestedOn of="webfig-no-ignore-remote-image-change">verified</TestedOn>). Set them in **Terminal** at the top of WebFig, or
+	**New Terminal** in Winbox. If the terminal asks whether to show the software licence, answer
+	it first: what you type before the `] >` prompt goes to that question.
+</Aside>
+
+## Write the install manifest {#write-the-manifest}
+
+The manifest lists every object the next steps create, so that `mikroscope uninstall` can find
+them all.
+
+**Files** › **New** › **Text File**:
+
+| Field    | Value                                           |
+| -------- | ----------------------------------------------- |
+| Name     | `mikroscope/mikroscope.manifest.txt`            |
+| Contents | the lines below, for the image source you use |
+
+<Tabs syncKey="manual-image">
+
+<TabItem label="Registry pull">
+
+<InstallManifest case="pull-dockerhub" title="mikroscope/mikroscope.manifest.txt" />
+
+</TabItem>
+
+<TabItem label="Image tar">
+
+<InstallManifest case="default-tar" title="mikroscope/mikroscope.manifest.txt" />
+
+</TabItem>
+
+</Tabs>
+
+If you skip a list membership, write `none` after its `iface-list=` or `addr-list=` and leave out
+its `object=` line. OK creates the `mikroscope` directory with the file.
+[RouterOS script](/mikroscope/install/script/#install-manifest) explains each line.
+
+<WebfigCapture name="manifest-new" />
+
+<WebfigCapture name="manifest-list" />
+
+## Create the veth {#create-the-veth}
+
+**Interfaces** › **VETH** › **New**:
+
+| Field   | Value                                           |
+| ------- | ----------------------------------------------- |
+| Comment | `mikroscope:mikroscope (managed by mikroscope)` |
+| Name    | `veth-mikroscope`                               |
+| Address | `172.30.10.2/30`                                |
+| Gateway | `172.30.10.1`                                   |
+
+Leave the rest as it is.
+
+<WebfigCapture name="veth-new" />
+
+<WebfigCapture name="veth-list" />
+
+## Add the address {#add-the-address}
+
+**IP** › **Addresses** › **New**:
+
+| Field     | Value                                           |
+| --------- | ----------------------------------------------- |
+| Comment   | `mikroscope:mikroscope (managed by mikroscope)` |
+| Address   | `172.30.10.1/30`                                |
+| Interface | `veth-mikroscope`                               |
+
+<WebfigCapture name="address-new" />
+
+<WebfigCapture name="address-list" />
+
+## Add list memberships {#add-list-memberships}
+
+Optional. They let the agent's replies past raw firewall rules that drop by interface list or by
+address list. A membership is not scoped to mikroscope: any other rule that matches the list
+matches the veth or the /30 too ([Firewall lists](/mikroscope/install/firewall/)).
+
+**Interfaces** › **Interface List** › **New**:
+
+| Field     | Value                                           |
+| --------- | ----------------------------------------------- |
+| Comment   | `mikroscope:mikroscope (managed by mikroscope)` |
+| List      | `LAN`                                           |
+| Interface | `veth-mikroscope`                               |
+
+<WebfigCapture name="iface-member-new" />
+
+<WebfigCapture name="iface-member-list" />
+
+**IP** › **Firewall** › **Address Lists** › **New**:
+
+| Field   | Value                                           |
+| ------- | ----------------------------------------------- |
+| Comment | `mikroscope:mikroscope (managed by mikroscope)` |
+| List    | `LANs`                                          |
+| Address | `172.30.10.0/30`                                |
+
+<WebfigCapture name="addr-list-new" />
+
+<WebfigCapture name="addr-list-list" />
+
+## Create the envlist {#create-the-envlist}
+
+**Container** › **Envs** › **New**, once per entry, each with List `mikroscope-env`:
+
+| Key              | Value                                           |
+| ---------------- | ----------------------------------------------- |
+| `MIKROSCOPE_TAG` | `mikroscope:mikroscope (managed by mikroscope)` |
+| `RATE_HZ`        | `10`                                            |
+| `BUFFER_S`       | `60`                                            |
+| `PORT`           | `9123`                                          |
+| `ADDR`           | `172.30.10.2`                                   |
+| `MEM_LIMIT_MB`   | `16`                                            |
+| `CAPTURE_MB`     | `4`                                             |
+
+`MIKROSCOPE_TAG` is how the CLI tells the envlist is the install's. The other keys are the agent's
+settings: [Environment variables](/mikroscope/reference/environment/#the-agents-envlist).
+`MEM_LIMIT_MB` follows from the rate and the ring; the
+[Script generator](/mikroscope/install/generator/) computes it for other values.
+
+<WebfigCapture name="env-new" />
+
+<WebfigCapture name="env-list" />
+
+A `TOKEN` entry holds its value in clear, and WebFig shows it in clear in this list and in its
+form (<TestedOn of="webfig-shows-env-values">verified</TestedOn>). Add one only for
+[Expose on the LAN](/mikroscope/security/expose/), and treat any screen that shows it as a secret.
+
+## Create the container {#create-the-container}
+
+<Tabs syncKey="manual-image">
+
+<TabItem label="Registry pull">
+
+**Container** › **New**:
+
+| Field             | Value                                                                    |
+| ----------------- | ------------------------------------------------------------------------ |
+| Comment           | `mikroscope:mikroscope (managed by mikroscope)`                          |
+| Remote Image      | `registry-1.docker.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}` |
+| Root Dir          | `mikroscope/mikroscope`                                                  |
+| Privileged        | ticked                                                                   |
+| Interface         | `veth-mikroscope`                                                        |
+| Envlists          | `mikroscope-env`                                                         |
+| Memory Max        | `64M`                                                                    |
+| Logging           | ticked                                                                   |
+| Start On Boot     | ticked                                                                   |
+| Restart Policy    | `on failure (non 0 exit code)`                                           |
+| Restart Interval  | `00:00:10`                                                               |
+| Restart Max Count | `5`                                                                      |
+
+Leave Name empty: RouterOS names the container after the image. OK starts the pull: the router
+pulls the image for its own architecture, so it needs to reach the registry and have room for the
+layers.
+
+<WebfigCapture name="container-new-pull-1" />
+
+<WebfigCapture name="container-new-pull-2" />
+
+<WebfigCapture name="container-new-pull-3" />
+
+Wait for `download/extract done` in **Log**. The row is then ready to start, and does not carry
+the `R` flag yet.
+
+<WebfigCapture name="container-list-pulled" />
+
+</TabItem>
+
+<TabItem label="Image tar">
+
+1. **Files** › **Upload…**, and pick `mikroscope.tar`. It lands at the top of the router's
+   storage.
+
+   <WebfigCapture name="tar-upload" />
+
+2. **Container** › **New**, with the fields of the registry pull but **File** `mikroscope.tar` in
+   place of Remote Image:
+
+   <WebfigCapture name="container-new-tar-1" />
+
+3. Wait for `download/extract done` in **Log**.
+
+   <WebfigCapture name="container-list-extracted" />
+
+Keep the tar until the next step is done.
+
+</TabItem>
+
+</Tabs>
+
+### Set ignore-remote-image-change {#set-ignore-remote-image-change}
+
+In the terminal, set `ignore-remote-image-change`, and name `restart-policy` in the same command: a
+`/container/set` that leaves `restart-policy` out puts it back to `always`
+(<TestedOn of="container-set-resets-restart-policy">verified</TestedOn>).
+
+```text
+/container/set [find comment="mikroscope:mikroscope (managed by mikroscope)"] ignore-remote-image-change=yes restart-policy=on-failure
+:put [/container/get [find comment="mikroscope:mikroscope (managed by mikroscope)"] ignore-remote-image-change]
+:put [/container/get [find comment="mikroscope:mikroscope (managed by mikroscope)"] restart-policy]
+```
+
+The two reads print `true` and `on-failure`. `install` sets it for both image sources: without
+it, RouterOS stops and removes the container on its own once the tar is deleted, and re-creates it
+minutes later.
+
+<WebfigCapture name="terminal-ignore" />
+
+For the image tar, delete it now: **Files**, select `mikroscope.tar`, **Remove**.
+
+<WebfigCapture name="tar-remove" />
+
+## Start and verify {#start-and-verify}
+
+1. **Container**, select the row, then **Start** in the Actions panel.
+
+   <WebfigCapture name="container-start" />
+
+   The row gets the `R` (running) flag.
+
+   <WebfigCapture name="container-running" />
+
+2. **Log**, with **Filter** on and Topics contains `container`: the log ends with
+   `*** started /mikroscope-agent` and the agent's own line.
+
+   <WebfigCapture name="log-container" />
+
+3. In the terminal, ask the agent from the router:
+
+   ```text
+   :put ([/tool/fetch url="http://172.30.10.2:9123/healthz" output=user as-value]->"data")
+   ```
+
+   It prints `{"ok":true,…}`.
+
+   <WebfigCapture name="terminal-healthz" />
+
+From a computer on the router's LAN, `curl http://172.30.10.2:9123/healthz` answers the same, and
+`mikroscope status --router …` lists every object of the install
+([Network access](/mikroscope/install/reaching-the-agent/) if it does not answer).
+
+## Remove {#remove}
+
+From a computer with the CLI, `mikroscope uninstall --router … --yes` reads the manifest, removes
+everything the steps above created, and checks that nothing is left
+([Upgrade and uninstall](/mikroscope/install/upgrade/#uninstall)). Through the menus, remove in this order:
+
+1. **Container**: select the row, **Stop** in the Actions panel, wait until the `R` flag is gone,
+   then **Remove**. RouterOS removes the root dir, `mikroscope/mikroscope`, with the container; if
+   Files still lists it, remove it there too.
+
+   <WebfigCapture name="remove-container" />
+
+2. **Container** › **Envs**: select the seven `mikroscope-env` entries, **Remove**.
+
+   <WebfigCapture name="remove-envs" />
+
+3. **IP** › **Firewall** › **Address Lists**: the `172.30.10.0/30` entry, **Remove**.
+4. **Interfaces** › **Interface List**: the `veth-mikroscope` member, **Remove**.
+5. **IP** › **Addresses**: `172.30.10.1/30`, **Remove**.
+6. **Interfaces** › **VETH**: `veth-mikroscope`, **Remove**.
+7. **Files**: `mikroscope/mikroscope.manifest.txt`, **Remove**; then the `mikroscope` directory, if
+   nothing else is in it.
+
+   <WebfigCapture name="remove-files" />
+
+A tar left behind by an extraction that did not finish goes too: **Files**, `mikroscope.tar`,
+**Remove**.
+
+<SeeAlso>
+
+## See also
+
+- [Manual install: terminal](/mikroscope/install/manual-cli/): the same objects as commands.
+- [Script generator](/mikroscope/install/generator/): the commands with your values filled in, as
+  one script.
+- [Install methods](/mikroscope/install/routes/): the other ways to install, a script included.
+- [Storage and container settings](/mikroscope/install/layout/): what each container setting does.
+- [Firewall lists](/mikroscope/install/firewall/): when the list memberships are needed.
+- [Expose on the LAN](/mikroscope/security/expose/): reaching the agent on the router's own
+  address.
+
+</SeeAlso>

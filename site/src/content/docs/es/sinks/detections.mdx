@@ -1,31 +1,40 @@
 ---
-title: Detecciones
+title: Reglas de detección
 description: "Las once reglas de detección de mikroscope sobre el kernel de MikroTik RouterOS: la condición exacta de cada una, qué necesita y qué no puede afirmar."
 head:
   - tag: title
     content: Reglas de detección de fallos para MikroTik RouterOS | mikroscope
+docType: reference
 ---
 
-import { Aside } from "@astrojs/starlight/components";
 import Measured from "../../../../components/Measured.astro";
-import NotClaimed from "../../../../components/NotClaimed.astro";
 import PrivilegedOnly from "../../../../components/PrivilegedOnly.astro";
 import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
+import TestedOn from "../../../../components/TestedOn.astro";
 
 Una detección es un evento discreto que el colector pone en la línea temporal: un «mira
-aquí», nunca una serie continua y nunca un veredicto. Esta página responde, para cada una
-de las once reglas, exactamente cuándo salta, qué tiene que aportar el despliegue para que
-pueda saltar y qué no te puede decir. Los valores derivados en los que se apoyan algunas
-reglas están en [lo que deriva el colector](/mikroscope/es/sinks/derive/).
+aquí», nunca una serie continua y nunca un veredicto. Para cada una de las once reglas:
+cuándo salta, qué tiene que aportar el despliegue para que pueda saltar y qué no te puede
+decir. Los valores derivados en los que se apoyan algunas reglas están en [Valores
+derivados](/mikroscope/es/sinks/derive/).
 
-## Lo que lleva una detección
+## Campos de una detección {#lo-que-lleva-una-detección}
 
-Toda detección tiene los mismos campos: `rule`; `key` — la CPU, el núcleo, la zona o el
-puerto al que se refiere, vacío para una regla de todo el equipo; `seq` y `wall_ns` de la
-muestra que la provocó; `value`, la cantidad que comparó la regla; `threshold`, contra qué
-la comparó; y un `message` en palabras. Los umbrales son los de cada regla y se escriben en
-cada evento.
+Toda detección tiene los mismos campos:
+
+<ScrollTable label="Los campos de una detección">
+
+| Campo            | Significado                                                                        |
+| ---------------- | ---------------------------------------------------------------------------------- |
+| `rule`           | la regla que saltó                                                                 |
+| `key`            | la CPU, el núcleo, la zona o el puerto al que se refiere; vacío para una regla de todo el equipo |
+| `seq`, `wall_ns` | la muestra que la provocó                                                          |
+| `value`          | la cantidad que comparó la regla                                                   |
+| `threshold`      | contra qué la comparó: el umbral propio de la regla, escrito en cada evento        |
+| `message`        | el evento en palabras                                                              |
+
+</ScrollTable>
 
 **Una vez por regla y clave cada 10 s.** Tras saltar una regla para una clave, la misma
 regla y clave quedan suprimidas durante 10 s del reloj de pared de las muestras, así que una
@@ -35,7 +44,7 @@ suprimió, pero ningún destino exporta esa cuenta.
 Las reglas se ejecutan en el proceso del colector y su historia vive allí. Un colector que
 se reinicia empieza desde cero cada ventana móvil, cada intervalo y cada valor anterior.
 
-## Dónde caen las detecciones
+## Destinos {#dónde-caen-las-detecciones}
 
 <ScrollTable label="Dónde escribe las detecciones cada destino">
 
@@ -57,7 +66,7 @@ alerta](/mikroscope/es/dashboards/alerts/) salta con cualquier detección salvo 
 `ipc-collapse`: esas dos describen cómo lleva el tráfico un router sano, y se dibujan y se guardan
 pero no avisan.
 
-## Las reglas
+## Reglas {#las-reglas}
 
 <ScrollTable label="Las once reglas de un vistazo">
 
@@ -97,24 +106,11 @@ anterior. `value` es el nuevo número de secuencia, `threshold` el anterior.
 
 **Necesita** que el colector haya visto al menos una muestra antes del reinicio. La
 secuencia del agente vuelve a empezar desde 1 en cada arranque, así que así es como se ve un
-reinicio desde fuera.
-
-<Aside type="note" title="Corregido en 1.0.4">
-	Esto era inalcanzable en un colector en marcha. `forward` guardaba su cursor de lectura y nunca lo
-	reiniciaba, así que el anillo de un agente reiniciado respondía a `/snapshot?since=<secuencia
-	antigua>` con nada —y sin hueco— hasta que su nueva secuencia superaba el cursor antiguo: un día a
-	10 Hz para un agente que llevaba un día. Desde 1.0.4, `resync` retrocede el cursor a la muestra más
-	antigua del anillo nuevo en la siguiente lectura de salud, como mucho un minuto, y registra `agent
-	restarted: its newest sample is N and the cursor was M; resuming from 1`. La secuencia baja del
-	agente nuevo frente a la anterior de la etapa es justo lo que casa esta regla, así que salta.
-	`TestResyncAfterAgentRestart` cubre el lado del colector. El RB5009 de referencia ejercitó la
-	resincronización de verdad el 2026-09-19, cuando una actualización de RouterOS reinició el router a
-	las 00:43:30 CEST (22:43:30 UTC del día anterior) y la capa del kernel se reanudó a las 00:45:03. No
-	se comprobó si entonces se escribió una fila de `mikroscope_detection` para `agent-restart`, y el
-	almacén que la habría guardado se sustituyó más tarde ese mismo día: el actual empieza a las 11:13
-	UTC. Ese almacén guarda una fila de `agent-restart`, a las 08:08:54 UTC del 2026-09-24, con `value`
-	1 frente a `threshold` 4 338 037, cuando se actualizó el agente a 1.2.0.
-</Aside>
+reinicio desde fuera. En su siguiente lectura de salud, como mucho un minuto, el colector
+retrocede su cursor de lectura a la muestra más antigua del anillo nuevo y registra `agent
+restarted: its newest sample is N and the cursor was M; resuming from K`; la secuencia baja
+del agente nuevo frente a la anterior es lo que casa esta regla
+(`TestResyncAfterAgentRestart` cubre el lado del colector).
 
 **No puede afirmar** por qué se reinició el agente. Un colector reiniciado a la vez no tiene
 número de secuencia anterior y no ve nada.
@@ -144,15 +140,13 @@ de la última muestra y la mediana móvil.
 por CPU antes de su primera marca. Las referencias abarcan diez segundos de reloj de pared a
 cualquier cadencia del muestreador.
 
-**Falsos positivos, medidos.** En este equipo el squeeze es el fondo, no un suceso. En el
-RB5009 de referencia `time_squeeze` es 0 en el 87,3 % de las muestras por CPU, 1 en el <Measured id="squeeze.backgroundOne" />,
-2 en el <Measured id="squeeze.backgroundTwo" /> y 3 en el <Measured id="squeeze.exactlyThree" />, mientras que softnet no descartó nada
-en esas mismas 24 h. Una ventana móvil de una distribución que es siete octavos ceros tiene
-un percentil 90 de 1, así que «por encima de p90» lo cumple cualquier 2 — por eso quien
-manda es el suelo y no el percentil. Reejecutada sobre 6 h de muestras almacenadas, con
-suelo 2 salta <Measured id="microburst.firesPerHourAtTwo" /> y con suelo 3 salta <Measured id="microburst.firesPerHourAtThree" />, y sigue marcando
-88 muestras para el contador de ráfagas y para `derived.burst`. Un descarte marca por sí
-solo, con cualquier cuenta de squeezes.
+**Falsos positivos.** El squeeze puede ser el fondo de un router, no un suceso. En el router
+medido, la mayoría de las muestras por CPU no llevan ningún squeeze, y `time_squeeze` es 1 en el <Measured id="squeeze.backgroundOne" />,
+2 en el <Measured id="squeeze.backgroundTwo" /> y 3 en el <Measured id="squeeze.exactlyThree" />. Una ventana móvil de una
+distribución que es casi toda ceros tiene un percentil 90 de 1, así que «por encima de p90»
+lo cumple cualquier 2 — por eso quien manda es el suelo de 3 y no el percentil. Reejecutada
+sobre muestras almacenadas, con suelo 2 salta <Measured id="microburst.firesPerHourAtTwo" /> y con suelo 3
+salta <Measured id="microburst.firesPerHourAtThree" />. Un descarte marca por sí solo, con cualquier cuenta de squeezes.
 
 **No puede afirmar** el tamaño de la ráfaga, ni el flujo ni la interfaz que la causó. Dice
 que el kernel se quedó sin presupuesto más de lo habitual mientras llevaba menos paquetes
@@ -166,12 +160,12 @@ marcas nueva y anterior en segundos.
 
 **Necesita** `privileged=yes`, que exige el log del kernel, y un colector que siga en marcha
 durante el reinicio mientras el agente vuelve. No necesita credenciales de la API de
-RouterOS. El agente que vuelve tras el reinicio es un proceso nuevo; desde 1.0.4 el
-colector retrocede su cursor al anillo nuevo en menos de un minuto (ver
-[`agent-restart`](#agent-restart)), así que sus muestras sí llegan a `forward`. La regla salta
-entonces con un registro del log del kernel cuyo tiempo desde el arranque esté por debajo del
-último visto antes del reinicio. No se comprobó si saltó en el reinicio del 2026-09-19 del
-equipo de referencia; nada en el árbol lo registra en un sentido ni en otro.
+RouterOS. El agente que vuelve tras el reinicio es un proceso nuevo; el colector retrocede
+su cursor al anillo nuevo en menos de un minuto (ver [`agent-restart`](#agent-restart)), así
+que sus muestras sí llegan a `forward`. La regla salta entonces con un registro del log del
+kernel cuyo tiempo desde el arranque esté por debajo del último visto antes del reinicio. No
+está comprobado si salta en un reinicio real
+(<TestedOn of="not-tested">Probado en</TestedOn>).
 
 **No puede afirmar** que se vea cada reinicio. El agente lee el log del kernel desde el
 final al arrancar, así que el primer registro tras un reinicio es uno escrito después de que
@@ -190,16 +184,13 @@ registros en la ventana, `threshold` 2.
 
 **Necesita** `privileged=yes`. Un nombre de RouterOS necesita que la placa esté en la tabla
 de puertos del agente, y el nombre actual necesita además la capa de la API; consulta
-[puertos de RouterOS y nombres del kernel](/mikroscope/es/reference/port-names/).
+[Nombres de puertos](/mikroscope/es/reference/port-names/).
 
 **No puede afirmar** una avería. Un cable desenchufado y vuelto a enchufar en menos de un
-minuto son un registro de down y uno de up, y salta. No se ha capturado ningún flap
-provocado con esta regla en marcha; los flaps medidos para la tabla de puertos el
-2026-09-15 no lo fueron. Sí se han capturado flaps no provocados: entre el 2026-09-19 a
-las 11:13 UTC y el 2026-09-24 a las 08:26 UTC, el almacén del despliegue de referencia
-guarda 11 filas de `link-flap`, en `ether1`, `ether2`, `ether4`, `ether6` y `ether7`, cada
-una con entre 2 y 6 registros de enlace en 60 s. No se comprobó cuál se debió a un cable,
-a un equipo del otro lado o a otra cosa.
+minuto son un registro de down y uno de up, y salta. La regla ha saltado con flaps no
+provocados sin decir si los causó el cable, el equipo del otro lado u otra cosa; no se ha
+capturado ningún flap provocado con ella en marcha
+(<TestedOn of="not-tested">Probado en</TestedOn>).
 
 ### `conntrack-cliff`
 
@@ -223,9 +214,8 @@ los últimos 60 s. `value` es la ocupación como fracción, `threshold` 0,8.
 guardadas en los últimos 60 s.
 
 **No puede afirmar** cuándo se llenará la tabla: a propósito, no se adjunta ningún tiempo
-hasta el llenado. Como escala, la tabla del router de referencia
-tenía <Measured id="conntrack.slab" /> entradas el 2026-09-12, un 0,65 % del techo de 966 656 que ese
-kernel informó el 2026-09-14.
+hasta el llenado. Como escala, la tabla de un router medido
+tenía <Measured id="conntrack.slab" /> entradas, un 0,65 % del techo de su kernel.
 
 ### `thermal-high`
 
@@ -249,11 +239,11 @@ vez que se cierra uno, así que lo antes que puede saltar es tras unos cuatro mi
 lecturas.
 
 **Necesita** una zona térmica. Las medias son sobre las lecturas que llevaban las muestras;
-la temperatura se lee a la cadencia de sondeo declarada por la zona, 1 Hz en el equipo de
-referencia.
+la temperatura se lee a la cadencia de sondeo declarada por la zona
+(`mikroscope_thermal_polling_seconds`).
 
-**Resolución.** El sensor del equipo de referencia cuantiza a unos <Measured id="thermal.quantumC" />, así que 1 °C por
-minuto son 2,4 escalones y se puede resolver.
+**Resolución.** Un sensor que cuantiza a unos <Measured id="thermal.quantumC" />, como el medido,
+resuelve 1 °C por minuto en 2,4 escalones.
 
 **No puede afirmar** una causa, ni una subida más lenta que 1 °C por minuto.
 
@@ -272,11 +262,11 @@ historia móvil guarda hasta sesenta.
 que separa un régimen de bloqueo por memoria de un núcleo que se queda quieto, y la regla es
 por núcleo, nunca entre núcleos.
 
-## Las comprobaciones de doctor no son estas reglas
+## Comprobaciones de doctor frente a reglas {#las-comprobaciones-de-doctor-no-son-estas-reglas}
 
-Desde 1.2.0, `doctor` a secas lee el anillo del agente en marcha y hace cuatro comprobaciones
-propias: `layer2-loop`, `stp-churn`, `link-flap` y `softnet-drops`, descritas en [lo que
-muestra el agente en marcha](/mikroscope/es/install/prerequisites/#lo-que-muestra-el-agente-en-marcha).
+`doctor` a secas lee el anillo del agente en marcha y hace cuatro comprobaciones propias:
+`layer2-loop`, `stp-churn`, `link-flap` y `softnet-drops`, descritas en [Comprobaciones de
+salud](/mikroscope/es/install/prerequisites/#lo-que-muestra-el-agente-en-marcha).
 No son detecciones: se ejecutan una vez, cuando `doctor` las pide, sobre lo que guarde el
 anillo hasta sus 10 000 muestras más recientes, 60 s por defecto, y no escriben nada en ningún destino.
 
@@ -287,30 +277,22 @@ hace saltar la detección y no la comprobación. Un bucle de capa 2 no es ningun
 reglas: el `layer2-loop` de `doctor` lo señala en el anillo, y sobre el histórico lo vigila
 en el almacén la [regla de alerta](/mikroscope/es/dashboards/alerts/) `mikroscope-l2-loop`.
 
-<NotClaimed variant="not-provoked">
-	De las once reglas, cuatro han saltado en el equipo de referencia, contadas en su almacén entre
-	el 2026-09-19 a las 11:13 UTC y el 2026-09-24 a las 08:26 UTC: `microburst` 116 veces,
-	`ipc-collapse` 41 (en los cuatro núcleos), `link-flap` 11 y `agent-restart` una. Solo de
-	`microburst` se ha medido el comportamiento contra las muestras; las filas de las otras tres se
-	contaron, sin cotejarlas con lo que hacía el router. Las siete restantes solo las ejercitan las
-	pruebas unitarias de la etapa de derivación contra muestras construidas. No se ha provocado en
-	el RB5009, con estas reglas en marcha, ningún OOM kill dentro del contenedor, reinicio, flap de
-	enlace, vaciado o tormenta de conntrack, excursión térmica ni colapso de IPC: es el router de
-	producción del propietario, los reinicios esperan a una ventana de mantenimiento, y una tormenta
-	de conntrack provocada puede dejar sin acceso el camino por el que se está trabajando.
-</NotClaimed>
+Cuatro de las once reglas han saltado en un router real, y solo de `microburst` se ha medido
+el comportamiento contra las muestras. Las otras siete solo las ejercitan las pruebas
+unitarias de la etapa de derivación contra muestras construidas, y no se ha provocado ningún
+fallo con las reglas en marcha (<TestedOn of="not-tested">Probado en</TestedOn>).
 
 <SeeAlso>
 
 ## Véase también
 
-- [Lo que deriva el colector](/mikroscope/es/sinks/derive/): la marca `burst` y los demás valores que
+- [Valores derivados](/mikroscope/es/sinks/derive/): la marca `burst` y los demás valores que
   se escriben junto a las muestras.
 - [Reglas de alerta](/mikroscope/es/dashboards/alerts/): las reglas de Grafana construidas sobre las
   detecciones y los contadores de averías.
-- [Un bucle que solo veía el kernel](/mikroscope/es/playbooks/loop/): lo que cazó el log del kernel
-  en el router de producción.
-- [Lo que aporta privileged](/mikroscope/es/limits/privileged/): las fuentes de las que dependen la
+- [Bucle de capa 2](/mikroscope/es/playbooks/loop/): lo que cazó el log del kernel en un router
+  en servicio.
+- [Modo privilegiado](/mikroscope/es/limits/privileged/): las fuentes de las que dependen la
   mitad de estas reglas.
 
 </SeeAlso>

@@ -14,6 +14,12 @@
 // list does not, so a new heading is listed, and so protected, from the change
 // that adds it.
 //
+// A heading whose section merged into another, or left the page, can keep its
+// id as an alias: `<Anchor name="old-id" />` (src/components/Anchor.astro)
+// renders `<span id="old-id" data-anchor-alias>`. Those ids count as present,
+// so the listed id stays satisfied, but they are never added to the list: the
+// list is of headings, and an alias exists only to keep one of them.
+//
 // Usage: node scripts/check-anchors.mjs [--write] [dist-directory]
 //   --write  adds the build's new ids to the list. It never removes one: when
 //            a section is really gone, delete its line by hand, in the same
@@ -39,9 +45,14 @@ function* htmlFiles(dir) {
 	}
 }
 
-/** `route#id` for each heading of the build, sorted. */
+/**
+ * `route#id` for each heading of the build, and for each `<Anchor>` alias.
+ *
+ * @returns {{ headings: Set<string>, aliases: Set<string> }}
+ */
 function built() {
-	const out = new Set();
+	const headings = new Set();
+	const aliases = new Set();
 	for (const file of htmlFiles(DIST)) {
 		const html = readFileSync(file, "utf8");
 		if (isRedirectStub(html)) continue;
@@ -50,13 +61,19 @@ function built() {
 			"",
 		);
 		for (const m of html.matchAll(/<h[1-6]\b[^>]*?\sid="([^"]+)"/g))
-			out.add(`${route}#${m[1]}`);
+			headings.add(`${route}#${m[1]}`);
+		for (const tag of html.matchAll(
+			/<[a-z]+\b[^>]*\sdata-anchor-alias\b[^>]*>/g,
+		)) {
+			const id = /\sid="([^"]+)"/.exec(tag[0])?.[1];
+			if (id !== undefined) aliases.add(`${route}#${id}`);
+		}
 	}
-	if (out.size === 0) {
+	if (headings.size === 0) {
 		console.error(`No headings under ${DIST}. Run pnpm build first.`);
 		process.exit(1);
 	}
-	return out;
+	return { headings, aliases };
 }
 
 const HEADER = [
@@ -71,9 +88,13 @@ const listed = new Set(
 		.map((l) => l.trim())
 		.filter((l) => l !== "" && !l.startsWith("#")),
 );
-const now = built();
-const lost = [...listed].filter((a) => !now.has(a));
+const { headings: now, aliases } = built();
+const lost = [...listed].filter((a) => !now.has(a) && !aliases.has(a));
 const added = [...now].filter((a) => !listed.has(a));
+// An alias that keeps nothing: its id was never published, so it only adds an
+// id to the page. A typo in `name` is the usual cause, and it leaves the id it
+// meant to keep reported as lost above.
+const idle = [...aliases].filter((a) => !listed.has(a));
 
 if (WRITE && added.length > 0) {
 	const all = [...new Set([...listed, ...added])].sort();
@@ -99,5 +120,16 @@ if (added.length > 0 && !WRITE) {
 	for (const a of added.slice(0, 20)) console.error(`  ${a}`);
 	if (added.length > 20) console.error(`  … and ${added.length - 20} more`);
 }
+if (idle.length > 0) {
+	failed = true;
+	console.error(
+		`anchors: ${idle.length} <Anchor> alias(es) keep an id scripts/anchors.txt does not list. ` +
+			"An alias keeps a published id; check its name against the list:",
+	);
+	for (const a of idle) console.error(`  ${a}`);
+}
 if (failed) process.exit(1);
-console.log(`anchors: ${now.size} heading ids, all listed, none lost`);
+console.log(
+	`anchors: ${now.size} heading ids, all listed, none lost` +
+		(aliases.size > 0 ? `; ${aliases.size} kept by <Anchor>` : ""),
+);

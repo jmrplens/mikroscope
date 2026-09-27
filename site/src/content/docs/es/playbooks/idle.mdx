@@ -1,29 +1,27 @@
 ---
-title: La forma de un router en reposo
+title: Línea base en reposo
 description: "Sesenta segundos en reposo de un MikroTik RB5009 leídos a 10 Hz: el suelo de ocupación, un squeeze de softnet que nunca es cero y un log del kernel mudo."
 head:
   - tag: title
     content: "Un MikroTik RB5009 en reposo, por núcleo, a 10 Hz | mikroscope"
+docType: evidence
 ---
 
 import Measured from "../../../../components/Measured.astro";
 import NotClaimed from "../../../../components/NotClaimed.astro";
 import Provenance from "../../../../components/Provenance.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
-
-Esta página responde a qué aspecto tiene lo "normal", para que las demás páginas
-tengan algo respecto a lo que ser anómalas. Conoce esta forma antes de salir a
-buscar anomalías, o las encontrarás en todas partes.
-
-<Provenance of="playbooks-2026-09-12" />
+import walkthrough from "../../../../assets/walkthrough/rb5009-walkthrough.svg";
 
 **En resumen:** en reposo, los cuatro núcleos del RB5009 de referencia están
 ocupados un 6–8 %, `time_squeeze` nunca es cero (unos 200 cada 20 s) y el log
-del kernel calla. Lee todas las demás páginas contra esa forma: un flujo
-constante de sucesos del kernel en reposo es la anomalía, y un squeeze distinto
-de cero, por sí solo, no.
+del kernel calla. Lee todos los demás casos contra esa forma: un flujo constante
+de sucesos del kernel en reposo es la anomalía, y un squeeze distinto de cero,
+por sí solo, no.
 
-## Sesenta segundos en reposo
+<Provenance of="playbooks-2026-09-12" />
+
+## Grabación {#sesenta-segundos-en-reposo}
 
 Tres tramos de 20 segundos:
 
@@ -34,13 +32,13 @@ Tres tramos de 20 segundos:
    2    6.5   7.1   5.2   6.7   6.8  58259     199      179  36.3  1400       0
 ```
 
-Los porcentajes de esa tabla se calcularon a posteriori a partir de los deltas de
-ticks en bruto que envía el agente; el agente nunca los convierte en porcentajes.
+Los porcentajes se calcularon después a partir de los deltas de ticks en bruto
+que envía el agente; el agente nunca los convierte en porcentajes. Esta lectura
+no tiene gráfico: es anterior al historial del almacén InfluxDB de referencia,
+que empieza el 2026-09-19. El [gráfico grabado](#gráfico-grabado) de abajo es un
+`record` posterior del mismo router en reposo.
 
-No hay gráfico de estos sesenta segundos: se leyeron el 2026-09-12, antes de que
-empiece el historial del almacén InfluxDB de referencia, el 2026-09-19.
-
-## Qué leer
+## Qué mirar {#qué-leer}
 
 - **Un 6–8 % de ocupación en los cuatro núcleos es el suelo de este router**, no
   un problema. Son DNS, DHCP, WireGuard, el bridge y su propio mantenimiento.
@@ -52,41 +50,101 @@ empiece el historial del almacén InfluxDB de referencia, el 2026-09-19.
   actividad.**
 - **Cero sucesos del kernel es el estado sano.** Cualquier flujo constante de
   `events` en reposo merece el tratamiento del [caso del
-  bucle](/mikroscope/es/playbooks/loop/) — así es exactamente como empezó.
+  bucle](/mikroscope/es/playbooks/loop/): así empezó.
 
-## El squeeze de fondo y la marca de ráfaga
+## Squeezes de fondo {#el-squeeze-de-fondo-y-la-marca-de-ráfaga}
 
 El suelo del squeeze se volvió a medir en las 24 h hasta el 2026-09-16 a las
-07:00 UTC, en el mismo equipo, sobre 3 738 704 muestras por CPU: alrededor
-del <Measured id="squeeze.backgroundOne" /> de las muestras llevan un squeeze de fondo,
-el <Measured id="squeeze.backgroundTwo" /> exactamente dos y el <Measured id="squeeze.exactlyThree" />
-exactamente tres. Medido en este router el 2026-09-15: una regla que marque cualquier squeeze salta
-92 veces en veinte minutos, y no significa nada.
+07:00 UTC, en el mismo equipo, sobre 3 738 704 muestras por CPU:
+
+- alrededor del <Measured id="squeeze.backgroundOne" /> de las muestras llevan un squeeze de fondo;
+- el <Measured id="squeeze.backgroundTwo" /> lleva exactamente dos;
+- el <Measured id="squeeze.exactlyThree" /> lleva exactamente tres.
+
+En este router, el 2026-09-15, una regla que marcaba cualquier squeeze saltó 92
+veces en veinte minutos, y no significaba nada.
 
 Así que la marca `burst` del colector es una desviación respecto a la norma del
-propio equipo: un paquete descartado, o más squeezes de los que esa CPU suele
-tener (por encima de su percentil 90 móvil y al menos 3) en una muestra cuyo
-número de paquetes estuvo en su mediana móvil o por debajo. Las líneas base
-móviles abarcan diez segundos de reloj de pared a cualquier cadencia. Tres
-muestras marcadas en una CPU en 60 s disparan la detección `microburst`; una sola
-muestra marcada se queda en un dato.
+propio equipo. Marca una muestra cuyo número de paquetes estuvo en su mediana
+móvil o por debajo y que tiene:
+
+- un paquete descartado, o
+- más squeezes de los que esa CPU suele tener: por encima de su percentil 90
+  móvil y al menos 3.
+
+Las líneas base móviles abarcan diez segundos de reloj de pared a cualquier
+cadencia. Tres muestras marcadas en una CPU en 60 s disparan la detección
+`microburst`; una sola muestra marcada se queda en un dato.
 
 <NotClaimed variant="device-specific">
 	Este suelo es un RB5009 con el reloj fijado a 1400 MHz, que ejecuta el DNS, el DHCP, el WireGuard
-	y el bridge de este propietario. Un router con otros servicios, un reloj que escala o una placa
+	y el bridge de su propietario. Un router con otros servicios, un reloj que escala o una placa
 	distinta tiene otra forma en reposo. Toma los mismos sesenta segundos en el tuyo antes de leer
-	cualquier otra página contra ella.
+	cualquier otro caso contra ella.
+</NotClaimed>
+
+## Gráfico grabado
+
+<a class="ms-chart-link" href={walkthrough.src}>
+	<img
+		class="ms-chart"
+		src={walkthrough.src}
+		width={walkthrough.width}
+		height={walkthrough.height}
+		alt="RB5009UG+S+, 70 s a 10 Hz: 700 muestras en 69,9 s sobre cuatro núcleos, con tres marcadores discontinuos: «baseline, router idle» a los 12 s, «dashboards check started» a los 30 s y «check finished» a los 50 s. La ocupación por núcleo se mantiene baja, con excursiones de una sola muestra al 100 %; el panel de softnet muestra time squeezes y un cero plano en los descartes; la memoria disponible se mantiene entre 662 y 671 MiB."
+	/>
+</a>
+
+<div class="ms-chart-open">
+	<a href={walkthrough.src}>Abre el gráfico a tamaño completo</a> (SVG, 1200 × 754) para leer sus
+	etiquetas en un móvil. Los rótulos de los paneles van en inglés porque `plot` los escribe así:
+	el título lo pones tú con `--title`, el resto es el vocabulario del kernel.
+</div>
+
+<Provenance of="record-2026-09-16" />
+
+Es una grabación real de un router en reposo, la forma contra la que se lee todo lo demás. Las tres
+líneas discontinuas son las notas escritas en el terminal de `record` durante ella; las etiquetas
+las llevan enteras porque caben, y una más larga se acorta en vez de montarse sobre la siguiente.
+
+- **t = 12 s, `baseline, router idle`.** No pasa nada, y los paneles lo dicen: cada núcleo promedia
+  menos del 10 % en toda la grabación, y en el tramo tranquilo que sigue a esta nota los cuatro
+  juntos promedian un 3,9 %.
+- **t = 30 a 50 s, entre `dashboards check started` y `check finished`.** Un navegador cargando los
+  dos paneles de Grafana contra el colector de este mismo router. Los cuatro núcleos juntos
+  promedian un 5,0 % en ese tramo, y el trabajo llega en dos ráfagas cortas justo después de la
+  nota: el núcleo 0 al 50 % o por encima durante 0,6 s desde los 32,3 s, y otros 0,3 s a los
+  33,2 s.
+- **El trabajo está en excursiones cortas.** 76 de las 700 muestras tienen un núcleo al 50 % o por
+  encima, en 46 tramos separados; 38 de ellos duran una sola muestra, y el más largo dura 1,4 s, al
+  principio de la grabación y antes de la primera nota. El planificador del kernel pone cada
+  excursión en el núcleo que esté libre. Una muestra aislada —un núcleo al 100 % durante 100 ms—
+  mueve una media de un segundo sobre cuatro núcleos en un <Measured id="burst.100msOn4Cores" />.
+- **softnet: `dropped` plano en cero, `time_squeeze` entre 0 y unos 20 por segundo.** No se perdió
+  nada en 70 s. Los squeezes son el fondo de este equipo, no un suceso; lo que el colector llama
+  microburst es un racimo de ellos —tres muestras marcadas en un mismo núcleo dentro de 60 s—, y
+  nunca uno solo.
+- **Memoria disponible, de 662 a 671 MiB.** Unos 9 MiB de vaivén normal en toda la grabación, sin
+  ningún escalón en ninguno de los dos extremos de la comprobación de los paneles.
+
+El propio `cpu-load` de RouterOS, a 1 s, da este minuto por un puñado plano de puntos porcentuales.
+La grabación muestra de qué está hecho ese puñado: qué núcleo se llevó cada excursión, cuánto duró
+y dónde caen las notas frente a ella.
+
+<NotClaimed variant="device-specific">
+	Una grabación, en un router, a 10 Hz, con el router por lo demás en reposo. Las cifras por panel
+	de arriba están leídas de este gráfico, no vueltas a medir.
 </NotClaimed>
 
 <SeeAlso>
 
 ## Véase también
 
-- [Una inundación de paquetes](/mikroscope/es/playbooks/packet-flood/): lo que hace el squeeze cuando
+- [Inundación de paquetes](/mikroscope/es/playbooks/packet-flood/): lo que hace el squeeze cuando
   sí cambia.
-- [Un bucle que solo veía el kernel](/mikroscope/es/playbooks/loop/): lo que resultó ser un flujo
-  constante de sucesos en reposo.
-- [Detecciones](/mikroscope/es/sinks/detections/): la regla `microburst` y las demás, con lo que cada
-  una no puede afirmar.
+- [Bucle de capa 2](/mikroscope/es/playbooks/loop/): lo que resultó ser un flujo constante de
+  sucesos en reposo.
+- [Reglas de detección](/mikroscope/es/sinks/detections/): la regla `microburst` y las demás, con lo
+  que cada una no puede afirmar.
 
 </SeeAlso>

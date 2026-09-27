@@ -1,6 +1,7 @@
 ---
-title: The RouterOS API tier
-description: On an RB5009, RouterOS cpu-load fitted a ~1 s trailing mean of /proc/stat. What else the collector asks the binary API, and the presets that ask less.
+title: RouterOS API tier
+description: What the collector asks the RouterOS binary API, the presets that ask less, what cpu-load averages and what a missing value means.
+docType: how-to
 head:
   - tag: title
     content: The RouterOS API tier and what cpu-load averages | mikroscope
@@ -8,19 +9,16 @@ head:
 
 import { Aside } from "@astrojs/starlight/components";
 import Measured from "../../../components/Measured.astro";
-import Provenance from "../../../components/Provenance.astro";
-import NotClaimed from "../../../components/NotClaimed.astro";
 import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
+import TestedOn from "../../../components/TestedOn.astro";
 
-Beside the kernel tier it pulls from the agent, `forward` can hold one persistent
-session to the [RouterOS binary
-API](https://help.mikrotik.com/docs/spaces/ROS/pages/47579160/API) for the API tier (a
-second one when the kernel tier itself comes through the relay) and read what the
-container cannot see. This page answers what that tier reads, which of it the agent
-already covers, how to choose how much of it to run, and what a missing value means.
+`forward` can hold one persistent session to the [RouterOS binary
+API](https://help.mikrotik.com/docs/spaces/ROS/pages/47579160/API) (a second one when
+the kernel tier itself comes through the relay) to read what the container cannot see:
+per-interface traffic and counters. Choose how much it asks with `--api-mode`.
 
-## What the agent already reads, and what it cannot
+## Agent vs API tier {#what-the-agent-already-reads-and-what-it-cannot}
 
 Most of what the API tier can fetch, the agent reads itself:
 
@@ -28,46 +26,24 @@ Most of what the API tier can fetch, the agent reads itself:
   same `/proc/stat` jiffies the agent differences at 10 Hz.
 - `/system/health`'s temperature is `/sys/class/thermal`, readable from the container.
 - The conntrack count is the global `nf_conntrack` slab cache, which the agent reads
-  under `privileged=yes`; see [conntrack without the API](/mikroscope/playbooks/conntrack/).
+  under `privileged=yes`; see [Conntrack without the API](/mikroscope/playbooks/conntrack/).
 
 What is left is **per-interface bytes and packets**. They live in the router's network
-namespace and stay out of reach whatever the container is given; see [the router's CPU,
-the container's network](/mikroscope/limits/namespaces/).
+namespace and stay out of reach whatever the container is given; see [Container
+visibility](/mikroscope/limits/namespaces/).
 
-## How many seconds does RouterOS `cpu-load` average over?
+## cpu-load window {#how-many-seconds-does-routeros-cpu-load-average-over}
 
-RouterOS `cpu-load` averages about one second: on a MikroTik RB5009 running RouterOS
-7.24.2 it tracked a trailing mean of **<Measured id="cpuLoad.window1" /> that reached
-the API <Measured id="cpuLoad.delay1" /> late** in one hour and **a mean of <Measured id="cpuLoad.window2" />, <Measured id="cpuLoad.delay2" />
-late** in another, each the best fit against the kernel's own `/proc/stat` busy ratio
-read at 10 Hz on 2026-09-15 (r = <Measured id="cpuLoad.r1" /> over the hour's <Measured id="cpuLoad.samples1" />
-API samples, and r = <Measured id="cpuLoad.r2" /> over the other's <Measured id="cpuLoad.samples2" />).
-
-MikroTik's [`/system/resource`
+RouterOS `cpu-load` is a trailing mean of about one second of the kernel's
+`/proc/stat` busy time, and it reaches the API a fraction of a second late
+(<TestedOn of="cpu-load-window-2026-09-15">measured</TestedOn>). MikroTik's
+[`/system/resource`
 documentation](https://help.mikrotik.com/docs/spaces/ROS/pages/40992875/Resource)
 defines `cpu-load` as the percentage of used CPU resources, all CPUs combined, and
-names no window (read on 2026-09-24). The rest of this section is how the window was
-measured rather than assumed.
+names no window. It cannot resolve anything shorter than its own second, which is why
+mikroscope reads the kernel.
 
-`/system/resource` reports `cpu-load` as an integer percent. The API series was
-correlated against the agent's own per-core busy ratio, which is the same
-`/proc/stat` jiffies, for a range of window lengths and delays, and the fits above
-are the best of each hour. Widening the window only makes the fit worse — 1.5 s
-gives 0.955, 2 s gives 0.919, 5 s gives 0.822, 8 s gives 0.791.
-
-A sixty-second average is ruled out twice over. Its correlation is 0.238, and the
-step response has no ramp in it: at the sharpest load step in the day the kernel
-went from 5 % to 27 % in one second and `cpu-load` went from 5 to 26 in that same
-second, then from 22 % to 6 % on the way down just as fast. A one-minute average
-would have needed a minute to travel either way.
-
-<Provenance of="cpu-load-window-2026-09-15" />
-
-So the number is what it claims to be. What it still cannot do is resolve anything
-shorter than its own second, which is the whole reason this project reads the
-kernel.
-
-## Choosing how much to ask
+## API modes {#choosing-how-much-to-ask}
 
 `--api-mode` picks a preset. It is `full` unless you say otherwise, and an explicit
 `--api-every`, `--no-health` or `--conntrack-every` still wins over it.
@@ -78,14 +54,14 @@ kernel.
 | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
 | `off`  | no API tier: `--api-every 0`                                                                                                                                        | production, when per-interface traffic already comes from somewhere else |
 | `slow` | one round every 10 s, without `/system/health` and without the conntrack count; `/system/resource`, `monitor-traffic` and the port counters still run on each round | production, when you want interface rates too                            |
-| `full` | one round every second, with `/system/health`; port counters every 10 s; the conntrack count only if `--conntrack-every` asks for it                                | experiments and short `forward` runs                                            |
+| `full` | one round every second, with `/system/health`; port counters every 10 s; the conntrack count only if `--conntrack-every` asks for it                                | experiments and short `forward` runs                                     |
 
 </ScrollTable>
 
-`off` is the mode that gives per-interface traffic up; `slow` is the one that keeps it
-cheaply. Two dashboard panels are blank by configuration under `slow` rather than by
-device — `/system/health` and the RouterOS connection count — and they name the flag
-that fills them.
+`off` gives per-interface traffic up; `slow` keeps it cheaply. Under `slow` two
+dashboard panels are blank by configuration rather than by device —
+`/system/health` and the RouterOS connection count — and they name the flag that
+fills them.
 
 <Aside type="note" title="The off preset stops the API tier, not every API session">
 	The relay transport pulls the agent's ring through `/tool fetch` over the same binary API. With
@@ -93,7 +69,7 @@ that fills them.
 	opens an API session for it whatever `--api-mode` says. `--transport direct` never does.
 </Aside>
 
-## What one round asks
+## Commands per round {#what-one-round-asks}
 
 Every API-tier command runs on the tier's one session, one at a time, with a 15 s timeout each. The
 slower cadences are checked on each round, so none of them runs more often than
@@ -115,48 +91,52 @@ slower cadences are checked on each round, so none of them runs more often than
 
 </ScrollTable>
 
-A command that fails leaves its part of the sample empty and records why; the rest of
-the round still stands. The failures are logged on standard error as `api tier: …`,
-written as lines to Loki and rows to SQL, and counted on OTLP — never turned into a
-value. An `/interface` read that fails keeps the inventory already
-held — a transient error does not blank every panel's label — and is reported as
-`inventory: …`; the list and bridge reads are best effort, and without them the
-inventory still carries names, types and comments.
+- A command that fails leaves its part of the sample empty and records why; the
+  rest of the round still stands. The failures are logged on standard error as
+  `api tier: …`, written as lines to Loki and rows to SQL, and counted on OTLP —
+  never turned into a value.
+- An `/interface` read that fails keeps the inventory already held, so a
+  transient error does not blank every panel's label, and is reported as
+  `inventory: …`. The list and bridge reads are best effort; without them the
+  inventory still carries names, types and comments.
+- The API-tier sample is stamped with the collector's clock plus the skew
+  measured against the agent, so it lands on the agent's timeline.
 
-The API-tier sample is stamped with the collector's clock plus the skew measured
-against the agent, so it lands on the agent's timeline.
+## Interface inventory {#what-each-interface-is}
 
-## What each interface is
+The three inventory reads say what the numbers belong to. Per interface they give:
 
-The three inventory reads answer what the counters cannot: what the numbers belong to.
-Per interface they give its current name, the board's default name (the factory
-`ether5` of a physical port, empty for a bridge, a VLAN or a tunnel), RouterOS's own
-type (`ether`, `bridge`, `vlan`, `pppoe-out`, `wg`, `veth`, `loopback`), the comment,
-the interface lists it belongs to — sorted and comma-joined, `WAN` or `LAN,VPN` — the
-bridge it is a port of, and the MTU. A bridge member that is in no list of its own
-takes its bridge's lists, because that is how a RouterOS firewall rule matches it, and
-a bridge port that names an interface list rather than an interface is not labelled.
+<ScrollTable label="What the inventory reads per interface">
 
-On the reference RB5009 (RouterOS 7.24.2, 2026-09-16) the three reads return 17
-interfaces. `ether1` is an `ether` in the `LAN` list, a port of `bridge`, labelled
-"TrueNAS - High Performance Storage", MTU 9000; `ether5` is an `ether` in `WAN` and in
-no bridge, labelled "DIGI ONT"; `PPPoE_DIGI` is `pppoe-out`, `WAN`, MTU 1480;
-`VLAN_DIGI` is `vlan`, `WAN`; `wg_devices` and `wg_trastero` are `wg` in `LAN,VPN`;
-`ether6` and `ether7` carry the comment "Unused".
+| Field        | Source                                        | Example                                                                   |
+| ------------ | --------------------------------------------- | ------------------------------------------------------------------------- |
+| name         | `/interface/print`                            | the current name                                                          |
+| default name | `/interface/print`                            | the factory `ether5` of a physical port; empty for a bridge, VLAN or tunnel |
+| type         | `/interface/print`                            | `ether`, `bridge`, `vlan`, `pppoe-out`, `wg`, `veth`, `loopback`          |
+| comment      | `/interface/print`                            | the label a panel shows                                                   |
+| MTU          | `/interface/print` (`actual-mtu`)             | `9000`                                                                    |
+| role         | `/interface/list/member/print`                | the interface lists, sorted and comma-joined: `WAN`, `LAN,VPN`            |
+| bridge       | `/interface/bridge/port/print`                | the bridge it is a port of                                                |
 
-This is configuration, not telemetry, so it is read once at start — before the first
-kernel pull, so a kernel-log record is labelled from the first line — and then on the
-slow `--labels-every` cadence, never per poll. An edited comment, or a port moved
-between lists, reaches the dashboard within minutes rather than at the next collector
-restart, and a comment removed in RouterOS disappears here too: the read replaces the
-inventory wholesale. None of the five properties it asks for can carry a secret.
+</ScrollTable>
 
-Every `monitor-traffic` rate row and every per-port counter row then carries `label`
-(the comment), `type`, `role` and `bridge`, so a panel says what is plugged in rather
-than a port number, and says which numbers may be compared. Prometheus is the exception
-by design: a comment is edited by a human, and a changing label would spawn a new
-series for every edit, so the collector's `/metrics` carries one info series per
-interface — `mikroscope_api_interface_info{interface,label,type,role,bridge,default_name} 1`,
+- A bridge member that is in no list of its own takes its bridge's lists,
+  because that is how a RouterOS firewall rule matches it. A bridge port that
+  names an interface list rather than an interface is not labelled.
+- This is configuration, not telemetry, so it is read once at start — before the
+  first kernel pull, so a kernel-log record is labelled from the first line — and
+  then on the slow `--labels-every` cadence, never per poll. An edited comment,
+  or a port moved between lists, reaches the dashboard within minutes, and a
+  comment removed in RouterOS disappears here too: the read replaces the
+  inventory wholesale. None of the five properties it asks for can carry a
+  secret.
+- Every `monitor-traffic` rate row and every per-port counter row carries `label`
+  (the comment), `type`, `role` and `bridge`, so a panel says what is plugged in
+  rather than a port number, and which numbers may be compared.
+
+Prometheus is the exception by design: a comment is edited by a human, and a changing
+label would spawn a new series for every edit, so the collector's `/metrics` carries one
+info series per interface — `mikroscope_api_interface_info{interface,label,type,role,bridge,default_name} 1`,
 for every interface whether or not it has a comment — and a query joins it:
 
 ```text
@@ -189,170 +169,110 @@ Without the API tier a kernel record keeps the board's default name and gets no 
 
 Without `--api`, `--api-user` and `MIKROSCOPE_API_PASSWORD`, `forward` runs the kernel tier
 alone. When they are given but the session cannot be opened within 10 s it logs
-`api tier: not connected yet, will keep trying: …` and attaches the reader anyway: since
-1.0.9 a failed first dial is a warning, not a tier disabled for the life of the process.
+`api tier: not connected yet, will keep trying: …` and attaches the reader anyway: a
+failed first dial is a warning, not a tier disabled for the life of the process.
 
-## The user it needs
+## API user {#the-user-it-needs}
 
 In any mode the API tier's commands are reads: a user with the `read` and `api`
 policies is enough. `test` is needed only for `/tool fetch`, which the relay transport
 and nothing else in the API tier uses. The group, the address restriction and why the
-credential never lives on the router are on [the API user](/mikroscope/security/api-user/).
+credential never lives on the router are on [API user](/mikroscope/security/api-user/).
 
-## A value that is absent is absent
+## Missing values {#a-value-that-is-absent-is-absent}
 
 The API tier keeps exactly what the router returned and invents nothing for what it did
 not.
 
-**Loss rates.** `monitor-traffic` may return `rx-drops`, `tx-drops`, `tx-queue-drops`,
-`rx-errors` and `tx-errors` per second, and a sink writes each one only when it came
-back. On the RB5009 with RouterOS 7.24.2 (2026-09-15) it returns the three drop rates
-and **no error keys at all**.
+- **Loss rates.** `monitor-traffic` may return `rx-drops`, `tx-drops`,
+  `tx-queue-drops`, `rx-errors` and `tx-errors` per second, and a sink writes each
+  one only when it came back. A router can return the three drop rates and **no
+  error keys at all** (<TestedOn of="monitor-traffic-keys">verified</TestedOn>).
+- **Port counters.** The per-port counters are a map of RouterOS's own field
+  names, not a fixed set of fields, and only plain unsigned integers that count
+  something are kept. `mtu`, `actual-mtu`, `l2mtu`, `max-l2mtu` and
+  `sfp-shutdown-temperature` parse as integers but are sizes and configuration,
+  and every sink renders this map as a counter family, so they are dropped rather
+  than left for each consumer to know about; the MTU travels in the inventory
+  instead.
+- **Two commands, merged per interface.** `/interface/ethernet/print stats`
+  brings the MAC's typed errors, the collision family, the frame-size buckets and
+  the driver counters; `/interface/print stats-detail` brings the fast-path
+  `fp-*` counters, `link-downs`, `tx-queue-drop` and the kernel-side totals. A
+  board without collision counters produces no collision entries rather than a
+  row of zeroes that reads as "no collisions".
+- **Errors only the counters carry.** A port can count `rx-overflow` while
+  `monitor-traffic` returns no error key for it, so that count reaches a
+  consumer only through the port counters
+  (<TestedOn of="rx-overflow-port-counters">verified</TestedOn>).
+- **Every interface.** The counters cover every interface the router lists, not
+  only `--interfaces`: the port a fault lives on is often one nobody thought to
+  monitor.
+- **Cumulative.** The counters run since boot or the port's last reset, so a
+  consumer differences them. They separate what a switch port received on the
+  wire (`rx-bytes`) from what reached the CPU (`driver-rx-byte`); the rest the
+  switch chip forwarded in hardware, and no counter inside the container has a
+  number for it. The collector turns the fast-path counters beside them into [a
+  share of the traffic each interface hands the
+  CPU](/mikroscope/sinks/derive/#beside-every-counter-poll).
+- **A switch port and a bridge count different things**, which is why the type
+  travels with every row. An `ether` in a bridge counts its wire, including the
+  frames the switch chip forwarded without the CPU; the `bridge` counts its own
+  CPU side; a VLAN or a PPPoE link counts what the CPU sent and received. A port
+  and its bridge are two planes, neither a subset of the other: drawn side by
+  side without their type they read as peers, and summed they double-count.
+  Never add them.
+- **Interface labels.** What each row is labelled with — the comment, the type,
+  the role and the bridge — is the inventory above, and an interface the
+  inventory does not list carries none of them rather than an invented blank
+  identity.
 
-**Port counters.** The per-port counters are a map of RouterOS's own field names, not a
-fixed set of fields, and only plain unsigned integers that count something are kept.
-`mtu`, `actual-mtu`, `l2mtu`, `max-l2mtu` and `sfp-shutdown-temperature` parse as
-integers but are sizes and configuration, and every sink renders this map as a counter
-family, so they are dropped rather than left for each consumer to know about; the MTU
-travels in the inventory instead. The two commands are
-merged per interface: `/interface/ethernet/print stats` brings the MAC's typed errors,
-the collision family, the frame-size buckets and the driver counters;
-`/interface/print stats-detail` brings the fast-path `fp-*` counters, `link-downs`,
-`tx-queue-drop` and the kernel-side totals. A board without collision counters produces
-no collision entries rather than a row of zeroes that reads as "no collisions".
+## rx-overflow {#what-rx-overflow-on-the-nas-port-is}
 
-The reason is a measurement. On 2026-09-15 the reference router's `ether1` had 652 364
-`rx-overflow` events, growing, and `monitor-traffic` returns no error key for that port
-at all: that count reaches a consumer only through the port counters. What those
-overflows turned out to be is [below](#what-rx-overflow-on-the-nas-port-is).
+The kernel tier cannot see `rx-overflow` by construction. A frame the switch chip
+forwards in hardware never reaches the CPU, so no `/proc` file on the router has a
+number for it; it takes the per-port counters, and only the API has those. [Port
+losing frames](/mikroscope/playbooks/port-errors/) works through one such port, from
+the dashboard tile to the fix.
 
-The counters cover **every** interface the router lists, not only `--interfaces`: the
-port a fault lives on is often one nobody thought to monitor, and the layer-2 loop of
-2026-09-12 was on a port absent from the `monitor-traffic` list.
+## Router cost {#what-the-tier-costs-the-router}
 
-They are cumulative since boot or the port's last reset, so a consumer differences them.
-The derivation they enable, measured on `ether1` (2.5 GbE to a NAS, 2026-09-16, since
-the port's last counter reset): 255.8 GB of `rx-bytes` on the wire, of which 29.7 GB of
-`driver-rx-byte` reached the CPU — the rest the switch chip forwarded in hardware, and
-no counter inside the container has a number for it. The collector turns the fast-path
-counters beside them into [a share of the traffic each interface hands the
-CPU](/mikroscope/sinks/derive/#beside-every-counter-poll).
+The API process relays each command to the subsystem that answers it
+(`interface-mgmt`, `config-db`), and that is where its cost shows. The profiles
+and the A/B of a round every second are on [Agent cost](/mikroscope/cost/#api-tier-cost).
 
-**A switch port and a bridge count different things**, which is why the type travels
-with every row. An `ether` in a bridge counts its wire, including the frames the switch
-chip forwarded without the CPU; the `bridge` counts its own CPU side; a VLAN or a PPPoE
-link counts what the CPU sent and received. `ether1` and `bridge` are two planes,
-neither a subset of the other: drawn side by side without their type they read as
-peers, and summed they double-count. Never add them.
+The API is still the costly path. Per-port data comes from the container wherever
+the container can see it, and configuration is read at start and on the slow labels
+cadence, never per poll.
 
-**Interface labels.** What each row is labelled with — the comment, the type, the role
-and the bridge — is the inventory above, and an interface the inventory does not list
-carries none of them rather than an invented blank identity.
+## Reconnection {#when-the-connection-dies}
 
-## What `rx-overflow` on the NAS port is
+The tier holds one socket, so anything that takes the router away takes the tier
+with it: a reboot, a RouterOS upgrade, an operator restarting the API service. The
+tier reopens the connection itself.
 
-The port counters are the only place the reference router's `ether1` overflows appear,
-and over fifteen hours they say what kind of event they are. Measured 2026-09-15
-between 07:13 and 22:20 UTC, over 4 471 consecutive 10 s counter polls of `ether1`
-(2.5 Gbps to a NAS, MTU 9000):
+<ScrollTable label="Which failures reopen the API connection">
 
-- 126 443 `rx-overflow` events in all, present in 40 % of the intervals; per interval
-  the median is 29, the p99 about 1 036 and the largest 3 747. Over the run that is
-  0.53 % of the packets the NAS sent.
-- Rank correlation over the 10 s deltas: 0.85 against the part of the NAS's receive the
-  switch forwarded in hardware (`rx-bytes` minus `driver-rx-byte`), 0.00 against the
-  part it sent to the CPU (`driver-rx-byte`).
-- Where it was going: `ether8` (NGINX, 1 Gbps) carries most of the volume, `ether4`
-  (Mastodon, 1 Gbps) is the most frequent destination; the SFP+ cage, `ether2`,
-  `ether3` and the CPU path show nothing.
-- The frames were large: the 1024-and-up frame-size bucket on `ether1` has a median of
-  9 331 per interval with overflow against 1 336 per interval without.
-- The load was not high: the median NAS receive in an interval with overflow is about
-  9 Mbit/s as a 10 s mean. Bursts, not sustained load.
-- Nothing on the CPU side: softnet dropped 0, `time_squeeze` correlates 0.04 and the
-  `switch0` interrupts 0.05 against the overflows, with the agent's 10 Hz data binned
-  to 10 s. No pause frames on `ether1` in either direction.
-
-Read together that is consistent with 2.5 Gbps line-rate bursts switched inside the
-chip toward 1 Gbps ports with no flow control in effect. Not verified: the switch
-chip's exact counter semantics, and the NAS's own retransmit count — the counters are
-the port's, not the conversation's.
-
-The kernel tier cannot see any of it by construction. A frame the switch chip forwards
-in hardware never reaches the CPU, so no `/proc` file on the router has a number for
-it; it takes the per-port counters, and only the API has those.
-
-## What the tier costs the router
-
-Measured on the reference RB5009 (RouterOS 7.24.2, 2026-09-16) with RouterOS's own
-[profiler](https://help.mikrotik.com/docs/spaces/ROS/pages/8323153/Profiler),
-`/tool profile duration=60s cpu=total`, once with the collector stopped and once with it
-running `--interfaces bridge,ether1,PPPoE_DIGI --counters-every 10s --api-every 1s`. The first
-five one-second snapshots of each profile are dropped: they hold the SSH connect that
-asked for it.
-
-<ScrollTable label="Router CPU with and without the API tier">
-
-| Profile row      | Collector stopped | Collector running |
-| ---------------- | ----------------- | ----------------- |
-| total            | 5.93 %            | 6.04 %            |
-| `interface-mgmt` | 0.40 %            | 0.87 %            |
-| `config-db`      | about 0 %         | 0.15 %            |
+| Failure                                                                   | Reopens the connection | Why                                                                                          |
+| ------------------------------------------------------------------------- | ---------------------- | -------------------------------------------------------------------------------------------- |
+| transport error: EOF, a broken pipe, a connection reset, a command timeout | yes, and retries that one command on the new connection | the socket is finished                                        |
+| `!trap`                                                                   | no                     | the router is alive and refusing the command; asking again only spends its CPU               |
+| `!fatal`                                                                  | yes                    | RouterOS sends it as it closes the session, as [MikroTik's API documentation](https://help.mikrotik.com/docs/spaces/ROS/pages/47579160/API) states |
 
 </ScrollTable>
 
-The total moves by 0.11 points, which is inside the traffic noise of a minute; the two
-rows that answer the tier's questions move by about half a point between them. No `api`
-process row appears in either profile: the API process relays, and the work lands on
-the subsystem that answers. So a tier running a round every second costs the router
-about 0.5 % of its total CPU. That table is one 60 s profile per condition, with no
-spread.
+- Attempts are spaced at five seconds. One round issues four or five commands, so
+  a router that is down would otherwise be dialed several times a second, and
+  every dial carries a login.
+- The inventory is dropped and re-read after a reconnection: an upgrade is
+  exactly when an interface can change its name, type or bridge, and stale labels
+  on fresh rates would be worse than a moment's gap.
+- A collector that starts while the router is down is the same case seen from
+  the other end: it connects on the first round the router answers.
 
-A larger configuration was measured as an A/B on the same router on 2026-09-19, the day
-of a RouterOS upgrade that has left it on 7.24.4 (which version the A/B itself ran on was
-not recorded): every interface but `lo` in `--interfaces` (16) and `--conntrack-every
-10s`, 8 min without against 14 min with. Mean `cpu-load` went from 7.12 % to 7.91 % and
-mean kernel busy from 7.70 % to 8.46 %, about +0.8 points; that is a lower bound, since
-bridge traffic fell from 48.0 to 38.9 Mbit/s between the windows. The p50 of `cpu-load`
-stayed at 6 and the p95 went from 16 to 18.
-
-That is small, and the project still treats the API as the costly path. Per-port data
-comes from the container wherever the container can see it, and configuration is read
-at start and on the slow labels cadence, never per poll.
-
-## When the connection dies
-
-The tier holds one socket, so anything that takes the router away takes the
-tier with it: a reboot, a RouterOS upgrade, an operator restarting the API
-service. Since 1.0.9 it reopens the connection itself.
-
-The rule is about who failed, not about what failed. A **transport** error —
-EOF, a broken pipe, a connection reset, a command timeout — means the socket is
-finished, so the tier redials and retries that one command on the new
-connection. A **`!trap`** does not redial: the router is alive and refusing the
-command, and asking again would only spend its CPU on the same bad question. A
-**`!fatal`** does, because that is the word RouterOS sends as it closes the
-session, as [MikroTik's API documentation](https://help.mikrotik.com/docs/spaces/ROS/pages/47579160/API) states.
-
-Attempts are spaced at five seconds. One round issues four or five commands, so
-a router that is down would otherwise be dialed several times a second, and
-every dial carries a login. The inventory is dropped and re-read after a
-reconnection: an upgrade is exactly when an interface can change its name, type
-or bridge, and stale labels on fresh rates would be worse than a moment's gap.
-
-Measured against the reference RB5009 on 2026-09-19, after that day's RouterOS
-upgrade, without touching the router: a collector running `monitor-traffic` on
-16 interfaces (all but `lo`) at 1 Hz had its API socket
-destroyed from the host with `ss -K`, which is what the router's side of a
-reboot looks like to it. The tier reopened the connection and retried inside
-the same round — 0 failed commands, 0 dropped rounds, 16 interfaces in every
-one of the 108 seconds either side of the kill.
-
-A collector that starts while the router is down is the same case seen from the
-other end. The first dial failing is a warning, not a disabled tier — it
-connects on the first round the router answers.
-
-The collector says so, once per event rather than once per failed command:
+A socket killed under a running collector is reopened and the command retried
+inside the same round (<TestedOn of="api-tier">tested</TestedOn>). The
+collector says so once per event rather than once per failed command:
 
 ```text
 api tier: reconnected (1 since start)
@@ -360,46 +280,37 @@ api tier: recovered after 137 failed round(s)
 ```
 
 and the minute report carries `api: N failed round(s), N reconnect(s)` while
-either is nonzero. Before 1.0.9 none of this existed, and the outage was
-invisible: `api` counts rounds _attempted_, so the report kept growing through
-a tier in which every command failed. What that cost on the reference device is
-in [Troubleshooting](/mikroscope/reference/troubleshooting/#the-api-panels-are-blank-and-the-kernel-panels-are-fine).
+either is nonzero. `api` counts rounds _attempted_, so those two counts are what
+shows a tier in which every command fails. [Troubleshooting](/mikroscope/reference/troubleshooting/#the-api-panels-are-blank-and-the-kernel-panels-are-fine)
+covers what that looks like on the dashboards.
 
-## The conntrack count
+## Conntrack count {#the-conntrack-count}
 
 `--conntrack-every 10s` asks `/ip/firewall/connection/print count-only` at that
-cadence: <Measured id="api.conntrackMs" /> at <Measured id="conntrack.api" /> entries on the RB5009 (2026-09-11, the day before the slab readings; the time of day is not recorded), a single reading with no spread. It is off by default because it
-is a table scan over an API session, and under `privileged=yes` the agent's
-`nf_conntrack` slab count is the same population read from a file at the sampler's rate.
-The two will not match exactly — they are sampled at different instants, and the slab
-counts objects the allocator still holds. Whether they track has not been measured: the API
-said <Measured id="conntrack.api" /> the day before the agent's slab said <Measured id="conntrack.slab" />,
-which shows the same order of magnitude and no more. Run the count and read the slab in the
-same minute on your own device to compare them.
+cadence; one call took <Measured id="api.conntrackMs" /> at <Measured id="conntrack.api" />
+entries. It is off by default because it is a table scan over an API session, and
+under `privileged=yes` the agent's `nf_conntrack` slab count is the same population
+read from a file at the sampler's rate. The two will not match exactly — they are
+sampled at different instants, and the slab counts objects the allocator still holds.
+Whether they track is <TestedOn of="not-tested">not measured</TestedOn>: run the count
+and read the slab in the same minute on your own device to compare them.
 
-<NotClaimed>
-	The API tier has run on one board, the reference RB5009. The inventory and loss-key figures and
-	the 60 s cost profile above were measured on RouterOS 7.24.2 (2026-09-15 and 16). The
-	reconnection test and the 16-interface A/B ran on 2026-09-19, the day of a RouterOS upgrade;
-	since then the tier has run continuously on the upgraded router, now on 7.24.4, and none of the
-	7.24.2 figures has been re-measured there. Which loss keys and which counters another version or
-	another board returns is that router's statement to make; the sinks carry whatever comes back
-	and nothing else. Nor does the correlation above say whether RouterOS computes `cpu-load`'s
-	one-second window on a wall clock or on jiffies.
-</NotClaimed>
+The boards and RouterOS versions the tier has run on are under <TestedOn of="devices-and-versions">Devices and versions</TestedOn>.
+Which loss keys and which counters another version or another board returns is that
+router's to say; the sinks carry whatever comes back and nothing else.
 
 <SeeAlso>
 
 ## See also
 
-- [The API user](/mikroscope/security/api-user/): the RouterOS group and address restriction the
+- [API user](/mikroscope/security/api-user/): the RouterOS group and address restriction the
   tier's user needs.
-- [The collector](/mikroscope/sinks/): where the API-tier sample joins the kernel timeline.
-- [RouterOS ports and kernel names](/mikroscope/reference/port-names/): matching the API's
+- [Run the collector](/mikroscope/sinks/): where the API-tier sample joins the kernel timeline.
+- [Port names](/mikroscope/reference/port-names/): matching the API's
   `ether2` to the kernel's `eth1`.
 - [Conntrack without the API](/mikroscope/playbooks/conntrack/): reading the connection count from
   the slab instead.
-- [Compared with the alternatives](/mikroscope/start/compared/): what SNMP, the RouterOS API and
+- [Compared with alternatives](/mikroscope/start/compared/): what SNMP, the RouterOS API and
   the other tools read on a MikroTik router, beside what the agent reads.
 
 </SeeAlso>

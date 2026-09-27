@@ -1,6 +1,7 @@
 ---
-title: What privileged buys
-description: Why the agent’s RouterOS container runs privileged=yes by default, what that makes readable, and the network, processes and sensors it still cannot reach.
+title: Privileged mode
+description: What privileged=yes on the agent's RouterOS container makes readable, what it leaves out of reach, and what running without it costs.
+docType: explanation
 head:
   - tag: title
     content: "RouterOS container privileged=yes: what it reads | mikroscope"
@@ -8,35 +9,34 @@ head:
 
 import { Aside } from "@astrojs/starlight/components";
 import Measured from "../../../components/Measured.astro";
-import NotClaimed from "../../../components/NotClaimed.astro";
-import Provenance from "../../../components/Provenance.astro";
 import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
+import TestedOn from "../../../components/TestedOn.astro";
 
-`install` creates the agent's container with `privileged=yes`. This page answers what that
-setting changes on the router, which of the agent's sources depend on it, what it does not
-open however it is configured, and what you give up by turning it off.
+`install` creates the agent's container with `privileged=yes`. The setting decides which of the
+agent's sources the kernel lets it read; it opens no network access and no view of RouterOS's
+processes.
 
-## The default, and why
+## Default {#the-default-and-why}
 
 The container runs `privileged=yes` unless you pass `--privileged=false` to `install` or
 `upgrade`, which recreates the container. It is a boolean flag, so it takes `=false`; a
-separate `false` argument is not read as its value. The setting exists on RouterOS 7.24 and
+separate `false` argument is not read as its value. The setting needs RouterOS 7.24 or
 later: RouterOS added privileged mode for containers in 7.24, as its
 [changelog](https://download.mikrotik.com/routeros/7.24/CHANGELOG) records.
 
 Reading the device's internal state is what mikroscope is for, and privileged is what makes
 the root-only kernel files readable. An ordinary RouterOS container is placed in a
-[user namespace](https://man7.org/linux/man-pages/man7/user_namespaces.7.html) where its root maps to host uid 32768, so `/proc/slabinfo` and `/dev/kmsg` come
-back `EACCES`. `privileged=yes` drops that user namespace.
+[user namespace](https://man7.org/linux/man-pages/man7/user_namespaces.7.html) where its root maps to host uid 32768 (<TestedOn of="not-tested">read on one board</TestedOn>),
+so `/proc/slabinfo` and `/dev/kmsg` come back `EACCES`. `privileged=yes` drops that user namespace.
 
 It is still a real grant of privilege, which is why `plan` and `install --dry-run` print it
 with the rest of the container's settings before anything is written.
 
-## What it adds
+## What it enables {#what-it-adds}
 
-Found readable on the RB5009 (RouterOS 7.24.2, kernel 5.6.3) on 2026-09-12, and read by the
-agent except where the table says otherwise:
+`privileged=yes` makes these sources readable, and the agent reads each except where the table
+says otherwise:
 
 <ScrollTable label="Sources privileged=yes makes readable">
 
@@ -52,10 +52,10 @@ agent except where the table says otherwise:
 
 The PMU needs privileged for a different reason from the files: its counters are opened
 system-wide (`pid = -1`), which [`perf_event_open(2)`](https://man7.org/linux/man-pages/man2/perf_event_open.2.html) says takes `CAP_SYS_ADMIN`
-against the host, `CAP_PERFMON` from Linux 5.8 (the reference kernel is 5.6.3), or a
-`perf_event_paranoid` below 1. `perf_event_paranoid` reads 2 on the reference device and does
-not block a privileged container. What the PMU shows that no tick counter can is on
-[the resolution floor](/mikroscope/limits/).
+against the host, `CAP_PERFMON` on Linux 5.8 and later, or a `perf_event_paranoid` below 1. A
+privileged container keeps `CAP_SYS_ADMIN` against the host, so a `perf_event_paranoid` of 2 does
+not block it (<TestedOn of="reference-hardware">measured</TestedOn>). What the PMU shows that no
+tick counter can is on [Resolution limits](/mikroscope/limits/).
 
 The kernel log is read without blocking and capped at 64 records per tick. It is opened at
 the end of the buffer, so a boot-time backlog is never replayed as if it had just happened.
@@ -71,43 +71,30 @@ device-info stream. Without privileged, the slab, PMU and MTD families are absen
 The kernel-log family appears only once a record has been seen, so its absence alone cannot
 tell an unprivileged deployment from a quiet kernel; the `privileged` flag can.
 
-## What it does not add
+## What it does not enable {#what-it-does-not-add}
 
 It adds **no** network access and **no** view of RouterOS's processes. Privileged drops the
-user namespace and leaves the network and PID namespaces in place:
-
-<Provenance of="netns-2026-09-12" />
-
+user namespace and leaves the network and PID namespaces in place (<TestedOn of="netns-2026-09-12">verified</TestedOn>).
 So per-interface counters still come from the RouterOS API, and per-process CPU is out of
-reach even with the host's `/proc` mounted into the container. Both are measured on
-[the router's CPU, the container's network](/mikroscope/limits/namespaces/).
+reach even with the host's `/proc` mounted into the container. Both are on
+[Container visibility](/mikroscope/limits/namespaces/).
 
-It adds no extra capabilities either: an unprivileged container already holds all 38. What
-changes is the user namespace those capabilities are confined to, not the set.
+It adds no capabilities either: an unprivileged container already holds the full set the kernel
+defines (<TestedOn of="not-tested">read on one board</TestedOn>). What changes is the user
+namespace those capabilities are confined to, not the set.
 
-And it cannot give you more sensors than the board has. On the RB5009, `/sys/class/hwmon`
-is empty even privileged. The two thermal zones, `cpu-thermal` and `soc-thermal`, are the
-entire sensor set of the base model, and both are readable without privileged: there is no
-voltage, current or fan reading to be had. RouterOS's own `/system/health` on that board
-reports exactly one sensor, `cpu-temperature`, which is the `soc-thermal` zone truncated to
-whole degrees: a mean offset of +0.55 °C over the 8 minutes where both series existed
-(2026-09-14). On a board that does have voltage, current or fan sensors the API still adds
-them.
+And it cannot give you more sensors than the board has. The agent reads the thermal zones, which
+need no privileged, and nothing under `/sys/class/hwmon`. On the board measured, `hwmon` is empty
+even privileged, so its thermal zones are its whole kernel sensor set (<TestedOn of="reference-hardware">measured</TestedOn>).
+On a board that does have voltage, current or fan sensors, the RouterOS API tier still adds them.
 
-<NotClaimed variant="device-specific">
-	The sensor set, the capability count and the uid mapping were read on one RB5009 on RouterOS
-	7.24.2. A board with hwmon sensors, or a later RouterOS that builds containers differently, has
-	not been checked.
-</NotClaimed>
-
-## Running without it
+## Run unprivileged {#running-without-it}
 
 `--privileged=false` keeps everything that is readable from an ordinary container: every
 global `/proc` file in the samples, the thermal zones, `scaling_cur_freq`, `/proc/yaffs`,
 `/proc/buddyinfo`, `/proc/diskstats`, and the agent's own cost. What goes:
 
-- The kernel log. The [layer-2 loop](/mikroscope/playbooks/loop/) this project found on its
-  own reference router was visible only there.
+- The kernel log. A [layer-2 loop](/mikroscope/playbooks/loop/) can be visible only there.
 - The router's connection count from the slab cache. The RouterOS API's `count-only` table
   scan is the remaining source, which the collector runs only when `--conntrack-every` is
   set.
@@ -123,17 +110,17 @@ this rule does not read) and `mikroscope-ecc-failure` (MTD) have no data and sta
 
 <Aside type="caution" title="Privileged is not a mount">
 	A privileged container with the host's `/` mounted reads the whole RouterOS configuration, secrets
-	included (tested on the RB5009 on 2026-09-15). The installer does not mount any host path into the
-	agent's container, and nothing here needs one.
+	included (<TestedOn of="host-mounts">tested</TestedOn>). The installer does not mount any host path
+	into the agent's container, and nothing here needs one.
 </Aside>
 
 <SeeAlso>
 
 ## See also
 
-- [The router's CPU, the container's network](/mikroscope/limits/namespaces/): the two
+- [Container visibility](/mikroscope/limits/namespaces/): the two
   namespaces privileged leaves in place, file by file.
-- [What runs where](/mikroscope/security/): the agent's container and what it can reach, from
+- [Security model](/mikroscope/security/): the agent's container and what it can reach, from
   the security side.
 - [Conntrack without the API](/mikroscope/playbooks/conntrack/): the slab count privileged
   makes readable, and how to check it.

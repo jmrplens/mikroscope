@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/jmrplens/mikroscope/internal/router"
+	"github.com/jmrplens/mikroscope/internal/version"
 )
 
 // routerTestdata is internal/router's testdata, which holds the golden
@@ -48,6 +49,13 @@ func TestGoldenCasesThroughTheCLI(t *testing.T) {
 	}
 	if len(cases) == 0 {
 		t.Fatal("the golden matrix holds no case")
+	}
+	// The pull cases tag the agent image with version.Placeholder, which
+	// the router package's own reader of the matrix expands the same way.
+	for i := range cases {
+		for j, a := range cases[i].Args {
+			cases[i].Args[j] = version.Expand(a)
+		}
 	}
 	for _, gc := range cases {
 		t.Run(gc.ID, func(t *testing.T) {
@@ -95,6 +103,7 @@ func cliCase(t *testing.T, verb string, args []string, extra ...string) cli {
 // matchGolden compares what the CLI printed with the golden file.
 func matchGolden(t *testing.T, id, kind, got string) {
 	t.Helper()
+	got = router.Templated(got)
 	path := filepath.Join(routerTestdata, "golden", id+"."+kind+".txt")
 	want, err := os.ReadFile(path) // #nosec G304 -- a name built from the case matrix, under testdata
 	if err != nil {

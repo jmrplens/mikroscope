@@ -8,7 +8,8 @@
 // of the page, which is a machine, which does not file bugs.
 //
 // Beyond existing, a twin has to say what its page says where it matters
-// most and where it has already been wrong: the provenance under a figure (the
+// most and where it has already been wrong: the provenance a page prints,
+// which only the evidence pages do (src/lib/voice.mjs) (the
 // landing's twin named the 2026-09-15 campaign under the 2026-09-18 table the
 // page described correctly, GEO audit of 2026-09-24), the landing's hero
 // tagline, which the reduction of the body never saw, and links a model can
@@ -187,6 +188,9 @@ const pages = [...files(DIST, (name) => name === "index.html")]
 	.map((path) => path.replace(/index\.html$/, ""));
 const twins = new Set([...files(DIST, (name) => name === "index.md")]);
 
+// Provenance lines and verifications the pages show, for the summary.
+let provenanceLines = 0;
+
 if (only !== "llms") {
 	if (pages.length === 0) {
 		fail(`no built pages under ${DIST}. Run pnpm build first.`);
@@ -228,14 +232,28 @@ if (only !== "llms") {
 			);
 		}
 
-		// Every provenance line the page shows, the twin shows too, word for word.
+		// Every provenance line the page shows, the twin shows too, word for word,
+		// and so does every "device, RouterOS, date" a <Verified> prints. A page
+		// that shows none, which is every page but the evidence ones, has nothing
+		// to carry.
 		const twinText = plain(text);
 		for (const m of html.matchAll(
 			/<p class="ms-provenance"[^>]*data-campaign="([^"]+)"[^>]*>([\s\S]*?)<\/p>/g,
 		)) {
+			provenanceLines += 1;
 			if (!twinText.includes(plainHtml(m[2]))) {
 				fail(
 					`/${twin} does not carry the provenance its page shows for ${m[1]}: "${plainHtml(m[2]).slice(0, 90)}…"`,
+				);
+			}
+		}
+		for (const m of html.matchAll(
+			/<span class="ms-verified" data-verified="([^"]+)">((?:<span[^>]*>[^<]*<\/span>|<time[^>]*>[^<]*<\/time>|[^<])*)<\/span>/g,
+		)) {
+			provenanceLines += 1;
+			if (!twinText.includes(plainHtml(m[2]))) {
+				fail(
+					`/${twin} does not carry the verification its page shows for ${m[1]}: "${plainHtml(m[2])}"`,
 				);
 			}
 		}
@@ -421,6 +439,6 @@ console.log(
 	only === "llms"
 		? "[twins] both llms.txt indexes list pages and bundles that exist, alike in both languages, every llms file states the current release, and every link in them is absolute."
 		: only === "twins"
-			? `[twins] ${pages.length} pages, ${twins.size} twins, each announced, each with a page, each carrying its page's provenance and only absolute links; both landings' tagline and links hold.`
+			? `[twins] ${pages.length} pages, ${twins.size} twins, each announced, each with a page and only absolute links; the ${provenanceLines} provenance lines and verifications the pages show are in their twins; both landings' tagline and links hold.`
 			: `[twins] ${pages.length} pages, ${twins.size} twins, and the llms.txt indexes and bundles closed.`,
 );

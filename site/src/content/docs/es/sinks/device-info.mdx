@@ -1,19 +1,24 @@
 ---
-title: El flujo de datos del equipo
+title: Datos del equipo
 description: Lo que el agente sabe de una placa MikroTik sin la API de RouterOS (identidad, techos, cadencias) y cómo lo recibe cada destino, como hechos y no muestras.
+docType: reference
+head:
+  - tag: title
+    content: El flujo de datos del equipo | mikroscope
 ---
 
 import CadenceReasons from "../../../../components/CadenceReasons.astro";
 import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
 import Src from "../../../../components/Src.astro";
+import TestedOn from "../../../../components/TestedOn.astro";
 
 Al arrancar, el agente averigua lo que puede sobre la placa en la que corre, sin la API de
 RouterOS y sin ninguna credencial, y lo sirve en `/capabilities`. El colector lo entrega a
-cada destino como registro propio. Esta página responde a qué guarda el registro, cuándo se
-envía y dónde lo pone cada destino.
+cada destino como registro propio: qué guarda, cuándo se envía y dónde lo pone cada
+destino.
 
-## Lo que lleva
+## Contenido {#lo-que-lleva}
 
 - **Identidad**: la cadena de modelo del device tree (la placa), el kernel, el número de
   núcleos, si el contenedor es privilegiado y si tiene cgroup2, las fuentes activas, la
@@ -27,16 +32,14 @@ envía y dónde lo pone cada destino.
   nombre por el que no es la cadencia del muestreador.
 
 Un techo que la placa no publica se omite, nunca se rellena con un número sacado de otro
-sitio — el techo de conntrack de 966 656 y el límite de 64 MiB del contenedor son los de
-la propia placa.
+sitio: cada techo del registro es la lectura del propio equipo.
 
-### Los motivos que da una cadencia
+### Motivos de cadencia {#los-motivos-que-da-una-cadencia}
 
 <CadenceReasons />
 
 Los contadores nunca tienen suelo; solo las fuentes de nivel llevan cadencia. Los suelos en
-sí y cómo se midieron están en [cada fuente a su propio
-suelo](/mikroscope/es/limits/source-floors/).
+sí están en [Cadencias de las fuentes](/mikroscope/es/limits/source-floors/).
 
 ## Cuándo se envía
 
@@ -50,16 +53,14 @@ de estado. Que no se envíe nada es ausencia, no una placa sin datos.
 
 **Por qué se repite.** Estos datos son filas con la marca de tiempo del colector, así que un
 almacén solo los tiene en los instantes en que se enviaron, y una ventana de panel que no
-contiene ningún envío no contiene ningún dato. Enviados una sola vez al arrancar, los cuatro
-paneles del equipo muestran «No data» en toda ventana posterior: medido en el despliegue de
-referencia el 2026-09-17, donde la última fila de equipo tenía 26 horas y esos paneles
-llevaban vacíos otro tanto. Cinco minutos pone los datos dentro de cualquier ventana en la
-que valga la pena leerlos y cuesta doce filas por envío — una de identidad, una por zona
-térmica, una por núcleo con datos de cpufreq, una por fuente de nivel — frente a las 864 000
-filas de muestra al día que produce `--rate 10`.
+contiene ningún envío no contiene ningún dato: enviados una sola vez al arrancar, los cuatro
+paneles del equipo mostrarían «No data» en toda ventana posterior. Cinco minutos pone los
+datos dentro de cualquier ventana en la que valga la pena leerlos y cuesta, por envío, una
+fila de identidad, una por zona térmica, una por núcleo con datos de cpufreq y una por
+fuente de nivel, frente a las 864 000 filas de muestra al día que produce `--rate 10`.
 
 La repetición va marcada como tal, y los destinos se reparten según eso: los almacenes la
-escriben como cualquier otra fila, que es justo para lo que está, y los flujos pensados para
+escriben como cualquier otra fila, así que toda ventana tiene los datos, y los flujos pensados para
 que alguien los lea — Loki, stdout, una grabación — la saltan, porque un registro es para lo
 que cambia. Así Loki sigue llevando exactamente una línea `device` por conjunto de datos.
 
@@ -69,15 +70,15 @@ cada techo y cada cadencia. Un agente reiniciado cuyo único cambio es un techo 
 — un `--memory-max` nuevo, o un `FLOOR_HZ` con el mismo conjunto de fuentes — conserva su
 hash, así que el cambio no es lo que dispara el envío; llega a los destinos en la siguiente
 repetición de cinco minutos, y la fila que lo lleva queda marcada entonces y no cuando
-ocurrió. Esto está leído en el código (`capsHash` en <Src path="internal/agent/source.go" />), no
-observado.
+ocurrió. Esto está leído en el código (`capsHash` en <Src path="internal/agent/source.go" />) y no
+observado (<TestedOn of="not-tested">Probado en</TestedOn>).
 
 Son hechos, no muestras. No tienen reloj propio, así que los destinos que ponen marca de
 tiempo a sus registros los marcan con el reloj del colector en el momento en que se
 enviaron; las líneas del fichero y de stdout `json` no llevan marca de tiempo, y Prometheus
 los genera al hacer el scrape. Nunca se mezclan en una fila de muestra.
 
-## Dónde lo pone cada destino
+## Almacenamiento por destino {#dónde-lo-pone-cada-destino}
 
 <ScrollTable label="Dónde cae el flujo de datos del equipo en cada destino">
 
@@ -129,11 +130,10 @@ frecuencias como lista de kHz separada por espacios.
 
 </ScrollTable>
 
-En el RB5009 de referencia, leídos de `related_cpus` y `affected_cpus` dentro del
-contenedor el 2026-09-14 (RouterOS 7.24.2), los clusters de cpufreq son `{0,1}` y `{2,3}`,
-así que un panel de frecuencia por núcleo son en realidad dos series. Esa es la topología de
-esta placa y de ninguna otra: el agente lee los clusters por equipo, y no se ha medido
-ninguna otra placa. El techo de conntrack llega a Prometheus
+El agente lee el cluster de cpufreq de cada núcleo de su `related_cpus`, en cada equipo. En
+una placa cuyos núcleos cambian de frecuencia por parejas, por ejemplo con los clusters
+`{0,1}` y `{2,3}`, un panel de frecuencia por núcleo son en realidad dos series. El techo
+de conntrack llega a Prometheus
 como `mikroscope_slab_limit_objects` de la caché `nf_conntrack` y no como una familia de
 datos del equipo.
 
@@ -141,9 +141,9 @@ datos del equipo.
 
 ## Véase también
 
-- [Los endpoints HTTP del agente](/mikroscope/es/reference/http/): `/capabilities`, de donde sale
+- [Endpoints HTTP](/mikroscope/es/reference/http/): `/capabilities`, de donde sale
   este registro.
-- [Cada fuente a su propio suelo](/mikroscope/es/limits/source-floors/): las cadencias y las medidas
+- [Cadencias de las fuentes](/mikroscope/es/limits/source-floors/): las cadencias y los motivos
   que hay detrás.
 - [InfluxDB 3](/mikroscope/es/sinks/influxdb/): las demás medidas junto a las que están los
   registros del equipo.

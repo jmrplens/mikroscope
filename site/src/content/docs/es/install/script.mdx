@@ -1,0 +1,191 @@
+---
+title: Script de RouterOS
+description: Genera la instalación como un único script de RouterOS con mikroscope plan --rsc, ejecútalo desde el terminal del router o con /import, verifícalo, lee su manifiesto y retíralo.
+docType: how-to
+head:
+  - tag: title
+    content: Instalar el agente con un script de RouterOS | mikroscope
+---
+
+import { Aside, Tabs, TabItem } from "@astrojs/starlight/components";
+import ManualSteps from "../../../../components/ManualSteps.astro";
+import SeeAlso from "../../../../components/SeeAlso.astro";
+import TestedOn from "../../../../components/TestedOn.astro";
+
+`mikroscope plan --rsc` escribe la instalación entera como un único script de RouterOS. Ejecútalo en
+el router, desde un terminal o con `/import`: sin ssh desde tu ordenador, y el script comprueba el
+router antes de escribir nada. Para rellenar las opciones en un formulario, usa el
+[Generador de scripts](/mikroscope/es/install/generator/); escribe el mismo script.
+
+## Generar {#generate}
+
+```sh
+mikroscope plan --rsc --remote-image jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}} --out install.rsc
+```
+
+No se conecta a nada e imprime
+`install.rsc: 39 lines; review it, then paste it into the router's terminal or /import it`.
+Sin `--out` el script sale por la salida estándar. Acepta las mismas opciones que `install`:
+`--name`, `--veth`, `--subnet`, `--iface-list`, `--addr-list`, `--rate`, `--disk` y el resto
+([CLI](/mikroscope/es/reference/cli/#opciones-de-los-verbos-de-despliegue)).
+
+- **Descarga del registro**, con `--remote-image`: el router descarga la imagen por su cuenta.
+- **Tar de la imagen**, sin ella: el script espera el tar en el router como `mikroscope.tar`
+  (`<name>.tar` con `--name`), y su cabecera lo dice (`BEFORE RUNNING: put the agent image tar on the device as mikroscope.tar`).
+  Súbelo antes: [Instalación sin conexión](/mikroscope/es/install/offline/).
+
+Con las opciones por defecto, el script es:
+
+<ManualSteps variant="script" case="pull-dockerhub" title="install.rsc" />
+
+Se ejecuta como un único bloque `{ … }`, en este orden:
+
+1. **Guardas.** Se detiene con `:error "mikroscope: …"`, antes de escribir nada, cuando la versión
+   de RouterOS es anterior a 7.24, falta el paquete `container`, device mode está desactivado, una
+   veth, una envlist o un contenedor `--container-name` con ese nombre son de otra cosa, la lista de
+   interfaces no existe, falta el disco de `--disk`, el tar no está subido, o un fichero en la ruta
+   del manifiesto no es el manifiesto de esta instalación.
+2. **El manifiesto de la instalación**, y después cada objeto, con la misma etiqueta que escribe
+   `install`. Un paso que falla detiene los siguientes.
+3. **Una espera de hasta 120 s** a que el contenedor arranque, y después una línea: `mikroscope:
+   agent running, http://172.30.10.2:9123/healthz` o `mikroscope: not running yet; see /log/print
+   where topics~"container"`.
+
+## Ejecutar en el router {#run-on-the-router}
+
+<Tabs syncKey="rsc-run">
+
+<TabItem label="Pegar">
+
+1. Abre un terminal en el router: WebFig › Terminal, Winbox › New Terminal, o ssh.
+2. Espera al prompt `] >`.
+3. Pega el fichero entero.
+
+</TabItem>
+
+<TabItem label="Subir e importar">
+
+1. Sube `install.rsc` en Files (WebFig o Winbox), o con `scp`.
+2. Ejecuta:
+
+   ```text
+   /import file-name=install.rsc
+   ```
+
+3. Borra el fichero: `/file/remove install.rsc`.
+
+</TabItem>
+
+</Tabs>
+
+<Aside type="caution" title="Pega solo en el prompt">
+	En el primer inicio de sesión RouterOS pregunta `Do you want to see the software license? [Y/n]:`,
+	y las primeras líneas que pegues responden a esa pregunta y se pierden. Un pegado que pierde la
+	`{` que abre el bloque se rompe. Responde a la pregunta, espera a `] >` y pega después.
+</Aside>
+
+Un `/import` correcto imprime:
+
+```text
+mikroscope: agent running, http://172.30.10.2:9123/healthz
+Script file loaded and executed successfully
+```
+
+Una guarda que falla nombra el problema y no escribe nada, por ejemplo en la ruta del tar sin el tar
+subido:
+
+```text
+Script Error: mikroscope: upload mikroscope.tar first (:error; line 20) (:import; line 1)
+```
+
+## Verificar {#verify}
+
+En el router:
+
+```text
+/container/print where comment="mikroscope:mikroscope (managed by mikroscope)"
+:put ([/tool/fetch url="http://172.30.10.2:9123/healthz" output=user as-value]->"data")
+```
+
+La primera muestra el contenedor con la marca `R` (en marcha); la segunda imprime la respuesta de
+`/healthz` del agente, `{"ok":true,…}`. Desde un ordenador con la CLI,
+`mikroscope status --router …` reconoce la instalación y sondea el agente.
+
+## Manifiesto de la instalación {#install-manifest}
+
+El script escribe primero el manifiesto de la instalación, `mikroscope/<name>.manifest.txt` en el
+disco de la instalación. Léelo en el router:
+
+```text
+:put [/file/get [find name="mikroscope/mikroscope.manifest.txt"] contents]
+```
+
+```text
+mikroscope-manifest=1
+name=mikroscope
+tag=mikroscope:mikroscope (managed by mikroscope)
+disk=
+veth=veth-mikroscope
+subnet=172.30.10.0/30
+port=9123
+iface-list=LAN
+addr-list=LANs
+expose=
+container-name=
+remote-image=registry-1.docker.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}
+token=no
+dir=mikroscope
+file=mikroscope/mikroscope.manifest.txt
+object=/interface/veth name=veth-mikroscope
+object=/ip/address interface=veth-mikroscope
+object=/interface/list/member interface=veth-mikroscope list=LAN
+object=/ip/firewall/address-list list=LANs address=172.30.10.0/30
+object=/container/envs list=mikroscope-env
+object=/container interface=veth-mikroscope
+dir=mikroscope/mikroscope
+```
+
+Las primeras líneas son las opciones con las que se hizo la instalación, con los nombres de las
+opciones de la CLI; `token=` dice solo `yes` o `no`, nunca el valor. Cada línea `object=`, `file=`
+y `dir=` es algo que creó la instalación. `mikroscope uninstall` lee el manifiesto, retira todo lo
+que enumera y el manifiesto al final. La ruta del tar añade `file=mikroscope.tar`.
+
+## Limitaciones {#limitations}
+
+- **No puede subir nada.** Úsalo con `--remote-image`, o sube el tar antes de ejecutarlo.
+- **Con un token, el fichero es una credencial.** La línea de la envlist lleva el token en claro,
+  porque el router lo necesita en claro. La CLI escribe el fichero con permisos `0600`; bórralo del
+  router tras el `/import`.
+- **No ejecuta `doctor`.** Las guardas cubren la versión, el paquete, device mode, las colisiones de
+  nombres, la lista de interfaces, el disco, el tar y la ruta del manifiesto. No comprueban la
+  memoria ni el almacenamiento libres, una ruta que se solape con la /30 ni una regla del firewall
+  que descarte las respuestas del agente: ejecuta `mikroscope doctor` desde un ordenador que llegue
+  al router, o repasa los [Requisitos](/mikroscope/es/install/prerequisites/) a mano.
+
+Lo que se ha ejecutado, y lo que no, está en <TestedOn of="install-routes">Probado en</TestedOn>.
+
+## Retirar {#remove}
+
+Desde un ordenador con la CLI:
+
+```sh
+mikroscope uninstall --router admin@192.168.88.1 --yes
+```
+
+Lee el manifiesto, así que no necesita ninguna otra opción. Sin la CLI, ejecuta las órdenes de
+retirada de [Instalación manual: terminal](/mikroscope/es/install/manual-cli/#remove).
+[Actualizar y desinstalar](/mikroscope/es/install/upgrade/) tiene lo que la retirada nunca toca.
+
+<SeeAlso>
+
+## Véase también
+
+- [Generador de scripts](/mikroscope/es/install/generator/): el mismo script desde un formulario en
+  el navegador.
+- [Instalación sin conexión](/mikroscope/es/install/offline/): el tar de imagen que necesita la ruta
+  del tar.
+- [Salvaguardas del instalador](/mikroscope/es/security/installer/#un-script-rsc-generado-es-una-credencial):
+  por qué un script con token es una credencial.
+- [Métodos de instalación](/mikroscope/es/install/routes/): las otras formas de instalar.
+
+</SeeAlso>

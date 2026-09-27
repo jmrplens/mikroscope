@@ -1,279 +1,917 @@
 ---
-title: En qué punto está
-description: Qué funciona de extremo a extremo en un MikroTik RB5009, cuánto cuesta allí el agente, qué se encontró y no se ha corregido, y qué publica cada versión.
+title: Probado en
+description: Los equipos, las versiones de RouterOS, las fechas y las condiciones que hay detrás de cada medida y cada comprobación de la documentación de mikroscope, lo que se encontró y lo que no se ha probado.
+docType: evidence
 head:
   - tag: title
-    content: "Estado: qué funciona hoy en MikroTik RouterOS | mikroscope"
+    content: "Probado en: equipos, versiones y resultados | mikroscope"
 ---
 
+import CampaignRegister from "../../../../components/CampaignRegister.astro";
 import DashboardCount from "../../../../components/DashboardCount.astro";
 import Measured from "../../../../components/Measured.astro";
-import NotClaimed from "../../../../components/NotClaimed.astro";
 import Provenance from "../../../../components/Provenance.astro";
 import RunsTable from "../../../../components/RunsTable.astro";
 import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
 import Src from "../../../../components/Src.astro";
-import Verified from "../../../../components/Verified.astro";
+import TestedOn from "../../../../components/TestedOn.astro";
+import VerifiedRegister from "../../../../components/VerifiedRegister.astro";
 import Version from "../../../../components/Version.astro";
 
-Esta página responde a lo que necesita saber primero quien está decidiendo si
-probar mikroscope, el agente y colector de telemetría del kernel para MikroTik
-RouterOS: qué partes funcionan de extremo a extremo, en qué hardware se
-demostró, cuánto cuesta hoy el observador, qué defectos se conocen y siguen
-abiertos, y si hay algo que descargar. Se contrastó con el código de la 1.2.0 el
-2026-09-24, y lo que cambiaron la 1.2.1 y la 1.2.2 se contrastó con el código de
-la 1.2.2 ese mismo día; la versión actual es la <Version link />.
+Dónde se ejecutó, se midió o se comprobó cada parte de mikroscope: el equipo, la versión de
+RouterOS, la fecha y las condiciones, lo que encontró cada ejecución y lo que no se ha probado. Las
+guías dicen lo que hace la herramienta y enlazan aquí la prueba. Los veredictos de las funciones se
+contrastaron con el código de la 1.2.0 y de la 1.2.2 el 2026-09-24, los apartados que vinieron de
+las guías con el código de la 1.3.1 el 2026-09-26, y lo que esta página dice del código posterior a
+la 1.3.1, que es el que publica la 1.4.0, con ese código el 2026-09-27; la versión actual es la <Version link />.
 
-## Qué funciona de extremo a extremo
+## Hardware de referencia {#reference-hardware}
 
-Todo lo siguiente, salvo las baterías de pruebas, los ocho destinos y las formas
-de las reglas de alerta señalados como tales, se ha ejecutado contra el RB5009 de
-referencia (RouterOS 7.24.2, y 7.24.4 donde se indica), y no solo contra
-simulaciones. Ese RB5009 es el router de producción del mantenedor del proyecto,
-José Manuel Requena Plens, al que el resto de esta página llama el propietario. Cada
-parte empieza por su veredicto y la fecha que lo respalda, y después da las
-pruebas.
+Todas las cifras medidas en hardware de router que aparecen en esta documentación salen de un único
+MikroTik RB5009UG+S+: arm64, 4 × 1,4 GHz Cortex-A72 (r0p1), 1 GiB de RAM, Linux 5.6.3. Es el router de
+producción del mantenedor del proyecto, José Manuel Requena Plens, así que nada que necesite un
+reinicio se hace en él fuera de una ventana de mantenimiento, y no se le provoca ninguna tormenta de
+conntrack, que puede dejar sin acceso el camino por el que se está trabajando. No hay un segundo
+equipo físico. El único otro RouterOS que usa el proyecto es el
+[laboratorio virtual](#virtual-lab). Qué RouterOS tenía en cada momento está en
+[Equipos y versiones](#un-equipo-dos-versiones-de-routeros).
 
-### El agente
+### Kernel y PMU
 
-**El agente funciona en el RB5009 de referencia: el instalado estaba en marcha
-allí el 2026-09-23, cuando `doctor` leyó 600 muestras de su anillo.** Lee
-`/proc`, `/sys`, `/dev/kmsg` y los contadores de `perf_event_open` del kernel
-compartido con un temporizador fijo de 1 a 100 Hz (10 Hz por defecto; medidos
-10, 20, 50 y 100 Hz), guarda las muestras en un anillo y las sirve: `/healthz`,
-`/capabilities`, `/snapshot`, `/stream`, `/sampler`, y los endpoints de captura
-por disparo `/captures` y `/capture`. No sirve ningún `/metrics`: desde 1.0.5 la
-exposición es solo la del colector.
+- **Ficheros de contabilidad** (campaña <TestedOn of="kernel-2026-09-11">`kernel-2026-09-11`</TestedOn>):
+  no hay `/proc/pressure` ni `/proc/schedstat`, y la columna `irq` de `/proc/stat` vale siempre 0,
+  así que el tiempo de IRQ hardware se cuenta dentro de `system`. `USER_HZ` es 100, un tick de 10 ms.
+- **Trazado**: un contenedor de descubrimiento privilegiado no encontró el 2026-09-12 ni eBPF, ni
+  kprobes, ni ftrace: ni BTF, ni debugfs, ni tracefs, y los puntos de montaje no existen. Una nueva
+  comprobación el 2026-09-14 encontró `/sys/fs/bpf` presente y vacío y `/proc/modules` con 238 módulos
+  cargados, pero ni `/lib/modules`, ni cabeceras del kernel, ni compilador en el equipo.
+- **PMU**, desde dentro de un contenedor privilegiado el 2026-09-12 (RouterOS 7.24.2): la prueba abrió
+  `cycles`, `instructions`, `cache-misses`, `branch-misses` y `bus-cycles` a nivel de sistema en 4 de
+  4 CPU. En los datos del propio agente de las 24 h que terminaron el 2026-09-12, seis de los siete
+  contadores que pide informaron en 4 de 4 núcleos, `cache-references` entre ellos, y
+  `branch-instructions` no produjo ninguna fila. Los eventos genéricos `stalled-frontend` y
+  `stalled-backend` devuelven `ENOENT` en el A72.
+- **El trabajo que el tick no ve**: en una muestra de 100,4 ms en la que `/proc/stat` no marcó ningún
+  tick ocupado en ninguno de los cuatro núcleos, la PMU contó entre 2,2 y 4,6 millones de ciclos y
+  entre 0,8 y 2,1 millones de instrucciones ejecutadas, con una tasa de fallos de caché del 3,8–5,7 %
+  (registrado el 2026-09-12). Durante 2 s ese mismo día, las instrucciones por ciclo fueron de 0,381
+  en cpu0 a 0,992 en cpu1.
+- **Privilegios**: `perf_event_paranoid` vale 2 y no bloquea a un contenedor privilegiado, que conserva
+  `CAP_SYS_ADMIN` efectiva frente al host (medido el 2026-09-12). Un contenedor sin privilegios ya
+  tiene las 38 capacidades, y su root corresponde al uid 32768 del host, así que `/proc/slabinfo` y
+  `/dev/kmsg` devuelven `EACCES` (RouterOS 7.24.2; la fecha de estas dos lecturas no consta). Con
+  `privileged=yes`, el log del kernel, `/proc/slabinfo`, los contadores ECC de la MTD y la PMU se
+  encontraron legibles el 2026-09-12 (RouterOS 7.24.2, kernel 5.6.3).
 
-### La CLI de despliegue
+### Sensores y relojes
 
-**Las seis órdenes de despliegue funcionan en el RB5009 de referencia, y las seis
-se han ejecutado allí con RouterOS 7.24.4, la última el 2026-09-23.** `doctor`,
-`plan`, `install`, `status`, `upgrade` y `uninstall` instalan, actualizan y
-retiran el agente, listando cada escritura antes de hacerla y verificando cada
-retirada por recuento de propiedad. El 2026-09-12, `doctor` → `install` →
-`status` → `upgrade` → `uninstall` dejó el `/export` del router idéntico byte a
-byte, comparado por hash en memoria y sin escribirlo nunca a disco. El agente
-respondió 3 s después de la instalación, con un tiempo de ida y vuelta de
-5–7 ms. El 2026-09-17 se ejecutaron las cuatro rutas de instalación contra el
-mismo equipo, una tras otra y cada una retirada antes de la siguiente: la
-compilación desde el checkout, el tar del agente publicado, la descarga que el
-propio router hizo desde Docker Hub y el script de `plan --rsc` importado en el
-router sin CLI ninguna en la instalación misma. El agente respondió en todas, y
-el `/export` posterior a las cuatro era idéntico byte a byte al anterior a ellas.
+- `/sys/class/hwmon` está vacío, incluso con privilegios. Las dos zonas térmicas, `cpu-thermal` y
+  `soc-thermal`, son todo el conjunto de sensores del modelo base, y las dos se leen sin privileged.
+  El `/system/health` de RouterOS en esta placa informa de exactamente un sensor, `cpu-temperature`,
+  que es la zona `soc-thermal` truncada a grados enteros: un desfase medio de +0,55 °C durante los 8
+  minutos en que existieron las dos series (2026-09-14).
+- Las dos zonas declaran un `polling_delay` de 1 000 ms y un `polling-delay-passive` de 250 ms (leído
+  el 2026-09-14), así que el kernel vuelve a leer el sensor a 1 Hz. El punto de disparo crítico
+  declarado es 105 °C, leído de `/sys` (la fecha no consta). El sensor cuantiza en escalones de
+  unos <Measured id="thermal.quantumC" /> (<TestedOn of="floors-overnight">`floors-overnight`</TestedOn>).
+- El gobernador de cpufreq marcaba `userspace` el 2026-09-14, y los clusters de cpufreq, leídos de
+  `related_cpus` y `affected_cpus` dentro del contenedor ese mismo día (RouterOS 7.24.2), son `{0,1}`
+  y `{2,3}`.
 
-Desde 1.2.0, `doctor` por sí solo lee además una vez el anillo del agente en
-marcha y nombra cuatro fallos que las herramientas de RouterOS no muestran —un
-bucle de capa 2, cambios continuos de STP, un enlace que cae y vuelve y descartes
-de softnet—; si ningún agente responde en 3 s lo dice y lo omite, y lo que
-encuentra nunca cambia el código de salida. Trae también dos comprobaciones
-`WARN`, que no cambian ni el código de salida ni que `install` siga adelante: con
-`--remote-image`, un usuario puesto en `/container/config` cuando `registry-url`
-está vacío o nombra un host distinto del que se descarga la imagen, y una
-instalación con el
-mismo `--name`
-publicada en la LAN sin `TOKEN` en su entorno. Lee si hay un usuario puesto y
-cuántas entradas `TOKEN` existen, nunca un valor. Dónde se ejecutó cada cosa está
-en [Un equipo, dos versiones de RouterOS](#un-equipo-dos-versiones-de-routeros).
+### Vista desde el contenedor
+
+- **Globales dentro del contenedor** (establecido el 2026-09-11, RouterOS 7.24.2, kernel 5.6.3): los
+  ficheros de CPU, interrupciones, memoria y dispositivos de bloques, y `/proc/net/softnet_stat`. Un
+  contenedor normal leyó además como del router, el 2026-09-12: las dos zonas térmicas,
+  `scaling_cur_freq` por núcleo, `/proc/yaffs` y `/proc/buddyinfo`. `/proc/device-tree/model` dice
+  `RB5009` incluso sin privilegios.
+- **Los del propio contenedor** (campaña <TestedOn of="netns-2026-09-12">`netns-2026-09-12`</TestedOn>):
+  `/proc/net/dev`, `/proc/net/snmp`, `/proc/net/netstat` y `nf_conntrack_count` describían la veth del
+  contenedor, 4 paquetes mientras el router reenviaba millones, y `privileged=yes` no cambió eso. El
+  resto de esa frontera:
+
+<ScrollTable label="Ficheros del espacio de nombres de red tal como los ve el contenedor en el RB5009">
+
+| Qué                                                                               | Lo que ve el contenedor                                                                             | Leído      |
+| --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ---------- |
+| `/sys/class/net`                                                                  | solo `lo` y la veth; ningún dispositivo para ningún puerto frontal, privilegiado o no               | 2026-09-14 |
+| `/sys/class/mdio_bus`, `/sys/class/phy`                                           | `mdio_bus` solo contiene `fixed-0`; `phy` está vacío                                                | 2026-09-14 |
+| `netdev_budget`, `netdev_max_backlog` y las demás entradas globales de `net.core` | ausentes; las entradas por espacio de nombres, como `somaxconn`, están presentes                    | 2026-09-14 |
+| ficheros de `/proc/net/*` creados por módulos                                     | los del propio contenedor: `fib_trie` muestra solo el `/30` de la veth, `snmp6` cuenta sus paquetes | 2026-09-15 |
+| `nf_conntrack_max`                                                                | el techo real del router, 966 656, el mismo que RouterOS informa como `max-entries`                 | 2026-09-14 |
+| tiempos de expiración de conntrack                                                | los valores por defecto de Linux (`tcp_timeout_established` 432 000 s frente al `1d` de RouterOS)   | 2026-09-14 |
+
+</ScrollTable>
+
+- **Los montajes del host** no cruzan la frontera:
+  ver <TestedOn of="host-mounts">el hecho verificado</TestedOn> del 2026-09-15.
+- El registro de datos del equipo lleva los techos propios de la placa, nunca un número sacado de
+  otro sitio: el techo de conntrack de 966 656 y el límite de memoria de 64 MiB del contenedor.
+
+### Almacenamiento
+
+- `nbd0`–`nbd15` están presentes e inactivos y `mtdblock0`–`2` dan todo ceros (2026-09-12, RouterOS
+  7.24.2, kernel 5.6.3; <Src path="internal/dashboards/panels.go" />, el panel de E/S en curso de
+  disco). La fila de `/proc/yaffs` o de `/proc/diskstats` de un dispositivo solo se guarda cuando su
+  delta no es cero, lo que aquí ocurre unas pocas veces por minuto. El almacén InfluxDB de referencia
+  seguía sin tabla de dispositivos de bloques, y sin tabla de PSI, el 2026-09-25, con RouterOS 7.24.4.
+- Los contadores ECC de la MTD están todos a cero tras años de servicio (la fecha de la lectura no
+  consta).
+- `/proc/slabinfo` ocupa 13 833 bytes y 129 líneas por lectura (2026-09-14), el mayor análisis por
+  tick, un orden de magnitud por encima de cualquier otro.
+- El log del router tenía 66 217 filas cuando `record` lo leyó, porque su tema `dns` registra a disco
+  (la fecha no consta).
+- Tiene un disco tmpfs, que usa `--ephemeral`. Su cortafuegos raw lleva las dos reglas de descarte
+  `defconf:` de MikroTik en su forma de listas, `in-interface-list=!LAN` y `src-address-list=!LANs`
+  ([Listas del firewall](/mikroscope/es/install/firewall/)).
+
+### Puertos e interfaces
+
+- **Nombres del kernel frente a nombres de RouterOS**
+  ([Nombres de puertos](/mikroscope/es/reference/port-names/)): `eth1` = `ether2` por el bucle de capa
+  2 del caso real (2026-09-13). `eth5` = `ether6` y `eth6` = `ether7` el 2026-09-15: los dos puertos
+  están comentados como `Unused` y ninguno estaba `RUNNING`, así que cada uno se apagó y se volvió a
+  encender por la API mientras el agente leía `/dev/kmsg`. El kernel registró
+  `br0: port 7(eth5) entered disabled state` dentro de la ventana de `ether6` y `port 7(eth6)` dentro
+  de la de `ether7`, con nueve segundos entre ellas, lo que descarta leer dos veces el mismo apagado.
+  No se interrumpió ningún tráfico y los dos puertos estaban de vuelta en menos de cuatro segundos.
+  Los seis pares deducidos y el switch se apoyan en un `/interface/ethernet/print` de solo lectura del
+  2026-09-13: direcciones MAC consecutivas, de `…:55` para `ether1` a `…:5D` para `sfp-sfpplus1`, en el
+  orden de enumeración de RouterOS, y los nueve puertos declarando `switch=switch1` frente al único
+  `switch0` del kernel. El device tree, analizado el 2026-09-14, muestra el `ethernet@0` del SoC con
+  tres MAC, solo `eth0` habilitada (el enlace de subida de 10 G) y `eth1`/`eth2` deshabilitadas; los
+  nueve puertos del frontal son netdevs que el driver del switch crea en tiempo de ejecución. La tabla
+  es la de esta placa, observada con RouterOS 7.24.2.
+- **Las formas de registro del log del kernel** para cada clase de suceso de puerto se vieron entre el
+  2026-09-12 y el 2026-09-15 (kernel 5.6.3).
+- **Inventario** (2026-09-16, RouterOS 7.24.2): las tres lecturas de configuración devuelven 17
+  interfaces. `ether1` es un `ether` de la lista `LAN`, puerto de `bridge`, etiquetado «TrueNAS - High
+  Performance Storage», MTU 9000; `ether5` es un `ether` de `WAN` que no está en ningún bridge,
+  etiquetado «DIGI ONT»; `PPPoE_DIGI` es `pppoe-out`, `WAN`, MTU 1480; `VLAN_DIGI` es `vlan`, `WAN`;
+  `wg_devices` y `wg_trastero` son `wg` en `LAN,VPN`; `ether6` y `ether7` llevan el comentario
+  «Unused».
+- **Contadores**: 9 puertos × 45 contadores, y 15 en cada interfaz bridge, VLAN, PPPoE, WireGuard,
+  veth o loopback, contados en las propias filas `mikroscope_api_ifcounters` del colector el
+  2026-09-24. La versión de RouterOS no se leyó con ellas; el router tenía 7.24.4 ese día.
+
+## Laboratorio virtual {#virtual-lab}
+
+El Cloud Hosted Router de MikroTik bajo QEMU, en un contenedor Docker, en la máquina en la que se
+construyó el laboratorio (x86_64, 12 núcleos, 27 GB de RAM, Docker 29.8, QEMU 10.0.13), aprovisionado
+en una instantánea limpia con el paquete `container` y `device-mode container=yes`. Medido el
+2026-09-26 con RouterOS 7.24.4 y la CLI y la imagen del agente 1.3.1 publicadas:
+
+- **CHR x86_64** con KVM: 2 núcleos, kernel `5.6.3-64`.
+- **CHR arm64** con la emulación TCG de QEMU, `cortex-a72`, 2 vCPU, 1 GiB: kernel `5.6.3`, la
+  arquitectura, la versión del kernel y el modelo de CPU del RB5009, a la velocidad del host.
+
+**Lo que muestra**: corrección. Las órdenes de RouterOS que envía mikroscope y lo que responde
+RouterOS, la lectura que hace `doctor` del router, que RouterOS elija y descargue la imagen de su
+arquitectura, el arranque y la parada del contenedor, la detección de capacidades del agente, su
+formato de muestra y su anillo. Las rutas de instalación que se ejecutaron allí están en
+[Rutas de instalación probadas](#install-routes-tested).
+
+**Cómo llega el laboratorio a sus agentes**: por una ruta estática. El lado LAN del laboratorio,
+`192.168.88.10/24` dentro del contenedor del laboratorio, tiene su ruta por defecto por el puente de
+Docker, no por el router, y llega a cada agente por `172.30.0.0/16 via 192.168.88.1`, el valor por
+defecto de `LAB_AGENT_ROUTES`: el prefijo más amplio de
+[Ruta estática](/mikroscope/es/install/reaching-the-agent/#ruta-estática). El 2026-09-27, la
+`172.30.10.0/30` por defecto y una instalación en `172.30.11.0/30` respondieron ambas a `/healthz` por
+ella.
+
+**Lo que no puede mostrar**:
+
+- Una placa. No hay chip de switch, flash, sensores ni modelo en el device tree, así que no hay mapa
+  de puertos. Las `/capabilities` del agente dan `cpufreq`, `mtd`, `psi`, `schedstat` y `thermal`
+  ausentes en los dos, `perf` y `kmsg` presentes en los dos, y `yaffs` ausente en x86_64 y presente
+  en arm64, un `/proc/yaffs` sin flash detrás.
+- Cadencias por encima de 10 Hz. La licencia gratuita de CHR limita lo que envía el router a
+  1 Mbit/s por interfaz: copiar 2 MiB desde el router por ether2 llevó 15,6 s, unos 1,07 Mbit/s,
+  frente a 0,2 s hacia él. `/stream` midió 2 526 B por línea en el laboratorio, 0,21 Mbit/s a 10 Hz,
+  así que 50 Hz está en el tope y 100 Hz por encima. No se midió ninguna de las dos.
+- Ningún coste en arm64. Con TCG el reloj del invitado sigue al del host, así que ninguna duración,
+  ninguna cifra de CPU (`cpu-load`, `self.cpu_us`, `read_ns`, `wake_ns`, la dispersión de `dt_ns`,
+  `slipped`), ninguna tasa de interrupciones, softirqs o cambios de contexto y ninguna cuenta de la
+  PMU del laboratorio arm64 mide un Cortex-A72. El agente aguantó allí a 10 Hz, 3 003 ticks en 300,1 s
+  con 1 retrasado y 1 202 en 120,1 s sin ninguno, y su tamaño residente de 14–16 MiB (32 MiB
+  cargados a su cgroup) es solo orientativo.
+
+Un bucle de rutas del propio laboratorio, ya corregido, hacía que el router emulado se arrastrara
+cada vez que algo sondeaba una dirección de agente sin veth detrás: antes de la corrección, `install`
+en arm64 tardó 38,4, 11,8 y 34,1 s, y el primero y el tercero salieron con 1 en una instalación
+completa. Las cifras de arm64 de aquí son de después de la corrección; las de x86_64 se tomaron
+antes. Lo que encontró allí la 1.3.1 está en
+[Problemas conocidos](#encontrado-en-el-laboratorio-virtual).
+
+### Tiempos del laboratorio {#lab-timings}
+
+En la máquina de arriba, desde la instantánea limpia. Cómo se ejecuta cada batería está en
+[Baterías de pruebas](/mikroscope/es/reference/testing/#el-laboratorio-virtual-de-routeros).
+
+- **Un arranque desde la instantánea hasta que responde ssh**, 2026-09-26: 7 s en x86_64 (6,9, 7,2,
+  7,4 y 7,4 s) y de 26 a 28 s en arm64 (25,7, 26,6, 27,0 y 27,5 s).
+- **`make roundtrip`**, 2026-09-26: `doctor`, `install`, `status`, `upgrade` y `uninstall`, cada
+  orden con `--ephemeral`, y el `/export` del router resumido con un hash antes y después. De 28 a
+  34 s en x86_64 en tres ejecuciones y de 40 a 45 s en arm64 en cuatro, con el export idéntico byte a
+  byte todas las veces. Con el código de la 1.4.0, que hace un solo intento de `uninstall`, el
+  2026-09-27: 20 s en x86_64 y 35 s en arm64, una ejecución de cada una con los pasos de compilación
+  de make incluidos, con el export idéntico byte a byte.
+- **`make test-lab` con los escenarios de la 1.3.1**, 2026-09-26: de 7 min 21 s a 9 min 49 s en
+  x86_64 en seis ejecuciones y de 12 min 12 s a 16 min 48 s en arm64 en tres, las más lentas de cada
+  una con las dos baterías en paralelo en un anfitrión ocupado. Ninguna instalación falló.
+- **`make test-lab` con los escenarios de las opciones de instalación**, con el código posterior a
+  la 1.3.1, 2026-09-27: 28 min 32 s en x86_64 sola, y después 28 min 17 s en x86_64 y 57 min 29 s en
+  arm64 en paralelo. Tras las correcciones que pidió la revisión, 29 min 2 s y 57 min 13 s en
+  paralelo, con todas las pruebas superadas; las veinte desinstalaciones de S9 con un cliente en
+  `/stream`, diez por arquitectura, quedaron limpias al primer intento, en 8,0 a 12,6 s. Ese mismo
+  día S17 se ejecutó en un laboratorio CHR x86_64 con RouterOS 7.23.7: a `doctor` le faltó
+  `RouterOS 7.24 or later` y leyó todas las demás comprobaciones.
+- **RouterOS 7.24.4 cambia su propio `/export`**: añade y quita por su cuenta una línea
+  `/system keymat-provider … name=default`, así que la comparación de la batería deja esa línea fuera
+  (2026-09-26).
+
+### Corte de corriente tras instalar {#power-cut-after-install}
+
+El 2026-09-26, un corte de corriente hecho en cuanto una instalación recién hecha respondió no
+devolvió ningún agente en 90 s en tres de cuatro intentos en el laboratorio arm64. Los dos
+contenedores que se miraron no podían arrancar (`Exec format error`, `Segmentation fault`), muy
+probablemente porque RouterOS aún no había escrito la instalación en su disco; eso no se examinó. En
+x86_64 volvieron tres de tres. El escenario del arranque con el router, S7, espera 45 s entre la
+instalación y su corte, y solo pregunta si ese arranque funciona. S6 corta la corriente bajo una
+instalación `--ephemeral` en el disco tmpfs del laboratorio: después el contenedor sigue configurado y
+detenido, su raíz, su imagen y el manifiesto se han ido con el contenido del disco, el disco sigue ahí
+y vacío, y nada responde; `uninstall --ephemeral` no deja después nada en absoluto. Pasó en las dos
+arquitecturas en las ejecuciones del 2026-09-27.
+
+### RouterOS x86 desde la ISO {#routeros-x86-from-the-iso}
+
+El laboratorio opcional que instala RouterOS x86 desde la ISO de MikroTik se ejecutó el 2026-09-26
+con RouterOS 7.24.4. El router informó de la placa `x86 QEMU Standard PC (Q35 + ICH9, 2009)` y de
+una licencia de prueba sin nivel y con 24 horas por delante. La CLI 1.3.1 y el agente de la rama del
+laboratorio se comportaron como en CHR x86_64: a `doctor` le faltaron las mismas dos listas, una
+instalación desde el tar respondió al momento, `status` reconoció todos los objetos y `uninstall`
+verificó el router limpio, dejando el mismo directorio `mikroscope` vacío. Las `/capabilities` del
+agente fueron las de CHR x86_64.
+
+### Ejecuciones en la CI {#lab-runs-in-ci}
+
+El flujo se ejecutó por primera vez en los runners de GitHub el 2026-09-26, como el trabajo del
+laboratorio de la CI en el pull request #69: cuatro ejecuciones x86_64 entre las 21:06 UTC de ese día
+y las 00:45 UTC del 2026-09-27, cada una con las diez pruebas que tenía entonces la batería superadas
+(de 471,7 a 485,8 s) en un trabajo de 10 min 30 s a 13 min 30 s. De las tres ejecuciones de abajo,
+las dos primeras tenían la caché vacía, así que `make lab-up` descargó RouterOS y lo aprovisionó; la
+tercera tomó las descargas de la caché y aprovisionó una instantánea nueva.
+
+<ScrollTable label="Tres ejecuciones del laboratorio en los runners de GitHub tras la fusión del pull request #69">
+
+| Ejecución                          | Commit                                   | Runner                                                         | `make lab-up`                                                    | Batería                                                                                   | Trabajo       |
+| ---------------------------------- | ---------------------------------------- | -------------------------------------------------------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ------------- |
+| arm64, a petición sobre main       | `e7efbbe`, el laboratorio tal como se fusionó | `ubuntu-latest`: 4 CPU, 15 989 MB, `/dev/kvm` presente     | 4 min 29 s: aprovisionamiento 83 s, un arranque de la instantánea 24 s | 638,6 s, las diez pruebas de ese commit superadas                                    | 16 min 24 s   |
+| x86_64, pull request #70           | `3c34d9a`, las opciones de instalación   | `ubuntu-latest`: 4 CPU, 15 989 MB, `/dev/kvm` usado por KVM    | 4 min 28 s: aprovisionamiento 46 s, un arranque de la instantánea 8 s | 1 591,4 s (26 min 31 s), todas las pruebas superadas; S17 omitida, porque necesita un RouterOS anterior a 7.24 | 32 min 42 s   |
+| x86_64, pull request #70           | `1826aa5`, con la credencial de registro | `ubuntu-latest`, `/dev/kvm` usado por KVM                      | 1 min 25 s: las descargas desde la caché, aprovisionamiento 76 s | 1 633,1 s (27 min 13 s), todas las pruebas superadas; S17 omitida. El router descargó como la cuenta de Docker Hub del repositorio, S2 incluida; S1, S18 y los scripts de Docker Hub y de GHCR de S5 arrancaron sin ella | 29 min 52 s   |
+
+</ScrollTable>
+
+En las dos primeras de esas ejecuciones se cortó una descarga desde MikroTik
+(`connection reset by peer`) y se reanudó al primer reintento. La sonda de KVM en el runner arm64 de
+GitHub encontró `ubuntu-24.04-arm` con 4 CPU y sin `/dev/kvm`, así que el laboratorio arm64 sigue
+emulado en un runner x86_64.
+
+Las dos ejecuciones en el pull request #70 lo retuvieron 30 y 33 min, y por eso `lab.yml` se ejecuta ahora
+solo cada semana y a petición, nunca en un pull request ni antes de una publicación.
+
+En el commit de la publicación 1.4.0 (`79b7c2f`, una ejecución a petición el 2026-09-27, run
+36329638066) la batería entera pasó en las dos arquitecturas: 1 517,2 s en x86_64 en un trabajo de
+31 min 38 s, y 3 042,6 s en arm64, emulado, en un trabajo de 54 min 52 s. La imagen del agente 1.4.0
+aún no estaba publicada, así que los trece casos de referencia que descargan su imagen descargaron la
+de la 1.3.1, como hace S5 antes de una etiqueta y dice en su registro.
+
+## Equipos y versiones {#un-equipo-dos-versiones-de-routeros}
+
+<ScrollTable label="Todos los RouterOS en los que ha funcionado mikroscope">
+
+| Equipo                         | Tipo                            | RouterOS | Cuándo                                               | Qué se ejecutó allí                                                                                                                            |
+| ------------------------------ | ------------------------------- | -------- | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| RB5009UG+S+                    | hardware, arm64                 | 7.24.1   | hasta la actualización del 2026-09-10                | el coste de una conexión SSH, 2026-08-26                                                                                                       |
+| RB5009UG+S+                    | hardware, arm64                 | 7.24.2   | del 2026-09-10 a más o menos el 2026-09-18 22:43 UTC | la mayoría de las campañas, del 2026-09-11 al 2026-09-18                                                                                       |
+| RB5009UG+S+                    | hardware, arm64                 | 7.24.4   | desde más o menos el 2026-09-18 22:43 UTC           | la campaña de errores de puerto, los tiempos de `/stream`, las gráficas del almacén de referencia y las órdenes de despliegue desde el 2026-09-21, ninguna de la 1.4.0 |
+| CHR x86_64, laboratorio virtual | virtual (KVM), amd64            | 7.24.4   | 2026-09-26 y 2026-09-27                              | `doctor`, `plan`, tres rutas de instalación, `--expose`, `uninstall` con la 1.3.1; la batería entera del laboratorio con el código posterior y en el commit de la 1.4.0     |
+| CHR arm64, laboratorio virtual  | emulado (TCG), arm64            | 7.24.4   | 2026-09-26 y 2026-09-27                              | `doctor`, `plan`, tres rutas de instalación, `uninstall` con la 1.3.1; la batería entera del laboratorio con el código posterior y en el commit de la 1.4.0                |
+| CHR x86_64, laboratorio virtual | virtual (KVM), amd64            | 7.23.7   | 2026-09-27                                           | `doctor`, que rechaza un RouterOS anterior a 7.24 (S17)                                                                                         |
+| RouterOS x86 desde la ISO, laboratorio virtual | virtual (KVM), amd64 | 7.24.4 | 2026-09-26                                    | `doctor`, una instalación desde el tar, `status` y `uninstall` con la 1.3.1                                                                    |
+
+</ScrollTable>
+
+**Cuándo pasó el RB5009 a 7.24.4.** La actualización en sí no quedó anotada, pero está acotada: la
+fecha de compilación de 7.24.4 es 2026-09-16 11:32:21; el 2026-09-24 el router informó de 7.24.4 con
+un uptime de 5d15h49m12s, un arranque hacia el 2026-09-18 22:43 UTC; y una actualización de RouterOS
+lo reinició a las 00:43:30 CEST del 2026-09-19, las 22:43:30 UTC del día anterior, tras lo cual la
+capa del kernel se reanudó a las 00:45:03. El uptime de la capa de la API en el almacén de referencia
+crece al ritmo del reloj desde el 2026-09-19 a las 11:13:35 UTC. Así que el router tiene 7.24.4 desde
+ese arranque como tarde. Las campañas fechadas del 2026-09-16 al 2026-09-18 constan como 7.24.2; la
+cota ni lo confirma ni lo desmiente. Ninguna de las medidas de 7.24.2 se ha repetido sobre 7.24.4.
+
+**Lo que se ejecutó sobre 7.24.4.** `doctor`, `plan`, `install`, `status` y `uninstall` el
+2026-09-21, con el agente instalado funcionando de forma continua desde el 2026-09-19. El 2026-09-23
+se reprodujo en solo lectura la forma 1.2.x del aviso de registro de `doctor`, y su aviso de token
+con una instalación desechable que se expuso, se actualizó sin token y se retiró, así que `upgrade`
+también se ha ejecutado allí. Ese mismo día `doctor` leyó 600 muestras del anillo del agente en
+marcha y no encontró nada. El 2026-09-24 se le dio a RouterOS la referencia del agente con su host de
+registro dentro de `remote-image=`
+(dos <TestedOn of="remote-image-host">hechos verificados</TestedOn>). La capa de la API funciona sin
+parar sobre 7.24.4 desde el 2026-09-19; sus lecturas de inventario y de claves de pérdidas y su
+perfil de coste son de 7.24.2 (2026-09-15 y 16), y su prueba de reconexión y su A/B con 16
+interfaces del 2026-09-19, tras la actualización de ese día, sin la versión anotada al lado.
+
+**Los ajustes del contenedor** que escribe `install` se verificaron en el RB5009 con RouterOS 7.24.2
+y se volvieron a ejercitar sobre 7.24.4; no se probó ninguna otra placa.
+
+**El agente del RB5009** se actualizó a 1.0.9 el 2026-09-19 y a 1.2.0 a las 08:08:54 UTC del
+2026-09-24. Los tiempos de `/stream` del 2026-09-21 son del agente 1.0.9.
+
+### Plataformas {#qué-publica-la-versión}
+
+De las cuatro plataformas que publica una versión, `arm64` se ha ejecutado en hardware, el RB5009, y
+emulada en el laboratorio. `amd64` solo se ha ejecutado en el laboratorio, en el CHR x86_64 y en
+RouterOS x86 desde la ISO, ambos bajo KVM, nunca en hardware x86. `arm/v7` y `arm/v5` nunca se han
+ejecutado en RouterOS: se compilan de forma cruzada, y la CI arranca cada imagen con `-version` bajo
+la emulación de modo usuario de QEMU (`make agent-smoke`), que no es RouterOS. Qué publica cada
+versión, y qué números de versión nunca llegaron a publicarse, está en
+[Versiones](/mikroscope/es/about/changelog/#lo-que-publica-cada-versión).
+
+## Estado de las funciones {#qué-funciona-de-extremo-a-extremo}
+
+Todo lo siguiente se ejecutó contra el RB5009 salvo que diga la batería de contenedores o el
+laboratorio: con RouterOS 7.24.2 si está fechado hasta el 2026-09-18, y con 7.24.4 si está fechado
+desde el 2026-09-19 ([Equipos y versiones](#un-equipo-dos-versiones-de-routeros)). Cada parte
+empieza por su veredicto y la fecha que lo respalda.
+
+### Agente {#el-agente}
+
+**El agente funciona en el RB5009: el instalado estaba en marcha allí el 2026-09-23, cuando `doctor`
+leyó 600 muestras de su anillo.** Lee `/proc`, `/sys`, `/dev/kmsg` y los contadores de
+`perf_event_open` del kernel compartido con un temporizador fijo de 1 a 100 Hz (10 Hz por defecto;
+10, 20, 50 y 100 Hz <TestedOn of="rates-2026-09-18">medidos</TestedOn>), guarda las muestras en un
+anillo y las sirve: `/healthz`, `/capabilities`, `/snapshot`, `/stream`, `/sampler`, y los endpoints
+de captura por disparo `/captures` y `/capture`. No sirve ningún `/metrics`; la exposición es la del
+colector.
+
+### Órdenes de despliegue {#la-cli-de-despliegue}
+
+**Las seis órdenes de despliegue se han ejecutado en el RB5009 con RouterOS 7.24.4, las seis a más
+tardar el 2026-09-23, cada una con la CLI de su fecha. Las de la 1.4.0 no se han ejecutado allí: el código
+posterior a la 1.3.1, que es el que publica la 1.4.0, solo se ha ejecutado en el laboratorio virtual
+(2026-09-27).** `doctor`, `plan`, `install`, `status`, `upgrade` y `uninstall` instalan, actualizan
+y retiran el agente, listando cada escritura antes de hacerla y verificando cada retirada por
+recuento de propiedad.
+
+- **Ida y vuelta, 2026-09-12**: `doctor` → `install` → `status` → `upgrade` → `uninstall` dejó el
+  `/export` del router idéntico byte a byte (<TestedOn of="export-identical">verificado</TestedOn>).
+  El agente respondió 3 s después de la instalación, con un tiempo de ida y vuelta de 5–7 ms: dos
+  sondeos, 7 ms tras `install` y 5 ms tras `upgrade`, y el primero imprimió
+  `direct transport ok: agent 4857d0a-dirty, 10 Hz, seq 29, 0 slipped, 7ms round trip`. Es una
+  instalación en una red, no una cifra para otra. La ejecución pasó `--ephemeral` a `doctor`,
+  `install` y `upgrade`, y es anterior a 1.1.0, desde la que `uninstall` solo retira con `--yes`.
+  `scripts/roundtrip.sh` pasa ahora `--yes` a su desinstalación (hasta 1.2.0 no lo hacía, así que ahí
+  solo listaba y su comprobación del export fallaba) y `--ephemeral` a todas las órdenes. En esa forma
+  se ejecuta en el laboratorio como `make roundtrip` ([Tiempos del laboratorio](#lab-timings)), y no
+  se ha ejecutado contra el RB5009, donde es `make roundtrip-device`.
+- **Rutas de instalación**: cuatro rutas de principio a fin el 2026-09-17, y las del laboratorio el
+  2026-09-26, en [Rutas de instalación probadas](#install-routes-tested).
+- **`doctor` por sí solo** lee además una vez el anillo del agente en marcha y nombra cuatro fallos
+  que las herramientas de RouterOS no muestran: un bucle de capa 2, cambios continuos de STP, un
+  enlace que cae y vuelve y descartes de softnet. Si ningún agente responde en 3 s lo dice y lo
+  omite, y lo que encuentra nunca cambia el código de salida. El 2026-09-23 leyó 600 muestras y no
+  encontró nada; los cuatro fallos los cubren pruebas que reproducen el texto real de los registros y
+  la cadencia de 2,0 s del bucle del RB5009, no un fallo en vivo. Su hallazgo de cambios de STP se
+  apoya en cómo se ve un enlace sano al subir: en el ether7 del RB5009, cinco subidas de enlace el
+  2026-09-21 registraron cada una tres pasos a learning a la vez y llegaron a forwarding entre 2,1 y
+  2,8 s después, y en 30 días del almacén de ese router toda subida sana dejó learning menos
+  forwarding en 0.
+- **Sus comprobaciones `WARN`**, que no cambian ni el código de salida ni que `install` siga
+  adelante. Dos son anteriores a la 1.4.0: con `--remote-image`, un usuario puesto en
+  `/container/config` cuando `registry-url` está vacío o nombra un host distinto del que se descarga
+  la imagen; y una instalación con el mismo `--name` publicada en la LAN sin `TOKEN` en su entorno.
+  Lee si hay un usuario puesto y cuántas entradas `TOKEN` existen, nunca un valor. La forma 1.2.x del
+  aviso de registro se reprodujo en solo lectura sobre 7.24.4 el 2026-09-23; la comparación de hosts
+  que la sustituyó solo ha avisado contra respuestas de router falsas en los tests. La 1.4.0 añade un
+  `WARN` para una descarga en un router ARM de 32 bits, para una descarga con menos de 16 MiB libres
+  por encima del `memory-max` del contenedor, para el arranque con el router cuando la raíz está en un
+  disco tmpfs, para una regla de cortafuegos que puede descartar las respuestas del agente, para un
+  `--lan-address` en el enlace de subida, para objetos etiquetados para la instalación que las
+  opciones no seleccionan, y para una tabla de rutas o un cortafuegos que no pudo leer. De ellos, los
+  avisos del tmpfs y de los objetos etiquetados saltaron en el laboratorio en CHR x86_64, RouterOS
+  7.24.4, el 2026-09-27; ninguno se ha ejecutado en el RB5009.
+- **Extracción del tar**, 7.24.2, 2026-09-11: un tar de 1,8 MiB, una compilación de esa fecha
+  anterior a 1.0.0, se extrajo en el mismo segundo que su `/container/add`. La CLI de entonces borraba
+  el tar tras una espera fija; la 1.4.0 espera a que el contenedor marque `stopped`, con
+  `--extract-timeout` como límite.
+- **Una instalación expuesta actualizada sin su token**, 7.24.4, 2026-09-21: el upgrade pasó su
+  comprobación, dejó las dos reglas en su sitio y escribió una envlist sin `TOKEN`, y `/snapshot` por
+  la dirección LAN del router pasó de `401` a `200`. Desde 1.2.0 `doctor` señala ese estado, y el
+  código posterior a la 1.3.1 rechaza un `upgrade` así (laboratorio, 2026-09-27).
+- **Un `uninstall` sin más de una instalación expuesta**, 7.24.4, 2026-09-21: retiró todo lo demás,
+  imprimió `verified: nothing mikroscope created remains on the router` y dejó el dst-nat apuntando a
+  una dirección que ya no existía. El código posterior a la 1.3.1 lee del router la forma de la
+  instalación, y un `uninstall` sin más retiró las dos reglas en el laboratorio (2026-09-27).
 
 ### `record`, `mark` y `plot`
 
-**`record`, `mark` y `plot` funcionan de extremo a extremo, como muestra una
-grabación hecha en el RB5009 de referencia el 2026-09-12.** Esa grabación, de
-60 s a 10 Hz, dio exactamente 600 muestras, 0 huecos y −7 ms de desfase de reloj.
+**`record`, `mark` y `plot` funcionan de extremo a extremo, como muestra una grabación hecha en el
+RB5009 el 2026-09-12:** 60 s a 10 Hz, exactamente 600 muestras, 0 huecos y −7 ms de desfase de
+reloj. Lo que mostró está en <TestedOn of="record-2026-09-12">su campaña</TestedOn>.
+
+En el laboratorio el 2026-09-27 (CHR x86_64, RouterOS 7.24.4, la imagen publicada del agente 1.3.1),
+`record --for 60s` escribió 600 muestras, `seq` de 11 a 610, con 0 huecos. Tres notas de `mark`
+desde una segunda shell llegaron al mismo `.markers.csv` mientras `record` corría, y el resumen de
+`record` dijo `0 marker(s)`: solo cuenta las notas escritas en él. `mark --log-markers` por la API
+del laboratorio añadió 7 marcadores del log del router en la ventana, y `plot` dibujó las 600
+muestras y 10 marcadores.
 
 ### `forward`
 
-**`forward` se ha ejecutado desde el RB5009 hacia tres de sus once destinos,
-fichero, Prometheus e InfluxDB 3, los tres a la vez el 2026-09-15; los otros ocho
-solo se han vuelto a leer desde productos reales en contenedores, desde el
-2026-09-16.** `forward` es el colector: une la capa del kernel con la capa de la
-API de RouterOS y escribe en once destinos. Por Loki, OTLP, Graphite,
-Elasticsearch, SQL, PostgreSQL, Telegraf y stdout todavía no han pasado muestras
-del router, pero todos ellos escriben ya en el producto real — InfluxDB 3,
-PostgreSQL, Elasticsearch, Graphite, Loki, un OpenTelemetry Collector, Telegraf y
-Prometheus en contenedores — y la batería vuelve a leer cada uno por su propia
-API (2026-09-16). Su etapa de derivación añade valores derivados y eventos de
-detección junto a las filas en bruto, y emite un flujo de datos del equipo una
-vez por cada hash de capacidades.
+**`forward` se ha ejecutado desde el RB5009 hacia tres de sus once destinos, fichero, Prometheus e
+InfluxDB 3, los tres a la vez el 2026-09-15; los otros ocho solo se han vuelto a leer desde productos
+reales en contenedores, desde el 2026-09-16.** `forward` une la capa del kernel con la capa de la API
+de RouterOS y escribe en once destinos. Por Loki, OTLP, Graphite, Elasticsearch, SQL, PostgreSQL,
+Telegraf y stdout no han pasado muestras del router; la batería de contenedores escribe en cada
+producto real y lo vuelve a leer por su propia API ([Baterías de pruebas](/mikroscope/es/about/status/#las-baterías-de-pruebas)).
 
-### Los dashboards
+- **2026-09-12, ocho minutos**: 4 800 muestras del kernel y 479 de la API reenviadas con 0 huecos y 0
+  descartes, ejecutando
+  `mikroscope forward --for 8m --prom :9124 --influx … --interfaces bridge,ether1,PPPoE_DIGI --conntrack-every 10s`.
+- **2026-09-15, cinco ejecuciones de cadencia** a 10, 50 y 100 Hz hacia un fichero, una exposición
+  Prometheus e InfluxDB 3 a la vez: todos los destinos informaron de 0 huecos y 0 descartes
+  (<TestedOn of="rates-2026-09-15">`rates-2026-09-15`</TestedOn>).
+- **Prometheus**: un Prometheus 3.14 hizo scrape de la exposición del colector cada 5 s con el RB5009
+  alimentando el colector, el 2026-09-12 y de nuevo el 2026-09-15. No consta ningún otro intervalo de
+  scrape ni ninguna otra versión de Prometheus.
+- **InfluxDB 3**: el primer destino real, el 2026-09-12, respondió
+  `422: would exceed limit of 5 databases`, el límite por nodo que InfluxData documenta para Core. Las
+  ejecuciones medidas usaron una instancia de InfluxDB 3 Core propia. El 2026-09-19 el colector pasó
+  a InfluxDB 3 Enterprise 3.11.4 y escribió 44 820 filas en 36 tablas en sus primeros 19 minutos, 0
+  descartadas y 0 errores. Todo lo anterior a esa fecha se midió contra Core.
+- **El colector frente a un agente más rápido**, 2026-09-21: con el agente a 100 Hz y otra vez a
+  50 Hz, `/healthz` daba `rate_hz` 100 y 50 y el propio registro del colector repetía esa misma
+  cadencia, mientras que `mikroscope_info{rate_hz}` valía `10` en los dos casos;
+  `mikroscope_cpu_busy_ticks` llevaba los cubos `le="0"` a `le="11"` más `+Inf` en los dos; y
+  `window="1s"`, `window="10s"` y `window="60s"` estaban los tres presentes en los dos.
+- **Detecciones en el almacén de referencia**, del 2026-09-19 a las 11:13 UTC al 2026-09-24 a las
+  08:26 UTC: saltaron cuatro de las once reglas, `microburst` 116 veces, `ipc-collapse` 41 (en los
+  cuatro núcleos), `link-flap` 11 y `agent-restart` una. Solo de `microburst` se ha medido el
+  comportamiento contra las muestras
+  (<TestedOn of="microburst-replay-2026-09-16">`microburst-replay-2026-09-16`</TestedOn>); las otras
+  tres se contaron, sin cotejarlas con lo que hacía el router. Las 11 filas de `link-flap` están en
+  `ether1`, `ether2`, `ether4`, `ether6` y `ether7`, cada una con entre 2 y 6 registros de enlace en
+  60 s, todas sin provocar; no se comprobó cuál se debió a un cable, a un equipo del otro lado o a
+  otra cosa.
+- **Reinicios**: el reinicio por la actualización de RouterOS del 2026-09-19 ejercitó de verdad la
+  resincronización del colector (la capa del kernel se reanudó a las 00:45:03 CEST). No se comprobó
+  si entonces se escribió una fila de `mikroscope_detection` para `agent-restart`, y el almacén que
+  la habría guardado se sustituyó más tarde ese mismo día; el actual empieza a las 11:13 UTC. Guarda
+  una fila de `agent-restart`, a las 08:08:54 UTC del 2026-09-24, con `value` 1 frente a `threshold`
+  4 338 037, cuando se actualizó el agente a 1.2.0.
+- **Datos del equipo**: enviados una sola vez al arrancar, los cuatro paneles del equipo muestran «No
+  data» en toda ventana posterior: el 2026-09-17 la última fila de equipo del despliegue de
+  referencia tenía 26 horas y esos paneles llevaban vacíos otro tanto. Repetidos cada cinco minutos,
+  cuestan doce filas por envío en el RB5009.
+- **La entrega durante 24 horas**, 2026-09-17, en el despliegue de referencia: la mayor interrupción
+  fue de 114,5 s, y la provocamos nosotros, un cambio de contenedor más el minuto que tarda el colector
+  en notar que el agente se ha reiniciado. En funcionamiento normal el colector nunca se quedó atrás.
+  Por eso el anillo guarda 60 s por defecto: cubre un reinicio de cualquiera de los dos lados en una
+  LAN.
 
-**Todos los paneles de los cinco dashboards respondieron sin error en un Grafana
-real sobre los almacenes de la batería de contenedores (2026-09-17), y los
-dashboards de InfluxDB y Prometheus superaron `dashboards check` sobre los datos
-del propio RB5009 (2026-09-16).** Hay uno por almacén —InfluxDB 3, Prometheus,
-PostgreSQL, Graphite y Elasticsearch—, generados a partir de una sola lista de
-paneles, con reglas de alerta para los tres cuyo lenguaje de consulta es el de
-las reglas. A los dos almacenes SQL se les hace la misma pregunta en dos
-dialectos: los paneles de PostgreSQL son los de InfluxDB reescritos, y la batería
-de contenedores hace que un PostgreSQL real planifique todas sus consultas.
-Graphite y Elasticsearch llevan menos paneles a propósito (<DashboardCount store="graphite" of="panels" /> y <DashboardCount store="elasticsearch" of="panels" /> frente a <DashboardCount store="influxdb" of="panels" />):
-Graphite no tiene etiquetas y Elasticsearch no tiene documentos anidados, así que
-lo que no pueden expresar está ausente en vez de equivocado.
+### Capa de la API {#capa-de-la-api}
 
-Los cinco se importan en un Grafana real sobre los almacenes que llenó la
-batería, y se le pregunta a cada panel: el 2026-09-17 devolvieron datos 57, 98,
-136, 35 y 28 paneles, y no falló ninguno. Las anotaciones de Elasticsearch y
-Graphite, que consultaban PromQL contra su propia fuente de datos hasta que la
-1.2.1 las corrigió, desde entonces solo se han comprobado como JSON generado en
-una prueba unitaria, no en un Grafana real.
+**La capa de la API ha funcionado en una sola placa, el RB5009, sin parar sobre 7.24.4 desde el
+2026-09-19.**
 
-El 2026-09-16, en Grafana 13.2.1, contra el RB5009 con los disparadores por
-defecto y un `forward` de 30 minutos hacia los dos almacenes, `dashboards check`
-dio por buenos los 171 paneles que tenía entonces el de InfluxDB (0 fallidos, 10
-vacíos conocidos tolerados) y 133 paneles de Prometheus (0 fallidos, 9 vacíos
-conocidos tolerados). El recorrido sin interfaz, fila a fila, de los dos
-dashboards — 0 insignias de error y 0 "No data" — es del 2026-09-15 y cubre 168 y
-130 paneles; no se ha repetido para los dos paneles de eventos de puerto ni para
-la tabla de inventario de interfaces, que no cubre. Un recorrido del 2026-09-14,
-contra una captura de 10,5 h del mismo equipo, renderizó 140 paneles de InfluxDB
-con el mismo resultado. Los cambios de diseño de 1.2.0 —números de las
-estadísticas a 32 px fijos y la memoria en uso como serie temporal— se
-comprobaron el 2026-09-24 importando el dashboard de InfluxDB en el Grafana del
-propietario y capturándolo a 390x844 y a 1600x1000; los otros cuatro dashboards
-no se capturaron. El 2026-09-25, Grafana 12.3.0 y 13.2.1 sobre un almacén
-InfluxDB 3.11.2 Core desechable renderizaron la fila no disponible del dashboard
-de InfluxDB: tal como estaba en 1.3.0, abrirla envió cinco consultas y pintó
-cinco insignias `table … not found` en las dos versiones; con sus consultas
-publicadas ocultas no envió ninguna ni pintó ninguna, y 13.2.2 hizo lo mismo en
-un segundo renderizado ese día. Los otros cuatro dashboards conservan
-encendidas las consultas de esa fila salvo que un sondeo no haya encontrado la
-medida, porque en sus almacenes una medida ausente responde sin error (vacío en
-Prometheus, PostgreSQL y Graphite, ceros en Elasticsearch) en lugar de fallar; eso se comprobó por consulta, no renderizando. Esos mismos renderizados
-vieron que 12.3.0 nunca envía la consulta de la anotación de detecciones de
-InfluxDB, con la tabla o sin ella, y eso no se ha investigado.
+- **Reconexión**, 2026-09-19, tras la actualización de ese día, sin tocar el router: a un colector que
+  ejecutaba `monitor-traffic` sobre 16 interfaces (todas salvo `lo`) a 1 Hz se le destruyó el socket
+  de la API desde el host con `ss -K`, que es como se ve desde él el lado del router en un reinicio.
+  La capa reabrió la conexión y reintentó dentro de la misma ronda: 0 comandos fallidos, 0 rondas
+  perdidas, 16 interfaces en cada uno de los 108 segundos a ambos lados de la muerte del socket.
+- **Lo que devuelve RouterOS**: <TestedOn of="monitor-traffic-keys">claves de pérdidas</TestedOn>,
+  una <TestedOn of="rx-overflow-port-counters">cuenta de `rx-overflow` que solo llevan los contadores de puerto</TestedOn>,
+  los <TestedOn of="port-planes">dos planos de cuenta</TestedOn> de un puerto del switch y su bridge,
+  y las <TestedOn of="log-time-full-date">horas del log</TestedOn>.
+- **`cpu-load`** es una media móvil de más o menos un segundo, ajustada contra `/proc/stat`
+  (<TestedOn of="cpu-load-window-2026-09-15">`cpu-load-window-2026-09-15`</TestedOn>).
+- **Lo que le cuesta al router**: [Coste de la capa API](/mikroscope/es/cost/#api-tier-cost).
 
-### Las reglas de alerta
+### Dashboards {#los-dashboards}
 
-**Solo la forma de InfluxDB 3 de las reglas se ha cargado en Grafana y se ha
-visto evaluarse, el 2026-09-21 contra el almacén del propietario; las formas de
-Prometheus y PostgreSQL nunca.** Las reglas son <DashboardCount store="influxdb" of="rules" />
-para InfluxDB 3, <DashboardCount store="prometheus" of="rules" /> para
-Prometheus y <DashboardCount store="postgres" of="rules" /> para PostgreSQL. La
-carga del 2026-09-21, en Grafana 13.2.1, tenía las doce reglas de InfluxDB de esa
-fecha y descubrió siete que nunca podían dispararse; tras la corrección de
-1.1.0 las doce devolvieron un valor.
+**Todos los paneles de los cinco dashboards respondieron sin error en un Grafana real sobre los
+almacenes de la batería de contenedores (2026-09-17), y los dashboards de InfluxDB y Prometheus
+superaron `dashboards check` sobre los datos del propio RB5009 (2026-09-16).** Hay uno por almacén,
+InfluxDB 3, Prometheus, PostgreSQL, Graphite y Elasticsearch, generados a partir de una sola lista de
+paneles. Graphite y Elasticsearch llevan menos paneles a propósito
+(<DashboardCount store="graphite" of="panels" />
+y <DashboardCount store="elasticsearch" of="panels" />
+frente a <DashboardCount store="influxdb" of="panels" />): Graphite no tiene etiquetas y
+Elasticsearch no tiene documentos anidados. Los paneles de PostgreSQL son los de InfluxDB reescritos,
+y la batería de contenedores hace que un PostgreSQL real planifique todas sus consultas. Las versiones
+de Grafana usadas son la 12.3.2 el 2026-09-12; la 13.2.1 en las pasadas en el navegador del
+2026-09-12 y el 2026-09-14, `check` y renderizado el 2026-09-15, `check` el 2026-09-16 y la batería
+de contenedores; la 12.3.0 el 2026-09-21 y en los renderizados del 2026-09-25; y la 13.2.2 el
+2026-09-24 y el 2026-09-25. No se ha probado ninguna otra versión.
 
-Las dos reglas que añadió 1.2.0 no estaban en esa carga. En su lugar se
-contrastaron en SQL con datos pasados del almacén InfluxDB 3 de referencia:
-`mikroscope-bridge-port-dark` marca sfp-sfpplus1 en 204 intervalos de diez
-minutos y ether2 en 376 entre el 2026-09-19 11:13 y el 2026-09-23 22:44 UTC, las
-dos fases del bucle de capa 2 de esa semana, y ningún otro puerto;
-`mikroscope-wakeup-storm` nunca pasó de 1,81 en 551 ventanas sanas de diez
-minutos (2026-09-20..23) y se abrió en 35,7 con la tormenta de despertares del
-2026-09-23. Las formas PromQL de las dos solo se comprobaron en su sintaxis,
-porque ese almacén no guarda historia aquí. De la forma PostgreSQL de la regla de
-despertares no consta ninguna ejecución contra datos, y la regla del puerto
-oscuro no tiene forma PostgreSQL: la 1.2.1 la quitó, porque la tabla de
-contadores de interfaz del destino SQL no tiene las columnas que lee.
+- **2026-09-12.** En Grafana 12.3.2, el dashboard de InfluxDB contra un InfluxDB 3 Core aislado
+  alimentado por `forward` desde el RB5009: todos los paneles devolvieron filas, entre 158 y 316 por
+  panel en 10 minutos. El dashboard de Prometheus contra un Prometheus 3.14 haciendo scrape del
+  colector cada 5 s: todos los paneles devolvieron filas, entre 228 y 2 052 en 5 minutos. Sin el
+  campo `token` de la fuente de datos, los paneles fallaban con `flightsql: Unauthenticated`. Ese
+  mismo día `dashboards check --store influxdb --window 12h` pasó en los 125 paneles que recorrió
+  mientras unos 90 eran ilegibles en un navegador: leyendas que decían "value core 0", dos xycharts
+  atascados en "Loading plugin panel…", una franja de continuidad que seguía en verde sobre 2 170
+  ticks perdidos. Un Overview de ocho paneles se renderizó con 2 188 px de alto en una ventana de
+  móvil de 844 px, y 900 puntos de datos es el ancho que envió el navegador para las gráficas.
+- **2026-09-14.** Un Overview de once paneles midió 1 052 px de alto en una ventana de navegador de
+  1 080 px, una pantalla de escritorio; un
+  recorrido de renderizado contra una captura de 10,5 h del RB5009 renderizó 140 paneles de InfluxDB
+  con 0 insignias de error y 0 "No data"; la fuente de datos de InfluxDB escapó `$__interval_ms` en
+  cinco paneles, en el navegador, convirtiéndolo en un SQL que InfluxDB 3 no podía analizar; y una
+  consulta que nombraba un campo que el almacén nunca había recibido falló al planificarse,
+  `No field named limit. Valid fields are …`, a través del proxy de la fuente de datos.
+- **2026-09-15, Grafana 13.2.1**: `check`, y un recorrido fila a fila sin interfaz de los dos
+  dashboards en Chromium a 1600x1000, 0 insignias de error y 0 "No data" en 168 paneles de InfluxDB y
+  130 de Prometheus. No se ha repetido para los tres paneles que no cubrió: los dos de eventos de
+  puerto y "What each interface is: type, role, bridge and label". El mismo recorrido vio la
+  proporción de fast path oscilar entre 0 y 100 % de una lectura a otra en interfaces que movían
+  pocos paquetes. Regenerar ese día reprodujo byte a byte los ficheros del repositorio.
+- **2026-09-16, Grafana 13.2.1**, contra el agente del RB5009 (RouterOS 7.24.2, privilegiado, los
+  disparadores por defecto), `forward --prom :9124 --influx … --interfaces bridge,ether1,PPPoE_DIGI
+  --counters-every 10s` durante 30 minutos hacia un InfluxDB 3 Core aislado, y un Prometheus 3.14
+  haciendo scrape del colector cada 5 s y del agente directamente para las familias que el colector
+  no podía recalcular entonces:
 
-Desde la 1.2.2 la regla de detecciones, `mikroscope-detections`, ya no se dispara
-con `microburst` ni con `ipc-collapse`, que describen cómo lleva el tráfico un
-router sano; [la página de las reglas de alerta](/mikroscope/es/dashboards/alerts/#las-reglas)
-tiene el día de datos que hay detrás de ese cambio.
+<ScrollTable label="Resultados de dashboards check, 2026-09-16">
+
+| Almacén    | Ventana    | Paneles | Fallan | Vacíos conocidos tolerados                                                                                                                                  |
+| ---------- | ---------- | ------: | -----: | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| InfluxDB 3 | 30 minutos |     171 |      0 | 10 (los dos paneles de eventos de puerto, la consulta opcional de conntrack, los dos paneles de disparos, PSI, los cuatro dispositivos de bloques en reposo) |
+| Prometheus | 30 minutos |     133 |      0 | 9 (los dos paneles de eventos de puerto, los dos paneles de conntrack de la API, PSI, los cuatro dispositivos de bloques)                                    |
+
+</ScrollTable>
+
+Los 10 y 9 son ese despliegue sobre esa ventana. El SQL de los dos paneles de eventos de puerto se
+validó ese mismo día contra una tabla sintética en ese mismo InfluxDB 3, porque el almacén en vivo no
+tenía columna `kind` hasta que se le escribiera el primer registro de puerto clasificado; la tiene
+desde el 2026-09-19, con las ocho clases. La página de dashboards de esa fecha registró además que
+la exposición del propio agente llevaba la etiqueta `kind` solo cuando el propio agente clasificaba,
+cosa que el del RB5009 no hacía entonces; hoy los agentes no sirven exposición.
+
+- **2026-09-17, batería de contenedores**: los cinco dashboards importados en un Grafana real sobre
+  los almacenes que llenó la batería, preguntando a cada panel: devolvieron datos 57, 98, 136, 35 y
+  28 paneles, y no falló ninguno.
+- **2026-09-21, Grafana 12.3.0**: `import` contra el almacén InfluxDB 3 en vivo y después `check` sobre
+  una ventana de 15 min: 167 paneles devolvieron filas, los 9 vacíos conocidos salieron vacíos, y el
+  indicador de detecciones del Overview salió vacío porque el almacén no tenía ninguna detección en
+  esa ventana, que es el único caso que `check` señala y que un navegador lee como el «none» sano.
+- **2026-09-24, el Grafana de producción**, cuyo endpoint de salud informaba de la 13.2.2 más tarde
+  ese mismo día: el dashboard de InfluxDB importado y capturado a 390x844 y a 1600x1000 para comprobar
+  el texto de 32 px de los paneles stat y la serie temporal de memoria. Con el tamaño automático de
+  Grafana, un simple "0" se dibujaba de unos 60 px de alto a 390x844 y cada panel stat ocupaba cerca
+  de un tercio de la pantalla; con el tamaño fijo, los números se leían a un tamaño normal en los dos.
+  No se hizo recuento de insignias fila a fila, no se midió la altura del Overview y los otros cuatro
+  dashboards no se capturaron.
+- **2026-09-25, Grafana 12.3.0, 13.2.1 y 13.2.2 sobre un InfluxDB 3.11.2 Core desechable**:
+  - La fila no disponible tal como estaba en 1.3.0 envió cinco consultas y pintó cinco insignias
+    `table … not found` en 12.3.0 y 13.2.1; con sus consultas publicadas ocultas no envió ninguna ni
+    pintó ninguna, y 13.2.2 hizo lo mismo en un segundo renderizado.
+  - Una consulta de detecciones contra una tabla `mikroscope_detection` que falta no puede escribirse
+    de forma que evite el error de planificación de InfluxDB 3: `WHERE false`, un `UNION ALL` y una
+    guarda `EXISTS` sobre `information_schema` fallaron todas al planificar. En 13.2.1 la capa que
+    falla no mostró nada en el dashboard y escribió en el log de Grafana una línea de nivel error
+    `Partial data response error` por carga. 12.3.0 nunca envió la consulta de esa capa, con la tabla
+    o sin ella ([problema conocido](#encontrado-y-sin-corregir)).
+  - Un `import` con sondeo desde 1.3.0 quitaba las consultas de un panel que faltaba, y Grafana
+    12.3.0 le da a un panel sin consultas una por defecto: el plugin de InfluxDB le respondió
+    `No SQL statements were provided in the query string`, como una insignia roja. 13.2.1 no envió
+    nada por ese mismo panel.
+  - Elasticsearch 9.5.3: la búsqueda de la variable Host, escrita hasta 1.3.0 como un objeto JSON,
+    salía de 13.2.1 y 13.2.2 como una consulta vacía respondida con 400
+    `invalid query, missing metrics and aggregations`, y 12.3.0 no la enviaba; abierto sin
+    `?var-host=`, seis paneles del Overview fallaban con `Failed to parse query [host.keyword:]`.
+    Escrita como la cadena JSON que analiza la fuente de datos, Host se llenó desde el índice y ningún
+    panel mostró insignia en ninguna de las tres.
+  - Un panel de InfluxDB que agrupa con `$__dateBin` con un paso por debajo del segundo dibujó un bin
+    de 0 segundos y volvió vacío, en `check` y en un navegador con el zoom en unos pocos minutos, en
+    13.2.1 y 13.2.2.
+- **2026-09-25, el Grafana 13.2.2 de producción contra el almacén InfluxDB 3 de referencia**, con una
+  compilación que oculta las consultas de la fila no disponible: `dashboards check --window 1h`, con
+  el sondeo y con `--no-probe`, dio 164 paneles con filas, 12 vacíos conocidos tolerados y 1 fallo,
+  "Detections in the window", porque el almacén no tenía ninguna detección en esa hora. Sin el
+  sondeo, los cinco paneles no disponibles salen como `none … rows=0 frames=0` sin texto de error,
+  donde 1.3.0 imprimía `400 … table … not found`; los dos paneles de disparos respondieron
+  `mikroscope_trigger not found`, porque ese almacén no tiene tabla de disparos. El SQL de la anotación
+  de detecciones devolvió 44 filas en 6 horas. Repetido más tarde ese día, después de que los ficheros
+  sin sondeo de los otros cuatro almacenes recuperaran sus consultas de la fila no disponible, dio los
+  mismos recuentos, y la capa de detecciones 32 filas en 6 horas; el fichero de InfluxDB comprobado
+  era idéntico byte a byte al de la primera vez.
+- **2026-09-25, batería de contenedores** (Grafana 13.2.1, Prometheus 3.14.0, PostgreSQL 18.6,
+  graphite-statsd 1.1.10-5, Elasticsearch 9.5.3): las consultas no disponibles de los ficheros del
+  repositorio, contra almacenes que no tenían nada para ellas, respondieron todas 200 sin error, y en
+  Elasticsearch todos los puntos fueron 0, tanto si otro router del mismo índice había mapeado el
+  campo como si no. En PostgreSQL la consulta de la capa de detecciones respondió 200 sin filas sobre
+  una ventana anterior a cualquier detección, y 10 filas sobre la de la propia ejecución. Las dos
+  fueron consultas por la API de Grafana, no renderizados.
+- **La continuidad** se deriva del número de secuencia de cada muestra, y encontró 4 493 ticks
+  perdidos y un reinicio en la captura del 2026-09-11/12 de los que el registro de huecos del colector
+  no decía nada.
+- **El rango por defecto** es de 3 horas porque `now-15m` abría 108 paneles vacíos con el agente
+  parado, y con el agente en marcha dibujaba muros de ruido ilegibles de muestras de 100 ms (la fecha
+  no consta).
+
+### Reglas de alerta {#las-reglas-de-alerta}
+
+**Solo la forma de InfluxDB 3 de las reglas se ha cargado en Grafana y se ha visto evaluarse, el
+2026-09-21 contra el almacén del mantenedor; las formas de Prometheus y PostgreSQL nunca.** Las reglas
+son <DashboardCount store="influxdb" of="rules" /> para InfluxDB
+3, <DashboardCount store="prometheus" of="rules" /> para Prometheus
+y <DashboardCount store="postgres" of="rules" /> para PostgreSQL.
+
+- **La carga del 2026-09-21**, en Grafana 13.2.1 contra el almacén InfluxDB 3 en vivo, tenía las doce
+  reglas de InfluxDB de esa fecha y destapó dos defectos, los dos corregidos en 1.1.0. `coalesce()`
+  sobre el agregado sin signo que escribe el destino de InfluxDB devolvía HTTP 200 sin marcos, que
+  Grafana lee como NoData y estas reglas como OK: siete de las doce no podían saltar nunca,
+  `mikroscope-l2-loop` entre ellas, mientras el mismo SQL contra `/api/v3/query_sql` devolvía 109 con
+  la firma del bucle en vivo. Y la regla de conntrack nombraba `limit_objs`, la columna del destino
+  SQL, donde el destino de InfluxDB escribe `limit`; la página de reglas de alerta había predicho ese
+  defecto antes de confirmarse. Tras la corrección las doce devolvieron un valor, y
+  `mikroscope-l2-loop` pasó a Alerting a las 16:58:50Z con la firma `own-address` en vivo; la lista de
+  instancias de Grafana para esa regla seguía llevando `Normal (NoData)` de las 16:56:50Z, de la
+  ejecución anterior a la corrección.
+- **Consultas ejecutadas a mano contra el almacén en vivo el 2026-09-21**: `mikroscope-l2-loop` dio
+  109 en su propia ventana de cinco minutos, con la firma `own-address` en `ether2` corriendo sin
+  parar a unos 0,5 registros/s desde el 2026-09-19; `mikroscope-port-link-down` dio 3 en la ventana que
+  contiene una caída de enlace real en `ether7` a las 16:33:49 y 4 en el grupo de cuatro de `ether4`
+  de las 09:19 del 2026-09-20. Las dos tienen umbral 0 con `gt`, así que las dos condiciones se
+  cumplieron.
+- **Las dos reglas que añadió 1.2.0** no estaban en esa carga, y ningún Grafana las ha evaluado
+  desde entonces. Su SQL de InfluxDB se contrastó con datos pasados del almacén de referencia:
+  `mikroscope-bridge-port-dark` devolvió 1 en tres ventanas dentro del bucle y 0 después, y marcó
+  `sfp-sfpplus1` en 204 intervalos de diez minutos y `ether2` en 376 entre el 2026-09-19 11:13 y el
+  2026-09-23 22:44 UTC, las dos fases del bucle de capa 2 de esa semana, y ningún otro puerto.
+  `mikroscope-wakeup-storm` devolvió 0,94–0,95 en dos ventanas sanas, nunca pasó de 1,81 en 551
+  ventanas de diez minutos con un día completo detrás (del 2026-09-20 al 23), y se abrió en 35,7 con la
+  tormenta de despertares del 2026-09-23; se apagó cuando la nueva tasa pasó a ser la base, al cabo de
+  unas cuatro horas. Su PromQL solo se comprobó en su sintaxis. De la forma PostgreSQL de la regla de
+  despertares no consta ninguna ejecución, y la regla del puerto oscuro no tiene forma PostgreSQL: la
+  1.2.1 la quitó, porque la tabla de contadores de interfaz del destino SQL no tiene las columnas que
+  lee.
+- **La regla de detecciones** ya no salta con `microburst` ni con `ipc-collapse`, que describen cómo
+  lleva el tráfico un router sano: del 2026-09-23 10:30 al 2026-09-24 10:30 UTC en el RB5009 fueron 64
+  de 71 detecciones, y con ellas la regla saltó en 43 de 288 ventanas de cinco minutos; sin ellas, en
+  6.
+- **La regla de salida**: un puerto de 1 GbE hacia un servidor perdió 3 337 paquetes en seis ráfagas
+  de un segundo a lo largo de 6,5 h, con picos de 436 paquetes/s (2026-09-19), visible en el panel de
+  cola de salida y, con razón, sin ser una alerta.
+- **La regla térmica** lee el punto de disparo crítico de la propia zona, 105 °C en el RB5009.
 
 ### `forward --grafana`
 
-**`forward --grafana` se ha ejecutado contra el Grafana del propietario
-(2026-09-19, InfluxDB 3) y contra el de la batería de contenedores para los cinco
-almacenes (2026-09-20).** Concilia una fuente de datos y un dashboard por cada
-almacén al que escribe el colector, al arrancar, antes de la primera muestra. En
-la batería de contenedores se preguntó después cada panel de cada dashboard por
-la propia API de Grafana **contra la fuente de datos que el colector había
-construido**. Tres almacenes derivan la suya y a dos se les dice la dirección;
-`--sql` no puede describir ninguna jamás y lo dice. No se publica nada si no se
-pasa `--grafana`, un fallo es un aviso y no una negativa a arrancar, y esto no
-borra nada nunca.
+**`forward --grafana` se ha ejecutado contra el Grafana del mantenedor (2026-09-19, InfluxDB 3) y
+contra el de la batería de contenedores para los cinco almacenes (2026-09-20).** El 2026-09-20 se
+apuntó el colector a un Grafana real y a cada uno de los cinco almacenes por turno, se le dejó crear
+la fuente de datos, y después `dashboards check` pasó la consulta de cada panel por la API de Grafana
+contra la fuente de datos que había construido el colector. Los cinco respondieron sin error de
+fuente de datos. La misma ejecución encontró un defecto que ninguna prueba unitaria tenía: un colector
+que escribía en un PostgreSQL vivo por `--postgres` y en nada más no publicaba nada y decía «there is
+nothing to publish», porque la lista de almacenes solo conocía `--sql`. Contra un almacén InfluxDB en
+HTTP plano, una fuente de datos sin `insecureGrpc` respondía a todos los paneles
+`tls: first record does not look like a TLS handshake` mientras el almacén estaba perfectamente
+(medido el 2026-09-19).
 
 ### `uninstall --targets`
 
-**`uninstall --targets` retiró solo lo que escribió este proyecto en la batería
-de contenedores (2026-09-20), y NO se ha ejecutado contra el almacén de
-producción del propietario.** Retira lo que esto puso en cualquier sitio: los
-objetos del router (el valor por defecto, como antes), el dashboard y la fuente
-de datos que publicó, y las tablas, índices y ficheros que escribieron los
-destinos. A los almacenes se les pregunta qué tienen en vez de decírselo desde
-una lista compilada, no se borra nada sin `--yes`, y la batería de contenedores
-comprueba que una tabla que este proyecto no escribió, en la misma base de datos
-y el mismo esquema, ni se lista ni se borra.
+**`uninstall --targets` retiró solo lo que escribió este proyecto en la batería de contenedores
+(2026-09-20), y no se ha ejecutado contra el almacén de producción del mantenedor.** La batería
+comprueba que una tabla que este proyecto no escribió, en la misma base de datos y el mismo esquema,
+ni se lista ni se borra.
 
-### Las baterías de pruebas
+### Baterías de pruebas {#las-baterías-de-pruebas}
 
-**Tres baterías no necesitan router: una se ejecuta en la CI en Linux, macOS y
-Windows contra simulaciones, otra contra nueve almacenes reales en docker
-compose, completa por primera vez el 2026-09-16, y otra ejecuta la CLI y el
-agente contra un RouterOS virtual, en verde por primera vez el 2026-09-26.** La batería de extremo a
-extremo compila los dos binarios y los ejecuta contra un árbol `/proc` capturado
-del equipo de referencia y contra un agente simulado, con un receptor por cada
-protocolo de destino que comprueba los bytes. No necesita router, ni Grafana, ni
-red, y se ejecuta en la CI tanto en macOS y Windows como en Linux, que es donde
-se notaría una diferencia en el nombre del ejecutable, en los ficheros que
-escriben los destinos de fichero y SQL, o en cómo se detiene un proceso hijo.
+**Cuatro baterías no necesitan router: la unitaria y la de extremo a extremo se ejecutan en la CI en
+Linux, macOS y Windows contra árboles capturados y simulaciones, otra contra nueve almacenes reales
+en docker compose, completa por primera vez el 2026-09-16, y otra ejecuta la CLI y el agente contra
+un RouterOS virtual, en verde por primera vez el 2026-09-26 y ejecutada por primera vez en los
+runners de GitHub el mismo día.** Qué demuestra cada una y cómo ejecutarla está en
+[Baterías de pruebas](/mikroscope/es/reference/testing/).
 
-La segunda batería, contra los almacenes mismos (`make test-e2e-docker`),
-levanta nueve de ellos con docker compose, ejecuta el mismo colector contra el
-mismo agente simulado con todos los destinos apuntando a ellos y luego le
-pregunta a cada almacén por su propia API: SQL contra InfluxDB 3, `psql` contra
-el guion que escribió el destino SQL, una búsqueda contra Elasticsearch,
-`query_range` contra Loki, `render` contra Graphite, el OTLP que el colector
-decodificó, el protocolo de línea que Telegraf analizó y un scrape del exportador
-almacenado en Prometheus. Después importa los cinco dashboards en Grafana y pasa
-la consulta de cada panel por la propia API de Grafana. Necesita Docker y ningún
-router: las muestras son las mismas enlatadas, así que la ejecución es
-reproducible en cualquier máquina. La primera ejecución completa, el 2026-09-16,
-encontró un panel que nombraba dos columnas que el almacén solo tiene cuando se
-ejecutó la capa de la API. Ahora también ejecuta el destino SQL y el destino
-PostgreSQL que conecta en paralelo hacia dos bases de datos y le pregunta al
-servidor si tienen lo mismo —34 tablas coincidiendo byte a byte el 2026-09-20—,
-publica las cinco fuentes de datos y comprueba sus dashboards contra ellas, y
-vuelve a vaciar los almacenes con `uninstall --targets data`.
+- **De extremo a extremo**: los dos binarios contra un árbol `/proc` capturado del RB5009 y un agente
+  simulado, con un receptor por cada protocolo de destino que comprueba los bytes. No necesita router,
+  ni Grafana, ni red, y se ejecuta en la CI tanto en macOS y Windows como en Linux, que es donde se
+  notaría una diferencia en el nombre del ejecutable, en los ficheros que escriben los destinos de
+  fichero y SQL, o en cómo se detiene un proceso hijo. Cada destino se prueba contra un receptor local
+  desde el 2026-09-12, en el equipo de desarrollo amd64. La batería antes hacía scrape del agente y del
+  colector, y ahora comprueba solo el colector.
+- **Almacenes** (`make test-e2e-docker`): el colector, contra el mismo agente enlatado y con la capa
+  de la API apagada, hacia Loki 3, el OpenTelemetry Collector, graphite-statsd, Elasticsearch 9,
+  Telegraf 1.39 por HTTP, PostgreSQL 18 (con `--sql`, y con `--postgres` desde que ese destino llegó el
+  2026-09-21), InfluxDB 3 y Prometheus, con el destino de fichero como el oráculo contra el que se
+  comparan los demás. Cada almacén se vuelve a leer por su propia API, después se importan los cinco
+  dashboards en Grafana y la consulta de cada panel pasa por la API de Grafana; la batería publica las
+  cinco fuentes de datos y comprueba sus dashboards contra ellas, y vuelve a vaciar los almacenes con
+  `uninstall --targets data`. Necesita Docker y ningún router: las muestras son enlatadas, así que la
+  ejecución es reproducible en cualquier máquina. La primera ejecución completa, el 2026-09-16,
+  encontró un panel que nombraba dos columnas que el almacén solo tiene cuando se ejecutó la capa de la
+  API: la tabla de eventos de puerto nombra `label` y `role`, que el destino escribe en una fila del
+  registro del kernel solo desde el inventario de la capa de la API, y en InfluxDB 3 una columna que
+  no está en la tabla hizo fallar la consulta con `Schema error: No field named label`, así que el
+  panel no podía dibujarse. Las páginas de destinos registran el colector escribiendo en estos
+  almacenes desde el 2026-09-17. En la máquina de desarrollo, el 2026-09-16, la pila se levantó en 55
+  a 81 s con las imágenes ya descargadas, y la batería entera tardó de 75 a 100 s desde cero. La
+  batería entró en la ruta de los pull requests el 2026-09-18. Hasta entonces se ejecutaba cada
+  semana, a petición y antes de una publicación, y así llegó la 1.0.5 a `main` con dos pruebas de la
+  batería leyendo todavía el `/metrics` del agente, que esa versión había quitado: todos los checks
+  del pull request estaban en verde, y lo encontró la puerta de publicación. En la ejecución de
+  publicación que falló tardó 2 min 37 s desde el inicio del trabajo hasta el resultado, contenedores
+  incluidos; en el pull request #70, el 2026-09-27, 4 min 9 s. El OpenTelemetry Collector, que acepta JSON, es el único receptor OTLP real contra el que
+  se ha ejecutado el destino. El 2026-09-20 los destinos SQL y PostgreSQL, ejecutados en paralelo
+  hacia dos bases de datos, tenían 34 tablas coincidiendo byte a byte, cada columna de cada fila con
+  un hash por fila sumado, más un `information_schema.columns` idéntico para todo el esquema.
+- **Laboratorio virtual de RouterOS** (`make test-lab`): los verbos de despliegue de la CLI y el
+  agente contra el Cloud Hosted Router 7.24.4 de MikroTik en QEMU, x86_64 y arm64 emulado:
+  instalación por las dos vías de imagen, actualización, desinstalación, `--ephemeral` y
+  `start-on-boot` a través de un corte de corriente, y cada escenario termina comparando el `/export`
+  del router con el de su inicio. Prueba que el instalador es correcto; no es una placa, y ninguna
+  cifra de [Coste del agente](#lo-que-cuesta-hoy-el-agente) ni de [Campañas](#campaigns) sale de él.
+  El laboratorio, sus tiempos y sus primeras ejecuciones en los runners de GitHub están en
+  [Laboratorio virtual](#virtual-lab), y sus escenarios en
+  [Baterías de pruebas](/mikroscope/es/reference/testing/#el-laboratorio-virtual-de-routeros).
+- **Fixtures de los destinos**, no un router: los tamaños de SQL, OTLP, Graphite, Elasticsearch y
+  Telegraf de [Otros destinos](/mikroscope/es/sinks/other/) salen de fixtures de pruebas de dos
+  núcleos del 2026-09-12. La cabecera SQL de las cuarenta y tres tablas, generada por el propio
+  `header()` del destino el 2026-09-19, ocupa 10 482 B, 13 966 B con las sentencias de hypertable de
+  TimescaleDB. Doce renderizados de un mapa de 8 nombres dieron 7 órdenes (2026-09-12), registrado
+  en <Src path="internal/sinks/telegraf.go" />.
+- **El equipo de desarrollo** (amd64, kernel 6.12.107): `TestParsePressureReadsTheRunningKernel` y
+  `TestParseSchedstatReadsTheRunningKernel` analizan el `/proc/pressure/{cpu,memory,io}` y el
+  `/proc/schedstat` del propio equipo y los comparan con una segunda lectura de esos mismos bytes, y se
+  saltan la prueba donde los ficheros no están, que es el caso del RB5009. En ese equipo pasan. Su
+  `/proc/pressure/cpu` lleva línea `full`, toda a cero al volver a leerla el 2026-09-24: la
+  documentación de PSI del kernel dice que el `full` de CPU no está definido para el sistema entero y
+  que se publica desde la 5.13 a cero, así que un kernel más antiguo no tiene esa línea y el analizador
+  acepta las dos formas. Su PMU, registrada el 2026-09-21,
+  tiene seis contadores, `cycles`, `instructions`, `cache-references`, `cache-misses`,
+  `branch-instructions` y `branch-misses`, multiplexados, cada uno funcionando en torno al 84 % del
+  tiempo que estuvo habilitado. Un intervalo de 100,3 ms llevó allí 11 ticks (2026-09-11/12);
+  `sample_test.go` comprueba que la fracción de ocupación está limitada a 1.
+- **El rearme del filtro de cambios**, contra el árbol de fixtures el 2026-09-15: las familias de
+  medidores con suelo y `mikroscope_slab_limit_objects` estaban presentes en 6 de 6 scrapes desde 5 s
+  después del arranque. El comentario de `ProcSource.ReArm`
+  en <Src path="internal/agent/source.go" /> registra la misma comprobación como cuatro scrapes desde
+  t+5 s, 0 antes de la corrección y 4 de 4 después; no consta de qué ejecución es cada cuenta.
+- **El generador de scripts**, 2026-09-27: `pnpm run rsc:check` renderiza en JavaScript los 20 casos
+  de referencia de la especificación de pasos y compara byte a byte con la salida de Go cada script,
+  las órdenes de cada paso, el orden de retirada, los valores y la línea de órdenes; un cambio de una
+  línea en el renderizador le hizo informar de 72 fallos. `pnpm test:generator` hizo 168
+  comprobaciones en Chromium sin interfaz (Playwright 1.63) contra el sitio compilado: los 20 casos
+  puestos con los propios controles del formulario, los errores, el token, copiar, el uso solo con
+  teclado, ninguna petición de red, y las descargas `.rsc`, que funcionan bajo la CSP meta del sitio.
+  Una comparación puntual con el código de Go sobre 304 juegos de opciones coincidió en 301; los
+  otros tres son entradas que la página rechaza y Go acepta (un prefijo `/030`, un umbral
+  `busy>=.5` y una dirección IPv6 con IPv4 mapeada).
+- **El sitio**, 2026-09-25: Chromium 153 sin interfaz pidió solo `favicon.svg`, y resolvió un `id` de
+  manifiesto `./` a la raíz del origen; en Chromium y WebKit sin interfaz, con los dos esquemas, tras
+  elegir en el selector, tras una elección guardada y una recarga, tras el botón del teléfono y sin
+  JavaScript, la etiqueta `theme-color` tuvo el color de la cabecera todas las veces, donde el par
+  separado por `prefers-color-scheme` al que sustituye tenía el color del otro tema tras cada elección.
 
-La tercera, el [laboratorio virtual de RouterOS](/mikroscope/es/reference/testing/#el-laboratorio-virtual-de-routeros)
-(`make test-lab`), ejecuta los verbos de despliegue de la CLI y el agente
-contra el Cloud Hosted Router 7.24.4 de MikroTik en QEMU, x86_64 y arm64
-emulado: instalación por las dos vías de imagen, actualización,
-desinstalación, `--ephemeral` y `start-on-boot` a través de un corte de
-corriente, y cada escenario termina comparando el `/export` del router con
-el de su inicio. Prueba que el instalador es correcto; no es una placa, y
-ningún coste ni frecuencia de esta página sale de él.
+## Rutas de instalación probadas {#install-routes-tested}
 
-## Lo que cuesta hoy el agente
+<ScrollTable label="Cada ruta de instalación por equipo, con la fecha y el resultado">
 
-Con los valores por defecto de la instalación — 10 Hz, suelos por fuente por
-defecto, un anillo de 60 s — el agente cuesta **<Measured id="run.10hz.cpu" /> de un núcleo y <Measured id="run.10hz.rss" /> de RSS**,
-leídos de su propio cgroup en régimen estacionario con el anillo lleno:
+| Ruta                                   | RB5009UG+S+                                                                                                                                                                                                                                         | CHR x86_64, laboratorio                                                                      | CHR arm64, laboratorio                                                                              |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| Descarga de Docker Hub, `--remote-image` | 2026-09-17, 7.24.2: `/healthz` a 2 ms; la imagen 1.0.1, enviada sin su host y descargada a través de `registry-url`. 2026-09-24, 7.24.4: la referencia con su host, con un `/container/add` escrito a mano, sin arrancar; ningún `install` completo | 2026-09-26: `install` en 9,6 s, descarga anónima con el `/container/config` de fábrica; 2026-09-27: S2, S4 y S5 | 2026-09-26: `install` en 10,3 y 10,2 s, descarga anónima; 2026-09-27: S2, S4 y S5 |
+| Descarga de GHCR, `--remote-image`     | 2026-09-21, 7.24.4: **falló**, `auth error`                                                                                                                                                                                                         | 2026-09-26: descarga sin credencial de registro y con el host en `remote-image=`, `/healthz` 5 s después de empezar la instalación; 2026-09-27: S18 y S5 | 2026-09-27: S18 y S5 |
+| `plan --rsc`, con `/import`            | 2026-09-17, 7.24.2: `/healthz` a 15 ms en sus primeras muestras, sin CLI en la instalación                                                                                                                                                          | 2026-09-26: `/healthz` 14 s después de empezar la subida; 2026-09-27: S4, y los quince guiones de referencia que el laboratorio puede ejecutar (S5); el script por defecto pegado en el indicador `] >`, y un script de tar sin su tar, que se detuvo antes de escribir nada | 2026-09-26: `/healthz` 9,1 y 9,5 s después de empezar la subida; el script era el de x86_64; 2026-09-27: S4 y S5 |
+| Tar de la imagen, `--agent-tar`        | 2026-09-17, 7.24.2: el tar arm64 publicado, `/healthz` a 2 ms                                                                                                                                                                                       | 2026-09-26: el tar amd64 de la versión, 6 s; 2026-09-27: el tar de la rama, S3 y diez instalaciones seguidas; el tar amd64 de la versión comprobado con `sha256sum` y `cosign verify-blob`, y después instalado y actualizado | 2026-09-26: el tar arm64 de la versión, suma de comprobación como la publicada, 9,6 y 9,2 s; 2026-09-27: el tar de la rama, S3 y tres instalaciones seguidas |
+| Generador de scripts                   | sin ejecutar | 2026-09-27: el script por defecto de la página, igual al de `plan --rsc`, y un script de tar con otros ajustes, cada uno descargado de la página compilada y pegado en el indicador `] >`; el agente respondió cada vez, y el `uninstall` de la CLI y el script de desinstalación de la página dejaron cada uno el `/export` como estaba | sin ejecutar |
+| Instalación manual, terminal           | sin ejecutar | 2026-09-27: las órdenes de la página una a una, descarga del registro y tar; `/healthz` respondió, `status` reconoció la instalación por su manifiesto, y la retirada de la página no dejó nada; de nuevo con las dos reglas de `--expose`, y con las dos pertenencias omitidas | sin ejecutar |
+| Instalación manual, WebFig             | sin ejecutar | 2026-09-27: las dos vías de imagen, cada formulario enviado; `/healthz` 200 cada vez; la descarga retirada por WebFig, el tar por `uninstall` leyendo el manifiesto que escribió WebFig; el `/export` como estaba tras cada una | sin ejecutar |
+| Desde el repositorio                   | 2026-09-17, 7.24.2: `/healthz` a 2 ms; la ida y vuelta del 2026-09-12                                                                                                                                                                               | sin ejecutar                                                                                 | sin ejecutar                                                                                        |
+| `--expose`                             | 2026-09-11: las dos reglas <TestedOn of="expose-rules">verificadas</TestedOn>; 2026-09-23, 7.24.4: una instalación desechable expuesta, actualizada sin token y retirada                                                                             | 2026-09-26: `/healthz` 200, `/capabilities` 401 sin el token y 200 con él; 2026-09-27: S8 y S14 | 2026-09-27: S8 y S14 |
+| `uninstall`                            | 2026-09-17: verificado por recuento de propiedad tras cada ruta; el `/export` tras las cuatro, idéntico byte a byte al de antes                                                                                                                      | 2026-09-26, 1.3.1: fallaron 5 de 15 primeros intentos; un segundo lo limpió todo cada vez. 2026-09-27: cada primer intento limpio, tras cada ruta (F4) | 2026-09-26, 1.3.1: 8 de 8 primeros intentos limpiaron; con un cliente en `/stream` falló. 2026-09-27: cada primer intento limpio, tras cada ruta (F4) |
+
+</ScrollTable>
+
+- **En el laboratorio, el 2026-09-27**, con el código posterior a la 1.3.1 (la sección 1.4.0
+  del registro de cambios): la batería entera del laboratorio en las dos arquitecturas, con todas las
+  pruebas superadas ([Tiempos del laboratorio](#lab-timings)). Tras cada ruta, las de descarga y tar
+  de la CLI, una instalación desde el tar y después una actualización, un guion de `plan --rsc`
+  importado, cada guion de referencia que el laboratorio puede ejecutar e instalaciones hechas por la
+  CLI 1.3.1 publicada, `uninstall` dejó el `/export` igual al tomado antes de instalar y ninguna ruta
+  de mikroscope en `/file`. La descarga de GHCR del 2026-09-26 registró `registry=ghcr.io`, una capa
+  de 3 093 207 bytes y `download/extract done` 2 s después, con `/container/config` sin
+  `registry-url` ni usuario.
+- **Las ejecuciones de las páginas de instalación**, 2026-09-27, en el laboratorio x86_64, con el
+  código posterior a la 1.3.1 y la imagen y el tar publicados del agente 1.3.1:
+  - El script por defecto del generador respondió 8,8 s después de empezar a pegarlo. Su script de
+    tar (nombre `gen2`, `172.30.11.0/30`, puerto 9200, las dos listas `none`, cadencia 20, disparos
+    `busy>=0.9,oom`, un token generado en la página, `--expose` en 192.168.88.1,
+    `--restart-max-count 3`, `--start-on-boot no`) era idéntico byte a byte al de `plan --rsc` para
+    la línea de órdenes de la página, respondió en `172.30.11.2:9200` y borró su tar tras la
+    extracción.
+  - El script por defecto de `plan --rsc`, idéntico byte a byte a `pull-dockerhub.rsc`, instaló un
+    agente en marcha tanto pegado como subido y después con `/import` (`Script file loaded and
+    executed successfully`). El script de tar sin el tar se detuvo con
+    `mikroscope: upload mikroscope.tar first` y no escribió nada.
+  - Las órdenes de la página de instalación manual por terminal, cada una por separado: las dos vías
+    respondieron, la espera de la vía del tar borró el tar tras la extracción, y una instalación
+    manual con tar también la retiró `uninstall --yes` sin más. Un buscar y reemplazar de los
+    marcadores que también reescribió las claves de la envlist hizo que la retirada dejara la envlist
+    entera, sin avisar, y por eso la página dice que se reemplacen solo los valores.
+  - La misma página otra vez, cuando ya escribía un manifiesto por vía de imagen y daba a `--expose`
+    una sección: una descarga del registro expuesta en `192.168.88.1` con token, una instalación con
+    tar y una descarga del registro con las dos pertenencias omitidas. Cada manifiesto que
+    escribieron sus órdenes fue idéntico byte a byte al de la CLI con los mismos ajustes
+    (`pull-dockerhub`, `expose-token`, `default-tar`, `lists-none`); `status` leyó cada uno de su
+    manifiesto, el expuesto con sus dos reglas como de la instalación; `/capabilities` respondió 401
+    sin el token y 200 con él; y la retirada de la página, primero las dos reglas, dejó la cuenta de
+    sobrantes en 0 y `/export`, el residuo y `/file` iguales a la referencia.
+  - Una instalación por WebFig dejó un `/export` igual al que dejó el `/import` del script de
+    referencia, en las dos vías, salvo las dos direcciones MAC de la veth, que RouterOS elige al azar;
+    `status` listó cada uno de sus objetos como de la instalación.
+  - Las comprobaciones de la página sin conexión sobre los ficheros publicados de 1.3.1:
+    `sha256sum --ignore-missing -c checksums.txt` OK y `cosign verify-blob` (cosign v3.1.3)
+    `Verified OK`. Después `install` y `upgrade --agent-tar` con el tar amd64, 7 053 KiB subidos, y un
+    `uninstall` limpio.
+  - Instalaciones hechas por la CLI publicada 1.3.1: `status` leyó su forma de las etiquetas,
+    `upgrade --remote-image` escribió un manifiesto, y `uninstall --yes` lo retiró todo, el directorio
+    `mikroscope/` de 1.3.1 incluido.
+  - `upgrade` sin `--remote-image` ni `--agent-tar` buscó Go para compilar el agente: no toma la
+    imagen del manifiesto. Un segundo `install` en un router ya instalado no creó nada
+    (`install done: 0 step(s) created`).
+- **Las ejecuciones de las páginas de configuración**, 2026-09-27, laboratorio x86_64: `doctor` en
+  un CHR de serie marcó MISSING solo la lista de interfaces `LAN`, con una solución que ofrece
+  `--iface-list none`, y con las dos listas en `none` pasó cada comprobación. Las listas integradas se
+  rechazaron antes de conectar. La comprobación de trampas contra los perfiles `advanced-firewall` y
+  `advanced-firewall-range` nombró la regla que descarta las respuestas del agente, y su solución.
+  Una lista de direcciones que no existía la creó la entrada de la instalación y ya no estaba tras
+  `uninstall`. La primera ida y vuelta del sondeo marcó de 1,02 a 1,03 s en tres de seis
+  instalaciones y 2 ms en las otras tres, y `status` un segundo después de 1 a 2 ms.
+- **En el RB5009, el 2026-09-17**, las cuatro rutas se ejecutaron una tras otra, cada una con su
+  propio nombre, su veth y su `/30` para no tocar nada de lo que ya había en el equipo, y cada una se
+  retiró antes de la siguiente. `/healthz` se leyó desde el equipo del colector.
+- **GHCR, el 2026-09-21**, una segunda instalación junto a la que estaba en marcha, con su propio
+  `--name`, `--veth`, `--subnet` y `--port`. La CLI de esa fecha ponía en `remote-image=` solo el resto
+  de la referencia, así que `registry-url` se apuntó a `https://ghcr.io` para la ejecución y se
+  restauró después; `doctor` se negó primero con `MISSING registry-url is https://ghcr.io`. Con el
+  registro apuntando a GHCR el router creó el contenedor y falló la descarga:
+  `download/extract error: fetch manifest failed: getting https://ghcr.io/v2/jmrplens/mikroscope-agent/manifests/1.0.9 failed: auth error`.
+  `/container/config` guarda un único usuario y contraseña para todos los registros, y el del RB5009
+  es un login de Docker Hub. Desde el equipo del operador ese mismo día, contra el mismo paquete
+  público, sin credencial devolvía 200 una vez obtenido el token anónimo, y con una credencial ajena
+  403 en el endpoint del token. La ejecución encontró además que una instalación con `--remote-image`
+  identificaba su contenedor por la referencia del registro, la misma cadena en cualquier
+  instalación, así que una segunda instalación en un router se negaba como si la primera fuera de
+  otro; ahora se identifica por su veth.
+- **Los límites de Docker Hub**, leídos el 2026-09-24: 100 descargas anónimas cada 6 horas por
+  dirección IPv4 o `/64` IPv6, y el token anónimo lleva las mismas 6 h (`pull_limit_interval` 21600),
+  mientras que la cabecera `ratelimit-limit` del registro en un `HEAD` del manifiesto del agente decía
+  `100;w=3600`. No se midió cuál de los dos aplica Docker. La cifra de una descarga por instalación
+  sale de la regla de recuento de Docker y de una descarga hecha con `curl` desde el equipo del
+  operador, no de una descarga de RouterOS.
+- **Las fuentes de MikroTik sobre el registro por defecto**, leídas el 2026-09-24: el changelog de 7.18
+  añade `registry-url=https://lscr.io`, el de 7.21.2 dice "changed default container registry to
+  docker.io", ningún changelog de 7.21.3 a 7.24.4 menciona el registro, y la documentación de
+  contenedores sigue dando `https://lscr.io/`. El CHR del laboratorio con 7.24.4 no tenía
+  `registry-url` ni usuario e informaba `assumed-registry-url: docker.io`.
+
+## Coste del agente {#lo-que-cuesta-hoy-el-agente}
+
+Con los valores por defecto de la instalación, 10 Hz, suelos por fuente por defecto y un anillo de
+60 s, el agente cuesta **<Measured id="run.10hz.cpu" /> de un núcleo y <Measured id="run.10hz.rss" /> de
+RSS**, leídos de su propio cgroup en régimen estacionario con el anillo lleno:
 
 <Provenance of="rates-2026-09-18" />
 
 <RunsTable only={["10hz"]} />
 
-Eso está por encima del presupuesto de <Measured id="budget.cpu" /> de un núcleo y dentro del
-de <Measured id="budget.rss" /> de RSS —estuvo por encima de los dos hasta el anillo de 60 s y el
-límite de memoria derivado de 1.0.6. El presupuesto es orientativo, no un contrato: el coste depende del equipo, del
-conjunto de fuentes y del tamaño del anillo. El presupuesto de imagen es <Measured id="budget.image" />;
-la imagen publicada de 1.2.1 para arm64 mide <Measured id="image.size" />: 6 690 304 B, medidos sobre el
-artefacto de la versión el 2026-09-24, de los que el binario del agente ocupa 6 684 832 B. Las
-imágenes armv5 y armv7 miden 7 214 592 B y la amd64 7 222 784 B. Las notas de la versión 1.0.0
-daban <Measured id="image.size.v100" /> para la imagen de esa versión (v1.0.0, etiquetada el 2026-09-16),
-y las imágenes intermedias no tienen medición propia. El trabajo `agent-size` de la CI mantiene el binario del agente, que es
-todo lo que lleva la imagen, por debajo de 8 MiB en arm64, armv7 y amd64.
+Eso está por encima del presupuesto de <Measured id="budget.cpu" /> de un núcleo y dentro
+del de <Measured id="budget.rss" /> de RSS. La campaña del 2026-09-15 estaba por encima en los dos, con
+un anillo de 300 s y un límite de memoria fijo, antes de que 1.0.6 trajera el anillo de 60 s y el
+límite derivado. El presupuesto de imagen es <Measured id="budget.image" />; la imagen publicada de
+1.2.1 para arm64 mide <Measured id="image.size" /> (<TestedOn of="image">`image`</TestedOn>). El
+presupuesto es orientativo, no un contrato: el coste depende del equipo, del conjunto de fuentes y
+del tamaño del anillo.
 
-Dos reglas mantienen honesta la cifra de coste: esperar a que se llene el
-anillo (`BUFFER_S`) antes de citar una cifra de régimen estacionario — en el
-RB5009, con un límite blando de memoria de 14 MiB, una lectura tomada en el
-primer minuto tras la instalación dio un 1,47 % de un núcleo frente a
-un <Measured id="gc.tight.cpu" /> en régimen estacionario — y leer el coste del `/metrics` del colector, o de
-`cpu_us` y `rss` en `mikroscope_self` en el almacén que uses, en vez de un
-`/snapshot` grande, cuya respuesta de ~1,9 MB tiene que serializar el agente.
+Dos reglas mantienen honesta una cifra de coste. Espera primero a que se llene el anillo
+(`BUFFER_S`): en el RB5009, con un límite blando de memoria de 14 MiB, una lectura tomada en el primer
+minuto tras la instalación dio un 1,47 % de un núcleo frente a un <Measured id="gc.tight.cpu" /> en
+régimen estacionario. Y lee el coste del `/metrics` del colector, o de `cpu_us` y `rss` en
+`mikroscope_self` en el almacén que uses, en vez de un `/snapshot` grande, cuya respuesta de ~1,9 MB
+tiene que serializar el agente. El procedimiento está en
+[Coste del agente](/mikroscope/es/cost/#medirlo-en-tu-propio-equipo).
 
-### Coste a 10 Hz, por configuración
+### Coste por configuración {#coste-a-10-hz-por-configuración}
 
-Todas las filas se midieron en el mismo RB5009 a 10 Hz, y cada una es una ventana
-sin dispersión registrada. Son los ajustes que un lector puede elegir, así que la
-tabla dice lo que cuesta cada uno, no lo que valía el número en algún momento
-anterior.
+Todas las filas se midieron en el mismo RB5009 a 10 Hz, y cada una es una ventana sin dispersión
+registrada.
 
 <ScrollTable label="El coste del agente a 10 Hz en el RB5009, por configuración">
 
@@ -287,141 +925,501 @@ anterior.
 
 </ScrollTable>
 
-## Un equipo, dos versiones de RouterOS
+## Campañas {#campaigns}
 
-Todas las cifras tomadas en el equipo que aparecen en esta documentación vienen
-de un único RB5009UG+S+, el router de producción del propietario. El
-laboratorio virtual de RouterOS (`test/lab`) prueba que el instalador es
-correcto; ninguna cifra de esta página sale de él. La mayoría de las cifras se midieron con RouterOS 7.24.2 y cada
-una lo indica; la campaña de errores de puerto (2026-09-19), los tiempos de
-`/stream` (2026-09-21) y las tres gráficas del almacén de referencia (del
-2026-09-19 al 2026-09-24) son de 7.24.4. El equipo ha pasado a 7.24.4, y allí se ejercitaron `doctor`,
-`plan`, `install`, `status` y `uninstall` el 2026-09-21, con el agente instalado
-funcionando de forma continua desde el 2026-09-19. El 2026-09-23, también sobre
-7.24.4, se reprodujo en solo lectura la forma 1.2.x del aviso de registro de
-`doctor` (la comparación de hosts que la sustituyó solo se ha ejecutado contra
-respuestas de router falsas en los tests) y su aviso de token con una
-instalación desechable que se expuso, se actualizó sin token y se retiró, así
-que `upgrade` también se ha ejecutado allí. Ese mismo día
-`doctor` leyó 600 muestras del anillo del agente en marcha y no encontró nada;
-los cuatro fallos que nombra los cubren pruebas que reproducen el texto real de
-los registros y la cadencia de 2,0 s del bucle del equipo de referencia, no un
-fallo en vivo. El 2026-09-24, también sobre 7.24.4, se le dio a RouterOS la
-referencia del agente con su host de registro dentro de `remote-image=`, en
-contenedores creados en una veth temporal, nunca arrancados y retirados después:
-el host mandó sobre `registry-url` (verificado en <Verified of="remote-image-host" />),
-y Docker Hub sirvió el agente con el usuario y la contraseña de registro del
-equipo borrados y luego restaurados (verificado en <Verified of="docker-hub-anonymous" />). Esa es la forma que envía ahora
-`--remote-image`; un `install` completo con ella aún no se ha ejecutado en el
-router. Las mediciones de 7.24.2 no se han repetido sobre 7.24.4.
+Cada campaña en una entrada: el equipo, la versión de RouterOS, la fecha y las condiciones, las
+cifras que citan de ella las guías y lo que encontró. Una cifra de una guía enlaza aquí su campaña.
 
-<NotClaimed variant="untested">
-	Una segunda placa de cualquier tipo. El hEX S (2025) — RouterOS de 32 bits sobre un chip ARM64,
-	que es para lo que existe la compilación `linux/arm/v5` del agente — no ha llegado, así que ni la
-	ruta del desbordamiento de contadores de 32 bits ni ninguna de las dos imágenes ARM de 32 bits se
-	han ejecutado en hardware. Ningún host RouterOS x86_64. Ningún RouterOS anterior a 7.24, y
-	ninguna de las cifras de 7.24.2 vuelta a medir sobre 7.24.4. Nada que necesite un
-	reinicio, que espera a una ventana de mantenimiento. Un [informe de placa](https://github.com/jmrplens/mikroscope/issues/new?template=2-board-report.yml)
-	desde otra placa es lo que cambia lo primero y, desde una placa ARM de 32 bits, un host x86_64 o un
-	RouterOS anterior a 7.24, también la frase que lo nombra.
-</NotClaimed>
+### Coste y cadencia
 
-## Encontrado y sin corregir
+<CampaignRegister only={["rates-2026-09-18"]} level={4} />
 
-Contrastado con el código a fecha de esta página:
+Seis ventanas de 300 s, a 10, 20, 50 y 100 Hz y a 50 y 100 Hz con `FLOOR_HZ`, ninguna de las cuales
+perdió una muestra: [Techo de muestreo](/mikroscope/es/cost/rate-ceiling/) tiene la tabla. La WAN
+llevaba de media unos <Measured id="load.ordinary" /> durante los 44 minutos de la campaña, con picos
+de 933 Mbit/s.
 
-- **El resumen final de `forward` va a stdout**, el mismo flujo en el que el
-  destino `--stdout` escribe los registros, así que `forward --stdout=lp | telegraf`
-  termina cada ejecución con líneas que el consumidor no puede analizar.
-- **Un `--token` erróneo no hace fallar la ejecución.** Cada petición queda
-  registrada como `401 Unauthorized`, y la ejecución termina en el plazo de
-  `--for` con código de salida 0 y `forwarded 0 kernel samples`. La
-  comprobación de salud que hace `forward` antes de empezar a pedir datos lee
-  `/healthz`, que no necesita token, así que la supera. El mensaje es correcto;
-  el código de salida no le dice nada a un fichero de unidad.
-- **Números de secuencia duplicados en la ejecución nocturna del 2026-09-13.**
-  La ejecución a 50 Hz escribió valores de `seq` repetidos en InfluxDB; los
-  paneles llaman a esas filas "duplicate sample (seq repeated)". La explicación
-  más probable, sin verificar, es que el cliente HTTP de Go
-  reenviaba un POST por una conexión reutilizada ya muerta después de que el
-  servidor lo hubiera confirmado. Los destinos InfluxDB, Loki, OTLP,
-  Elasticsearch y Telegraf rechazan ese reenvío, así que una conexión muerta es
-  un error que el destino reintenta y contabiliza. Ninguna ejecución posterior
-  a esa noche muestra si los duplicados han desaparecido.
+<CampaignRegister only={["rates-2026-09-15"]} level={4} />
 
-### Encontrado en el equipo y sin recoger
+Cinco ejecuciones de cadencia a 10, 50 y 100 Hz con el colector escribiendo a la vez en un fichero,
+en una exposición Prometheus y en InfluxDB 3; todos los destinos informaron de 0 huecos y 0
+descartes. El valor por defecto de la instalación a 10 Hz de esa fecha costaba un 2,85 % de un núcleo
+y 31,3 MiB de RSS, con un anillo de 300 s y un límite de memoria fijo de 40 MiB; 50 Hz necesitó
+`--memory-max 96M` y 100 Hz `128M`. La WAN llevaba unos 30 Mbit/s, por la tarde. La cifra de la
+instalación por defecto que citan las guías es de `rates-2026-09-18`, no de esta campaña.
 
-Dos ficheros legibles del equipo de referencia, leídos allí el 2026-09-15, no
-se recogen: `/proc/cmdline`, que
-lleva `board=5009 ver=7.24.1` — una segunda identidad del equipo sin la API — y
-el watchdog hardware en `/sys/class/watchdog/watchdog0`.
+<CampaignRegister only={["gc"]} level={4} />
 
-## Qué publica la versión
+El mismo agente, anillo y fuentes con un límite blando de 14 MiB y después con margen:
+[Coste por configuración](/mikroscope/es/about/status/#coste-a-10-hz-por-configuración) tiene las dos filas.
 
-El fichero <Src path="VERSION" /> del repositorio contiene la **<Version />**, que
-el changelog, <Src path="CHANGELOG.md" />, fecha el <Version show="date" />. Va
-compilada en los dos binarios y es lo que devuelve `mikroscope version`, y el
-changelog dice qué cambió cada versión. No todos los números tienen release
-propia: la 1.0.5, la 1.0.8 y la 1.0.10 nunca se etiquetaron, y la v1.0.6 se
-etiquetó pero su ejecución de release falló. Los cambios de la 1.0.5 y la 1.0.6
-salen en la v1.0.7, los de la 1.0.8 en la v1.0.9 y los de la 1.0.10 en la
-v1.1.0. El changelog conserva una sección para la 1.0.5, la 1.0.6 y la 1.0.8,
-que dicen qué cambió, y ninguna para la 1.0.10. Una etiqueta `v*` lanza la
-configuración de GoReleaser, que publica:
+<CampaignRegister only={["line-size-2026-09-17"]} level={4} />
 
-- **Archivos de la CLI** para linux y freebsd en amd64, arm64 y arm (ARMv7), y
-  para darwin y windows en amd64 y arm64: `.tar.gz`, y `.zip` en Windows, cada
-  uno con la licencia MIT, <Src path="LICENSE" />, y <Src path="README.md" />.
-- **Archivos del agente** para linux en amd64, arm64, armv5 y armv7, para quien
-  quiera el binario pelado en lugar de una imagen.
-- **Tar de imagen del agente para cargar a mano**, cuatro —
-  `mikroscope-agent-arm64.tar`, `mikroscope-agent-armv5.tar`,
-  `mikroscope-agent-armv7.tar`, `mikroscope-agent-amd64.tar` (el ARM de 32 bits
-  son dos: las placas EN7562CT solo aceptan v5) —, que es lo que
-  `install --agent-tar` sube al router.
-- **La imagen del agente en dos registros**, `jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}`
-  en Docker Hub y `ghcr.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}` en GHCR (también con
-  la etiqueta `latest`), cada una un único manifiesto sobre `linux/amd64`,
-  `linux/arm64`, `linux/arm/v7` y `linux/arm/v5`, que
-  `install --remote-image` hace descargar al router. mikroscope envía la
-  referencia entera, con el host del registro incluido —`registry-1.docker.io/…`
-  para Docker Hub—, así que el ajuste global `/container/config registry-url` ni
-  hace falta ni se escribe, y Docker Hub sirve la imagen sin login de registro:
-  [Nada que ajustar en el router](/mikroscope/es/install/routes/#nada-que-ajustar-en-el-router)
-  tiene lo que se midió. Hasta la 1.2.2 el host se dejaba a `registry-url`, cuyo
-  valor por defecto en RouterOS no siempre ha sido Docker Hub.
-- **La imagen del colector**, `jmrplens/mikroscope:{{MIKROSCOPE_VERSION}}` en Docker Hub y
-  `ghcr.io/jmrplens/mikroscope:{{MIKROSCOPE_VERSION}}` en GHCR (también con la etiqueta
-  `latest`), sobre `linux/amd64` y `linux/arm64`, para los stacks de compose de
-  la carpeta <Src path="deploy/" />.
-- **`checksums.txt`**, que cubre todos los archivos y todos los tar de imagen,
-  una firma cosign sin claves sobre él y un SBOM SPDX por archivo, firmado a su
-  vez.
+3 230 B medidos, cobrados desde la clase de tamaño de 3 456 B de Go. Los 2 439 B del 2026-09-12
+subestimaban el anillo un 35 %, y el agente funcionaba con 32,9 MiB de RSS donde bastaban 24,3. Una
+línea sin PMU cuesta un 35 % menos. El tamaño de las líneas con los suelos por fuente actuales no se
+ha medido.
 
-Instalar desde una versión publicada no necesita ni toolchain de Go ni copia del
-repositorio. Con una copia del repositorio y Go 1.27 se instala en cambio un
-agente compilado desde tu propio árbol: `make build` para la CLI y
-`make build-agent` para el agente, que `install` e `image` compilan también por
-su cuenta. Las cuatro maneras de llevar el agente a un router, y lo que necesita
-cada una, están en [Instalar el agente](/mikroscope/es/install/).
+<CampaignRegister only={["line-size"]} level={4} />
 
-Lo que la versión publica para `linux/arm/v5`, `linux/arm/v7` y `linux/amd64`
-está compilado de forma cruzada y comprobado en CI. De las cuatro plataformas,
-solo `arm64` se ha ejecutado en hardware: en el único RB5009 de arriba.
+La línea media antes de que llevara la PMU y la temporización del propio muestreador, redondeada a
+unos 2,4 kB en las guías de esa fecha.
+
+<CampaignRegister only={["busybox-2026-09-11"]} level={4} />
+
+Dos ejecuciones de 60 s, 2,40 y 2,48 % de un núcleo, del `cpu.stat` del cgroup frente a
+`/proc/uptime`; las lecturas en sí tardaban unos 0,77 ms por muestra. No se ha vuelto a medir con el
+conjunto de fuentes actual del agente:
+[Coste del agente](/mikroscope/es/cost/#lo-que-cuesta-la-alternativa).
+
+<CampaignRegister only={["ssh-connect"]} level={4} />
+
+Medido antes de que existiera el agente, con RouterOS 7.24.1. Con 7.24.2, el 2026-09-11, el mismo
+coste apareció en `/tool profile` como un 17–33 % en una o dos instantáneas, no en una ventana medida:
+[Coste de SSH](/mikroscope/es/cost/#ssh-cost).
+
+<CampaignRegister only={["api-profile-2026-09-16"]} level={4} />
+
+Un perfil de 60 s por condición, sin dispersión:
+[Coste de la capa API](/mikroscope/es/cost/#api-tier-cost).
+
+<CampaignRegister only={["image"]} level={4} />
+
+Medido con `ls -l` sobre el artefacto de la versión v1.2.1, con su suma de comprobación verificada
+contra el `checksums.txt` firmado: 6 690 304 B, de los que el binario del agente ocupa 6 684 832 B.
+Los tar de armv5 y armv7 miden 7 214 592 B y el de amd64 7 222 784 B. El trabajo `agent-size` de la CI
+mantiene el binario del agente, que es todo lo que lleva la imagen, por debajo de 8 MiB en arm64,
+armv7 y amd64.
+
+<CampaignRegister only={["image-v100"]} level={4} />
+
+La cifra que dan las notas de la versión 1.0.0; la v1.0.0 se etiquetó el 2026-09-16. Las imágenes
+entre ella y la 1.2.1 no tienen medida propia.
+
+### Kernel y fuentes
+
+<CampaignRegister only={["kernel-2026-09-11"]} level={4} />
+
+La columna `irq` de `/proc/stat` vale siempre 0 en este kernel, así que el tiempo de IRQ hardware
+está dentro de `system`. `USER_HZ` es 100, así que un tick son 10 ms y los escalones de ocupación de
+las guías son aritmética a partir de él. Los ficheros que dentro del contenedor son del router se
+establecieron ese mismo día ([Vista desde el contenedor](#vista-desde-el-contenedor)).
+
+<CampaignRegister only={["discovery-2026-09-12"]} level={4} />
+
+La ronda que no encontró ningún camino de trazado ([Kernel y PMU](#kernel-y-pmu)), y cuyo `slabinfo`
+es el de `testdata/proc/rb5009`: `nf_conntrack` 6 582 activos de 8 075.
+
+<CampaignRegister only={["netns-2026-09-12"]} level={4} />
+
+Dentro del contenedor `/proc/net/dev` contaba la veth, 4 paquetes mientras el router reenviaba
+millones, con `privileged=yes` y sin él.
+
+<CampaignRegister only={["floors-overnight"]} level={4} />
+
+La captura que fijó el suelo de 6 Hz al que se ralentiza `/proc/slabinfo`, la frecuencia a la que
+cambiaba su caché más rápida, `nf_conntrack`. Los niveles de memoria se movían unas 24 veces por
+segundo. Es una placa, una noche en reposo, con el reloj fijado en el ajuste del mantenedor: «cpufreq
+nunca cambió» significa que no cambió esa noche.
+
+<CampaignRegister only={["cpu-load-window-2026-09-15"]} level={4} />
+
+El mejor ajuste de cada hora: una media móvil de <Measured id="cpuLoad.window1" /> que llegó a la
+API con <Measured id="cpuLoad.delay1" /> de retardo (r = <Measured id="cpuLoad.r1" />
+sobre <Measured id="cpuLoad.samples1" /> muestras de la API), y una media
+de <Measured id="cpuLoad.window2" /> que llegó con <Measured id="cpuLoad.delay2" /> de retardo
+(r = <Measured id="cpuLoad.r2" /> sobre <Measured id="cpuLoad.samples2" />). `/system/resource` publica
+`cpu-load` como un porcentaje entero, y la serie de la API se correlacionó con la proporción de
+ocupación por núcleo del agente, los mismos jiffies de `/proc/stat`, para una serie de longitudes de
+ventana y retardos. Ensanchar la ventana solo empeoró el ajuste: 1,5 s dio 0,955; 2 s, 0,919; 5 s,
+0,822; y 8 s, 0,791. Una media de sesenta segundos queda descartada dos veces: su correlación es
+0,238, y en el mayor salto de carga del día el kernel pasó de 5 % a 27 % en un segundo y `cpu-load` de
+5 a 26 en ese mismo segundo, y de 22 % a 6 % al bajar con la misma rapidez. La
+[documentación de `/system/resource`](https://help.mikrotik.com/docs/spaces/ROS/pages/40992875/Resource)
+de MikroTik define `cpu-load` como el porcentaje de recursos de CPU usados, sumando todas las CPU, y
+no nombra ninguna ventana (leída el 2026-09-24).
+
+### Grabación y transporte
+
+<CampaignRegister only={["record-2026-09-12"]} level={4} />
+
+Exactamente 600 muestras, 0 huecos y un desfase de reloj de −7 ms. Un bucle de RouterOS por script
+(`:for … 400 000`) se vio como la carga de un núcleo entero al 100 % de t = 21,0 a 25,8 s, con la
+muestra de 25,8 s marcando alrededor del 60 %, y el inicio y el final resueltos a 100 ms. Los
+marcadores del log del router explicaron una meseta de 2 s entre 15 y 17 s que nadie había provocado:
+el planificador `ensure-ipv6-nd-prefix`. Las horas del log llegaron por la API como fechas completas
+(<TestedOn of="log-time-full-date">verificado</TestedOn>).
+
+<CampaignRegister only={["record-2026-09-16"]} level={4} />
+
+La grabación de la que sale el gráfico de
+[Línea base en reposo](/mikroscope/es/playbooks/idle/#gráfico-grabado).
+
+<CampaignRegister only={["stream-2026-09-21"]} level={4} />
+
+Agente 1.0.9 a 10 Hz. Cada conexión terminó en el tiempo de escritura de 30 s del servidor, le
+quedara lo que le quedara por enviar, así que quien consuma `/stream` reconecta con el último `seq`
+que vio.
+
+<CampaignRegister only={["relay-fetch"]} level={4} />
+
+`/tool fetch output=user` truncó el cuerpo sin avisar en 64 512 B con cuerpos de 64 K, 256 K, 1 M y
+4 M.
+
+<CampaignRegister only={["line-protocol-2026-09-12"]} level={4} />
+
+Unos 1,2 KiB por muestra, la cifra a partir de la cual los destinos de InfluxDB y Telegraf
+dimensionan su presupuesto de bytes. No medido por encima de 10 Hz, ni vuelto a medir con el conjunto
+de fuentes actual.
+
+### Red y fallos
+
+<CampaignRegister only={["playbooks-2026-09-12"]} level={4} />
+
+Las lecturas sobre las que se construyen los [casos reales](/mikroscope/es/playbooks/idle/), de un
+kernel aarch64 en una placa con 1 GB de RAM; donde se provocó un fallo, el caso real dice cómo. Tres
+casos llevan además un gráfico del almacén InfluxDB de referencia, cuyo historial empieza el
+2026-09-19: la vuelta del bucle, la comprobación cruzada de conntrack y el puerto que pierde tramas.
+El puerto que pierde tramas es una campaña aparte, una semana después, leída en los contadores de
+puerto de la capa de la API y no en el agente. `time_squeeze` no era cero ni siquiera en reposo.
+Mientras el reflejo de capa 2 estaba activo, el log del kernel iba
+a <Measured id="loop.eventsBefore" />, y una pareja «blocking state» y luego «learning state» llegaba
+dentro de un mismo tick de 100 ms con el mismo nivel, así que su orden dentro del tick es la señal. La
+tabla de conntrack tenía <Measured id="conntrack.slab" /> entradas, un 0,65 % del techo de 966 656
+que el kernel informó el 2026-09-14.
+
+<CampaignRegister only={["squeeze-2026-09-16"]} level={4} />
+
+Las 24 h terminaron a las 07:00 UTC del 2026-09-16. `time_squeeze` era 0 en el 87,3 % de las muestras
+por CPU, y una ventana móvil de esa distribución tiene un percentil 90 de 1, así que «por encima de
+p90» lo cumple cualquier 2. El 2026-09-15 una condición de disparo que salta ante cualquier squeeze
+saltó 92 veces en veinte minutos (RouterOS 7.24.2), y por eso `squeeze` no es un disparador por
+defecto.
+
+<CampaignRegister only={["microburst-replay-2026-09-16"]} level={4} />
+
+Con suelo 3 la regla siguió marcando 88 muestras para el contador de ráfagas y para `derived.burst`.
+
+<CampaignRegister only={["api-conntrack"]} level={4} />
+
+La cuenta fue 6 212, el día antes de que el slab del agente marcara <Measured id="conntrack.slab" />:
+el mismo orden de magnitud, que no dice nada de si las dos se siguen. Las diez llamadas tardaron una
+mediana de 1,3 ms, la más rápida 1,1 ms y la primera 71 ms, en frío; la hora no consta.
+
+<CampaignRegister only={["counters-2026-09-16"]} level={4} />
+
+`ether1`, 2,5 GbE hacia un NAS, había recibido 255,8 GB por el cable (`rx-bytes`) y había entregado
+29,7 GB de ellos a la CPU (`driver-rx-byte`) desde el último reinicio del contador del puerto; el
+resto lo reenvió el chip de conmutación en hardware. Todos los puertos del switch daban una
+proporción de fast path de alrededor del 100 %, con `fp-rx-byte` igual a `driver-rx-byte` con unos
+pocos kB de diferencia. `bridge` había pasado por el fast path 211,9 GB de los 663,0 GB que llevó a la
+CPU desde el arranque (32 %), y `PPPoE_DIGI` el 99,97 %. `fp-tx-byte` estaba a 0 en todas las
+interfaces tras cientos de GB transmitidos (<TestedOn of="fp-tx-zero">verificado</TestedOn>).
+
+<CampaignRegister only={["port-overflow-2026-09-19"]} level={4} />
+
+El caso real es [Puerto que pierde tramas](/mikroscope/es/playbooks/port-errors/).
+
+Medido sin campaña propia: el 2026-09-15 una ráfaga tuvo un pico de 736 paquetes en una muestra de
+20 ms, una muestra a 50 Hz, frente a una mediana de 28.
+
+## Comportamiento de RouterOS verificado {#verified-routeros-behaviour}
+
+Hechos de sí o no sobre RouterOS en los que se apoyan las guías, cada uno comprobado una vez, con
+dónde y cuándo.
+
+<VerifiedRegister />
+
+## Sin probar {#not-tested}
+
+Lo que no cubre aquí ninguna ejecución, medida ni comprobación. Una guía que afirma una de estas cosas
+como comportamiento esperado enlaza esta lista.
+
+### Hardware y versiones
+
+- Una segunda placa de cualquier tipo. El hEX S (2025), RouterOS de 32 bits sobre un chip ARM64, que
+  es para lo que existe la compilación `linux/arm/v5` del agente, no ha llegado, así que ni la ruta
+  del desbordamiento de contadores de 32 bits ni ninguna de las dos imágenes ARM de 32 bits se han
+  ejecutado en RouterOS. Un
+  [informe de placa](https://github.com/jmrplens/mikroscope/issues/new?template=2-board-report.yml)
+  desde otra placa es lo que cambia esto.
+- RouterOS x86 en hardware: la imagen amd64 solo se ha ejecutado en QEMU, en el CHR x86_64 del
+  laboratorio y en RouterOS x86 instalado desde la ISO de MikroTik.
+- Ningún RouterOS anterior a 7.24 más allá de la comprobación de versión de `doctor`, que S17 ejecutó
+  en un CHR con 7.23.7, y ninguna de las cifras de 7.24.2 vuelta a medir sobre 7.24.4.
+- Nada que necesite un reinicio del RB5009, que espera a una ventana de mantenimiento. Así que no está
+  probado en hardware que una instalación persistente sobreviva a un reinicio con
+  `start-on-boot=yes`. En el CHR del laboratorio volvió a responder en menos de 90 s tras un corte de
+  corriente (S7, en las dos arquitecturas).
+- Qué ficheros están en un espacio de nombres en otra versión de RouterOS u otra placa: cada fila de
+  [Vista desde el contenedor](#vista-desde-el-contenedor) se leyó en un único RB5009 con 7.24.2.
+- Una placa con sensores hwmon, o un RouterOS posterior que construya los contenedores de otra
+  manera: el conjunto de sensores, las 38 capacidades y la correspondencia de uid se leyeron en un
+  único RB5009 con 7.24.2.
+- La correspondencia de puertos en otra placa: el desplazamiento de uno, la posición de la jaula
+  SFP+ y la reutilización de `port 7` se observaron en un RB5009UG+S+ con 7.24.2, y el agente no los
+  aplica a ninguna otra placa.
+- Los caminos de PSI y `schedstat` en un router: el kernel del RB5009 no tiene ninguno de los dos. El
+  conjunto de contadores de la PMU solo se conoce en el Cortex-A72 del RB5009 y en el equipo de
+  desarrollo amd64.
+- Cualquier cadencia de las fuentes en otro equipo o con otra carga: las cadencias son las del RB5009,
+  con 7.24.2. Vuelve a medirlas con `FLOOR_HZ` igual a la cadencia del muestreador.
+- Qué claves de pérdidas y qué contadores devuelve otra versión de RouterOS u otra placa.
+- Lo que ahorra `--goarm 7` frente a la compilación ARMv5: ningún hardware ARM ha ejecutado ninguna.
+- Las entradas de la envlist en un RouterOS anterior a 7.24: mikroscope escribe `key=`, porque
+  `name=` falló en el RB5009 con 7.24.2, y no se probó cómo toma una u otra una 7.x anterior.
+- Un tráfico mayor que la carga corriente del RB5009: unos <Measured id="load.ordinary" /> en la WAN
+  durante la campaña del 2026-09-18. No se afirma ninguna cadencia en otra placa.
+
+### Instalación y actualización
+
+- En el RB5009, una descarga de GHCR sin credencial de registro, y cualquier descarga de GHCR con el
+  host dentro de `remote-image=`: su única ejecución contra GHCR tomó el host de `registry-url`. El
+  CHR del laboratorio hizo las dos con 7.24.4 ([Rutas de instalación probadas](#install-routes-tested)).
+- Qué credencial presenta RouterOS a un host que solo se nombra en `remote-image=` cuando
+  `registry-url` nombra otro. La única ejecución con un host distinto del de `registry-url`, el
+  2026-09-24, nombraba `registry.invalid`, que nunca se resolvió. Con el mismo host, el laboratorio
+  mostró que RouterOS solo la presenta cuando `registry-url` se escribe como el host a secas
+  (<TestedOn of="registry-url-host-match">verificado</TestedOn>).
+- En el RB5009: un `install` o un `upgrade` completo que envíe la referencia completa, un
+  `registry-url` con su valor de fábrica y la referencia completa en cualquier RouterOS que no sea
+  7.24.4. El CHR del laboratorio ejecutó las dos cosas con la 1.3.1 sobre 7.24.4.
+- Una descarga a través de un espejo o una caché intermedia nombrados en la referencia.
+- Las órdenes de despliegue de la 1.4.0 en cualquier hardware: el manifiesto de instalación, la forma
+  guardada en el router, `--arch auto`, las comprobaciones nuevas de doctor y el script con sus
+  guardas solo se han ejecutado en los CHR del laboratorio, con el código posterior a la 1.3.1.
+- `--ssh-option` y `MIKROSCOPE_SSH_OPTIONS` contra cualquier router: la CLI del laboratorio se conecta
+  con el `ssh_config` propio del laboratorio, y solo las pruebas unitarias pasan la opción.
+- Que `--extract-timeout` se agote, lo que conserva el tar, en cualquier router.
+- La comparación de hosts de registro de `doctor` contra un router real: solo se ha ejecutado contra
+  respuestas de router falsas en los tests.
+- Si un usuario `read,api` puede leer los valores de la envlist en `/container/envs`.
+- La ida y vuelta idéntica byte a byte en hardware: en cualquier placa que no sea el RB5009, en el
+  RB5009 con cualquier RouterOS salvo 7.24.2, con `install` y `upgrade` sin `--ephemeral`, o con los
+  ajustes actuales del contenedor (`privileged=yes`, `memory-max=64M`, las entradas de la envlist
+  `MEM_LIMIT_MB`, `CAPTURE_MB`, `TRIGGERS` y `FLOOR_HZ`): en el RB5009 se hizo con `memory-max=32M`.
+  Desde entonces `install`, `status` y `uninstall` se han ejecutado allí en 7.24.4. En el CHR 7.24.4
+  del laboratorio, `make roundtrip` la ejecuta con `--ephemeral` (2026-09-26); S2 y S3 ejecutan
+  `install`, `upgrade` y `uninstall` sin él, con `privileged=yes`, `memory-max=64M`, `MEM_LIMIT_MB` y
+  `CAPTURE_MB`, y S5 importa un script que además escribe `TRIGGERS` y `FLOOR_HZ`; cada uno termina
+  con el `/export` igual al de su inicio, salvo la línea `keymat-provider` de RouterOS (las dos
+  arquitecturas, 2026-09-27).
+- Cortafuegos distintos del del RB5009, donde el 2026-09-11 bastaron las dos pertenencias a listas, y
+  de los perfiles del laboratorio. Un cortafuegos con otras reglas de descarte en `raw`, `input` o
+  `forward` puede descartar el tráfico del contenedor en otro punto, e `install` no añade nada para
+  eso más allá de las dos pertenencias. No se comprobó si la configuración de fábrica de un router
+  lleva las dos reglas raw.
+- `--expose` desde fuera de la LAN: solo se probó una máquina de la LAN llegando a la dirección LAN
+  del router. Si algo de fuera de la LAN llega a esa dirección depende del resto del cortafuegos, y no
+  se probó ningún camino así.
+- Winbox: la página de instalación por WebFig dice que Winbox tiene los mismos menús y campos, y no se
+  ejecutó ningún Winbox. Las reglas de `--expose` por los formularios NAT y Filter Rules de WebFig, un
+  script entero pegado en el terminal de WebFig o de Winbox, y WebFig en cualquier RouterOS salvo
+  7.24.4.
+- Los scripts del generador, la instalación manual por terminal y la instalación por WebFig en el
+  laboratorio arm64 o en el RB5009.
+
+### Grabación y captura
+
+- Una grabación por encima de 10 Hz: las ejecuciones sin pérdidas a 20, 50 y 100 Hz fueron del
+  colector, que usa el mismo tamaño de lote. Una grabación a través del relay, a cualquier cadencia.
+- El rendimiento del relay. Con idas y vueltas de `/tool fetch` de cerca de 1 s en la mitad de las
+  llamadas y unos 3 ms en el resto (<TestedOn of="relay-fetch">medido</TestedOn> en el RB5009 con
+  7.24.2), la aritmética da del orden de 26 muestras por segundo, menos cuando
+  las llamadas lentas se agrupan. El límite del relay y el aviso de arranque están leídos del código
+  (2026-09-15), no medidos en un equipo. El límite del relay y su fracción de 1 s en cualquier
+  RouterOS salvo 7.24.2.
+- El coste de un disparo en el equipo; 3 µs para una ventana de 10 s a 10 Hz es la estimación del
+  diseño. Cómo se comporta el agente bajo una tormenta sostenida de disparos. Cualquier captura a 50 o
+  100 Hz. Los tamaños de captura de [Captura por disparo](/mikroscope/es/record/triggers/) son
+  aritmética a partir del tamaño de línea, no tamaños de capturas tomadas en el RB5009.
+
+### Colector y destinos
+
+- Destinos alimentados desde el RB5009 hacia un backend en marcha: solo fichero, Prometheus e
+  InfluxDB 3. Loki, un receptor OTLP, carbon, Elasticsearch, OpenSearch, Telegraf, PostgreSQL y
+  TimescaleDB no han recibido muestras del router en ninguna ejecución registrada. OpenSearch, las
+  hypertables de TimescaleDB y la salida estándar nunca se han probado contra un almacén real; solo
+  los cubren las pruebas de contrato de bytes.
+- Un TimescaleDB real: las llamadas a `create_hypertable` siguen la firma documentada de TimescaleDB
+  2.x y no están verificadas.
+- El tamaño del destino SQL en un router. Las cifras del fixture (1 375 B de SQL para un evento del
+  kernel frente a 716 B de protocolo de líneas, 1 138 B para un evento de la API frente a 608 B, unos
+  14 KiB/s a 10 Hz más la capa de la API a 1 Hz tras una cabecera de 5,6 KiB, 2 749 B con las fuentes
+  privilegiadas) cubren dieciocho de las cuarenta y tres tablas que escribe el destino: once se
+  añadieron después del fixture, y `load`, `stat`, `buddy`, `mtd`, `api_ifcounter`, `api_ifinfo`,
+  `trigger`, `derived`, `derived_iface`, `detection` y las cuatro tablas `device` no se ejercitaron.
+  Son anteriores a las columnas `port` y `kind` de `mikroscope_event`.
+- `--sql - | psql` con un `psql` que se queda atrás frente a un agente a 10 Hz, que bloquea el bucle de
+  peticiones.
+- El presupuesto de la salida estándar para `json`, cuyas líneas son más grandes que las del
+  protocolo de líneas.
+- Un renderizado OTLP de una muestra de cuatro núcleos con un top-K real de interrupciones, una
+  muestra de cuatro núcleos en el formato de Elasticsearch, y el presupuesto de Graphite por encima de
+  10 Hz.
+- Una escritura en el `/api/v2/write` de InfluxDB 2. El tamaño en protocolo de líneas por encima de
+  10 Hz o con el conjunto de fuentes actual. Si desactivar el reenvío propio del cliente HTTP evita
+  los duplicados del 2026-09-13.
+- La entrega de Loki durante una tormenta del log del kernel.
+- Cualquier intervalo de scrape de Prometheus que no sea 5 s, y cualquier Prometheus que no sea 3.14.
+- Los 10 Hz constantes del colector frente a un agente más rápido: la referencia de ráfagas y la poda
+  del top-K están leídas del código; el peso EWMA de 1/600 y el desalojo a las 36 000 muestras no se
+  han visto ocurrir nunca, porque ninguna ejecución hizo que una línea de interrupción cayera del
+  top-K y siguiera fuera.
+- Los deltas a cero que se escriben junto a una proporción de fast path ausente (leído
+  en <Src path="internal/derive/derive.go" />), y un cambio de techo o de cadencia sin cambio de hash
+  que llega a los destinos en la siguiente repetición de cinco minutos (leído en `capsHash`).
+- El coste de PMU por paquete comparado entre dos configuraciones del router. Si los diez segundos de
+  la referencia de ráfagas sirven en otra placa u otra mezcla de tráfico: se ajustó contra un RB5009
+  en un solo día. Una proporción de fast path de tx a partir de contadores en vivo.
+- Detecciones provocadas con las reglas en marcha: ningún OOM kill en el contenedor, reinicio, flap de
+  enlace, vaciado o tormenta de conntrack, excursión térmica ni colapso de IPC. Si `reboot` saltó en el
+  reinicio del 2026-09-19. Un flap provocado con `link-flap` en marcha; los flaps del 2026-09-15 no lo
+  estaban.
+- Si RouterOS calcula la ventana de un segundo de `cpu-load` sobre un reloj de pared o sobre jiffies.
+  Si la cuenta de conntrack de la API y la del slab se siguen la una a la otra.
+
+### Otras herramientas {#other-tools}
+
+- Ninguna de las seis herramientas de [Comparado con alternativas](/mikroscope/es/start/compared/) se
+  ejecutó para esa página. Cada celda de sus filas es lo que dice su propia documentación o su
+  código, leído el 2026-09-24: mktxp en el commit `1e4412a` (fechado el 2026-09-21),
+  mikrotik-exporter en `428dbfc` (fechado el 2026-07-03), y el fichero MIB que MikroTik publica para
+  RouterOS 7.24.4. No se midió lo que le cuesta a un router el sondeo SNMP, The Dude, Graphing, el
+  Profiler, mktxp o mikrotik-exporter, con qué frecuencia puede sondearlo cada uno con utilidad, ni
+  qué pone RouterOS en `hrProcessorLoad`.
+
+### Dashboards y alertas
+
+- Cualquier Grafana que no sea 12.3.0, 12.3.2, 13.2.1 o 13.2.2. En 12.3.0 los únicos renderizados son
+  los del 2026-09-25; el resto del dashboard se comprobó allí solo por consulta.
+- La altura del Overview de trece paneles en un navegador; el JSON del repositorio le da 31 unidades
+  de cuadrícula.
+- La regeneración byte a byte de los ficheros de dashboard añadidos después del 2026-09-15.
+- Las anotaciones y capas de detecciones de Elasticsearch y Graphite en Grafana: solo se comprueba su
+  JSON generado, con pruebas unitarias.
+- Una pasada de renderizado sobre los dos paneles de eventos de puerto y la tabla de inventario de
+  interfaces.
+- Que una regla se resuelva: el bucle del RB5009 terminó el 2026-09-23, pero no se ha comprobado en el
+  historial de estados de Grafana la vuelta de `mikroscope-l2-loop` a Normal. No se ha visto a
+  `mikroscope-l2-loop` ni a `mikroscope-port-link-down` pasar a pendiente, saltar y resolverse.
+- Las dos reglas que añadió 1.2.0 dentro de cualquier Grafana, su PromQL más allá de la sintaxis y el
+  SQL de PostgreSQL de la regla de despertares.
+- Los ficheros de alertas de Prometheus y PostgreSQL en cualquier Grafana, y cualquier consulta de
+  alerta de PostgreSQL contra un PostgreSQL real: una prueba unitaria lee el esquema, no una base de
+  datos.
+- La entrega de avisos: no se configuró ningún punto de contacto, así que lo que se observó es el
+  estado de cada regla.
+- Un almacén al que le falta una tabla o una columna que lee una regla: se espera que la consulta
+  falle y que se aplique `execErrState: Error` en lugar de OK. Lo que hace entonces Grafana es su
+  comportamiento de Error y No Data, no probado aquí.
+
+## Problemas conocidos {#encontrado-y-sin-corregir}
+
+Contrastado con el código el 2026-09-24, y el flujo del resumen final otra vez con la 1.3.1 el
+2026-09-26:
+
+- **El resumen final de `forward` va a stdout**, el mismo flujo en el que el destino `--stdout`
+  escribe los registros, así que `forward --stdout=lp | telegraf` termina cada ejecución con líneas que
+  el consumidor no puede analizar.
+- **Un `--token` erróneo no hace fallar la ejecución.** Cada petición queda registrada como
+  `401 Unauthorized`, y la ejecución termina en el plazo de `--for` con código de salida 0 y
+  `forwarded 0 kernel samples`. La comprobación de salud que hace `forward` antes de empezar a pedir
+  datos lee `/healthz`, que no necesita token, así que la supera. El mensaje es correcto; el código de
+  salida no le dice nada a un fichero de unidad.
+- **Números de secuencia duplicados en la ejecución nocturna del 2026-09-13.** La ejecución a 50 Hz
+  escribió valores de `seq` repetidos en InfluxDB; los paneles llaman a esas filas "duplicate sample
+  (seq repeated)". La explicación más probable, sin verificar, es que el cliente HTTP de Go reenviaba
+  un POST por una conexión reutilizada ya muerta después de que el servidor lo hubiera confirmado. Los
+  destinos InfluxDB, Loki, OTLP, Elasticsearch y Telegraf rechazan ese reenvío, así que una conexión
+  muerta es un error que el destino reintenta y contabiliza. Ninguna ejecución posterior a esa noche
+  muestra si los duplicados han desaparecido.
+- **Un tag negado dentro de un OR no devuelve nada, en silencio, en InfluxDB 3.** El 2026-09-23, en el
+  almacén de referencia (InfluxDB 3 Enterprise desde el 2026-09-19; la versión no se anotó con la
+  consulta), `NOT (port='ether2' AND kind IN (…))` sobre `mikroscope_kmsg` devolvió 0 filas donde
+  coincidían 14, y lo mismo su forma de De Morgan y el OR explícito. Devolvió 14 en cuanto se filtró
+  también `port='ether2'` fuera del OR. Los paneles y las reglas que se distribuyen no usan ese patrón.
+- **Grafana 12.3.0 nunca envía la consulta de la capa de detecciones de InfluxDB**, con la tabla o sin
+  ella: su interruptor se quedó con un indicador de carga, apagarlo, encenderlo y refrescar no envió
+  nada, y no se dibujó ninguna marca, ni en el dashboard completo ni en una copia de un solo panel
+  (2026-09-25). Grafana 13.2.1 la envió en el acto sobre el mismo almacén. Por qué, y si 12.3.2 hace
+  lo mismo, no se ha investigado.
+
+### Encontrado en el laboratorio virtual {#encontrado-en-el-laboratorio-virtual}
+
+Lo que encontraron la CLI y la imagen del agente 1.3.1 publicadas en el CHR del laboratorio, RouterOS
+7.24.4, el 2026-09-26. Cada punto termina con lo que hace el código posterior a la 1.3.1, comprobado
+en el laboratorio el 2026-09-27; la 1.4.0 publica ese código, y la sección 1.4.0 del registro de
+cambios recoge cada cambio.
+
+- **`doctor` con sus valores por defecto falla tres comprobaciones en un CHR.** `--arch` vale arm64
+  por defecto, lo que falla solo en x86_64; la lista de interfaces `LAN` no existe; y la comprobación
+  «has entries» de la lista de direcciones `LANs` falla con una lista vacía o inexistente, aunque su
+  propio arreglo dice que una lista vacía está bien si no existe esa regla. Un router sin esa regla solo
+  pasa dándole una entrada a la lista, o con `--no-doctor`, que se salta todas las demás comprobaciones.
+  **Tras la 1.3.1**: `--arch` vale `auto` por defecto y lee la arquitectura del router, una lista de
+  direcciones vacía ya no es un fallo, y una lista de interfaces que falta, todavía MISSING con los
+  valores por defecto, tiene un arreglo que ofrece `--iface-list none` (S1).
+- **Una lista de interfaces integrada** como `static`, `all` o `dynamic` pasa la comprobación de
+  existencia de doctor, y RouterOS se niega a añadirle un miembro. **Tras la 1.3.1**: `--iface-list`
+  rechaza `all`, `dynamic` y `static`; RouterOS responde `cannot add to builtin list`.
+- **`--ephemeral` necesita un disco tmpfs**, y un CHR no lista ningún disco. El arreglo de doctor,
+  `/disk/add type=tmpfs tmpfs-max-size=64M slot=tmpfs`, funcionó, y la instalación fue a
+  `tmpfs/mikroscope/mikroscope` con `start-on-boot=no`. **Tras la 1.3.1**: igual, y `doctor` avisa
+  además cuando se fuerza el arranque con el router sobre una raíz en un disco tmpfs, que un reinicio
+  vacía.
+- **`uninstall` compite con la parada del contenedor.** Detiene el contenedor, espera 4 s fijos y lo
+  elimina, y el agente tardó 0 s en pararse seis veces, 4 s cuatro veces y 5 s una (log de RouterOS,
+  resolución de 1 s): 5 de 15 primeros intentos en x86_64 fallaron con
+  `failure: cannot remove running`. Con un cliente en `/stream` falló siempre en las dos arquitecturas,
+  porque el cierre HTTP del agente lo espera hasta 5 s. Los pasos siguientes se ejecutaron igualmente,
+  y un segundo `uninstall` lo limpió todo cada vez. **Tras la 1.3.1**: la retirada espera hasta 30 s
+  mientras el contenedor está `running` o `stopping`, y cada primer intento quedó limpio
+  ([Tiempos del laboratorio](#lab-timings)).
+- **Un directorio `mikroscope` vacío se queda en `/file` después de cada `uninstall`**: el padre del
+  root-dir del contenedor, que el recuento de propiedad no incluye. **Tras la 1.3.1**: cada vía de
+  instalación escribe un manifiesto de instalación, y `uninstall` quita lo que lista, y después el
+  manifiesto y el directorio `mikroscope/` cuando no queda nada más en él; tras ninguna vía quedó una
+  ruta de mikroscope en `/file` (F4).
+- **El sondeo posterior a `install` lee mal un contenedor en marcha** sobre 7.24.4. Pregunta
+  `/container/find … status="running"`, y `status` no es una propiedad de `/container` allí
+  (`/container/find status=running` responde `bad parameter status`), mientras que la marca `running`
+  vale 1. Así que cuando falló el sondeo, la CLI dijo "the container is not running on the router" con
+  el agente en marcha y a punto de responder. Visto dos veces en arm64. **Tras la 1.3.1**: el sondeo
+  lee la marca `running`.
+- **El listado del plan nombraba un tar con `--remote-image`**: `image=mikroscope.tar`, un fichero
+  que `install` nunca sube, e imprimía la subida o la descarga como un paso propio con el número del
+  paso del contenedor, así que dos pasos compartían número. **Tras la 1.3.1**: `image=` nombra la
+  referencia que descarga el router, y la descarga o la subida es una línea del paso del contenedor.
+- **El token del agente viajaba en la línea de órdenes de ssh**, donde la tabla de procesos del
+  anfitrión lo mostraba mientras la orden se ejecutaba: el código de la 1.3.1 lo mostró en dos líneas
+  de órdenes. **Tras la 1.3.1** una orden que lo lleva va a ssh por la entrada estándar; leer la
+  tabla de procesos cada 2 ms durante una instalación y una actualización con `--expose` no lo
+  encontró en ninguna, en las dos arquitecturas.
+- **Las palabras de RouterOS se perdían cuando su ssh salía con 1**: el error decía
+  `ssh "<script>": exit status 1`, y el mensaje de RouterOS, en las líneas siguientes, lo descartaba
+  la línea de omisión de uninstall. El ssh de RouterOS salió con 1 o con 0 ante el mismo fallo, más o
+  menos a partes iguales. **Tras la 1.3.1** el error empieza con lo que imprimió RouterOS.
+
+## Fuentes sin recoger {#encontrado-en-el-equipo-y-sin-recoger}
+
+Dos ficheros legibles del RB5009, leídos allí el 2026-09-15, no se recogen: `/proc/cmdline`, que lleva
+`board=5009 ver=7.24.1`, una segunda identidad del equipo sin la API, y el watchdog hardware en
+`/sys/class/watchdog/watchdog0`.
 
 <SeeAlso>
 
 ## Véase también
 
-- [El coste del observador](/mikroscope/es/cost/): el presupuesto, la cifra actual y cómo medirla
-  en tu propio equipo.
-- [El techo de muestreo](/mikroscope/es/cost/rate-ceiling/): las seis ejecuciones medidas a 10, 20, 50 y
+- [Coste del agente](/mikroscope/es/cost/): el presupuesto, los costes de SSH y de la capa de la API,
+  y cómo medir el agente en tu propio router.
+- [Techo de muestreo](/mikroscope/es/cost/rate-ceiling/): las seis ejecuciones medidas a 10, 20, 50 y
   100 Hz.
-- [El fichero y los demás destinos](/mikroscope/es/sinks/other/): los once destinos en los que
-  escribe `forward`.
-- [Linaje y licencia](/mikroscope/es/about/lineage/): de dónde vienen el código de despliegue y el
-  cliente de la API.
-- [Las versiones](/mikroscope/es/about/changelog/): la versión actual y su fecha, y dónde queda
-  registrada cada una de las anteriores.
+- [Límites de la evidencia](/mikroscope/es/cost/limits/): lo que estas medidas no pueden decirte
+  sobre otro equipo u otra carga.
+- [Casos reales](/mikroscope/es/playbooks/idle/): los fallos leídos en el RB5009, con las órdenes que
+  los reproducen.
+- [Versiones](/mikroscope/es/about/changelog/): la versión actual, su fecha y lo que publica cada
+  versión.
 
 </SeeAlso>

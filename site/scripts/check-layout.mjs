@@ -90,8 +90,12 @@ const inspect = () => {
 			);
 		}
 	}
-	// The copy button: present, visible, and clear of the code.
+	// The copy button: present, visible, and clear of the code. A frame in a
+	// tab that is not selected, or in a closed <details>, is not laid out
+	// until the reader opens it, so its button measures 0×0: only the frames
+	// on show are measured.
 	for (const frame of document.querySelectorAll(".expressive-code .frame")) {
+		if (frame.closest("[role=tabpanel][hidden], details:not([open])")) continue;
 		const button = frame.querySelector(".copy button");
 		if (!button) {
 			problems.push("a code block has no copy button");
@@ -143,7 +147,19 @@ await withPreview(async (origin) => {
 			const context = await browser.newContext(contextOptions);
 			const page = await context.newPage();
 			for (const path of paths) {
-				await page.goto(new URL(path, origin).href, { waitUntil: "load" });
+				// `origin` ends in the site's base (/mikroscope/), and a path that
+				// starts with / would replace it: resolve the path under it.
+				const response = await page.goto(
+					new URL(path.replace(/^\//, ""), origin).href,
+					{ waitUntil: "load" },
+				);
+				if (response?.status() !== 200) {
+					failures.push(
+						`${path} @${name}: HTTP ${response?.status() ?? "no response"}`,
+					);
+					checked += 1;
+					continue;
+				}
 				const problems = await page.evaluate(inspect);
 				checked += 1;
 				for (const problem of problems)

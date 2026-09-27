@@ -4,7 +4,7 @@ Notable changes per release. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the versions
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.4.0] - 2026-09-27
 
 ### Added
 
@@ -28,17 +28,18 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the shell scripts with their verbs, settings, exit statuses and lock files;
   `test/lab/lab.sh` only builds and execs it. The same static binary is the
   lab container's first process, and its unit tests put a fake Docker and a
-  fake router in place of the real ones, covering 90.7 % of `internal/lab`
+  fake router in place of the real ones, covering 90.9 % of `internal/lab`
   and 98.5 % of its container side on 2026-09-27. Against the script, on the
   same machine a day apart: provisioning took 41 and 42 s on x86_64 (the
   script: 41 to 45 s) and 98 and 104 s on arm64 (97 to 105 s) in two runs,
   and the suite, every test passing, 8 min 17 s to 9 min 28 s on x86_64
   (7 min 21 s to 9 min 49 s) and 13 min 18 s to 17 min 19 s on arm64
   (12 min 12 s to 16 min 48 s) in three, the slowest of each at a load
-  average of up to 34. Five profiles set up what a test needs: the lists
-  1.3.1's `doctor` asks for, a tmpfs disk, RouterOS 7's default home firewall,
-  and the raw traps of MikroTik's "Building Advanced Firewall" guide in its
-  list and range forms. Measured on
+  average of up to 34. Six profiles set up what a test needs: the lists
+  1.3.1's `doctor` asks for, lists of other names (`MYLAN`, `MYNETS`) for
+  `--iface-list` and `--addr-list`, a tmpfs disk, RouterOS 7's default home
+  firewall, and the raw traps of MikroTik's "Building Advanced Firewall"
+  guide in its list and range forms. Measured on
   2026-09-26 with CHR 7.24.4 on the development machine: provisioning took 41
   to 45 s on x86_64 and 97 to 105 s on arm64, a boot from the snapshot 7 s and
   26 to 28 s, a reset 9 to 21 s and 21 to 34 s; with the snapshot free of
@@ -55,32 +56,41 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   routes, `plan --rsc` imported, upgrade, status, uninstall, `--ephemeral` and
   start-on-boot through a power cut, `--expose` with its token, uninstall with
   a client on `/stream`, two installs side by side and repeated installs in a
-  row, each scenario ending with `/export` compared with its start. 1.3.1's known
-  bugs are asserted as known. Green on 2026-09-26 on both architectures:
+  row, each scenario ending with `/export` compared with its start. The
+  suite first ran the 1.3.1 code and asserted 1.3.1's known bugs as known;
+  1.4.0's suite asserts them fixed (below, and under Fixed). That first
+  suite was green on 2026-09-26 on both architectures:
   7 min 21 s to 9 min 49 s on x86_64 (six runs), 12 min 12 s to 16 min 48 s
   on arm64 (three), 10 of 10 installs on x86_64 and 3 of 3 on arm64 in each.
   A fourth arm64 run failed once in S9, the uninstall with a client on
-  `/stream`: 1.3.1's known race, with RouterOS's words lost because the CLI
-  keeps only the first line of an ssh error (`exit status 1`) when RouterOS's
-  ssh exits 1. It happened on x86_64 too; S9 now reads the race from what it
-  leaves, the container among the steps still present. It found two things about
-  RouterOS. 7.24.4 adds and drops a
-  `/system keymat-provider … name=default` line in `/export` on its own, which
-  the comparison leaves out. And a power cut made as soon as a fresh install
-  answered brought back, in three of four tries on the arm64 lab, a container
-  that could not start (`Exec format error`, `Segmentation fault`), most
-  likely because the install had not reached the disk yet; on x86_64 three
-  of three came back. The start-on-boot scenario waits 45 s before its cut.
-- **The lab in CI** (`.github/workflows/lab.yml`): x86_64 on a pull request
-  that touches what installs the agent, and as a gate before GoReleaser;
-  both architectures weekly (Mondays 05:03 UTC) and on dispatch. The Actions
+  `/stream`: 1.3.1's stop/remove race, with RouterOS's words lost because
+  1.3.1's uninstall kept only the first line of an ssh error
+  (`exit status 1`) when RouterOS's ssh exited 1. It happened on x86_64
+  too. Both are fixed in this release (see Fixed): S9 now requires every
+  first uninstall to verify the router clean, `LAB_S9_REPEAT` times (10 by
+  default). The suite found two things about RouterOS. 7.24.4 adds and
+  drops a `/system keymat-provider … name=default` line in `/export` on its
+  own, which the comparison leaves out. And a power cut made as soon as a
+  fresh install answered brought back no agent within 90 s in three of four
+  tries on the arm64 lab, and the two looked at had a container that could
+  not start (`Exec format error`, `Segmentation fault`), likely because the
+  install had not reached the disk yet (not examined); on x86_64 three of
+  three came back. The start-on-boot scenario waits 45 s before its cut.
+- **The lab in CI** (`.github/workflows/lab.yml`): both architectures weekly
+  (Mondays 05:03 UTC) and on dispatch, never on a pull request or as a gate
+  before GoReleaser, since with the install options' scenarios a run held a
+  pull request for 30 to 33 min on GitHub's runners (x86_64, 2026-09-27). The Actions
   cache keeps MikroTik's downloads, pinned by SHA-256 in
   `test/lab/SHA256SUMS`, and the provisioned snapshot, which carries no
   credential; a failed or timed-out run uploads the console, container and
-  test logs with the lab's credentials replaced by their names. Not yet
-  run on GitHub's runners: whether they give the job `/dev/kvm`, and how long
-  it takes there, is for the first dispatch to measure. The lab router pulls
-  from Docker Hub as an account when the repository has the secrets
+  test logs with the lab's credentials replaced by their names. On GitHub's
+  runners on 2026-09-27 the x86_64 job had `/dev/kvm` and took 29 min 52 s,
+  the suite 1 633 s, pulling as the repository's Docker Hub account; the
+  arm64 lab, emulated because GitHub's arm64 runner has no `/dev/kvm`, took
+  16 min 24 s on dispatch with the lab's first suite, before the install
+  options' scenarios; with them it is unmeasured on a runner (57 min 13 s on
+  the development machine on 2026-09-27, beside the x86_64 lab). The lab
+  router pulls from Docker Hub as an account when the repository has the secrets
   `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` (the release's token),
   since Docker Hub allows an address 100 anonymous pulls per 6 hours and a
   runner's address is shared: they become `LAB_REGISTRY_USER` and
@@ -92,8 +102,9 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   credential, RouterOS presented it for `registry-1.docker.io/jmrplens/…`
   under that value (`auth error`) and not under `https://registry-1.docker.io`
   (pulled anonymously), and mikroscope writes the host into every reference.
-  Without them, as on a fork's pull request or a dispatch that checks out
-  another `ref`, the router pulls anonymously.
+  Without them, as in a repository that lacks either secret or on a
+  dispatch that checks out another `ref` (a fork pull request's merge SHA,
+  say), the router pulls anonymously.
   S1, S18 and S5's Docker Hub and GHCR scripts, which test a router with no
   credential, boot without it.
 
@@ -144,9 +155,9 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   install with `--iface-list MYLAN --addr-list MYNETS` and one with
   `--expose`, each removed whole by an uninstall given none of those flags.
 - **Install options.** `--iface-list none` and `--addr-list none` leave the
-  membership out (`all`, `dynamic` and `static` are refused, as RouterOS
-  refuses members on them: `cannot add to builtin list`, CHR 7.24.4,
-  2026-09-26);
+  membership out (`--iface-list` refuses `all`, `dynamic` and `static`, as
+  RouterOS refuses members on its built-in interface lists:
+  `cannot add to builtin list`, CHR x86_64 7.24.4, 2026-09-26);
   `--container-name`; `--start-on-boot auto|yes|no`; `--restart-max-count`
   and `--restart-interval`; `--extract-timeout` (10 to 600 s, 120 s by
   default; ssh's own deadline for a command, 3 min, grows past it); and
@@ -154,14 +165,15 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   seven ssh_config keywords that run nothing (`StrictHostKeyChecking=accept-new`
   reaches a fresh router). Every value is bounded before the first
   connection.
-- **`--arch auto`, the default.** `install` and `upgrade` read the router's
-  architecture in doctor's one batch, before they build or load the image;
-  with `--no-doctor` that is one more connect, and the CLI says so. An
-  `--agent-tar` image's own architecture is compared with the router's.
-  `plan`, `--dry-run` and `image` connect to nothing and keep arm64. Checked
-  in the lab (2026-09-26 and 2026-09-27): install and upgrade without
-  `--arch` on both architectures, and the arm64 tar refused on x86_64 before
-  anything was listed.
+- **`--arch auto`, the default.** `install` reads the router's architecture
+  in doctor's one batch, and `upgrade`, which runs no doctor, in the read it
+  makes before it writes; both do so before they build the image. With
+  `--no-doctor` and no `--remote-image`, `install` takes one more connect
+  for it, and the CLI says so. An `--agent-tar` image's own architecture is
+  compared with the router's. `plan`, `--dry-run` and `image` connect to
+  nothing and keep arm64. Checked in the lab (CHR 7.24.4, 2026-09-26 and
+  2026-09-27): install and upgrade without `--arch` on both architectures,
+  and the arm64 tar refused on x86_64 before anything was listed.
 - **Doctor's new checks**, in the order an install meets them: RouterOS 7.24
   or later; a container package for the architecture; room for a pull and
   on `--disk`, and start-on-boot on a tmpfs root; a veth, envlist, container
@@ -185,14 +197,24 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   foreign envlist are each MISSING, and install writes nothing. On a 7.23.7
   CHR (x86_64, 2026-09-27) doctor was MISSING `RouterOS 7.24 or later` and
   read every other check.
+- **Two more doctor checks.** With `--ephemeral`, which puts the image and
+  the root on a RAM disk in the `tmpfs` slot, a disk in that slot that is
+  not RAM is MISSING. On a 32-bit ARM router with `--remote-image`, doctor
+  WARNs that it was not measured which of the index's `linux/arm/v5` and
+  `linux/arm/v7` images RouterOS pulls on an EN7562CT board (hEX Refresh),
+  where only the v5 one runs, and names `mikroscope-agent-armv5.tar` with
+  `--agent-tar` for a container that stops with `Exec format error`. Both
+  verdicts were checked against a fake router only: the lab has no 32-bit
+  ARM router, and the only disk it adds in the `tmpfs` slot is a RAM disk.
 - **Every batched read is keyed.** Each query prints `@@<key>=<value>` and is
   read by its key, so a warning or a query that fails no longer shifts every
   answer after it, and a menu an older RouterOS lacks reads as "could not
   read". A batch ends with a line that cannot fail: RouterOS's ssh takes its
   exit status from the last command, and a batch whose last line failed
-  exited 1 in 6 and in 1 of 20 runs, which threw away every answer, while
-  the same batches with a good line after the failure exited 0 in 40 of 40
-  (CHR x86_64 7.24.4, 2026-09-27).
+  exited with status 1 in 6 of 20 runs (a menu that does not exist) and in
+  1 of 20 (a get of an item that does not exist), which threw away every
+  answer, while the same batches with a good line after the failure exited
+  0 in 40 of 40 (CHR x86_64 7.24.4, 2026-09-27).
 - **The install script runs as one guarded block.** `plan --rsc` writes one
   `{ … }` block that checks first, and stops with nothing written, when the
   RouterOS version, the container package, device-mode, a foreign veth,
@@ -224,31 +246,152 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   by side, every test passing, S9's twenty uninstalls with a client on
   `/stream` each clean at the first attempt. S17, run on a 7.23.7 lab the
   same day, passed.
+- **The site's script generator** (`install/generator`): a form that renders
+  the `mikroscope plan --rsc` script in the browser from the steps spec,
+  byte for byte, with its uninstall script, the equivalent command line and
+  a token generated in the page; nothing is sent or stored.
+  `pnpm run rsc:check`, part of `pnpm lint`, holds it to every golden case,
+  and `pnpm test:generator` drives the form in a browser, the `.rsc`
+  downloads under the site's CSP included. `<ManualSteps>` renders the manual
+  install pages' RouterOS commands from the same spec, with placeholders.
+  Both of the page's scripts, pasted at the `] >` prompt of the x86_64 lab
+  (CHR 7.24.4, 2026-09-27), installed a running agent, and both the CLI's
+  uninstall and the page's uninstall script left `/export` as it was.
+- **The install through WebFig or Winbox** (`install/manual-gui`), form by
+  form, with the manifest the CLI writes, so `status`, `upgrade` and
+  `uninstall` treat a GUI install as their own. Its 29 captures come from a
+  real install in the virtual lab by `site/scripts/gen-webfig-captures.mjs`,
+  which is also the GUI route's test: on the x86_64 lab (CHR 7.24.4,
+  2026-09-27) both image routes left the same `/export` as the reference
+  script's `/import`, the veth's random MAC addresses aside, and were
+  removed back to the starting `/export`. Not tested: an install in Winbox,
+  which the page says has WebFig's menus and fields; the `--expose` rules
+  through WebFig's NAT and Filter Rules forms; and the WebFig install on the
+  arm64 lab or on the RB5009.
 
 ### Changed
 
+- **Nothing names the release by hand.** The golden scripts, their case
+  matrix (`internal/router/testdata/cases.json`, whose pull cases name the
+  agent image) and the site's script data (`site/src/data/rsc`) keep the
+  release as `{{MIKROSCOPE_VERSION}}`, as the site's pages already did. The
+  Go tests (`router.Templated`, `version.Expand`), the site's build (a Vite
+  plugin, and `scripts/data-hooks.mjs` for `docs/`) and the lab's S5 write
+  `VERSION` in; until a release's image is published, S5 pulls the newest
+  release's instead and says so. From this release on, a release changes
+  `VERSION`, this file and the generated `docs/`, and no script or golden:
+  1.4.0's own release commit changed only those. The WebFig captures are
+  pictures and are taken again after a tag.
 - **`make roundtrip` runs in the lab.** The install round trip (`doctor`,
   `install`, `status`, `upgrade`, `uninstall`, every verb with `--ephemeral`,
   `/export` compared in memory) now targets the virtual lab: 28 to 34 s on
-  x86_64 (three runs) and 40 to 45 s on arm64 (four) on 2026-09-26, the
-  export byte-identical every time. On a real router it is
+  x86_64 (three runs) and 40 to 45 s on arm64 (four) on 2026-09-26 with the
+  1.3.1 CLI, and with 1.4.0's code and one `uninstall` attempt 20 s on x86_64
+  and 35 s on arm64 (one run each, make's build steps included, 2026-09-27),
+  the export byte-identical every time. On a real router it is
   `make roundtrip-device ROUTER=<ssh target> CONFIRM_WRITES=yes`, which
   refuses to start, before it builds anything, unless both are on the make
   command line: neither is read from the environment, and `ROUTER` has no
-  default and must be one ssh target.
+  default and must be one ssh target. Both make one `uninstall` attempt, and
+  a failed one fails the round trip: the retry that stepped past 1.3.1's
+  stop/remove race is gone with the race (see Fixed).
 - **`.env.example` leaves the install's shape unset.** `MIKROSCOPE_ARCH`,
   the lists and the other shape variables are commented out, so they do not
   override what the router holds when `status`, `upgrade` or `uninstall`
   reads it.
+- **`uninstall` without `--yes` connects to the router when one is named.**
+  With `--router` or `MIKROSCOPE_ROUTER` set, the listing first reads the
+  install's shape, from its manifest or, for an install made by 1.3.x, from
+  its tagged objects, in one connect of its own, and lists the plan for that
+  shape; a connect that fails, or a flag that contradicts the shape, stops
+  it, as with `--yes`. 1.3.1 listed the plan for the flags as given and did
+  not connect to the router. With no router named it still lists from the
+  flags alone.
 - **The plan listing and the script changed shape**, as the goldens show:
   the install manifest is step 1; a pull or an upload is a line of the
   container step rather than a step with the same number; `image=` names the
   reference the router pulls; the upgrade listing names the steps it keeps;
   and the script's closing comment selects the container by its tag rather
   than by a name RouterOS may have picked (a pull is named after its image).
+- **The documentation reads as a tool's documentation, and its proof lives on
+  the evidence pages.** 40 pages and their Spanish twins were rewritten: the
+  use, reference, explanation and configure pages open with the task or the
+  result instead of "This page answers…", their headings are table-of-contents
+  labels, options and error strings are tables, and they name no device, no
+  RouterOS version other than the 7.24 minimum, no date and no release
+  history. Each fact that left a guide went, in substance and in both
+  languages, to Tested on, a cost page, a case study or this changelog, and
+  the guide links it with `<TestedOn>`: of 226 moved passages, five the plan
+  marked for deletion were dropped (two of them the brand page's decision
+  dates). Four statements were corrected against the code on the way: the
+  relay's fetch limit is reached above about 144 % of the charged line size,
+  not 134 % (`internal/transport/transport.go`); the CPU clusters come from
+  `related_cpus` alone (`internal/procfs/limits.go`); after an agent restart
+  `forward` logs `resuming from` the oldest sequence the new ring holds, not
+  always 1 (`internal/forward/forward.go`); and the collector page no longer
+  derives a relay ceiling from one fetch per poll, because `forward` drains up
+  to 100 fetches a poll while the replies come back full. Then the start,
+  install, configure and reference pages followed the code after 1.3.1:
+  Start is the quick install, four commands from the CLI to `status`; the
+  install group gains RouterOS script, Offline install, Upgrade and
+  uninstall, Manual install: terminal and Manual install: WebFig and Winbox,
+  and the explanation group How it works; the configure and reference pages
+  document the list values `none`, the container flags, the install manifest,
+  doctor's checks and their fixes. The commands of the quick install, script,
+  offline and both manual pages, `upgrade`, `uninstall` and the first
+  recording ran in the x86_64 lab (CHR 7.24.4, 2026-09-27); neither manual
+  page ran on arm64, and removing dashboards and data
+  (`uninstall --targets`) did not run in the lab, which has no Grafana or
+  stores.
+- **Tested on (`about/status`) is the single evidence page.** It holds the
+  reference hardware once, the virtual lab (CHR x86_64 and arm64, RouterOS
+  7.24.4, 2026-09-26), the devices and versions, the feature status, the
+  install routes tested, the agent's cost, the 26 measurement campaigns and 25
+  verified RouterOS facts as registers with stable ids (`#campaign-<id>`,
+  `#verified-<id>`, the same in both languages), everything not tested, the
+  known issues and the uncollected sources. The cost pages gained SSH cost and
+  API tier cost; the case studies keep their provenance; the landing's figures
+  link their campaign.
+- **The sidebar follows the reader's task**: Start here, Install, Configure,
+  Use, Reference, Explanation, Evidence and About, and each entry is the page's
+  own title, now a short label: 45 pages and their Spanish twins were
+  renamed, among them What the router needs to Requirements, Four ways to
+  install to Install methods, Where the project stands to Tested on, The
+  cost of the observer to Agent cost, Five minutes with a router to First
+  recording and When something does not work to Troubleshooting. No page
+  changed address and every published heading id still resolves:
+  `site/scripts/anchors.txt` gained 380 ids since 1.3.1 and lost none.
+  `docs/` follows the groups: new `configure.md` and
+  `evidence.md`; `sinks/derive`, `sinks/detections` and `sinks/device-info`
+  moved to `reference.md`, the cost pages to `evidence.md`, Diagnose faults to
+  `dashboards.md`, and `playbooks.md` holds the case studies.
+- **The llms files follow the groups and llms.txt v2.** Each index entry now
+  carries a link to the page's markdown twin, every page points at its index
+  with `rel="describedby"`, and `llms-core.txt` is Start here plus the install
+  methods, the router's requirements, How it works, the resolution limits,
+  Tested on and the agent's cost. The section files are renamed after the new groups;
+  `llms/start-here.txt` keeps its name.
+- **`pnpm run voice:check`** (`site/scripts/check-voice.mjs`, part of
+  `pnpm lint`) reports provenance on a guide, an evidence-only component off
+  the evidence pages, a heading that is not a label, and a `<TestedOn>` link
+  to an entry Tested on does not have. It fails the build: every page passes,
+  in both languages, source and build, so a new finding stops `pnpm lint`, and
+  an evidence-only component on a guide stops `pnpm build`. `docType` is
+  required in every page's frontmatter. `MS_VOICE=warn` reports without
+  failing: `voice:check` lists every finding in that mode as in error mode,
+  and `pnpm build`, which in error mode stops at the first evidence-only
+  component, lists every one.
 
 ### Fixed
 
+- **`pnpm run layout:check` measured the site's 404 page instead of its
+  pages.** It resolved each page's path against the preview's address with
+  a leading `/`, which dropped the `/mikroscope/` base, so each of its 258
+  renders loaded Astro's base-path 404 and the check passed in 5.5 s,
+  in CI too. It now loads each page under the base and fails on any status
+  but 200; a code block in a tab that is not on show, whose copy button
+  measures 0×0 until the tab opens, is left out. On 2026-09-27 the 258
+  renders, 390 and 1280 px, passed.
 - **An uninstall while a client read `/stream` failed at its first
   attempt.** The removal stopped the container, waited a fixed 4 s and
   removed it, and RouterOS refuses to remove a container that is still
@@ -281,12 +424,25 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   through an install and an upgrade with `--expose` found it on no command
   line (lab, 2026-09-27, both architectures), where the 1.3.1 code showed it
   on two (2026-09-26).
+- **An ssh error could print the agent token.** When ssh exited non-zero
+  (RouterOS's ssh does on some failures, ssh itself on a dropped connection
+  or a timeout), 1.3.1's error quoted the whole command, and the container
+  step's command writes the envlist, `TOKEN` included, so a failed
+  container step with a token set (`--token` or `MIKROSCOPE_TOKEN`) could
+  show it on stderr. This is read from the 1.3.1 code; no run that printed
+  the token is recorded. The error now quotes the command's first 160
+  bytes, with the token, in the command and in RouterOS's output, replaced
+  by `(secret)`. Checked with a stand-in ssh
+  (`TestSSHRunnerKeepsRouterOSWordsOnTheFirstLine`); the lab suite does not
+  assert it.
 - **RouterOS's words were lost when its ssh exited 1**: the error read
   `ssh "<script>": exit status 1` and the message was on the lines after it,
   which uninstall's skip line dropped. The error now starts with what
-  RouterOS printed. RouterOS's ssh exits 1 or 0 on the same failure (about
-  half and half in the lab, 2026-09-26), and the words now reach the output
-  either way.
+  RouterOS printed. RouterOS's ssh exits 1 or 0 on the same failure, and
+  how often it exited 1 varied: over 20 runs each in the x86_64 lab
+  (CHR 7.24.4), 11 and 8 of 20 for two failing commands on 2026-09-26, and
+  6 and 1 of 20 for two others on 2026-09-27. The words now reach the
+  output either way.
 - **`uninstall` and `status --expose` asked for the token**, which no
   selector reads. Only `install`, `upgrade` and `plan`, which write or render
   the envlist, need it; `doctor` and `image` no longer do either.
@@ -1505,7 +1661,9 @@ as data, through the collector, to whichever sinks the operator configured.
   trigger and capture counters. The end-to-end suite used to scrape the agent
   and the collector; it now asserts against the collector alone, which is a
   stronger statement. There is no keep list to maintain and nothing left to
-  double-count.
+  double-count. `mikroscope_slipped_total` is no longer withheld: the collector
+  used to leave it out rather than write a 0 about a sampler it never ran, and
+  now reports the number the agent gives it on `/sampler`.
 
 - **The agent's memory limit is derived from its ring**, not fixed at 40 MiB:
   rate × buffer × the line size, times 2.5, floored at 16 MiB and capped at

@@ -7,11 +7,11 @@ body:
     attributes:
       value: |
         Three pages answer most of what lands here:
-        [When something does not work](https://jmrp.io/docs/mikroscope/reference/troubleshooting/)
+        [Troubleshooting](https://jmrp.io/docs/mikroscope/reference/troubleshooting/)
         lists the symptoms in the words you actually see,
-        [Found and not fixed](https://jmrp.io/docs/mikroscope/about/status/#found-and-not-fixed)
+        [Known issues](https://jmrp.io/docs/mikroscope/about/status/#found-and-not-fixed)
         lists what is already known, and
-        [What it cannot see](https://jmrp.io/docs/mikroscope/limits/) says what
+        [Resolution limits](https://jmrp.io/docs/mikroscope/limits/) says what
         the kernel and RouterOS will not give a container.
 
         Not every report starts here:

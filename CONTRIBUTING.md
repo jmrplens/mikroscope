@@ -104,8 +104,8 @@ go build ./... && go test ./...
 - `make test-lab` (after `make lab-up`) for any change to `internal/router`,
   the deploy verbs (`doctor`, `plan`, `install`, `upgrade`, `status`,
   `uninstall`), the image, or how the agent starts: it runs them against a
-  real RouterOS in the [virtual lab](#the-virtual-routeros-lab). CI runs it on
-  x86_64 for a pull request that touches those paths.
+  real RouterOS in the [virtual lab](#the-virtual-routeros-lab). CI does not
+  run it on pull requests, so run it before you open one.
 - `make shellcheck` is inside `make analyze` and runs over `install.sh`,
   every script under `scripts/` and `.github/scripts/`, and the lab's
   wrapper (`test/lab/lab.sh`). actionlint runs
@@ -334,15 +334,10 @@ LAB_ARCH=arm64 bin/mikroscope-lab lock go test -tags labe2e -count=1 -timeout 15
   and neither goes into a commit, an issue, an artifact or a screenshot.
 
 **In CI.** `.github/workflows/lab.yml` runs the same `make lab-up` and
-`make test-lab`. x86_64, under KVM, runs on a pull request that touches the
-installer's paths (`internal/router`, `internal/image`, `internal/agent`,
-`cmd/mikroscope`, `cmd/mikroscope-agent`, `Dockerfile.agent`, the
-`Makefile`, the agent tars, the round trip, the lab, its driver
-(`cmd/mikroscope-lab`, `internal/lab`) and its suite, and `lab.yml` itself;
-`ci.yml`'s `changes` job holds the list), as a gate before
-every release, weekly and on dispatch. arm64 runs weekly and on dispatch
-only: under emulation it takes an estimated 25 to 35 minutes, which the
-first dispatch will measure, and a release does not wait on it. The Actions
+`make test-lab`, for both architectures, weekly on main and on dispatch. It
+never runs on a pull request or as a release gate: with the install options'
+scenarios a run takes half an hour or more, so run `make test-lab` yourself
+before a pull request that touches the installer. The Actions
 cache keeps MikroTik's downloads, checked against `test/lab/SHA256SUMS`, and
 the provisioned router, which carries no credential: each run's `lab-up`
 gives it that run's key and password. A failed or timed-out run uploads the
@@ -385,11 +380,10 @@ the same way:
   Anything that writes (a container, a veth, a firewall object, a user) is a
   decision you make for that run, not one a script makes for you.
 - **One ssh connection, many commands.** Each ssh connect costs a small
-  RouterOS device a large share of a core for its duration (20 to 27 % on the
-  reference RB5009, measured on RouterOS 7.24.1 on 2026-08-26; see
-  [what ssh costs the router](https://jmrp.io/docs/mikroscope/install/#what-ssh-costs-the-router)).
-  Batch commands into one connection; never loop over connects, and never use
-  ssh as a data path.
+  RouterOS device a large share of a core for its duration
+  ([SSH cost](https://jmrp.io/docs/mikroscope/cost/#ssh-cost)). Batch commands
+  into one connection; never loop over connects, and never use ssh as a data
+  path.
 - **Exact tags only.** Everything `install` creates carries the comment
   `mikroscope:<name> (managed by mikroscope)`, and every selector that removes
   or changes something matches that tag exactly, plus identity. A change that
@@ -413,7 +407,8 @@ fixture under `testdata/` and a test, the field in `internal/sample`, the read
 in `internal/agent` at a stated cadence, its `/metrics` family, the sinks that
 carry it, a dashboard panel, and a row on the reference page. It also owes its
 cost: what one read takes, on which board and RouterOS version, measured on
-what date.
+what date, recorded as a campaign in `site/src/data/measurements.ts` and shown
+on the evidence pages, not in the guide that documents the source.
 
 **A new sink** means: a file in `internal/sinks` with a test of its exact wire
 format, its flag in `cmd/mikroscope`, its variable in `.env.example`, an
@@ -438,8 +433,11 @@ user's healthy router, not only against the reference device's faults.
 install manifest and the site's script data all render. The goldens under
 `internal/router/testdata/golden` pin every case of `testdata/cases.json`:
 `go test ./internal/router -run TestGolden -update` rewrites them, the diff is
-reviewed as part of the change, and `make gen-rsc` follows. A `VERSION` bump
-changes the first line of every script, so a release runs both too.
+reviewed as part of the change, and `make gen-rsc` follows. Where a script
+names the release (its first line, a pull case's agent image) the goldens, the
+matrix and the site's script data carry `{{MIKROSCOPE_VERSION}}`, and the
+tests, the site's build and the lab write `VERSION` in, so a release rewrites
+none of them.
 
 **A new doctor check** means its item in `internal/router/doctor.go`, a test,
 its row in `site/src/data/doctor-checks.ts` in both languages, and the
@@ -451,16 +449,25 @@ belongs to, so its pull requests are labelled with it.
 **A board report** becomes a row in the README's table of verified devices,
 with what was measured and on what date; an entry in `internal/procfs/ports.go`
 when it carries port pairs, with its `Evidence` and the pairs it `Measured`;
-and the status page, in both languages.
+and the Tested on page, in both languages.
 
 **A behaviour change** means a test that fails before it and passes after it,
 and a `CHANGELOG.md` entry.
 
 ## House rules
 
-- Comments, the changelog and the documentation say what was measured, on
-  which device and RouterOS version, on what date, and what was not. A number
-  carries its spread. A claim without its evidence is not written.
+- Comments, the changelog, the test READMEs and the evidence pages (Tested
+  on, the cost pages, the case studies, the test suites) say what was
+  measured, on which device and RouterOS version, on what date, and what was
+  not. A number carries its spread. A claim without its evidence is not
+  written.
+- Guides, reference and explanation pages are tool documentation: short,
+  imperative, task-first, with headings that are table-of-contents labels. They
+  carry no dates, no RouterOS version except a minimum requirement ("RouterOS
+  7.24 or later") and no device model; the guide states the fact and links
+  the evidence page that holds the proof (`<TestedOn>`). `pnpm run
+  voice:check` in `site/` enforces it, and `site/README.md` ("Adding a page")
+  has the rules and the components.
 - Comments explain why, not what. A comment that restates the code is worse
   than no comment.
 - Everything under version control is in English, except the Spanish pages

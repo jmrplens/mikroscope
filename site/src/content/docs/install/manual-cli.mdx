@@ -1,0 +1,297 @@
+---
+title: "Manual install: terminal"
+description: Install the agent by typing each RouterOS command in the router's terminal — the manifest, the veth, the address, the list memberships, the envlist and the container — then verify it and remove it.
+docType: how-to
+head:
+  - tag: title
+    content: Install the agent by hand from the RouterOS terminal | mikroscope
+---
+
+import { Aside, Tabs, TabItem } from "@astrojs/starlight/components";
+import ManualSteps from "../../../components/ManualSteps.astro";
+import ScrollTable from "../../../components/ScrollTable.astro";
+import SeeAlso from "../../../components/SeeAlso.astro";
+
+Install the agent one RouterOS command at a time, in the router's terminal: for a router with no
+computer that runs the CLI, or to see and adapt every object. The commands are the ones `install`
+runs, with placeholders in capitals. For the same commands with your values filled in, use the
+[Script generator](/mikroscope/install/generator/).
+
+## Before you start {#before-you-start}
+
+Pick a value for each placeholder. The defaults are the ones `install` uses:
+
+<ScrollTable label="The placeholders in the commands, with their defaults">
+
+| Placeholder         | Default                                        | Meaning                                                                                           |
+| ------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `NAME`              | `mikroscope`                                   | the install's name                                                                                |
+| `TAG`               | `mikroscope:NAME (managed by mikroscope)`      | the comment on every object; keep this form so the CLI recognises the install                     |
+| `VETH`              | `veth-mikroscope`                              | the veth's name                                                                                   |
+| `NET/30`            | `172.30.10.0/30`                               | an IPv4 /30 at its network address, unused on the router                                          |
+| `GW_IP`             | `172.30.10.1`                                  | the router's end of the /30: the network address + 1                                              |
+| `AGENT_IP`          | `172.30.10.2`                                  | the agent's end of the /30: the network address + 2                                              |
+| `PORT`              | `9123`                                         | the agent's HTTP port                                                                             |
+| `IFACE_LIST`        | `LAN`                                          | the interface list the veth joins; `none` in the manifest when you skip the membership            |
+| `ADDR_LIST`         | `LANs`                                         | the address list the /30 joins; `none` in the manifest when you skip the membership               |
+| `ENVLIST`           | `NAME-env`                                     | the container's envlist                                                                           |
+| `DISK`              | empty (internal flash)                         | a disk slot, such as `tmpfs` or `usb1`; it prefixes the three paths below                         |
+| `MANIFEST_DIR`      | `mikroscope`                                   | `DISK/mikroscope` on a disk                                                                        |
+| `MANIFEST_FILE`     | `mikroscope/NAME.manifest.txt`                 | the install manifest                                                                              |
+| `ROOT_DIR`          | `mikroscope/NAME`                              | the container's root                                                                              |
+| `IMAGE_REF`         | `registry-1.docker.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}` | the image the router pulls (registry pull)                                  |
+| `IMAGE_FILE`        | `NAME.tar`                                     | the uploaded image tar (tar route); `DISK/NAME.tar` on a disk                                    |
+| `RATE_HZ`           | `10`                                           | the sampler rate, 1–100 Hz                                                                        |
+| `BUFFER_S`          | `60`                                           | the ring, 10–3600 s                                                                               |
+| `MEM_LIMIT_MB`      | `16`                                           | the agent's Go memory limit, below                                                                |
+| `CAPTURE_MB`        | `4`                                            | the triggered-capture budget, 0–256 MiB; `0` turns captures off                                   |
+| `MEMORY_MAX`        | `64M`                                          | the container's memory limit                                                                      |
+| `START_ON_BOOT`     | `yes`                                          | `no` for a root on a RAM disk, which a reboot empties                                             |
+| `PRIVILEGED`        | `yes`                                          | `no` loses the kernel log, the slab counts, the flash counters and the PMU                        |
+| `RESTART_MAX_COUNT` | `5`                                            | restarts after a failure                                                                          |
+| `RESTART_INTERVAL`  | `10s`                                          | the wait between them                                                                             |
+| `EXTRACT_TIMEOUT_S` | `120`                                          | how long to wait for RouterOS to extract the tar (tar route)                                      |
+| `FLOOR_HZ`          | none                                           | optional: one cadence for every level source                                                      |
+| `TRIGGERS`          | none                                           | optional: trigger conditions ([Triggered capture](/mikroscope/record/triggers/))                  |
+| `TOKEN`             | none                                           | optional: the bearer token the agent asks for; a secret                                           |
+| `CONTAINER_NAME`    | empty (RouterOS names it)                      | optional: the container's `name=`                                                                 |
+| `LAN_IP`            | none                                           | with `--expose` only: the router's LAN address                                                    |
+
+</ScrollTable>
+
+An empty default stays empty: on internal flash the manifest's line is `disk=`, and without a
+container name `container-name=`, with nothing after the `=`.
+
+<Aside type="caution" title="Replace values, not keys">
+	Some placeholders share their name with an envlist key: `key=RATE_HZ value="RATE_HZ"`. Replace
+	only the value in quotes. The keys (`MIKROSCOPE_TAG`, `RATE_HZ`, `BUFFER_S`, `PORT`, `ADDR`,
+	`MEM_LIMIT_MB`, `CAPTURE_MB`, `FLOOR_HZ`, `TRIGGERS`, `TOKEN`) stay as written, so a blind
+	find-and-replace of `TAG` or `PORT` breaks the commands.
+</Aside>
+
+`MEM_LIMIT_MB` is `RATE_HZ` × `BUFFER_S` × the size a sample takes in the ring × 2.5, rounded up,
+at least 16 and at most ¾ of `MEMORY_MAX` while that still leaves room for the ring. With a
+`MEMORY_MAX` of `64M` that gives 16 at 10 Hz and 60 s, 25 at 50 Hz and 60 s, and 48 at 100 Hz and
+60 s. The generator computes it for you.
+
+**Check the router.** Read the release and the architecture, the `container` package and device
+mode:
+
+```text
+/system/resource/print
+/system/package/print where name="container"
+/system/device-mode/print
+```
+
+`version` must be 7.24 or later and `architecture-name` one of `arm64`, `arm` or `x86_64`; the
+package must be listed and not disabled; device mode must show `container: yes`.
+[Requirements](/mikroscope/install/prerequisites/) has the fixes: the device-mode step needs a
+press of the reset or mode button, or a power cut, within 5 minutes; on CHR, power the virtual
+machine off and on.
+
+**Check for collisions.** Each of these must print nothing, or a count of 0:
+
+```text
+/interface/veth/print where name="VETH"
+/container/envs/print count-only where list="ENVLIST"
+/ip/address/print where address in NET/30
+/ip/route/print where dst-address in NET/30
+/file/print where name="MANIFEST_FILE"
+```
+
+And these must find what you name: the interface list, and the disk if you use one.
+
+```text
+/interface/list/print where name="IFACE_LIST"
+/disk/print
+```
+
+For a root on a RAM disk, create one first: `/disk/add type=tmpfs tmpfs-max-size=64M slot=tmpfs`,
+then use `DISK` `tmpfs` and `START_ON_BOOT` `no`. Whether the firewall drops the agent's replies
+is on [Firewall lists](/mikroscope/install/firewall/).
+
+<Aside type="caution" title="How to paste">
+	Paste at the `] >` prompt, one command per line, each line whole: a line that starts with
+	`:local` or holds a loop only works as one line. On a first login RouterOS asks about the
+	software licence, and the first lines you paste answer it: answer first. Never paste the output
+	of `/container/envs/print` or `/container/print detail` anywhere: it can show the token.
+</Aside>
+
+## Write the install manifest {#write-the-manifest}
+
+The manifest lists every object the next steps create, so that `mikroscope uninstall` and the
+removal below find them all. Leave out the `object=` line of any step you skip; for a list
+membership you skip, also write `none` after its `iface-list=` or `addr-list=`.
+
+<Tabs syncKey="manual-image">
+
+<TabItem label="Registry pull">
+
+<ManualSteps step="manifest" />
+
+</TabItem>
+
+<TabItem label="Image tar">
+
+<ManualSteps step="manifest" source="tar" />
+
+The tar's manifest leaves `remote-image=` empty and names the tar in a `file=` line, so that
+`uninstall` also removes a tar an extraction left behind.
+
+</TabItem>
+
+</Tabs>
+
+Read it back with `:put [/file/get [find name="MANIFEST_FILE"] contents]`.
+[RouterOS script](/mikroscope/install/script/#install-manifest) explains each line.
+
+## Create the veth {#create-the-veth}
+
+<ManualSteps step="veth" />
+
+## Add the address {#add-the-address}
+
+<ManualSteps step="address" />
+
+## Add list memberships {#add-list-memberships}
+
+Optional. They let the agent's replies past raw firewall rules that drop by interface list or
+address list; skip either when no rule of yours needs it, and drop its `object=` line from the
+manifest and write `none` after its `iface-list=` or `addr-list=`.
+A membership is not scoped to mikroscope: any other rule that matches the list matches the veth or
+the /30 too ([Firewall lists](/mikroscope/install/firewall/)).
+
+<ManualSteps step="iface-member" />
+
+<ManualSteps step="addr-member" />
+
+## Create the envlist {#create-the-envlist}
+
+<ManualSteps step="env" />
+
+Add the optional entries you use:
+
+<ManualSteps step="env-optional" with="floorHz triggers token" />
+
+The `TOKEN` value is stored in clear: treat it as readable by any RouterOS user with `read`, and
+keep other credentials out of the envlist.
+
+## Create the container {#create-the-container}
+
+<Tabs syncKey="manual-image">
+
+<TabItem label="Registry pull">
+
+<ManualSteps step="container" />
+
+RouterOS pulls the image for its own architecture. The router needs to reach the registry and to
+have room in RAM for the layers.
+
+</TabItem>
+
+<TabItem label="Image tar">
+
+1. Upload the tar for the router's architecture as `IMAGE_FILE`, in Files (WebFig or Winbox) or with
+   `scp` ([Offline install](/mikroscope/install/offline/)).
+2. Create the container from it:
+
+   <ManualSteps step="container" source="tar" />
+
+3. Wait for RouterOS to extract it, then delete the tar. The line stops, and keeps the tar, if
+   extraction is not done within `EXTRACT_TIMEOUT_S`:
+
+   <ManualSteps step="extract-wait" source="tar" />
+
+</TabItem>
+
+</Tabs>
+
+## Expose on the LAN {#expose-on-the-lan}
+
+Optional: to reach the agent on the router's LAN address, add the two rules `--expose` writes
+([Expose on the LAN](/mikroscope/security/expose/)). They need a `TOKEN` in the envlist.
+
+Write the manifest again first, so that it records them: `expose=LAN_IP`, `token=yes` and one
+`object=` line per rule.
+
+<Tabs syncKey="manual-image">
+
+<TabItem label="Registry pull">
+
+<ManualSteps step="manifest" with="expose token" />
+
+</TabItem>
+
+<TabItem label="Image tar">
+
+<ManualSteps step="manifest" source="tar" with="expose token" />
+
+</TabItem>
+
+</Tabs>
+
+Then add the two rules:
+
+<ManualSteps step="expose-nat" />
+
+<ManualSteps step="expose-accept" />
+
+## Start and verify {#start-and-verify}
+
+<ManualSteps step="start" />
+
+On the router:
+
+```text
+/container/print where comment="TAG"
+/log/print where topics~"container"
+:put ([/tool/fetch url="http://AGENT_IP:PORT/healthz" output=user as-value]->"data")
+```
+
+After a registry pull, RouterOS downloads and extracts the image before it starts the container.
+Until the log shows `*** download/extract done`, the container shows the `E`
+(`DOWNLOADING/EXTRACTING`) flag and the last command prints `failure: Invalid argument`: run the
+three again.
+
+Then the container shows the `R` (running) flag. The log ends with `*** started /mikroscope-agent` and
+the agent's own line, `mikroscope-agent <version> …: kernel …, 10 Hz, ring 60 s, listening on
+AGENT_IP:PORT, …`. The last command prints `{"ok":true,…}`. From a computer on the router's LAN,
+`curl http://AGENT_IP:PORT/healthz` answers the same, and `mikroscope status` recognises the
+install.
+
+## Remove {#remove}
+
+Run the removals, newest first. The first stops and removes the container and its root and
+envlist; the last removes the manifest and the `MANIFEST_DIR` directory when nothing else is in
+it, and stops, keeping the manifest, if any object with the tag is left. If you exposed the agent,
+remove its two rules first:
+
+<ManualSteps step="expose-accept" field="remove" />
+
+<ManualSteps step="expose-nat" field="remove" />
+
+Then the rest:
+
+<ManualSteps variant="remove" />
+
+If a tar is still there because extraction timed out, remove it too:
+`/file/remove [find name="IMAGE_FILE"]`. Then check that nothing is left; this prints `0`:
+
+```text
+:put ([:len [/interface/veth/find comment="TAG"]] + [:len [/ip/address/find comment="TAG"]] + [:len [/interface/list/member/find comment="TAG"]] + [:len [/ip/firewall/address-list/find comment="TAG"]] + [:len [/ip/firewall/nat/find comment="TAG"]] + [:len [/ip/firewall/filter/find comment="TAG"]] + [:len [/container/find comment="TAG"]] + [:len [/container/envs/find list="ENVLIST"]] + [:len [/file/find name="MANIFEST_FILE"]])
+```
+
+`mikroscope uninstall --router … --yes` does the same from a computer with the CLI, and verifies
+it: [Upgrade and uninstall](/mikroscope/install/upgrade/#uninstall).
+
+<SeeAlso>
+
+## See also
+
+- [Script generator](/mikroscope/install/generator/): these commands with your values filled in.
+- [Manual install: WebFig and Winbox](/mikroscope/install/manual-gui/): the same objects through the
+  menus.
+- [Storage and container settings](/mikroscope/install/layout/): what each container setting does.
+- [Install methods](/mikroscope/install/routes/): the other ways to install.
+
+</SeeAlso>

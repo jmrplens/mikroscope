@@ -176,10 +176,10 @@ make test-lab
   router has no username and no password.
 - **In CI** the repository's secrets `DOCKERHUB_USERNAME` and
   `DOCKERHUB_TOKEN` become these variables for the steps that bring the
-  lab up, run the suite and redact the failure report, and no other step;
-  `ci.yml` and `release.yml` pass the two by name. A fork's pull request, a
+  lab up, run the suite and redact the failure report, and no other step.
+  CI runs the lab weekly and on dispatch only, never on a pull request. A
   repository without `DOCKERHUB_TOKEN`, and a dispatch that checks out another
-  `ref` (which may be a fork's merge commit, code the lab builds and runs)
+  `ref` (which may be a fork's merge commit, code the lab builds and runs),
   run anonymously, as before.
 
 **What was measured**, in the x86_64 lab on 2026-09-27 (CHR 7.24.4), with a
@@ -437,7 +437,7 @@ documentation's own pages.
 | S2 `TestS02PullInstallStatusUpgradeUninstall` | doctor-lists | install *pull*, `/healthz` and `/capabilities`, `status`, `upgrade` to the same reference, `uninstall` | the agent answers; `status` names it; the export equals the baseline; no mikroscope path left |
 | S3 `TestS03TarInstallUpgradeUninstall` | doctor-lists | install from the branch's tar, `upgrade` from it, `uninstall` | the agent reports the branch build's version, commit and date before and after the upgrade, and restarted; clean export |
 | S4 `TestS04PlanScriptImported` | doctor-lists | `plan --rsc` for the tar (the tar put as `mikroscope.tar`) and for *pull*; `/import`; `status`; `uninstall` | the agent answers; `status` recognises the script's objects; clean export |
-| S5 `TestS05GoldenScriptsInstallAndUninstall` | per case; `pull-dockerhub` and `pull-ghcr` with no registry credential | every `lab: true` case of `internal/router/testdata/cases.json`: the site's `.rsc` (equal to the Go golden), `/import`, `/healthz` on its /30, the token checks, `status`, `uninstall` with the case's flags | the agent answers; clean export; no mikroscope path left |
+| S5 `TestS05GoldenScriptsInstallAndUninstall` | per case; `pull-dockerhub` and `pull-ghcr` with no registry credential | every `lab: true` case of `internal/router/testdata/cases.json`: the site's `.rsc` (equal to the Go golden), with `VERSION` written in and, until that release's image is published, the newest release's image pulled instead; `/import`, `/healthz` on its /30, the token checks, `status`, `uninstall` with the case's flags | the agent answers; clean export; no mikroscope path left |
 | S6 `TestS06EphemeralThroughAPowerCut` | tmpfs-disk, doctor-lists | install `--ephemeral`, power cycle, `uninstall --ephemeral` | after the cut the container is configured and stopped, its root and image are gone, the tmpfs disk is there and empty, nothing answers; afterwards nothing at all is left, the directory included |
 | S7 `TestS07StartOnBootAfterAPowerCut` | doctor-lists | a persistent install, 45 s for it to reach the disk, power cycle | the agent answers within 90 s, as a new start; clean export |
 | S8 `TestS08ExposeWithToken` | doctor-lists | install `--expose --lan-address 192.168.88.1 --token …`, reads from the LAN side, uninstall with the same flags | `/healthz` 200, `/capabilities` 401 without the token and 200 with it; both firewall rules there, then gone; clean export |

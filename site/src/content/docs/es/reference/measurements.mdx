@@ -1,22 +1,26 @@
 ---
-title: Medidas de InfluxDB y SQL
+title: Esquema de los almacenes
 description: Cada medida de InfluxDB y cada tabla SQL que escribe mikroscope, con etiquetas, campos, columnas, claves, unidades y si cada valor es un delta o un nivel.
+docType: reference
+head:
+  - tag: title
+    content: Medidas de InfluxDB y SQL | mikroscope
 ---
 
-import NotClaimed from "../../../../components/NotClaimed.astro";
 import PrivilegedOnly from "../../../../components/PrivilegedOnly.astro";
 import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
 import Src from "../../../../components/Src.astro";
+import TestedOn from "../../../../components/TestedOn.astro";
 
-Esta página responde qué contiene una fila en el almacén: qué medida o tabla,
-qué etiquetas o columnas de clave la identifican, qué campos lleva, en qué
-unidad, y si un valor es un delta sobre el intervalo de la muestra o un nivel.
-Está leída de <Src path="internal/sinks/influx.go" />, <Src path="internal/sinks/device.go" /> y del
-fichero <Src path="internal/sinks/sql.go" />. Los dos almacenes no guardan el mismo conjunto; [dónde
-difieren](#dónde-difieren-los-dos-almacenes) es la última sección.
+Lo que contiene una fila en el almacén: la medida de InfluxDB o la tabla SQL,
+las etiquetas o columnas de clave que la identifican, los campos que lleva y sus
+unidades, y si cada valor es un delta sobre el intervalo de la muestra o un
+nivel. Leído de <Src path="internal/sinks/influx.go" />, <Src path="internal/sinks/device.go" /> y del
+fichero <Src path="internal/sinks/sql.go" />. Los dos almacenes no guardan el mismo conjunto:
+[InfluxDB frente a SQL](/mikroscope/es/reference/measurements/#dónde-difieren-los-dos-almacenes) enumera las diferencias.
 
-## Qué destinos escriben esto
+## Destinos que escriben {#qué-destinos-escriben-esto}
 
 - `forward --influx` envía el line protocol de InfluxDB de abajo.
 - `forward --stdout lp` y `forward --telegraf` renderizan con el mismo
@@ -24,7 +28,7 @@ difieren](#dónde-difieren-los-dos-almacenes) es la última sección.
   líneas de `mikroscope_api_health`, `mikroscope_softirq` y `mikroscope_slab`
   dentro de un lote no es estable: el codificador recorre mapas de Go para
   ellas, y el fichero <Src path="internal/sinks/telegraf.go" /> registra 12 renderizados de un mapa de
-  8 nombres que dieron 7 órdenes distintos (2026-09-12).
+  8 nombres que dieron 7 órdenes distintos.
 - `forward --sql` escribe sus propias tablas de PostgreSQL, que se enumeran más
   abajo.
 
@@ -65,11 +69,11 @@ En [line protocol](https://docs.influxdata.com/influxdb3/core/reference/line-pro
 final es un entero sin signo, `i` uno con signo, un número a secas un float,
 `true`/`false` un booleano, y un valor entre comillas una cadena.
 
-## InfluxDB: la capa del kernel
+## Capa del kernel en InfluxDB {#influxdb-la-capa-del-kernel}
 
 Un juego de filas por muestra del kernel, todas en el `wall_ns` de esa muestra.
 
-### CPU, interrupciones y la propia muestra
+### CPU, interrupciones y muestra {#cpu-interrupciones-y-la-propia-muestra}
 
 <ScrollTable label="Medidas de InfluxDB de la capa del kernel: CPU, interrupciones, muestra">
 
@@ -162,7 +166,7 @@ tiene. Como una consulta que nombra una columna que el almacén nunca ha
 recibido falla al planificarse, `kind` solo se puede consultar después de
 escribir el primer registro de puerto con él.
 
-## InfluxDB: la capa de la API de RouterOS
+## Capa de la API en InfluxDB {#influxdb-la-capa-de-la-api-de-routeros}
 
 Un juego por consulta a la API, sellado con la hora del agente.
 
@@ -201,13 +205,11 @@ son de mejor esfuerzo.
 `type` es lo que impide sumar dos filas, porque RouterOS cuenta cosas
 distintas en interfaces distintas. Un puerto del conmutador cuenta su cable,
 incluidas las tramas que el chip conmutó por hardware; un puente cuenta su lado
-de la CPU; una VLAN o un PPPoE cuentan lo que la CPU envió y recibió. En el
-router de referencia (RB5009, RouterOS 7.24.2, 2026-09-16) ether1 recibió
-255,8 GB por el cable y 29,7 GB de ellos llegaron a la CPU: la fila `ether` y
-la fila `bridge` son planos distintos, ninguno subconjunto del otro, y sumarlos
-no cuenta nada que exista.
+de la CPU; una VLAN o un PPPoE cuentan lo que la CPU envió y recibió. La fila
+`ether` y la fila `bridge` son planos distintos, ninguno subconjunto del otro, y
+sumarlos no cuenta nada que exista.
 
-## InfluxDB: valores derivados, anotaciones y datos del equipo
+## Derivados y equipo en InfluxDB {#influxdb-valores-derivados-anotaciones-y-datos-del-equipo}
 
 <ScrollTable label="Medidas de InfluxDB que escribe el colector">
 
@@ -235,37 +237,37 @@ pasó por el fast path, no una fracción del cable: `fp-rx-byte` sobre
 cable, y sobre `rx-byte` en una interfaz por software, que no tiene contadores
 de driver. Las tramas conmutadas por hardware no están en ninguno de los dos
 números. `rx_bytes` y `tx_bytes` son los denominadores de la fracción, no
-totales del cable. Medido en el RB5009 de referencia (2026-09-16): los puertos
-del conmutador dan ~100 % (`fp-rx-byte` iguala a `driver-rx-byte` con unos
-pocos kB de diferencia), el puente llevó por el fast path 211,9 GB de 663,0 GB
-desde el arranque, y PPPoE_DIGI el 99,97 %. `fp-tx-byte` se quedó en 0 en todas
-las interfaces tras cientos de GB transmitidos, así que la fracción de tx y sus
-deltas se retienen mientras el `fp-tx-byte` acumulado sea 0: `fp_tx_share` no
-está y `tx_bytes` y `fp_tx_bytes` valen 0.
+totales del cable. Mientras el `fp-tx-byte` acumulado de una interfaz sea 0, la
+fracción de tx y sus deltas se retienen: `fp_tx_share` no está y `tx_bytes` y
+`fp_tx_bytes` valen 0. [Valores
+derivados](/mikroscope/es/sinks/derive/#junto-a-cada-lectura-de-contadores) dice
+lo que da la fracción en los puertos del conmutador y en las interfaces por
+software.
 
-Un valor derivado se escribe junto a sus entradas y nunca en lugar de ellas,
-así que el almacén puede volver a calcularlo. `suspect` marca una muestra con
-un reinicio de contador, en la que una cifra por paquete sería una cota
-inferior, así que los campos por paquete se dejan fuera. Las etiquetas `board`
-y `kernel` valen `unknown` cuando el agente no pudo establecerlas. Las cuatro
-medidas `mikroscope_device*` se escriben cuando arranca `forward`, de nuevo
-antes de un minuto después de que cambie el hash de capacidades del agente (el
-colector vuelve a leer `/healthz` una vez por minuto), y si no, se repiten cada
-cinco minutos para que cualquier ventana de un panel las contenga. Un
-transporte que no puede traer `/capabilities` no escribe ninguna fila del
-equipo. Las cuatro últimas son el [`/sampler`](/mikroscope/es/reference/http/#get-sampler) del
-agente, leído cuando arranca `forward` y después una vez por minuto. `ticks`, `slipped`,
-`capture_served_bytes`, `fired` y los dos campos `count` son totales acumulados desde que arrancó
-el agente, no deltas: una tasa es la diferencia entre dos filas, y un reinicio del agente los
-devuelve a 0. `captures_held`, `capture_bytes` y `capture_budget_bytes` son niveles. Los campos
-de capturas y las tres medidas de capturas solo se escriben cuando las capturas están activadas
-(`CAPTURE_MB` por encima de 0). Qué significa cada
-valor y cada regla está en [lo que deriva el
-colector](/mikroscope/es/sinks/derive/),
-[detecciones](/mikroscope/es/sinks/detections/) y [el flujo de datos del
+- **Los valores derivados** se escriben junto a sus entradas y nunca en lugar de ellas, así que el
+  almacén puede volver a calcularlos. `suspect` marca una muestra con un reinicio de contador, en la
+  que una cifra por paquete sería una cota inferior, así que los campos por paquete se dejan fuera.
+- **`board` y `kernel`** valen `unknown` cuando el agente no pudo establecerlas.
+- **Las cuatro medidas `mikroscope_device*`** se escriben cuando arranca `forward`, de nuevo antes de
+  un minuto después de que cambie el hash de capacidades del agente (el colector vuelve a leer
+  `/healthz` una vez por minuto), y si no, se repiten cada cinco minutos para que cualquier ventana
+  de un panel las contenga. Un transporte que no puede traer `/capabilities` no escribe ninguna fila
+  del equipo.
+- **Las cuatro últimas filas**, `mikroscope_sampler` y las tres medidas de capturas, son el
+  [`/sampler`](/mikroscope/es/reference/http/#get-sampler) del agente, leído cuando arranca
+  `forward` y después una vez por minuto. `ticks`, `slipped`, `capture_served_bytes`, `fired` y los
+  dos campos `count` son totales acumulados desde que arrancó el agente, no deltas: una tasa es la
+  diferencia entre dos filas, y un reinicio del agente los devuelve a 0. `captures_held`,
+  `capture_bytes` y `capture_budget_bytes` son niveles. Los campos de capturas y las tres medidas de
+  capturas solo se escriben cuando las capturas están activadas (`CAPTURE_MB` por encima de 0).
+
+Qué significa cada
+valor y cada regla está en [Valores
+derivados](/mikroscope/es/sinks/derive/), [Reglas de
+detección](/mikroscope/es/sinks/detections/) y [Datos del
 equipo](/mikroscope/es/sinks/device-info/).
 
-## Lo que exige InfluxDB 3 Core
+## Requisitos de InfluxDB 3 Core {#lo-que-exige-influxdb-3-core}
 
 - Un nodo guarda como mucho cinco bases de datos. Una escritura a una sexta
   falla con `422`; el destino espera y sigue intentándolo.
@@ -273,8 +275,7 @@ equipo](/mikroscope/es/sinks/device-info/).
 - El tipo de una columna es inmutable una vez escrito.
 - Una consulta que nombra un campo que el almacén nunca ha recibido falla al
   planificarse, exactamente igual que una tabla que falta:
-  `No field named limit. Valid fields are …` (verificado a través del proxy de
-  la fuente de datos de Grafana, 2026-09-14).
+  `No field named limit. Valid fields are …`.
 - La URL de escritura contiene `&`; entrecomíllala cuando vive en un fichero
   que cargas con `source`.
 
@@ -285,7 +286,7 @@ El destino envía un lote por segundo y encola hasta `--queue-seconds` ×
 `--queue-seconds` lotes; [InfluxDB 3](/mikroscope/es/sinks/influxdb/)
 cubre la entrega.
 
-## SQL: el fichero
+## Fichero de script SQL {#sql-el-fichero}
 
 `--sql out.sql` escribe texto de PostgreSQL: una cabecera y luego un `INSERT`
 por registro. No hay driver de base de datos; la conexión es cosa de `psql`.
@@ -298,7 +299,8 @@ mikroscope forward --sql out.sql --for 10m && psql -f out.sql
   `CREATE TABLE IF NOT EXISTS` por tabla, así que cada fichero vuelve a
   declarar el esquema sin daño. `--sql-hypertable` añade un
   `SELECT create_hypertable('<table>', 'time', if_not_exists => TRUE);` por
-  tabla.
+  tabla, con la firma documentada de TimescaleDB 2.x
+  (<TestedOn of="not-tested">no ejecutado contra TimescaleDB</TestedOn>).
 - La clave primaria de cada tabla empieza por `time, host`, y cada `INSERT`
   termina en `ON CONFLICT DO NOTHING`: aplicar dos veces el mismo fichero no
   hace nada, porque una fila es un instante inmutable, nunca un total que una
@@ -311,7 +313,7 @@ mikroscope forward --sql out.sql --for 10m && psql -f out.sql
   PostgreSQL rechaza las dos cosas.
 - `--sql -` escribe en la salida estándar. Como este destino no tiene cola, un
   `psql` que se queda atrás bloquea el bucle de peticiones del colector en vez
-  de descartar.
+  de descartar (<TestedOn of="not-tested">no medido</TestedOn>).
 - El destino cuenta los eventos que escribió en el fichero, no las filas que
   guardó el servidor.
 
@@ -320,7 +322,7 @@ mikroscope forward --sql out.sql --for 10m && psql -f out.sql
 `mikroscope_sample` (o con `mikroscope_cpu`) por `(time, host)` para obtener el
 intervalo real en vez de suponer el período nominal.
 
-## SQL: tablas de la capa del kernel
+## Tablas SQL del kernel {#sql-tablas-de-la-capa-del-kernel}
 
 <ScrollTable label="Tablas SQL de la capa del kernel">
 
@@ -357,7 +359,7 @@ columnas de contadores son `BIGINT`, ya que PostgreSQL no tiene un tipo de 64
 bits sin signo y ningún delta que produzca un router en una muestra se acerca a
 2^63.
 
-## SQL: tablas de la capa de la API, del colector y del equipo
+## Tablas SQL: API y equipo {#sql-tablas-de-la-capa-de-la-api-del-colector-y-del-equipo}
 
 <ScrollTable label="Tablas SQL de la capa de la API, del colector y del equipo">
 
@@ -387,7 +389,7 @@ bits sin signo y ningún delta que produzca un router en una muestra se acerca a
 
 </ScrollTable>
 
-## Dónde difieren los dos almacenes
+## InfluxDB frente a SQL {#dónde-difieren-los-dos-almacenes}
 
 <ScrollTable label="Diferencias entre las medidas de InfluxDB y las tablas SQL">
 
@@ -407,23 +409,8 @@ bits sin signo y ningún delta que produzca un router en una muestra se acerca a
 
 </ScrollTable>
 
-<NotClaimed>
-	El destino SQL nunca se ha ejecutado contra un TimescaleDB real en este repositorio: las llamadas
-	a `create_hypertable` siguen la firma documentada de TimescaleDB 2.x y no están verificadas. Su
-	tamaño se midió el 2026-09-12 sobre el propio fixture de pruebas del paquete (2 núcleos, una cola
-	de softnet, una línea de interrupción, sin fuentes privileged), no en un router: un evento del
-	kernel se renderiza en 1 375 B de SQL frente a 716 B de line protocol, un evento de la API en
-	1 138 B frente a 608 B, y 10 Hz más la capa de la API a 1 Hz escriben unos 14 KiB/s tras una
-	cabecera de 5,6 KiB; con las fuentes privileged el mismo evento del kernel crece hasta 2 749 B.
-	Las cifras cubren dieciocho de las cuarenta y tres tablas que escribe hoy el destino: el fixture
-	es del 2026-09-12 y once tablas se añadieron después, en 1.0.3 y 1.0.5, y no ejercitó `load`,
-	`stat`, `buddy`, `mtd`, `api_ifcounter`, `api_ifinfo`, `trigger`, `derived`, `derived_iface`,
-	`detection` ni las cuatro tablas `device`. No se han vuelto a medir, así que son además anteriores
-	a las columnas `port` y `kind` de `mikroscope_event`. La cabecera de las cuarenta y tres, generada
-	por el propio `header()` del destino el 2026-09-19, ocupa 10 482 B, unos 10,2 KiB. No
-	se ha medido cómo se comporta `--sql - | psql` cuando `psql` se queda atrás frente a un agente a
-	10 Hz.
-</NotClaimed>
+El tamaño medido de este SQL frente al line protocol, y las tablas que esa
+cifra no cubre, están en <TestedOn of="not-tested">Probado en</TestedOn>.
 
 <SeeAlso>
 
@@ -431,9 +418,9 @@ bits sin signo y ningún delta que produzca un router en una muestra se acerca a
 
 - [InfluxDB 3](/mikroscope/es/sinks/influxdb/): apuntar `forward` a InfluxDB y qué garantías de
   entrega tiene.
-- [Familias de métricas de Prometheus](/mikroscope/es/reference/metrics/): los mismos datos como
+- [Métricas de Prometheus](/mikroscope/es/reference/metrics/): los mismos datos como
   scrape.
-- [El fichero y los demás destinos](/mikroscope/es/sinks/other/): JSONL, SQL en la práctica, Loki,
+- [Otros destinos](/mikroscope/es/sinks/other/): JSONL, SQL en la práctica, Loki,
   OTLP, Graphite, Elasticsearch, Telegraf.
 - [Importar y comprobar](/mikroscope/es/dashboards/import-and-check/): los paneles que consultan
   estas medidas.

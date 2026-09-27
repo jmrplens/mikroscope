@@ -18,7 +18,7 @@ body:
           [board report](https://github.com/jmrplens/mikroscope/issues/new?template=2-board-report.yml),
           even when it did not work.
 
-        [When something does not work](https://jmrp.io/docs/mikroscope/reference/troubleshooting/)
+        [Troubleshooting](https://jmrp.io/docs/mikroscope/reference/troubleshooting/)
         may answer it before you ask. **Never paste a
         credential**, `.env`, or the output of `/container/print detail`,
         `/container/envs/print`, `/export` or `plan --rsc`, and replace the

@@ -5,7 +5,11 @@
 //	go run ./cmd/gen_rsc                            # into site/src/data/rsc
 //	go run ./cmd/gen_rsc -out /tmp/x                # anywhere else, for a check
 //
-// It writes three kinds of file, and nothing else ever edits them:
+// It writes three kinds of file, and nothing else ever edits them. Where they
+// name the release (a script's header, an agent image's tag, "version") they
+// carry version.Placeholder instead, written by router.Templated, and the
+// site's build puts the current VERSION there; so a release changes none of
+// them:
 //
 //	spec.json         router.SpecJSON: every step, the script's text, the
 //	                  manifest, the sweep, the defaults and the bounds
@@ -34,6 +38,7 @@ import (
 	"regexp"
 
 	"github.com/jmrplens/mikroscope/internal/router"
+	"github.com/jmrplens/mikroscope/internal/version"
 )
 
 // genCase is one entry of the golden matrix, as internal/router's golden
@@ -76,6 +81,7 @@ func run(out, matrix string) error {
 	if err != nil {
 		return err
 	}
+	spec = []byte(router.Templated(string(spec)))
 	dir := filepath.Join(out, "cases")
 	if mkErr := os.MkdirAll(dir, 0o750); mkErr != nil {
 		return mkErr
@@ -90,7 +96,7 @@ func run(out, matrix string) error {
 			return fmt.Errorf("case %s: %w", c.ID, caseErr)
 		}
 		outs = append(outs, oc)
-		if writeErr := write(filepath.Join(dir, c.ID+".rsc"), script); writeErr != nil {
+		if writeErr := write(filepath.Join(dir, c.ID+".rsc"), []byte(router.Templated(string(script)))); writeErr != nil {
 			return writeErr
 		}
 	}
@@ -101,6 +107,7 @@ func run(out, matrix string) error {
 	if writeErr := write(filepath.Join(out, "spec.json"), append(spec, '\n')); writeErr != nil {
 		return writeErr
 	}
+	matrixJSON = []byte(router.Templated(string(matrixJSON)))
 	if writeErr := write(filepath.Join(out, "cases.json"), append(matrixJSON, '\n')); writeErr != nil {
 		return writeErr
 	}
@@ -125,11 +132,16 @@ func readCases(path string) ([]genCase, error) {
 		return nil, fmt.Errorf("%s holds no case", path)
 	}
 	seen := map[string]bool{}
-	for _, c := range cases {
+	for i, c := range cases {
 		if !validCaseID.MatchString(c.ID) || seen[c.ID] {
 			return nil, fmt.Errorf("%s: case id %q is not valid or is repeated", path, c.ID)
 		}
 		seen[c.ID] = true
+		// A pull case's image is tagged version.Placeholder: expanded here to
+		// render, and written back by router.Templated with the rest.
+		for j, a := range c.Args {
+			cases[i].Args[j] = version.Expand(a)
+		}
 	}
 	return cases, nil
 }

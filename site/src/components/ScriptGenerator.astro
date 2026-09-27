@@ -1,0 +1,859 @@
+---
+/**
+ * The RouterOS install script generator: a form, the script it renders, and
+ * what to run around it.
+ *
+ * The script is `mikroscope plan --rsc`'s, byte for byte: src/lib/rsc.mjs
+ * renders it from the steps spec cmd/gen_rsc exports from Go
+ * (src/data/rsc/spec.json), and scripts/check-rsc.mjs holds the two to each
+ * other on every case of the golden matrix. Nothing here writes a RouterOS
+ * command of its own. Each field is one CLI flag: its `data-opt` names the
+ * spec option, and the same check fails when a field has no option or an
+ * option no field.
+ *
+ * It is split in parts, so the page can put its own headings (its table of
+ * contents) between them; one script binds them all:
+ *
+ *   <ScriptGenerator />                 the form
+ *   <ScriptGenerator part="script" />   the install script and its CLI command
+ *   <ScriptGenerator part="tar" />      fetching and uploading the tar (tar only)
+ *   <ScriptGenerator part="verify" />   checking the agent answers
+ *   <ScriptGenerator part="remove" />   the uninstall command and script
+ *
+ * Every part is rendered at build time for the defaults (a Docker Hub pull),
+ * so with JavaScript off the page still shows a script that works; the form
+ * and the buttons are shown by the script, which is the only thing that can
+ * make them do anything. The script is bundled (src/lib/rsc-ui.mjs), not
+ * inline, and it makes no request, stores nothing and logs nothing: the token
+ * it generates exists in the page until the page is left.
+ */
+import spec from "../data/rsc/spec.json";
+import { AGENT_IMAGES, AGENT_TARS, EXAMPLE_ROUTER, generatorDefaults } from "../lib/rsc.mjs";
+
+type Spec = import("../lib/rsc.mjs").Spec;
+
+interface Props {
+	part?: "form" | "script" | "tar" | "verify" | "remove";
+}
+
+const { part = "form" } = Astro.props;
+const t = Astro.locals.t;
+const s = spec as unknown as Spec;
+const version = s.version;
+const d = s.defaults;
+
+/** The defaults, a Docker Hub pull: what every part shows before the form is touched. */
+const def = generatorDefaults(s);
+const v = def.values;
+
+/** Each start-on-boot value as the form names it. */
+const BOOT_LABELS = {
+	auto: t("ms.gen.startOnBoot.auto"),
+	yes: t("ms.gen.startOnBoot.yes"),
+	no: t("ms.gen.startOnBoot.no"),
+};
+
+/** The ring's derived memory limit at the defaults, for the hint. */
+const memLimitAuto = v.memLimitMB;
+
+/** A threshold the form offers first for each trigger that takes one. */
+const THRESHOLDS: Record<string, string> = { busy: "0.95", slip: "2", memfall: "32", kmsg: "3" };
+/** The agent's own default set, which "choose" starts from. */
+const AGENT_DEFAULT_TRIGGERS = ["softnet-drop", "oom", "kmsg", "reset", "irq-err", "flash-bad"];
+for (const g of s.triggers) {
+	if (g.op !== "" && !THRESHOLDS[g.name]) {
+		throw new Error(`ScriptGenerator: the trigger ${g.name} takes a threshold and has none to offer`);
+	}
+}
+
+/** Every string the browser needs, handed over in one attribute. */
+const CLIENT_KEYS = [
+	"ms.gen.copied",
+	"ms.gen.copyFailed",
+	"ms.gen.downloaded",
+	"ms.gen.tokenGenerated",
+	"ms.gen.tokenCleared",
+	"ms.gen.summary",
+	"ms.gen.summaryOne",
+	"ms.gen.valid",
+	"ms.gen.subnet.ends",
+	"ms.gen.memLimitMB.hint",
+	"ms.gen.err.integer",
+	"ms.gen.err.range",
+	"ms.gen.err.durationRange",
+	"ms.gen.err.pattern.name",
+	"ms.gen.err.pattern.objectName",
+	"ms.gen.err.pattern.disk",
+	"ms.gen.err.pattern.memory",
+	"ms.gen.err.pattern.duration",
+	"ms.gen.err.pattern.imageRef",
+	"ms.gen.err.pattern.token",
+	"ms.gen.err.builtinList",
+	"ms.gen.err.subnet",
+	"ms.gen.err.subnetPrefix",
+	"ms.gen.err.subnetNetwork",
+	"ms.gen.err.lanAddress",
+	"ms.gen.err.exposeToken",
+	"ms.gen.err.memLimitDerived",
+	"ms.gen.err.triggerUnknown",
+	"ms.gen.err.triggerNoThreshold",
+	"ms.gen.err.triggerRange",
+	"ms.gen.err.triggersEmpty",
+	"ms.gen.err.other",
+	"ms.gen.name",
+	"ms.gen.veth",
+	"ms.gen.subnet",
+	"ms.gen.port",
+	"ms.gen.ifaceList",
+	"ms.gen.addrList",
+	"ms.gen.disk",
+	"ms.gen.ephemeral",
+	"ms.gen.arch",
+	"ms.gen.remoteImage",
+	"ms.gen.rateHz",
+	"ms.gen.bufferS",
+	"ms.gen.memoryMax",
+	"ms.gen.memLimitMB",
+	"ms.gen.floorHz",
+	"ms.gen.captureMB",
+	"ms.gen.triggers",
+	"ms.gen.privileged",
+	"ms.gen.token",
+	"ms.gen.expose",
+	"ms.gen.lanAddress",
+	"ms.gen.restartMaxCount",
+	"ms.gen.restartInterval",
+	"ms.gen.startOnBoot",
+	"ms.gen.containerName",
+	"ms.gen.extractTimeout",
+] as const;
+const strings = JSON.stringify(Object.fromEntries(CLIENT_KEYS.map((k) => [k, t(k)])));
+
+/** A field's label, hint and error ids, so every control names all three. */
+const ids = (key: string) => ({ hint: `gen-hint-${key}`, err: `gen-err-${key}` });
+const describedBy = (key: string, hint = true) =>
+	hint ? `${ids(key).hint} ${ids(key).err}` : ids(key).err;
+---
+
+{
+	part === "form" && (
+		<>
+			<p class="ms-gen-nojs" data-gen-nojs>{t("ms.gen.nojs")}</p>
+			<section
+				class="ms-gen not-content"
+				data-ms-gen
+				data-strings={strings}
+				data-router={EXAMPLE_ROUTER}
+				aria-label={t("ms.gen.form")}
+				hidden
+			>
+				<fieldset class="ms-gen-group">
+					<legend>{t("ms.gen.group.image")}</legend>
+					<div class="ms-gen-field" data-opt="remoteImage">
+						<fieldset class="ms-gen-choice">
+							<legend>{t("ms.gen.source")}</legend>
+							<label>
+								<input type="radio" name="gen-source" value="remote" checked />
+								{t("ms.gen.source.remote")}
+							</label>
+							<label>
+								<input type="radio" name="gen-source" value="tar" />
+								{t("ms.gen.source.tar")}
+							</label>
+						</fieldset>
+						<div class="ms-gen-sub" data-gen-show="remote">
+							<label for="gen-registry">{t("ms.gen.remoteImage")}</label>
+							<select id="gen-registry" aria-describedby={describedBy("remoteImage")}>
+								{AGENT_IMAGES.map((img, i) => (
+									<option value={`${img.ref}:${version}`} selected={i === 0}>
+										{`${img.ref}:${version}`}
+									</option>
+								))}
+								<option value="">{t("ms.gen.registry.other")}</option>
+							</select>
+							<label for="gen-remote-other" class="ms-gen-sub" data-gen-show="remote-other" hidden>
+								{t("ms.gen.registry.otherLabel")}
+							</label>
+							<input
+								id="gen-remote-other"
+								type="text" autocomplete="off"
+								spellcheck="false"
+								autocapitalize="off"
+								data-gen-show="remote-other"
+								aria-describedby={describedBy("remoteImage")}
+								hidden
+							/>
+							<p class="ms-gen-hint" id={ids("remoteImage").hint}>{t("ms.gen.remoteImage.hint")}</p>
+						</div>
+						<p class="ms-gen-error" id={ids("remoteImage").err} hidden />
+					</div>
+					<div class="ms-gen-field" data-opt="arch" data-gen-show="tar" hidden>
+						<label for="gen-arch">{t("ms.gen.arch")}</label>
+						<select id="gen-arch" aria-describedby={describedBy("arch")}>
+							{AGENT_TARS.map((a, i) => (
+								<option value={a.asset} selected={i === 0}>
+									{t(`ms.gen.arch.${a.asset}`)}
+								</option>
+							))}
+						</select>
+						<p class="ms-gen-hint" id={ids("arch").hint}>{t("ms.gen.arch.hint")}</p>
+						<p class="ms-gen-error" id={ids("arch").err} hidden />
+					</div>
+				</fieldset>
+
+				<fieldset class="ms-gen-group">
+					<legend>{t("ms.gen.group.storage")}</legend>
+					<div class="ms-gen-field" data-opt="disk">
+						<fieldset class="ms-gen-choice">
+							<legend>{t("ms.gen.disk")}</legend>
+							<label>
+								<input type="radio" name="gen-storage" value="flash" checked />
+								{t("ms.gen.disk.flash")}
+							</label>
+							<label>
+								<input type="radio" name="gen-storage" value="tmpfs" data-opt="ephemeral" />
+								{t("ms.gen.disk.tmpfs")}
+							</label>
+							<label>
+								<input type="radio" name="gen-storage" value="other" />
+								{t("ms.gen.disk.other")}
+							</label>
+						</fieldset>
+						<div class="ms-gen-sub" data-gen-show="disk-other" hidden>
+							<label for="gen-disk">{t("ms.gen.disk.name")}</label>
+							<input
+								id="gen-disk"
+								type="text" autocomplete="off"
+								spellcheck="false"
+								autocapitalize="off"
+								aria-describedby={describedBy("disk")}
+							/>
+						</div>
+						<p class="ms-gen-hint" id={ids("disk").hint}>{t("ms.gen.disk.hint")}</p>
+						<p class="ms-gen-note" data-gen-show="tmpfs" hidden>
+							{t("ms.gen.disk.tmpfsFirst")}{" "}
+							<code>/disk/add type=tmpfs tmpfs-max-size=64M slot=tmpfs</code>
+						</p>
+						<p class="ms-gen-error" id={ids("disk").err} hidden />
+					</div>
+				</fieldset>
+
+				<fieldset class="ms-gen-group">
+					<legend>{t("ms.gen.group.network")}</legend>
+					<div class="ms-gen-grid">
+						<div class="ms-gen-field" data-opt="name">
+							<label for="gen-name">{t("ms.gen.name")}</label>
+							<input id="gen-name" type="text" autocomplete="off" value={String(d.name)} spellcheck="false" autocapitalize="off" aria-describedby={describedBy("name")} />
+							<p class="ms-gen-hint" id={ids("name").hint}>{t("ms.gen.name.hint")}</p>
+							<p class="ms-gen-error" id={ids("name").err} hidden />
+						</div>
+						<div class="ms-gen-field" data-opt="veth">
+							<label for="gen-veth">{t("ms.gen.veth")}</label>
+							<input id="gen-veth" type="text" autocomplete="off" value={String(d.veth)} spellcheck="false" autocapitalize="off" aria-describedby={describedBy("veth")} />
+							<p class="ms-gen-hint" id={ids("veth").hint}>{t("ms.gen.veth.hint")}</p>
+							<p class="ms-gen-error" id={ids("veth").err} hidden />
+						</div>
+						<div class="ms-gen-field" data-opt="subnet">
+							<label for="gen-subnet">{t("ms.gen.subnet")}</label>
+							<input id="gen-subnet" type="text" autocomplete="off" value={String(d.subnet)} spellcheck="false" autocapitalize="off" inputmode="decimal" aria-describedby={describedBy("subnet")} />
+							<p class="ms-gen-hint" id={ids("subnet").hint} data-gen-live="subnet">
+								{t("ms.gen.subnet.ends").replace("{router}", v.gatewayIP).replace("{agent}", v.containerIP)}
+							</p>
+							<p class="ms-gen-error" id={ids("subnet").err} hidden />
+						</div>
+						<div class="ms-gen-field" data-opt="port">
+							<label for="gen-port">{t("ms.gen.port")}</label>
+							<input id="gen-port" type="text" autocomplete="off" inputmode="numeric" value={String(d.port)} aria-describedby={describedBy("port")} />
+							<p class="ms-gen-hint" id={ids("port").hint}>{t("ms.gen.port.hint")}</p>
+							<p class="ms-gen-error" id={ids("port").err} hidden />
+						</div>
+					</div>
+				</fieldset>
+
+				<fieldset class="ms-gen-group">
+					<legend>{t("ms.gen.group.lists")}</legend>
+					<div class="ms-gen-grid">
+						<div class="ms-gen-field" data-opt="ifaceList">
+							<label for="gen-iface-list">{t("ms.gen.ifaceList")}</label>
+							<select id="gen-iface-list" aria-describedby={describedBy("ifaceList")}>
+								<option value={String(d.ifaceList)} selected>{String(d.ifaceList)}</option>
+								<option value={s.bounds.listNone}>{t("ms.gen.list.none")}</option>
+								<option value="">{t("ms.gen.list.other")}</option>
+							</select>
+							<div class="ms-gen-sub" data-gen-show="iface-other" hidden>
+								<label for="gen-iface-other">{t("ms.gen.ifaceList.name")}</label>
+								<input id="gen-iface-other" type="text" autocomplete="off" spellcheck="false" autocapitalize="off" aria-describedby={describedBy("ifaceList")} />
+							</div>
+							<p class="ms-gen-hint" id={ids("ifaceList").hint}>{t("ms.gen.ifaceList.hint")}</p>
+							<p class="ms-gen-error" id={ids("ifaceList").err} hidden />
+						</div>
+						<div class="ms-gen-field" data-opt="addrList">
+							<label for="gen-addr-list">{t("ms.gen.addrList")}</label>
+							<select id="gen-addr-list" aria-describedby={describedBy("addrList")}>
+								<option value={String(d.addrList)} selected>{String(d.addrList)}</option>
+								<option value={s.bounds.listNone}>{t("ms.gen.list.none")}</option>
+								<option value="">{t("ms.gen.list.other")}</option>
+							</select>
+							<div class="ms-gen-sub" data-gen-show="addr-other" hidden>
+								<label for="gen-addr-other">{t("ms.gen.addrList.name")}</label>
+								<input id="gen-addr-other" type="text" autocomplete="off" spellcheck="false" autocapitalize="off" aria-describedby={describedBy("addrList")} />
+							</div>
+							<p class="ms-gen-hint" id={ids("addrList").hint}>{t("ms.gen.addrList.hint")}</p>
+							<p class="ms-gen-error" id={ids("addrList").err} hidden />
+						</div>
+					</div>
+				</fieldset>
+
+				<fieldset class="ms-gen-group">
+					<legend>{t("ms.gen.group.agent")}</legend>
+					<div class="ms-gen-grid">
+						<div class="ms-gen-field" data-opt="rateHz">
+							<label for="gen-rate">{t("ms.gen.rateHz")}</label>
+							<input id="gen-rate" type="text" autocomplete="off" inputmode="numeric" spellcheck="false" autocapitalize="off" value={String(d.rateHz)} aria-describedby={describedBy("rateHz")} />
+							<p class="ms-gen-hint" id={ids("rateHz").hint}>{t("ms.gen.rateHz.hint")}</p>
+							<p class="ms-gen-error" id={ids("rateHz").err} hidden />
+						</div>
+						<div class="ms-gen-field" data-opt="bufferS">
+							<label for="gen-buffer">{t("ms.gen.bufferS")}</label>
+							<input id="gen-buffer" type="text" autocomplete="off" inputmode="numeric" spellcheck="false" autocapitalize="off" value={String(d.bufferS)} aria-describedby={describedBy("bufferS")} />
+							<p class="ms-gen-hint" id={ids("bufferS").hint}>{t("ms.gen.bufferS.hint")}</p>
+							<p class="ms-gen-error" id={ids("bufferS").err} hidden />
+						</div>
+						<div class="ms-gen-field" data-opt="memoryMax">
+							<label for="gen-memory-max">{t("ms.gen.memoryMax")}</label>
+							<input id="gen-memory-max" type="text" autocomplete="off" spellcheck="false" autocapitalize="off" value={String(d.memoryMax)} aria-describedby={describedBy("memoryMax")} />
+							<p class="ms-gen-hint" id={ids("memoryMax").hint}>{t("ms.gen.memoryMax.hint")}</p>
+							<p class="ms-gen-error" id={ids("memoryMax").err} hidden />
+						</div>
+						<div class="ms-gen-field" data-opt="memLimitMB">
+							<label for="gen-mem-limit">{t("ms.gen.memLimitMB")}</label>
+							<input id="gen-mem-limit" type="text" autocomplete="off" inputmode="numeric" spellcheck="false" autocapitalize="off" value={""} aria-describedby={describedBy("memLimitMB")} />
+							<p class="ms-gen-hint" id={ids("memLimitMB").hint} data-gen-live="memLimitMB">{t("ms.gen.memLimitMB.hint").replace("{n}", memLimitAuto)}</p>
+							<p class="ms-gen-error" id={ids("memLimitMB").err} hidden />
+						</div>
+						<div class="ms-gen-field" data-opt="captureMB">
+							<label for="gen-capture">{t("ms.gen.captureMB")}</label>
+							<input id="gen-capture" type="text" autocomplete="off" inputmode="numeric" spellcheck="false" autocapitalize="off" value={String(d.captureMB)} aria-describedby={describedBy("captureMB")} />
+							<p class="ms-gen-hint" id={ids("captureMB").hint}>{t("ms.gen.captureMB.hint")}</p>
+							<p class="ms-gen-error" id={ids("captureMB").err} hidden />
+						</div>
+						<div class="ms-gen-field" data-opt="floorHz">
+							<label for="gen-floor">{t("ms.gen.floorHz")}</label>
+							<input id="gen-floor" type="text" autocomplete="off" inputmode="numeric" spellcheck="false" autocapitalize="off" value={String(d.floorHz)} aria-describedby={describedBy("floorHz")} />
+							<p class="ms-gen-hint" id={ids("floorHz").hint}>{t("ms.gen.floorHz.hint")}</p>
+							<p class="ms-gen-error" id={ids("floorHz").err} hidden />
+						</div>
+					</div>
+					<div class="ms-gen-field" data-opt="triggers">
+						<fieldset class="ms-gen-choice">
+							<legend>{t("ms.gen.triggers")}</legend>
+							<label>
+								<input type="radio" name="gen-triggers-mode" value="default" checked />
+								{t("ms.gen.triggers.default")}
+							</label>
+							<label>
+								<input type="radio" name="gen-triggers-mode" value="custom" />
+								{t("ms.gen.triggers.custom")}
+							</label>
+						</fieldset>
+						<fieldset class="ms-gen-triggers" data-gen-show="triggers-custom" hidden>
+							<legend class="ms-gen-visually-hidden">{t("ms.gen.triggers.conditions")}</legend>
+							{s.triggers.map((g) => (
+								<div class="ms-gen-trigger">
+									<label>
+										<input type="checkbox" data-trigger={g.name} checked={AGENT_DEFAULT_TRIGGERS.includes(g.name)} />
+										<code>{g.op === "" ? g.name : `${g.name}${g.op}`}</code>
+									</label>
+									{g.op !== "" && (
+										<input
+											type="text"
+											inputmode="decimal"
+											class="ms-gen-threshold"
+											autocomplete="off"
+											data-threshold={g.name}
+											value={THRESHOLDS[g.name]}
+											aria-label={t("ms.gen.triggers.threshold").replace("{trigger}", `${g.name}${g.op}`).replace("{min}", String(g.min)).replace("{max}", String(g.max))}
+											aria-describedby={ids("triggers").err}
+										/>
+									)}
+								</div>
+							))}
+						</fieldset>
+						<p class="ms-gen-hint" id={ids("triggers").hint}>{t("ms.gen.triggers.hint")}</p>
+						<p class="ms-gen-error" id={ids("triggers").err} hidden />
+					</div>
+					<div class="ms-gen-field" data-opt="privileged">
+						<label class="ms-gen-check">
+							<input id="gen-privileged" type="checkbox" checked={d.privileged === true} aria-describedby={ids("privileged").hint} />
+							{t("ms.gen.privileged")}
+						</label>
+						<p class="ms-gen-hint" id={ids("privileged").hint}>{t("ms.gen.privileged.hint")}</p>
+					</div>
+				</fieldset>
+
+				<fieldset class="ms-gen-group">
+					<legend>{t("ms.gen.group.access")}</legend>
+					<div class="ms-gen-field" data-opt="token">
+						<label for="gen-token">{t("ms.gen.token")}</label>
+						<div class="ms-gen-row">
+							<input
+								id="gen-token"
+								type="text"
+								readonly
+								spellcheck="false"
+								autocapitalize="off"
+								autocomplete="off"
+								placeholder={t("ms.gen.token.none")}
+								aria-describedby={describedBy("token")}
+							/>
+							<button type="button" data-gen-token="generate">{t("ms.gen.token.generate")}</button>
+							<button type="button" data-gen-copy="token" disabled>{t("ms.gen.token.copy")}</button>
+							<button type="button" data-gen-token="clear" disabled>{t("ms.gen.token.clear")}</button>
+						</div>
+						<p class="ms-gen-hint" id={ids("token").hint}>{t("ms.gen.token.hint")}</p>
+						<p class="ms-gen-error" id={ids("token").err} hidden />
+						<p class="ms-gen-status" role="status" data-gen-status="token" />
+					</div>
+					<div class="ms-gen-field" data-opt="expose">
+						<label class="ms-gen-check">
+							<input id="gen-expose" type="checkbox" aria-describedby={ids("expose").hint} />
+							{t("ms.gen.expose")}
+						</label>
+						<p class="ms-gen-hint" id={ids("expose").hint}>{t("ms.gen.expose.hint")}</p>
+					</div>
+					<div class="ms-gen-field" data-opt="lanAddress" data-gen-show="expose" hidden>
+						<label for="gen-lan-address">{t("ms.gen.lanAddress")}</label>
+						<input id="gen-lan-address" type="text" autocomplete="off" inputmode="decimal" spellcheck="false" placeholder="192.168.88.1" aria-describedby={describedBy("lanAddress")} />
+						<p class="ms-gen-hint" id={ids("lanAddress").hint}>{t("ms.gen.lanAddress.hint")}</p>
+						<p class="ms-gen-error" id={ids("lanAddress").err} hidden />
+					</div>
+				</fieldset>
+
+				<details class="ms-gen-group ms-gen-advanced">
+					<summary>{t("ms.gen.group.advanced")}</summary>
+					<div class="ms-gen-grid">
+						<div class="ms-gen-field" data-opt="restartMaxCount">
+							<label for="gen-restart-max">{t("ms.gen.restartMaxCount")}</label>
+							<input id="gen-restart-max" type="text" autocomplete="off" inputmode="numeric" value={String(d.restartMaxCount)} aria-describedby={describedBy("restartMaxCount")} />
+							<p class="ms-gen-hint" id={ids("restartMaxCount").hint}>{t("ms.gen.restartMaxCount.hint")}</p>
+							<p class="ms-gen-error" id={ids("restartMaxCount").err} hidden />
+						</div>
+						<div class="ms-gen-field" data-opt="restartInterval">
+							<label for="gen-restart-interval">{t("ms.gen.restartInterval")}</label>
+							<input id="gen-restart-interval" type="text" autocomplete="off" value={String(d.restartInterval)} spellcheck="false" aria-describedby={describedBy("restartInterval")} />
+							<p class="ms-gen-hint" id={ids("restartInterval").hint}>{t("ms.gen.restartInterval.hint")}</p>
+							<p class="ms-gen-error" id={ids("restartInterval").err} hidden />
+						</div>
+						<div class="ms-gen-field" data-opt="startOnBoot">
+							<label for="gen-start-on-boot">{t("ms.gen.startOnBoot")}</label>
+							<select id="gen-start-on-boot" aria-describedby={describedBy("startOnBoot")}>
+								{s.bounds.startOnBoot.map((x) => (
+									<option value={x} selected={x === d.startOnBoot}>{BOOT_LABELS[x as keyof typeof BOOT_LABELS]}</option>
+								))}
+							</select>
+							<p class="ms-gen-hint" id={ids("startOnBoot").hint}>{t("ms.gen.startOnBoot.hint")}</p>
+							<p class="ms-gen-error" id={ids("startOnBoot").err} hidden />
+						</div>
+						<div class="ms-gen-field" data-opt="containerName">
+							<label for="gen-container-name">{t("ms.gen.containerName")}</label>
+							<input id="gen-container-name" type="text" autocomplete="off" value={String(d.containerName)} spellcheck="false" autocapitalize="off" aria-describedby={describedBy("containerName")} />
+							<p class="ms-gen-hint" id={ids("containerName").hint}>{t("ms.gen.containerName.hint")}</p>
+							<p class="ms-gen-error" id={ids("containerName").err} hidden />
+						</div>
+						<div class="ms-gen-field" data-opt="extractTimeout">
+							<label for="gen-extract-timeout">{t("ms.gen.extractTimeout")}</label>
+							<input id="gen-extract-timeout" type="text" autocomplete="off" value={String(d.extractTimeout)} spellcheck="false" aria-describedby={describedBy("extractTimeout")} />
+							<p class="ms-gen-hint" id={ids("extractTimeout").hint}>{t("ms.gen.extractTimeout.hint")}</p>
+							<p class="ms-gen-error" id={ids("extractTimeout").err} hidden />
+						</div>
+					</div>
+				</details>
+			</section>
+		</>
+	)
+}
+
+{
+	part === "script" && (
+		<div class="ms-gen-part not-content" data-gen-part="script">
+			<p class="ms-gen-visually-hidden" role="status" data-gen-status="validity" />
+			<div class="ms-gen-errors" data-gen-errors tabindex="-1" hidden>
+				<p class="ms-gen-errors-title" data-gen-errors-title />
+				<ul data-gen-errors-list />
+			</div>
+			<div data-gen-valid>
+				<p class="ms-gen-warning" data-gen-show="token" hidden>{t("ms.gen.tokenWarning")}</p>
+				<div class="ms-gen-out" role="region" aria-label={t("ms.gen.out.install")} tabindex="0">
+					<pre><code data-gen-out="install">{def.script}</code></pre>
+				</div>
+				<div class="ms-gen-actions" data-gen-js hidden>
+					<button type="button" data-gen-copy="install">{t("ms.gen.copy")}</button>
+					<button type="button" data-gen-download="install" data-file="mikroscope-install.rsc">{t("ms.gen.download")}</button>
+					<p class="ms-gen-status" role="status" data-gen-status="install" />
+				</div>
+				<p class="ms-gen-label">{t("ms.gen.out.cli")}</p>
+				<div class="ms-gen-out ms-gen-out-short" role="region" aria-label={t("ms.gen.out.cli")} tabindex="0">
+					<pre><code data-gen-out="cli">{def.cli}</code></pre>
+				</div>
+				<p class="ms-gen-hint" data-gen-show="token" hidden>{t("ms.gen.cli.tokenEnv").replace("{env}", s.cli.tokenEnv)}</p>
+				<div class="ms-gen-actions" data-gen-js hidden>
+					<button type="button" data-gen-copy="cli">{t("ms.gen.copyCommand")}</button>
+					<p class="ms-gen-status" role="status" data-gen-status="cli" />
+				</div>
+			</div>
+		</div>
+	)
+}
+
+{
+	part === "tar" && (
+		<div class="ms-gen-part not-content" data-gen-part="tar">
+			<p class="ms-gen-note" data-gen-invalid hidden>{t("ms.gen.invalidHere")}</p>
+			<div data-gen-valid>
+				<p class="ms-gen-note" data-gen-show="remote">{t("ms.gen.tar.notNeeded")}</p>
+				<div class="ms-gen-out ms-gen-out-short" role="region" aria-label={t("ms.gen.out.tar")} tabindex="0" data-gen-show="tar" hidden>
+					<pre><code data-gen-out="tar">{def.tar.join("\n")}</code></pre>
+				</div>
+				<div class="ms-gen-actions" data-gen-js data-gen-show="tar" hidden>
+					<button type="button" data-gen-copy="tar">{t("ms.gen.copyCommands")}</button>
+					<p class="ms-gen-status" role="status" data-gen-status="tar" />
+				</div>
+			</div>
+		</div>
+	)
+}
+
+{
+	part === "verify" && (
+		<div class="ms-gen-part not-content" data-gen-part="verify">
+			<p class="ms-gen-note" data-gen-invalid hidden>{t("ms.gen.invalidHere")}</p>
+			<div data-gen-valid>
+				<p class="ms-gen-label">{t("ms.gen.verify.router")}</p>
+				<div class="ms-gen-out ms-gen-out-short" role="region" aria-label={t("ms.gen.verify.router")} tabindex="0">
+					<pre><code data-gen-out="verify-router">{def.verify.router.join("\n")}</code></pre>
+				</div>
+				<p class="ms-gen-label">{t("ms.gen.verify.lan")}</p>
+				<div class="ms-gen-out ms-gen-out-short" role="region" aria-label={t("ms.gen.verify.lan")} tabindex="0">
+					<pre><code data-gen-out="verify-lan">{def.verify.lan.join("\n")}</code></pre>
+				</div>
+			</div>
+		</div>
+	)
+}
+
+{
+	part === "remove" && (
+		<div class="ms-gen-part not-content" data-gen-part="remove">
+			<p class="ms-gen-note" data-gen-invalid hidden>{t("ms.gen.invalidHere")}</p>
+			<div data-gen-valid>
+				<p class="ms-gen-label">{t("ms.gen.remove.cli")}</p>
+				<div class="ms-gen-out ms-gen-out-short" role="region" aria-label={t("ms.gen.remove.cli")} tabindex="0">
+					<pre><code data-gen-out="uninstall-cli">{def.uninstallCli}</code></pre>
+				</div>
+				<div class="ms-gen-actions" data-gen-js hidden>
+					<button type="button" data-gen-copy="uninstall-cli">{t("ms.gen.copyUninstallCommand")}</button>
+					<p class="ms-gen-status" role="status" data-gen-status="uninstall-cli" />
+				</div>
+				<p class="ms-gen-label">{t("ms.gen.out.uninstall")}</p>
+				<div class="ms-gen-out" role="region" aria-label={t("ms.gen.out.uninstall")} tabindex="0">
+					<pre><code data-gen-out="uninstall">{def.uninstall}</code></pre>
+				</div>
+				<div class="ms-gen-actions" data-gen-js hidden>
+					<button type="button" data-gen-copy="uninstall">{t("ms.gen.copyUninstall")}</button>
+					<button type="button" data-gen-download="uninstall" data-file="mikroscope-uninstall.rsc">{t("ms.gen.downloadUninstall")}</button>
+					<p class="ms-gen-status" role="status" data-gen-status="uninstall" />
+				</div>
+			</div>
+		</div>
+	)
+}
+
+<script>
+	import { start } from "../lib/rsc-ui.mjs";
+	start();
+</script>
+
+<style>
+	.ms-gen-nojs {
+		color: var(--ms-muted);
+	}
+	.ms-gen[hidden],
+	.ms-gen-nojs[hidden] {
+		display: none;
+	}
+	.ms-gen {
+		display: grid;
+		gap: 1rem;
+		margin-block: 1rem 1.5rem;
+		color: var(--ms-body);
+	}
+	.ms-gen-group {
+		border: 1px solid var(--ms-border);
+		border-radius: var(--ms-radius);
+		background: var(--ms-surface-raised);
+		padding: 0.75rem 1rem 1rem;
+		margin: 0;
+		min-width: 0;
+		display: grid;
+		gap: 0.75rem;
+	}
+	.ms-gen-group > legend,
+	.ms-gen-advanced > summary {
+		color: var(--ms-heading);
+		font-weight: 600;
+		padding-inline: 0.25rem;
+	}
+	.ms-gen-advanced > summary {
+		cursor: pointer;
+		padding-block: 0.25rem;
+	}
+	.ms-gen-advanced[open] > summary {
+		margin-block-end: 0.5rem;
+	}
+	.ms-gen-grid {
+		display: grid;
+		gap: 0.75rem 1rem;
+		grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+	}
+	.ms-gen-field {
+		display: grid;
+		gap: 0.3rem;
+		align-content: start;
+		min-width: 0;
+	}
+	.ms-gen-field[hidden],
+	.ms-gen-sub[hidden],
+	[data-gen-show][hidden] {
+		display: none;
+	}
+	.ms-gen-sub {
+		display: grid;
+		gap: 0.3rem;
+	}
+	.ms-gen label {
+		color: var(--ms-heading);
+	}
+	.ms-gen-choice {
+		border: 0;
+		padding: 0;
+		margin: 0;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.25rem 1.25rem;
+		min-width: 0;
+	}
+	.ms-gen-choice > legend {
+		color: var(--ms-heading);
+		padding: 0;
+		margin-block-end: 0.3rem;
+		float: left;
+		width: 100%;
+	}
+	.ms-gen-choice label,
+	.ms-gen-check {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.45rem;
+		color: var(--ms-body);
+	}
+	.ms-gen input[type="text"],
+	.ms-gen select {
+		width: 100%;
+		min-width: 0;
+		box-sizing: border-box;
+		font: inherit;
+		font-family: var(--sl-font-mono);
+		font-size: var(--sl-text-sm);
+		color: var(--ms-heading);
+		background: var(--ms-page);
+		border: 1px solid var(--ms-border-strong);
+		border-radius: 0.35rem;
+		padding: 0.4rem 0.55rem;
+	}
+	.ms-gen input[type="radio"],
+	.ms-gen input[type="checkbox"] {
+		accent-color: var(--ms-accent);
+		width: 1rem;
+		height: 1rem;
+		margin: 0;
+		flex: none;
+	}
+	.ms-gen input[aria-invalid="true"],
+	.ms-gen select[aria-invalid="true"] {
+		border-color: var(--ms-status-bad);
+		border-width: 2px;
+	}
+	.ms-gen input[readonly] {
+		background: var(--ms-surface);
+	}
+	.ms-gen-row {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+		align-items: center;
+	}
+	.ms-gen-row > input {
+		flex: 1 1 16rem;
+	}
+	.ms-gen-triggers {
+		border: 0;
+		margin: 0;
+		padding: 0;
+		display: grid;
+		gap: 0.4rem 1rem;
+		grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+		min-width: 0;
+	}
+	.ms-gen-trigger {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		min-width: 0;
+	}
+	.ms-gen-trigger label {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.45rem;
+		color: var(--ms-body);
+	}
+	.ms-gen .ms-gen-threshold {
+		width: 5.5rem;
+		flex: none;
+	}
+	.ms-gen-hint,
+	.ms-gen-label {
+		margin: 0;
+		color: var(--ms-muted);
+		font-size: var(--sl-text-sm);
+	}
+	.ms-gen-label {
+		color: var(--ms-heading);
+		font-weight: 600;
+		margin-block: 1rem 0.4rem;
+	}
+	.ms-gen-note,
+	.ms-gen-warning {
+		margin: 0;
+		font-size: var(--sl-text-sm);
+		color: var(--ms-body);
+		border-inline-start: var(--ms-rule) solid var(--ms-muted);
+		padding-inline-start: 0.6rem;
+	}
+	.ms-gen-warning {
+		border-inline-start-color: var(--ms-status-warn);
+		margin-block: 0.75rem;
+	}
+	.ms-gen-error {
+		margin: 0;
+		color: var(--ms-status-bad);
+		font-size: var(--sl-text-sm);
+		font-weight: 600;
+	}
+	.ms-gen-status {
+		margin: 0;
+		font-size: var(--sl-text-sm);
+		color: var(--ms-body);
+		min-height: 1.2em;
+	}
+	.ms-gen button {
+		font: inherit;
+		font-size: var(--sl-text-sm);
+	}
+	.ms-gen button,
+	.ms-gen-actions button {
+		color: var(--ms-heading);
+		background: var(--ms-surface);
+		border: 1px solid var(--ms-border-strong);
+		border-radius: 0.35rem;
+		padding: 0.4rem 0.8rem;
+		cursor: pointer;
+	}
+	.ms-gen button:disabled,
+	.ms-gen-actions button:disabled {
+		cursor: not-allowed;
+		color: var(--ms-muted);
+	}
+	.ms-gen-part {
+		margin-block: 0.75rem 1rem;
+	}
+	.ms-gen-out {
+		max-height: 28rem;
+		overflow: auto;
+		border: 1px solid var(--ms-border);
+		border-radius: var(--ms-radius);
+		background: var(--ms-surface);
+	}
+	.ms-gen-out-short {
+		max-height: none;
+	}
+	.ms-gen-out[hidden] {
+		display: none;
+	}
+	.ms-gen-out pre {
+		margin: 0;
+		padding: 0.75rem 1rem;
+		background: transparent;
+		border: 0;
+		overflow: visible;
+		width: max-content;
+		min-width: 100%;
+		box-sizing: border-box;
+	}
+	.ms-gen-out code {
+		font-family: var(--sl-font-mono);
+		font-size: var(--sl-text-xs);
+		line-height: 1.6;
+		color: var(--ms-heading);
+		background: none;
+		padding: 0;
+		white-space: pre;
+	}
+	.ms-gen-actions {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.5rem 0.75rem;
+		margin-block-start: 0.5rem;
+	}
+	.ms-gen-actions[hidden] {
+		display: none;
+	}
+	.ms-gen-actions .ms-gen-status {
+		flex: 1 1 12rem;
+	}
+	.ms-gen-errors {
+		border: 1px solid var(--ms-status-bad);
+		border-inline-start: var(--ms-rule) solid var(--ms-status-bad);
+		border-radius: var(--ms-radius);
+		background: var(--ms-status-bad-soft);
+		padding: 0.75rem 1rem;
+		margin-block-end: 0.75rem;
+		color: var(--ms-body);
+	}
+	.ms-gen-errors[hidden] {
+		display: none;
+	}
+	.ms-gen-errors-title {
+		margin: 0 0 0.4rem;
+		color: var(--ms-heading);
+		font-weight: 600;
+	}
+	.ms-gen-errors ul {
+		margin: 0;
+		padding-inline-start: 1.2rem;
+	}
+	.ms-gen-errors a {
+		color: var(--ms-heading);
+	}
+	.ms-gen-visually-hidden {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0 0 0 0);
+		white-space: nowrap;
+		border: 0;
+	}
+</style>

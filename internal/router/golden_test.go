@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/jmrplens/mikroscope/internal/version"
 )
 
 // The golden harness pins what the router package prints for a matrix of
@@ -20,7 +22,10 @@ import (
 // or a change to a listing shows every line it moves.
 //
 // testdata/cases.json is the matrix: one entry per install shape, with the
-// arguments exactly as they are given to `mikroscope plan`. Each case has
+// arguments exactly as they are given to `mikroscope plan`, except that an
+// agent image's tag is version.Placeholder, read as the current VERSION.
+// The goldens keep the placeholder where the rendering names the release
+// (Templated), so that a VERSION bump rewrites none of them. Each case has
 // four goldens in testdata/golden:
 //
 //	<id>.plan.txt     every step Plan returns with every command it carries
@@ -65,6 +70,10 @@ var goldenKinds = []string{"plan", "listing", "upgrade", "rsc"}
 
 var validCaseID = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 
+// pinnedAgentTag is an agent image with a release number written out, which
+// the matrix must not carry (loadGoldenCases).
+var pinnedAgentTag = regexp.MustCompile(`mikroscope-agent:[0-9]`)
+
 // goldenCase is one entry of testdata/cases.json. Lab says whether the lab
 // suite can run the case against a virtual RouterOS, and Profiles names the
 // test/lab/routeros profiles it applies first; Note says what the case pins.
@@ -78,8 +87,10 @@ type goldenCase struct {
 
 // loadGoldenCases reads the matrix and refuses one that the other readers of
 // it (the lab suite, and later the script generator's data) could not use: an
-// unknown field, a missing or repeated id, a null list, or a lab profile that
-// does not exist.
+// unknown field, a missing or repeated id, a null list, a lab profile that
+// does not exist, or an agent image tagged with a release number instead of
+// version.Placeholder. Every argument comes back with the placeholder
+// expanded, so the pull cases name this release's image and follow VERSION.
 func loadGoldenCases(t *testing.T) []goldenCase {
 	t.Helper()
 	raw, err := os.ReadFile(casesFile)
@@ -111,6 +122,12 @@ func loadGoldenCases(t *testing.T) []goldenCase {
 			t.Fatalf("%s: case %s: say in note what the case pins", casesFile, c.ID)
 		}
 		seen[c.ID] = true
+		for j, a := range c.Args {
+			if pinnedAgentTag.MatchString(a) {
+				t.Fatalf("%s: case %s: %q names a release; write mikroscope-agent:%s, which follows VERSION", casesFile, c.ID, a, version.Placeholder)
+			}
+			cases[i].Args[j] = version.Expand(a)
+		}
 		for _, p := range c.Profiles {
 			if labErr != nil {
 				break
@@ -209,9 +226,11 @@ func TestGolden(t *testing.T) {
 	checkNoOrphans(t, want)
 }
 
-// checkGolden compares one rendering with its file, or writes the file.
+// checkGolden compares one rendering with its file, or writes the file. Both
+// sides are in Templated form, the release written as version.Placeholder.
 func checkGolden(t *testing.T, name, got string) {
 	t.Helper()
+	got = Templated(got)
 	path := filepath.Join(goldenDir, name)
 	if *update {
 		if err := os.WriteFile(path, []byte(got), 0o600); err != nil {

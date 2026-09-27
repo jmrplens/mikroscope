@@ -1,39 +1,38 @@
 ---
-title: El colector
-description: Cómo lleva forward la telemetría de kernel de MikroTik RouterOS a once destinos (extraer, fusionar, derivar, repartir) y qué descarta con un almacén lento.
+title: Ejecutar el colector
+description: "Ejecuta mikroscope forward para traer la telemetría de kernel de un router MikroTik, unirla a la capa de la API de RouterOS, derivar valores y escribirla en once destinos."
+docType: how-to
 head:
   - tag: title
     content: El colector de telemetría de MikroTik RouterOS | mikroscope
 ---
 
 import { Aside, Steps } from "@astrojs/starlight/components";
+import Anchor from "../../../../components/Anchor.astro";
 import Figure from "../../../../components/Figure.astro";
 import Measured from "../../../../components/Measured.astro";
-import NotClaimed from "../../../../components/NotClaimed.astro";
-import Provenance from "../../../../components/Provenance.astro";
 import Stat from "../../../../components/Stat.astro";
 import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
+import TestedOn from "../../../../components/TestedOn.astro";
 
 <Figure name="data-path" />
 
 `mikroscope forward` es el colector. Tira de la capa del kernel del agente en el
-router MikroTik, muestrea la capa de la API de RouterOS, marca las dos con el reloj
-del agente, pasa la etapa de derivación sobre ellas y escribe la línea temporal
-fusionada en cada destino que indiques. Esta página responde a qué hace una ejecución, cómo sigue el ritmo del
-agente, qué reloj lleva cada registro y qué significa «descartado» cuando un destino
-deja de responder.
+router, muestrea la capa de la API de RouterOS, marca las dos con el reloj del
+agente, pasa la etapa de derivación sobre ellas y escribe la línea temporal
+fusionada en cada destino que indiques.
 
 ```sh
 mikroscope forward --prom :9124 --influx "$MIKROSCOPE_INFLUX_URL" --influx-db "$MIKROSCOPE_INFLUX_DB" --interfaces bridge,ether1
 ```
 
-`forward` sin ningún destino es un error, no algo que no hace nada en silencio: leería
-el router y tiraría los datos. Hace falta al menos uno de `--file`, `--prom`,
-`--influx`, `--loki`, `--otlp`, `--graphite`, `--elastic`, `--sql`, `--postgres`,
-`--telegraf` o `--stdout`, y lo normal es usar más de uno a la vez.
+Indica al menos un destino: `--file`, `--prom`, `--influx`, `--loki`, `--otlp`,
+`--graphite`, `--elastic`, `--sql`, `--postgres`, `--telegraf` o `--stdout`.
+`forward` sin ninguno es un error, porque leería el router y tiraría los datos.
+Lo normal es usar varios a la vez.
 
-## Lo que hace una ejecución
+## Etapas de una ejecución {#lo-que-hace-una-ejecución}
 
 <Steps>
 
@@ -46,16 +45,15 @@ el router y tiraría los datos. Hace falta al menos uno de `--file`, `--prom`,
    agente — placa, kernel, techos, cadencias — salen al arrancar como registro
    propio, de nuevo cuando cambia el hash de capacidades y, si no, cada cinco
    minutos, para que los paneles del equipo tengan una fila dentro de cualquier
-   ventana. Consulta [el flujo de datos del equipo](/mikroscope/es/sinks/device-info/).
+   ventana. Consulta [Datos del equipo](/mikroscope/es/sinks/device-info/).
 
 3. **Tira del anillo cada `--poll`.** La primera extracción empieza después de la
-   muestra más reciente del agente, así que `forward` no reproduce lo que el anillo
-   tenía antes de arrancar: siempre empieza en la muestra más reciente del agente.
-   `forward` no tiene `--from-start` y lo rechaza como opción desconocida; solo
-   `record` recupera el anillo. Cada extracción pide las
-   muestras posteriores al último número de secuencia visto. Un marcador de disparo
-   viaja entre las muestras en orden de secuencia y se reenvía como anotación, nunca
-   se decodifica como muestra.
+   muestra más reciente del agente: `forward` no reproduce lo que el anillo tenía
+   antes de arrancar, y rechaza `--from-start` como opción desconocida (solo
+   `record` recupera el anillo). Cada extracción pide las muestras posteriores al
+   último número de secuencia visto. Un marcador de disparo viaja entre las
+   muestras en orden de secuencia y se reenvía como anotación, nunca se decodifica
+   como muestra.
 
 4. **Deriva y luego reparte.** Cada muestra del kernel pasa por [la etapa de
    derivación](/mikroscope/es/sinks/derive/), y la muestra, sus valores derivados y
@@ -63,12 +61,13 @@ el router y tiraría los datos. Hace falta al menos uno de `--file`, `--prom`,
    cada destino en el mismo orden.
 
 5. **Muestrea la capa de la API cada `--api-every`** (1 s por defecto) cuando hay
-   credenciales de la API configuradas. Consulta [la capa de la API de
+   credenciales de la API configuradas. Consulta [Capa de la API de
    RouterOS](/mikroscope/es/sinks/api-tier/).
 
-6. **Vuelve a medir el desfase cada minuto.** Un salto de más de 50 ms se registra —
-   un paso del reloj del router, una corrección de NTP — y se cuenta como salto de
-   desfase. La misma lectura de estado vuelve a comprobar el hash de capacidades.
+6. **Vuelve a medir el desfase cada minuto.** Un salto de más de 50 ms — un paso
+   del reloj del router, una corrección de NTP — se registra y se cuenta como
+   salto de desfase. La misma lectura de estado vuelve a comprobar el hash de
+   capacidades.
 
 7. **Con Ctrl-C o al final de `--for`**, extrae una última vez, cierra cada destino con
    un vaciado final e imprime lo que hizo cada uno.
@@ -78,40 +77,40 @@ el router y tiraría los datos. Hace falta al menos uno de `--file`, `--prom`,
 En ese bucle no hay interpolación en ningún sitio: cada consumidor ve la cadencia que
 tiene de verdad cada fuente.
 
-## Extraer lo bastante rápido
+## Cadencia de sondeo y lote {#extraer-lo-bastante-rápido}
 
-`--poll` (500 ms por defecto) es cada cuánto se tira del anillo y `--batch` cuántas
-muestras pide una extracción. El lote por defecto es el doble de lo que produce un
-intervalo de sondeo a la cadencia del agente, y nunca menos de 20. Un lote fijo de 20
-muestras por sondeo de 500 ms limitaría una extracción a 40 Hz y perdería 1 − 40/50 de
-las muestras de un agente a 50 Hz, y por eso el lote se dimensiona a partir de la cadencia
-del agente. Una extracción se
-repite mientras vuelva llena — hasta 100 veces — para que el cursor se ponga al día
-dentro de un sondeo en vez de avanzar un lote por sondeo. Una respuesta corta es el
-borde del anillo.
+<ScrollTable label="Opciones de extracción de forward">
 
-El transporte por relay limita una extracción a <Measured id="relay.maxBatch" /> líneas, y el límite
-se calcula en vez de elegirse: `/tool fetch` devuelve como
-mucho <Measured id="relay.replyMaxBytes" />, la línea del anillo se cobra
-a <Measured id="ring.lineChargedBytes" /> (los <Measured id="ring.lineBytes" /> medidos, redondeados a
-su clase de tamaño del asignador) y el límite deja un 134 % de eso para que también quepa un lote de
-líneas por encima de la media: unos 45 kB. Una respuesta que aun así llega al límite de fetch se rechaza
-con `relay reply hit the 64512-byte fetch limit; lower the batch` en vez de analizarse truncada.
-Con el sondeo por defecto de 500 ms eso son 26 muestras/s, y por encima el colector se queda atrás.
-`forward` calcula lo que el lote efectivo y el sondeo permiten por segundo y avisa al arrancar
-cuando queda por debajo de la cadencia del agente — para el relay contra un agente a 100 Hz, la
-aritmética da:
+| Opción    | Por defecto | Qué ajusta                                                                                                                                                                    |
+| --------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--poll`  | `500ms`     | Cada cuánto se tira del anillo.                                                                                                                                               |
+| `--batch` | `0`         | Muestras que pide una extracción. `0` es el doble de lo que produce un intervalo de sondeo a la cadencia del agente, nunca menos de 20, para que un agente a 50 Hz no quede limitado a 40 Hz. |
+
+</ScrollTable>
+
+- Una extracción se repite mientras vuelva llena, hasta 100 veces, para que el
+  cursor se ponga al día dentro de un sondeo en vez de avanzar un lote por
+  sondeo. Una respuesta corta es el borde del anillo.
+- El transporte por relay limita una extracción a <Measured id="relay.maxBatch" />
+  líneas. El límite se calcula a partir de los <Measured id="relay.replyMaxBytes" />
+  que devuelve como mucho `/tool fetch`, de una línea del anillo que se cobra a la
+  clase de tamaño del asignador de <Measured id="ring.lineChargedBytes" /> (los
+  medidos <Measured id="ring.lineBytes" />, redondeados) y de un 134 % de margen
+  para líneas por encima de la media: unos 45 kB. Una respuesta que aun así llega al límite de fetch se
+  rechaza con `relay reply hit the 64512-byte fetch limit; lower the batch` en
+  vez de analizarse truncada.
+- `forward` calcula lo que el lote efectivo permite por cada `--poll` y avisa al
+  arrancar cuando queda por debajo de la cadencia del agente. Para el relay
+  contra un agente a 100 Hz, 13 muestras por sondeo de 500 ms dan:
 
 ```text
 warning: at most 13 samples per pull every 500ms is 26/s, below the agent's 100 Hz; the collector will fall behind and report gaps. Raise --batch, lower --poll, or use the direct transport
 ```
 
-El límite y el aviso están leídos del código el 2026-09-15, no vueltos a medir en un equipo.
-
 Un colector que se queda más atrás que el anillo del agente (60 s por defecto) recibe
 una línea de hueco en vez de las muestras, y cada destino registra el hueco.
 
-## Qué reloj lleva cada registro
+## Marcas de tiempo {#qué-reloj-lleva-cada-registro}
 
 <ScrollTable label="El reloj con el que se marca cada registro">
 
@@ -126,11 +125,11 @@ una línea de hueco en vez de las muestras, y cada destino registra el hueco.
 
 </ScrollTable>
 
-## ¿Cuál debería usar?
+## Elegir un destino {#cuál-debería-usar}
 
-<Stat name="sinks" as="word" /> destinos, y la respuesta honesta es que casi todo el
-mundo quiere uno de los dos primeros. Los demás existen para que mikroscope encaje con lo que ya
-tienes, en vez de pedirte que montes algo nuevo.
+`forward` escribe en <Stat name="sinks" as="word" /> destinos. Casi todas las
+instalaciones necesitan una de las dos primeras filas; las demás existen para que
+mikroscope encaje con lo que ya tienes.
 
 <ScrollTable label="Para qué sirve cada destino, qué lleva y si trae dashboard">
 
@@ -149,20 +148,19 @@ tienes, en vez de pedirte que montes algo nuevo.
 
 </ScrollTable>
 
-Nada impide nombrar varios a la vez, y esa es la disposición normal: `--file`
-junto a un almacén te deja una captura a la que volver, y `--loki` junto a
-`--influx` pone el registro del kernel donde puede alcanzarlo una consulta de
-logs mientras los números van al almacén que leen los dashboards.
+- Nombra varios a la vez: `--file` junto a un almacén te deja una captura a la
+  que volver, y `--loki` junto a `--influx` pone el registro del kernel donde
+  puede alcanzarlo una consulta de logs mientras los números van al almacén que
+  leen los dashboards.
+- **Loki recibe eventos, no métricas** —los registros del kernel, las
+  detecciones, los huecos, los disparos, los errores de la capa de la API y los
+  registros del equipo—, así que una ejecución solo con Loki no tiene ni un
+  número de CPU o memoria.
+- **`--prom` se consulta, no se envía**: `forward` sirve `/metrics` y
+  Prometheus viene a por él, así que el colector tiene que ser alcanzable desde
+  la máquina de Prometheus.
 
-Dos de ellos no llevan lo mismo que el resto. **Loki recibe eventos, no
-métricas** —los registros del kernel, las detecciones, los huecos, los disparos,
-los errores de la capa de la API y los registros del equipo—, así que una ejecución
-solo con Loki no tiene ni un número de CPU o memoria. Y **`--prom`
-se consulta, no se envía**: `forward` sirve `/metrics` y Prometheus viene a por
-él, lo que significa que el colector tiene que ser alcanzable desde la máquina
-de Prometheus.
-
-## Los once destinos
+## Destinos {#los-once-destinos}
 
 <ScrollTable label="Los destinos en los que puede escribir forward">
 
@@ -182,22 +180,27 @@ de Prometheus.
 
 </ScrollTable>
 
-Las credenciales de los destinos nunca vienen de una opción: una opción se ve en `ps` y en
-el historial del shell. Cada token de un destino se lee solo de su variable `MIKROSCOPE_*`.
-El token bearer del propio agente es la excepción: `forward` lo toma como `--token`, con
-`MIKROSCOPE_TOKEN` por defecto. `--host-tag`
-(`MIKROSCOPE_HOST_TAG`, `router` por defecto) pone la misma etiqueta de host en cada
-punto de cada destino.
+- Las credenciales de los destinos nunca vienen de una opción: una opción se ve
+  en `ps` y en el historial del shell. Cada token de un destino se lee solo de su
+  variable `MIKROSCOPE_*`. El token bearer del propio agente es la excepción:
+  `forward` lo toma como `--token`, con `MIKROSCOPE_TOKEN` por defecto.
+- `--host-tag` (`MIKROSCOPE_HOST_TAG`, `router` por defecto) pone la misma
+  etiqueta de host en cada punto de cada destino.
+- Un destino que se pidió y no se puede construir — un puerto ya ocupado, un
+  fichero que no se puede abrir — hace fallar la ejecución en vez de quedar
+  ausente en silencio.
 
-Un destino que se pidió y no se puede construir — un puerto ya ocupado, un fichero que
-no se puede abrir — hace fallar la ejecución. Un destino ausente en silencio es peor que
-no tener datos, porque la ausencia no se ve.
+<Anchor name="lo-que-se-ha-medido" />
 
-## Un destino lento nunca para el bucle
+Las ejecuciones que ha hecho el colector contra un router y los destinos que ha
+alimentado están en la <TestedOn of="rates-2026-09-15">página de pruebas</TestedOn>,
+y los almacenes contra los que se prueba cada destino, en las baterías de <TestedOn of="test-suites">pruebas</TestedOn>.
 
-El bucle de extracción del colector nunca debe esperar a un destino. Cada destino que
-habla con un remoto renderiza en memoria y entrega los bytes a una cola acotada que
-vacía una goroutine propia una vez por segundo:
+## Colas y descartes {#un-destino-lento-nunca-para-el-bucle}
+
+El bucle de extracción nunca espera a un destino. Cada destino que habla con un
+remoto renderiza en memoria y entrega los bytes a una cola acotada que vacía una
+goroutine propia una vez por segundo:
 
 - La cola guarda `--queue-seconds` (60 por defecto) segundos de un presupuesto de bytes:
   64 KiB por segundo para InfluxDB, PostgreSQL (`--postgres`), Loki, OTLP,
@@ -220,10 +223,11 @@ estado en memoria bajo un cerrojo y lo sirve en cada scrape.
 	El destino SQL no tiene cola, así que con `--sql -` alimentando `| psql`, un `psql` que se retrasa
 	llena la tubería y la siguiente escritura bloquea el bucle de extracción en vez de descartar. Cada
 	`INSERT` es su propia transacción, que es la forma realista de que `psql` se quede atrás frente a
-	un agente a 10 Hz. No medido. Escribe a un fichero y aplícalo después.
+	un agente a 10 Hz (<TestedOn of="not-tested">sin medir</TestedOn>). Escribe a un fichero y
+	aplícalo después.
 </Aside>
 
-### Lo que cuentan los contadores
+### Contadores de entrega {#lo-que-cuentan-los-contadores}
 
 `forward` imprime `written`, `dropped` y `errors` por destino, y la unidad depende de la
 forma:
@@ -235,7 +239,7 @@ forma:
 - **Fichero, SQL y Prometheus cuentan eventos**: uno por muestra, disparo, lectura de la
   API, hueco, detección o registro del equipo aceptado.
 
-## Lo que imprime `forward`
+## Salida en consola {#lo-que-imprime-forward}
 
 Al arrancar, por la salida de error: una línea `sink: <name>` por destino, la
 configuración de la capa de la API, y la versión, cadencia, número de secuencia,
@@ -253,14 +257,15 @@ forwarded <n> kernel samples, <n> api samples, <n> gap(s), <n> skew jump(s)
   <sink>: <n> written, <n> dropped, <n> errors
 ```
 
-Dos propiedades de esa salida pueden sorprender a un consumidor: el resumen de salida va
-al mismo flujo en el que escribe el destino `--stdout`, así que
-`forward --stdout=lp | telegraf` termina cada ejecución con líneas que el consumidor no
-puede interpretar; y un `--token` erróneo se registra en cada extracción como
-`401 Unauthorized` mientras la ejecución termina igualmente en su
-plazo `--for` con código de salida 0 y `forwarded 0 kernel samples`.
+<Aside type="caution" title="Dos cosas que saber antes de canalizarla">
+	El resumen de salida va al mismo flujo en el que escribe el destino `--stdout`, así que
+	`forward --stdout=lp | telegraf` termina cada ejecución con líneas que el consumidor no puede
+	interpretar. Y un `--token` erróneo se registra en cada extracción como `401 Unauthorized`,
+	mientras la ejecución termina igualmente en su plazo `--for` con código de salida 0 y
+	`forwarded 0 kernel samples`.
+</Aside>
 
-## Una dimensión, un nombre
+## Nombres de etiquetas {#una-dimensión-un-nombre}
 
 Un procesador es `cpu` en todas partes — etiqueta de InfluxDB, columna SQL, etiqueta de
 Prometheus, atributo OTLP — nunca `core`. El cable lleva la unidad del propio kernel y la
@@ -268,33 +273,6 @@ nombra en el campo (`_khz`, `_kb`, `_ticks`, `_pages`, `_sectors`); cada destino
 una sola vez, a la convención de ese almacén, y convierte un valor y su techo de la misma
 manera. Por eso la temperatura es `celsius` junto a `critical_celsius`, y el tiempo
 ocupado de un dispositivo de bloques es `io_s`.
-
-## Lo que se ha medido
-
-En el RB5009 de referencia el 2026-09-12, esta ejecución de ocho minutos reenvió 4 800
-muestras del kernel y 479 de la API con 0 huecos y 0 descartes:
-
-```sh
-mikroscope forward --for 8m --prom :9124 --influx … --interfaces bridge,ether1,PPPoE_DIGI --conntrack-every 10s
-```
-
-En las cinco ejecuciones de cadencia del 2026-09-15 el colector escribió en tres destinos
-a la vez, y todos informaron de 0 huecos y 0 descartes a 10, 50 y 100 Hz:
-
-<Provenance of="rates-2026-09-15" />
-
-<NotClaimed>
-	Loki, OTLP, Graphite, Elasticsearch, OpenSearch, Telegraf, SQL y stdout se prueban contra
-	receptores locales que comprueban los bytes que acepta cada protocolo (máquina de desarrollo,
-	amd64, desde el 2026-09-12). Desde el 2026-09-17 la suite de extremo a extremo con docker además
-	ejecuta el colector, contra un agente enlatado y con la capa de la API apagada, hacia Loki 3, el
-	OpenTelemetry Collector, graphite-statsd, Elasticsearch 9, Telegraf 1.39 por HTTP y PostgreSQL 18
-	(con `--sql`, y con `--postgres` desde que ese destino llegó el 2026-09-21), y lee los datos de
-	vuelta por la API de cada almacén. Ninguno se ha alimentado desde el RB5009 hacia un backend en
-	marcha, y OpenSearch, las hypertables de TimescaleDB y stdout nunca se han probado contra un
-	almacén real. Los tamaños en bytes que se citan para ellos en [los demás
-	destinos](/mikroscope/es/sinks/other/) salen de fixtures de pruebas, no de un equipo.
-</NotClaimed>
 
 <SeeAlso>
 
@@ -304,9 +282,9 @@ a la vez, y todos informaron de 0 huecos y 0 descartes a 10, 50 y 100 Hz:
   scrape que espera el panel.
 - [InfluxDB 3](/mikroscope/es/sinks/influxdb/): la URL de escritura, las medidas y lo que rechaza
   InfluxDB 3 Core.
-- [La capa de la API de RouterOS](/mikroscope/es/sinks/api-tier/): lo que el colector sigue
+- [Capa de la API de RouterOS](/mikroscope/es/sinks/api-tier/): lo que el colector sigue
   preguntando al router, y cómo preguntar menos.
-- [Llegar al agente](/mikroscope/es/install/reaching-the-agent/): los transportes directo y por relay
+- [Acceso por red](/mikroscope/es/install/reaching-the-agent/): los transportes directo y por relay
   sobre los que va la extracción.
 
 </SeeAlso>

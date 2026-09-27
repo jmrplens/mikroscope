@@ -1,19 +1,23 @@
 ---
-title: The device-info stream
+title: Device info
 description: What the agent learns about a MikroTik board without the RouterOS API (identity, ceilings, cadences) and how every sink receives it as facts, not samples.
+docType: reference
+head:
+  - tag: title
+    content: The device-info stream | mikroscope
 ---
 
 import CadenceReasons from "../../../components/CadenceReasons.astro";
 import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
 import Src from "../../../components/Src.astro";
+import TestedOn from "../../../components/TestedOn.astro";
 
 At start the agent works out what it can about the board it runs on, with no RouterOS API
 and no credential, and serves it on `/capabilities`. The collector hands that to every
-sink as its own record. This page answers what the record holds, when it is sent, and
-where each sink puts it.
+sink as its own record: what it holds, when it is sent and where each sink puts it.
 
-## What it carries
+## Contents {#what-it-carries}
 
 - **Identity**: the device tree's model string (the board), the kernel, the core count,
   whether the container is privileged and whether it has cgroup2, the enabled sources, the
@@ -26,16 +30,14 @@ where each sink puts it.
   is not the sampler rate.
 
 A ceiling the board does not publish is left out, never filled with a number from
-somewhere else — the 966 656 conntrack ceiling and the 64 MiB container cap are the
-board's own.
+somewhere else: every ceiling in the record is the device's own reading.
 
-### The reasons a cadence gives
+### Cadence reasons {#the-reasons-a-cadence-gives}
 
 <CadenceReasons />
 
-Counters are never floored; only level sources carry a cadence. The floors themselves and
-how they were measured are on [each source at its own
-floor](/mikroscope/limits/source-floors/).
+Counters are never floored; only level sources carry a cadence. The floors themselves are
+on [Source cadences](/mikroscope/limits/source-floors/).
 
 ## When it is sent
 
@@ -48,15 +50,14 @@ tries again at the next health read. Nothing sent is absence, not a board with n
 
 **Why it repeats.** These facts are rows with the collector's timestamp, so a store holds
 them only at the instants they were sent, and a dashboard window that contains no
-emission contains no facts at all. Sent once at start, the four device panels read "No
-data" over every window after it: measured on the reference deployment on 2026-09-17,
-where the last device row was 26 hours old and those panels had been empty for as long.
-Five minutes puts the facts inside any window worth reading them over and costs twelve
-rows an emission — one identity, one per thermal zone, one per core with cpufreq facts,
-one per level source — against the 864 000 sample rows a day that `--rate 10` produces.
+emission contains no facts at all: sent once at start, the four device panels would read
+"No data" over every window after it. Five minutes puts the facts inside any window worth
+reading them over and costs, per emission, one row for the identity, one per thermal zone,
+one per core with cpufreq facts and one per level source, against the 864 000 sample rows
+a day that `--rate 10` produces.
 
 The repeat is marked as one, and the sinks split on it: the stores write it like any
-other row, which is the whole point, and the streams meant for a reader — Loki, stdout,
+other row, so every window holds the facts, and the streams meant for a reader — Loki, stdout,
 a recording — skip it, because a log is for change. So Loki still carries exactly one
 `device` line per set of facts.
 
@@ -66,14 +67,15 @@ are left out of it. A restarted agent whose only change is a ceiling or a cadenc
 `--memory-max`, or a `FLOOR_HZ` with the same source set — keeps its hash, so the change
 is not what triggers the send; it reaches the sinks at the next five-minute repeat, and
 the row that carries it is stamped then rather than when it happened. This is read from
-the code (`capsHash` in <Src path="internal/agent/source.go" />), not observed.
+the code (`capsHash` in <Src path="internal/agent/source.go" />) and not observed
+(<TestedOn of="not-tested">Tested on</TestedOn>).
 
 These are facts, not samples. They have no clock of their own, so the sinks that
 timestamp records stamp them with the collector's clock when they were sent; the file and
 stdout `json` lines carry no timestamp, and Prometheus renders them at scrape. They are
 never mixed into a sample row.
 
-## Where each sink puts it
+## Storage per sink {#where-each-sink-puts-it}
 
 <ScrollTable label="Where the device-info stream lands in each sink">
 
@@ -125,11 +127,9 @@ ladder as a space-joined list of kHz.
 
 </ScrollTable>
 
-On the reference RB5009, read from `related_cpus` and `affected_cpus` inside the container
-on 2026-09-14 (RouterOS 7.24.2), the cpufreq clusters are `{0,1}` and `{2,3}`, so a
-per-core frequency panel is really two series. That is this board's topology and nothing
-else's: the agent reads the clusters per device, and no other board has been measured. The
-conntrack ceiling reaches Prometheus as
+The agent reads each core's cpufreq cluster from its `related_cpus`, per device. On a board
+whose cores change frequency in pairs, for example clusters `{0,1}` and `{2,3}`, a per-core
+frequency panel is really two series. The conntrack ceiling reaches Prometheus as
 `mikroscope_slab_limit_objects` for the `nf_conntrack` cache rather than as a device-info
 family.
 
@@ -137,10 +137,10 @@ family.
 
 ## See also
 
-- [The agent's HTTP endpoints](/mikroscope/reference/http/): `/capabilities`, where this record
+- [HTTP endpoints](/mikroscope/reference/http/): `/capabilities`, where this record
   comes from.
-- [Each source at its own floor](/mikroscope/limits/source-floors/): the cadences and the
-  measurements behind them.
+- [Source cadences](/mikroscope/limits/source-floors/): the cadences and the reasons behind
+  them.
 - [InfluxDB 3](/mikroscope/sinks/influxdb/): the other measurements the device records sit beside.
 
 </SeeAlso>

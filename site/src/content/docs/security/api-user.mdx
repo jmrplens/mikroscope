@@ -1,6 +1,7 @@
 ---
-title: The API user
-description: The dedicated RouterOS user the collector logs in as, the policy it needs for each command, and what that policy lets it read.
+title: API user
+description: Create the dedicated RouterOS user the collector logs in as, with the policy each command needs, and see what that policy lets it read.
+docType: how-to
 head:
   - tag: title
     content: "Least-privilege RouterOS API user for the collector | mikroscope"
@@ -10,13 +11,13 @@ import { Aside } from "@astrojs/starlight/components";
 import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
 import Src from "../../../components/Src.astro";
-import Verified from "../../../components/Verified.astro";
+import TestedOn from "../../../components/TestedOn.astro";
 
 The agent needs no RouterOS account. Three things on your host do: the collector's API tier, the
-relay transport, and the router-log markers. This page answers which of them needs which policy,
-how to create a user that has that and nothing more, and what such a user can still read.
+relay transport, and the router-log markers. Give them one dedicated user with `read` and `api`,
+plus `test` if you use the relay.
 
-## Which commands need it
+## Required policies {#which-commands-need-it}
 
 <ScrollTable label="What logs in to the RouterOS API, what it runs and the policy it needs">
 
@@ -28,8 +29,8 @@ how to create a user that has that and nothing more, and what such a user can st
 
 </ScrollTable>
 
-`/tool fetch` and `/tool profile` both require the `test` policy (verified
-on <Verified of="test-policy" />). mikroscope uses `/tool fetch` for the relay and does not use `/tool profile`.
+`/tool fetch` and `/tool profile` both require the `test` policy (<TestedOn of="test-policy">verified</TestedOn>).
+mikroscope uses `/tool fetch` for the relay and does not use `/tool profile`.
 
 `read,api` is enough for the API tier and for `--log-markers`. `test` is needed only when the relay
 is used — `--transport relay`, or `auto` when the direct transport does not answer — whatever
@@ -41,7 +42,7 @@ its default is 0 even in `full`; `monitor-traffic` runs only when `--interfaces`
 configuration reads behind the interface inventory run whenever the tier is on, once before the
 first kernel pull and again every `--labels-every`; the two stats reads follow `--counters-every`,
 10 s by default. Which calls
-run at which cadence is on [the RouterOS API tier](/mikroscope/sinks/api-tier/).
+run at which cadence is on [RouterOS API tier](/mikroscope/sinks/api-tier/).
 
 Without an address and a user, each command says so differently:
 
@@ -57,32 +58,40 @@ Without an address and a user, each command says so differently:
 That check looks only at `--api` and `--api-user`. An empty `MIKROSCOPE_API_PASSWORD` is not caught
 there; it shows up as a failed login, `api <address>: …`.
 
-## The group and the user
+## Create the user {#the-group-and-the-user}
 
-A group that grants `read`, `api` and `test` and denies by name every other policy
-[RouterOS defines](https://help.mikrotik.com/docs/spaces/ROS/pages/8978504/User), and a user in it restricted to the collector's address:
+1. Create a group that grants `read`, `api` and `test` and denies by name every other policy
+   [RouterOS defines](https://help.mikrotik.com/docs/spaces/ROS/pages/8978504/User):
 
-```text
-/user/group/add name=mikroscope policy=read,api,test,!write,!ftp,!local,!telnet,!ssh,!reboot,!policy,!winbox,!password,!web,!sniff,!sensitive,!romon,!rest-api
-/user/add name=mikroscope group=mikroscope password=<generate> address=<collector host>/32
-```
+   ```text
+   /user/group/add name=mikroscope policy=read,api,test,!write,!ftp,!local,!telnet,!ssh,!reboot,!policy,!winbox,!password,!web,!sniff,!sensitive,!romon,!rest-api
+   ```
 
-Drop `test` from the group if you will never use the relay.
+   Drop `test` from the list if you will never use the relay.
 
-Restrict `address=` to the collector host, and restrict `/ip/service` for `api` to your LAN. Both
-are RouterOS-side limits on where the password is accepted from, and neither depends on mikroscope.
+2. Create the user in that group, restricted to the collector's address:
+
+   ```text
+   /user/add name=mikroscope group=mikroscope password=<generate> address=<collector host>/32
+   ```
+
+3. Restrict `/ip/service` for `api` to your LAN. With `address=` on the user, both are
+   RouterOS-side limits on where the password is accepted from, and neither depends on mikroscope.
+
+4. Pass the address, the user and the password to the CLI, as in
+   [Pass the credentials](#how-the-cli-passes-it).
 
 Make this user for mikroscope rather than reusing one made for another tool. A least-privilege API
 user built for something else typically belongs to a group that denies `test`, so it cannot run the
 relay, and widening that group widens it for the other tool as well.
 
-## What `read` still reads
+## What read can see {#what-read-still-reads}
 
-`read` is not narrow. **Over the binary API, `/container/print` returned every property of every
-container, `cmd` and `envlist` included, to a user with only `read,api`** (the user
-`mikroscope`, <Verified of="read-user-envlist" />; only the property names were printed). Reading the envlist
-entries' values in `/container/envs` was not checked separately; the design assumes this user can,
-and so treats the agent's `TOKEN` entry, when one is set, as readable by it.
+`read` is not narrow. **Over the binary API, `/container/print` returns every property of every
+container, `cmd` and `envlist` included, to a user with only `read,api`** (<TestedOn of="read-user-envlist">verified</TestedOn>).
+Whether it can also read the envlist entries' values in `/container/envs` is <TestedOn of="not-tested">not tested</TestedOn>;
+the design assumes this user can, and so treats the agent's `TOKEN` entry, when one is set, as
+readable by it.
 
 The collector narrows what it asks for where it reads configuration. The three interface-inventory reads
 name their properties — `name`, `default-name`, `type`, `comment` and `actual-mtu`; `list` and
@@ -92,9 +101,9 @@ a `.proplist` as well. The counter reads — `monitor-traffic`, `stats`, `stats-
 conntrack `count-only` do not. None of this limits what the user is allowed to request: it can
 still ask for every container's properties.
 
-## How the CLI passes it
+## Pass the credentials {#how-the-cli-passes-it}
 
-<ScrollTable label="How the CLI passes it">
+<ScrollTable label="Where the CLI reads the API address, user and password">
 
 | Setting  | Flag         | Environment variable      |
 | -------- | ------------ | ------------------------- |
@@ -117,11 +126,11 @@ The repository's <Src path=".env.example" /> gives the address as `192.168.88.1:
 
 ## See also
 
-- [What runs where](/mikroscope/security/): every piece, what it reaches and which credential it
+- [Security model](/mikroscope/security/): every piece, what it reaches and which credential it
   holds.
-- [The RouterOS API tier](/mikroscope/sinks/api-tier/): what the collector reads over this user,
+- [RouterOS API tier](/mikroscope/sinks/api-tier/): what the collector reads over this user,
   and the `off`, `slow` and `full` presets.
-- [Reaching the agent](/mikroscope/install/reaching-the-agent/): the direct and relay transports,
+- [Network access](/mikroscope/install/reaching-the-agent/): the direct and relay transports,
   and when the relay needs `test`.
 
 </SeeAlso>

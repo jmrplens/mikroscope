@@ -1,9 +1,10 @@
 ---
-title: Un puerto perdiendo tramas
+title: Puerto que pierde tramas
 description: "Un puerto MikroTik que cuenta rx-overflow: distinguir carga de microrráfaga con los contadores del puerto, qué no lo arregló y el ritmo del emisor que sí."
 head:
   - tag: title
     content: "rx-overflow en un puerto MikroTik: ¿carga o ráfaga? | mikroscope"
+docType: evidence
 ---
 
 import FaultSignature from "../../../../components/FaultSignature.astro";
@@ -12,16 +13,6 @@ import Measured from "../../../../components/Measured.astro";
 import NotClaimed from "../../../../components/NotClaimed.astro";
 import Provenance from "../../../../components/Provenance.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
-
-**Port errors in the window** está verde en 0 y roja por encima. Esta página es
-qué hacer cuando está roja: cómo llegar de ese único número a qué puerto, qué
-error y —la pregunta que decide el arreglo— si el puerto pierde tramas porque
-está ocupado o porque quien envía lo hace a ráfagas.
-
-La página entera es un fallo real del RB5009 de referencia, encontrado el
-2026-09-19 y arreglado esa misma tarde.
-
-<Provenance of="port-overflow-2026-09-19" />
 
 **En resumen:** un `rx-overflow` en un puerto cuyos intervalos con desborde llevan
 una fracción pequeña de la capacidad del enlace es una ráfaga, no una carga. Aquí
@@ -32,7 +23,15 @@ emisor por debajo de lo que puede vaciar el destino más lento sí,
 de <Measured id="overflow.perHourBefore" /> desbordes por hora a ninguno en los 39
 minutos medidos.
 
-## De la tesela al puerto
+Cuando **Port errors in the window** está en rojo (está verde en 0 y roja por
+encima), las secciones de abajo van de ese único número al puerto, al error y a
+si el puerto pierde tramas porque está ocupado o porque quien envía lo hace a
+ráfagas, que es lo que decide el arreglo. Las lecturas son un fallo real del
+RB5009 de referencia, encontrado el 2026-09-19 y arreglado esa misma tarde.
+
+<Provenance of="port-overflow-2026-09-19" />
+
+## Encontrar el puerto {#de-la-tesela-al-puerto}
 
 La tesela suma todos los errores tipificados del MAC de todos los puertos. A
 propósito no dice cuál: abre **Interface traffic** y lee _Port errors per bin_,
@@ -48,11 +47,10 @@ llegaron bien y se descartaron por no tener dónde ponerlas. No es un fallo de
 cableado. `rx-fcs-error`, `rx-fragment` y los contadores de colisión sí lo son,
 y te mandan a otro sitio completamente: el cable, el dúplex, el puerto.
 
-## ¿Carga, o ráfaga?
+## Carga o ráfaga {#carga-o-ráfaga}
 
-Esta es la pregunta de la que cuelga el arreglo, y los contadores la responden.
-
-Coge el volumen recibido en los intervalos de 10 segundos que desbordaron y
+De esto depende el arreglo, y los contadores lo responden. Coge el volumen
+recibido en los intervalos de 10 segundos que desbordaron y
 compáralo con lo que el enlace podría haber llevado. En el equipo de referencia
 el intervalo mediano con desborde llevó <Measured id="overflow.burstRate" /> en un
 enlace de 2,5 Gbit/s: el <Measured id="overflow.occupancy" /> de su capacidad.
@@ -68,7 +66,7 @@ Si en cambio los intervalos que desbordan son los que rozan la velocidad de
 línea, párate aquí: eso es un problema de capacidad y la respuesta es un enlace
 más rápido o menos tráfico.
 
-## Adónde iban las tramas
+## Camino del tráfico {#adónde-iban-las-tramas}
 
 Una ráfaga desborda en la entrada porque algo aguas abajo no puede con ella.
 Los contadores por puerto lo encuentran por correlación: ordena los deltas del
@@ -76,13 +74,13 @@ desborde contra los deltas de transmisión de cada otro puerto en los mismos
 intervalos.
 
 En el equipo de referencia el más fuerte fue `ether4` con ρ 0,53, un puerto de
-1 Gbit/s, y `sfp-sfpplus1` con ρ 0,42 —que es de 10 Gbit/s pero alimenta a un
+1 Gbit/s, y `sfp-sfpplus1` con ρ 0,42, que es de 10 Gbit/s pero alimenta a un
 switch cuyos puertos no lo son. La parte del tráfico que llega a la CPU
 correlacionó a ρ 0,00, lo que descarta el propio reenvío del router: esas
 tramas nunca llegaron a la CPU.
 
 `ether4` llevaba además 6 644 `tx-queue-drop`. Ese es el mismo suceso contado
-desde el otro extremo —la cola de salida que no drenaba bastante rápido— y
+desde el otro extremo, la cola de salida que no drenaba bastante rápido, y
 encontrar los dos es lo que convierte una correlación en un mecanismo: un
 origen de 2,5 Gbit/s soltando ráfagas a velocidad de línea contra un destino de
 1 Gbit/s.
@@ -92,10 +90,49 @@ En el dashboard es _Egress queue drops — the router's own transmit queue_, en
 minutos seguidos descartando, así que ráfagas como estas se ven en el panel y, a
 propósito, no te avisan.
 
-## Lo que no funcionó
+## Quince horas de contadores
 
-En el equipo de referencia se probaron dos cosas antes de la que funcionó, y
-merece la pena conocerlas porque las dos parecen correctas.
+El 2026-09-15, cuatro días antes del arreglo, los contadores de la capa de la API
+en el mismo puerto dijeron qué clase de suceso es el desborde. Los contadores de
+puerto son el único sitio donde aparecen estos desbordamientos. Medido entre las
+07:13 y las 22:20 UTC, sobre 4 471 lecturas consecutivas de los contadores cada
+10 s en `ether1` (2,5 Gbps hacia un NAS, MTU 9000):
+
+- 126 443 sucesos `rx-overflow` en total, presentes en el 40 % de los
+  intervalos; por intervalo la mediana es 29, el p99 unos 1 036 y el mayor
+  3 747. En toda la tirada eso es el 0,53 % de los paquetes que envió el NAS.
+- Correlación de rangos sobre los deltas de 10 s: 0,85 con la parte de lo que
+  recibe el NAS que el switch reenvió en hardware (`rx-bytes` menos
+  `driver-rx-byte`), 0,00 con la parte que mandó a la CPU (`driver-rx-byte`).
+- Hacia dónde iba: `ether8` (NGINX, 1 Gbps) se lleva casi todo el volumen y
+  `ether4` (Mastodon, 1 Gbps) es el destino más frecuente; la jaula SFP+,
+  `ether2`, `ether3` y el camino de la CPU no muestran nada.
+- Las tramas eran grandes: el intervalo de tamaño de trama de 1024 en adelante en
+  `ether1` tiene una mediana de 9 331 por intervalo con desbordamiento frente a
+  1 336 por intervalo sin él.
+- La carga no era alta: la mediana de lo que recibe el NAS en un intervalo con
+  desbordamiento son unos 9 Mbit/s de media en 10 s. Ráfagas, no carga
+  sostenida.
+- Nada del lado de la CPU: softnet descartó 0, `time_squeeze` correlaciona 0,04 y
+  las interrupciones de `switch0` 0,05 con los desbordamientos, con los datos a
+  10 Hz del agente agrupados en intervalos de 10 s. Ninguna trama de pausa en
+  `ether1` en ningún sentido.
+
+Leído en conjunto, encaja con ráfagas a la velocidad de línea de 2,5 Gbps
+conmutadas dentro del chip hacia puertos de 1 Gbps sin control de flujo en juego.
+Sin verificar: la semántica exacta de los contadores del chip de conmutación y la
+cuenta de retransmisiones del propio NAS; los contadores son del puerto, no de la
+conversación.
+
+La capa del kernel no puede ver nada de esto por construcción. Una trama que el
+chip de conmutación reenvía en hardware nunca llega a la CPU, así que ningún
+fichero de `/proc` del router tiene un número para ella; hacen falta los
+contadores por puerto, y solo la API los tiene.
+
+## Arreglos fallidos {#lo-que-no-funcionó}
+
+En el equipo de referencia se probaron primero dos arreglos que parecen
+correctos, y ninguno funcionó.
 
 **Una MTU más pequeña.** Bajar el origen y el puerto de 9000 a 1500 recortó las
 peores ráfagas un 91 % y los datos perdidos por trama descartada por seis, y
@@ -109,12 +146,12 @@ ambos todavía a **0**. Mira esos dos contadores antes de creer que el pause te
 está ayudando. El chip descarta la trama en vez de pedirle al origen que
 espere.
 
-## Lo que sí funcionó
+## Arreglo {#lo-que-sí-funcionó}
 
-Espaciar al origen. No un AQM —la cola del origen está vacía al 0,36 % de
+Espacia al origen con un shaper cuya tasa esté **por debajo de lo que drena el
+destino más lento**. No un AQM: la cola del origen está vacía al 0,36 % de
 ocupación, así que un AQM no tiene nada que gestionar y le pasa la ráfaga
-intacta a la NIC— sino un shaper con una tasa **por debajo de lo que drena el
-destino más lento**:
+intacta a la NIC. En el origen:
 
 ```sh
 tc qdisc replace dev <iface> root cake bandwidth 900Mbit
@@ -140,7 +177,7 @@ dicen nada, ni a favor ni en contra, de si aguanta.
 
 <Figure name="port-overflow-2026-09-19" />
 
-## La firma
+## Firma {#la-firma}
 
 <FaultSignature origin="real" date="2026-09-19">
 
@@ -168,8 +205,8 @@ dicen nada, ni a favor ni en contra, de si aguanta.
 ## Véase también
 
 - [Interface traffic](/mikroscope/es/dashboards/#tráfico-por-interfaz): los paneles que lee esta página.
-- [La capa de la API](/mikroscope/es/sinks/api-tier/): de dónde salen los contadores por puerto, y
-  por qué el agente no los ve.
+- [Capa de la API de RouterOS](/mikroscope/es/sinks/api-tier/): de dónde salen los contadores por
+  puerto, y por qué el agente no los ve.
 - [Reglas de alerta](/mikroscope/es/dashboards/alerts/): la regla que salta con esto, y lo que no
   puede distinguir.
 

@@ -1,20 +1,24 @@
 ---
-title: Lo que deriva el colector
+title: Valores derivados
 description: "Qué calcula el colector junto a las muestras: presión de memoria, coste PMU por paquete, paquetes por interrupción, la marca de ráfaga y cuándo se omite."
+docType: reference
+head:
+  - tag: title
+    content: Lo que deriva el colector | mikroscope
 ---
 
 import Measured from "../../../../components/Measured.astro";
-import NotClaimed from "../../../../components/NotClaimed.astro";
 import ScrollTable from "../../../../components/ScrollTable.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
 import Src from "../../../../components/Src.astro";
+import TestedOn from "../../../../components/TestedOn.astro";
 
-El colector tiene una etapa de derivación. Esta página responde a qué calcula, a partir
-de qué entradas, cuándo un valor se omite en vez de escribirse y dónde lo pone cada
-destino. Los eventos discretos que provoca la misma etapa están en
-[detecciones](/mikroscope/es/sinks/detections/).
+La etapa de derivación del colector calcula valores junto a las muestras en bruto. De cada
+uno: sus entradas, cuándo se omite en vez de escribirse y dónde lo pone cada destino. Los
+eventos discretos que provoca la misma etapa están en [Reglas de
+detección](/mikroscope/es/sinks/detections/).
 
-## Por qué el colector, y no el agente ni el panel
+## Dónde se derivan los valores {#por-qué-el-colector-y-no-el-agente-ni-el-panel}
 
 La etapa de derivación existe para las derivaciones que necesitan estado entre muestras,
 que unen la capa del kernel con la capa de la API, o que deben calcularse una sola vez para
@@ -30,7 +34,7 @@ La rigen dos reglas:
 - **Una detección es un evento discreto** en la línea temporal, un «mira aquí» — nunca una
   serie continua y nunca un veredicto.
 
-## Junto a cada muestra del kernel
+## Por muestra del kernel {#junto-a-cada-muestra-del-kernel}
 
 ### `mem_pressure`
 
@@ -51,14 +55,15 @@ deltas de `/proc/vmstat` de la muestra:
 
 </ScrollTable>
 
-### Las razones por paquete de la PMU
+### Cocientes de PMU por paquete {#las-razones-por-paquete-de-la-pmu}
 
 `cycles_per_packet`, `instructions_per_packet` y `cache_misses_per_packet`: cuentas de PMU
 sumadas sobre los núcleos, divididas entre los paquetes que softnet procesó
 en la muestra, sumados sobre los núcleos: el coste de reenvío del router en la única unidad
 que permite comparar dos configuraciones. Un cambio de reglas que reduce a la mitad los
 ciclos por paquete es una mejora real; uno que reduce a la mitad el tiempo ocupado mientras
-el tráfico también se reducía a la mitad no lo es.
+el tráfico también se reducía a la mitad no lo es. Todavía no consta ninguna comparación así
+entre dos configuraciones (<TestedOn of="not-tested">no probado</TestedOn>).
 
 Ausentes sin PMU, en una muestra sin paquetes, y en una muestra con un reinicio de contador
 (`suspect`), donde un delta es una cota inferior y no una medida.
@@ -86,10 +91,13 @@ Las referencias móviles abarcan diez segundos de reloj de pared a cualquier cad
 muestras a 10 Hz, 500 a 50 Hz, 1 000 a 100 Hz, acotadas entre 10 y 2 000 muestras. No se
 marca ninguna muestra hasta que su CPU tiene al menos diez muestras de historia.
 
-Por qué un percentil y no «cualquier squeeze», medido en el RB5009 de referencia sobre
-3 738 704 muestras por CPU en 24 h: alrededor del <Measured id="squeeze.backgroundOne" /> de las muestras llevan un squeeze de fondo
-y el <Measured id="squeeze.backgroundTwo" /> llevan exactamente dos. «Cualquier squeeze» marcaría la normalidad del equipo varias
-veces por minuto.
+Por qué un percentil y no «cualquier squeeze»: los squeezes pueden ser el fondo de un
+router. En el router medido, alrededor del <Measured id="squeeze.backgroundOne" /> de las muestras por CPU
+llevan un squeeze y el <Measured id="squeeze.backgroundTwo" /> exactamente dos, así que «cualquier
+squeeze» marcaría la normalidad del equipo varias veces por minuto. La referencia es la del
+propio equipo: en otra placa o con otra mezcla de tráfico su percentil será el de ese
+equipo, y no se ha medido si diez segundos son el intervalo adecuado allí
+(<TestedOn of="not-tested">Probado en</TestedOn>).
 
 Tres muestras marcadas en una CPU en 60 s es lo que provoca la
 [detección](/mikroscope/es/sinks/detections/#microburst) `microburst`; una muestra marcada
@@ -101,7 +109,7 @@ Verdadero cuando el agente informó de un reinicio de contador en la muestra: un
 que retrocedió sin un desbordamiento de 32 bits. La fila en bruto se conserva; los valores
 por paquete de arriba — los tres cocientes de la PMU y `packets_per_irq` — se omiten.
 
-## Junto a cada lectura de contadores
+## Por lectura de contadores {#junto-a-cada-lectura-de-contadores}
 
 En cada ronda de la API que trajo los contadores por puerto, el colector calcula, sobre los
 deltas desde la lectura anterior, la proporción del fast path del tráfico que cada interfaz
@@ -120,7 +128,7 @@ contador presente en las dos lecturas:
 </ScrollTable>
 
 `fp_tx_share` es el mismo cociente en el otro sentido — Δ`fp-tx-byte` entre
-Δ`driver-tx-byte`, Δ`tx-byte` o Δ`tx-bytes` — y en el equipo de referencia se omite, más abajo.
+Δ`driver-tx-byte`, Δ`tx-byte` o Δ`tx-bytes` — y se omite mientras `fp-tx-byte` no haya contado nunca, más abajo.
 Cada proporción está limitada a 1, con los cuatro deltas de bytes escritos en la misma fila;
 ahí `rx_bytes` y `tx_bytes` son los denominadores de la proporción, no los totales del cable.
 
@@ -130,19 +138,19 @@ un puerto que se queda la CPU — `driver-rx-byte` frente a `rx-byte` — es otr
 responde a partir de los contadores en bruto el panel apilado "Where a port's receive bytes
 went"; la etapa de derivación no la calcula.
 
-Medido en el RB5009 de referencia (RouterOS 7.24.2, 2026-09-16) sobre los contadores
-acumulados desde el arranque: todos los puertos del switch dan alrededor del 100 %, porque
-allí `fp-rx-byte` es igual a `driver-rx-byte` con unos pocos kB de diferencia — cada byte que
-un puerto entrega a la CPU se cuenta en el driver, capaz de fast path, así que la línea de un
-puerto dice poco. Las interfaces software son las líneas sobre las que la proporción informa:
-`bridge` pasó por el fast path 211,9 GB de 663,0 GB (32 %), `PPPoE_DIGI` el 99,97 %.
+Un puerto del switch cuyo `fp-rx-byte` es igual a su `driver-rx-byte` da alrededor del
+100 %: cada byte que el puerto entrega a la CPU se cuenta en el driver, capaz de fast path,
+así que la línea del puerto dice poco. La proporción informa sobre las interfaces software,
+como un bridge o un cliente PPPoE (<TestedOn of="counters-2026-09-16">medido</TestedOn>).
 
-**La proporción de tx se omite mientras `fp-tx-byte` no haya contado nunca.** En ese router
-`fp-tx-byte` está a 0 en todas las interfaces tras cientos de GB transmitidos, lo que se lee
-como un contador que RouterOS no mantiene aquí y no como un fast path que no reenvió nada; una
-proporción calculada a partir de él sería un 0 % fabricado. Mientras el `fp-tx-byte` acumulado
-de una interfaz sea 0, el colector no escribe `fp_tx_share` para ella, y sus `tx_bytes` y
-`fp_tx_bytes` son 0.
+**La proporción de tx se omite mientras `fp-tx-byte` no haya contado nunca.** Un router
+puede dejar `fp-tx-byte` a 0 en todas las interfaces tras cientos de GB transmitidos: eso se
+lee como un contador que RouterOS no mantiene allí y no como un fast path que no reenvió
+nada, y una proporción calculada a partir de él sería un 0 % fabricado. Mientras el
+`fp-tx-byte` acumulado de una interfaz sea 0, el colector no escribe `fp_tx_share` para ella,
+y sus `tx_bytes` y `fp_tx_bytes` son 0. Todavía no se ha producido ninguna proporción de tx a
+partir de contadores en vivo, y no está establecido por qué RouterOS deja ese contador a 0
+(<TestedOn of="not-tested">no probado</TestedOn>).
 
 También falta una proporción para un sentido que no movió bytes, cuyo contador retrocedió, o
 cuyo contador del fast path el puerto no informa, y la fila entera falta cuando no se pudo
@@ -152,17 +160,19 @@ siembra y no escribe nada.
 Un delta que no se pudo calcular — su contador ausente, que retrocedió, u omitido junto con la
 proporción de tx — se escribe como 0 junto a la proporción ausente: las filas de InfluxDB y SQL
 y el objeto `fastpath` de Elasticsearch llevan `rx_bytes`, `fp_rx_bytes`, `tx_bytes` y
-`fp_tx_bytes` siempre. Leído en el código (<Src path="internal/derive/derive.go" />), no observado. En ese
-caso, lee la proporción, no el delta.
+`fp_tx_bytes` siempre. Esto está leído en el código
+(<Src path="internal/derive/derive.go" />) y no observado
+(<TestedOn of="not-tested">Probado en</TestedOn>). En ese caso, lee la proporción,
+no el delta.
 
-La proporción es por lectura, y en una interfaz que mueve pocos paquetes oscila: el repaso del
-panel del 2026-09-15 la vio ir de 0 a 100 % entre lecturas en interfaces así, por lo que el
+La proporción es por lectura, y en una interfaz que mueve pocos paquetes oscila entre 0 y
+100 % de una lectura a otra, por lo que el
 panel "Fast-path share of the traffic each interface hands the CPU" la pondera por bytes en
 cada intervalo — los bytes por fast path del intervalo entre los bytes del intervalo — en vez
 de dibujar el valor de cada lectura. La forma de Prometheus de ese panel es el gauge por
 lectura del colector y conserva ese ruido.
 
-## Dónde lo pone cada destino
+## Almacenamiento por destino {#dónde-lo-pone-cada-destino}
 
 <ScrollTable label="Dónde caen los valores derivados en cada destino">
 
@@ -192,27 +202,17 @@ y `mikroscope.derived.packets_per_irq`. Graphite escribe `derived.mem_pressure`,
 `burst` ni `suspect`. En los tres, un cociente que no se pudo calcular se omite en vez de
 escribirse como 0.
 
-<NotClaimed>
-	No consta ninguna comparación del coste de PMU por paquete entre dos configuraciones del router en
-	el equipo de referencia, y esa comparación es el uso para el que existe. La referencia de ráfagas
-	está ajustada contra un RB5009 en un solo día; en otra placa o con otra mezcla de tráfico su
-	percentil será el de ese equipo, y no se ha medido si diez segundos son el intervalo adecuado
-	allí. Ninguna interfaz de ese router cuenta `fp-tx-byte`, así que nunca se ha producido una
-	proporción de tx a partir de contadores en vivo, y no está establecido por qué RouterOS deja ese
-	contador a 0 allí.
-</NotClaimed>
-
 <SeeAlso>
 
 ## Véase también
 
-- [Detecciones](/mikroscope/es/sinks/detections/): las once reglas que ejecuta la misma etapa, y lo
+- [Reglas de detección](/mikroscope/es/sinks/detections/): las once reglas que ejecuta la misma etapa, y lo
   que no puede afirmar cada una.
-- [La capa de la API de RouterOS](/mikroscope/es/sinks/api-tier/): los contadores de puerto a partir
+- [Capa de la API de RouterOS](/mikroscope/es/sinks/api-tier/): los contadores de puerto a partir
   de los que se calcula la proporción del fast path.
-- [El suelo de resolución es del kernel](/mikroscope/es/limits/): por qué la PMU es la resolución por
+- [Límites de resolución](/mikroscope/es/limits/): por qué la PMU es la resolución por
   debajo del jiffie.
-- [Una inundación de paquetes](/mikroscope/es/playbooks/packet-flood/): descartes y squeezes de
+- [Inundación de paquetes](/mikroscope/es/playbooks/packet-flood/): descartes y squeezes de
   softnet en un router real.
 
 </SeeAlso>

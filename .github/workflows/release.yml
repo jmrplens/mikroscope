@@ -101,29 +101,6 @@ jobs:
     permissions:
       contents: read
 
-  # Beside the other two, for the same reason. The deploy verbs of the CLI
-  # being released, against MikroTik's CHR x86_64 in QEMU under KVM (lab.yml,
-  # test/lab): install by both image routes, upgrade and uninstall on a real
-  # RouterOS. The pull scenarios pull the release before this one, because
-  # this tag's agent image is pushed only after the gates (lab.yml says how
-  # it picks it). arm64 is not a gate, as the maintainer decided on
-  # 2026-09-26: it runs under emulation, adds about half an hour [estimate],
-  # and depends on MikroTik's download server and on Docker Hub being up. It
-  # runs weekly.
-  lab:
-    name: Lab gate
-    needs: [preflight]
-    uses: ./.github/workflows/lab.yml
-    with:
-      arch: x86_64
-    # By name, never `secrets: inherit`: the Docker Hub account and token
-    # the lab router pulls with (lab.yml says why).
-    secrets:
-      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
-    permissions:
-      contents: read
-
   # The gates sit in front of this job because it is the first one that
   # publishes anything, and what it publishes cannot be taken back once
   # somebody has pulled it.
@@ -131,7 +108,7 @@ jobs:
     name: GoReleaser
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    needs: [preflight, e2e, race, lab]
+    needs: [preflight, e2e, race]
     env:
       # Lifted out of `secrets` so a step can ask whether it is set: a fork
       # releasing from its own tag has no Docker Hub credentials and pushes to

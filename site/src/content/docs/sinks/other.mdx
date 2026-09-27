@@ -1,21 +1,20 @@
 ---
-title: The file and the other sinks
-description: "The JSONL file, stdout, SQL, PostgreSQL, Loki, OTLP, Graphite, Elasticsearch and Telegraf: what each sink carries, how it delivers, what it cannot promise."
+title: Other sinks
+description: "The JSONL file, stdout, SQL, PostgreSQL, Loki, OTLP, Graphite, Elasticsearch and Telegraf: what each sink carries, how it delivers and what its protocol cannot hold."
+docType: how-to
 ---
 
 import { Aside } from "@astrojs/starlight/components";
 import Measured from "../../../components/Measured.astro";
-import NotClaimed from "../../../components/NotClaimed.astro";
 import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
+import TestedOn from "../../../components/TestedOn.astro";
 
 Besides [Prometheus](/mikroscope/sinks/prometheus/) and [InfluxDB
-3](/mikroscope/sinks/influxdb/), `forward` writes to nine more destinations. This page
-answers, for each one, which parts of the timeline it receives, how it is delivered,
-and what the destination's protocol means it cannot tell you. The queue, backoff and
-counters they share are on [the collector](/mikroscope/sinks/).
+3](/mikroscope/sinks/influxdb/), `forward` writes to nine more destinations. The queue,
+backoff and counters they share are on [Run the collector](/mikroscope/sinks/).
 
-## What each sink receives
+## Sink coverage {#what-each-sink-receives}
 
 <ScrollTable label="What each of the nine sinks receives">
 
@@ -33,10 +32,10 @@ counters they share are on [the collector](/mikroscope/sinks/).
 
 </ScrollTable>
 
-Kernel-log records exist only when the container runs with `privileged=yes`; see [what
-privileged buys](/mikroscope/limits/privileged/).
+Kernel-log records exist only when the container runs with `privileged=yes`; see
+[Privileged mode](/mikroscope/limits/privileged/).
 
-## The file
+## File {#the-file}
 
 ```sh
 mikroscope forward --file timeline.jsonl
@@ -70,8 +69,8 @@ blocks with nothing to bound it — so this sink is queued: one batch per second
 batch written in a single call of whole lines so a reader never sees a partial record,
 64 KiB × `--queue-seconds` of budget, oldest dropped first. A batch that a stalled
 reader lets grow past the whole budget is closed early. That budget was sized for a
-line-protocol sample of about 1.2 KiB; it has **not** been measured for `json`, whose
-lines carry sources line protocol leaves out and are larger.
+line-protocol sample of about 1.2 KiB. For `json`, whose lines carry sources line
+protocol leaves out and are larger, it is <TestedOn of="not-tested">not measured</TestedOn>.
 
 - A broken pipe does not reach the counters: Go leaves `SIGPIPE` on standard output
   uncaught, so the process exits.
@@ -80,7 +79,7 @@ lines carry sources line protocol leaves out and are larger.
 - `forward` prints its exit summary on standard output as well, so a pipe into
   `telegraf` ends every run with lines the consumer cannot parse.
 
-## SQL for PostgreSQL and TimescaleDB
+## SQL script (`--sql`) {#sql-for-postgresql-and-timescaledb}
 
 ```sh
 mikroscope forward --sql out.sql --for 10m && psql -f out.sql
@@ -106,14 +105,14 @@ Every `INSERT` ends in `ON CONFLICT DO NOTHING`, so applying the same file twice
 no-op rather than a duplicate-key abort. A row is one immutable instant of a counter
 delta, never a running total a later file revises.
 
-### `--postgres`: the same statements, down a connection
+### PostgreSQL (`--postgres`) {#--postgres-the-same-statements-down-a-connection}
 
 ```sh
 mikroscope forward --postgres 'postgres://user@host/mikroscope?sslmode=require'
 ```
 
-Since 1.1.0 the collector can write to a PostgreSQL that is **running**, instead of to a
-file somebody replays later. `--sql` and `--postgres` are the same sink twice: the
+`--postgres` writes to a PostgreSQL that is **running**, instead of to a file somebody
+replays later. `--sql` and `--postgres` are the same sink twice: the
 connecting one sends the statements the file one produces, from one renderer. Not two
 that agree today — the dashboards this project generates for the postgres store have to
 be true of a deployment that used either, and a second renderer would pass a row count
@@ -159,11 +158,9 @@ does. `MIKROSCOPE_POSTGRES_DSN` sets the default.
   `MIKROSCOPE_POSTGRES_DSN` in an environment file, rather than in the flag.
 </Aside>
 
-**Verified against a real server**: the docker end-to-end suite runs the sweep with both
-sinks at once, the script into one database and the connection into another, then asks
-PostgreSQL whether the two hold the same thing. On 2026-09-20 that was **34 tables
-matching byte for byte** — every column of every row, hashed per row and summed — plus
-identical `information_schema.columns` for the whole schema.
+The docker end-to-end suite runs both sinks at once, the script into one database and
+the connection into another, and checks that the two hold the same rows
+(<TestedOn of="test-suites">Test suites</TestedOn>).
 
 <ScrollTable label="Tables the SQL sink declares">
 
@@ -231,35 +228,36 @@ carrying its own MAC as source, the layer-2 loop signature) or `other`. Both are
 a record that names no port.
 
 A source the deployment cannot read emits no row. A value that was not measured is
-NULL, never 0: RouterOS 7.24.2 returns no interface error keys at all, and a 0 there
-would claim a measurement that was never made. Text is coerced where PostgreSQL would
+NULL, never 0: a router can return no interface error keys at all
+(<TestedOn of="monitor-traffic-keys">verified</TestedOn>), and a 0 there would claim a measurement
+that was never made. Text is coerced where PostgreSQL would
 refuse it — a NUL byte is dropped, invalid UTF-8 becomes U+FFFD — and a NaN or infinite
 float becomes NULL. `TIMESTAMPTZ` resolves to 1 µs, so two samples closer than that
 would collide on the primary key; at 10 Hz they are 100 ms apart.
 
 Compared with InfluxDB the SQL sink is short of exactly one thing: the kernel-log
-**count** table. That was a long list until 1.0.3 and 1.0.5 closed it — CPU frequency,
-the PMU, softirq, `/proc/vmstat` levels and counters, per-CPU interrupts,
-`mikroscope_sample` and the full-width `mikroscope_mem` all have tables now. It carries
-two InfluxDB does not: the kernel-log **text** in `mikroscope_event`, and the API tier's
-errors.
+**count** table. It carries two InfluxDB does not: the kernel-log **text** in
+`mikroscope_event`, and the API tier's errors.
 
 <Aside type="caution" title="A pipe into psql can block the collector">
 	The SQL sink is synchronous, with no queue. With `--sql -` feeding `psql`, a `psql` that falls
 	behind — each `INSERT` is its own transaction and commit — fills the pipe, and the next write
-	blocks the collector's pull loop instead of dropping. Not measured. Write a file and apply it
-	afterwards, or wrap the file in `BEGIN`/`COMMIT` by hand.
+	blocks the collector's pull loop instead of dropping
+	(<TestedOn of="not-tested">not measured</TestedOn>). Write a file and apply it afterwards, or
+	wrap the file in `BEGIN`/`COMMIT` by hand.
 </Aside>
 
-Size, from the sink's own test fixture on 2026-09-12 — two cores, one softnet queue, one
-interrupt, no privileged sources — not from the device: a kernel event renders to 1 375 B
-of SQL and an API event to 1 138 B, so 10 Hz plus the 1 Hz API tier is about 14 KiB/s of
-file after a 5.6 KiB header. The same two events in line protocol are 716 B and 608 B,
-about 1.9× smaller, though part of that is content the SQL rows carry and line protocol
-did not. With the privileged sources present the kernel event grows to 2 749 B. That header
-is the fixture's: the header for all forty-three tables the sink declares, rendered by the
-sink's own `header()` on 2026-09-19, is 10 482 B, about 10.2 KiB — 13 966 B with the
-TimescaleDB hypertable statements.
+Sizes from the sink's test fixture — two cores, one softnet queue, one interrupt, no
+privileged sources — not from a router:
+
+- A kernel event renders to 1 375 B of SQL and an API event to 1 138 B, so 10 Hz plus
+  the 1 Hz API tier is about 14 KiB/s of file after the fixture's 5.6 KiB header.
+- The same two events in line protocol are 716 B and 608 B, about 1.9× smaller, though
+  part of that is content the SQL rows carry and line protocol did not.
+- With the privileged sources present the kernel event grows to 2 749 B.
+- The header for all forty-three tables the sink declares, rendered by the sink's own
+  `header()`, is 10 482 B, about 10.2 KiB — 13 966 B with the TimescaleDB hypertable
+  statements.
 
 ## Loki
 
@@ -310,16 +308,15 @@ extracts on demand:
 
 Each record is stamped with its tick's wall clock, never with its own since-boot stamp,
 which would date it 1970 plus uptime and be refused by Loki. Records of one tick are
-1 ns apart, counting up, because a Loki stream is ordered by timestamp alone and on the
-reference device a "blocking state" then "learning state" pair arrives inside one
-100 ms tick at the same level: their order is the signal. The offset is at most 63 ns,
+1 ns apart, counting up, because a Loki stream is ordered by timestamp alone and a
+"blocking state" then "learning state" pair can arrive inside one 100 ms tick at the
+same level: their order is the signal. The offset is at most 63 ns,
 bounded by the agent's cap of 64 records per tick.
 
-One push per second, 64 KiB × `--queue-seconds` of budget. On the RB5009 (RouterOS
-7.24.2, kernel 5.6.3, 2026-09-12) the kernel log ran at <Measured id="loop.eventsBefore" /> while the
-layer-2 reflection was live and <Measured id="loop.eventsAfter" /> after it was fixed, and a rendered line
-measures about 150 B with its JSON envelope, so one second of budget holds hours of
-that traffic. Not measured during a kernel-log storm.
+One push per second, 64 KiB × `--queue-seconds` of budget. A rendered line is about
+150 B with its JSON envelope, so at the <Measured id="loop.eventsBefore" /> of kernel-log
+records a live layer-2 loop produced, one second of budget holds hours of that traffic.
+Delivery during a kernel-log storm is <TestedOn of="not-tested">not measured</TestedOn>.
 
 ## OTLP
 
@@ -332,9 +329,9 @@ request per second. A bearer token comes from `MIKROSCOPE_OTLP_TOKEN`. JSON rath
 protobuf is a dependency decision: protobuf would add a code generator and a runtime.
 The [OTLP specification](https://opentelemetry.io/docs/specs/otlp/) says a server SHOULD
 accept JSON-encoded payloads on the same port as binary protobuf — a recommendation, not a
-requirement, so a receiver that takes protobuf only is within the letter of it. The one
-real receiver this sink has been run against, the OpenTelemetry Collector in the docker
-end-to-end suite, takes JSON. The resource
+requirement, so a receiver that takes protobuf only is within the letter of it. The
+OpenTelemetry Collector takes JSON (<TestedOn of="test-suites">tested</TestedOn>). The
+resource
 carries `host.name` (the host tag) and `service.name=mikroscope`; the scope carries the
 collector's version.
 
@@ -397,12 +394,12 @@ client. The rejection is deterministic (a Prometheus OTLP
 receiver refusing a point older than its window is the common case), so the same batch
 would be rejected identically.
 
-Size, from a two-core test fixture on 2026-09-12 and not from the device: one kernel
-sample renders to 8 132 B of OTLP JSON against 716 B of line protocol, about 11×, the
-price of repeating attribute keys and quoting every 64-bit integer. One second of 10 Hz
-samples plus one API sample is 68 868 B, so the 64 KiB-per-second budget holds about one
-second of backlog per second and the default 60 s about 57 batches. The four-core RB5009,
-with its real interrupt top-K, renders larger; not measured.
+Sizes from a two-core test fixture, not from a router: one kernel sample renders to
+8 132 B of OTLP JSON against 716 B of line protocol, about 11×, the price of repeating
+attribute keys and quoting every 64-bit integer. One second of 10 Hz samples plus one API
+sample is 68 868 B, so the 64 KiB-per-second budget holds about one second of backlog per
+second and the default 60 s about 57 batches. A board with more cores and a real
+interrupt top-K renders larger (<TestedOn of="not-tested">not measured</TestedOn>).
 
 ## Graphite
 
@@ -441,8 +438,7 @@ value becomes `none`, so a path's depth never changes.
 
 </ScrollTable>
 
-What the protocol cannot promise, stated because each one changes what a Graphite panel
-means:
+What the protocol cannot promise, and what each limit changes on a Graphite panel:
 
 - **Whole-second timestamps.** Whisper's finest retention is one second, so at 10 Hz
   nine of every ten samples land on a slot that already holds a value and carbon keeps
@@ -462,10 +458,9 @@ means:
   and the swap counters are omitted, and kernel-log records are dropped because Graphite
   stores numbers only. Board, kernel and governor strings have no Graphite form.
 
-The byte budget is 256 KiB per queued second, four times the others: a four-core
-RB5009-shaped tick with every source present renders to 6 411 B in 131 lines in the
-sink's test fixture (development host, 2026-09-12, not the device), so 10 Hz is about
-63 KiB/s. Not measured above 10 Hz.
+The byte budget is 256 KiB per queued second, four times the others: a four-core tick
+with every source present renders to 6 411 B in 131 lines in the sink's test fixture,
+not on a router, so 10 Hz is about 63 KiB/s. Above 10 Hz it is <TestedOn of="not-tested">not measured</TestedOn>.
 
 ## Elasticsearch and OpenSearch
 
@@ -517,10 +512,9 @@ reason once a minute — separately from delivery failures, because a mapping co
 an unreachable cluster call for different actions. Batches close once a second or at
 1 MiB, whichever comes first.
 
-Size, from the sink's two-core fixture on 2026-09-12 and not from the device: 1 077 B of
-NDJSON for a kernel sample with no optional source, 1 952 B across two documents with the
-optional sources and one kernel-log record. A four-core sample from the RB5009 has not
-been rendered in this format.
+Sizes from the sink's two-core fixture, not from a router: 1 077 B of NDJSON for a kernel
+sample with no optional source, 1 952 B across two documents with the optional sources
+and one kernel-log record. A four-core sample is <TestedOn of="not-tested">not rendered</TestedOn> in this format.
 
 ## Telegraf
 
@@ -551,34 +545,23 @@ The endpoint's scheme picks the transport:
   matters.
 
 The budget is the InfluxDB sink's 64 KiB per queued second: at about 1.2 KiB per 10 Hz
-sample (RB5009, 2026-09-12), about 5 minutes of backlog at the default 60 s. The shared
-encoder writes the `/system/health` readings in Go map order, so records within a batch
-are not ordered stably — 12 renders of an 8-name map gave 7 orders (2026-09-12). Every
-record carries its own timestamp, so nothing is lost or mis-timed.
+sample (<TestedOn of="line-protocol-2026-09-12">measured</TestedOn>), about 5 minutes of backlog at the
+default 60 s. The shared encoder writes the `/system/health` readings in Go map order, so
+records within a batch are not ordered stably — 12 renders of an 8-name map gave 7
+orders. Every record carries its own timestamp, so nothing is lost or mis-timed.
 
 Every sink on this page is tested against a local receiver that asserts the bytes its
-protocol accepts (development host, amd64, since 2026-09-12). Since 2026-09-17 the docker
-end-to-end suite also runs the collector, against a canned agent and with the API tier off,
-into the real stores and reads the data back through each store's own API: Loki 3, the
-OpenTelemetry Collector, graphite-statsd, Elasticsearch 9, Telegraf 1.39 over HTTP and
-PostgreSQL 18, through both `--sql` and `--postgres`, with the file sink as the oracle the
-others are compared against.
-
-<NotClaimed>
-	Apart from the file sink, which was one of the three sinks in the 2026-09-15 rate runs, none of
-	these sinks was part of the measured rate runs, and none has been fed from the RB5009 into a
-	running Loki, OTLP receiver, carbon, Elasticsearch, OpenSearch, Telegraf, PostgreSQL or
-	TimescaleDB in a recorded run. OpenSearch, TimescaleDB's hypertables and standard output have
-	never been run against a real store: they are covered by the byte-contract tests only.
-</NotClaimed>
+protocol accepts. <TestedOn of="test-suites">Test suites</TestedOn> lists the real stores
+each sink also runs against, and <TestedOn of="not-tested">Not tested</TestedOn> what has
+not been run against a store or fed from a router.
 
 <SeeAlso>
 
 ## See also
 
-- [The collector](/mikroscope/sinks/): the queue, backoff and counters these sinks share.
+- [Run the collector](/mikroscope/sinks/): the queue, backoff and counters these sinks share.
 - [InfluxDB 3](/mikroscope/sinks/influxdb/): the measurements `--stdout lp` and `--telegraf` carry.
-- [Detections](/mikroscope/sinks/detections/): what the detection lines, rows and documents say.
+- [Detection rules](/mikroscope/sinks/detections/): what the detection lines, rows and documents say.
 - [Environment variables](/mikroscope/reference/environment/): every `MIKROSCOPE_*` a sink reads.
 
 </SeeAlso>

@@ -1,0 +1,234 @@
+{
+  "login": {
+    "file": "login.webp",
+    "menu": "WebFig login",
+    "alt": {
+      "en": "The WebFig login page: Login admin, the Password field empty, and the Login button.",
+      "es": "La página de acceso de WebFig: Login admin, el campo Password vacío y el botón Login."
+    }
+  },
+  "manifest-new": {
+    "file": "manifest-new.webp",
+    "menu": "Files › New › Text File",
+    "alt": {
+      "en": "Files › New File: Name mikroscope/mikroscope.manifest.txt, and in Contents the manifest, from mikroscope-manifest=1 to dir=mikroscope/mikroscope.",
+      "es": "Files › New File: Name mikroscope/mikroscope.manifest.txt y, en Contents, el manifiesto, desde mikroscope-manifest=1 hasta dir=mikroscope/mikroscope."
+    }
+  },
+  "manifest-list": {
+    "file": "manifest-list.webp",
+    "menu": "Files",
+    "alt": {
+      "en": "Files after OK: the new mikroscope directory and mikroscope/mikroscope.manifest.txt in it.",
+      "es": "Files tras OK: el nuevo directorio mikroscope y dentro mikroscope/mikroscope.manifest.txt."
+    }
+  },
+  "veth-new": {
+    "file": "veth-new.webp",
+    "menu": "Interfaces › VETH › New",
+    "alt": {
+      "en": "Interfaces › New Interface of type VETH: Comment is the mikroscope tag, Name veth-mikroscope, Address 172.30.10.2/30 and Gateway 172.30.10.1.",
+      "es": "Interfaces › New Interface de tipo VETH: Comment es la etiqueta de mikroscope, Name veth-mikroscope, Address 172.30.10.2/30 y Gateway 172.30.10.1."
+    }
+  },
+  "veth-list": {
+    "file": "veth-list.webp",
+    "menu": "Interfaces › VETH",
+    "alt": {
+      "en": "The VETH tab after OK: veth-mikroscope, with the mikroscope tag as its comment.",
+      "es": "La pestaña VETH tras OK: veth-mikroscope, con la etiqueta de mikroscope como comentario."
+    }
+  },
+  "address-new": {
+    "file": "address-new.webp",
+    "menu": "IP › Addresses › New",
+    "alt": {
+      "en": "IP › Addresses › New Address: the mikroscope tag as Comment, Address 172.30.10.1/30 and Interface veth-mikroscope.",
+      "es": "IP › Addresses › New Address: la etiqueta de mikroscope como Comment, Address 172.30.10.1/30 e Interface veth-mikroscope."
+    }
+  },
+  "address-list": {
+    "file": "address-list.webp",
+    "menu": "IP › Addresses",
+    "alt": {
+      "en": "IP › Addresses after OK: 172.30.10.1/30 on veth-mikroscope beside the router's own addresses.",
+      "es": "IP › Addresses tras OK: 172.30.10.1/30 en veth-mikroscope junto a las direcciones propias del router."
+    }
+  },
+  "iface-member-new": {
+    "file": "iface-member-new.webp",
+    "menu": "Interfaces › Interface List › New",
+    "alt": {
+      "en": "Interfaces › Interface List › New Interface List Member: List LAN, Interface veth-mikroscope, and the mikroscope tag as Comment.",
+      "es": "Interfaces › Interface List › New Interface List Member: List LAN, Interface veth-mikroscope y la etiqueta de mikroscope como Comment."
+    }
+  },
+  "iface-member-list": {
+    "file": "iface-member-list.webp",
+    "menu": "Interfaces › Interface List",
+    "alt": {
+      "en": "The Interface List tab after OK: veth-mikroscope is a member of LAN.",
+      "es": "La pestaña Interface List tras OK: veth-mikroscope es miembro de LAN."
+    }
+  },
+  "addr-list-new": {
+    "file": "addr-list-new.webp",
+    "menu": "IP › Firewall › Address Lists › New",
+    "alt": {
+      "en": "IP › Firewall › Address Lists › New: List LANs, Address 172.30.10.0/30, and the mikroscope tag as Comment.",
+      "es": "IP › Firewall › Address Lists › New: List LANs, Address 172.30.10.0/30 y la etiqueta de mikroscope como Comment."
+    }
+  },
+  "addr-list-list": {
+    "file": "addr-list-list.webp",
+    "menu": "IP › Firewall › Address Lists",
+    "alt": {
+      "en": "The Address Lists tab after OK: 172.30.10.0/30 in LANs beside the router's LAN range.",
+      "es": "La pestaña Address Lists tras OK: 172.30.10.0/30 en LANs junto al rango LAN del router."
+    }
+  },
+  "env-new": {
+    "file": "env-new.webp",
+    "menu": "Container › Envs › New",
+    "alt": {
+      "en": "Container › Envs › New: List mikroscope-env, Key MIKROSCOPE_TAG, and the mikroscope tag as Value.",
+      "es": "Container › Envs › New: List mikroscope-env, Key MIKROSCOPE_TAG y la etiqueta de mikroscope como Value."
+    }
+  },
+  "env-list": {
+    "file": "env-list.webp",
+    "menu": "Container › Envs",
+    "alt": {
+      "en": "The Envs tab with the seven entries of mikroscope-env: MIKROSCOPE_TAG, RATE_HZ 10, BUFFER_S 60, PORT 9123, ADDR 172.30.10.2, MEM_LIMIT_MB 16 and CAPTURE_MB 4.",
+      "es": "La pestaña Envs con las siete entradas de mikroscope-env: MIKROSCOPE_TAG, RATE_HZ 10, BUFFER_S 60, PORT 9123, ADDR 172.30.10.2, MEM_LIMIT_MB 16 y CAPTURE_MB 4."
+    }
+  },
+  "container-new-pull-1": {
+    "file": "container-new-pull-1.webp",
+    "menu": "Container › New",
+    "alt": {
+      "en": "Container › New Container, top of the form: the mikroscope tag as Comment, Remote Image registry-1.docker.io/jmrplens/mikroscope-agent with the release tag, and Root Dir mikroscope/mikroscope.",
+      "es": "Container › New Container, parte superior del formulario: la etiqueta de mikroscope como Comment, Remote Image registry-1.docker.io/jmrplens/mikroscope-agent con la etiqueta de la versión y Root Dir mikroscope/mikroscope."
+    }
+  },
+  "container-new-pull-2": {
+    "file": "container-new-pull-2.webp",
+    "menu": "Container › New",
+    "alt": {
+      "en": "The same form further down: Privileged ticked, Interface veth-mikroscope and Envlists mikroscope-env.",
+      "es": "El mismo formulario más abajo: Privileged marcado, Interface veth-mikroscope y Envlists mikroscope-env."
+    }
+  },
+  "container-new-pull-3": {
+    "file": "container-new-pull-3.webp",
+    "menu": "Container › New",
+    "alt": {
+      "en": "The bottom of the form: Memory Max 64M, Logging and Start On Boot ticked, Restart Policy on failure, Restart Interval 10 s and Restart Max Count 5.",
+      "es": "La parte inferior del formulario: Memory Max 64M, Logging y Start On Boot marcados, Restart Policy on failure, Restart Interval 10 s y Restart Max Count 5."
+    }
+  },
+  "container-list-pulled": {
+    "file": "container-list-pulled.webp",
+    "menu": "Container",
+    "alt": {
+      "en": "The Container tab once the pull is over: one row, with the tag as Comment, its root dir, veth-mikroscope and mikroscope-env, and no R flag.",
+      "es": "La pestaña Container al terminar la descarga: una fila, con la etiqueta como Comment, su root dir, veth-mikroscope y mikroscope-env, y sin la marca R."
+    }
+  },
+  "terminal-ignore": {
+    "file": "terminal-ignore.webp",
+    "menu": "Terminal",
+    "alt": {
+      "en": "WebFig's Terminal: /container/set with ignore-remote-image-change=yes and restart-policy=on-failure, then two reads that print true and on-failure.",
+      "es": "El Terminal de WebFig: /container/set con ignore-remote-image-change=yes y restart-policy=on-failure, y dos lecturas que imprimen true y on-failure."
+    }
+  },
+  "container-start": {
+    "file": "container-start.webp",
+    "menu": "Container › Start",
+    "alt": {
+      "en": "The Container tab with the mikroscope row selected and Start in the Actions panel.",
+      "es": "La pestaña Container con la fila de mikroscope seleccionada y Start en el panel Actions."
+    }
+  },
+  "container-running": {
+    "file": "container-running.webp",
+    "menu": "Container",
+    "alt": {
+      "en": "The Container tab after Start: the mikroscope container running.",
+      "es": "La pestaña Container tras Start: el contenedor mikroscope en marcha."
+    }
+  },
+  "log-container": {
+    "file": "log-container.webp",
+    "menu": "Log",
+    "alt": {
+      "en": "Log, filtered on container: the pull finishing and the container starting.",
+      "es": "Log, filtrado por container: la descarga terminando y el contenedor arrancando."
+    }
+  },
+  "terminal-healthz": {
+    "file": "terminal-healthz.webp",
+    "menu": "Terminal",
+    "alt": {
+      "en": "WebFig's Terminal: /tool/fetch of http://172.30.10.2:9123/healthz, and the first row of the agent's answer, which opens with \"ok\":true.",
+      "es": "El Terminal de WebFig: /tool/fetch de http://172.30.10.2:9123/healthz, y la primera fila de la respuesta del agente, que empieza por \"ok\":true."
+    }
+  },
+  "remove-container": {
+    "file": "remove-container.webp",
+    "menu": "Container › Stop, Remove",
+    "alt": {
+      "en": "The Container tab with the stopped mikroscope row selected, before Remove.",
+      "es": "La pestaña Container con la fila parada de mikroscope seleccionada, antes de Remove."
+    }
+  },
+  "remove-envs": {
+    "file": "remove-envs.webp",
+    "menu": "Container › Envs › Remove",
+    "alt": {
+      "en": "The Envs tab with the seven mikroscope-env entries selected, before Remove.",
+      "es": "La pestaña Envs con las siete entradas de mikroscope-env seleccionadas, antes de Remove."
+    }
+  },
+  "remove-files": {
+    "file": "remove-files.webp",
+    "menu": "Files › Remove",
+    "alt": {
+      "en": "Files with mikroscope/mikroscope.manifest.txt selected, before Remove: the container's root dir went with the container, and the mikroscope directory goes once it is empty.",
+      "es": "Files con mikroscope/mikroscope.manifest.txt seleccionado, antes de Remove: el root dir del contenedor se fue con el contenedor, y el directorio mikroscope se borra cuando queda vacío."
+    }
+  },
+  "tar-upload": {
+    "file": "tar-upload.webp",
+    "menu": "Files › Upload…",
+    "alt": {
+      "en": "Files after Upload…: mikroscope.tar at the top of the router's storage, beside the mikroscope directory that holds the manifest.",
+      "es": "Files tras Upload…: mikroscope.tar en la raíz del almacenamiento del router, junto al directorio mikroscope que guarda el manifiesto."
+    }
+  },
+  "container-new-tar-1": {
+    "file": "container-new-tar-1.webp",
+    "menu": "Container › New",
+    "alt": {
+      "en": "Container › New Container for the image tar: File mikroscope.tar in place of Remote Image, and Root Dir mikroscope/mikroscope.",
+      "es": "Container › New Container para el tar de la imagen: File mikroscope.tar en lugar de Remote Image, y Root Dir mikroscope/mikroscope."
+    }
+  },
+  "container-list-extracted": {
+    "file": "container-list-extracted.webp",
+    "menu": "Container",
+    "alt": {
+      "en": "The Container tab once the tar is extracted: one row, with the tag as Comment, its root dir, veth-mikroscope and mikroscope-env, and no R flag.",
+      "es": "La pestaña Container con el tar ya extraído: una fila, con la etiqueta como Comment, su root dir, veth-mikroscope y mikroscope-env, y sin la marca R."
+    }
+  },
+  "tar-remove": {
+    "file": "tar-remove.webp",
+    "menu": "Files › Remove",
+    "alt": {
+      "en": "Files with mikroscope.tar selected, before Remove: the image is extracted and the tar is no longer needed.",
+      "es": "Files con mikroscope.tar seleccionado, antes de Remove: la imagen ya está extraída y el tar sobra."
+    }
+  }
+}

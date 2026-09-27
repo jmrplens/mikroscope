@@ -8,8 +8,14 @@
  * Provenance, so a phone wraps between them and never inside "RouterOS 7.24.2".
  * Everything is on one line of output: a break inside an inline element is a
  * space before the punctuation that follows it.
+ *
+ * Evidence pages only (src/lib/voice.mjs): anywhere else it warns, or fails
+ * the build once MS_VOICE is "error". A guide states the fact and links it:
+ * <TestedOn of="<fact>">verified</TestedOn> points at the fact's entry in
+ * <VerifiedRegister> on Tested on.
  */
 import { isVerificationId, verifications } from "../data/verifications";
+import { evidenceOnly } from "../lib/voice.mjs";
 
 interface Props {
 	of: string;
@@ -19,6 +25,7 @@ const { of } = Astro.props;
 if (!isVerificationId(of)) {
 	throw new Error(`Verified: unknown fact "${of}"; facts live in src/data/verifications.ts`);
 }
+evidenceOnly("<Verified>", Astro.locals.starlightRoute);
 const v = verifications[of];
 ---
 

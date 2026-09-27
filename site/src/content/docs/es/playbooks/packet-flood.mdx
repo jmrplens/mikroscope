@@ -1,9 +1,10 @@
 ---
-title: Una inundación de paquetes
+title: Inundación de paquetes
 description: "Una inundación ICMP de 10 s contra un MikroTik RB5009, leída desde su contenedor: la interrupción del switch como contador de puerto, y time_squeeze."
 head:
   - tag: title
     content: "Una inundación de paquetes vista desde RouterOS | mikroscope"
+docType: evidence
 ---
 
 import FaultSignature from "../../../../components/FaultSignature.astro";
@@ -12,20 +13,17 @@ import NotClaimed from "../../../../components/NotClaimed.astro";
 import Provenance from "../../../../components/Provenance.astro";
 import SeeAlso from "../../../../components/SeeAlso.astro";
 
-Esta página responde a qué aspecto tiene el tráfico que la CPU del router tiene
-que atender, visto desde dentro de un contenedor que no puede ver las interfaces
-del router. La inundación se provocó a propósito.
-
-<Provenance of="playbooks-2026-09-12" />
-
 **En resumen:** desde dentro del contenedor, una inundación dirigida al router se
 ve como una línea de interrupción que se multiplica, aquí `switch0` de 5,5 k a
 34 k por tramo de 5 s, con su coste en el único núcleo al que está fijada esa
 interrupción, y con los softirq y `time_squeeze` subiendo a la vez. El contenedor
 no ve los contadores de las interfaces del router, así que la interrupción hace
-sus veces: da el inicio, el final y el núcleo que pagó, no los bytes.
+sus veces: da el inicio, el final y el núcleo que pagó, no los bytes. La
+inundación se provocó a propósito.
 
-## Cómo se provocó
+<Provenance of="playbooks-2026-09-12" />
+
+## Montaje {#cómo-se-provocó}
 
 ICMP contra la propia dirección LAN del router, desde un host de la LAN, limitado
 a 10 s. Es tráfico que la CPU del router tiene que atender, a diferencia del
@@ -38,11 +36,11 @@ ping -f -w 10 192.168.0.1     # 67 793 paquetes, ~6.8 kpps, 0 % de pérdida
 
 `192.168.0.1` es la dirección LAN del router de referencia; usa la de tu router.
 
-## Lo que registró el agente
+## Grabación {#lo-que-registró-el-agente}
 
-En tramos de 5 segundos, antes y durante. No hay gráfico de esta inundación: se
-provocó el 2026-09-12, antes de que empiece el historial del almacén InfluxDB de
-referencia, el 2026-09-19.
+En tramos de 5 segundos, antes y durante. No hay gráfico: la inundación es
+anterior al historial del almacén InfluxDB de referencia, que empieza el
+2026-09-19.
 
 ```text
    t  busy%  per-core busy%           sirq  squeeze  top IRQ
@@ -52,7 +50,7 @@ referencia, el 2026-09-19.
    5   14.3  24.9  19.6   3.5   9.2    153      136  switch0=33832
 ```
 
-## Qué leer
+## Qué mirar {#qué-leer}
 
 - **Las interrupciones de `switch0` pasaron de 5,5 k a 34 k por tramo**, una
   subida de 6×. Es lo más parecido a un contador por interfaz que existe dentro
@@ -61,18 +59,18 @@ referencia, el 2026-09-19.
   qué núcleo pagó.
 - **El coste cayó en un solo núcleo** (el núcleo 0, al 23–25 %) porque esa IRQ
   está fijada. Una inundación que satura un núcleo mientras tres están ociosos es
-  una forma habitual y confusa — el total dice 14 %, y el router parece
+  una forma habitual y confusa: el total dice 14 %, y el router parece
   bloqueado.
 - **Los softirqs se triplicaron (de 50 a 150)**, y `time_squeeze` subió con ellos.
   `time_squeeze` es el que hay que vigilar: cuenta las veces que el manejador de
   softirq agotó su presupuesto con trabajo aún en cola. Un squeeze que sube con un
   caudal plano es la firma de un router en su techo de paquetes por segundo.
 - **El tiempo de IRQ hardware no aparece en la columna `irq` de `/proc/stat`** en
-  este kernel — siempre es 0 (sin `IRQ_TIME_ACCOUNTING`). Ese trabajo está dentro
+  este kernel: siempre es 0 (sin `IRQ_TIME_ACCOUNTING`). Ese trabajo está dentro
   de `system`. No leas el campo `irq` para concluir que el router no tiene carga
   de interrupciones.
 
-## Dónde viven estas señales
+## Origen de las señales {#dónde-viven-estas-señales}
 
 - Las líneas de interrupción son `mikroscope_irq_total{irq,name,cpu}` en
   `/metrics`, por núcleo, para las fuentes que aparecieron en el top-K de alguna
@@ -100,22 +98,22 @@ kernel de una ráfaga más corta que el intervalo de muestreo. Lee [la forma en
 reposo](/mikroscope/es/playbooks/idle/) para saber por qué la regla no es
 "cualquier squeeze".
 
-## Tu instrumento forma parte del sistema
+## Efecto del observador {#tu-instrumento-forma-parte-del-sistema}
 
-Un inciso que lo demuestra: ejecutar
-`/system/routerboard/settings/print` por SSH produjo sucesos del kernel propios —
+Ejecutar `/system/routerboard/settings/print` por SSH produjo sucesos del kernel
+propios:
 
 ```text
 [4] rb_ioctl, cmd: 0x5212, arg: 0x0
 [4] rb: RB_GET_CF_INFO
 ```
 
-Leer la configuración de RouterOS deja rastro en el log del kernel. Cuando estés
-correlacionando sucesos con tus propias acciones, recuerda que tu instrumento
-forma parte del sistema. En este equipo, cada conexión SSH cuesta además
-un <Measured id="ssh.connectCpu" /> de CPU mientras dura.
+Leer la configuración de RouterOS deja rastro en el log del kernel, así que
+separa tus propias acciones antes de atribuir una causa a un suceso. En este
+equipo, cada conexión SSH cuesta además un <Measured id="ssh.connectCpu" /> de
+CPU mientras dura.
 
-## La firma
+## Firma {#la-firma}
 
 <FaultSignature origin="provoked" date="2026-09-12">
 
@@ -139,11 +137,10 @@ un <Measured id="ssh.connectCpu" /> de CPU mientras dura.
 
 ## Véase también
 
-- [La forma de un router en reposo](/mikroscope/es/playbooks/idle/): la línea base de squeeze e
-  interrupciones desde la que subió esta inundación.
-- [La CPU del router, la red del contenedor](/mikroscope/es/limits/namespaces/): por qué la
-  interrupción es visible y los contadores de las interfaces no.
-- [Lo que deriva el colector](/mikroscope/es/sinks/derive/): la marca `burst` y los costes por
-  paquete.
+- [Línea base en reposo](/mikroscope/es/playbooks/idle/): la línea base de squeeze e interrupciones
+  desde la que subió esta inundación.
+- [Visibilidad del contenedor](/mikroscope/es/limits/namespaces/): por qué la interrupción es visible
+  y los contadores de las interfaces no.
+- [Valores derivados](/mikroscope/es/sinks/derive/): la marca `burst` y los costes por paquete.
 
 </SeeAlso>

@@ -10,7 +10,7 @@ import { inlineCodeNowrap, inlineCodeUnits } from "./src/lib/inline-code.mjs";
 import { nowrapValues } from "./src/lib/nowrap-values.mjs";
 import { lastmodTable } from "./src/lib/lastmod.mjs";
 import { metaCsp } from "./src/lib/meta-csp.mjs";
-import { readRelease } from "./src/lib/release.mjs";
+import { readRelease, withVersion } from "./src/lib/release.mjs";
 import { versionPlaceholder } from "./src/lib/version-placeholder.mjs";
 
 const siteRoot = fileURLToPath(new URL(".", import.meta.url));
@@ -109,6 +109,28 @@ function pageDatesModule() {
 				Object.entries(pageDates()).map(([file, page]) => [file, page.date]),
 			);
 			return `export default ${JSON.stringify(dates)};`;
+		},
+	};
+}
+
+/**
+ * Writes the release into the install steps' data as it is imported. cmd/gen_rsc
+ * keeps {{MIKROSCOPE_VERSION}} in src/data/rsc/*.json where a script names the
+ * release (its header, the agent image's tag, `version`), so a new VERSION
+ * changes none of those files; every import of them, on the server and in the
+ * generator's bundled script, goes through here and reads the current one.
+ * `enforce: "pre"` puts it ahead of Vite's own JSON plugin, which parses the
+ * text this returns.
+ */
+function rscReleaseData() {
+	const data = /[\\/]src[\\/]data[\\/]rsc[\\/][^\\/]+\.json$/;
+	return {
+		name: "mikroscope-rsc-release",
+		enforce: /** @type {const} */ ("pre"),
+		/** @param {string} code @param {string} id */
+		transform(code, id) {
+			if (!data.test(id.split("?")[0])) return undefined;
+			return { code: withVersion(code, release.version), map: null };
 		},
 	};
 }
@@ -400,7 +422,11 @@ export default defineConfig({
 			// 845 px at a 390 px viewport (measured 2026-09-15). The `<Code>`
 			// component path was unaffected.
 			expressiveCode: { emitExternalStylesheet: true },
-			// The information architecture, in reading order.
+			// The information architecture, in reading order: start, install,
+			// configure, use, then reference, explanation, the evidence and the
+			// project. A reader who came to do something finds it in the first
+			// four groups; the last four are for looking something up or checking
+			// a claim, so three of them start collapsed.
 			//
 			// A page is listed by its slug alone, and Starlight labels it with
 			// that page's own title in each language: the English title here,
@@ -414,11 +440,13 @@ export default defineConfig({
 			//
 			// A label is written only where the sidebar deliberately says less
 			// than the title. The group labels have no page to take a title
-			// from, so each keeps its Spanish translation beside it.
+			// from, so each keeps its Spanish translation beside it. The English
+			// group label also names the group's llms/<label>.txt file
+			// (src/lib/llms.mjs), so renaming a group renames that file.
 			sidebar: [
 				{
 					label: "Start here",
-					translations: { es: "Empezar aquí" },
+					translations: { es: "Empezar" },
 					items: [
 						{ slug: "start" },
 						{ slug: "start/walkthrough" },
@@ -427,97 +455,47 @@ export default defineConfig({
 					],
 				},
 				{
-					label: "What it costs",
-					translations: { es: "Lo que cuesta" },
-					items: [
-						{ slug: "cost" },
-						{ slug: "cost/rate-ceiling" },
-						{ slug: "cost/limits" },
-					],
-				},
-				{
 					label: "Install",
 					translations: { es: "Instalar" },
 					items: [
-						{ slug: "install" },
-						{
-							// Shorter than the title, "Getting the CLI onto your
-							// machine", as the sidebar had it before labels came
-							// from titles.
-							label: "Getting the CLI",
-							translations: { es: "Tener la CLI" },
-							slug: "install/cli",
-						},
-						{ slug: "install/prerequisites" },
 						{ slug: "install/routes" },
-						{ slug: "install/firewall" },
-						{ slug: "install/layout" },
-						{ slug: "install/reaching-the-agent" },
+						{ slug: "install/prerequisites" },
+						{ slug: "install/cli" },
+						{ slug: "install" },
+						{ slug: "install/generator" },
+						{ slug: "install/script" },
+						{ slug: "install/manual-cli" },
+						{ slug: "install/manual-gui" },
+						{ slug: "install/offline" },
+						{ slug: "install/upgrade" },
 					],
 				},
 				{
-					label: "Record and capture",
-					translations: { es: "Grabar y capturar" },
-					items: [{ slug: "record" }, { slug: "record/triggers" }],
+					label: "Configure",
+					translations: { es: "Configurar" },
+					items: [
+						{ slug: "install/reaching-the-agent" },
+						{ slug: "install/firewall" },
+						{ slug: "install/layout" },
+						{ slug: "security/api-user" },
+						{ slug: "security/expose" },
+					],
 				},
 				{
-					label: "Collector and sinks",
-					translations: { es: "Colector y destinos" },
+					label: "Use",
+					translations: { es: "Uso" },
 					items: [
+						{ slug: "record" },
+						{ slug: "record/triggers" },
 						{ slug: "sinks" },
 						{ slug: "sinks/prometheus" },
 						{ slug: "sinks/influxdb" },
 						{ slug: "sinks/other" },
 						{ slug: "sinks/api-tier" },
-						{ slug: "sinks/derive" },
-						{ slug: "sinks/detections" },
-						{ slug: "sinks/device-info" },
-					],
-				},
-				{
-					label: "Dashboards",
-					// "Dashboards" in Spanish too: the Spanish pages say
-					// "dashboard" for a Grafana dashboard and keep "panel" for one
-					// of its panels, and "Paneles" named the wrong one.
-					translations: { es: "Dashboards" },
-					items: [
 						{ slug: "dashboards" },
 						{ slug: "dashboards/import-and-check" },
 						{ slug: "dashboards/alerts" },
-					],
-				},
-				{
-					label: "Reading the data",
-					translations: { es: "Leer los datos" },
-					items: [
 						{ slug: "playbooks" },
-						{ slug: "playbooks/idle" },
-						{ slug: "playbooks/loop" },
-						{ slug: "playbooks/cpu" },
-						{ slug: "playbooks/packet-flood" },
-						{ slug: "playbooks/flash-wear" },
-						{ slug: "playbooks/port-errors" },
-						{ slug: "playbooks/conntrack" },
-					],
-				},
-				{
-					label: "Limits",
-					translations: { es: "Límites" },
-					items: [
-						{ slug: "limits" },
-						{ slug: "limits/namespaces" },
-						{ slug: "limits/privileged" },
-						{ slug: "limits/source-floors" },
-					],
-				},
-				{
-					label: "Security",
-					translations: { es: "Seguridad" },
-					items: [
-						{ slug: "security" },
-						{ slug: "security/api-user" },
-						{ slug: "security/expose" },
-						{ slug: "security/installer" },
 					],
 				},
 				{
@@ -530,9 +508,53 @@ export default defineConfig({
 						{ slug: "reference/http" },
 						{ slug: "reference/metrics" },
 						{ slug: "reference/measurements" },
+						{ slug: "sinks/derive" },
+						{ slug: "sinks/detections" },
+						{ slug: "sinks/device-info" },
 						{ slug: "reference/port-names" },
 						{ slug: "reference/troubleshooting" },
 						{ slug: "reference/glossary" },
+					],
+				},
+				{
+					label: "Explanation",
+					translations: { es: "Conceptos" },
+					items: [
+						{ slug: "how-it-works" },
+						{ slug: "limits" },
+						{ slug: "limits/namespaces" },
+						{ slug: "limits/privileged" },
+						{ slug: "limits/source-floors" },
+						{ slug: "security" },
+						{ slug: "security/installer" },
+					],
+				},
+				// The pages that keep provenance (src/lib/voice.mjs
+				// EVIDENCE_SLUGS): the device, the RouterOS version, the date and
+				// the conditions behind what the other groups state.
+				{
+					label: "Evidence",
+					translations: { es: "Pruebas y mediciones" },
+					collapsed: true,
+					items: [
+						{ slug: "about/status" },
+						{ slug: "cost" },
+						{ slug: "cost/rate-ceiling" },
+						{ slug: "cost/limits" },
+						{
+							label: "Case studies",
+							translations: { es: "Casos reales" },
+							items: [
+								{ slug: "playbooks/idle" },
+								{ slug: "playbooks/loop" },
+								{ slug: "playbooks/cpu" },
+								{ slug: "playbooks/packet-flood" },
+								{ slug: "playbooks/flash-wear" },
+								{ slug: "playbooks/port-errors" },
+								{ slug: "playbooks/conntrack" },
+							],
+						},
+						{ slug: "reference/testing" },
 					],
 				},
 				{
@@ -540,28 +562,8 @@ export default defineConfig({
 					translations: { es: "Acerca de" },
 					collapsed: true,
 					items: [
-						{ slug: "about/status" },
 						{ slug: "about/changelog" },
 						{ slug: "about/lineage" },
-					],
-				},
-				// Last, and its own group: everything above answers "how do I
-				// use this", and these two answer "how do I change it". Mixed
-				// into Reference and About they read as things a user has to
-				// get through to reach what they came for.
-				{
-					label: "For contributors",
-					translations: { es: "Para quien contribuye" },
-					collapsed: true,
-					items: [
-						{
-							// The Spanish label is shorter than the Spanish
-							// title, which adds "a sí mismo", as the sidebar had
-							// it before labels came from titles.
-							label: "How the project tests itself",
-							translations: { es: "Cómo se prueba el proyecto" },
-							slug: "reference/testing",
-						},
 						{ slug: "about/brand" },
 						{
 							label: "Contributing (GitHub)",
@@ -601,5 +603,5 @@ export default defineConfig({
 		// after every other integration has written to them.
 		...(META_CSP ? [metaCsp({ skip: isRedirectStub })] : []),
 	],
-	vite: { plugins: [pageDatesModule()] },
+	vite: { plugins: [pageDatesModule(), rscReleaseData()] },
 });
