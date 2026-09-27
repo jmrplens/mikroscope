@@ -1,0 +1,27 @@
+---
+/**
+ * The contents of the install manifest, as the file on the router holds it,
+ * for a reader who writes the file by hand (Files › New › Text File in
+ * WebFig or Winbox).
+ *
+ * It is the manifest a golden case of the install steps spec writes
+ * (src/data/rsc/cases.json, from cmd/gen_rsc): the same lines, in the same
+ * order, `mikroscope install` and the generated script write, which is what
+ * lets `mikroscope status`, `upgrade` and `uninstall` read a GUI install as
+ * their own. Never retyped into a page.
+ */
+import { Code } from "@astrojs/starlight/components";
+
+import { manifestText } from "../lib/webfig.mjs";
+
+interface Props {
+	/** The golden case, e.g. `pull-dockerhub` or `default-tar`. */
+	case: string;
+	/** The code block's title. */
+	title?: string;
+}
+
+const { case: id, title } = Astro.props as Props;
+---
+
+<Code code={manifestText(id).replace(/\n$/, "")} lang="text" title={title} />

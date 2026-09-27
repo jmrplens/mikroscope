@@ -1,0 +1,101 @@
+---
+/**
+ * One WebFig screen of the manual GUI install, as it looked filled in.
+ *
+ * The pictures are taken by `site/scripts/gen-webfig-captures.mjs` while it
+ * installs the agent through WebFig in the virtual lab and takes it out
+ * again, so each one is a form that was really submitted, and the run is the
+ * GUI route's test. The alt text comes from the same script, in both
+ * languages (src/assets/webfig/captures.json), and the caption is where the
+ * screen is in WebFig's menus, which read the same in both.
+ *
+ * The files are 2× the pixels of the screen they show, at most 1600 px wide.
+ * The picture is laid out at its screen size, never wider than the prose
+ * column: a 1280 px screen fills the column, a terminal row or the login box
+ * is shown at the size a reader would see it, not blown up.
+ */
+import { Image } from "astro:assets";
+
+import { langOf } from "../lib/lang";
+import { webfigCapture } from "../lib/webfig.mjs";
+
+interface Props {
+	/** The stem under src/assets/webfig, e.g. `veth-new`. */
+	name: string;
+}
+
+const { name } = Astro.props as Props;
+const meta = webfigCapture(name);
+const lang = langOf(Astro.locals.starlightRoute) === "es" ? "es" : "en";
+
+const images = import.meta.glob<{ default: ImageMetadata }>(
+	"../assets/webfig/*.webp",
+	{ eager: true },
+);
+const key = Object.keys(images).find((f) => f.endsWith(`/${meta.file}`));
+if (!key) {
+	throw new Error(
+		`<WebfigCapture name="${name}" />: no ${meta.file} in src/assets/webfig. Run site/scripts/gen-webfig-captures.mjs (its header says how).`,
+	);
+}
+const image = images[key].default;
+
+/** The prose column, `--sl-content-width` (50rem in chrome.css). */
+const COLUMN = 800;
+/** The picture's size on screen: half its pixels, at most the column. */
+const width = Math.min(COLUMN, Math.round(image.width / 2));
+const height = Math.round((image.height * width) / image.width);
+/** The variants for `srcset`, none wider than the file itself. */
+const widths = [...new Set([640, 1024, 1600, image.width])]
+	.filter((w) => w <= image.width)
+	.sort((a, b) => a - b);
+/**
+ * What the page takes beside the prose column, so `sizes` names the width
+ * the picture is laid out at rather than the column's cap: from 72rem the
+ * sidebar and the table of contents (1280 px leaves a 616 px column), from
+ * 50rem the sidebar alone (800 px leaves 452). Measured on the built page at
+ * 800–1920 px; each is the smallest margin in its range, so `sizes` is never
+ * below the laid-out width and a DPR-1 laptop takes the 640w file.
+ */
+const BESIDE_WIDE = 664;
+const BESIDE_MID = 348;
+/** One range: the picture at its own width once the column holds it. */
+const range = (from: number, beside: number) =>
+	width + beside > from
+		? [`(min-width: ${width + beside}px) ${width}px`, `(min-width: ${from}px) calc(100vw - ${beside}px)`]
+		: [`(min-width: ${from}px) ${width}px`];
+const sizes = [...range(1152, BESIDE_WIDE), ...range(800, BESIDE_MID), "100vw"].join(", ");
+---
+
+<figure class="ms-capture ms-webfig">
+	<a href={image.src}>
+		<Image
+			src={image}
+			widths={widths}
+			sizes={sizes}
+			width={width}
+			height={height}
+			loading="lazy"
+			decoding="async"
+			alt={meta.alt[lang]}
+		/>
+	</a>
+	<figcaption>{meta.menu}</figcaption>
+</figure>
+
+<style>
+	/* The border, radius and caption come from `.ms-capture` in
+	 * components.css. What differs: that rule stretches a picture to the
+	 * column and caps its height at 30rem, and a screen shown for a field in
+	 * its last row, or a terminal row, is shown whole and at its own width.
+	 * Both classes in the selector so it outranks that rule wherever the
+	 * stylesheets land. */
+	.ms-capture.ms-webfig {
+		margin-block: 1.25rem;
+	}
+	.ms-capture.ms-webfig :global(img) {
+		inline-size: auto;
+		max-inline-size: 100%;
+		max-block-size: none;
+	}
+</style>

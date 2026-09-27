@@ -111,6 +111,7 @@ const MANIFEST = [
 			"install/prerequisites",
 			"install/cli",
 			"install",
+			"install/manual-gui",
 		],
 	},
 	// What to set once it is installed: how the host reaches the agent, the

@@ -478,6 +478,7 @@ export default defineConfig({
 							translations: { es: "Instalar con la CLI" },
 						},
 						{ slug: "install/generator" },
+						{ slug: "install/manual-gui" },
 					],
 				},
 				{

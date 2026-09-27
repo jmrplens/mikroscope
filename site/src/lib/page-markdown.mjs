@@ -49,6 +49,7 @@ import * as dashboards from "../data/dashboards.ts";
 import * as home from "../data/home.ts";
 import { release } from "../data/release.ts";
 import figureMeta from "../data/figures/figures.json" with { type: "json" };
+import { manifestText, webfigCapture } from "./webfig.mjs";
 // The landing's own source, for the one thing its twin needs from the
 // frontmatter rather than the body: the hero tagline. See TAGLINES.
 import landingEn from "../content/docs/index.mdx?raw";
@@ -353,6 +354,18 @@ function renderSelfClosing(name, attributes, expressions, context) {
 			}
 			return `*${attributes.caption}*`;
 		}
+		// A WebFig screen of the manual GUI install. The file has no
+		// pictures, so the reduction is the alt text: what the screen shows
+		// filled in, which is what a reader of the file can type. A URL in it
+		// goes in a code span, so the italic line carries no bare URL.
+		case "WebfigCapture":
+			return `*${webfigCapture(attributes.name).alt[
+				lang === "es" ? "es" : "en"
+			].replaceAll(/https?:\/\/[^\s,;)]+/g, (url) => `\`${url}\``)}*`;
+		// The install manifest's contents, from the golden case, as the
+		// component renders them.
+		case "InstallManifest":
+			return `\n\n\`\`\`text\n${manifestText(attributes.case).replace(/\n$/, "")}\n\`\`\`\n\n`;
 		// A count the Go source decides, written the way the page writes it:
 		// `as="word"` is prose ("ten"), anything else is digits, with the same
 		// table of words Stat.astro uses (numberWord in format.ts).
