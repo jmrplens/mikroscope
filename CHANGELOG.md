@@ -327,6 +327,14 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`pnpm run layout:check` measured the site's 404 page instead of its
+  pages.** It resolved each page's path against the preview's address with
+  a leading `/`, which dropped the `/mikroscope/` base, so each of its 258
+  renders loaded Astro's base-path 404 and the check passed in 5.5 s,
+  in CI too. It now loads each page under the base and fails on any status
+  but 200; a code block in a tab that is not on show, whose copy button
+  measures 0×0 until the tab opens, is left out. On 2026-09-27 the 258
+  renders, 390 and 1280 px, passed.
 - **An uninstall while a client read `/stream` failed at its first
   attempt.** The removal stopped the container, waited a fixed 4 s and
   removed it, and RouterOS refuses to remove a container that is still
