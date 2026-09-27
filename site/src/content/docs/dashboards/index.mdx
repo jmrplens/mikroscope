@@ -1,6 +1,6 @@
 ---
 title: Dashboards
-description: "The five Grafana dashboards for MikroTik RouterOS kernel telemetry, one per store and generated from one panel list: every section, every panel and what each store cannot carry."
+description: "The five Grafana dashboards for MikroTik RouterOS kernel telemetry, one per store: how they get into Grafana, every section and panel, and what each store cannot carry."
 docType: how-to
 head:
   - tag: title
@@ -19,49 +19,28 @@ import SeeAlso from "../../../components/SeeAlso.astro";
 import Src from "../../../components/Src.astro";
 import TestedOn from "../../../components/TestedOn.astro";
 
-`mikroscope dashboards gen` writes one Grafana dashboard per store, five in all, from a single
-panel list in <Src path="internal/dashboards/" />, and an alert-rule file beside three of them. To
-load them into Grafana and check every panel, see
-[Import and check](/mikroscope/dashboards/import-and-check/); for the rules, see
-[Alert rules](/mikroscope/dashboards/alerts/).
+Five Grafana dashboards, one per store Grafana can query (InfluxDB 3, Prometheus, PostgreSQL,
+Graphite and Elasticsearch), generated from one panel list
+in <Src path="internal/dashboards/" />, with an alert-rule file beside three of them
+([Alert rules](/mikroscope/dashboards/alerts/)). `install` does not put them in Grafana: it writes
+only to the router.
 
-## Files {#what-gen-writes}
+## Get them into Grafana {#get-them-into-grafana}
 
-<FileTree>
+A dashboard reads the store the collector writes to ([Run the collector](/mikroscope/sinks/)), and
+gets into Grafana one of three ways:
 
-- dashboards/
-  - mikroscope-influxdb.json <DashboardCount store="influxdb" of="panels" /> panels, InfluxDB 3 (SQL)
-  - mikroscope-prometheus.json <DashboardCount store="prometheus" of="panels" /> panels, Prometheus
-  - mikroscope-postgres.json <DashboardCount store="postgres" of="panels" /> panels, PostgreSQL / TimescaleDB
-  - mikroscope-graphite.json <DashboardCount store="graphite" of="panels" /> panels, Graphite
-  - mikroscope-elasticsearch.json <DashboardCount store="elasticsearch" of="panels" /> panels, Elasticsearch
-  - mikroscope-alerts-influxdb.yaml <DashboardCount store="influxdb" of="rules" /> rules
-  - mikroscope-alerts-prometheus.yaml <DashboardCount store="prometheus" of="rules" /> rules
-  - mikroscope-alerts-postgres.yaml <DashboardCount store="postgres" of="rules" /> rules
+- **From the collector**: `forward … --grafana <url>` creates the datasource and publishes the
+  dashboard at every start, and `dashboards publish` does the same once
+  ([details](/mikroscope/dashboards/import-and-check/#letting-the-collector-do-it-forward---grafana)).
+- **With the CLI**: `dashboards import --store <store> --datasource-uid <uid>`, against a
+  datasource you already have
+  ([details](/mikroscope/dashboards/import-and-check/#importing-from-the-cli)).
+- **By hand**: upload the JSON in Grafana
+  ([details](/mikroscope/dashboards/import-and-check/#importing-by-hand)).
 
-</FileTree>
-
-```sh
-mikroscope dashboards gen                    # writes the eight files into ./dashboards
-mikroscope dashboards gen --out /tmp/dash    # or into another directory
-```
-
-- **Format.** Grafana's shareable export format: the datasource is a `${DS_MIKROSCOPE}` placeholder
-  declared in `__inputs`, there is no `id`, and the `uid` is fixed, `mikroscope-<store>`, one per
-  dashboard, so a re-import updates the same dashboard in place instead of creating a second one.
-  A test asserts that two generations of the InfluxDB dashboard are identical.
-- **Grafana version.** `__requires` declares Grafana 11.0.0. The panel options are written to the
-  schema Grafana 13.2.1 expects: the xychart's mark, for one, moved between Grafana 11 and 13. The
-  versions the dashboards have been checked on are on <TestedOn of="dashboards">Tested on</TestedOn>.
-- **InfluxDB 3.** The queries are SQL, and every one is bounded by `$__timeFilter`, because
-  InfluxDB 3 Core refuses unbounded scans. Where a column is named `cluster` the SQL quotes it,
-  because `cluster` is a reserved word in DataFusion.
-- **Prometheus.** The queries read a Prometheus that scrapes the collector's `/metrics`, and that
-  alone: the kernel tier recomputed from the samples, the collector's own derived and detection
-  families, and what only the sampler can produce, which reaches the collector as data because the
-  agent serves no exposition of its own. Prometheus 3 renders a histogram's zero bucket boundary as
-  `le="0.0"`, so a query reading that bucket matches `le=~"0|0.0"`. The scrape job is on
-  [Import and check](/mikroscope/dashboards/import-and-check/#prometheus-one-scrape-job).
+[Set up in Grafana](/mikroscope/dashboards/import-and-check/) has the datasource for each store and
+the check that runs every panel.
 
 ## Screenshots {#what-it-looks-like}
 
@@ -96,9 +75,10 @@ form. Each panel below that is on one store only says which.
 
 <DashboardCounts />
 
-The counts are those of the committed files, which carry the compiled defaults. `import` and
-`check` ask the datasource what it holds first and can move panels into or out of the last row;
-see [Not available on this device](#not-available-on-this-device) below.
+The counts are those of the committed files, which carry the compiled defaults.
+`dashboards import`, `dashboards publish` and `forward --grafana` ask the datasource what it holds
+first and can move panels into or out of the last row, and `check` checks the dashboard `import`
+would store; see [Not available on this device](#not-available-on-this-device) below.
 
 ## Section order {#reading-order}
 
@@ -254,8 +234,9 @@ off by default so that a quiet dashboard stays quiet; turn it on when you are wo
 **Before the first detection.** An InfluxDB store has no `mikroscope_detection` table until the
 collector writes its first detection, and InfluxDB 3 refuses a query that names a missing table;
 no form of the query avoids that (<TestedOn of="dashboards">forms tried</TestedOn>).
-`mikroscope dashboards import` asks the store first, and when the table is not there it ships the
-detections layer switched off, with its query kept, so you can switch it on later. The committed
+`dashboards import`, `dashboards publish` and `forward --grafana` ask the store first, and when the
+table is not there they ship the detections layer switched off, with its query kept, so you can
+switch it on later. The committed
 files and a [manual import](/mikroscope/dashboards/import-and-check/#importing-by-hand) have nobody
 to ask, so the layer stays on: its query fails on every load and refresh without showing anything
 on the dashboard, and Grafana logs an error-level `Partial data response error` line each time
@@ -383,8 +364,8 @@ On InfluxDB the `mikroscope_kmsg` table is created by the first kernel record wr
 `kind` column by the first port record written with one. On a router whose kernel has not spoken
 since the collector started, the table does not exist and InfluxDB 3 refuses the query when it plans
 it; the collapsed section keeps that query from running until someone opens it. The code calls this
-a mitigation, not a fix. `import` with the probe routes those panels into the not-available row
-instead.
+a mitigation, not a fix. A probed publish, `dashboards import` or the collector's, routes those
+panels into the not-available row instead.
 
 ## Deep-dive sections {#the-deep-tiers}
 
@@ -496,8 +477,10 @@ compiled defaults put both here because the device they were built against produ
 **On InfluxDB every query in this row ships switched off** (hidden, in Grafana's query editor), so
 opening the row runs nothing and each panel shows a short note instead of data
 (<TestedOn of="dashboards">rendered</TestedOn>). If your store does hold the measurement,
-switch the panel's queries back on in its editor, or run `import` (InfluxDB and Prometheus; the
-other three cannot be probed), which asks the store and moves the panel back into its own section.
+switch the panel's queries back on in its editor, or publish the dashboard again with
+`dashboards import`, `dashboards publish` or a restart of a collector run with `--grafana`
+(InfluxDB and Prometheus; the other three cannot be probed), which asks the store and moves the
+panel back into its own section.
 
 **On the other four stores the row keeps its queries on**, because there a missing measurement is
 not an error. The PostgreSQL sink creates every table, `mikroscope_psi` and `mikroscope_disk`
@@ -514,13 +497,13 @@ store, a panel the probe found missing ships with its queries switched off, as o
 
 Two sections are declared for these panels, **Pressure stall (PSI)** and **Block devices**, and ship
 no row while every panel in them is absent. On a kernel built with PSI, or a board with USB or eMMC
-storage that moves, `import` finds the measurement and the section appears in its place, queries
-on, with no edit to the generator. That takes a store `import` can probe, InfluxDB or Prometheus;
+storage that moves, `import`, or the collector at its next start, finds the measurement and the
+section appears in its place, queries on, with no edit to the generator. That takes a store `import` can probe, InfluxDB or Prometheus;
 the other three cannot be probed and keep the compiled row. `import` also works the other way: on a
 store that lacks a measurement the compiled defaults expect — or a field added after that store was
 first written — the panel moves into this row with its queries switched off, so it shows its
 explanation and not a red error badge. How the probe decides is on
-[Import and check](/mikroscope/dashboards/import-and-check/#the-probe).
+[Set up in Grafana](/mikroscope/dashboards/import-and-check/#the-probe).
 
 ## Ratios, gaps and units {#how-the-dashboards-handle-ratios-holes-and-figures}
 
@@ -540,12 +523,50 @@ explanation and not a red error badge. How the probe decides is on
   (<Measured id="budget.cpu" /> of one core, <Measured id="budget.rss" />). A panel description that
   quotes a measured figure names the device and the date it was measured on, and yours will differ.
 
+## Files {#what-gen-writes}
+
+<FileTree>
+
+- dashboards/
+  - mikroscope-influxdb.json <DashboardCount store="influxdb" of="panels" /> panels, InfluxDB 3 (SQL)
+  - mikroscope-prometheus.json <DashboardCount store="prometheus" of="panels" /> panels, Prometheus
+  - mikroscope-postgres.json <DashboardCount store="postgres" of="panels" /> panels, PostgreSQL / TimescaleDB
+  - mikroscope-graphite.json <DashboardCount store="graphite" of="panels" /> panels, Graphite
+  - mikroscope-elasticsearch.json <DashboardCount store="elasticsearch" of="panels" /> panels, Elasticsearch
+  - mikroscope-alerts-influxdb.yaml <DashboardCount store="influxdb" of="rules" /> rules
+  - mikroscope-alerts-prometheus.yaml <DashboardCount store="prometheus" of="rules" /> rules
+  - mikroscope-alerts-postgres.yaml <DashboardCount store="postgres" of="rules" /> rules
+
+</FileTree>
+
+```sh
+mikroscope dashboards gen                    # writes the eight files into ./dashboards, made if missing
+mikroscope dashboards gen --out /tmp/dash    # or into another directory
+```
+
+- **Format.** Grafana's shareable export format: the datasource is a `${DS_MIKROSCOPE}` placeholder
+  declared in `__inputs`, there is no `id`, and the `uid` is fixed, `mikroscope-<store>`, one per
+  dashboard, so a re-import updates the same dashboard in place instead of creating a second one.
+  A test asserts that two generations of the InfluxDB dashboard are identical.
+- **Grafana version.** `__requires` declares Grafana 11.0.0. The panel options are written to the
+  schema Grafana 13.2.1 expects: the xychart's mark, for one, moved between Grafana 11 and 13. The
+  versions the dashboards have been checked on are on <TestedOn of="dashboards">Tested on</TestedOn>.
+- **InfluxDB 3.** The queries are SQL, and every one is bounded by `$__timeFilter`, because
+  InfluxDB 3 Core refuses unbounded scans. Where a column is named `cluster` the SQL quotes it,
+  because `cluster` is a reserved word in DataFusion.
+- **Prometheus.** The queries read a Prometheus that scrapes the collector's `/metrics`, and that
+  alone: the kernel tier recomputed from the samples, the collector's own derived and detection
+  families, and what only the sampler can produce, which reaches the collector as data because the
+  agent serves no exposition of its own. Prometheus 3 renders a histogram's zero bucket boundary as
+  `le="0.0"`, so a query reading that bucket matches `le=~"0|0.0"`. The scrape job is on
+  [Set up in Grafana](/mikroscope/dashboards/import-and-check/#prometheus-one-scrape-job).
+
 <SeeAlso>
 
 ## See also
 
-- [Import and check](/mikroscope/dashboards/import-and-check/): the datasource, the Prometheus
-  scrape job, and what `check` does and does not verify.
+- [Set up in Grafana](/mikroscope/dashboards/import-and-check/): publish them from the collector,
+  import them with the CLI or by hand, and check every panel.
 - [Alert rules](/mikroscope/dashboards/alerts/): the rules generated beside the dashboards, and where
   each threshold comes from.
 - [Detection rules](/mikroscope/sinks/detections/): the events behind the Detections section and the

@@ -1,6 +1,6 @@
 ---
 title: FAQ
-description: Short answers about mikroscope on MikroTik RouterOS, from MIPS and the 7.24 minimum to cost, production use and cpu-load, each linked to the page with the detail.
+description: Short answers about mikroscope on MikroTik RouterOS, from MIPS and the 7.24 minimum to cost, production use, cpu-load and the Grafana dashboards, each linked to the page with the detail.
 docType: reference
 head:
   - tag: title
@@ -83,6 +83,17 @@ per-interface traffic from it. What it adds is the kernel's own view, which none
 documented to read: per-core ticks at up to 100 Hz, softirqs, softnet drops and squeezes, and the
 kernel log. Where no container runs, SNMP or mktxp is the tool:
 [Compared with alternatives](/mikroscope/start/compared/).
+
+## Grafana dashboards {#does-install-set-up-the-grafana-dashboards}
+
+`install` does not set up Grafana: it writes only to the router. The collector does, when it runs
+with `--grafana <url>` and a Grafana service-account token in `GRAFANA_TOKEN`: at every start it
+creates or corrects the datasource and publishes the dashboard of each store it can describe:
+InfluxDB, Elasticsearch and PostgreSQL (through `--postgres`) on their own, Prometheus and Graphite
+once given the address in `--grafana-datasource-url`.
+`mikroscope dashboards publish`, given the collector's sink flags and `--grafana`, does the same
+once without collecting, and `dashboards import` or Grafana's own import binds a dashboard to a
+datasource you already have: [Set up in Grafana](/mikroscope/dashboards/import-and-check/).
 
 ## Outbound connections {#does-the-agent-send-anything-off-the-router}
 

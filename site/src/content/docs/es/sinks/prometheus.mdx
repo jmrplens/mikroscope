@@ -61,6 +61,23 @@ responde los contadores que no son por tick. No hay nada que contar dos veces ni
 lista de `keep` que mantener. Los intervalos de scrape y las versiones de
 Prometheus que se han usado están en el estado de las <TestedOn of="feature-status">funciones</TestedOn>.
 
+Después, el dashboard. Al colector lo consulta Prometheus, así que no puede saber la dirección a
+la que pregunta Grafana: indícala en `--grafana-datasource-url`, o nombra en
+`--grafana-datasource-uid` una fuente de datos de Prometheus que ya tengas. Cuando Prometheus
+haya hecho unos cuantos scrapes:
+
+```sh
+export GRAFANA_TOKEN=…
+mikroscope dashboards publish --prom :9124 --grafana http://grafana:3000 \
+  --grafana-datasource-url http://prometheus:9090   # Prometheus tal como lo alcanza Grafana
+```
+
+Las mismas opciones `--grafana` en el colector publican en cada arranque, siempre que `--prom`
+sea su único destino con dashboard: junto a `--influx` u otro, las opciones de la fuente de datos
+se rechazan, así que publica Prometheus de esta forma. O impórtalo con
+`dashboards import --store prometheus` sobre una fuente de datos que ya tengas ([Fuente de datos
+por destino](/mikroscope/es/dashboards/import-and-check/#cinco-de-cinco-por-dos-caminos-distintos)).
+
 ### Origen de cada familia {#lo-que-sabe-el-colector-y-de-dónde}
 
 <ScrollTable label="De dónde salen las familias del colector">
@@ -206,7 +223,7 @@ Consulta [Datos del equipo](/mikroscope/es/sinks/device-info/).
 
 - [Métricas de Prometheus](/mikroscope/es/reference/metrics/): cada familia que
   renderizan el agente y el colector, con sus etiquetas.
-- [Importar y comprobar](/mikroscope/es/dashboards/import-and-check/): los paneles que alimenta este
+- [Configurar en Grafana](/mikroscope/es/dashboards/import-and-check/): los paneles que alimenta este
   trabajo de scrape, y cómo comprobarlos panel a panel.
 - [Valores derivados](/mikroscope/es/sinks/derive/): qué significan los gauges
   `mikroscope_derived_*` y cuándo faltan.

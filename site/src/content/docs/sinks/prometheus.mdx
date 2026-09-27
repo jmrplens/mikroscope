@@ -60,6 +60,22 @@ that are not per-tick. There is nothing to double-count and no keep list to
 maintain. The scrape intervals and Prometheus versions that have been run are
 under <TestedOn of="feature-status">Feature status</TestedOn>.
 
+Then the dashboard. The collector is scraped, so it cannot know the address Grafana queries:
+give it in `--grafana-datasource-url`, or name a Prometheus datasource you already have in
+`--grafana-datasource-uid`. Once Prometheus has scraped a few times:
+
+```sh
+export GRAFANA_TOKEN=…
+mikroscope dashboards publish --prom :9124 --grafana http://grafana:3000 \
+  --grafana-datasource-url http://prometheus:9090   # Prometheus as Grafana reaches it
+```
+
+The same `--grafana` flags on the collector publish at every start, as long as `--prom` is its
+only sink with a dashboard: beside `--influx` or another, the datasource flags are refused, so
+publish Prometheus this way. Or import it with `dashboards import --store prometheus` against a
+datasource you already have ([Datasource per
+sink](/mikroscope/dashboards/import-and-check/#five-of-five-by-two-different-routes)).
+
 ### Family sources {#what-the-collector-knows-and-how}
 
 <ScrollTable label="Where the collector's families come from">
@@ -202,7 +218,7 @@ info](/mikroscope/sinks/device-info/).
 
 - [Prometheus metrics](/mikroscope/reference/metrics/): every family the agent and the
   collector render, with its labels.
-- [Import and check](/mikroscope/dashboards/import-and-check/): the dashboards this scrape job
+- [Set up in Grafana](/mikroscope/dashboards/import-and-check/): the dashboards this scrape job
   feeds, and how to check them panel by panel.
 - [Derived values](/mikroscope/sinks/derive/): what the `mikroscope_derived_*` gauges
   mean and when they are absent.

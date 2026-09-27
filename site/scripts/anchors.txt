@@ -168,6 +168,7 @@
 /dashboards/#detections-and-captures
 /dashboards/#flash-wear
 /dashboards/#forwarding-cost-derived
+/dashboards/#get-them-into-grafana
 /dashboards/#hardware-counters-pmu
 /dashboards/#how-the-dashboards-handle-ratios-holes-and-figures
 /dashboards/#interface-traffic
@@ -209,8 +210,12 @@
 /dashboards/alerts/#what-the-rules-cannot-see
 /dashboards/alerts/#where-the-thresholds-come-from
 /dashboards/import-and-check/#_top
+/dashboards/import-and-check/#check-every-panel
 /dashboards/import-and-check/#checking-against-a-finished-capture
+/dashboards/import-and-check/#choose-a-route
+/dashboards/import-and-check/#datasources
 /dashboards/import-and-check/#five-of-five-by-two-different-routes
+/dashboards/import-and-check/#grafana-token
 /dashboards/import-and-check/#importing-by-hand
 /dashboards/import-and-check/#importing-from-the-cli
 /dashboards/import-and-check/#letting-the-collector-do-it-forward---grafana
@@ -223,6 +228,7 @@
 /dashboards/import-and-check/#the-postgresql-datasource
 /dashboards/import-and-check/#the-probe
 /dashboards/import-and-check/#the-url-and-the-fields
+/dashboards/import-and-check/#update-and-remove
 /dashboards/import-and-check/#what-check-does-not-verify
 /dashboards/import-and-check/#what-check-verifies
 /dashboards/import-and-check/#what-has-been-verified
@@ -403,6 +409,7 @@
 /es/dashboards/#interrupciones-y-softirqs
 /es/dashboards/#las-cuatro-preguntas-de-todos-los-días
 /es/dashboards/#las-rayas-rojas-discontinuas-de-todos-los-paneles
+/es/dashboards/#llevarlos-a-grafana
 /es/dashboards/#lo-que-cuesta-observar-y-si-llegó-a-funcionar
 /es/dashboards/#lo-que-escribe-gen
 /es/dashboards/#lo-que-se-marcó
@@ -434,9 +441,13 @@
 /es/dashboards/alerts/#starlight__on-this-page
 /es/dashboards/alerts/#véase-también
 /es/dashboards/import-and-check/#_top
+/es/dashboards/import-and-check/#actualizar-y-quitar
 /es/dashboards/import-and-check/#cinco-de-cinco-por-dos-caminos-distintos
+/es/dashboards/import-and-check/#comprobar-cada-panel
 /es/dashboards/import-and-check/#comprobar-contra-una-captura-terminada
 /es/dashboards/import-and-check/#el-sondeo
+/es/dashboards/import-and-check/#elegir-un-camino
+/es/dashboards/import-and-check/#fuentes-de-datos
 /es/dashboards/import-and-check/#importar-a-mano
 /es/dashboards/import-and-check/#importar-desde-la-cli
 /es/dashboards/import-and-check/#la-fuente-de-datos-de-elasticsearch
@@ -450,6 +461,7 @@
 /es/dashboards/import-and-check/#prometheus-un-trabajo-de-scrape
 /es/dashboards/import-and-check/#que-lo-haga-el-colector-forward---grafana
 /es/dashboards/import-and-check/#starlight__on-this-page
+/es/dashboards/import-and-check/#token-de-grafana
 /es/dashboards/import-and-check/#véase-también
 /es/how-it-works/#_top
 /es/how-it-works/#components
@@ -581,6 +593,7 @@
 /es/install/script/#verify
 /es/install/script/#véase-también
 /es/install/upgrade/#_top
+/es/install/upgrade/#dashboards-after-an-upgrade
 /es/install/upgrade/#never-removed
 /es/install/upgrade/#remove-dashboards-and-data
 /es/install/upgrade/#starlight__on-this-page
@@ -901,6 +914,7 @@
 /es/reference/troubleshooting/#the-nombre-sink-does-not-know-the-address-grafana-would-query
 /es/reference/troubleshooting/#tls-first-record-does-not-look-like-a-tls-handshake
 /es/reference/troubleshooting/#trampa-del-cortafuegos
+/es/reference/troubleshooting/#un-almacén-por-ejecución
 /es/reference/troubleshooting/#un-bucle-que-routeros-no-muestra
 /es/reference/troubleshooting/#un-destino-está-descartando
 /es/reference/troubleshooting/#una-credencial-para-todos-los-registros
@@ -949,6 +963,7 @@
 /es/security/installer/#véase-también
 /es/sinks/#_top
 /es/sinks/#cuál-debería-usar
+/es/sinks/#dashboard-en-grafana
 /es/sinks/#extraer-lo-bastante-rápido
 /es/sinks/#lo-que-cuentan-los-contadores
 /es/sinks/#lo-que-hace-una-ejecución
@@ -1060,6 +1075,7 @@
 /es/start/#siguientes-pasos
 /es/start/#starlight__on-this-page
 /es/start/#verificar
+/es/start/#verlo-en-grafana
 /es/start/#véase-también
 /es/start/compared/#_top
 /es/start/compared/#cuándo-no-usar-mikroscope
@@ -1070,6 +1086,7 @@
 /es/start/compared/#starlight__on-this-page
 /es/start/compared/#véase-también
 /es/start/questions/#_top
+/es/start/questions/#configura-install-los-dashboards-de-grafana
 /es/start/questions/#cuánto-le-cuesta-al-router
 /es/start/questions/#cuántos-segundos-promedia-el-cpu-load-de-routeros
 /es/start/questions/#en-qué-routers-ha-funcionado-de-verdad
@@ -1219,6 +1236,7 @@
 /install/script/#starlight__on-this-page
 /install/script/#verify
 /install/upgrade/#_top
+/install/upgrade/#dashboards-after-an-upgrade
 /install/upgrade/#never-removed
 /install/upgrade/#remove-dashboards-and-data
 /install/upgrade/#see-also
@@ -1529,6 +1547,7 @@
 /reference/troubleshooting/#installing
 /reference/troubleshooting/#no-container-package
 /reference/troubleshooting/#one-credential-for-every-registry
+/reference/troubleshooting/#one-store-per-run
 /reference/troubleshooting/#reading-what-it-shows
 /reference/troubleshooting/#routeros-version
 /reference/troubleshooting/#see-also
@@ -1587,6 +1606,7 @@
 /security/installer/#what-it-refuses-to-send-to-the-router
 /sinks/#_top
 /sinks/#a-slow-sink-never-stops-the-loop
+/sinks/#dashboard-in-grafana
 /sinks/#one-dimension-one-name
 /sinks/#pulling-fast-enough
 /sinks/#see-also
@@ -1696,6 +1716,7 @@
 /start/#other-ways-to-install
 /start/#requirements
 /start/#see-also
+/start/#see-it-in-grafana
 /start/#starlight__on-this-page
 /start/#verify
 /start/#what-it-does-not-do
@@ -1708,6 +1729,7 @@
 /start/compared/#what-only-the-kernel-showed
 /start/compared/#when-not-to-use-mikroscope
 /start/questions/#_top
+/start/questions/#does-install-set-up-the-grafana-dashboards
 /start/questions/#does-it-replace-snmp-or-mktxp
 /start/questions/#does-it-see-interface-traffic
 /start/questions/#does-mikroscope-run-on-mips-or-tile-routers

@@ -268,7 +268,7 @@ const NEIGHBOURS = [
 	],
 	[
 		"../dashboards/README.md",
-		"The two committed Grafana dashboards and their alert rules as files, with the datasource settings, including the InfluxDB datasource's two secure fields",
+		"The five committed Grafana dashboards and their alert rules as files, with the datasource settings, including the InfluxDB datasource's two secure fields",
 	],
 	[
 		"../site/",

@@ -24,12 +24,12 @@ ejecuta dónde, a qué llega y qué credencial guarda.
 | Pieza                                                            | Corre                                      | Llega a                                                                                                                         | Credenciales                                                                    |
 | ---------------------------------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
 | `mikroscope-agent`                                               | en un contenedor scratch dentro del router | sirve HTTP solo en la dirección de la veth; **ninguna conexión saliente**                                                       | no presenta ninguna; un token bearer opcional que _exige_                       |
-| `mikroscope doctor`, `install`, `upgrade`, `uninstall`, `status` | tu máquina, cuando los ejecutas            | el router por tu propio ssh de administrador; `install`, `upgrade` y `status` además sondean el `/healthz` del agente, y `doctor` lee `/healthz` y después el anillo del agente, como mucho sus 10 000 muestras más recientes | tu clave ssh; `doctor` presenta además el token del agente si hay uno |
+| `mikroscope doctor`, `install`, `upgrade`, `uninstall`, `status` | tu máquina, cuando los ejecutas            | el router por tu propio ssh de administrador; `install`, `upgrade` y `status` además sondean el `/healthz` del agente, y `doctor` lee `/healthz` y después el anillo del agente, como mucho sus 10 000 muestras más recientes; `uninstall --targets dashboard` o `data` llega además a tu Grafana y a los almacenes | tu clave ssh; `doctor` presenta además el token del agente si hay uno; `GRAFANA_TOKEN` y las credenciales de los destinos para esos objetivos |
 | `mikroscope plan`, `install --dry-run`, `upgrade --dry-run`      | tu máquina                                 | nada: construyen la imagen e imprimen el listado sin conectarse al router                                                       | ninguna, salvo que `plan --rsc` reciba un token (abajo)                         |
 | `mikroscope record`, `forward`                                   | tu máquina                                 | el agente por HTTP; la API binaria del router para la capa de la API de `forward`, el transporte relay y `record --log-markers` | el token del agente si hay uno; un usuario de la API dedicado y de solo lectura; `GRAFANA_TOKEN` con `--grafana` |
 | `mikroscope mark`                                                | tu máquina                                 | los ficheros locales de la grabación; la API binaria del router solo con `--log-markers`; nunca el agente                       | el usuario de la API, solo con `--log-markers`                                  |
 | destinos                                                         | tu máquina, dentro de `forward`            | sirven `/metrics` para tu Prometheus; envían a InfluxDB y a los demás destinos que indiques                                     | sus tokens, en tu entorno                                                       |
-| `mikroscope dashboards import`, `check`                          | tu máquina                                 | tu Grafana                                                                                                                      | `GRAFANA_TOKEN`, en tu entorno                                                  |
+| `mikroscope dashboards publish`, `import`, `check`               | tu máquina                                 | tu Grafana; `publish` crea o corrige allí las fuentes de datos y la carpeta                                                     | `GRAFANA_TOKEN`, en tu entorno; `publish` además las credenciales de los destinos que copia en las fuentes de datos |
 
 </ScrollTable>
 
@@ -87,8 +87,13 @@ se ve en `ps` y en el historial de la shell.
 - PostgreSQL (`--postgres`, o `MIKROSCOPE_POSTGRES_DSN`): el DSN es una opción, así que deja la
   contraseña fuera de él y que el driver la lea de `PGPASSWORD` o de `~/.pgpass`, como hace psql.
   Una contraseña escrita en un DSN pasado como opción se ve en `ps`, y venga de donde venga el DSN,
-  `forward --grafana` copia la contraseña escrita en él en el datasource de Grafana que crea. Una
-  contraseña que solo está en el entorno o en el fichero de contraseñas no se copia.
+  `forward --grafana` y `dashboards publish` copian la contraseña escrita en él en la fuente de datos
+  de Grafana que crean. Una contraseña que solo está en el entorno o en el fichero de contraseñas no
+  se copia.
+- `forward --grafana` y `dashboards publish` copian también el token de InfluxDB
+  (`MIKROSCOPE_INFLUX_TOKEN`, que puede escribir) y `MIKROSCOPE_ELASTIC_AUTH` en las fuentes de datos
+  que crean. Para dar a Grafana una credencial de solo lectura, crea tú la fuente de datos y pasa
+  `--grafana-datasource-uid`.
 - Grafana: `GRAFANA_TOKEN`.
 
 El token del agente es la excepción: tiene una opción `--token` además de `MIKROSCOPE_TOKEN`. El

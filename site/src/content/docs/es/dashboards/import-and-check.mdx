@@ -1,7 +1,10 @@
 ---
-title: Importar y comprobar
-description: "Enlaza los dashboards a una fuente de datos de Grafana, impórtalos a mano, con la CLI o desde el colector, y comprueba la consulta de cada panel contra un Grafana en marcha."
+title: Configurar en Grafana
+description: "Lleva los dashboards de mikroscope a Grafana: publicados por el colector, importados con la CLI o a mano, con la fuente de datos de cada almacén; después comprueba cada panel, actualízalos y quítalos."
 docType: how-to
+head:
+  - tag: title
+    content: Configurar los dashboards de mikroscope en Grafana | mikroscope
 ---
 
 import { Aside, Tabs, TabItem } from "@astrojs/starlight/components";
@@ -12,197 +15,155 @@ import SeeAlso from "../../../../components/SeeAlso.astro";
 import Src from "../../../../components/Src.astro";
 import TestedOn from "../../../../components/TestedOn.astro";
 
-Crea la fuente de datos de tu almacén, importa el dashboard y ejecuta después
-`mikroscope dashboards check`: demuestra que la consulta de cada panel devuelve filas a través de la
-propia API de consultas de Grafana. No demuestra que un lector pueda leer el resultado.
+`mikroscope install` no pone nada en Grafana: solo escribe en el router. Los dashboards llegan a
+Grafana por uno de tres caminos, y el del colector es el más corto porque además crea la fuente de
+datos. Sea cual sea el camino, `mikroscope dashboards check` ejecuta después la consulta de cada
+panel a través de la propia API de Grafana. Eso demuestra que las consultas devuelven filas, no que
+un lector pueda leer el resultado.
 
-## Fuente de datos de InfluxDB 3 {#la-fuente-de-datos-de-influxdb-3}
+## Elegir un camino {#elegir-un-camino}
 
-Lo primero es la base de datos: `influxdb3 create database mikroscope` en el nodo de InfluxDB 3, con
-un token que pueda leerla y escribirla — la misma base de datos y el mismo token en los que escribe
-el destino, en [InfluxDB 3](/mikroscope/es/sinks/influxdb/).
+<ScrollTable label="Caminos hacia Grafana">
 
-La fuente de datos es de tipo `influxdb`, `version: SQL`, `dbName: mikroscope` —los campos del
-[ejemplo de aprovisionamiento del propio Grafana para InfluxDB 3 con SQL](https://grafana.com/docs/grafana/latest/datasources/influxdb/configure/)—,
-con **los dos** campos seguros rellenos:
-
-- `httpHeaderValue1` = `Bearer <token>` (la ruta HTTP)
-- `token` = `<token>` (la ruta FlightSQL)
-
-Sin el segundo, los paneles fallan con `flightsql: Unauthenticated`.
-
-## Fuente de datos de Prometheus {#prometheus-un-trabajo-de-scrape}
-
-Haz scrape del colector con un solo trabajo y apunta una fuente de datos de Prometheus a ese
-Prometheus:
-
-```yaml
-- job_name: "mikroscope"
-  scrape_interval: 5s
-  static_configs: [{ targets: ["<equipo del colector>:9124"] }]
-```
-
-`mikroscope forward --prom :9124` lleva todas las familias: el tier de kernel recalculado desde las
-muestras que recibió, las familias propias de derivación y detección del colector, y lo que solo el
-muestreador puede producir. El agente no sirve ningún `/metrics`; su cronometraje de tick viaja en
-las muestras y sus contadores llegan por `GET /sampler`, que el colector lee cada minuto. Un segundo
-trabajo no tendría nada que añadir.
-
-## Fuente de datos de PostgreSQL {#la-fuente-de-datos-de-postgresql}
-
-El destino SQL escribe un **guion**, no filas: `forward --sql out.sql` y después `psql -f out.sql`,
-o `--sql - | psql`. Así que la base de datos tiene el esquema y los datos solo después de aplicar
-ese guion —una fuente de datos apuntada a una base vacía responde a cada panel con «relation does
-not exist»—.
-
-La fuente de datos es el `grafana-postgresql-datasource` de Grafana, con la base y el usuario con
-los que se cargó el guion. El `sslmode` es cosa tuya; `postgresVersion` solo decide qué sintaxis
-puede emitir el complemento, y todas las consultas de este dashboard son SQL llano.
-
-Los paneles son los de InfluxDB, reescritos: la macro de agrupación, los percentiles, los casts y
-los nombres de columna que el destino SQL tuvo que cambiar porque `user`, `from` y `to` son palabras
-reservadas. Algunos paneles no se reescriben y **se caen en silencio**, en vez de pasar a la fila de
-«no disponible»: los del log del kernel, porque el esquema SQL no tiene tabla de recuentos para él,
-y los de `mikroscope_buddy` y los contadores de interfaz de RouterOS, anchos en InfluxDB y largos en
-SQL, donde un pivote es otra pregunta, y "Headroom under the container memory cap", porque el límite
-va en la fila `mikroscope_self` de InfluxDB y en el esquema SQL es un dato del equipo. El dashboard
-de PostgreSQL del repositorio lleva por
-tanto <DashboardCount store="postgres" of="panels" /> paneles frente a los <DashboardCount store="influxdb" of="panels" /> de InfluxDB.
-
-## Fuente de datos de Graphite {#la-fuente-de-datos-de-graphite}
-
-Graphite no tiene etiquetas: cada dimensión es un nodo de la ruta, así que una consulta ES una ruta
-—y los dos primeros nodos son tuyos—. `--graphite-prefix` (por defecto `mikroscope`) y `--host-tag`
-son por eso **variables del dashboard**, leídas del propio árbol de métricas de Graphite, y el
-dashboard las pregunta arriba en vez de quedar fijado a quien lo generó.
-
-La fuente de datos es de tipo `graphite`; no hace falta nada más. Desde la CLI, `check` no puede
-leer el selector de variables de un navegador, así que se las pasas:
-
-```sh
-mikroscope dashboards check --store graphite --datasource-uid <uid> \
-  --var prefix=mikroscope --var host=rb5009
-```
-
-## Fuente de datos de Elasticsearch {#la-fuente-de-datos-de-elasticsearch}
-
-De tipo `elasticsearch`, con el índice que produzca el `--elastic-index` con el que reenvíes y
-`@timestamp` como campo de tiempo.
-
-Este dashboard es el más pequeño de los cinco, y la razón está en los documentos y no en las
-consultas: el destino escribe las lecturas por núcleo y por dispositivo de una muestra como
-**arrays** —`cpu` es un array con un objeto por núcleo— y un array mapeado dinámicamente es un
-campo multivaluado sin correspondencia entre sus miembros. `avg(cpu.busy_ratio)` es la media entre
-los núcleos, que es un número real; «la proporción de ocupación del núcleo 2» no es expresable sin
-un mapeo nested que el destino no declara. Así que los paneles de Elasticsearch son los agregados
-escalares, y los de por núcleo están ausentes en vez de equivocados.
-
-El dashboard tiene una variable, **Host**, que se llena con una búsqueda de términos sobre
-`host.keyword`, porque un índice puede contener varios routers. La búsqueda es la cadena JSON que
-la fuente de datos analiza, así que Host se llena desde el índice
-(<TestedOn of="dashboards">renderizado</TestedOn>). `check` nunca ejecuta esa búsqueda: toma el
-valor de `--var host=`.
-
-## Importar a mano {#importar-a-mano}
-
-Grafana → Dashboards → New → Import, como lo describe la [guía de importación del propio
-Grafana](https://grafana.com/docs/grafana/latest/visualizations/dashboards/build-dashboards/import-dashboards/): sube el
-`mikroscope-<almacén>.json` de <Src path="dashboards/" /> que corresponda a tu fuente de datos
-(influxdb, prometheus, postgres, graphite o elasticsearch) y elige la fuente de datos cuando
-Grafana pida `DS_MIKROSCOPE`.
-
-Un fichero subido así lleva los **valores compilados por defecto**: los paneles de PSI y de
-dispositivos de bloques (cinco; tres en Graphite y Elasticsearch) están en la fila de no
-disponibles. En InfluxDB sus consultas van apagadas; en los otros cuatro almacenes siguen
-encendidas, porque allí que falte una medida no es un error
-([por qué](/mikroscope/es/dashboards/#no-disponible-en-este-equipo)). Todos los demás paneles se
-publican con su consulta encendida, tenga o no tu almacén su medida. En InfluxDB, un panel al que
-le falta la tabla o la columna muestra entonces el error de planificación de InfluxDB 3, como una
-insignia roja, cuando se abre su sección. `import` desde la CLI lo evita. La anotación de
-detecciones sigue encendida en un fichero subido así; antes de la primera detección falla sin
-mostrar nada, como cuenta
-[el apartado de anotaciones](/mikroscope/es/dashboards/#las-rayas-rojas-discontinuas-de-todos-los-paneles).
-
-## Importar con la CLI {#importar-desde-la-cli}
-
-```sh
-export GRAFANA_URL=http://grafana:3000 GRAFANA_TOKEN=…
-mikroscope dashboards import --store influxdb --datasource-uid <uid>
-mikroscope dashboards check  --store influxdb --datasource-uid <uid> --window 15m
-```
-
-<ScrollTable label="Opciones de dashboards gen, import y check">
-
-| Opción             | Por defecto          | La usa        | Qué hace                                                                                      |
-| ------------------ | -------------------- | ------------- | --------------------------------------------------------------------------------------------- |
-| `--store`          | `influxdb`           | import, check | `influxdb`, `prometheus`, `postgres`, `graphite` o `elasticsearch`; también el id del plugin de fuente de datos que se envía a Grafana |
-| `--grafana`        | `$GRAFANA_URL`       | import, check | la URL base de Grafana                                                                        |
-| `--datasource-uid` | ninguno, obligatoria | import, check | la fuente de datos a la que se enlaza `DS_MIKROSCOPE`                                         |
-| `--no-probe`       | desactivada          | import, check | no preguntar a la fuente de datos qué contiene; usar los valores compilados por defecto       |
-| `--window`         | `15m`                | check         | longitud de la ventana de consulta                                                            |
-| `--end`            | ahora                | check         | el borde derecho de la ventana, en RFC 3339                                                   |
-| `--var`            | ninguna              | check         | fija una variable del dashboard, `nombre=valor`, repetible; Graphite necesita `prefix` y `host`, Elasticsearch `host` |
-| `--out`            | `dashboards`         | gen           | el directorio en el que `gen` escribe los ocho ficheros                                     |
+| Camino                                                          | Orden                                                                                                     | Fuente de datos                                                                     | Úsalo cuando                                                                                  |
+| --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| [Desde el colector](/mikroscope/es/dashboards/import-and-check/#que-lo-haga-el-colector-forward---grafana) | `forward … --grafana <url>`, o una sola vez sin recoger: `dashboards publish` con las mismas opciones | creada a partir de las opciones del destino, o adoptada con `--grafana-datasource-uid` | quieres que te cree la fuente de datos; el colector vuelve a publicar en cada arranque        |
+| [Con la CLI](#importar-desde-la-cli)                            | `dashboards import --store <almacén> --datasource-uid <uid>`                                              | una que ya existe                                                                   | ya tienes la fuente de datos, o el colector no llega a Grafana                                |
+| [A mano](#importar-a-mano)                                      | Grafana → Dashboards → New → Import                                                                       | una que ya existe                                                                   | no hay token para mikroscope                                                                  |
 
 </ScrollTable>
 
-El token solo se lee de `GRAFANA_TOKEN`; no hay opción para él. Es un token de cuenta de servicio de
-Grafana con permiso para escribir dashboards. El UID de la fuente de datos es el último segmento de
-la URL de sus ajustes en Grafana, `/connections/datasources/edit/<uid>`. Sin una URL de Grafana, un
-token y un UID de fuente de datos, las dos órdenes se detienen con `import/check need --grafana,
-GRAFANA_TOKEN and --datasource-uid`.
+Todos los caminos necesitan un almacén en el que escriba el colector
+([Ejecutar el colector](/mikroscope/es/sinks/)). El uid del dashboard es `mikroscope-<almacén>` en
+todos los caminos, así que importar de nuevo sustituye el dashboard en vez de añadir un segundo.
 
-`import` envía el dashboard a `/api/dashboards/import` de Grafana con la entrada de la fuente de
-datos resuelta a tu UID, `overwrite` activado, a la carpeta General (`folderId` 0). El `uid` del
-dashboard es fijo, así que importar de nuevo sustituye el mismo dashboard en la misma URL. Imprime esa
-URL.
+¿Aún no tienes almacén ni Grafana? <Src path="deploy/" /> tiene dos pilas de compose, cada una con
+Grafana y el colector. La de InfluxDB publica el dashboard cuando arranca el colector, una vez
+fijado `GRAFANA_TOKEN`.
+
+## Token de Grafana {#token-de-grafana}
+
+El colector y la CLI leen un token de cuenta de servicio de Grafana solo de `GRAFANA_TOKEN`; ninguna
+opción lo acepta ([cuentas de servicio de Grafana](https://grafana.com/docs/grafana/latest/administration/service-accounts/)).
+Lo que tiene que poder hacer depende de la orden:
+
+- `forward --grafana` y `dashboards publish` crean la carpeta y crean o corrigen la fuente de datos,
+  y `uninstall --targets dashboard` la borra: dale a esa cuenta de servicio el rol Admin.
+- `dashboards import` escribe el dashboard y nada más, y `dashboards check` no escribe nada:
+  ejecuta consultas.
+- `--grafana-dry-run`, junto con `--grafana`, no contacta con ningún Grafana y no necesita token.
+
+`forward` toma el Grafana solo de `--grafana` o de `MIKROSCOPE_GRAFANA_URL`, nunca de `GRAFANA_URL`;
+qué variable leen las demás órdenes está en
+[Variables de entorno](/mikroscope/es/reference/environment/#grafana).
 
 ## Publicar desde el colector {#que-lo-haga-el-colector-forward---grafana}
 
-Apunta `forward` a un Grafana y el colector lo configura por su cuenta: concilia una fuente de datos
-y un dashboard por cada store al que escribe, una vez, al arrancar, antes de la primera muestra:
+Apunta `forward` a un Grafana y, al arrancar, antes de la primera muestra, el colector crea la
+fuente de datos y publica el dashboard de cada almacén en el que escribe:
 
 ```sh
+export MIKROSCOPE_INFLUX_TOKEN=…   # el token del destino; omítelo en un almacén sin autenticación
 export GRAFANA_TOKEN=…
 mikroscope forward \
   --influx http://influx:8181 --influx-db mikroscope \
   --grafana http://grafana:3000
 ```
 
+En la salida de error estándar:
+
 ```text
 grafana: folder "mikroscope" (bfyr3khdp41z4b) created
 grafana: influxdb: datasource mikroscope-influxdb (influxdb) created
+grafana: influxdb: could not ask the datasource which measurements it holds (…); using the compiled defaults
 grafana: influxdb: dashboard http://grafana:3000/d/mikroscope-influxdb/…
 ```
 
-<ScrollTable label="opciones de forward --grafana">
+La tercera línea aparece mientras el almacén aún no contiene nada (más abajo). `--grafana-dry-run`
+imprime lo que escribiría y se detiene. Comprueba lo que ha publicado con
+`mikroscope dashboards check --grafana http://grafana:3000 --store influxdb --datasource-uid mikroscope-influxdb`
+([Comprobar cada panel](#comprobar-cada-panel)).
 
-| Opción                     | Por defecto  | Qué hace                                                                                  |
-| -------------------------- | ------------ | ------------------------------------------------------------------------------------------ |
-| `--grafana`                | vacío        | el Grafana en el que publicar al arrancar. Vacío — lo normal — no publica nada              |
-| `--grafana-folder`         | `mikroscope` | la carpeta donde publicar; vacío es la carpeta General de Grafana                           |
-| `--grafana-datasource-uid` | vacío        | adoptar una fuente de datos existente por uid en lugar de crear una, y dejarla intacta      |
-| `--grafana-datasource-url` | vacío        | la dirección que consulta Grafana, para los dos destinos que no pueden saberla; también sustituye la que un destino sí sabe |
-| `--grafana-datasource-sslmode` | vacío    | `disable`, `require`, `verify-ca` o `verify-full` para la fuente de datos de PostgreSQL     |
-| `--grafana-dry-run`        | apagado      | imprimir la fuente de datos y el dashboard que escribiría, no escribir nada y parar antes de recoger |
+`mikroscope dashboards publish`, con las mismas opciones de destino y de `--grafana`, hace lo mismo
+una sola vez sin recoger y termina; si Grafana rechaza algo, sale con error, mientras que el
+colector sigue adelante. Imprime las mismas líneas en la salida estándar, sin el prefijo `grafana:`,
+y no contacta con ningún router. Las opciones de destino solo le dicen qué almacenes publicar y cómo
+describir sus fuentes de datos: ahí `--prom` no sirve ningún `/metrics`, y no se escribe nada en
+ningún almacén.
+
+```sh
+mikroscope dashboards publish \
+  --influx http://influx:8181 --influx-db mikroscope \
+  --grafana http://grafana:3000
+```
+
+Lo que crea tiene nombres fijos, así que una segunda ejecución escribe en los mismos sitios: la
+carpeta que nombra `--grafana-folder`, que se busca por su título o se crea, y por cada almacén una
+fuente de datos y un dashboard, los dos con el uid `mikroscope-<almacén>` (`mikroscope-influxdb`,
+`mikroscope-elasticsearch`, `mikroscope-prometheus`, `mikroscope-postgres`, `mikroscope-graphite`).
+La fuente de datos se llama también `mikroscope-<almacén>`; una que adoptes conserva su propio uid.
+
+<ScrollTable label="Opciones de publicación en Grafana, de forward y dashboards publish">
+
+| Opción                         | Por defecto  | Qué hace                                                                                                                  |
+| ------------------------------ | ------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| `--grafana`                    | vacío        | el Grafana en el que publicar ([sus variables](#token-de-grafana)). Vacío, lo normal, no publica nada                      |
+| `--grafana-folder`             | `mikroscope` | la carpeta donde publicar; `--grafana-folder ""` es la carpeta General de Grafana                                          |
+| `--grafana-datasource-uid`     | vacío        | adoptar una fuente de datos existente por uid en lugar de crear una, y dejarla intacta; un almacén por ejecución          |
+| `--grafana-datasource-url`     | vacío        | la dirección que consulta Grafana (`host:puerto` para PostgreSQL, una URL para los demás), para los dos destinos que no pueden saberla; también sustituye la que un destino sí sabe; un almacén por ejecución |
+| `--grafana-datasource-sslmode` | vacío        | `disable`, `require`, `verify-ca` o `verify-full` para la fuente de datos de PostgreSQL; cualquier otro valor se rechaza |
+| `--grafana-dry-run`            | apagado      | con `--grafana`, imprimir lo que escribiría, sin contactar con ningún Grafana ni necesitar token; `forward` se detiene después antes de recoger, y la rechaza sin un Grafana |
 
 </ScrollTable>
+
+Cada opción salvo `--grafana-dry-run` tiene también una variable `MIKROSCOPE_GRAFANA_*`
+([Variables de entorno](/mikroscope/es/reference/environment/#grafana)). Una variable vacía cuenta
+como no fijada, así que la carpeta General se pide con la opción, `--grafana-folder ""`.
 
 - **Está apagado si no lo pides.** Un colector que escribiera en el Grafana de alguien porque puede
   no es un colector que nadie deba ejecutar. `GRAFANA_TOKEN` es obligatorio por lo mismo: hay
   Grafanas que aceptan una petición anónima, y uno que lo hiciera escribiría como aquel por quien el
   servidor tome a quien pregunta.
 - **Un fallo aquí no detiene al colector.** Un Grafana inalcanzable, un token rechazado o una fuente
-  de datos que el servidor no acepta son cada uno un aviso y un colector que sigue recogiendo.
-  Negarse a arrancar cambiaría las muestras de la hora que pasó sin funcionar, que no se pueden
-  recuperar, por un dashboard publicado en el siguiente arranque, que sí.
-- **Nunca se borra nada.** Un dashboard o una fuente de datos bajo un uid en el que ya no escribe
-  nadie se quedan donde están. Borrar el dashboard de alguien sin que lo pida no es algo que deba
-  hacer un colector, ni siquiera con uno que hizo él, porque puede ser la copia que está mirando.
+  de datos que el servidor no acepta son cada uno un aviso,
+  `grafana: could not publish, carrying on without it: <motivo>`, y un colector que sigue
+  recogiendo. Se intentan todos los almacenes, y cada uno que falla recibe su propio aviso, que lo
+  nombra. Negarse a arrancar cambiaría las muestras de la hora que pasó sin funcionar, que no se
+  pueden recuperar, por un dashboard publicado en el siguiente arranque, que sí.
+  `dashboards publish` imprime los mismos motivos, uno por almacén, y sale con 1.
+- **Vuelve a publicar en cada arranque.** El dashboard se importa sobre sí mismo, así que un cambio
+  hecho en Grafana se sustituye en el siguiente arranque: guarda una copia editada como un dashboard
+  nuevo. La fuente de datos que creó se corrige para que vuelva a ser lo que describen las opciones
+  del destino, y una que lleva un token o una contraseña se reescribe en cada arranque y aparece
+  como `updated`.
+- **Un almacén vacío recibe los valores compilados.** Publica antes de la primera muestra, así que
+  en un almacén que aún no contiene nada el [sondeo](#el-sondeo) no encuentra nada y el dashboard
+  lleva los valores compilados por defecto. Reinicia el colector cuando el almacén tenga datos, o
+  ejecuta `dashboards publish` con las opciones del colector, y publicará el dashboard que admite tu
+  almacén. PostgreSQL, Graphite y Elasticsearch no se sondean nunca e imprimen la misma línea en
+  cada arranque.
+- **Copia la credencial del destino.** La fuente de datos de InfluxDB lleva el propio token del
+  destino, que puede escribir; la de Elasticsearch envía `MIKROSCOPE_ELASTIC_AUTH` igual que el
+  destino, y la de PostgreSQL lleva una contraseña escrita en `--postgres`. Para tener en Grafana una credencial de solo
+  lectura, crea tú la fuente de datos y adóptala con `--grafana-datasource-uid`.
+- **No borra nada.** Un dashboard o una fuente de datos de un destino en el que el colector ya no
+  escribe se queda donde está: borrar el dashboard de alguien sin que lo pida no es algo que deba
+  hacer un colector. `uninstall --targets dashboard` los quita
+  ([Actualizar y quitar](#actualizar-y-quitar)). Tampoco publica reglas de alerta
+  ([Reglas de alerta](/mikroscope/es/dashboards/alerts/)).
+
+<Aside type="caution" title="Grafana suele llegar al almacén por otra dirección">
+  Una fuente de datos que deriva el colector recibe la dirección en la que escribe el colector.
+  Grafana suele llegar al mismo almacén por otra: un colector en el host escribe en un puerto
+  publicado en `127.0.0.1`, mientras que Grafana, dentro de un contenedor, llega al almacén por el
+  nombre de su servicio. Grafana acepta una fuente de datos con la dirección del colector y no puede
+  usarla. Pasa en `--grafana-datasource-url` la dirección por la que Grafana llega al almacén
+  (`host:puerto` para PostgreSQL, una URL para los demás), un almacén por ejecución.
+</Aside>
 
 ### Fuente de datos por destino {#cinco-de-cinco-por-dos-caminos-distintos}
 
-**Tres destinos conocen la dirección que consulta Grafana**, porque es la
+**Tres destinos conocen una dirección que Grafana puede consultar**, porque es la
 dirección a la que escriben o a la que marcan. **Dos no pueden conocerla**, y
 por mucho que se leyeran sus opciones no aparecería — pero dicha la dirección
 en `--grafana-datasource-url`, no queda nada que derivar: una fuente de datos
@@ -212,8 +173,8 @@ de Prometheus es una URL, y una de Graphite también.
 
 | Destino      | Fuente de datos   | Por qué                                                                                       |
 | ------------ | ----------------- | ----------------------------------------------------------------------------------------------- |
-| `--influx`   | derivada          | el servidor al que escribe es el que consulta Grafana; `--influx-db` nombra la base de datos    |
-| `--elastic`  | derivada          | la URL base a la que hace `_bulk` es la que consulta Grafana; `--elastic-index` da el patrón    |
+| `--influx`   | derivada          | el servidor al que escribe, en la dirección que usa el colector; `--influx-db` nombra la base de datos |
+| `--elastic`  | derivada          | la URL base a la que hace `_bulk`, en la dirección que usa el colector; `--elastic-index` da el patrón |
 | `--postgres` | derivada          | marca al servidor, así que la cadena de conexión tiene host, puerto, base, usuario y sslmode    |
 | `--prom`     | se le dice la URL | **sirve** `/metrics` y lo raspan: el Prometheus que consulta Grafana es uno del que no ha oído hablar |
 | `--graphite` | se le dice la URL | habla el puerto de ingesta de carbon, que no es la API web que consulta Grafana — suele ser otro puerto del mismo host |
@@ -221,10 +182,25 @@ de Prometheus es una URL, y una de Graphite también.
 
 </ScrollTable>
 
-`--sql` es el único que no se puede describir jamás, y lo dice nombrando
-`--postgres` —el destino que sí puede— en vez de mandarte a Grafana. Cualquiera
-de ellos se puede adoptar con `--grafana-datasource-uid`, y una fuente de datos
-adoptada tampoco se corrige: conciliar una que `import` no creó sobrescribiría
+```sh
+mikroscope forward --prom :9124 --grafana http://grafana:3000 \
+  --grafana-datasource-url http://prometheus:9090   # Prometheus tal como lo alcanza Grafana
+```
+
+O nombra una fuente de datos de Prometheus que ya tengas con `--grafana-datasource-uid`. El trabajo
+de scrape sigue siendo cosa tuya ([Prometheus](#prometheus-un-trabajo-de-scrape)).
+
+Cada una de esas dos opciones nombra una sola fuente de datos, así que una ejecución que publicaría
+dos almacenes o más y fija cualquiera de las dos se rechaza antes de enviar nada, también en una
+ejecución de prueba. Publica esos almacenes de uno en uno con `dashboards publish`, cada uno con su
+opción de destino y su propio `--grafana-datasource-url` o `--grafana-datasource-uid`, y ejecuta el
+colector sin esas dos opciones. Con `--grafana` sigue publicando en cada arranque los almacenes que
+se describen solos (`--influx`, `--elastic`, `--postgres`), y avisa de cada uno de los demás, que
+deja tal como los dejó `dashboards publish`.
+
+`--sql` es el único que no se puede describir jamás. Su error nombra `--postgres`, el destino que
+sí puede, o una fuente de datos que crees en Grafana y nombres en `--grafana-datasource-uid`. Una
+fuente de datos adoptada no se corrige nunca: conciliar una que no creó el colector sobrescribiría
 ajustes que eligió otra persona.
 
 <Aside type="note" title="La fuente de datos de PostgreSQL, y dos cosas que no hará">
@@ -247,7 +223,7 @@ ajustes que eligió otra persona.
   `prefer`, `allow` o nada en absoluto recibe `disable` **y una línea diciéndolo**,
   porque adivinar `require` rompería a la otra mitad de los lectores dejándoles
   una fuente de datos que no puede conectar en absoluto.
-  `--grafana-datasource-sslmode` lo decide de plano.
+  `--grafana-datasource-sslmode` lo decide de plano, y solo acepta esos cuatro.
 </Aside>
 
 La fuente de datos de InfluxDB tiene ajustes propios:
@@ -255,9 +231,9 @@ La fuente de datos de InfluxDB tiene ajustes propios:
 <Aside type="note" title="Qué lleva la fuente de datos de InfluxDB que crea">
   Tres ajustes fáciles de olvidar a mano. El token va en `token` **y** en `httpHeaderValue1`
   (`Bearer <token>`), porque el plugin lee uno en el camino de FlightSQL y el otro en el de HTTP.
-  `insecureGrpc` sigue al esquema: contra un store en HTTP plano, una fuente de datos sin él responde
-  a todos los paneles `tls: first record does not look like a TLS handshake` mientras el store está
-  perfectamente. Y la base de datos va en `jsonData.dbName`, no en el campo `database` de arriba, que
+  `insecureGrpc` sigue al esquema: contra un almacén en HTTP plano, una fuente de datos sin él
+  responde a todos los paneles `tls: first record does not look like a TLS handshake` mientras el
+  almacén está perfectamente. Y la base de datos va en `jsonData.dbName`, no en el campo `database` de arriba, que
   este plugin ignora.
 </Aside>
 
@@ -266,7 +242,7 @@ La fuente de datos de InfluxDB tiene ajustes propios:
 `--influx` toma el servidor y `--influx-db` la base de datos, y la URL de escritura se monta a
 partir de ellos. Una URL de escritura entera, con su query string, se sigue tomando tal cual — la
 forma que puede tener ya `MIKROSCOPE_INFLUX_URL`. Pero una URL de escritura es la forma que quiere
-el sink y la forma equivocada para todo lo demás: Grafana quiere el servidor y la base de datos por
+el destino y la forma equivocada para todo lo demás: Grafana quiere el servidor y la base de datos por
 separado, y no acepta una ruta de escritura.
 
 ```sh
@@ -275,15 +251,169 @@ separado, y no acepta una ruta de escritura.
 ```
 
 Cuando `--influx` lleva una ruta, la base de datos de la fuente de datos se lee de **esa URL**,
-nunca de `--influx-db`: una fuente de datos apuntando a una base distinta de la que llena el sink es
-peor que ninguna. Una URL de escritura que esto no sabe desmontar — un `/api/v2/write` de v2, por
+nunca de `--influx-db`: una fuente de datos apuntando a una base distinta de la que llena el destino
+es peor que ninguna. Una URL de escritura que esto no sabe desmontar — un `/api/v2/write` de v2, por
 ejemplo — escribe igual de bien y sencillamente no puede describir una fuente de datos, y
 `forward --grafana` lo dice en vez de construir una que no responda a nada.
 
+## Importar con la CLI {#importar-desde-la-cli}
+
+```sh
+export GRAFANA_URL=http://grafana:3000 GRAFANA_TOKEN=…
+mikroscope dashboards import --store influxdb --datasource-uid <uid>
+```
+
+<ScrollTable label="Opciones de dashboards gen, import y check">
+
+| Opción             | Por defecto                                      | La usa        | Qué hace                                                                                      |
+| ------------------ | ------------------------------------------------ | ------------- | --------------------------------------------------------------------------------------------- |
+| `--store`          | `influxdb`                                       | import, check | `influxdb`, `prometheus`, `postgres`, `graphite` o `elasticsearch`                            |
+| `--grafana`        | `$GRAFANA_URL` y después `$MIKROSCOPE_GRAFANA_URL` | import, check | la URL base de Grafana                                                                      |
+| `--datasource-uid` | ninguno, obligatoria                             | import, check | la fuente de datos a la que se enlaza `DS_MIKROSCOPE`                                         |
+| `--no-probe`       | desactivada                                      | import, check | no preguntar a la fuente de datos qué contiene; usar los valores compilados por defecto       |
+| `--window`         | `15m`                                            | check         | longitud de la ventana de consulta                                                            |
+| `--end`            | ahora                                            | check         | el borde derecho de la ventana, en RFC 3339                                                   |
+| `--var`            | ninguna                                          | check         | fija una variable del dashboard, `nombre=valor`, repetible; Graphite necesita `prefix` y `host`, Elasticsearch `host` |
+| `--out`            | `dashboards`                                     | gen           | el directorio en el que `gen` escribe los ocho ficheros, que se crea si no existe             |
+
+</ScrollTable>
+
+El token es `GRAFANA_TOKEN` ([Token de Grafana](#token-de-grafana)). `import` no crea ninguna fuente
+de datos: enlázalo a una de [Fuentes de datos](#fuentes-de-datos), o a `mikroscope-<almacén>` cuando
+la haya creado el colector o `dashboards publish`. Sin una URL de Grafana, un token y un UID de
+fuente de datos, las dos órdenes se detienen con
+`import/check need --grafana, GRAFANA_TOKEN and --datasource-uid`.
+
+`import` envía el dashboard a `/api/dashboards/import` de Grafana con la entrada de la fuente de
+datos resuelta a tu UID, `overwrite` activado, a la carpeta General (`folderId` 0). El `uid` del
+dashboard es fijo, así que importar de nuevo sustituye el mismo dashboard en la misma URL. Imprime esa
+URL. `import` no tiene opción de carpeta.
+
+## Importar a mano {#importar-a-mano}
+
+Toma el fichero de la CLI que usas, para que corresponda a tu versión: `mikroscope dashboards gen`
+escribe los cinco dashboards y los tres ficheros de alertas en `./dashboards`, y crea el directorio
+si no existe; los ficheros solo los puedes leer tú. Los archivos de cada versión publicada no los
+incluyen, y el directorio <Src path="dashboards/" /> del repositorio sigue a `main`, que puede ir
+por delante de tu versión.
+
+Grafana → Dashboards → New → Import, como lo describe la [guía de importación del propio
+Grafana](https://grafana.com/docs/grafana/latest/visualizations/dashboards/build-dashboards/import-dashboards/): sube el
+`mikroscope-<almacén>.json` que corresponda a tu fuente de datos (influxdb, prometheus, postgres,
+graphite o elasticsearch) y elige la fuente de datos cuando Grafana pida `DS_MIKROSCOPE`.
+
+Un fichero subido así lleva los **valores compilados por defecto**: los paneles de PSI y de
+dispositivos de bloques (cinco; tres en Graphite y Elasticsearch) están en la fila de no
+disponibles. En InfluxDB sus consultas van apagadas; en los otros cuatro almacenes siguen
+encendidas, porque allí que falte una medida no es un error
+([por qué](/mikroscope/es/dashboards/#no-disponible-en-este-equipo)). Todos los demás paneles se
+publican con su consulta encendida, tenga o no tu almacén su medida. En InfluxDB, un panel al que
+le falta la tabla o la columna muestra entonces el error de planificación de InfluxDB 3, como una
+insignia roja, cuando se abre su sección. `dashboards import` y la publicación del colector lo
+evitan. La anotación de detecciones sigue encendida en un fichero subido así; antes de la primera
+detección falla sin mostrar nada, como cuenta
+[el apartado de anotaciones](/mikroscope/es/dashboards/#las-rayas-rojas-discontinuas-de-todos-los-paneles).
+
+## Fuentes de datos {#fuentes-de-datos}
+
+Los caminos de la CLI y a mano enlazan el dashboard a una fuente de datos que ya existe, y el
+colector adopta una con `--grafana-datasource-uid`. El UID de una fuente de datos es el último
+segmento de la URL de sus ajustes en Grafana, `/connections/datasources/edit/<uid>`.
+
+### InfluxDB 3 {#la-fuente-de-datos-de-influxdb-3}
+
+La base de datos es aquella en la que escribe el destino, y la primera escritura del destino la crea
+([InfluxDB 3](/mikroscope/es/sinks/influxdb/)); el token de la fuente de datos tiene que poder
+leerla.
+
+La fuente de datos es de tipo `influxdb`, `version: SQL`, `dbName: mikroscope` —los campos del
+[ejemplo de aprovisionamiento del propio Grafana para InfluxDB 3 con SQL](https://grafana.com/docs/grafana/latest/datasources/influxdb/configure/)—,
+con **los dos** campos seguros rellenos:
+
+- `httpHeaderValue1` = `Bearer <token>` (la ruta HTTP)
+- `token` = `<token>` (la ruta FlightSQL)
+
+Sin el segundo, los paneles fallan con `flightsql: Unauthenticated`.
+
+### Prometheus {#prometheus-un-trabajo-de-scrape}
+
+Haz scrape del colector con un solo trabajo y apunta una fuente de datos de Prometheus a ese
+Prometheus:
+
+```yaml
+- job_name: "mikroscope"
+  scrape_interval: 5s
+  static_configs: [{ targets: ["<equipo del colector>:9124"] }]
+```
+
+`mikroscope forward --prom :9124` lleva todas las familias: el tier de kernel recalculado desde las
+muestras que recibió, las familias propias de derivación y detección del colector, y lo que solo el
+muestreador puede producir. El agente no sirve ningún `/metrics`; su cronometraje de tick viaja en
+las muestras y sus contadores llegan por `GET /sampler`, que el colector lee cada minuto. Un segundo
+trabajo no tendría nada que añadir.
+
+### PostgreSQL {#la-fuente-de-datos-de-postgresql}
+
+La llenan dos destinos. `--postgres` escribe las filas en un PostgreSQL en marcha, y el colector
+puede construir esta fuente de datos a partir de su cadena de conexión. `--sql`, en cambio, escribe
+un guion: `forward --sql out.sql` y después `psql -f out.sql`, o `--sql - | psql`. Hasta que se
+aplica ese guion, una fuente de datos sobre esa base responde a cada panel con «relation does not
+exist».
+
+La fuente de datos es el `grafana-postgresql-datasource` de Grafana, con la base y el usuario con
+los que escribió el destino. El `sslmode` es cosa tuya; `postgresVersion` solo decide qué sintaxis
+puede emitir el complemento, y todas las consultas de este dashboard son SQL llano.
+
+Los paneles son los de InfluxDB, reescritos: la macro de agrupación, los percentiles, los casts y
+los nombres de columna que el destino SQL tuvo que cambiar porque `user`, `from` y `to` son palabras
+reservadas. Algunos paneles no se reescriben y **se caen en silencio**, en vez de pasar a la fila de
+«no disponible»: los del log del kernel, porque el esquema SQL no tiene tabla de recuentos para él,
+y los de `mikroscope_buddy` y los contadores de interfaz de RouterOS, anchos en InfluxDB y largos en
+SQL, donde un pivote es otra pregunta, y "Headroom under the container memory cap", porque el límite
+va en la fila `mikroscope_self` de InfluxDB y en el esquema SQL es un dato del equipo. El dashboard
+de PostgreSQL del repositorio lleva por
+tanto <DashboardCount store="postgres" of="panels" /> paneles frente a los <DashboardCount store="influxdb" of="panels" /> de InfluxDB.
+
+### Graphite {#la-fuente-de-datos-de-graphite}
+
+Graphite no tiene etiquetas: cada dimensión es un nodo de la ruta, así que una consulta ES una ruta
+—y los dos primeros nodos son tuyos—. `--graphite-prefix` (por defecto `mikroscope`) y `--host-tag`
+son por eso **variables del dashboard**, leídas del propio árbol de métricas de Graphite, y el
+dashboard las pregunta arriba en vez de quedar fijado a quien lo generó.
+
+La fuente de datos es de tipo `graphite`; no hace falta nada más. Desde la CLI, `check` no puede
+leer el selector de variables de un navegador, así que se las pasas:
+
+```sh
+mikroscope dashboards check --store graphite --datasource-uid <uid> \
+  --var prefix=mikroscope --var host=router
+```
+
+### Elasticsearch {#la-fuente-de-datos-de-elasticsearch}
+
+De tipo `elasticsearch`, con el índice que produzca el `--elastic-index` con el que reenvíes y
+`@timestamp` como campo de tiempo.
+
+Este dashboard es el más pequeño de los cinco, y la razón está en los documentos y no en las
+consultas: el destino escribe las lecturas por núcleo y por dispositivo de una muestra como
+**arrays** —`cpu` es un array con un objeto por núcleo— y un array mapeado dinámicamente es un
+campo multivaluado sin correspondencia entre sus miembros. `avg(cpu.busy_ratio)` es la media entre
+los núcleos, que es un número real; «la proporción de ocupación del núcleo 2» no es expresable sin
+un mapeo nested que el destino no declara. Así que los paneles de Elasticsearch son los agregados
+escalares, y los de por núcleo están ausentes en vez de equivocados.
+
+El dashboard tiene una variable, **Host**, que se llena con una búsqueda de términos sobre
+`host.keyword`, porque un índice puede contener varios routers. La búsqueda es la cadena JSON que
+la fuente de datos analiza, así que Host se llena desde el índice
+(<TestedOn of="dashboards">renderizado</TestedOn>). `check` nunca ejecuta esa búsqueda: toma el
+valor de `--var host=`.
+
 ## Sondeo del almacén {#el-sondeo}
 
-Antes de generar, `import` y `check` preguntan a la fuente de datos cuáles de las medidas de
-mikroscope contiene, a través de `/api/ds/query` de Grafana:
+Antes de generar, `dashboards import`, `dashboards publish` y `forward --grafana` preguntan a la
+fuente de datos cuáles de las medidas de mikroscope contiene, a través de `/api/ds/query` de
+Grafana. `dashboards check` hace la misma pregunta, así que comprueba el dashboard que guardaría
+`import`:
 
 <Tabs syncKey="store">
 <TabItem label="InfluxDB 3">
@@ -311,8 +441,9 @@ que transferir. Un histograma cuenta como presente cuando lo está su serie `_bu
 </TabItem>
 </Tabs>
 
-Imprime `datasource holds N measurements`; en InfluxDB, N cuenta las tablas más los pares
-`tabla.columna`, así que es mayor que el número de medidas. Después genera según la respuesta:
+`import` y `check` imprimen `datasource holds N measurements`; en InfluxDB, N cuenta las tablas más
+los pares `tabla.columna`, así que es mayor que el número de medidas. Después el dashboard se genera
+según la respuesta:
 
 - Un panel cuyas medidas y campos obligatorios están todos presentes se publica en su propia sección
   con su consulta — incluido un panel que los valores compilados ponen en la fila de no disponibles.
@@ -325,20 +456,34 @@ Imprime `datasource holds N measurements`; en InfluxDB, N cuenta las tablas más
   resultado vacío, así que el sondeo deja sus capas como están.
 - Un sondeo que falla — un error de Grafana, o una respuesta sin ningún nombre `mikroscope_` — es un
   aviso, no un error. `import` y `check` imprimen `warning: could not ask <store> which
-  measurements it holds`, con el motivo, y siguen con los valores compilados por defecto, de modo que
-  se te dice qué dashboard has recibido.
+  measurements it holds`, y el colector imprime `grafana: <store>: could not ask the datasource
+  which measurements it holds` (`dashboards publish`, la misma línea sin `grafana:`), cada uno con
+  el motivo. Todos siguen con los valores compilados por defecto, de modo que se te dice qué
+  dashboard has recibido.
 
 `--no-probe` se salta la pregunta y usa los valores compilados por defecto, que es también lo que hace
 `gen` a secas, ya que no tiene fuente de datos a la que preguntar.
 
 **Solo se puede sondear InfluxDB y Prometheus.** La consulta de arriba se escribe por tipo de fuente
 de datos, y <Src path="internal/dashboards/grafana.go" /> tiene una para esos dos y `cannot probe a "…"
-datasource` para el resto. Con `--store postgres`, `--store graphite` o `--store elasticsearch` el
-sondeo falla siempre, avisa siempre y entrega siempre los valores compilados: el mismo resultado que
-pasar `--no-probe`. Es una carencia, no una decisión de diseño: esos tres almacenes reciben el
-dashboard que declara la lista de paneles, no el que sus datos admiten.
+datasource` para el resto. Con `--store postgres`, `--store graphite` o `--store elasticsearch`, y en
+un colector que publica esos almacenes, el sondeo falla siempre, avisa siempre y entrega siempre los
+valores compilados: el mismo resultado que pasar `--no-probe`. Es una carencia, no una decisión de
+diseño: esos tres almacenes reciben el dashboard que declara la lista de paneles, no el que sus
+datos admiten.
 
-## Lo que verifica `check` {#lo-que-verifica-check}
+## Comprobar cada panel {#comprobar-cada-panel}
+
+```sh
+export GRAFANA_TOKEN=…
+mikroscope dashboards check --grafana http://grafana:3000 --store influxdb --datasource-uid mikroscope-influxdb --window 15m
+```
+
+`mikroscope-<almacén>` es la fuente de datos que crearon el colector o `dashboards publish`; tras una
+importación tuya, pasa el UID de tu fuente de datos. `check` no escribe nada en Grafana: regenera el dashboard, sondeo
+incluido, y ejecuta sus consultas.
+
+### Lo que verifica `check` {#lo-que-verifica-check}
 
 `check` genera el dashboard exactamente como lo haría `import` — sondeo incluido — y después, para
 cada panel, incluidos todos los paneles anidados dentro de una fila plegada, envía cada una de sus
@@ -384,7 +529,7 @@ panel que no es un vacío conocido devuelve filas.
 	que la tuvo antes pero no dentro de la ventana, `check` lo da por fallido.
 </Aside>
 
-## Límites de `check` {#lo-que-check-no-verifica}
+### Límites de `check` {#lo-que-check-no-verifica}
 
 `check` cuenta filas. No ve una leyenda, un eje, una unidad, un color, un umbral ni la cuadrícula,
 y que `check` pase no dice nada de si el dashboard se puede leer
@@ -394,8 +539,8 @@ dashboard en un navegador.
 Qué más queda fuera de su alcance, según el código:
 
 - **El dashboard guardado en Grafana.** `check` regenera el dashboard en local y ejecuta esas
-  consultas. No relee lo que guardó `import`, así que un dashboard editado en la interfaz de Grafana
-  no es lo que comprueba.
+  consultas. No relee lo que guardaron `import` o el colector, así que un dashboard editado en la
+  interfaz de Grafana no es lo que comprueba.
 - **Si un número es correcto.** Una fila es un aprobado. Una aritmética errónea que devuelve filas
   aprueba.
 - **Las anotaciones.** Solo se recorren los paneles; las consultas de las anotaciones de detecciones y
@@ -413,7 +558,7 @@ Qué más queda fuera de su alcance, según el código:
   valor que un navegador envió para las gráficas de este dashboard. Un panel más estrecho recibe un
   intervalo más ancho.
 
-## Comprobar una ventana pasada {#comprobar-contra-una-captura-terminada}
+### Comprobar una ventana pasada {#comprobar-contra-una-captura-terminada}
 
 `--window` es la longitud de la ventana de consulta y `--end` mueve su borde derecho, así que los
 paneles pueden comprobarse contra una captura que ya ha terminado en vez de contra un ahora en reposo:
@@ -431,6 +576,35 @@ comprobación vale lo que vale la ventana a la que apunta.
 Las versiones de Grafana, los almacenes y las ventanas contra los que se han ejecutado `check` y los
 renderizados en navegador están en <TestedOn of="dashboards">Probado en</TestedOn>.
 
+## Actualizar y quitar {#actualizar-y-quitar}
+
+**Actualizar.** Los dashboards vienen de la CLI, no del agente, así que `upgrade` los deja como
+están. Tras una CLI o una imagen del colector nuevas, vuelve a publicarlos como lo hiciste la
+primera vez: reinicia el colector con `--grafana`, ejecuta otra vez `dashboards publish` o
+`dashboards import`, o sube la nueva salida de `gen`. Todos conservan el uid, así que el dashboard
+se sustituye en su sitio y un cambio hecho en Grafana se pierde. Regenera y vuelve a aprovisionar
+también las reglas de alerta ([Reglas de alerta](/mikroscope/es/dashboards/alerts/)).
+
+**Quitar.** `uninstall --targets dashboard`, con las opciones de destino del colector y `--grafana`,
+lista por cada almacén el dashboard `mikroscope-<almacén>`, se importara como se importara, y la
+fuente de datos `mikroscope-<almacén>`, cada uno solo si está; `--yes` los quita:
+
+```sh
+export GRAFANA_TOKEN=…
+mikroscope uninstall --targets dashboard \
+  --influx http://influx:8181 --influx-db mikroscope --grafana http://grafana:3000         # lista lo que se quitaría
+mikroscope uninstall --targets dashboard \
+  --influx http://influx:8181 --influx-db mikroscope --grafana http://grafana:3000 --yes   # y lo quita
+```
+
+Dejar fuera `--yes` es su ejecución de prueba; rechaza `--grafana-dry-run`. Con
+`--grafana-datasource-uid` no lista ninguna fuente de datos: una adoptada se queda. La carpeta y
+las reglas de alerta aprovisionadas también se quedan, igual que una fuente de datos con otro uid
+([Quitar dashboards y datos](/mikroscope/es/install/upgrade/#remove-dashboards-and-data)). Un
+Grafana que no puede leer, porque no se alcanza, rechaza el token o falla, lo detiene antes de
+quitar nada, y el error dice qué estaba preguntando:
+`asking Grafana whether dashboard mikroscope-influxdb is there: …`.
+
 <SeeAlso>
 
 ## Véase también
@@ -438,6 +612,11 @@ renderizados en navegador están en <TestedOn of="dashboards">Probado en</Tested
 - [Dashboards](/mikroscope/es/dashboards/): cada sección y cada panel, y qué almacén lleva cada uno.
 - [Reglas de alerta](/mikroscope/es/dashboards/alerts/): los ficheros de aprovisionamiento que
   escribe `gen`, que `check` no ejecuta.
+- [Ejecutar el colector](/mikroscope/es/sinks/): los destinos que lee cada dashboard.
+- [Actualizar y desinstalar](/mikroscope/es/install/upgrade/#dashboards-after-an-upgrade): la CLI y
+  los dashboards tras una actualización.
+- [Solución de problemas](/mikroscope/es/reference/troubleshooting/#el-almacén-y-el-dashboard):
+  errores de fuente de datos y de publicación.
 - [Prometheus](/mikroscope/es/sinks/prometheus/): el `/metrics` del colector, que es lo que lee el trabajo
   de scrape.
 - [InfluxDB 3](/mikroscope/es/sinks/influxdb/): la URL de escritura, el token y los límites propios

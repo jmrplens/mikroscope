@@ -127,12 +127,12 @@ the first two rows; the rest exist so mikroscope fits what you already run.
 
 <ScrollTable label="What each sink is for, what it carries and whether a dashboard comes with it">
 
-| If you…                                                    | Use            | It carries                                     | Dashboard |
+| If you…                                                    | Use            | It carries                                     | [Dashboard](#dashboard-in-grafana) |
 | ----------------------------------------------------------- | -------------- | ----------------------------------------------- | --------- |
 | want the whole thing, with the dashboards, and have nothing yet | `--influx`  | every measurement, as line protocol              | **yes**, generated |
 | already run Prometheus                                      | `--prom`       | every family, recomputed from the samples        | **yes**, generated |
 | want to capture a window and look at it later               | `--file`       | the merged timeline as JSONL, nothing to install | no        |
-| keep long-term data in PostgreSQL or TimescaleDB            | `--sql`        | DDL and INSERTs for `psql`, no driver            | **yes**, generated |
+| keep long-term data in PostgreSQL or TimescaleDB            | `--sql`        | DDL and INSERTs for `psql`, no driver            | **yes**, generated, on a datasource you create |
 | write straight into a running PostgreSQL                    | `--postgres`   | the `--sql` statements, down a connection        | **yes**, generated |
 | want the kernel log and the detections where your logs are  | `--loki`       | **events only** — kmsg, detections, gaps, triggers, API errors, device records | no |
 | already run an OpenTelemetry pipeline                       | `--otlp`       | metrics as OTLP/HTTP                             | no        |
@@ -151,6 +151,43 @@ the first two rows; the rest exist so mikroscope fits what you already run.
 - **`--prom` is scraped, not pushed**: `forward` serves `/metrics` and
   Prometheus comes to it, so the collector has to be reachable from the
   Prometheus host.
+
+## Dashboard in Grafana {#dashboard-in-grafana}
+
+Six sinks feed the five dashboards: `--influx`, `--prom`, `--postgres` and `--sql` (which share the
+PostgreSQL one), `--graphite` and `--elastic`. Add `--grafana <url>` and put a Grafana service-account token,
+Admin role, in `GRAFANA_TOKEN`: at every start, before it reaches the router, the collector
+creates or corrects a datasource and publishes the dashboard for each of them it writes to:
+
+```sh
+export GRAFANA_TOKEN=…
+mikroscope forward --influx http://influx:8181 --influx-db mikroscope --grafana http://grafana:3000
+```
+
+- **Three describe their own datasource.** `--influx`, `--elastic` and `--postgres` write to the
+  server Grafana queries, so the datasource is built from their flags, at the address the
+  collector uses. When Grafana reaches that store by another address, pass it in
+  `--grafana-datasource-url`.
+- **The other three need to be told.** `--prom` is scraped and `--graphite` writes to carbon's
+  ingest port, so each needs the address Grafana queries in `--grafana-datasource-url`, or a
+  datasource you already have in `--grafana-datasource-uid`. `--sql` never connects, so it takes
+  `--grafana-datasource-uid` only.
+- **One store per run for those two flags.** Each names one datasource, so a run that writes to
+  two stores with a dashboard and sets either is refused before anything is written. Leave them
+  off the collector, which then publishes the stores that describe themselves and warns about the
+  rest, and publish each of the rest once with `mikroscope dashboards publish`, given that store's
+  sink flag and its own value.
+- **A failure does not stop the collector.** It prints
+  `grafana: could not publish, carrying on without it: <reason>`, one line per failure, and
+  collects.
+- **The Grafana comes from `--grafana` or `MIKROSCOPE_GRAFANA_URL`**, never from `GRAFANA_URL`,
+  which other Grafana tools may set
+  ([Grafana token](/mikroscope/dashboards/import-and-check/#grafana-token)).
+
+The other five sinks have no dashboard. `mikroscope dashboards publish`, given the same sink flags
+and `--grafana`, publishes once without collecting.
+[Set up in Grafana](/mikroscope/dashboards/import-and-check/) has what it creates, the other
+routes and the check.
 
 ## Sinks {#the-eleven-sinks}
 
@@ -232,9 +269,10 @@ shape:
 
 ## Console output {#what-forward-prints}
 
-At start, on standard error: one `sink: <name>` line per sink, the API tier's
-settings, and the agent's version, rate, sequence number, skew, transport and
-effective batch. Every minute, on standard error, a running report:
+At start, on standard error: with `--grafana`, the `grafana:` lines of the publish first
+([Dashboard in Grafana](#dashboard-in-grafana)); then one `sink: <name>` line per sink, the API
+tier's settings, and the agent's version, rate, sequence number, skew, transport and effective
+batch. Every minute, on standard error, a running report:
 
 ```text
 forwarded <n> kernel, <n> api, <n> gap(s), <n> trigger(s), <n> detection(s), <n> agent restart(s), last seq <n>; <sink>: <n> written, <n> dropped, <n> errors
@@ -270,6 +308,8 @@ is `celsius` beside `critical_celsius`, and block-device busy time is `io_s`.
   the dashboard expects.
 - [InfluxDB 3](/mikroscope/sinks/influxdb/): the write URL, the measurements and what InfluxDB 3
   Core refuses.
+- [Set up in Grafana](/mikroscope/dashboards/import-and-check/): the dashboard for each store,
+  from the collector or imported.
 - [RouterOS API tier](/mikroscope/sinks/api-tier/): what the collector still asks the router,
   and how to ask less.
 - [Network access](/mikroscope/install/reaching-the-agent/): the direct and relay transports

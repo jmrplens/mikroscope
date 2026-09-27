@@ -51,12 +51,15 @@ tablas que declara el destino SQL; lee el esquema, no una base de datos
 
 Cada fichero es `apiVersion: 1` con un grupo de reglas, `mikroscope`, en una carpeta llamada
 `mikroscope`, organización 1, evaluado cada minuto. Las reglas se aprovisionan en vez de ir dentro de
-los dashboards, así que un operador que no quiera ninguna no copia nada.
+los dashboards, así que un operador que no quiera ninguna no copia nada. `forward --grafana`,
+`dashboards publish` y `dashboards import` no instalan ninguna, y `uninstall --targets dashboard` no
+quita ninguna.
 
 ## Instalar las reglas {#instalarlas}
 
-1. Sustituye el marcador de la fuente de datos por el UID de tu fuente de datos y escribe el fichero
-   en el directorio de aprovisionamiento de Grafana. Los ficheros de aprovisionamiento no resuelven
+1. Sustituye el marcador de la fuente de datos por el UID de tu fuente de datos
+   (`mikroscope-<almacén>` si la creó el colector o `dashboards publish`) y escribe el fichero en el
+   directorio de aprovisionamiento de Grafana. Los ficheros de aprovisionamiento no resuelven
    la entrada `${DS_MIKROSCOPE}` de un dashboard, así que la fuente de datos es un marcador literal,
    `DS_UID_PLACEHOLDER`:
 
@@ -182,7 +185,7 @@ anotación `summary` (el texto generado está en inglés):
 
 Las <DashboardCount store="prometheus" of="rules" /> leen el `/metrics` del colector, que es la única
 exposición que hay —
-[Importar y comprobar](/mikroscope/es/dashboards/import-and-check/#prometheus-un-trabajo-de-scrape)
+[Configurar en Grafana](/mikroscope/es/dashboards/import-and-check/#prometheus-un-trabajo-de-scrape)
 tiene el único trabajo de scrape. `mikroscope_slipped_total` está entre ellas: el agente es el
 dueño del ticker y lo único que puede contar un tick perdido, e informa del número por `/sampler`,
 que el colector lee cada minuto y renderiza. Así que la regla se dispara sobre una cifra de como
@@ -298,7 +301,7 @@ probado, está en <TestedOn of="alert-rules">Probado en</TestedOn>.
 
 - [Reglas de detección](/mikroscope/es/sinks/detections/): las once reglas detrás de la alerta de
   detecciones, y lo que cada una no puede afirmar.
-- [Importar y comprobar](/mikroscope/es/dashboards/import-and-check/): el UID de fuente de datos que
+- [Configurar en Grafana](/mikroscope/es/dashboards/import-and-check/): el UID de fuente de datos que
   necesitan estos ficheros, y el trabajo de scrape de Prometheus.
 - [Dashboards](/mikroscope/es/dashboards/): los paneles de cuyos contadores de fallos salen estas
   reglas.

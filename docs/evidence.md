@@ -2348,5 +2348,5 @@ No suite shows:
   first ran, how long it takes, what the lab found, and what has not been
   tested.
 - [Run the collector](https://jmrp.io/docs/mikroscope/sinks/): what each sink writes.
-- [Import and check](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/): the same
+- [Set up in Grafana](https://jmrp.io/docs/mikroscope/dashboards/import-and-check/): the same
   `dashboards check` the stores suite runs, against your own store.

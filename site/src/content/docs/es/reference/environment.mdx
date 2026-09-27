@@ -148,35 +148,58 @@ secretos que usa la CLI se leen solo del entorno.
 | `MIKROSCOPE_OTLP_TOKEN`     | el endpoint OTLP                                       |
 | `MIKROSCOPE_ELASTIC_AUTH`   | Elasticsearch u OpenSearch                             |
 | `MIKROSCOPE_TELEGRAF_TOKEN` | el receptor HTTP de Telegraf                           |
-| `GRAFANA_TOKEN`             | `dashboards import`, `dashboards check` y `forward --grafana` |
+| `GRAFANA_TOKEN`             | `dashboards publish`, `import` y `check`, `forward --grafana`, `uninstall --targets dashboard` |
 
 </ScrollTable>
 
 ## Grafana
 
-`dashboards import` y `dashboards check` leen `GRAFANA_URL` (el valor por
-defecto de `--grafana`) y `GRAFANA_TOKEN`. Ninguna de las dos lleva el prefijo
-`MIKROSCOPE_`. <Src path=".env.example" /> lleva las dos, comentadas, en su bloque de Grafana.
+`GRAFANA_TOKEN` es el único token de Grafana que usan todos los verbos, sin prefijo, y ninguna opción
+lo recibe. El Grafana en sí es `--grafana`, y cada verbo busca su valor por defecto en un orden
+distinto:
 
-`forward` tiene su propio `--grafana`, que publica al arrancar, y sus variables
-**sí** llevan el prefijo, porque son ajustes del colector y no del verbo
-`dashboards`:
+<ScrollTable label="Dónde encuentra cada verbo la URL de su Grafana">
 
-<ScrollTable label="Variables MIKROSCOPE_* de forward --grafana">
-
-| Variable                            | Opción                     | Valor por defecto | Significado                                                    |
-| ----------------------------------- | -------------------------- | ----------------- | -------------------------------------------------------------- |
-| `MIKROSCOPE_GRAFANA_URL`            | `--grafana`                | vacío             | publicar en este Grafana al arrancar; vacío no publica nada    |
-| `MIKROSCOPE_GRAFANA_FOLDER`         | `--grafana-folder`         | `mikroscope`      | carpeta donde publicar; vacío es la carpeta General de Grafana |
-| `MIKROSCOPE_GRAFANA_DATASOURCE_UID` | `--grafana-datasource-uid` | vacío             | adoptar este datasource en lugar de crear uno                  |
-| `MIKROSCOPE_GRAFANA_DATASOURCE_URL` | `--grafana-datasource-url` | vacío             | la dirección que consulta Grafana, para los destinos que no pueden saberla |
-| `MIKROSCOPE_GRAFANA_DATASOURCE_SSLMODE` | `--grafana-datasource-sslmode` | vacío         | sslmode para la fuente de datos de PostgreSQL                  |
+| Verbo                                                 | Lee, después de `--grafana`                    |
+| ----------------------------------------------------- | ---------------------------------------------- |
+| `dashboards publish`, `uninstall --targets dashboard` | `MIKROSCOPE_GRAFANA_URL`, y luego `GRAFANA_URL` |
+| `dashboards import`, `dashboards check`               | `GRAFANA_URL`, y luego `MIKROSCOPE_GRAFANA_URL` |
+| `forward`                                             | solo `MIKROSCOPE_GRAFANA_URL`                  |
 
 </ScrollTable>
 
-El token es `GRAFANA_TOKEN`, el mismo, sin prefijo. `forward --grafana` se niega
-a publicar sin él: hay Grafanas que aceptan una petición anónima, y uno que lo
-hiciera escribiría como aquel por quien el servidor tome a quien pregunta.
+`forward` nunca lee `GRAFANA_URL`, así que un `GRAFANA_URL` por sí solo no hace que el colector
+publique. Otras herramientas de Grafana leen también ese nombre y `GRAFANA_TOKEN`, y un colector
+arrancado desde una shell preparada para una de ellas empezaría a escribir una carpeta, una fuente de
+datos y un dashboard en ese Grafana sin que nadie se lo pidiera. <Src path=".env.example" /> lleva
+todas las variables de Grafana, comentadas, en sus dos bloques de Grafana.
+
+`forward`, `dashboards publish` y `uninstall` admiten `--grafana` y las opciones de abajo, y sus
+variables **sí** llevan el prefijo, porque son ajustes del colector y no de `dashboards import` y
+`check`:
+
+<ScrollTable label="Variables MIKROSCOPE_* de forward, dashboards publish y uninstall">
+
+| Variable                                | Opción                         | Valor por defecto | Significado                                                                                                     |
+| --------------------------------------- | ------------------------------ | ----------------- | --------------------------------------------------------------------------------------------------------------- |
+| `MIKROSCOPE_GRAFANA_URL`                | `--grafana`                    | vacío             | el Grafana en el que publicar; vacío no publica nada                                                            |
+| `MIKROSCOPE_GRAFANA_FOLDER`             | `--grafana-folder`             | `mikroscope`      | carpeta donde publicar; una variable vacía se ignora, así que la carpeta General se pide con `--grafana-folder ""` |
+| `MIKROSCOPE_GRAFANA_DATASOURCE_UID`     | `--grafana-datasource-uid`     | vacío             | adoptar esta fuente de datos en lugar de crear una; un almacén por ejecución                                    |
+| `MIKROSCOPE_GRAFANA_DATASOURCE_URL`     | `--grafana-datasource-url`     | vacío             | la dirección que consulta Grafana, para los destinos que no pueden saberla; un almacén por ejecución            |
+| `MIKROSCOPE_GRAFANA_DATASOURCE_SSLMODE` | `--grafana-datasource-sslmode` | vacío             | sslmode para la fuente de datos de PostgreSQL: `disable`, `require`, `verify-ca` o `verify-full`, y nada más |
+
+</ScrollTable>
+
+`uninstall` solo lee `MIKROSCOPE_GRAFANA_URL` y `MIKROSCOPE_GRAFANA_DATASOURCE_UID` de estas, e
+ignora las demás.
+
+Una ejecución que publica más de un almacén y fija `MIKROSCOPE_GRAFANA_DATASOURCE_UID` o
+`MIKROSCOPE_GRAFANA_DATASOURCE_URL` se rechaza antes de hacer ninguna petición: cada una nombra una
+sola fuente de datos. Publica aparte, con `dashboards publish`, el almacén que la necesita ([Publicación en
+Grafana](/mikroscope/es/reference/cli/#publicar-en-grafana)).
+
+La publicación se niega a ejecutarse sin `GRAFANA_TOKEN`: hay Grafanas que aceptan una petición
+anónima, y uno que lo hiciera escribiría como aquel por quien el servidor tome a quien pregunta.
 
 ## Envlist del agente {#la-envlist-del-agente}
 

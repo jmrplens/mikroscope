@@ -33,8 +33,9 @@ a registry image, `jmrplens/mikroscope-agent` on Docker Hub and
 `ghcr.io/jmrplens/mikroscope-agent` on GHCR. The collector is also an image,
 `jmrplens/mikroscope` and `ghcr.io/jmrplens/mikroscope` (linux/amd64, linux/arm64), and the
 directory [`deploy/`](https://github.com/jmrplens/mikroscope/tree/main/deploy) has two compose stacks that pair it with InfluxDB 3 or Prometheus and
-Grafana. That image runs `forward` only: the install commands need ssh and scp, which it leaves
-out. Both programs are under the MIT licence, in [`LICENSE`](https://github.com/jmrplens/mikroscope/blob/main/LICENSE).
+Grafana. That image's default command is `forward`, and `dashboards` runs in it too; the install
+commands need ssh and scp, which it leaves out. Both programs are under the MIT licence,
+in [`LICENSE`](https://github.com/jmrplens/mikroscope/blob/main/LICENSE).
 
 ### Data path
 
