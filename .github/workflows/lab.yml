@@ -66,6 +66,23 @@
 # `arch: x86_64`; by hand from the dispatch menu; and weekly on main, which is
 # also the run that fills the cache pull requests read (a cache saved on a
 # pull request's ref is visible to that pull request only).
+#
+# Docker Hub. The lab router pulls the agent image itself, about a dozen
+# times per run, and Docker Hub counts anonymous pulls per address: 100 per
+# 6 hours, and a runner's address is shared with whatever else ran from it.
+# So the router authenticates when the repository has DOCKERHUB_USERNAME and
+# DOCKERHUB_PULL_TOKEN, an access token with read-only scope. It is never
+# DOCKERHUB_TOKEN, which can push: that one stays with GoReleaser. ci.yml
+# and release.yml pass the two by name, and only the steps that bring the
+# router up, run the suite and redact the report see them, as
+# LAB_REGISTRY_USER and LAB_REGISTRY_TOKEN; mikroscope-lab gives them to
+# /container/config in a file at every boot, never on a command line, with
+# registry-url=registry-1.docker.io (no scheme: RouterOS 7.24.4 presents the
+# credential for a reference whose host is registry-url as written, measured
+# in the lab on 2026-09-27), and the cached snapshot never has them. A fork's pull request, or a
+# repository without the pull token, gets neither, and the router pulls
+# anonymously, as before. The scenarios that test a router with no
+# credential (S1, S18 and two golden scripts) boot without it either way.
 
 name: RouterOS Lab
 
@@ -99,6 +116,15 @@ on:
         description: "x86_64, arm64 or both; ci.yml and release.yml pass x86_64"
         default: x86_64
         type: string
+    # Passed by name, never `secrets: inherit`, so the token that can push
+    # to Docker Hub never reaches this workflow.
+    secrets:
+      DOCKERHUB_USERNAME:
+        description: "The Docker Hub account the lab router pulls as"
+        required: false
+      DOCKERHUB_PULL_TOKEN:
+        description: "A read-only Docker Hub access token of that account"
+        required: false
 
 permissions:
   contents: read
@@ -252,9 +278,15 @@ jobs:
       # Builds the lab image, downloads what the cache did not have, checks
       # every download against MikroTik's .sha256, provisions the router
       # (container package, device-mode container=yes by a cold reboot) and
-      # boots it.
+      # boots it, with the pull credential when there is one. This step, the
+      # suite and the report get the credential as both halves or neither:
+      # mikroscope-lab refuses one without the other, and a repository with
+      # the user but no pull token pulls anonymously.
       - name: Start the lab router
         timeout-minutes: ${{ matrix.arch == 'arm64' && 20 || 10 }}
+        env:
+          LAB_REGISTRY_USER: ${{ secrets.DOCKERHUB_PULL_TOKEN != '' && secrets.DOCKERHUB_USERNAME || '' }}
+          LAB_REGISTRY_TOKEN: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_PULL_TOKEN || '' }}
         run: make lab-up
 
       # Only when this run downloaded them: a snapshot hit downloads nothing.
@@ -276,7 +308,8 @@ jobs:
 
       # lab-up wrote test/lab/.env: the lab's admin password and agent token.
       # Nothing prints them; masked, the log hides them even if something
-      # did. The values are read without being echoed.
+      # did. The values are read without being echoed. The registry
+      # credential needs no mask here: GitHub masks every secret.
       - name: Mask the lab's credentials
         if: always()
         run: |
@@ -292,6 +325,9 @@ jobs:
       # machine without Docker.
       - name: Run the lab suite
         timeout-minutes: ${{ matrix.arch == 'arm64' && 150 || 60 }}
+        env:
+          LAB_REGISTRY_USER: ${{ secrets.DOCKERHUB_PULL_TOKEN != '' && secrets.DOCKERHUB_USERNAME || '' }}
+          LAB_REGISTRY_TOKEN: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_PULL_TOKEN || '' }}
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/lab-report"
@@ -301,12 +337,16 @@ jobs:
       # directory of named files: the router's serial console, the
       # container's own log, what mikroscope-lab reports and what an install
       # left on the router. Never test/lab/.env or test/lab/.cache/ssh. Each lab
-      # credential is replaced by its name in every file before the upload,
-      # in case a test printed one.
+      # credential, the registry's included, is replaced by its name in every
+      # file before the upload, in case a test printed one: perl reads the
+      # value from its environment, never from a command line, and matches
+      # it as a literal (\Q…\E), whatever characters it holds.
       - name: Collect the lab's state
         if: failure() || cancelled()
         env:
           OUT: ${{ runner.temp }}/lab-report
+          LAB_REGISTRY_USER: ${{ secrets.DOCKERHUB_PULL_TOKEN != '' && secrets.DOCKERHUB_USERNAME || '' }}
+          LAB_REGISTRY_TOKEN: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_PULL_TOKEN || '' }}
         run: |
           set -uo pipefail
           mkdir -p "$OUT"
@@ -321,18 +361,19 @@ jobs:
           timeout 120 make lab-status > "$OUT/status.txt" 2>&1
           timeout 120 make lab-residue > "$OUT/residue.txt" 2>&1
           [ -f "$OUT/test.log" ] || echo "the suite did not run" > "$OUT/test.log"
+          redact() {
+            [ -n "$2" ] || return 0
+            REDACT_NAME="$1" REDACT_VALUE="$2" perl -pi -e 's/\Q$ENV{REDACT_VALUE}\E/<$ENV{REDACT_NAME}>/g' "$OUT"/* ||
+              { echo "::warning::$1 could not be redacted: nothing is uploaded"; rm -f "$OUT"/*; }
+          }
           for key in LAB_ADMIN_PASSWORD LAB_AGENT_TOKEN; do
-            value=$(sed -n "s/^${key}=//p" test/lab/.env 2>/dev/null)
-            case "$value" in
-              "") ;;
-              *[!A-Za-z0-9]*)
-                echo "::warning::${key} is not alphanumeric, so it cannot be redacted safely: nothing is uploaded"
-                rm -f "$OUT"/*
-                break
-                ;;
-              *) sed -i "s/${value}/<${key}>/g" "$OUT"/* ;;
-            esac
+            redact "$key" "$(sed -n "s/^${key}=//p" test/lab/.env 2>/dev/null)"
           done
+          # The token first: it is the longer, and the user may be inside it.
+          # The user goes too, even where it names the image (<user>/…): it
+          # is half of the credential, and GitHub masks it in the log alike.
+          redact LAB_REGISTRY_TOKEN "${LAB_REGISTRY_TOKEN:-}"
+          redact LAB_REGISTRY_USER "${LAB_REGISTRY_USER:-}"
           ls -l "$OUT"
 
       # Kept a week, not a day: the weekly run fails on a Monday morning, and

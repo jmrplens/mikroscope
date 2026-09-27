@@ -436,6 +436,11 @@ jobs:
     uses: ./.github/workflows/lab.yml
     with:
       arch: x86_64
+    # By name: the lab router's read-only Docker Hub pull credential, and
+    # never DOCKERHUB_TOKEN, which can push (lab.yml says why).
+    secrets:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_PULL_TOKEN: ${{ secrets.DOCKERHUB_PULL_TOKEN }}
     permissions:
       contents: read
 
