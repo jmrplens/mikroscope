@@ -79,10 +79,13 @@
 # /container/config in a file at every boot, never on a command line, with
 # registry-url=registry-1.docker.io (no scheme: RouterOS 7.24.4 presents the
 # credential for a reference whose host is registry-url as written, measured
-# in the lab on 2026-09-27), and the cached snapshot never has them. A fork's pull request, or a
-# repository without the pull token, gets neither, and the router pulls
-# anonymously, as before. The scenarios that test a router with no
-# credential (S1, S18 and two golden scripts) boot without it either way.
+# in the lab on 2026-09-27), and the cached snapshot never has them. A fork's
+# pull request, a repository without the pull token, and a dispatch that
+# checks out another `ref` get neither, and the router pulls anonymously, as
+# before: that `ref` can be a fork's merge SHA, whose code the lab builds
+# and runs, and the token must not be in its environment. The scenarios that
+# test a router with no credential (S1, S18 and two golden scripts) boot
+# without it either way.
 
 name: RouterOS Lab
 
@@ -281,12 +284,13 @@ jobs:
       # boots it, with the pull credential when there is one. This step, the
       # suite and the report get the credential as both halves or neither:
       # mikroscope-lab refuses one without the other, and a repository with
-      # the user but no pull token pulls anonymously.
+      # the user but no pull token pulls anonymously. A dispatch with a `ref`
+      # gets neither: it may be a fork's code (see the top of this file).
       - name: Start the lab router
         timeout-minutes: ${{ matrix.arch == 'arm64' && 20 || 10 }}
         env:
-          LAB_REGISTRY_USER: ${{ secrets.DOCKERHUB_PULL_TOKEN != '' && secrets.DOCKERHUB_USERNAME || '' }}
-          LAB_REGISTRY_TOKEN: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_PULL_TOKEN || '' }}
+          LAB_REGISTRY_USER: ${{ !inputs.ref && secrets.DOCKERHUB_PULL_TOKEN != '' && secrets.DOCKERHUB_USERNAME || '' }}
+          LAB_REGISTRY_TOKEN: ${{ !inputs.ref && secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_PULL_TOKEN || '' }}
         run: make lab-up
 
       # Only when this run downloaded them: a snapshot hit downloads nothing.
@@ -326,8 +330,8 @@ jobs:
       - name: Run the lab suite
         timeout-minutes: ${{ matrix.arch == 'arm64' && 150 || 60 }}
         env:
-          LAB_REGISTRY_USER: ${{ secrets.DOCKERHUB_PULL_TOKEN != '' && secrets.DOCKERHUB_USERNAME || '' }}
-          LAB_REGISTRY_TOKEN: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_PULL_TOKEN || '' }}
+          LAB_REGISTRY_USER: ${{ !inputs.ref && secrets.DOCKERHUB_PULL_TOKEN != '' && secrets.DOCKERHUB_USERNAME || '' }}
+          LAB_REGISTRY_TOKEN: ${{ !inputs.ref && secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_PULL_TOKEN || '' }}
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/lab-report"
@@ -345,8 +349,8 @@ jobs:
         if: failure() || cancelled()
         env:
           OUT: ${{ runner.temp }}/lab-report
-          LAB_REGISTRY_USER: ${{ secrets.DOCKERHUB_PULL_TOKEN != '' && secrets.DOCKERHUB_USERNAME || '' }}
-          LAB_REGISTRY_TOKEN: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_PULL_TOKEN || '' }}
+          LAB_REGISTRY_USER: ${{ !inputs.ref && secrets.DOCKERHUB_PULL_TOKEN != '' && secrets.DOCKERHUB_USERNAME || '' }}
+          LAB_REGISTRY_TOKEN: ${{ !inputs.ref && secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_PULL_TOKEN || '' }}
         run: |
           set -uo pipefail
           mkdir -p "$OUT"
