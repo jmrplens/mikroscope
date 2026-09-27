@@ -281,6 +281,12 @@ emulado en un runner x86_64.
 Las dos ejecuciones en el pull request #70 lo retuvieron 30 y 33 min, y por eso `lab.yml` se ejecuta ahora
 solo cada semana y a petición, nunca en un pull request ni antes de una publicación.
 
+En el commit de la publicación 1.4.0 (`79b7c2f`, una ejecución a petición el 2026-09-27, run
+36329638066) la batería entera pasó en las dos arquitecturas: 1 517,2 s en x86_64 en un trabajo de
+31 min 38 s, y 3 042,6 s en arm64, emulado, en un trabajo de 54 min 52 s. La imagen del agente 1.4.0
+aún no estaba publicada, así que los trece casos de referencia que descargan su imagen descargaron la
+de la 1.3.1, como hace S5 antes de una etiqueta y dice en su registro.
+
 ## Equipos y versiones {#un-equipo-dos-versiones-de-routeros}
 
 <ScrollTable label="Todos los RouterOS en los que ha funcionado mikroscope">
@@ -290,8 +296,8 @@ solo cada semana y a petición, nunca en un pull request ni antes de una publica
 | RB5009UG+S+                    | hardware, arm64                 | 7.24.1   | hasta la actualización del 2026-09-10                | el coste de una conexión SSH, 2026-08-26                                                                                                       |
 | RB5009UG+S+                    | hardware, arm64                 | 7.24.2   | del 2026-09-10 a más o menos el 2026-09-18 22:43 UTC | la mayoría de las campañas, del 2026-09-11 al 2026-09-18                                                                                       |
 | RB5009UG+S+                    | hardware, arm64                 | 7.24.4   | desde más o menos el 2026-09-18 22:43 UTC           | la campaña de errores de puerto, los tiempos de `/stream`, las gráficas del almacén de referencia y las órdenes de despliegue desde el 2026-09-21, ninguna de la 1.4.0 |
-| CHR x86_64, laboratorio virtual | virtual (KVM), amd64            | 7.24.4   | 2026-09-26 y 2026-09-27                              | `doctor`, `plan`, tres rutas de instalación, `--expose`, `uninstall` con la 1.3.1; la batería entera del laboratorio con el código posterior      |
-| CHR arm64, laboratorio virtual  | emulado (TCG), arm64            | 7.24.4   | 2026-09-26 y 2026-09-27                              | `doctor`, `plan`, tres rutas de instalación, `uninstall` con la 1.3.1; la batería entera del laboratorio con el código posterior                 |
+| CHR x86_64, laboratorio virtual | virtual (KVM), amd64            | 7.24.4   | 2026-09-26 y 2026-09-27                              | `doctor`, `plan`, tres rutas de instalación, `--expose`, `uninstall` con la 1.3.1; la batería entera del laboratorio con el código posterior y en el commit de la 1.4.0     |
+| CHR arm64, laboratorio virtual  | emulado (TCG), arm64            | 7.24.4   | 2026-09-26 y 2026-09-27                              | `doctor`, `plan`, tres rutas de instalación, `uninstall` con la 1.3.1; la batería entera del laboratorio con el código posterior y en el commit de la 1.4.0                |
 | CHR x86_64, laboratorio virtual | virtual (KVM), amd64            | 7.23.7   | 2026-09-27                                           | `doctor`, que rechaza un RouterOS anterior a 7.24 (S17)                                                                                         |
 | RouterOS x86 desde la ISO, laboratorio virtual | virtual (KVM), amd64 | 7.24.4 | 2026-09-26                                    | `doctor`, una instalación desde el tar, `status` y `uninstall` con la 1.3.1                                                                    |
 

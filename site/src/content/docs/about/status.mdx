@@ -265,6 +265,11 @@ resumed at the first retry. The probe for KVM on GitHub's arm64 runner found `ub
 The two runs on pull request #70 held it for 30 and 33 min, which is why `lab.yml` now runs weekly and on
 dispatch only, never on a pull request or before a release.
 
+On 1.4.0's release commit (`79b7c2f`, a dispatch on 2026-09-27, run 36329638066) the whole suite
+passed on both architectures: 1 517.2 s on x86_64 in a job of 31 min 38 s, and 3 042.6 s on arm64,
+emulated, in a job of 54 min 52 s. The agent image 1.4.0 was not published yet, so the thirteen
+golden cases that pull their image pulled 1.3.1's, as S5 does before a tag and says in its log.
+
 ## Devices and versions {#one-device-two-routeros-versions}
 
 <ScrollTable label="Every RouterOS mikroscope has run on">
@@ -274,8 +279,8 @@ dispatch only, never on a pull request or before a release.
 | RB5009UG+S+               | hardware, arm64                 | 7.24.1   | until the upgrade of 2026-09-10             | the SSH connect cost, 2026-08-26                                                                                                                |
 | RB5009UG+S+               | hardware, arm64                 | 7.24.2   | 2026-09-10 to about 2026-09-18 22:43 UTC    | most campaigns, 2026-09-11 to 2026-09-18                                                                                                        |
 | RB5009UG+S+               | hardware, arm64                 | 7.24.4   | from about 2026-09-18 22:43 UTC             | the port-errors campaign, the `/stream` timings, the charts from the reference store, and the deployment commands from 2026-09-21, none of them 1.4.0's |
-| CHR x86_64, virtual lab   | virtual (KVM), amd64            | 7.24.4   | 2026-09-26 and 2026-09-27                   | `doctor`, `plan`, three install routes, `--expose`, `uninstall` with 1.3.1; the whole lab suite with the code after it                          |
-| CHR arm64, virtual lab    | emulated (TCG), arm64           | 7.24.4   | 2026-09-26 and 2026-09-27                   | `doctor`, `plan`, three install routes, `uninstall` with 1.3.1; the whole lab suite with the code after it                                      |
+| CHR x86_64, virtual lab   | virtual (KVM), amd64            | 7.24.4   | 2026-09-26 and 2026-09-27                   | `doctor`, `plan`, three install routes, `--expose`, `uninstall` with 1.3.1; the whole lab suite with the code after it and on 1.4.0's commit                         |
+| CHR arm64, virtual lab    | emulated (TCG), arm64           | 7.24.4   | 2026-09-26 and 2026-09-27                   | `doctor`, `plan`, three install routes, `uninstall` with 1.3.1; the whole lab suite with the code after it and on 1.4.0's commit                                     |
 | CHR x86_64, virtual lab   | virtual (KVM), amd64            | 7.23.7   | 2026-09-27                                  | `doctor`, which refuses a RouterOS below 7.24 (S17)                                                                                             |
 | RouterOS x86 from the ISO, virtual lab | virtual (KVM), amd64 | 7.24.4   | 2026-09-26                                  | `doctor`, a tar install, `status` and `uninstall` with 1.3.1                                                                                    |
 
