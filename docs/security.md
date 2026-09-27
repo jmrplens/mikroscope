@@ -698,7 +698,7 @@ The container step is the slow one, and the order inside it is what keeps the co
 If the file removal does not take, the marker stays, the count keeps including the envlist and the
 file, and `uninstall` says so instead of reporting clean.
 
-A doctor → install → status → upgrade → uninstall round trip (`make roundtrip`) left the router's `/export` byte-identical, compared by hash (verified on RB5009UG+S+, RouterOS 7.24.2, 2026-09-12).
+A doctor → install → status → upgrade → uninstall round trip (the round trip script, then `make roundtrip`; on a real router it is now `make roundtrip-device`) left the RB5009's `/export` byte-identical, compared by hash (verified on RB5009UG+S+, RouterOS 7.24.2, 2026-09-12). `make roundtrip` now runs the same script in the [virtual RouterOS lab](https://jmrp.io/docs/mikroscope/reference/testing/#the-virtual-routeros-lab).
 
 > **True of this device, not of yours**
 >

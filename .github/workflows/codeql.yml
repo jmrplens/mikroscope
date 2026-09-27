@@ -79,10 +79,11 @@ jobs:
 
       # A manual build keeps the Go extractor on the toolchain setup-go just
       # installed instead of letting autobuild probe for one. ./... rather than
-      # the two binaries, so the extractor sees cmd/gen_brand too. `go build`
-      # compiles no _test.go file, so of the end-to-end tree only the fake
-      # agent under test/e2e/fakeagent is extracted; the tests themselves are
-      # not analyzed. The agent is built for the runner's linux/amd64, which
+      # the two binaries, so the extractor sees the build-time tools
+      # (cmd/gen_brand, cmd/mikroscope-lab) too. `go build` compiles no
+      # _test.go file, so of the end-to-end tree only the fake agent under
+      # test/e2e/fakeagent is extracted; the tests themselves are not
+      # analyzed. The agent is built for the runner's linux/amd64, which
       # is also the build its /proc and /dev/kmsg readers are compiled into.
       - name: Build Go
         if: matrix.language == 'go'

@@ -1,8 +1,9 @@
 # Makefile for mikroscope. Running `make` with no arguments lists the targets.
 #
-# Two binaries and one build-time tool: the CLI and collector (cmd/mikroscope),
-# the agent that runs in a scratch container on the router
-# (cmd/mikroscope-agent), and cmd/gen_brand, which writes brand/ and is never
+# Two binaries and two build-time tools: the CLI and collector
+# (cmd/mikroscope), the agent that runs in a scratch container on the router
+# (cmd/mikroscope-agent), cmd/gen_brand, which writes brand/, and
+# cmd/mikroscope-lab, which drives the virtual RouterOS lab. Neither tool is
 # shipped. Every check CI runs has a target here, and the workflows call the
 # target rather than restating the command, so `make analyze` on a laptop asks
 # the questions a pull request is asked.
@@ -19,7 +20,9 @@ SHELL := /bin/bash
 	fmt fmt-check vet tidy lint golangci-lint govulncheck actionlint shellcheck analyze analyze-fix sonar \
 	mdlint mdlint-fix check-doc-links \
 	gen-dashboards check-dashboards gen-brand check-brand check-generated \
-	install-tools tools-versions release-check roundtrip
+	install-tools tools-versions release-check roundtrip roundtrip-device \
+	lab-tool lab-up lab-down lab-reset lab-status lab-ssh lab-cli lab-console lab-provision \
+	lab-profile lab-export lab-residue lab-power-cycle test-lab e2e-lab-build
 
 # ─── Variables ──────────────────────────────────────────────────────────────
 
@@ -72,10 +75,10 @@ AGENT_ARCHES    := arm64 arm amd64
 PLATFORM ?= linux/arm64
 
 # Coverage is one profile that instruments every package under cmd/ and
-# internal/, cmd/gen_brand included. ./test/... is left out because its suite
-# drives the built binaries as separate processes, which the profile of the
-# test binary cannot see: adding it changes the total by little and the run
-# time by a lot. SonarCloud reads the same coverage.out, so the number it
+# internal/, cmd/gen_brand and cmd/mikroscope-lab included. ./test/... is
+# left out because its suite drives the built binaries as separate
+# processes, which the profile of the test binary cannot see: adding it
+# changes the total by little and the run time by a lot. SonarCloud reads the same coverage.out, so the number it
 # reports and the floor below are one measurement.
 #
 # The floor sits under what was measured when it was set: 92.0% over
@@ -281,6 +284,12 @@ e2e-docker-build: ## Type-check the docker suite without starting anything
 	go vet -tags dockere2e ./test/e2e/docker/
 	go test -c -o /dev/null -tags dockere2e ./test/e2e/docker/
 
+# The lab suite (test/e2e/lab) is tagged for the same reason, and compiled here
+# for the same one: it needs a running lab, which no default job has.
+e2e-lab-build: ## Type-check the lab suite without starting anything
+	go vet -tags labe2e ./test/e2e/lab/
+	go test -c -o /dev/null -tags labe2e ./test/e2e/lab/
+
 ##@ Documentation
 
 # docs/ is generated from the English pages of the site, and a page changed
@@ -320,7 +329,7 @@ cover-check: ## Fail if coverage over cmd/ and internal/ is below COVERAGE_MIN
 
 ##@ Static analysis
 
-lint: golangci-lint e2e-docker-build govulncheck ## Run golangci-lint, type-check the tagged suite, and govulncheck
+lint: golangci-lint e2e-docker-build e2e-lab-build govulncheck ## Run golangci-lint, type-check the tagged suites, and govulncheck
 
 # The three commands CI's golangci-lint job runs, in its order.
 golangci-lint: ## Verify the linter config, check formatting, then lint
@@ -345,7 +354,7 @@ actionlint: ## Lint the GitHub workflows (shellcheck is used when it is on PATH,
 # most readers will execute.
 shellcheck: ## Lint the installer and every shell script the repository ships
 	@echo "=== shellcheck ==="
-	shellcheck install.sh scripts/*.sh .github/scripts/*.sh
+	shellcheck install.sh scripts/*.sh .github/scripts/*.sh test/lab/*.sh
 
 # Scoped to FMT_PATHS for the reason given where it is defined, and because the
 # formatter is the one command that rewrites files: with no path argument
@@ -517,12 +526,125 @@ release-check: ## Validate .goreleaser.yaml without releasing anything
 	@command -v goreleaser >/dev/null 2>&1 || { echo "make release-check: goreleaser is not installed (make install-tools)"; exit 2; }
 	goreleaser check
 
+##@ Virtual RouterOS lab
+
+# MikroTik's Cloud Hosted Router under QEMU in a Docker container, so no
+# RouterOS test depends on a real router: test/lab/README.md says what it is,
+# what it needs (Docker; /dev/kvm for x86_64) and where it stops being a
+# router. The first `lab-up` downloads RouterOS from MikroTik and provisions a
+# clean snapshot (container package installed, device-mode container=yes
+# confirmed); every later one boots in seconds. Nothing here reaches any router
+# but the lab's own.
+#
+# Every target drives the lab through bin/mikroscope-lab (cmd/mikroscope-lab,
+# built by lab-tool first), which takes the lab's lock first, so two checkouts
+# or two agents never drive one lab at once; test/lab/lab.sh execs the same
+# binary for whoever calls the script. LAB_STATE_DIR (environment or make
+# line) points a checkout at the lab another checkout runs: its test/lab,
+# where .cache/ and .env live. LAB_INSTANCE=<name> is a lab beside the
+# default one, with its own container, ports, lock and disks.
+# LAB_KIND=iso is RouterOS x86 from MikroTik's installation ISO, x86_64 only:
+# an opt-in recipe, never run by CI (README: "RouterOS x86 from the ISO").
+LAB_ARCH ?= x86_64
+LAB_ROS  ?= 7.24.4
+LAB_KIND ?= chr
+LAB_TOOL := $(BIN_DIR)/mikroscope-lab
+LAB      := LAB_ARCH=$(LAB_ARCH) LAB_ROS=$(LAB_ROS) LAB_KIND=$(LAB_KIND) $(LAB_TOOL)
+
+# The agent image a lab test pulls: the last release tag, not VERSION, which
+# runs ahead of what Docker Hub has during a release pull request. A clone
+# with no tags (a shallow CI checkout) falls back to `latest`, which Docker Hub
+# points at the last release too.
+LAB_REMOTE_IMAGE ?= jmrplens/mikroscope-agent:$(or $(shell git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//'),latest)
+
+# Static, because the same binary is the lab container's PID 1 and the entry
+# point of every `lab-cli` container, which run it inside the lab's Debian
+# image. go build writes nothing when the binary is up to date.
+lab-tool: ## Build the lab's driver, cmd/mikroscope-lab, into bin/ (a build-time tool, never shipped)
+	@mkdir -p $(BIN_DIR)
+	@CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o $(LAB_TOOL) ./cmd/mikroscope-lab
+
+lab-up: lab-tool ## Start the lab router (LAB_ARCH=x86_64|arm64, LAB_ROS=7.24.4, LAB_KIND=chr|iso); the first run provisions it
+	@$(LAB) up
+
+lab-down: lab-tool ## Shut the lab router down and remove its container; the disk keeps its state
+	@$(LAB) down
+
+lab-reset: lab-tool ## Put the lab router back to its clean snapshot, in seconds
+	@$(LAB) reset
+
+lab-status: lab-tool ## Show the lab container, who holds its lock and what the router reports
+	@$(LAB) status
+
+lab-ssh: lab-tool ## A console on the lab router over ssh; CMD='/ip/address/print' runs one command
+	@$(LAB) ssh $${CMD:+"$$CMD"}
+
+# ARGS is expanded by make, so ARGS='doctor --remote-image $(LAB_REMOTE_IMAGE)'
+# names the last release.
+lab-cli: build lab-tool ## Run this checkout's CLI against the lab from its LAN side: ARGS='doctor --arch amd64'
+	@$(LAB) cli $(ARGS)
+
+lab-profile: lab-tool ## Import lab set-ups from test/lab/routeros: PROFILE='doctor-lists tmpfs-disk'; none lists them
+	@$(LAB) profile $(PROFILE)
+
+lab-export: lab-tool ## Print the lab router's /export without its comment lines (stdout only)
+	@$(LAB) export
+
+lab-residue: lab-tool ## Count what an install could have left on the lab router
+	@$(LAB) residue
+
+lab-power-cycle: lab-tool ## Pull the lab router's power and put it back (a cold reboot)
+	@$(LAB) power-cycle
+
+lab-console: lab-tool ## Attach to the lab router's serial console
+	@$(LAB) console
+
+lab-provision: lab-tool ## Rebuild the lab's clean snapshot from MikroTik's image (FORCE=1 redoes an existing one)
+	@$(LAB) provision
+
+# The Go architecture of LAB_ARCH: --arch, and the agent tar a lab test installs.
+LAB_GOARCH = $(if $(filter arm64,$(LAB_ARCH)),arm64,amd64)
+
+# The end-to-end suite against the lab router (test/e2e/lab, build tag labe2e),
+# holding the lab's lock for the whole run so no other checkout or agent
+# drives the lab between two of its steps. It needs a running lab (make
+# lab-up): without one every test skips, or fails with
+# MIKROSCOPE_LAB_REQUIRED=1, which is what CI sets. LAB_RUN narrows it to the
+# tests a -run pattern matches; LAB_INSTALL_REPEAT sets how many installs the
+# repeat test makes (10 on x86_64, 3 on arm64).
+test-lab: build agent-tars lab-tool ## Run the end-to-end suite against the lab router (make lab-up first; LAB_ARCH, LAB_RUN='S0[1-4]')
+	LAB_REMOTE_IMAGE='$(LAB_REMOTE_IMAGE)' MIKROSCOPE_LAB_REQUIRED='$(MIKROSCOPE_LAB_REQUIRED)' \
+	  $(LAB) lock go test -tags labe2e -count=1 -timeout 75m -v $(if $(LAB_RUN),-run '$(LAB_RUN)') ./test/e2e/lab/
+
+# doctor → install → status → upgrade → uninstall, every verb with
+# --ephemeral, in the lab: scripts/roundtrip.sh with the lab's defaults, the
+# tmpfs disk and the lists imported first, the branch's agent tar, and the
+# lab's lock held throughout. It ends by comparing /export with the one taken
+# before, and nothing it does reaches any router but the lab's.
+roundtrip: build agent-tars lab-tool ## The deployment round trip in the lab (LAB_ARCH): install → status → upgrade → uninstall, then diff /export
+	FLAGS='--arch $(LAB_GOARCH) --agent-tar build/agent-images/mikroscope-agent-$(LAB_GOARCH).tar' \
+	  $(LAB) lock ./scripts/roundtrip.sh
+
 ##@ Reference device
 
-# A full install → status → upgrade → uninstall against a real router, which
-# ends by comparing the device's /export with the one taken before it started.
-# It WRITES to the device it is pointed at, so it is not part of any other
-# target: MIKROSCOPE_ROUTER decides what it touches, and the script asks before
-# it writes.
-roundtrip: build ## Install → status → upgrade → uninstall on $MIKROSCOPE_ROUTER, then diff /export (writes to the device)
-	./scripts/roundtrip.sh
+# The round trip of `make roundtrip` against a real router, over ssh from this
+# host: it WRITES to the device and removes what it wrote. Nothing names that
+# device but the make command line: ROUTER=<ssh target> has no default, and
+# neither it nor CONFIRM_WRITES=yes, which says the writes are meant, is read
+# from the environment. Both are checked before anything is built, and an
+# empty ROUTER, or one with a space or a quote in it, is refused too. The
+# device needs the tmpfs disk --ephemeral installs into; nothing is imported
+# into it. The CLI builds the agent itself (Go on this host), for ROUTER_ARCH
+# (default arm64); FLAGS adds flags to every verb.
+ROUTER_ARCH ?= arm64
+
+roundtrip-device: ## WRITES TO A REAL ROUTER: the round trip on ROUTER=<ssh target>, only with CONFIRM_WRITES=yes, both on the command line
+	@if [ "$(origin ROUTER)" != "command line" ]; then \
+	  echo "make roundtrip-device: name the router on the command line, ROUTER=<ssh target>; there is no default and the environment is not read"; exit 2; fi
+	@case '$(subst ','"'"',$(ROUTER))' in ''|*[[:space:]\'\"]*) \
+	  echo "make roundtrip-device: ROUTER must be one ssh target (user@host or an ssh config alias), not empty and without spaces or quotes"; exit 2;; esac
+	@if [ "$(origin CONFIRM_WRITES)" != "command line" ] || [ "$(CONFIRM_WRITES)" != yes ]; then \
+	  echo "make roundtrip-device: this installs on $(ROUTER), upgrades, and uninstalls again; add CONFIRM_WRITES=yes to the command line to go ahead (the environment is not read)"; exit 2; fi
+	@$(MAKE) --no-print-directory build
+	MIKROSCOPE_ROUTER='$(ROUTER)' CLI=bin/mikroscope ROS="ssh $(ROUTER)" SETUP= \
+	  FLAGS='--arch $(ROUTER_ARCH) $(FLAGS)' ./scripts/roundtrip.sh

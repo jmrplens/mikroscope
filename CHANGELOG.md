@@ -4,6 +4,95 @@ Notable changes per release. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the versions
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **A virtual RouterOS lab, so no test needs a real router.** `test/lab` runs
+  MikroTik's CHR under QEMU in a Docker container, x86_64 under KVM and arm64
+  emulated (the RB5009's architecture and Cortex-A72 core), provisioned once
+  into a clean snapshot with the `container` package and
+  `device-mode container=yes`, and put back to it in seconds. The CLI runs
+  from the lab's own LAN through `mikroscope-lab cli`, so the agent's default
+  172.30.10.2 never leaves the lab; it refuses `--router` and a
+  `--subnet` outside the lab's routes, and the lab's namespace has its own
+  firewall, which refuses new connections to private addresses outside the
+  lab and takes none from other containers. The snapshot carries no
+  credential: each lab gives the router its own key and password at boot, in
+  a file rather than on a command line. `make lab-up`, `lab-reset`, `lab-down`,
+  `lab-cli`, `lab-profile`, `lab-export`, `lab-residue` and `lab-power-cycle`
+  drive it; a lock per lab keeps two drivers apart, `LAB_STATE_DIR` lets a
+  second checkout drive the same lab, and `LAB_INSTANCE` runs a second lab
+  of an architecture beside the first. The driver is `cmd/mikroscope-lab`, a
+  build-time tool in Go that nothing ships (`make lab-tool`), which replaced
+  the shell scripts with their verbs, settings, exit statuses and lock files;
+  `test/lab/lab.sh` only builds and execs it. The same static binary is the
+  lab container's first process, and its unit tests put a fake Docker and a
+  fake router in place of the real ones, covering 90.7 % of `internal/lab`
+  and 98.5 % of its container side on 2026-09-27. Against the script, on the
+  same machine a day apart: provisioning took 41 and 42 s on x86_64 (the
+  script: 41 to 45 s) and 98 and 104 s on arm64 (97 to 105 s) in two runs,
+  and the suite, every test passing, 8 min 17 s to 9 min 28 s on x86_64
+  (7 min 21 s to 9 min 49 s) and 13 min 18 s to 17 min 19 s on arm64
+  (12 min 12 s to 16 min 48 s) in three, the slowest of each at a load
+  average of up to 34. Five profiles set up what a test needs: the lists
+  1.3.1's `doctor` asks for, a tmpfs disk, RouterOS 7's default home firewall,
+  and the raw traps of MikroTik's "Building Advanced Firewall" guide in its
+  list and range forms. Measured on
+  2026-09-26 with CHR 7.24.4 on the development machine: provisioning took 41
+  to 45 s on x86_64 and 97 to 105 s on arm64, a boot from the snapshot 7 s and
+  26 to 28 s, a reset 9 to 21 s and 21 to 34 s; with the snapshot free of
+  credentials, provisioning took 43 and 100 s, and a reset, the key and
+  password included, 9.9 to 21.3 s and 24.3 to 43.9 s (eleven each, with both
+  suites running). `make lab-up LAB_KIND=iso`
+  adds RouterOS x86 from MikroTik's installation ISO as an opt-in recipe (55 s
+  from the downloaded ISO to a running lab; a 24-hour trial licence), which CI
+  never runs. Limits: no board, flash, sensors or switch chip; the free CHR
+  licence caps what the router sends at 1 Mbit/s per interface; the arm64
+  lab's durations and CPU figures are the emulation's, never costs.
+- **`make test-lab`, the CLI and the agent against the lab** (`test/e2e/lab`,
+  build tag `labe2e`, type-checked by `make lint`): install by both image
+  routes, `plan --rsc` imported, upgrade, status, uninstall, `--ephemeral` and
+  start-on-boot through a power cut, `--expose` with its token, uninstall with
+  a client on `/stream`, two installs side by side and repeated installs in a
+  row, each scenario ending with `/export` compared with its start. 1.3.1's known
+  bugs are asserted as known. Green on 2026-09-26 on both architectures:
+  7 min 21 s to 9 min 49 s on x86_64 (six runs), 12 min 12 s to 16 min 48 s
+  on arm64 (three), 10 of 10 installs on x86_64 and 3 of 3 on arm64 in each.
+  A fourth arm64 run failed once in S9, the uninstall with a client on
+  `/stream`: 1.3.1's known race, with RouterOS's words lost because the CLI
+  keeps only the first line of an ssh error (`exit status 1`) when RouterOS's
+  ssh exits 1. It happened on x86_64 too; S9 now reads the race from what it
+  leaves, the container among the steps still present. It found two things about
+  RouterOS. 7.24.4 adds and drops a
+  `/system keymat-provider … name=default` line in `/export` on its own, which
+  the comparison leaves out. And a power cut made as soon as a fresh install
+  answered brought back, in three of four tries on the arm64 lab, a container
+  that could not start (`Exec format error`, `Segmentation fault`), most
+  likely because the install had not reached the disk yet; on x86_64 three
+  of three came back. The start-on-boot scenario waits 45 s before its cut.
+- **The lab in CI** (`.github/workflows/lab.yml`): x86_64 on a pull request
+  that touches what installs the agent, and as a gate before GoReleaser;
+  both architectures weekly (Mondays 05:03 UTC) and on dispatch. The Actions
+  cache keeps MikroTik's downloads, pinned by SHA-256 in
+  `test/lab/SHA256SUMS`, and the provisioned snapshot, which carries no
+  credential; a failed or timed-out run uploads the console, container and
+  test logs with the lab's credentials replaced by their names. Not yet
+  run on GitHub's runners: whether they give the job `/dev/kvm`, and how long
+  it takes there, is for the first dispatch to measure.
+
+### Changed
+
+- **`make roundtrip` runs in the lab.** The install round trip (`doctor`,
+  `install`, `status`, `upgrade`, `uninstall`, every verb with `--ephemeral`,
+  `/export` compared in memory) now targets the virtual lab: 28 to 34 s on
+  x86_64 (three runs) and 40 to 45 s on arm64 (four) on 2026-09-26, the
+  export byte-identical every time. On a real router it is
+  `make roundtrip-device ROUTER=<ssh target> CONFIRM_WRITES=yes`, which
+  refuses to start, before it builds anything, unless both are on the make
+  command line: neither is read from the environment, and `ROUTER` has no
+  default and must be one ssh target.
+
 ## [1.3.1] - 2026-09-25
 
 ### Changed

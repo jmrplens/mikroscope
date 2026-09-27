@@ -20,12 +20,17 @@ router y cómo recuperas el router después. `install` pone la imagen del agente
 un contenedor del router (la
 imagen publicada de 1.2.1 para arm64 mide <Measured id="image.size" />, casi todo el binario del agente); `uninstall` la vuelve a quitar. En <Verified of="export-identical" />, un ciclo
 completo con guion doctor → install → status → upgrade → uninstall
-(`make roundtrip`, que pasa `--ephemeral` a doctor, install y upgrade) dejó el `/export` del router idéntico byte a byte, salvo sus líneas
+(el guion del ciclo, entonces `make roundtrip`, que pasaba `--ephemeral` a doctor, install y
+upgrade; contra un router real ahora es `make roundtrip-device`) dejó el `/export` del router
+idéntico byte a byte, salvo sus líneas
 de cabecera `#`. Esa ejecución es anterior a 1.1.0, desde la que `uninstall`
 solo quita con `--yes`, y <Src path="scripts/roundtrip.sh" /> pasa ahora `--yes` a su paso de
 desinstalación (hasta 1.2.0 no lo hacía, así que ahí solo enumeraba y su
-comprobación del export fallaba); el guion en esa forma aún no se ha ejecutado
-contra el router. Cada objeto que crea install lleva el comentario
+comprobación del export fallaba) y `--ephemeral` a todos los verbos; el guion en esa forma aún
+no se ha ejecutado contra el RB5009. `make roundtrip` lo ejecuta ahora en el
+[laboratorio virtual de RouterOS](/mikroscope/es/reference/testing/#el-laboratorio-virtual-de-routeros),
+donde dejó el `/export` del router del laboratorio idéntico byte a byte en CHR 7.24.4, x86_64 y
+arm64, el 2026-09-26. Cada objeto que crea install lleva el comentario
 `mikroscope:<name> (managed by mikroscope)`, salvo la envlist y el fichero de la
 imagen, que no lo admiten; la envlist lleva la etiqueta en su entrada
 `MIKROSCOPE_TAG`. No se escribe nada antes de listarlo; la eliminación
@@ -283,9 +288,11 @@ mismo coste apareció en `/tool profile` como un 17–33 % en una o dos instant�
 medida.
 
 <NotClaimed variant="untested">
-	Que una instalación persistente sobreviva a un reinicio: el router de referencia está en
-	producción y no se reinicia para pruebas. El ciclo idéntico byte a byte en cualquier equipo que no
-	sea el RB5009, en cualquier RouterOS que no sea 7.24.2 —install, status y uninstall se han
+	Que una instalación persistente sobreviva a un reinicio en una placa: el router de referencia
+	está en producción y no se reinicia para pruebas (el laboratorio virtual muestra `start-on-boot`
+	a través de un corte de corriente en CHR, tras una espera de 45 s). El ciclo idéntico byte a
+	byte en cualquier equipo real que no sea el RB5009, en cualquier RouterOS que no sea 7.24.2 (salvo
+	el CHR 7.24.4 del laboratorio virtual) —install, status y uninstall se han
 	ejecutado desde entonces sobre 7.24.4, pero el ciclo en sí no se ha repetido allí—, o con install
 	y upgrade ejecutados sin `--ephemeral` (la ejecución con guion lo pasó a doctor, install y
 	upgrade, no a status ni a uninstall). El ciclo no se ha ejecutado contra los ajustes actuales del

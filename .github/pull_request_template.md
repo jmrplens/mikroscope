@@ -1,10 +1,10 @@
 <!--
 The title becomes the commit subject: this repository merges by squash only.
-Start it with a conventional prefix (feat, fix, docs, test, ci or chore, with a
-scope when one fits: `fix(router): …`). `fix` adds the bug label and `feat`
-the enhancement label; the paths add the area labels. The first two checks
-below apply to every change, and each of the others names the areas it
-applies to.
+Start it with a conventional prefix (feat, fix, docs, test, ci, refactor or
+chore, with a scope when one fits: `fix(router): …`). `fix` adds the bug
+label and `feat` the enhancement label; the paths add the area labels. The
+first two checks below apply to every change, and each of the others names
+the areas it applies to.
 -->
 
 ## What this changes
@@ -29,17 +29,19 @@ date it was measured on, and its spread.
 - [ ] `make agent-size` (anything the agent links: `agent`)
 - [ ] `make test-e2e-docker` (a sink, its encoding or its schema: `sinks`)
 - [ ] `make agent-smoke PLATFORM=…` (`internal/image`, or how the agent starts: `router`, `distribution`)
+- [ ] `make lab-up` and `make test-lab`, `LAB_ARCH=x86_64` and `arm64` (the deploy verbs, the image, or how the agent starts, against RouterOS in the virtual lab: `router`, `distribution`)
 - [ ] `make gen-dashboards` and the result committed (`dashboards`)
 - [ ] `make site-check` (anything under `site/`, so `site` or `documentation`: it builds first, then lints)
 
 ## What it touched on a router
 
 <!--
-Delete this section if nothing ran against a device. Otherwise: the board and
-RouterOS version, what was written (a container, a veth, a firewall object, a
-user), whether `--dry-run` was run first, and that everything written was
-removed again. No addresses, tokens, `.env` lines, or `/container/print
-detail`, `/container/envs/print`, `/export` or `plan --rsc` output.
+Delete this section if nothing ran against a real device; the virtual lab
+(`test/lab`) does not count. Otherwise: the board and RouterOS version, what
+was written (a container, a veth, a firewall object, a user), whether
+`--dry-run` was run first, and that everything written was removed again.
+No addresses, tokens, `.env` lines, or `/container/print detail`,
+`/container/envs/print`, `/export` or `plan --rsc` output.
 -->
 
 ## What it owes

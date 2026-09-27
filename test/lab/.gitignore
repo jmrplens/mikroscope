@@ -1,0 +1,4 @@
+# The lab's downloads, disks, keys and generated credentials never leave the
+# machine that made them.
+/.cache/
+/.env

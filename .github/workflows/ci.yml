@@ -12,12 +12,13 @@
 #
 #   compile ─┬─ typecheck (windows/amd64 · darwin/arm64 · linux/arm64 · linux/arm · freebsd/amd64)
 #            └─ e2e (e2e.yml: against fakes · offline)
+#   changes ─── lab (lab.yml: CHR x86_64, when a pull request touches the installer)
 #   coverage ─── sonarcloud
 #   agent_image (×3) ─── agent_images
 #   cross_platform (×3) ─── cross_platform_summary
 #   generated · golangci-lint · govulncheck · actionlint · markdown · site-lint · agent-size
-#   docs-audit ─── checks
-#                      └──► ci
+#   docs-audit · changes ─── checks
+#                                └──► ci
 #
 # Every edge joins neighboring columns, and that is deliberate. GitHub draws a
 # job with no parent and no child in one box with every other such job, and
@@ -25,7 +26,8 @@
 # in between. So the standalone jobs fan into "checks" first, and "ci" needs
 # only second-column nodes. compile and coverage are still decided there,
 # because when either fails its children are skipped, and a skip is a failure
-# to the verdict script.
+# to the verdict script. changes is the exception: its child, lab, is skipped
+# by design on most pull requests, so changes also feeds "checks" directly.
 #
 # The race detector is not here: it runs from race.yml, weekly and as a release
 # gate, for the reason given in that file.
@@ -261,7 +263,8 @@ jobs:
           exit "$status"
 
   # The one thing the jobs below it have in common: every package compiles,
-  # both binaries and cmd/gen_brand included. It is the parent of the
+  # both binaries and the build-time tools (cmd/gen_brand,
+  # cmd/mikroscope-lab) included. It is the parent of the
   # type-check matrix and of the end-to-end suite so that the graph shows them
   # as what they are, questions asked of the same build.
   compile:
@@ -282,9 +285,10 @@ jobs:
 
       - run: go mod download
 
-      # ./... rather than the two binaries: cmd/gen_brand and the fake agent
-      # under test/e2e are built by nothing else, so a break in either would
-      # otherwise surface the next time somebody ran it by hand.
+      # ./... rather than the two binaries: the build-time tools and the fake
+      # agent under test/e2e are built by nothing else here, so a break in
+      # any of them would otherwise surface the next time somebody ran it by
+      # hand.
       - name: Build every package
         run: go build ./...
 
@@ -350,6 +354,88 @@ jobs:
     # containers included, against a 20-minute timeout.
     with:
       stores: true
+    permissions:
+      contents: read
+
+  # Whether this pull request touches what puts the agent on a router, and so
+  # owes a run in the virtual RouterOS lab below. `git diff` against the merge
+  # base and a case statement, with no third-party path-filter action: that
+  # would be somebody else's code holding this job's token for a list of
+  # paths. The paths are the router code, the CLI, the image builder, the
+  # agent and its startup, what builds the agent image and its tars, the
+  # Makefile (it holds the build, agent-tars, lab and test-lab targets), the
+  # round trip, the lab, its driver (cmd/mikroscope-lab, internal/lab) and
+  # its suite, and the RouterOS scripts the site renders; plus lab.yml, so a
+  # change to the workflow runs it. Renames are not detected, so a file moved
+  # out of one of these paths counts by its old path as well as its new one. When the question cannot be answered
+  # (the base commit is not in the clone) the answer is yes. On a push to main
+  # it is no, without a checkout: main runs the lab weekly.
+  changes:
+    name: Installer paths
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      lab: ${{ steps.diff.outputs.lab }}
+    steps:
+      - name: Check out the repository
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          # The merge base has to be in the clone.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Compare with the merge base
+        id: diff
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" != pull_request ]; then
+            echo "not a pull request: main runs the lab weekly (lab.yml)"
+            echo "lab=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! changed=$(git diff --no-renames --name-only "${BASE_SHA}...${HEAD_SHA}"); then
+            echo "::warning::could not diff ${BASE_SHA}...${HEAD_SHA}, so the lab runs"
+            echo "lab=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          hits=""
+          while IFS= read -r f; do
+            case "$f" in
+              internal/router/* | cmd/mikroscope/* | cmd/mikroscope-agent/* | internal/image/* | \
+                internal/agent/* | Dockerfile.agent | Makefile | scripts/agent-tars.sh | \
+                scripts/roundtrip.sh | test/lab/* | test/e2e/lab/* | site/src/data/rsc/* | \
+                cmd/mikroscope-lab/* | internal/lab/* | .github/workflows/lab.yml)
+                hits+="  ${f}"$'\n'
+                ;;
+            esac
+          done <<< "$changed"
+          if [ -n "$hits" ]; then
+            printf 'the lab runs; installer paths changed:\n%s' "$hits"
+            echo "lab=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "no installer path changed; the lab does not run"
+            echo "lab=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # The CLI's deploy verbs against a real RouterOS: MikroTik's CHR x86_64 in
+  # QEMU under KVM, from the lab's own LAN (lab.yml, test/lab). Only when
+  # `changes` says the pull request touches the installer, because it costs a
+  # quarter of an hour [estimate, unmeasured on a runner] and downloads
+  # RouterOS from MikroTik and the agent image from Docker Hub. arm64 is not
+  # here: it runs under emulation, weekly and on dispatch only (the maintainer's
+  # decision of 2026-09-26). Its jobs carry their own timeouts.
+  lab:
+    name: Virtual RouterOS lab
+    needs: [changes]
+    if: needs.changes.outputs.lab == 'true'
+    uses: ./.github/workflows/lab.yml
+    with:
+      arch: x86_64
     permissions:
       contents: read
 
@@ -751,6 +837,7 @@ jobs:
       - site-lint
       - agent-size
       - docs-audit
+      - changes
       - coverage
       - compile
       - typecheck
@@ -908,6 +995,7 @@ jobs:
     needs:
       - typecheck
       - e2e
+      - lab
       - sonarcloud
       - agent_images
       - cross_platform_summary
@@ -923,4 +1011,8 @@ jobs:
         env:
           RESULTS: ${{ toJSON(needs) }}
           INFORMATIONAL: cross_platform_summary
+          # The lab runs only when a pull request touches the installer and is
+          # skipped by design otherwise. A failure of `changes`, which would
+          # skip it too, fails "checks" instead.
+          MAY_SKIP: lab
         run: bash .github/scripts/needs-verdict.sh

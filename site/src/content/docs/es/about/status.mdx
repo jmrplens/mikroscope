@@ -201,9 +201,10 @@ y el mismo esquema, ni se lista ni se borra.
 
 ### Las baterías de pruebas
 
-**Dos baterías no necesitan router: una se ejecuta en la CI en Linux, macOS y
-Windows contra simulaciones, y la otra contra nueve almacenes reales en docker
-compose, completa por primera vez el 2026-09-16.** La batería de extremo a
+**Tres baterías no necesitan router: una se ejecuta en la CI en Linux, macOS y
+Windows contra simulaciones, otra contra nueve almacenes reales en docker
+compose, completa por primera vez el 2026-09-16, y otra ejecuta la CLI y el
+agente contra un RouterOS virtual, en verde por primera vez el 2026-09-26.** La batería de extremo a
 extremo compila los dos binarios y los ejecuta contra un árbol `/proc` capturado
 del equipo de referencia y contra un agente simulado, con un receptor por cada
 protocolo de destino que comprueba los bytes. No necesita router, ni Grafana, ni
@@ -228,6 +229,15 @@ PostgreSQL que conecta en paralelo hacia dos bases de datos y le pregunta al
 servidor si tienen lo mismo —34 tablas coincidiendo byte a byte el 2026-09-20—,
 publica las cinco fuentes de datos y comprueba sus dashboards contra ellas, y
 vuelve a vaciar los almacenes con `uninstall --targets data`.
+
+La tercera, el [laboratorio virtual de RouterOS](/mikroscope/es/reference/testing/#el-laboratorio-virtual-de-routeros)
+(`make test-lab`), ejecuta los verbos de despliegue de la CLI y el agente
+contra el Cloud Hosted Router 7.24.4 de MikroTik en QEMU, x86_64 y arm64
+emulado: instalación por las dos vías de imagen, actualización,
+desinstalación, `--ephemeral` y `start-on-boot` a través de un corte de
+corriente, y cada escenario termina comparando el `/export` del router con
+el de su inicio. Prueba que el instalador es correcto; no es una placa, y
+ningún coste ni frecuencia de esta página sale de él.
 
 ## Lo que cuesta hoy el agente
 
@@ -280,8 +290,9 @@ anterior.
 ## Un equipo, dos versiones de RouterOS
 
 Todas las cifras tomadas en el equipo que aparecen en esta documentación vienen
-de un único RB5009UG+S+, el router de producción del propietario. No hay equipo
-de laboratorio. La mayoría de las cifras se midieron con RouterOS 7.24.2 y cada
+de un único RB5009UG+S+, el router de producción del propietario. El
+laboratorio virtual de RouterOS (`test/lab`) prueba que el instalador es
+correcto; ninguna cifra de esta página sale de él. La mayoría de las cifras se midieron con RouterOS 7.24.2 y cada
 una lo indica; la campaña de errores de puerto (2026-09-19), los tiempos de
 `/stream` (2026-09-21) y las tres gráficas del almacén de referencia (del
 2026-09-19 al 2026-09-24) son de 7.24.4. El equipo ha pasado a 7.24.4, y allí se ejercitaron `doctor`,
