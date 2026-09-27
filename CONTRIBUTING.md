@@ -433,8 +433,11 @@ user's healthy router, not only against the reference device's faults.
 install manifest and the site's script data all render. The goldens under
 `internal/router/testdata/golden` pin every case of `testdata/cases.json`:
 `go test ./internal/router -run TestGolden -update` rewrites them, the diff is
-reviewed as part of the change, and `make gen-rsc` follows. A `VERSION` bump
-changes the first line of every script, so a release runs both too.
+reviewed as part of the change, and `make gen-rsc` follows. Where a script
+names the release (its first line, a pull case's agent image) the goldens, the
+matrix and the site's script data carry `{{MIKROSCOPE_VERSION}}`, and the
+tests, the site's build and the lab write `VERSION` in, so a release rewrites
+none of them.
 
 **A new doctor check** means its item in `internal/router/doctor.go`, a test,
 its row in `site/src/data/doctor-checks.ts` in both languages, and the

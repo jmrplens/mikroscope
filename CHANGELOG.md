@@ -248,6 +248,16 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Nothing names the release by hand.** The golden scripts, their case
+  matrix (`internal/router/testdata/cases.json`, whose pull cases name the
+  agent image) and the site's script data (`site/src/data/rsc`) keep the
+  release as `{{MIKROSCOPE_VERSION}}`, as the site's pages already did. The
+  Go tests (`router.Templated`, `version.Expand`), the site's build (a Vite
+  plugin, and `scripts/data-hooks.mjs` for `docs/`) and the lab's S5 write
+  `VERSION` in; until a release's image is published, S5 pulls the newest
+  release's instead and says so. From the next release on, a release
+  changes `VERSION`, this file and the generated `docs/`, and no script or
+  golden. The WebFig captures are pictures and are taken again after a tag.
 - **`make roundtrip` runs in the lab.** The install round trip (`doctor`,
   `install`, `status`, `upgrade`, `uninstall`, every verb with `--ephemeral`,
   `/export` compared in memory) now targets the virtual lab: 28 to 34 s on

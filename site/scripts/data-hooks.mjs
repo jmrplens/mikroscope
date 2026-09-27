@@ -1,6 +1,7 @@
 // Teaches plain Node the two import spellings src/data/*.ts use and Vite reads
 // natively, so scripts/gen-docs.mjs can load the same data modules the site
-// renders from, verbatim.
+// renders from, verbatim; and writes the release into src/data/rsc/*.json as
+// the build does.
 //
 // Node strips types on its own, but it resolves no extensionless specifier,
 // and src/data/*.ts import each other as `./measurements` because that is what
@@ -18,6 +19,16 @@ import { readFileSync } from "node:fs";
 import { registerHooks } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { readRelease, withVersion } from "../src/lib/release.mjs";
+
+// src/data/rsc/*.json keep the release as {{MIKROSCOPE_VERSION}} (cmd/gen_rsc);
+// the build writes the current one in as they are imported (rscReleaseData in
+// astro.config.mjs), and so does this, for the same files and the same reason.
+const RSC_DATA = /[\\/]src[\\/]data[\\/]rsc[\\/][^\\/]+\.json$/;
+const { version } = readRelease(
+	fileURLToPath(new URL("../..", import.meta.url)),
+);
 
 registerHooks({
 	resolve(specifier, context, next) {
@@ -40,6 +51,13 @@ registerHooks({
 				format: "module",
 				shortCircuit: true,
 				source: `export default ${JSON.stringify(readFileSync(file, "utf8"))};`,
+			};
+		}
+		if (url.startsWith("file:") && RSC_DATA.test(fileURLToPath(url))) {
+			return {
+				format: "json",
+				shortCircuit: true,
+				source: withVersion(readFileSync(fileURLToPath(url), "utf8"), version),
 			};
 		}
 		return next(url, context);

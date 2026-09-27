@@ -84,6 +84,8 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import sharp from "sharp";
 
+import { readRelease, withVersion } from "../src/lib/release.mjs";
+
 const SITE = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const REPO = path.dirname(SITE);
 const OUT = path.join(SITE, "src/assets/webfig");
@@ -164,10 +166,14 @@ function credentials() {
  * GUI types are the ones the steps spec writes, byte for byte.
  */
 function golden(id) {
-	const cases = JSON.parse(readFileSync(path.join(RSC, "cases.json"), "utf8"));
+	// The data keeps the release as {{MIKROSCOPE_VERSION}}; the GUI types
+	// the current VERSION, as the page shows it.
+	const { version } = readRelease(REPO);
+	const read = (file) => withVersion(readFileSync(file, "utf8"), version);
+	const cases = JSON.parse(read(path.join(RSC, "cases.json")));
 	const c = cases.find((x) => x.id === id);
 	if (!c) die(`no case ${id} in src/data/rsc/cases.json`);
-	const script = readFileSync(path.join(RSC, "cases", `${id}.rsc`), "utf8");
+	const script = read(path.join(RSC, "cases", `${id}.rsc`));
 	const v = c.values;
 	/** key=value and key="value" pairs of one command, in order. */
 	const props = (line) =>

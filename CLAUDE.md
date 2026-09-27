@@ -126,6 +126,12 @@ hardware; then:
 - Commits: conventional prefixes (`feat`, `fix`, `docs`, `test`, `ci`,
   `refactor`, `chore`), no attribution lines, no session links. `main` takes
   pull requests only.
+- Nothing names the current release by hand. The binaries embed `VERSION`;
+  the site's pages, the golden case matrix, the goldens and
+  `site/src/data/rsc` write `{{MIKROSCOPE_VERSION}}`, which the site's build,
+  the tests and the lab replace with it (`version.Expand`,
+  `router.Templated`). A release changes `VERSION`, `CHANGELOG.md` and the
+  generated `docs/`.
 - The agent ships raw tick deltas, never percentages. `/metrics` stays
   independent of who scrapes and when.
 - **All documentation lives in the bilingual site** under

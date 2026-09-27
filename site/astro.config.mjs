@@ -10,7 +10,7 @@ import { inlineCodeNowrap, inlineCodeUnits } from "./src/lib/inline-code.mjs";
 import { nowrapValues } from "./src/lib/nowrap-values.mjs";
 import { lastmodTable } from "./src/lib/lastmod.mjs";
 import { metaCsp } from "./src/lib/meta-csp.mjs";
-import { readRelease } from "./src/lib/release.mjs";
+import { readRelease, withVersion } from "./src/lib/release.mjs";
 import { versionPlaceholder } from "./src/lib/version-placeholder.mjs";
 
 const siteRoot = fileURLToPath(new URL(".", import.meta.url));
@@ -109,6 +109,28 @@ function pageDatesModule() {
 				Object.entries(pageDates()).map(([file, page]) => [file, page.date]),
 			);
 			return `export default ${JSON.stringify(dates)};`;
+		},
+	};
+}
+
+/**
+ * Writes the release into the install steps' data as it is imported. cmd/gen_rsc
+ * keeps {{MIKROSCOPE_VERSION}} in src/data/rsc/*.json where a script names the
+ * release (its header, the agent image's tag, `version`), so a new VERSION
+ * changes none of those files; every import of them, on the server and in the
+ * generator's bundled script, goes through here and reads the current one.
+ * `enforce: "pre"` puts it ahead of Vite's own JSON plugin, which parses the
+ * text this returns.
+ */
+function rscReleaseData() {
+	const data = /[\\/]src[\\/]data[\\/]rsc[\\/][^\\/]+\.json$/;
+	return {
+		name: "mikroscope-rsc-release",
+		enforce: /** @type {const} */ ("pre"),
+		/** @param {string} code @param {string} id */
+		transform(code, id) {
+			if (!data.test(id.split("?")[0])) return undefined;
+			return { code: withVersion(code, release.version), map: null };
 		},
 	};
 }
@@ -581,5 +603,5 @@ export default defineConfig({
 		// after every other integration has written to them.
 		...(META_CSP ? [metaCsp({ skip: isRedirectStub })] : []),
 	],
-	vite: { plugins: [pageDatesModule()] },
+	vite: { plugins: [pageDatesModule(), rscReleaseData()] },
 });

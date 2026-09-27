@@ -43,15 +43,21 @@ import { chromium } from "playwright";
 
 import { withPreview } from "./preview-server.mjs";
 import { cliArgs, renderUninstall } from "../src/lib/rsc.mjs";
+import { readRelease, withVersion } from "../src/lib/release.mjs";
 
 const SITE = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const DATA = path.join(SITE, "src/data/rsc");
+// The data keeps the release as {{MIKROSCOPE_VERSION}}; the built page has the
+// current VERSION there, so the files are read with it written in.
+const { version } = readRelease(path.dirname(SITE));
+const read = (/** @type {string} */ file) =>
+	withVersion(readFileSync(file, "utf8"), version);
 /** @type {import("../src/lib/rsc.mjs").Spec} */
-const spec = JSON.parse(readFileSync(path.join(DATA, "spec.json"), "utf8"));
+const spec = JSON.parse(read(path.join(DATA, "spec.json")));
 /** @type {{ id: string, options: Record<string, any>, cliArgs: string }[]} */
-const cases = JSON.parse(readFileSync(path.join(DATA, "cases.json"), "utf8"));
+const cases = JSON.parse(read(path.join(DATA, "cases.json")));
 const golden = (/** @type {string} */ id) =>
-	readFileSync(path.join(DATA, "cases", `${id}.rsc`), "utf8");
+	read(path.join(DATA, "cases", `${id}.rsc`));
 const SHOTS = process.env.GENERATOR_SHOTS;
 
 /** @type {string[]} */

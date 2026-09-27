@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jmrplens/mikroscope/internal/version"
 )
 
 // goldenCase is one entry of internal/router/testdata/cases.json, the option
@@ -32,7 +34,9 @@ type goldenCase struct {
 //   - the script that is imported is the site's copy,
 //     site/src/data/rsc/cases/<id>.rsc, which must be byte-identical to the Go
 //     golden internal/router/testdata/golden/<id>.rsc.txt: that is what proves
-//     the page's script installs a working agent (spec A3). Until `make
+//     the page's script installs a working agent (spec A3). Both keep the
+//     release as version.Placeholder, which is written in before the import,
+//     as the site's build writes it into the page. Until `make
 //     gen-rsc` has written the site's copy the golden is imported instead,
 //     and the case fails at its end, naming the missing file;
 //   - a case without --remote-image has the branch's agent tar put where its
@@ -50,7 +54,9 @@ type goldenCase struct {
 //
 // Every case with --remote-image makes the router pull that image; with the
 // goldens as they are, that is twelve Docker Hub pulls and one from GHCR per
-// run. With LAB_REGISTRY_USER and LAB_REGISTRY_TOKEN set, the Docker Hub
+// run. The matrix tags those images with this checkout's VERSION
+// (version.Placeholder), and forPublishedImage points them at the last
+// release's while that VERSION has not been published yet. With LAB_REGISTRY_USER and LAB_REGISTRY_TOKEN set, the Docker Hub
 // pulls authenticate, except the cases in anonymousGoldens, which boot
 // without the credential. LAB_S5_CASES=<id>,<id> narrows the run to those
 // cases.
@@ -63,6 +69,11 @@ func TestS05GoldenScriptsInstallAndUninstall(t *testing.T) {
 	var cases []goldenCase
 	if jsonErr := json.Unmarshal(raw, &cases); jsonErr != nil {
 		t.Fatalf("cases.json: %v", jsonErr)
+	}
+	for i := range cases {
+		for j, a := range cases[i].Args {
+			cases[i].Args[j] = version.Expand(a)
+		}
 	}
 	only := map[string]bool{}
 	for id := range strings.SplitSeq(os.Getenv("LAB_S5_CASES"), ",") {
@@ -96,6 +107,29 @@ var anonymousGoldens = map[string]string{
 	"pull-ghcr":      "the page's GHCR script with no credential on the router, as S18; the lab's credential is Docker Hub's",
 }
 
+// forPublishedImage returns a pull case's script and arguments with an agent
+// image the registries have. The matrix tags its images with this checkout's
+// VERSION, which is what the page hands over. On a branch that raises VERSION
+// for a release, that image is pushed only after the tag, so until then the
+// router pulls the release l.RemoteImage names (LAB_REMOTE_IMAGE, the newest
+// tag by default), and the test says so. Everywhere else the two agree and
+// the script is imported as the page has it, byte for byte.
+func forPublishedImage(t *testing.T, l *Lab, script []byte, args []string) ([]byte, []string) {
+	t.Helper()
+	published := l.RemoteImage[strings.LastIndex(l.RemoteImage, ":")+1:]
+	ours := "mikroscope-agent:" + version.Version
+	if _, pull := flagValue(args, "remote-image"); !pull || published == version.Version || !bytes.Contains(script, []byte(ours)) {
+		return script, args
+	}
+	theirs := "mikroscope-agent:" + published
+	t.Logf("VERSION is %s and the newest release is %s: the router pulls %s instead of %s", version.Version, published, theirs, ours)
+	out := make([]string, len(args))
+	for i, a := range args {
+		out[i] = strings.ReplaceAll(a, ours, theirs)
+	}
+	return bytes.ReplaceAll(script, []byte(ours), []byte(theirs)), out
+}
+
 func runGoldenCase(t *testing.T, c goldenCase) {
 	t.Helper()
 	begin := start
@@ -119,6 +153,10 @@ func runGoldenCase(t *testing.T, c goldenCase) {
 	default:
 		script = site
 	}
+	// Both copies keep the release as version.Placeholder
+	// (router.Templated); the router gets the script with it written in.
+	script = []byte(version.Expand(string(script)))
+	script, c.Args = forPublishedImage(t, l, script, c.Args)
 	path := filepath.Join(dir, c.ID+".rsc")
 	if writeErr := os.WriteFile(path, script, 0o600); writeErr != nil { // #nosec G703 -- a case id of the repository's cases.json, under the test's own directory
 		t.Fatal(writeErr)

@@ -120,3 +120,22 @@ func TestLine(t *testing.T) {
 		t.Errorf("String() with nothing to report = %q, want %q", got, want)
 	}
 }
+
+// TestExpand verifies that every Placeholder becomes the version, and that a
+// string without one comes back as it was.
+func TestExpand(t *testing.T) {
+	old := Version
+	t.Cleanup(func() { Version = old })
+
+	Version = "1.2.3"
+	for in, want := range map[string]string{
+		"jmrplens/mikroscope-agent:" + Placeholder: "jmrplens/mikroscope-agent:1.2.3",
+		Placeholder + " and " + Placeholder:        "1.2.3 and 1.2.3",
+		"--rate":                                   "--rate",
+		"":                                         "",
+	} {
+		if got := Expand(in); got != want {
+			t.Errorf("Expand(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

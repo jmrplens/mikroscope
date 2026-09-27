@@ -56,6 +56,11 @@ import {
 	resolve,
 	splitCreate,
 } from "../src/lib/rsc.mjs";
+import {
+	readRelease,
+	VERSION_PLACEHOLDER,
+	withVersion,
+} from "../src/lib/release.mjs";
 
 const SITE = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const REPO = path.dirname(SITE);
@@ -63,10 +68,17 @@ const DATA = path.join(SITE, "src/data/rsc");
 const GOLDEN = path.join(REPO, "internal/router/testdata/golden");
 const COMPONENT = path.join(SITE, "src/components/ScriptGenerator.astro");
 
+// cmd/gen_rsc and the Go goldens keep the release as {{MIKROSCOPE_VERSION}};
+// every file is read with the current VERSION written in, as the site's build
+// reads it (rscReleaseData in astro.config.mjs).
+const { version } = readRelease(REPO);
+const read = (/** @type {string} */ file) =>
+	withVersion(readFileSync(file, "utf8"), version);
+const rawSpec = JSON.parse(readFileSync(path.join(DATA, "spec.json"), "utf8"));
 /** @type {import("../src/lib/rsc.mjs").Spec} */
-const spec = JSON.parse(readFileSync(path.join(DATA, "spec.json"), "utf8"));
+const spec = JSON.parse(read(path.join(DATA, "spec.json")));
 /** @type {{ id: string, options: Record<string, string | number | boolean>, cliArgs: string, cliEnv?: string[], values: Record<string, string> }[]} */
-const cases = JSON.parse(readFileSync(path.join(DATA, "cases.json"), "utf8"));
+const cases = JSON.parse(read(path.join(DATA, "cases.json")));
 
 /** @type {string[]} */
 const problems = [];
@@ -110,10 +122,9 @@ function planText(/** @type {import("../src/lib/rsc.mjs").Step[]} */ steps) {
 }
 
 // 6. the spec
-const version = readFileSync(path.join(REPO, "VERSION"), "utf8").trim();
-if (spec.version !== version) {
+if (rawSpec.version !== VERSION_PLACEHOLDER) {
 	fail(
-		`spec.json is for ${spec.version} and VERSION is ${version}: run \`make gen-rsc\` from the repository root`,
+		`spec.json names ${rawSpec.version} where cmd/gen_rsc writes ${VERSION_PLACEHOLDER}: run \`make gen-rsc\` from the repository root`,
 	);
 }
 for (const name of spec.predicates) {
@@ -188,7 +199,7 @@ for (const c of cases) {
 			fail(`${where}: ${path.relative(REPO, file)} is missing`);
 			continue;
 		}
-		const want = readFileSync(file, "utf8");
+		const want = read(file);
 		if (script !== want)
 			fail(
 				`${where}: render() differs from ${path.relative(REPO, file)} at ${firstDiff(script, want)}`,
@@ -196,7 +207,7 @@ for (const c of cases) {
 	}
 	const planFile = path.join(GOLDEN, `${c.id}.plan.txt`);
 	if (existsSync(planFile)) {
-		const golden = readFileSync(planFile, "utf8");
+		const golden = read(planFile);
 		const at = golden.indexOf("removal listing:\n");
 		const steps = planSteps(r.values, r.predicates, spec);
 		const got = planText(steps);
