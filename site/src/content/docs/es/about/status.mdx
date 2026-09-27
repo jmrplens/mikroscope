@@ -22,8 +22,9 @@ import Version from "../../../../components/Version.astro";
 Dónde se ejecutó, se midió o se comprobó cada parte de mikroscope: el equipo, la versión de
 RouterOS, la fecha y las condiciones, lo que encontró cada ejecución y lo que no se ha probado. Las
 guías dicen lo que hace la herramienta y enlazan aquí la prueba. Los veredictos de las funciones se
-contrastaron con el código de la 1.2.0 y de la 1.2.2 el 2026-09-24, y los apartados que vinieron de
-las guías con el código de la 1.3.1 el 2026-09-26; la versión actual es la <Version link />.
+contrastaron con el código de la 1.2.0 y de la 1.2.2 el 2026-09-24, los apartados que vinieron de
+las guías con el código de la 1.3.1 el 2026-09-26, y lo que esta página dice del código posterior a
+la 1.3.1, que es el que publica la 1.4.0, con ese código el 2026-09-27; la versión actual es la <Version link />.
 
 ## Hardware de referencia {#reference-hardware}
 
@@ -213,7 +214,9 @@ En la máquina de arriba, desde la instantánea limpia. Cómo se ejecuta cada ba
 - **`make roundtrip`**, 2026-09-26: `doctor`, `install`, `status`, `upgrade` y `uninstall`, cada
   orden con `--ephemeral`, y el `/export` del router resumido con un hash antes y después. De 28 a
   34 s en x86_64 en tres ejecuciones y de 40 a 45 s en arm64 en cuatro, con el export idéntico byte a
-  byte todas las veces.
+  byte todas las veces. Con el código de la 1.4.0, que hace un solo intento de `uninstall`, el
+  2026-09-27: 20 s en x86_64 y 35 s en arm64, una ejecución de cada una con los pasos de compilación
+  de make incluidos, con el export idéntico byte a byte.
 - **`make test-lab` con los escenarios de la 1.3.1**, 2026-09-26: de 7 min 21 s a 9 min 49 s en
   x86_64 en seis ejecuciones y de 12 min 12 s a 16 min 48 s en arm64 en tres, las más lentas de cada
   una con las dos baterías en paralelo en un anfitrión ocupado. Ninguna instalación falló.
@@ -253,11 +256,14 @@ agente fueron las de CHR x86_64.
 
 ### Ejecuciones en la CI {#lab-runs-in-ci}
 
-El flujo se ejecutó por primera vez en los runners de GitHub el 2026-09-27. Las dos primeras
-ejecuciones tenían la caché vacía, así que `make lab-up` descargó RouterOS y lo aprovisionó; la
+El flujo se ejecutó por primera vez en los runners de GitHub el 2026-09-26, como el trabajo del
+laboratorio de la CI en el pull request #69: cuatro ejecuciones x86_64 entre las 21:06 UTC de ese día
+y las 00:45 UTC del 2026-09-27, cada una con las diez pruebas que tenía entonces la batería superadas
+(de 471,7 a 485,8 s) en un trabajo de 10 min 30 s a 13 min 30 s. De las tres ejecuciones de abajo,
+las dos primeras tenían la caché vacía, así que `make lab-up` descargó RouterOS y lo aprovisionó; la
 tercera tomó las descargas de la caché y aprovisionó una instantánea nueva.
 
-<ScrollTable label="Las primeras ejecuciones del laboratorio en los runners de GitHub">
+<ScrollTable label="Tres ejecuciones del laboratorio en los runners de GitHub tras la fusión del pull request #69">
 
 | Ejecución                          | Commit                                   | Runner                                                         | `make lab-up`                                                    | Batería                                                                                   | Trabajo       |
 | ---------------------------------- | ---------------------------------------- | -------------------------------------------------------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ------------- |
@@ -267,10 +273,10 @@ tercera tomó las descargas de la caché y aprovisionó una instantánea nueva.
 
 </ScrollTable>
 
-En las dos primeras ejecuciones se cortó una descarga desde MikroTik (`connection reset by peer`) y se
-reanudó al primer reintento. La sonda de KVM en el runner arm64 de GitHub encontró
-`ubuntu-24.04-arm` con 4 CPU y sin `/dev/kvm`, así que el laboratorio arm64 sigue emulado en un
-runner x86_64.
+En las dos primeras de esas ejecuciones se cortó una descarga desde MikroTik
+(`connection reset by peer`) y se reanudó al primer reintento. La sonda de KVM en el runner arm64 de
+GitHub encontró `ubuntu-24.04-arm` con 4 CPU y sin `/dev/kvm`, así que el laboratorio arm64 sigue
+emulado en un runner x86_64.
 
 Las dos ejecuciones en el pull request #70 lo retuvieron 30 y 33 min, y por eso `lab.yml` se ejecuta ahora
 solo cada semana y a petición, nunca en un pull request ni antes de una publicación.
@@ -283,7 +289,7 @@ solo cada semana y a petición, nunca en un pull request ni antes de una publica
 | ------------------------------ | ------------------------------- | -------- | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
 | RB5009UG+S+                    | hardware, arm64                 | 7.24.1   | hasta la actualización del 2026-09-10                | el coste de una conexión SSH, 2026-08-26                                                                                                       |
 | RB5009UG+S+                    | hardware, arm64                 | 7.24.2   | del 2026-09-10 a más o menos el 2026-09-18 22:43 UTC | la mayoría de las campañas, del 2026-09-11 al 2026-09-18                                                                                       |
-| RB5009UG+S+                    | hardware, arm64                 | 7.24.4   | desde más o menos el 2026-09-18 22:43 UTC           | la campaña de errores de puerto, los tiempos de `/stream`, las gráficas del almacén de referencia y las órdenes de despliegue desde el 2026-09-21 |
+| RB5009UG+S+                    | hardware, arm64                 | 7.24.4   | desde más o menos el 2026-09-18 22:43 UTC           | la campaña de errores de puerto, los tiempos de `/stream`, las gráficas del almacén de referencia y las órdenes de despliegue desde el 2026-09-21, ninguna de la 1.4.0 |
 | CHR x86_64, laboratorio virtual | virtual (KVM), amd64            | 7.24.4   | 2026-09-26 y 2026-09-27                              | `doctor`, `plan`, tres rutas de instalación, `--expose`, `uninstall` con la 1.3.1; la batería entera del laboratorio con el código posterior      |
 | CHR arm64, laboratorio virtual  | emulado (TCG), arm64            | 7.24.4   | 2026-09-26 y 2026-09-27                              | `doctor`, `plan`, tres rutas de instalación, `uninstall` con la 1.3.1; la batería entera del laboratorio con el código posterior                 |
 | CHR x86_64, laboratorio virtual | virtual (KVM), amd64            | 7.23.7   | 2026-09-27                                           | `doctor`, que rechaza un RouterOS anterior a 7.24 (S17)                                                                                         |
@@ -321,11 +327,11 @@ y se volvieron a ejercitar sobre 7.24.4; no se probó ninguna otra placa.
 ### Plataformas {#qué-publica-la-versión}
 
 De las cuatro plataformas que publica una versión, `arm64` se ha ejecutado en hardware, el RB5009, y
-emulada en el laboratorio. `amd64` solo se ha ejecutado en el CHR x86_64 del laboratorio, nunca en
-hardware x86. `arm/v7` y `arm/v5` nunca se han ejecutado en RouterOS: se compilan de forma cruzada, y
-la CI arranca cada imagen con `-version` bajo la emulación de modo usuario de QEMU
-(`make agent-smoke`), que no es RouterOS. Qué publica cada versión, y qué números de versión nunca
-llegaron a publicarse, está en
+emulada en el laboratorio. `amd64` solo se ha ejecutado en el laboratorio, en el CHR x86_64 y en
+RouterOS x86 desde la ISO, ambos bajo KVM, nunca en hardware x86. `arm/v7` y `arm/v5` nunca se han
+ejecutado en RouterOS: se compilan de forma cruzada, y la CI arranca cada imagen con `-version` bajo
+la emulación de modo usuario de QEMU (`make agent-smoke`), que no es RouterOS. Qué publica cada
+versión, y qué números de versión nunca llegaron a publicarse, está en
 [Versiones](/mikroscope/es/about/changelog/#lo-que-publica-cada-versión).
 
 ## Estado de las funciones {#qué-funciona-de-extremo-a-extremo}
@@ -347,10 +353,12 @@ colector.
 
 ### Órdenes de despliegue {#la-cli-de-despliegue}
 
-**Las seis órdenes de despliegue funcionan en el RB5009, y las seis se han ejecutado allí con
-RouterOS 7.24.4, la última el 2026-09-23.** `doctor`, `plan`, `install`, `status`, `upgrade` y
-`uninstall` instalan, actualizan y retiran el agente, listando cada escritura antes de hacerla y
-verificando cada retirada por recuento de propiedad.
+**Las seis órdenes de despliegue se han ejecutado en el RB5009 con RouterOS 7.24.4, las seis a más
+tardar el 2026-09-23, cada una con la CLI de su fecha. Las de la 1.4.0 no se han ejecutado allí: el código
+posterior a la 1.3.1, que es el que publica la 1.4.0, solo se ha ejecutado en el laboratorio virtual
+(2026-09-27).** `doctor`, `plan`, `install`, `status`, `upgrade` y `uninstall` instalan, actualizan
+y retiran el agente, listando cada escritura antes de hacerla y verificando cada retirada por
+recuento de propiedad.
 
 - **Ida y vuelta, 2026-09-12**: `doctor` → `install` → `status` → `upgrade` → `uninstall` dejó el
   `/export` del router idéntico byte a byte (<TestedOn of="export-identical">verificado</TestedOn>).
@@ -375,17 +383,24 @@ verificando cada retirada por recuento de propiedad.
   2026-09-21 registraron cada una tres pasos a learning a la vez y llegaron a forwarding entre 2,1 y
   2,8 s después, y en 30 días del almacén de ese router toda subida sana dejó learning menos
   forwarding en 0.
-- **Sus dos comprobaciones `WARN`**, que no cambian ni el código de salida ni que `install` siga
-  adelante: con `--remote-image`, un usuario puesto en `/container/config` cuando `registry-url` está
-  vacío o nombra un host distinto del que se descarga la imagen; y una instalación con el mismo
-  `--name` publicada en la LAN sin `TOKEN` en su entorno. Lee si hay un usuario puesto y cuántas
-  entradas `TOKEN` existen, nunca un valor. La forma 1.2.x del aviso de registro se reprodujo en solo
-  lectura sobre 7.24.4 el 2026-09-23; la comparación de hosts que la sustituyó solo se ha ejecutado
-  contra respuestas de router falsas en los tests.
+- **Sus comprobaciones `WARN`**, que no cambian ni el código de salida ni que `install` siga
+  adelante. Dos son anteriores a la 1.4.0: con `--remote-image`, un usuario puesto en
+  `/container/config` cuando `registry-url` está vacío o nombra un host distinto del que se descarga
+  la imagen; y una instalación con el mismo `--name` publicada en la LAN sin `TOKEN` en su entorno.
+  Lee si hay un usuario puesto y cuántas entradas `TOKEN` existen, nunca un valor. La forma 1.2.x del
+  aviso de registro se reprodujo en solo lectura sobre 7.24.4 el 2026-09-23; la comparación de hosts
+  que la sustituyó solo ha avisado contra respuestas de router falsas en los tests. La 1.4.0 añade un
+  `WARN` para una descarga en un router ARM de 32 bits, para una descarga con menos de 16 MiB libres
+  por encima del `memory-max` del contenedor, para el arranque con el router cuando la raíz está en un
+  disco tmpfs, para una regla de cortafuegos que puede descartar las respuestas del agente, para un
+  `--lan-address` en el enlace de subida, para objetos etiquetados para la instalación que las
+  opciones no seleccionan, y para una tabla de rutas o un cortafuegos que no pudo leer. De ellos, los
+  avisos del tmpfs y de los objetos etiquetados saltaron en el laboratorio en CHR x86_64, RouterOS
+  7.24.4, el 2026-09-27; ninguno se ha ejecutado en el RB5009.
 - **Extracción del tar**, 7.24.2, 2026-09-11: un tar de 1,8 MiB, una compilación de esa fecha
   anterior a 1.0.0, se extrajo en el mismo segundo que su `/container/add`. La CLI de entonces borraba
-  el tar tras una espera fija; el código posterior a la 1.3.1 espera a que el contenedor marque
-  `stopped`, con `--extract-timeout` como límite.
+  el tar tras una espera fija; la 1.4.0 espera a que el contenedor marque `stopped`, con
+  `--extract-timeout` como límite.
 - **Una instalación expuesta actualizada sin su token**, 7.24.4, 2026-09-21: el upgrade pasó su
   comprobación, dejó las dos reglas en su sitio y escribió una envlist sin `TOKEN`, y `/snapshot` por
   la dirección LAN del router pasó de `401` a `200`. Desde 1.2.0 `doctor` señala ese estado, y el
@@ -676,7 +691,7 @@ ni se lista ni se borra.
 Linux, macOS y Windows contra árboles capturados y simulaciones, otra contra nueve almacenes reales
 en docker compose, completa por primera vez el 2026-09-16, y otra ejecuta la CLI y el agente contra
 un RouterOS virtual, en verde por primera vez el 2026-09-26 y ejecutada por primera vez en los
-runners de GitHub el 2026-09-27.** Qué demuestra cada una y cómo ejecutarla está en
+runners de GitHub el mismo día.** Qué demuestra cada una y cómo ejecutarla está en
 [Baterías de pruebas](/mikroscope/es/reference/testing/).
 
 - **De extremo a extremo**: los dos binarios contra un árbol `/proc` capturado del RB5009 y un agente
@@ -778,7 +793,7 @@ runners de GitHub el 2026-09-27.** Qué demuestra cada una y cómo ejecutarla es
 
 </ScrollTable>
 
-- **En el laboratorio, el 2026-09-27**, con el código posterior a la 1.3.1 (la sección Unreleased
+- **En el laboratorio, el 2026-09-27**, con el código posterior a la 1.3.1 (la sección 1.4.0
   del registro de cambios): la batería entera del laboratorio en las dos arquitecturas, con todas las
   pruebas superadas ([Tiempos del laboratorio](#lab-timings)). Tras cada ruta, las de descarga y tar
   de la CLI, una instalación desde el tar y después una actualización, un guion de `plan --rsc`
@@ -1164,15 +1179,25 @@ como comportamiento esperado enlaza esta lista.
   `registry-url` con su valor de fábrica y la referencia completa en cualquier RouterOS que no sea
   7.24.4. El CHR del laboratorio ejecutó las dos cosas con la 1.3.1 sobre 7.24.4.
 - Una descarga a través de un espejo o una caché intermedia nombrados en la referencia.
+- Las órdenes de despliegue de la 1.4.0 en cualquier hardware: el manifiesto de instalación, la forma
+  guardada en el router, `--arch auto`, las comprobaciones nuevas de doctor y el script con sus
+  guardas solo se han ejecutado en los CHR del laboratorio, con el código posterior a la 1.3.1.
+- `--ssh-option` y `MIKROSCOPE_SSH_OPTIONS` contra cualquier router: la CLI del laboratorio se conecta
+  con el `ssh_config` propio del laboratorio, y solo las pruebas unitarias pasan la opción.
+- Que `--extract-timeout` se agote, lo que conserva el tar, en cualquier router.
 - La comparación de hosts de registro de `doctor` contra un router real: solo se ha ejecutado contra
   respuestas de router falsas en los tests.
 - Si un usuario `read,api` puede leer los valores de la envlist en `/container/envs`.
-- La ida y vuelta idéntica byte a byte en hardware distinto del RB5009, en el RB5009 con cualquier
-  RouterOS salvo 7.24.2, con `install` y `upgrade` sin `--ephemeral`, o con los ajustes actuales del
-  contenedor (`privileged=yes`, `memory-max=64M`, las entradas de la envlist `MEM_LIMIT_MB`,
-  `CAPTURE_MB`, `TRIGGERS` y `FLOOR_HZ`): se hizo con `memory-max=32M`. Desde entonces `install`,
-  `status` y `uninstall` se han ejecutado en 7.24.4, y el CHR 7.24.4 del laboratorio ejecuta la ida y
-  vuelta.
+- La ida y vuelta idéntica byte a byte en hardware: en cualquier placa que no sea el RB5009, en el
+  RB5009 con cualquier RouterOS salvo 7.24.2, con `install` y `upgrade` sin `--ephemeral`, o con los
+  ajustes actuales del contenedor (`privileged=yes`, `memory-max=64M`, las entradas de la envlist
+  `MEM_LIMIT_MB`, `CAPTURE_MB`, `TRIGGERS` y `FLOOR_HZ`): en el RB5009 se hizo con `memory-max=32M`.
+  Desde entonces `install`, `status` y `uninstall` se han ejecutado allí en 7.24.4. En el CHR 7.24.4
+  del laboratorio, `make roundtrip` la ejecuta con `--ephemeral` (2026-09-26); S2 y S3 ejecutan
+  `install`, `upgrade` y `uninstall` sin él, con `privileged=yes`, `memory-max=64M`, `MEM_LIMIT_MB` y
+  `CAPTURE_MB`, y S5 importa un script que además escribe `TRIGGERS` y `FLOOR_HZ`; cada uno termina
+  con el `/export` igual al de su inicio, salvo la línea `keymat-provider` de RouterOS (las dos
+  arquitecturas, 2026-09-27).
 - Cortafuegos distintos del del RB5009, donde el 2026-09-11 bastaron las dos pertenencias a listas, y
   de los perfiles del laboratorio. Un cortafuegos con otras reglas de descarte en `raw`, `input` o
   `forward` puede descartar el tráfico del contenedor en otro punto, e `install` no añade nada para
@@ -1318,8 +1343,8 @@ Contrastado con el código el 2026-09-24, y el flujo del resumen final otra vez 
 
 Lo que encontraron la CLI y la imagen del agente 1.3.1 publicadas en el CHR del laboratorio, RouterOS
 7.24.4, el 2026-09-26. Cada punto termina con lo que hace el código posterior a la 1.3.1, comprobado
-en el laboratorio el 2026-09-27; ese código no está publicado en esa fecha, y lo recoge la sección
-Unreleased del registro de cambios.
+en el laboratorio el 2026-09-27; la 1.4.0 publica ese código, y la sección 1.4.0 del registro de
+cambios recoge cada cambio.
 
 - **`doctor` con sus valores por defecto falla tres comprobaciones en un CHR.** `--arch` vale arm64
   por defecto, lo que falla solo en x86_64; la lista de interfaces `LAN` no existe; y la comprobación
@@ -1331,7 +1356,7 @@ Unreleased del registro de cambios.
   valores por defecto, tiene un arreglo que ofrece `--iface-list none` (S1).
 - **Una lista de interfaces integrada** como `static`, `all` o `dynamic` pasa la comprobación de
   existencia de doctor, y RouterOS se niega a añadirle un miembro. **Tras la 1.3.1**: `--iface-list`
-  y `--addr-list` rechazan `all`, `dynamic` y `static`; RouterOS responde `cannot add to builtin list`.
+  rechaza `all`, `dynamic` y `static`; RouterOS responde `cannot add to builtin list`.
 - **`--ephemeral` necesita un disco tmpfs**, y un CHR no lista ningún disco. El arreglo de doctor,
   `/disk/add type=tmpfs tmpfs-max-size=64M slot=tmpfs`, funcionó, y la instalación fue a
   `tmpfs/mikroscope/mikroscope` con `start-on-boot=no`. **Tras la 1.3.1**: igual, y `doctor` avisa

@@ -11,8 +11,9 @@ Source: <https://jmrp.io/docs/mikroscope/about/status/>
 Where each part of mikroscope was run, measured or checked: the device, the RouterOS version, the
 date and the conditions, what each run found, and what has not been tested. The guides state what
 the tool does and link here for the proof. The feature verdicts were checked against the code at
-1.2.0 and 1.2.2 on 2026-09-24, and the sections that came from the guides against the code of 1.3.1
-on 2026-09-26; the current release is [1.4.0](https://github.com/jmrplens/mikroscope/releases/tag/v1.4.0).
+1.2.0 and 1.2.2 on 2026-09-24, the sections that came from the guides against the code of 1.3.1 on
+2026-09-26, and what this page says of the code after 1.3.1, which 1.4.0 ships, against that code on
+2026-09-27; the current release is [1.4.0](https://github.com/jmrplens/mikroscope/releases/tag/v1.4.0).
 
 ### Reference hardware
 
@@ -187,7 +188,9 @@ On the machine above, from the clean snapshot. How each suite is run is on
   7.4 s) and 26 to 28 s on arm64 (25.7, 26.6, 27.0 and 27.5 s).
 - **`make roundtrip`**, 2026-09-26: `doctor`, `install`, `status`, `upgrade` and `uninstall`, every
   verb with `--ephemeral`, and the router's `/export` hashed before and after. 28 to 34 s on x86_64
-  over three runs and 40 to 45 s on arm64 over four, the export byte-identical every time.
+  over three runs and 40 to 45 s on arm64 over four, the export byte-identical every time. With
+  1.4.0's code, which makes one `uninstall` attempt, on 2026-09-27: 20 s on x86_64 and 35 s on
+  arm64, one run each with make's build steps included, the export byte-identical.
 - **`make test-lab` with the scenarios of 1.3.1**, 2026-09-26: 7 min 21 s to 9 min 49 s on x86_64
   over six runs and 12 min 12 s to 16 min 48 s on arm64 over three, the slowest of each with both
   suites running side by side on a busy host. No install failed.
@@ -224,9 +227,11 @@ directory. The agent's `/capabilities` were CHR x86_64's.
 
 #### Lab runs in CI
 
-The workflow first ran on GitHub's runners on 2026-09-27. The first two runs had an empty cache,
-so `make lab-up` downloaded RouterOS and provisioned it; the third took the downloads from the cache
-and provisioned a new snapshot.
+The workflow first ran on GitHub's runners on 2026-09-26, as the lab job of CI on pull request #69:
+four x86_64 runs between 21:06 UTC that day and 00:45 UTC on 2026-09-27, each passing the ten tests
+the suite then had (471.7 to 485.8 s) in a job of 10 min 30 s to 13 min 30 s. Of the three runs
+below, the first two had an empty cache, so `make lab-up` downloaded RouterOS and provisioned it; the
+third took the downloads from the cache and provisioned a new snapshot.
 
 | Run                       | Commit                            | Runner                                                    | `make lab-up`                                            | Suite                                                                     | Job           |
 | ------------------------- | --------------------------------- | --------------------------------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------- | ------------- |
@@ -234,9 +239,9 @@ and provisioned a new snapshot.
 | x86_64, pull request #70  | `3c34d9a`, the install options    | `ubuntu-latest`: 4 CPUs, 15 989 MB, `/dev/kvm` used by KVM | 4 min 28 s: provisioning 46 s, a boot of the snapshot 8 s  | 1 591.4 s (26 min 31 s), every test passing; S17 skipped, as it needs a RouterOS below 7.24 | 32 min 42 s   |
 | x86_64, pull request #70  | `1826aa5`, with the registry credential | `ubuntu-latest`, `/dev/kvm` used by KVM                   | 1 min 25 s: the downloads from the cache, provisioning 76 s | 1 633.1 s (27 min 13 s), every test passing; S17 skipped. The router pulled as the repository's Docker Hub account, S2 included; S1, S18 and S5's Docker Hub and GHCR scripts booted without it | 29 min 52 s   |
 
-In the first two runs one download from MikroTik was cut (`connection reset by peer`) and resumed at the
-first retry. The probe for KVM on GitHub's arm64 runner found `ubuntu-24.04-arm` with 4 CPUs and no
-`/dev/kvm`, so the arm64 lab stays emulated on an x86_64 runner.
+In the first two of those runs one download from MikroTik was cut (`connection reset by peer`) and
+resumed at the first retry. The probe for KVM on GitHub's arm64 runner found `ubuntu-24.04-arm` with
+4 CPUs and no `/dev/kvm`, so the arm64 lab stays emulated on an x86_64 runner.
 
 The two runs on pull request #70 held it for 30 and 33 min, which is why `lab.yml` now runs weekly and on
 dispatch only, never on a pull request or before a release.
@@ -247,7 +252,7 @@ dispatch only, never on a pull request or before a release.
 | ------------------------- | ------------------------------- | -------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
 | RB5009UG+S+               | hardware, arm64                 | 7.24.1   | until the upgrade of 2026-09-10             | the SSH connect cost, 2026-08-26                                                                                                                |
 | RB5009UG+S+               | hardware, arm64                 | 7.24.2   | 2026-09-10 to about 2026-09-18 22:43 UTC    | most campaigns, 2026-09-11 to 2026-09-18                                                                                                        |
-| RB5009UG+S+               | hardware, arm64                 | 7.24.4   | from about 2026-09-18 22:43 UTC             | the port-errors campaign, the `/stream` timings, the charts from the reference store, and the deployment commands from 2026-09-21 on            |
+| RB5009UG+S+               | hardware, arm64                 | 7.24.4   | from about 2026-09-18 22:43 UTC             | the port-errors campaign, the `/stream` timings, the charts from the reference store, and the deployment commands from 2026-09-21, none of them 1.4.0's |
 | CHR x86_64, virtual lab   | virtual (KVM), amd64            | 7.24.4   | 2026-09-26 and 2026-09-27                   | `doctor`, `plan`, three install routes, `--expose`, `uninstall` with 1.3.1; the whole lab suite with the code after it                          |
 | CHR arm64, virtual lab    | emulated (TCG), arm64           | 7.24.4   | 2026-09-26 and 2026-09-27                   | `doctor`, `plan`, three install routes, `uninstall` with 1.3.1; the whole lab suite with the code after it                                      |
 | CHR x86_64, virtual lab   | virtual (KVM), amd64            | 7.23.7   | 2026-09-27                                  | `doctor`, which refuses a RouterOS below 7.24 (S17)                                                                                             |
@@ -282,10 +287,11 @@ re-exercised on 7.24.4; no other board was tried.
 #### Platforms
 
 Of the four platforms a release publishes, `arm64` has run on hardware, the RB5009, and under
-emulation in the lab. `amd64` has run only on the lab's CHR x86_64, never on x86 hardware. `arm/v7`
-and `arm/v5` have never run on RouterOS: they are cross-built, and CI starts each image with
-`-version` under QEMU user-mode emulation (`make agent-smoke`), which is not RouterOS. What each
-release publishes, and which version numbers never became a release, is on
+emulation in the lab. `amd64` has run only in the lab, on CHR x86_64 and on RouterOS x86 from the
+ISO, both under KVM, never on x86 hardware. `arm/v7` and `arm/v5` have never run on RouterOS: they
+are cross-built, and CI starts each image with `-version` under QEMU user-mode emulation
+(`make agent-smoke`), which is not RouterOS. What each release publishes, and which version numbers
+never became a release, is on
 [Releases](https://jmrp.io/docs/mikroscope/about/changelog/#what-a-release-publishes).
 
 ### Feature status
@@ -306,10 +312,11 @@ endpoints `/captures` and `/capture`. It serves no `/metrics`; the exposition is
 
 #### Deployment commands
 
-**All six deployment commands work on the RB5009, and all six have run there on RouterOS 7.24.4,
-the last of them on 2026-09-23.** `doctor`, `plan`, `install`, `status`, `upgrade` and `uninstall`
-install, upgrade and remove the agent, with every write listed before it happens and every removal
-verified by ownership counts.
+**All six deployment commands have run on the RB5009 on RouterOS 7.24.4, all six by 2026-09-23,
+each with the CLI of its date. 1.4.0's have not run there: the code after 1.3.1, which
+1.4.0 ships, has run only in the virtual lab (2026-09-27).** `doctor`, `plan`, `install`, `status`,
+`upgrade` and `uninstall` install, upgrade and remove the agent, with every write listed before it
+happens and every removal verified by ownership counts.
 
 - **Round trip, 2026-09-12**: `doctor` → `install` → `status` → `upgrade` → `uninstall` left the
   router's `/export` byte-identical ([verified](https://jmrp.io/docs/mikroscope/about/status/#verified-export-identical)). The agent answered 3 s
@@ -333,16 +340,22 @@ verified by ownership counts.
   on 2026-09-21 each logged three moves to learning at once and reached forwarding 2.1 to 2.8 s
   later, and across 30 days of that router's store every healthy link-up left learning minus
   forwarding at 0.
-- **Its two `WARN` checks**, which change neither the exit status nor whether `install` proceeds:
-  with `--remote-image`, a `/container/config` username set while `registry-url` is empty or names
-  a host other than the one the image is pulled from; and an install of the same `--name`
-  published on the LAN with no `TOKEN` in its environment. It reads whether a username is set and
-  how many `TOKEN` entries exist, never a value. The 1.2.x form of the registry warning was
-  reproduced read-only on 7.24.4 on 2026-09-23; the host comparison that replaced it has run only
-  against fake router answers in the tests.
+- **Its `WARN` checks**, which change neither the exit status nor whether `install` proceeds. Two
+  are older than 1.4.0: with `--remote-image`, a `/container/config` username set while
+  `registry-url` is empty or names a host other than the one the image is pulled from; and an
+  install of the same `--name` published on the LAN with no `TOKEN` in its environment. It reads
+  whether a username is set and how many `TOKEN` entries exist, never a value. The 1.2.x form of the
+  registry warning was reproduced read-only on 7.24.4 on 2026-09-23; the host comparison that
+  replaced it has warned only against fake router answers in the tests. 1.4.0 adds a `WARN` for a
+  pull on a 32-bit ARM router, for a pull with less than 16 MiB free beyond the container's
+  `memory-max`, for start-on-boot with the root on a tmpfs disk, for a firewall rule that may drop
+  the agent's replies, for a `--lan-address` on the uplink, for objects tagged for the install that
+  the flags do not select, and for a route table or firewall it could not read. Of these, the tmpfs
+  and the tagged-objects warnings fired in the lab on CHR x86_64, RouterOS 7.24.4, on 2026-09-27;
+  none has run on the RB5009.
 - **Tar extraction**, 7.24.2, 2026-09-11: a 1.8 MiB tar, a build of that date from before 1.0.0,
   was extracted within the same second as its `/container/add`. The CLI of that time deleted the
-  tar after a fixed wait; the code after 1.3.1 waits for the container to read `stopped`, bounded by
+  tar after a fixed wait; 1.4.0 waits for the container to read `stopped`, bounded by
   `--extract-timeout`.
 - **An exposed install upgraded without its token**, 7.24.4, 2026-09-21: the upgrade passed its
   check, left both rules in place and wrote an envlist with no `TOKEN`, and `/snapshot` through the
@@ -609,7 +622,7 @@ this project did not write, in the same database and schema, is neither listed n
 **Four suites need no router: the unit and end-to-end suites run in CI on Linux, macOS and Windows
 against captured trees and fakes, one runs against nine real stores in docker compose, first in full
 on 2026-09-16, and one runs the CLI and the agent against a virtual RouterOS, first green on
-2026-09-26 and first run on GitHub's runners on 2026-09-27.** What each proves and how to run it is on
+2026-09-26 and first run on GitHub's runners the same day.** What each proves and how to run it is on
 [Test suites](https://jmrp.io/docs/mikroscope/reference/testing/).
 
 - **End to end**: both binaries against a captured `/proc` tree of the RB5009 and a fake agent, with
@@ -701,7 +714,7 @@ on 2026-09-16, and one runs the CLI and the agent against a virtual RouterOS, fi
 | `--expose`                             | 2026-09-11: the two rules [verified](https://jmrp.io/docs/mikroscope/about/status/#verified-expose-rules); 2026-09-23, 7.24.4: a throwaway exposed install, upgraded without a token and removed                                                                          | 2026-09-26: `/healthz` 200, `/capabilities` 401 without the token and 200 with it; 2026-09-27: S8 and S14 | 2026-09-27: S8 and S14 |
 | `uninstall`                            | 2026-09-17: verified by ownership count after each route; `/export` after all four byte-identical to the one before                                                                                                          | 2026-09-26, 1.3.1: 5 of 15 first attempts failed; a second run cleaned up every time. 2026-09-27: every first attempt clean, after every route (F4) | 2026-09-26, 1.3.1: 8 of 8 first attempts cleaned up; with a client on `/stream` it failed. 2026-09-27: every first attempt clean, after every route (F4) |
 
-- **In the lab on 2026-09-27**, with the code after 1.3.1 (the changelog's Unreleased section): the
+- **In the lab on 2026-09-27**, with the code after 1.3.1 (the changelog's 1.4.0 section): the
   whole lab suite on both architectures, every test passing ([Lab timings](https://jmrp.io/docs/mikroscope/about/status/#lab-timings)). After
   every route, the CLI's pull and tar routes, a tar install then an upgrade, an imported
   `plan --rsc` script, every golden script the lab can run and installs made by the released 1.3.1
@@ -1296,14 +1309,24 @@ behaviour links this list.
   its factory default, and the full reference on any RouterOS but 7.24.4. The lab's CHR ran both
   with 1.3.1 on 7.24.4.
 - A pull through a mirror or pull-through cache named in the reference.
+- 1.4.0's deployment commands on any hardware: the install manifest, the stored shape,
+  `--arch auto`, doctor's new checks and the guarded script have run only on the lab's CHRs, with
+  the code after 1.3.1.
+- `--ssh-option` and `MIKROSCOPE_SSH_OPTIONS` against any router: the lab's CLI connects through the
+  lab's own `ssh_config`, and only unit tests pass the option.
+- `--extract-timeout` running out, which keeps the tar, on any router.
 - Doctor's registry host comparison against a real router: it has run only against fake router
   answers in the tests.
 - Whether a `read,api` user can read the envlist values in `/container/envs`.
-- The byte-identical round trip on hardware other than the RB5009, on the RB5009 with any RouterOS
-  but 7.24.2, with `install` and `upgrade` run without `--ephemeral`, or with the current container
-  settings (`privileged=yes`, `memory-max=64M`, the envlist entries `MEM_LIMIT_MB`, `CAPTURE_MB`,
-  `TRIGGERS` and `FLOOR_HZ`): it ran with `memory-max=32M`. `install`, `status` and `uninstall` have
-  run on 7.24.4 since, and the lab's CHR 7.24.4 runs the round trip.
+- The byte-identical round trip on hardware: on any board but the RB5009, on the RB5009 with any
+  RouterOS but 7.24.2, with `install` and `upgrade` run without `--ephemeral`, or with the current
+  container settings (`privileged=yes`, `memory-max=64M`, the envlist entries `MEM_LIMIT_MB`,
+  `CAPTURE_MB`, `TRIGGERS` and `FLOOR_HZ`): on the RB5009 it ran with `memory-max=32M`. `install`,
+  `status` and `uninstall` have run there on 7.24.4 since. On the lab's CHR 7.24.4, `make roundtrip`
+  runs it with `--ephemeral` (2026-09-26); S2 and S3 run `install`, `upgrade` and `uninstall`
+  without it, with `privileged=yes`, `memory-max=64M`, `MEM_LIMIT_MB` and `CAPTURE_MB`, and S5
+  imports a script that also writes `TRIGGERS` and `FLOOR_HZ`; each ends with `/export` equal to its
+  start, RouterOS's `keymat-provider` line aside (both architectures, 2026-09-27).
 - Firewalls other than the RB5009's, where on 2026-09-11 the two list memberships were enough, and
   the lab's profiles. A firewall with other drop rules in `raw`, `input` or `forward` may drop the
   container's traffic elsewhere, and `install` adds nothing for that beyond the two memberships.
@@ -1430,8 +1453,8 @@ Checked against the code on 2026-09-24, and the end-of-run summary's stream agai
 #### Found in the virtual lab
 
 What the published 1.3.1 CLI and agent image met on the lab's CHR, RouterOS 7.24.4, on 2026-09-26.
-Each item ends with what the code after 1.3.1 does, checked in the lab on 2026-09-27; that code is
-not released on that date, and the changelog's Unreleased section lists it.
+Each item ends with what the code after 1.3.1 does, checked in the lab on 2026-09-27; 1.4.0 ships
+that code, and the changelog's 1.4.0 section lists each change.
 
 - **`doctor` with its defaults fails three checks on a CHR.** `--arch` defaults to arm64, which
   fails on x86_64 only; the interface list `LAN` does not exist; and the address list `LANs` "has
@@ -1441,8 +1464,8 @@ not released on that date, and the changelog's Unreleased section lists it.
   reads the router's architecture, an empty address list is no longer a failure, and a missing
   interface list, still MISSING with the defaults, has a fix that offers `--iface-list none` (S1).
 - **A built-in interface list** such as `static`, `all` or `dynamic` passes doctor's existence
-  check, and RouterOS refuses to add a member to it. **After 1.3.1**: `--iface-list` and
-  `--addr-list` refuse `all`, `dynamic` and `static`; RouterOS answers `cannot add to builtin list`.
+  check, and RouterOS refuses to add a member to it. **After 1.3.1**: `--iface-list` refuses `all`,
+  `dynamic` and `static`; RouterOS answers `cannot add to builtin list`.
 - **`--ephemeral` needs a tmpfs disk**, and a CHR lists no disk. Doctor's fix,
   `/disk/add type=tmpfs tmpfs-max-size=64M slot=tmpfs`, worked, and the install went to
   `tmpfs/mikroscope/mikroscope` with `start-on-boot=no`. **After 1.3.1**: the same, and `doctor`
