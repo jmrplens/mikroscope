@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"io"
 	"net/http"
@@ -274,7 +275,7 @@ func TestPublishWritesTheFolderTheDatasourceAndTheDashboard(t *testing.T) {
 // event, so a datasource asking for the literal name would find one day's
 // index and miss every other.
 func TestElasticsearchDatasourceAsksForEveryDaysIndex(t *testing.T) {
-	s := &sinkFlags{elastic: "http://elastic:9200/", elIndex: "mikroscope-%Y.%m.%d", elasticAuth: "ApiKey abc"}
+	s := &sinkFlags{elastic: "http://elastic:9200/", elIndex: "mikroscope-%Y.%m.%d", elasticAuth: "abc"}
 	got, err := datasourceFor(dashboards.Elasticsearch, s, &publishFlags{}, io.Discard)
 	if err != nil {
 		t.Fatal(err)
@@ -285,14 +286,44 @@ func TestElasticsearchDatasourceAsksForEveryDaysIndex(t *testing.T) {
 	if got.JSON["index"] != "mikroscope*" {
 		t.Errorf("index = %v, want the wildcard that covers every day", got.JSON["index"])
 	}
-	if got.JSON["timeField"] != "time" {
-		t.Errorf("timeField = %v, want time", got.JSON["timeField"])
+	// The field the sink stamps every document with and every panel's query
+	// names. It was "time", which no document has.
+	if got.JSON["timeField"] != "@timestamp" {
+		t.Errorf("timeField = %v, want @timestamp, the field the sink writes", got.JSON["timeField"])
 	}
 	if got.Secret["httpHeaderValue1"] != "ApiKey abc" {
-		t.Errorf("secret = %v, want the credential verbatim — the sink sends it as given", got.Secret)
+		t.Errorf("secret = %v, want the key behind the ApiKey scheme, as the sink sends it", got.Secret)
 	}
 	if got.JSON["httpHeaderName1"] != "Authorization" {
 		t.Errorf("httpHeaderName1 = %v, want Authorization", got.JSON["httpHeaderName1"])
+	}
+}
+
+// MIKROSCOPE_ELASTIC_AUTH takes a user and a password or an API key, and the
+// datasource sends whichever it is the way the sink does. It was copied as
+// written, so `elastic:changeme` went out as `Authorization: elastic:changeme`
+// and a key without its scheme: neither signs in. With no credential the
+// datasource carries no header at all.
+func TestElasticsearchDatasourceSendsTheCredentialAsTheSinkDoes(t *testing.T) {
+	for auth, want := range map[string]string{
+		"elastic:changeme": "Basic ZWxhc3RpYzpjaGFuZ2VtZQ==",
+		"a2V5MTIz":         "ApiKey a2V5MTIz",
+	} {
+		s := &sinkFlags{elastic: "http://elastic:9200", elasticAuth: auth}
+		got, err := datasourceFor(dashboards.Elasticsearch, s, &publishFlags{}, io.Discard)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Secret["httpHeaderValue1"] != want {
+			t.Errorf("MIKROSCOPE_ELASTIC_AUTH=%s: header = %q, want %q", auth, got.Secret["httpHeaderValue1"], want)
+		}
+	}
+	got, err := datasourceFor(dashboards.Elasticsearch, &sinkFlags{elastic: "http://elastic:9200"}, &publishFlags{}, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Secret != nil || got.JSON["httpHeaderName1"] != nil {
+		t.Errorf("no credential: secret %v, header name %v, want neither", got.Secret, got.JSON["httpHeaderName1"])
 	}
 }
 
@@ -354,6 +385,7 @@ func TestPublishReportsWhatTheServerSaidAboutTheDatasource(t *testing.T) {
 // asserted rather than left to drift.
 func TestPublishFlagsAreTheOnesDocumented(t *testing.T) {
 	t.Setenv("MIKROSCOPE_GRAFANA_URL", "")
+	t.Setenv("GRAFANA_URL", "")
 	t.Setenv("MIKROSCOPE_GRAFANA_FOLDER", "")
 	t.Setenv("MIKROSCOPE_GRAFANA_DATASOURCE_UID", "")
 	fs := flag.NewFlagSet("t", flag.ContinueOnError)
@@ -476,9 +508,11 @@ func TestAnAdoptedDatasourceIsNeverWritten(t *testing.T) {
 }
 
 // clearPublishEnv empties the MIKROSCOPE_* variables the sink and --grafana
-// flags read their defaults from, so a test sees only the flags it passes.
+// flags read their defaults from, and the unprefixed GRAFANA_URL --grafana
+// falls back to, so a test sees only the flags it passes.
 func clearPublishEnv(t *testing.T) {
 	t.Helper()
+	t.Setenv("GRAFANA_URL", "")
 	for _, k := range []string{
 		"GRAFANA_URL", "GRAFANA_FOLDER", "GRAFANA_DATASOURCE_UID", "GRAFANA_DATASOURCE_URL",
 		"GRAFANA_DATASOURCE_SSLMODE", "INFLUX_URL", "INFLUX_DB", "INFLUX_TOKEN", "LOKI_URL", "OTLP_URL",
@@ -585,5 +619,307 @@ func TestDashboardsPublishDryRunSendsNoRequest(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "prometheus: would write datasource") || !strings.Contains(out.String(), "prometheus: would write dashboard") {
 		t.Errorf("dry run said %q, want the datasource and the dashboard it would write", out.String())
+	}
+}
+
+// One --grafana-datasource-url or -uid, one store. Either flag is a single
+// datasource, and a run of several stores that sets one would describe each
+// store's datasource with it: an InfluxDB datasource querying Prometheus's
+// port. It is refused before anything is sent, dry run included, and the
+// message names the stores and the way to do it instead.
+func TestOneDatasourceFlagIsRefusedForSeveralStores(t *testing.T) {
+	t.Setenv("GRAFANA_TOKEN", "t")
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		t.Errorf("a refused run reached the server: %s %s", r.Method, r.URL.Path)
+	}))
+	defer srv.Close()
+	two := &sinkFlags{influx: "http://i:8181", influxDB: "mikroscope", prom: ":9124"}
+	for _, c := range []struct {
+		name  string
+		pf    publishFlags
+		flags string
+	}{
+		{"url", publishFlags{dsURL: "http://prometheus:9090"}, "--grafana-datasource-url names"},
+		{"uid", publishFlags{dsUID: "someone-elses"}, "--grafana-datasource-uid names"},
+		{"both", publishFlags{dsURL: "http://prometheus:9090", dsUID: "x"}, "--grafana-datasource-url and --grafana-datasource-uid name one"},
+		{"dry run", publishFlags{dsURL: "http://prometheus:9090", dryRun: true}, "--grafana-datasource-url names"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			pf := c.pf
+			pf.url, pf.folder = srv.URL, "mikroscope"
+			var out strings.Builder
+			err := pf.publish(context.Background(), two, &out)
+			if err == nil {
+				t.Fatalf("said %q and no error, want the run refused", out.String())
+			}
+			for _, want := range []string{c.flags, "2 (influxdb, prometheus)", "dashboards publish"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("error = %q, want it to carry %q", err, want)
+				}
+			}
+			if out.Len() != 0 {
+				t.Errorf("said %q before refusing, want nothing", out.String())
+			}
+		})
+	}
+	// One store with either flag is what the flags are for.
+	pf := &publishFlags{url: srv.URL, dsURL: "http://prometheus:9090", dryRun: true}
+	if err := pf.check([]dashboards.Store{dashboards.Prometheus}); err != nil {
+		t.Errorf("one store with --grafana-datasource-url = %v, want it taken", err)
+	}
+}
+
+// The same refusal through the verb, and through the collector, where it is
+// a warning like every other publishing failure and the collector carries on.
+func TestTheSeveralStoresRefusalReachesBothVerbs(t *testing.T) {
+	clearPublishEnv(t)
+	t.Setenv("GRAFANA_TOKEN", "t")
+	args := []string{
+		"--grafana", "http://127.0.0.1:1", "--influx", "http://i:8181", "--influx-db", "m",
+		"--elastic", "http://e:9200", "--grafana-datasource-uid", "x",
+	}
+	err := dashboardsPublish(args, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "2 (influxdb, elasticsearch)") {
+		t.Errorf("dashboards publish = %v, want the refusal naming both stores", err)
+	}
+	var said []string
+	publishOrCarryOn(context.Background(),
+		&publishFlags{url: "http://127.0.0.1:1", dsUID: "x"},
+		&sinkFlags{influx: "http://i:8181", influxDB: "m", elastic: "http://e:9200"},
+		func(s string) { said = append(said, s) })
+	if len(said) != 1 || !strings.Contains(said[0], "carrying on without it: --grafana-datasource-uid names") {
+		t.Errorf("the collector logged %q, want one warning carrying the refusal", said)
+	}
+}
+
+// fakeGrafanaFor answers the whole publish path and refuses to create the
+// datasource of the stores named in refuse, the way a Grafana answers a name
+// that clashes with a datasource somebody else made.
+func fakeGrafanaFor(t *testing.T, refuse ...string) (*httptest.Server, *[]string) {
+	t.Helper()
+	var imported []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.URL.Path == "/api/folders" && r.Method == http.MethodGet:
+			_, _ = w.Write([]byte(`[{"uid":"f","title":"mikroscope"}]`))
+		case strings.HasPrefix(r.URL.Path, "/api/datasources/uid/") && r.Method == http.MethodGet:
+			w.WriteHeader(http.StatusNotFound)
+		case r.URL.Path == "/api/datasources":
+			var body struct {
+				UID string `json:"uid"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			if slices.Contains(refuse, body.UID) {
+				w.WriteHeader(http.StatusConflict)
+				_, _ = w.Write([]byte(`{"message":"data source with the same name already exists"}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"datasource":{}}`))
+		case r.URL.Path == "/api/ds/query":
+			_, _ = w.Write([]byte(`{"results":{"A":{"frames":[]}}}`))
+		case r.URL.Path == "/api/dashboards/import":
+			var body struct {
+				Dashboard struct {
+					UID string `json:"uid"`
+				} `json:"dashboard"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			imported = append(imported, body.Dashboard.UID)
+			_, _ = w.Write([]byte(`{"importedUrl":"/d/` + body.Dashboard.UID + `/x"}`))
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv, &imported
+}
+
+// A store that fails does not stop the ones after it. InfluxDB is the first
+// store tried, and before this a refused InfluxDB datasource left the
+// Elasticsearch and PostgreSQL stores after it unpublished and unmentioned.
+func TestAStoreThatFailsDoesNotStopTheRest(t *testing.T) {
+	t.Setenv("GRAFANA_TOKEN", "t")
+	srv, imported := fakeGrafanaFor(t, "mikroscope-influxdb")
+	sf := &sinkFlags{
+		influx: "http://i:8181", influxDB: "mikroscope",
+		elastic:  "http://e:9200",
+		postgres: "postgres://mikroscope:pw@pg:5432/mikroscope?sslmode=disable",
+	}
+	var out strings.Builder
+	err := (&publishFlags{url: srv.URL, folder: "mikroscope"}).publish(context.Background(), sf, &out)
+	if err == nil {
+		t.Fatalf("said %q and no error, want the InfluxDB refusal reported", out.String())
+	}
+	if !strings.Contains(err.Error(), "the datasource for influxdb") || !strings.Contains(err.Error(), "already exists") {
+		t.Errorf("error = %q, want the store that failed and what the server said", err)
+	}
+	for _, store := range []string{"elasticsearch", "postgres"} {
+		if !strings.Contains(out.String(), store+": dashboard "+srv.URL+"/d/mikroscope-"+store+"/x") {
+			t.Errorf("said %q, want %s published after the store that failed", out.String(), store)
+		}
+		if strings.Contains(err.Error(), store) {
+			t.Errorf("error = %q names %s, which was published", err, store)
+		}
+	}
+	if slices.Contains(*imported, "mikroscope-influxdb") {
+		t.Errorf("imported %v, want no dashboard for the store whose datasource was refused", *imported)
+	}
+}
+
+// Every store that fails is reported, each with its own reason, one line per
+// store; and the collector logs one warning per store rather than one warning
+// with the rest of the reasons on unprefixed lines under it.
+func TestEveryFailingStoreIsReportedOnce(t *testing.T) {
+	t.Setenv("GRAFANA_TOKEN", "t")
+	srv, _ := fakeGrafanaFor(t, "mikroscope-influxdb")
+	// InfluxDB is refused by the server; Prometheus and Graphite cannot know
+	// the address Grafana would query; Elasticsearch goes through.
+	sf := &sinkFlags{influx: "http://i:8181", influxDB: "mikroscope", elastic: "http://e:9200", prom: ":9124", graph: "g:2003"}
+	pf := &publishFlags{url: srv.URL, folder: "mikroscope"}
+	err := pf.publish(context.Background(), sf, io.Discard)
+	each, ok := errors.AsType[storeErrors](err)
+	if !ok || len(each) != 3 {
+		t.Fatalf("error = %v, want three stores' failures", err)
+	}
+	lines := strings.Split(err.Error(), "\n")
+	for i, want := range []string{"the datasource for influxdb", "the datasource for prometheus", "the datasource for graphite"} {
+		if i >= len(lines) || !strings.HasPrefix(lines[i], want) {
+			t.Errorf("line %d of %q, want it to start %q, in the order the stores are tried", i, err, want)
+		}
+	}
+
+	var said []string
+	publishOrCarryOn(context.Background(), pf, sf, func(s string) { said = append(said, s) })
+	warned := 0
+	for _, line := range said {
+		if !strings.HasPrefix(line, "grafana: ") {
+			t.Errorf("logged %q without the grafana: prefix", line)
+		}
+		if strings.Contains(line, "could not publish, carrying on without it: the datasource for ") {
+			warned++
+		}
+	}
+	if warned != 3 {
+		t.Errorf("logged %q, want one warning for each of the three stores", said)
+	}
+	if !slices.ContainsFunc(said, func(s string) bool { return strings.Contains(s, "elasticsearch: dashboard ") }) {
+		t.Errorf("logged %q, want the store that went through", said)
+	}
+}
+
+// A canceled run stops at the next store rather than failing each of the
+// rest the same way, and says which store it stopped at.
+func TestACanceledPublishStopsAtTheNextStore(t *testing.T) {
+	t.Setenv("GRAFANA_TOKEN", "t")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var asked []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asked = append(asked, r.Method+" "+r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/api/folders" {
+			_, _ = w.Write([]byte(`[{"uid":"f","title":"mikroscope"}]`))
+			return
+		}
+		// The first store's datasource is being asked about when the
+		// operator presses ^C.
+		cancel()
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+	sf := &sinkFlags{influx: "http://i:8181", influxDB: "mikroscope", elastic: "http://e:9200"}
+	err := (&publishFlags{url: srv.URL, folder: "mikroscope"}).publish(ctx, sf, io.Discard)
+	if !errors.Is(err, context.Canceled) || !strings.Contains(err.Error(), "elasticsearch: not published") {
+		t.Errorf("error = %v, want the cancellation, and the store it stopped at", err)
+	}
+	if len(asked) != 2 {
+		t.Errorf("asked %v, want the folder and the first datasource and nothing after the cancel", asked)
+	}
+}
+
+// --grafana-datasource-sslmode takes the four modes Grafana's PostgreSQL
+// datasource has. Anything else was written into the datasource as given,
+// where libpq's "prefer" or a typo is a datasource Grafana cannot use.
+func TestTheSSLModeOverrideIsOneGrafanaHas(t *testing.T) {
+	t.Setenv("GRAFANA_TOKEN", "")
+	sf := &sinkFlags{postgres: "postgres://mikroscope@pg:5432/mikroscope"}
+	for _, bad := range []string{"prefer", "allow", "verify_full", "Require"} {
+		pf := &publishFlags{url: "http://127.0.0.1:1", dsSSL: bad, dryRun: true}
+		err := pf.publish(context.Background(), sf, io.Discard)
+		if err == nil || !strings.Contains(err.Error(), "disable, require, verify-ca, verify-full") {
+			t.Errorf("--grafana-datasource-sslmode %s = %v, want a refusal naming the four", bad, err)
+		}
+	}
+	for _, good := range grafanaSSLModes {
+		pf := &publishFlags{url: "http://127.0.0.1:1", dsSSL: good, dryRun: true}
+		var out strings.Builder
+		if err := pf.publish(context.Background(), sf, &out); err != nil {
+			t.Errorf("--grafana-datasource-sslmode %s = %v, want it taken", good, err)
+		}
+	}
+}
+
+// --grafana's default: MIKROSCOPE_GRAFANA_URL and then GRAFANA_URL for
+// `dashboards publish` and `uninstall`, and MIKROSCOPE_GRAFANA_URL alone for
+// the collector, which must not start writing to a Grafana because a shell
+// set up for other tooling holds the unprefixed name.
+func TestWhereEachVerbReadsItsGrafanaFrom(t *testing.T) {
+	read := func(register func(*publishFlags, *flag.FlagSet)) string {
+		var pf publishFlags
+		register(&pf, flag.NewFlagSet("t", flag.ContinueOnError))
+		return pf.url
+	}
+	verb := (*publishFlags).register
+	collector := (*publishFlags).registerForCollector
+
+	t.Setenv("MIKROSCOPE_GRAFANA_URL", "")
+	t.Setenv("GRAFANA_URL", "http://unprefixed:3000")
+	if got := read(verb); got != "http://unprefixed:3000" {
+		t.Errorf("publish/uninstall --grafana = %q, want GRAFANA_URL when it is the only one set", got)
+	}
+	if got := read(collector); got != "" {
+		t.Errorf("forward --grafana = %q, want nothing: the collector never reads GRAFANA_URL", got)
+	}
+
+	t.Setenv("MIKROSCOPE_GRAFANA_URL", "http://prefixed:3000")
+	for name, register := range map[string]func(*publishFlags, *flag.FlagSet){"publish/uninstall": verb, "forward": collector} {
+		if got := read(register); got != "http://prefixed:3000" {
+			t.Errorf("%s --grafana = %q, want MIKROSCOPE_GRAFANA_URL first", name, got)
+		}
+	}
+}
+
+// And through the verb: `dashboards publish` with no --grafana and only
+// GRAFANA_URL set publishes there.
+func TestDashboardsPublishReadsTheUnprefixedGrafanaURL(t *testing.T) {
+	clearPublishEnv(t)
+	t.Setenv("GRAFANA_TOKEN", "t")
+	srv, imported := fakeGrafanaFor(t)
+	t.Setenv("GRAFANA_URL", srv.URL+"/")
+	var out strings.Builder
+	if err := dashboardsPublish([]string{"--influx", "http://i:8181", "--influx-db", "mikroscope"}, &out); err != nil {
+		t.Fatal(err, out.String())
+	}
+	if len(*imported) != 1 || !strings.Contains(out.String(), "influxdb: dashboard "+srv.URL+"/d/") {
+		t.Errorf("said %q, imported %v, want the dashboard published to GRAFANA_URL", out.String(), *imported)
+	}
+}
+
+// The help is where most people read which flag a store needs, and it said
+// --grafana-datasource-uid was required for every store that cannot describe
+// its own, when two of the three can be told their address instead.
+func TestTheDatasourceFlagsSayWhoNeedsThem(t *testing.T) {
+	fs := flag.NewFlagSet("t", flag.ContinueOnError)
+	var pf publishFlags
+	pf.register(fs)
+	uid := fs.Lookup("grafana-datasource-uid").Usage
+	for _, want := range []string{"required only for --sql", "--prom and --graphite can use --grafana-datasource-url", "One store per run"} {
+		if !strings.Contains(uid, want) {
+			t.Errorf("--grafana-datasource-uid usage = %q, want it to say %q", uid, want)
+		}
+	}
+	if u := fs.Lookup("grafana-datasource-url").Usage; !strings.Contains(u, "One store per run") {
+		t.Errorf("--grafana-datasource-url usage = %q, want it to say one store per run", u)
 	}
 }

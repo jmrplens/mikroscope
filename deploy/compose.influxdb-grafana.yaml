@@ -23,10 +23,13 @@
 #
 # THE COLLECTOR RUNS ON THE HOST'S NETWORK, and that is not a shortcut. The
 # agent answers on a /30 veth inside the router, and the route to it is the
-# host's — a container on a bridge network has no way there. Two consequences
-# follow: the collector reaches InfluxDB and Grafana at 127.0.0.1 rather than
-# by service name, and the host must already be able to curl the agent. If it
-# cannot, the relay is the other way in; see deploy/README.md.
+# host's — a container on a bridge network has no way there. Three
+# consequences follow: the collector reaches InfluxDB and Grafana at 127.0.0.1
+# rather than by service name; Grafana, which is on the bridge, reaches
+# InfluxDB by its service name instead, so the collector is told that address
+# for the datasource (MIKROSCOPE_GRAFANA_DATASOURCE_URL); and the host must
+# already be able to curl the agent. If it cannot, the relay is the other way
+# in; see deploy/README.md.
 
 name: mikroscope
 
@@ -81,6 +84,11 @@ services:
       MIKROSCOPE_TOKEN: ${MIKROSCOPE_TOKEN:-}
       MIKROSCOPE_INFLUX_URL: http://127.0.0.1:8181
       MIKROSCOPE_GRAFANA_URL: http://127.0.0.1:3000
+      # The address GRAFANA queries, not the one the collector writes to.
+      # Without it the datasource took the write address, 127.0.0.1:8181,
+      # which inside the Grafana container is that container's own loopback,
+      # where nothing listens on 8181.
+      MIKROSCOPE_GRAFANA_DATASOURCE_URL: http://influxdb:8181
       GRAFANA_TOKEN: ${GRAFANA_TOKEN:-}
     command:
       - forward

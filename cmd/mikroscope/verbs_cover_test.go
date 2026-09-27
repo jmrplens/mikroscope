@@ -52,10 +52,26 @@ func TestDashboardsGenWritesOneFilePerStoreAndItsAlerts(t *testing.T) {
 		}
 	}
 
-	// A directory that does not exist is the operator's typo, and it has to
-	// come back as an error rather than as a silent no-op.
-	if err := dashboardsGen(filepath.Join(dir, "no", "such", "dir")); err == nil {
-		t.Error("gen into a missing directory returned no error")
+	// A directory that is not there yet is made, parents included: `--out
+	// dashboards` in a fresh directory is the ordinary first run.
+	nested := filepath.Join(dir, "not", "there", "yet")
+	_ = capture(t, func() {
+		if err := dashboardsGen(nested); err != nil {
+			t.Errorf("gen into a directory that is not there yet: %v", err)
+		}
+	})
+	if _, err := os.Stat(filepath.Join(nested, "mikroscope-"+string(dashboards.Stores[0])+".json")); err != nil {
+		t.Errorf("gen made the directory but not the files: %v", err)
+	}
+
+	// A path that cannot be a directory, because a file is in the way, still
+	// comes back as an error rather than as a silent no-op.
+	blocked := filepath.Join(dir, "a-file")
+	if err := os.WriteFile(blocked, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := dashboardsGen(filepath.Join(blocked, "dir")); err == nil {
+		t.Error("gen under a file returned no error")
 	}
 }
 

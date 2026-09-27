@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -168,20 +169,114 @@ func TestDataRemovalsRefusesAWriteURLItCannotReadBack(t *testing.T) {
 // alone too, or an uninstall takes away somebody else's object.
 func TestAnAdoptedDatasourceIsNotRemoved(t *testing.T) {
 	t.Setenv("GRAFANA_TOKEN", "t")
-	// No server: Exists fails, existing() returns nil, and the point is that
-	// the datasource path is never even considered. A adopted uid short-
-	// circuits before any request, so this asserts the shape rather than the
-	// traffic.
+	// The dashboard is there and is listed; the datasource API is never even
+	// asked, because an adopted uid short-circuits before any request.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/datasources") {
+			t.Errorf("asked the datasource API with an adopted uid: %s %s", r.Method, r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"dashboard":{"uid":"mikroscope-influxdb"}}`))
+	}))
+	defer srv.Close()
 	sf := &sinkFlags{influx: "http://i:8181", influxDB: "m"}
-	pf := &publishFlags{url: "http://grafana.invalid", dsUID: "someone-elses"}
+	pf := &publishFlags{url: srv.URL, dsUID: "someone-elses"}
 	found, err := dashboardRemovals(context.Background(), sf, pf)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if len(found) != 1 || found[0].what != "dashboard mikroscope-influxdb" {
+		t.Errorf("found %+v, want the dashboard alone", found)
 	}
 	for _, item := range found {
 		if strings.Contains(item.what, "datasource") {
 			t.Errorf("an adopted datasource was listed for removal: %s", item.what)
 		}
+	}
+}
+
+// A Grafana that could not be read is not a Grafana with nothing in it. Only a
+// 404 means "not there"; a rejected token, a server error and a server that is
+// not listening each stop the verb with what went wrong, and none of them may
+// print "nothing of this is here to remove", which is the one answer that
+// sends the operator away with the dashboard still in place.
+func TestTheDashboardHalfReportsAGrafanaItCouldNotRead(t *testing.T) {
+	t.Setenv("GRAFANA_TOKEN", "glsa_revoked")
+	refusing := func(status int, body string) string {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodGet {
+				t.Errorf("a listing sent %s %s", r.Method, r.URL.Path)
+			}
+			w.WriteHeader(status)
+			_, _ = w.Write([]byte(body))
+		}))
+		t.Cleanup(srv.Close)
+		return srv.URL
+	}
+	gone := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	unreachable := gone.URL
+	gone.Close() // nothing is listening there now
+
+	for name, c := range map[string]struct{ url, want string }{
+		"rejected token": {refusing(http.StatusUnauthorized, `{"message":"invalid API key"}`), "invalid API key"},
+		"server error":   {refusing(http.StatusInternalServerError, `{"message":"database is locked"}`), "database is locked"},
+		"not listening":  {unreachable, "connect"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var out strings.Builder
+			err := uninstall([]string{
+				"--targets", "dashboard",
+				"--grafana", c.url,
+				"--influx", "http://store:8181", "--influx-db", "mikroscope",
+			}, &out)
+			if err == nil {
+				t.Fatalf("said %q and no error, want what went wrong", out.String())
+			}
+			for _, want := range []string{"asking Grafana whether dashboard mikroscope-influxdb is there", c.want} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("error = %q, want it to carry %q", err, want)
+				}
+			}
+			if strings.Contains(out.String(), "nothing of this is here to remove") {
+				t.Errorf("said %q about a Grafana it could not read", out.String())
+			}
+		})
+	}
+}
+
+// --grafana on uninstall falls back to the unprefixed GRAFANA_URL that
+// `dashboards import` and `check` read, after MIKROSCOPE_GRAFANA_URL.
+func TestUninstallFindsTheGrafanaInEitherVariable(t *testing.T) {
+	t.Setenv("GRAFANA_TOKEN", "t")
+	asked := map[string]int{}
+	serve := func(name string) string {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			asked[name]++
+			w.WriteHeader(http.StatusNotFound)
+		}))
+		t.Cleanup(srv.Close)
+		return srv.URL
+	}
+	prefixed, unprefixed := serve("prefixed"), serve("unprefixed")
+	args := []string{"--targets", "dashboard", "--influx", "http://store:8181", "--influx-db", "mikroscope"}
+
+	t.Setenv("MIKROSCOPE_GRAFANA_URL", "")
+	t.Setenv("GRAFANA_URL", unprefixed)
+	if err := uninstall(args, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if asked["unprefixed"] == 0 {
+		t.Error("with only GRAFANA_URL set, uninstall did not ask that Grafana")
+	}
+
+	// Both set: the prefixed one wins, as it is the collector's own.
+	t.Setenv("MIKROSCOPE_GRAFANA_URL", prefixed)
+	before := asked["unprefixed"]
+	if err := uninstall(args, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if asked["prefixed"] == 0 || asked["unprefixed"] != before {
+		t.Errorf("asked %v, want MIKROSCOPE_GRAFANA_URL's Grafana and not GRAFANA_URL's", asked)
 	}
 }
 
@@ -348,5 +443,74 @@ func TestTheVerbRefusesAWriteURLItCannotReadBack(t *testing.T) {
 	}, &strings.Builder{})
 	if err == nil || !strings.Contains(err.Error(), "--influx-db") {
 		t.Fatalf("err = %v, want it to name the flag that resolves it", err)
+	}
+}
+
+// --grafana-dry-run is one of forward's Grafana flags, which uninstall takes so
+// a collector's flags can be passed as they are, but it cannot be ignored the
+// way the others are: `--grafana-dry-run --yes` removed everything. It is
+// refused before any request, and the refusal says what the dry run is here.
+func TestUninstallRefusesTheGrafanaDryRun(t *testing.T) {
+	t.Setenv("GRAFANA_TOKEN", "t")
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		t.Errorf("a refused run reached Grafana: %s %s", r.Method, r.URL.Path)
+	}))
+	defer srv.Close()
+	var out strings.Builder
+	err := uninstall([]string{
+		"--targets", "dashboard", "--grafana", srv.URL,
+		"--influx", "http://store:8181", "--influx-db", "mikroscope",
+		"--grafana-dry-run", "--yes",
+	}, &out)
+	if err == nil || !strings.Contains(err.Error(), "no --grafana-dry-run: without --yes it lists") {
+		t.Errorf("uninstall --grafana-dry-run --yes = %v, want the refusal", err)
+	}
+	if out.Len() != 0 {
+		t.Errorf("said %q before refusing, want nothing", out.String())
+	}
+	// The flags it has no use for are still taken, and ignored.
+	if ignored := uninstall([]string{
+		"--targets", "dashboard", "--grafana", "http://127.0.0.1:1",
+		"--grafana-folder", "", "--grafana-datasource-url", "http://influx:8181", "--grafana-datasource-sslmode", "require",
+	}, io.Discard); ignored != nil {
+		t.Errorf("uninstall with forward's other Grafana flags = %v, want them taken", ignored)
+	}
+}
+
+// `--targets all --yes` lists the Grafana and store halves before it touches
+// the router. With the router half first, a run without --grafana, or against
+// a Grafana it could not read, removed the router objects and then stopped on
+// the dashboard half, half done. No router is named here, so a router half
+// that ran first would fail on the missing --router instead: the error says
+// which half stopped the verb.
+func TestUninstallAllStopsBeforeTheRouterWhenTheDashboardHalfCannotList(t *testing.T) {
+	t.Setenv("MIKROSCOPE_ROUTER", "")
+	t.Setenv("MIKROSCOPE_GRAFANA_URL", "")
+	t.Setenv("GRAFANA_URL", "")
+	t.Setenv("GRAFANA_TOKEN", "glsa_revoked")
+	refusing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"message":"invalid API key"}`))
+	}))
+	defer refusing.Close()
+	sinksArgs := []string{"--influx", "http://store.invalid:8181", "--influx-db", "mikroscope"}
+	for name, c := range map[string]struct {
+		extra []string
+		want  string
+	}{
+		"no Grafana named":         {nil, "--targets dashboard needs --grafana"},
+		"a Grafana it cannot read": {[]string{"--grafana", refusing.URL}, "asking Grafana whether dashboard mikroscope-influxdb is there"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var out strings.Builder
+			args := append(append([]string{"--targets", "all", "--yes"}, sinksArgs...), c.extra...)
+			err := uninstall(args, &out)
+			if err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("uninstall --targets all --yes = %v, want the dashboard half's %q", err, c.want)
+			}
+			if strings.Contains(out.String(), "router") {
+				t.Errorf("said %q, want nothing from the router half", out.String())
+			}
+		})
 	}
 }

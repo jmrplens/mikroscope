@@ -4,6 +4,7 @@ package docker
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"strconv"
@@ -155,6 +156,13 @@ func publishOnce(ctx context.Context, t *testing.T, s *sweep, store string, extr
 // datasource the collector just created. A panel with no rows is the store
 // having nothing to say in the window; a panel with an error is the
 // datasource, and that is the only thing this fails on.
+//
+// ANY FAIL LINE THAT CARRIES A REASON. `check` prints a panel's error after its
+// counts (checkLine). This used to look for " err ", which `check` never
+// prints, so only the two trap strings below could fail the test, and a
+// datasource that answered every panel with some third error passed. A
+// `none` line with a reason is a known-empty panel's, which `check` itself
+// tolerates.
 func checkAgainstWhatItBuilt(ctx context.Context, t *testing.T, s *sweep, store string, vars, env []string) {
 	t.Helper()
 	args := append([]string{
@@ -179,13 +187,23 @@ func checkAgainstWhatItBuilt(ctx context.Context, t *testing.T, s *sweep, store 
 		}
 	}
 	for line := range strings.SplitSeq(said, "\n") {
-		if strings.Contains(line, " err ") {
+		if reason := failReason(line); reason != "" {
 			t.Errorf("%s: a panel errored against the datasource it built: %s", store, line)
 		}
 	}
 	if err != nil {
 		t.Logf("%s: check exited non-zero (empty panels are expected here):\n%s", store, tailOf(said))
 	}
+}
+
+// failReason is the error a `dashboards check` FAIL line carries, and "" for
+// any other line, a FAIL with no reason (an empty panel) included.
+func failReason(line string) string {
+	m := checkLine.FindStringSubmatch(line)
+	if m == nil || m[1] != "FAIL" {
+		return ""
+	}
+	return strings.TrimSpace(m[5])
 }
 
 // grafanaLines is just the publish's own output, for the log.
@@ -206,4 +224,34 @@ func tailOf(s string) string {
 		lines = lines[len(lines)-12:]
 	}
 	return strings.Join(lines, "\n")
+}
+
+// failReason is what decides whether the datasource the collector built is
+// wrong, so it is pinned against lines printed the way `dashboards check`
+// prints them (the format string in cmd/mikroscope/dashboards.go). No stack is
+// needed for this one.
+func TestFailReasonReadsOnlyAFailLinesError(t *testing.T) {
+	for _, c := range []struct {
+		mark, title, err, want string
+	}{
+		{"FAIL", "CPU per core", `POST /api/ds/query: 400 Bad Request: {"message":"bad field"}`, `POST /api/ds/query: 400 Bad Request: {"message":"bad field"}`},
+		{"FAIL", "Memory", "flightsql: Unauthenticated", "flightsql: Unauthenticated"},
+		// An empty panel is the store with nothing in the window, not the
+		// datasource: a FAIL with no reason is not this test's failure.
+		{"FAIL", "Softirqs", "", ""},
+		{"ok  ", "Sample continuity", "", ""},
+		// Known-empty, with the error InfluxDB 3 plans a missing table with:
+		// `check` tolerates it, and so does this.
+		{"none", "Pressure stall", "table 'mikroscope_psi' not found", ""},
+	} {
+		line := fmt.Sprintf("  %s %-64s rows=%d frames=%d %s", c.mark, c.title, 0, 1, c.err)
+		if got := failReason(line); got != c.want {
+			t.Errorf("failReason(%q) = %q, want %q", line, got, c.want)
+		}
+	}
+	for _, other := range []string{"every panel returns data (0 known-empty tolerated)", "datasource holds 12 measurements", ""} {
+		if got := failReason(other); got != "" {
+			t.Errorf("failReason(%q) = %q, want nothing from a line that is not a panel's", other, got)
+		}
+	}
 }

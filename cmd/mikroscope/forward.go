@@ -27,7 +27,7 @@ func runForward(args []string, c cli) error {
 	)
 	fs := flag.NewFlagSet("mikroscope forward", flag.ContinueOnError)
 	sf.register(fs)
-	pf.register(fs)
+	pf.registerForCollector(fs)
 	fs.StringVar(&ifaces, "interfaces", env("INTERFACES", ""), "API tier: comma-separated interfaces for monitor-traffic (MIKROSCOPE_INTERFACES)")
 	fs.DurationVar(&apiEvery, "api-every", time.Second, "API tier cadence; 0 disables the API tier")
 	fs.DurationVar(&conntrackEvery, "conntrack-every", 0, "API tier: ask the conntrack count this often (0 = never; it is a table scan)")
@@ -44,6 +44,13 @@ func runForward(args []string, c cli) error {
 	}
 	if !sf.any() {
 		return errors.New("forward needs at least one sink: --file, --prom, --influx, --loki, --otlp, --graphite, --elastic, --sql, --postgres, --telegraf or --stdout")
+	}
+	// A DRY RUN WITH NOTHING TO DRY-RUN IS REFUSED, not ignored. Without a
+	// Grafana there is no publish to preview, and the dry run used to fall
+	// through to the collector, which then wrote samples into every sink named:
+	// the opposite of what a flag with "dry run" in its name was passed for.
+	if pf.dryRun && !pf.asked() {
+		return errors.New("--grafana-dry-run needs --grafana (or MIKROSCOPE_GRAFANA_URL): it previews the publish, and without a Grafana there is none")
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -189,7 +196,17 @@ func publishOrCarryOn(ctx context.Context, pf *publishFlags, sf *sinkFlags, logf
 			logf("grafana: " + line)
 		}
 	}
-	if err != nil {
-		logf("grafana: could not publish, carrying on without it: " + err.Error())
+	if err == nil {
+		return
+	}
+	// One warning per store that failed: publish carries on past a store that
+	// fails and returns what each one said, and a line apiece keeps each
+	// reason beside the prefix a reader searches the log for.
+	failed := []error{err}
+	if each, ok := errors.AsType[storeErrors](err); ok {
+		failed = each
+	}
+	for _, one := range failed {
+		logf("grafana: could not publish, carrying on without it: " + one.Error())
 	}
 }

@@ -66,6 +66,15 @@ func uninstall(args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
+	// THE GRAFANA FLAGS ARE FORWARD'S, so the flags a collector runs with can
+	// be passed here as they are; the ones this verb has no use for
+	// (--grafana-folder, --grafana-datasource-url and -sslmode) are ignored.
+	// Not the dry run. Ignored, `--grafana-dry-run --yes` removed everything,
+	// when the one thing it can have meant is "remove nothing". The dry run
+	// of this verb is leaving out --yes.
+	if pf.dryRun {
+		return errors.New("uninstall takes no --grafana-dry-run: without --yes it lists what would go and removes nothing")
+	}
 	// --yes is the deployment flag, not one of this verb's own: it means the
 	// same thing here as it does on install, and two flags spelled the same
 	// would be a flag redefined.
@@ -76,13 +85,15 @@ func uninstall(args []string, out io.Writer) error {
 	}
 	ctx := context.Background()
 
-	if wanted[targetRouter] {
-		if failed := removeRouterObjects(&c, yes, out); failed != nil {
-			return failed
-		}
-	}
-
+	// THE GRAFANA AND STORE HALVES ARE LISTED BEFORE THE ROUTER IS TOUCHED.
+	// Listing them is where they find out they cannot go ahead: no --grafana,
+	// no token, a Grafana or a store that cannot be read. With the router half
+	// first, `--targets all --yes` removed the router objects and then stopped
+	// on one of those, half done. A target that cannot be listed now stops
+	// the verb before anything is removed. The store half's printed reasons
+	// wait for the router half, so the output keeps its order.
 	var found []removal
+	var reasons strings.Builder
 	if wanted[targetDashboard] {
 		grafanaSide, failed := dashboardRemovals(ctx, &sf, &pf)
 		if failed != nil {
@@ -91,12 +102,20 @@ func uninstall(args []string, out io.Writer) error {
 		found = append(found, grafanaSide...)
 	}
 	if wanted[targetData] {
-		storeSide, failed := dataRemovals(ctx, &sf, out)
+		storeSide, failed := dataRemovals(ctx, &sf, &reasons)
 		if failed != nil {
 			return failed
 		}
 		found = append(found, storeSide...)
 	}
+
+	if wanted[targetRouter] {
+		if failed := removeRouterObjects(&c, yes, out); failed != nil {
+			return failed
+		}
+	}
+	fmt.Fprint(out, reasons.String())
+
 	if len(found) == 0 && !wanted[targetRouter] {
 		fmt.Fprintln(out, "nothing of this is here to remove")
 		return nil
@@ -195,8 +214,8 @@ func parseTargets(list string) (map[string]bool, error) {
 // collector writes to, for the ones that are actually there.
 func dashboardRemovals(ctx context.Context, sf *sinkFlags, pf *publishFlags) ([]removal, error) {
 	if pf.url == "" {
-		return nil, errors.New("--targets dashboard needs --grafana, and GRAFANA_TOKEN: " +
-			"without them there is nothing this could have published")
+		return nil, errors.New("--targets dashboard needs --grafana (or MIKROSCOPE_GRAFANA_URL or GRAFANA_URL), " +
+			"and GRAFANA_TOKEN: without them there is nothing this could have published")
 	}
 	token := os.Getenv("GRAFANA_TOKEN")
 	if token == "" {
@@ -206,32 +225,48 @@ func dashboardRemovals(ctx context.Context, sf *sinkFlags, pf *publishFlags) ([]
 	var found []removal
 	for _, store := range storesToPublish(sf) {
 		uid := "mikroscope-" + string(store)
-		if item := existing(ctx, g, "dashboard", "/api/dashboards/uid/"+uid, uid); item != nil {
-			found = append(found, *item)
+		item, there, err := existing(ctx, g, "dashboard", "/api/dashboards/uid/"+uid, uid)
+		if err != nil {
+			return nil, err
+		}
+		if there {
+			found = append(found, item)
 		}
 		// AN ADOPTED DATASOURCE IS NOT OURS TO TAKE AWAY. It was somebody
 		// else's before this ran and it is somebody else's after.
 		if pf.dsUID != "" {
 			continue
 		}
-		if item := existing(ctx, g, "datasource", "/api/datasources/uid/"+uid, uid); item != nil {
-			found = append(found, *item)
+		if item, there, err = existing(ctx, g, "datasource", "/api/datasources/uid/"+uid, uid); err != nil {
+			return nil, err
+		}
+		if there {
+			found = append(found, item)
 		}
 	}
 	return found, nil
 }
 
-// existing is a removal for an object that is there, and nil for one that is
-// not: an uninstall lists what it would take away, not what it wishes it could.
-func existing(ctx context.Context, g *dashboards.Grafana, kind, path, uid string) *removal {
+// existing is a removal for an object that is there, and false for one that
+// is not: an uninstall lists what it would take away, not what it wishes it
+// could.
+//
+// A GRAFANA THAT COULD NOT BE ASKED IS AN ERROR, NOT AN EMPTY ANSWER. Only a
+// 404 means the object is not there. An unreachable server, a rejected token
+// or a 500 used to read as "not there" too, and the verb then said "nothing
+// of this is here to remove" about a Grafana it had not managed to read: the
+// one answer that sends the operator away with the dashboard still in place.
+// The first object that cannot be read stops the listing and is named in the
+// error; the rest would fail the same way.
+func existing(ctx context.Context, g *dashboards.Grafana, kind, path, uid string) (removal, bool, error) {
 	there, err := g.Exists(ctx, path)
-	if err != nil || !there {
-		return nil
+	if err != nil {
+		return removal{}, false, fmt.Errorf("asking Grafana whether %s %s is there: %w", kind, uid, err)
 	}
-	return &removal{
+	return removal{
 		what: kind + " " + uid,
 		drop: func(ctx context.Context) error { return g.Delete(ctx, path) },
-	}
+	}, there, nil
 }
 
 // dataRemovals is every item every emptiable store holds, and a printed reason

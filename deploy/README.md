@@ -44,6 +44,13 @@ collector runs with `network_mode: host`, which is the same networking the
 binary has when you run it directly, and it reaches InfluxDB and Grafana at
 `127.0.0.1` rather than by service name.
 
+Grafana stays on the bridge, where `127.0.0.1` is the Grafana container's own
+loopback, so the datasource cannot use the address the collector writes to.
+The InfluxDB stack tells the collector the address Grafana reaches the store
+at, `MIKROSCOPE_GRAFANA_DATASOURCE_URL: http://influxdb:8181`, as the
+Prometheus stack's instructions [below](#prometheus-and-the-dashboard) do with
+`--grafana-datasource-url=http://prometheus:9090`.
+
 The check before you start: if `curl http://172.30.10.2:9123/healthz` answers
 on the host, the collector will work. If it does not, the host has no route to
 the veth and neither will the collector.

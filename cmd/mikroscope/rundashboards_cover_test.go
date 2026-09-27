@@ -2,8 +2,12 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
+	"flag"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -71,7 +75,7 @@ func TestRunDashboardsImportsAndChecks(t *testing.T) {
 	}
 
 	out = capture(t, func() {
-		if err := runDashboards([]string{"check", "--grafana", url, "--datasource-uid", "uid", "--window", "5m", "--var", "host=rb5009"}); err != nil {
+		if err := runDashboards([]string{"check", "--grafana", url, "--datasource-uid", "uid", "--window", "5m", "--var", "host=router"}); err != nil {
 			t.Errorf("check: %v", err)
 		}
 	})
@@ -105,5 +109,69 @@ func TestRunDashboardsCarriesOnWhenTheProbeFails(t *testing.T) {
 	// The import itself still runs; what it cannot do is tailor the panels.
 	if err != nil && !strings.Contains(err.Error(), "import") {
 		t.Errorf("import with a failing probe = %v", err)
+	}
+}
+
+// --grafana on import and check reads GRAFANA_URL and then the
+// MIKROSCOPE_GRAFANA_URL that `dashboards publish` reads, so one Grafana named
+// for either verb reaches the other; and a trailing slash is dropped, as
+// publish and uninstall drop it, rather than sent as `//api/…`.
+func TestImportAndCheckFindTheGrafanaInEitherVariable(t *testing.T) {
+	t.Setenv("GRAFANA_TOKEN", "t")
+	url := stubGrafanaServer(t, true)
+	for name, env := range map[string][2]string{
+		"GRAFANA_URL":            {url + "/", ""},
+		"MIKROSCOPE_GRAFANA_URL": {"", url + "/"},
+		"both, GRAFANA_URL wins": {url, "http://127.0.0.1:1"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("GRAFANA_URL", env[0])
+			t.Setenv("MIKROSCOPE_GRAFANA_URL", env[1])
+			out := capture(t, func() {
+				if err := runDashboards([]string{"import", "--datasource-uid", "uid"}); err != nil {
+					t.Errorf("import: %v", err)
+				}
+			})
+			if !strings.Contains(out, "imported: "+url+"/d/mikroscope-influxdb/") {
+				t.Errorf("import printed:\n%s\nwant the dashboard at %s with one slash", out, url)
+			}
+			out = capture(t, func() {
+				if err := runDashboards([]string{"check", "--datasource-uid", "uid", "--window", "5m"}); err != nil {
+					t.Errorf("check: %v", err)
+				}
+			})
+			if !strings.Contains(out, "every panel returns data") {
+				t.Errorf("check printed:\n%s", out)
+			}
+		})
+	}
+}
+
+// The --var example names a host the way the dashboards' own default does,
+// not the one router this project was first measured on. The usage is
+// printed to stderr, so it is read back from there.
+func TestTheVarExampleNamesNoDevice(t *testing.T) {
+	captureMu.Lock()
+	defer captureMu.Unlock()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved := os.Stderr
+	os.Stderr = w
+	done := make(chan string, 1)
+	go func() {
+		b, _ := io.ReadAll(r)
+		done <- string(b)
+	}()
+	helpErr := runDashboards([]string{"check", "-h"})
+	os.Stderr = saved
+	_ = w.Close()
+	usage := <-done
+	if !errors.Is(helpErr, flag.ErrHelp) {
+		t.Errorf("check -h = %v, want flag.ErrHelp", helpErr)
+	}
+	if !strings.Contains(usage, "--var host=router") || strings.Contains(usage, "rb5009") {
+		t.Errorf("check -h printed:\n%s\nwant the --var example host=router", usage)
 	}
 }

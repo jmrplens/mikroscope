@@ -8,10 +8,12 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"slices"
 	"strings"
 	"syscall"
 
 	"github.com/jmrplens/mikroscope/internal/dashboards"
+	"github.com/jmrplens/mikroscope/internal/sinks"
 )
 
 // publishFlags is `forward --grafana`: point the collector at a Grafana and it
@@ -31,11 +33,35 @@ type publishFlags struct {
 	dryRun bool
 }
 
+// register adds the --grafana flags to `dashboards publish` and `uninstall`,
+// with --grafana read from MIKROSCOPE_GRAFANA_URL and then from GRAFANA_URL.
+// Naming a Grafana is what those two verbs are for, and `dashboards import`
+// and `check` have always read GRAFANA_URL: one variable set for the one verb
+// should reach the others in the same family.
 func (p *publishFlags) register(fs *flag.FlagSet) {
-	fs.StringVar(&p.url, "grafana", env("GRAFANA_URL", ""), "publish the dashboards to this Grafana (forward: once, at start); token from GRAFANA_TOKEN (MIKROSCOPE_GRAFANA_URL)")
+	p.registerWith(fs, firstNonEmpty(env("GRAFANA_URL", ""), os.Getenv("GRAFANA_URL")),
+		"the Grafana the dashboards are published to; token from GRAFANA_TOKEN (MIKROSCOPE_GRAFANA_URL, then GRAFANA_URL)")
+}
+
+// registerForCollector is register for `forward`, whose --grafana reads
+// MIKROSCOPE_GRAFANA_URL and never the unprefixed GRAFANA_URL.
+//
+// NOT THE FALLBACK THE OTHER VERBS HAVE. GRAFANA_URL and GRAFANA_TOKEN are
+// unprefixed names that other Grafana tooling may read too, so a shell set up
+// for it can hold both, and a collector started from that shell would begin
+// writing a folder, a datasource and a dashboard into that Grafana without
+// anybody having asked it to: exactly what "off unless --grafana is passed"
+// is there to prevent. The prefixed name is one somebody set for this.
+func (p *publishFlags) registerForCollector(fs *flag.FlagSet) {
+	p.registerWith(fs, env("GRAFANA_URL", ""),
+		"publish the dashboards to this Grafana once, at start; token from GRAFANA_TOKEN (MIKROSCOPE_GRAFANA_URL)")
+}
+
+func (p *publishFlags) registerWith(fs *flag.FlagSet, grafanaURL, grafanaUsage string) {
+	fs.StringVar(&p.url, "grafana", grafanaURL, grafanaUsage)
 	fs.StringVar(&p.folder, "grafana-folder", env("GRAFANA_FOLDER", "mikroscope"), "the Grafana folder to publish into; empty means the General folder")
-	fs.StringVar(&p.dsUID, "grafana-datasource-uid", env("GRAFANA_DATASOURCE_UID", ""), "adopt this existing datasource instead of creating one — required for the stores that cannot describe their own")
-	fs.StringVar(&p.dsURL, "grafana-datasource-url", env("GRAFANA_DATASOURCE_URL", ""), "the address Grafana queries, for the sinks that cannot know it: --prom, --graphite. It also overrides the address a sink does know")
+	fs.StringVar(&p.dsUID, "grafana-datasource-uid", env("GRAFANA_DATASOURCE_UID", ""), "adopt this existing datasource instead of creating one; required only for --sql, while --prom and --graphite can use --grafana-datasource-url instead. One store per run")
+	fs.StringVar(&p.dsURL, "grafana-datasource-url", env("GRAFANA_DATASOURCE_URL", ""), "the address Grafana queries, for the sinks that cannot know it: --prom, --graphite. It also overrides the address a sink does know. One store per run")
 	fs.StringVar(&p.dsSSL, "grafana-datasource-sslmode", env("GRAFANA_DATASOURCE_SSLMODE", ""), "sslmode for the PostgreSQL datasource: disable, require, verify-ca or verify-full. Read from --postgres when it names one Grafana understands")
 	fs.BoolVar(&p.dryRun, "grafana-dry-run", false, "print the datasource and dashboard --grafana would write and write nothing (forward: then stop before collecting)")
 }
@@ -59,7 +85,7 @@ func dashboardsPublish(args []string, out io.Writer) error {
 		return fmt.Errorf("dashboards publish takes flags only, not %q", fs.Arg(0))
 	}
 	if !pf.asked() {
-		return errors.New("dashboards publish needs --grafana (or MIKROSCOPE_GRAFANA_URL), with the token in GRAFANA_TOKEN")
+		return errors.New("dashboards publish needs --grafana (or MIKROSCOPE_GRAFANA_URL or GRAFANA_URL), with the token in GRAFANA_TOKEN")
 	}
 	if !sf.any() {
 		return errors.New("dashboards publish needs the sink flags the collector runs with (--influx, --prom, --postgres, --sql, --graphite or --elastic): the datasource is described from them")
@@ -75,14 +101,21 @@ func (p *publishFlags) asked() bool { return p.url != "" }
 // publish reconciles a datasource and a dashboard per store the sinks write
 // to. Everything it does is reported to out, line per object, so a --dry-run
 // and a real run print the same list.
+//
+// The flags are checked before anything else, the token included, so a run
+// that could not do what it was told says so before it is given a credential,
+// and a dry run refuses what the real run would.
 func (p *publishFlags) publish(ctx context.Context, s *sinkFlags, out io.Writer) error {
-	token := os.Getenv("GRAFANA_TOKEN")
-	if token == "" && !p.dryRun {
-		return errors.New("--grafana needs GRAFANA_TOKEN: publishing without one would write as whoever an anonymous request is to that server")
-	}
 	stores := storesToPublish(s)
 	if len(stores) == 0 {
 		return errors.New("no sink this builds a dashboard for is configured, so there is nothing to publish")
+	}
+	if err := p.check(stores); err != nil {
+		return err
+	}
+	token := os.Getenv("GRAFANA_TOKEN")
+	if token == "" && !p.dryRun {
+		return errors.New("--grafana needs GRAFANA_TOKEN: publishing without one would write as whoever an anonymous request is to that server")
 	}
 	g := &dashboards.Grafana{URL: strings.TrimRight(p.url, "/"), Token: token}
 
@@ -100,12 +133,78 @@ func (p *publishFlags) publish(ctx context.Context, s *sinkFlags, out io.Writer)
 		fmt.Fprintf(out, "would ensure folder %q\n", p.folder)
 	}
 
+	// EVERY STORE GETS ITS TURN. One store's datasource failing says nothing
+	// about the next one's, which has its own address, plugin and permissions:
+	// stopping at the first left the stores after it unpublished and
+	// unmentioned, and the operator to find out one run at a time. Each
+	// store's outcome is a line of out or an error naming the store, and the
+	// errors come back joined. Only a canceled run stops early, because every
+	// store after it would fail the same way.
+	var failed storeErrors
 	for _, store := range stores {
+		if ctx.Err() != nil {
+			failed = append(failed, fmt.Errorf("%s: not published: %w", store, ctx.Err()))
+			break
+		}
 		if err := p.publishOne(ctx, g, s, store, folderUID, out); err != nil {
-			return err
+			failed = append(failed, err)
 		}
 	}
-	return nil
+	if len(failed) == 0 {
+		return nil
+	}
+	return failed
+}
+
+// storeErrors is publish's error when one store or more could not be
+// published: each store's own error, in the order the stores were tried. It
+// reads as errors.Join does, one line per store, and unwraps to the list, so
+// the collector can warn once per store (publishOrCarryOn).
+type storeErrors []error
+
+func (f storeErrors) Error() string   { return errors.Join(f...).Error() }
+func (f storeErrors) Unwrap() []error { return f }
+
+// check refuses the flag values no store could be published with.
+//
+// ONE DATASOURCE ADDRESS, ONE STORE. --grafana-datasource-url and
+// --grafana-datasource-uid each take a single value, and every store of a run
+// was given it: a collector writing to InfluxDB and Prometheus with
+// --grafana-datasource-url pointed at Prometheus built an InfluxDB datasource
+// that queried Prometheus's port. There is no value either flag could hold
+// that is right for two stores, which are different servers read by
+// different plugins, so a run of several stores that sets one is refused
+// before anything is written, and the message says how to do it instead.
+func (p *publishFlags) check(stores []dashboards.Store) error {
+	if p.dsSSL != "" && !slices.Contains(grafanaSSLModes, p.dsSSL) {
+		return fmt.Errorf("--grafana-datasource-sslmode %q is not a mode Grafana's PostgreSQL datasource has: use one of %s",
+			p.dsSSL, strings.Join(grafanaSSLModes, ", "))
+	}
+	if len(stores) < 2 {
+		return nil
+	}
+	var set []string
+	if p.dsURL != "" {
+		set = append(set, "--grafana-datasource-url")
+	}
+	if p.dsUID != "" {
+		set = append(set, "--grafana-datasource-uid")
+	}
+	if len(set) == 0 {
+		return nil
+	}
+	names := make([]string, len(stores))
+	for i, store := range stores {
+		names[i] = string(store)
+	}
+	verb := "names"
+	if len(set) > 1 {
+		verb = "name"
+	}
+	return fmt.Errorf("%s %s one datasource for every store, and this run has %d (%s): "+
+		"publish them one at a time with `mikroscope dashboards publish`, each with that store's sink flag "+
+		"and its own --grafana-datasource-url or --grafana-datasource-uid, and run the collector without them",
+		strings.Join(set, " and "), verb, len(stores), strings.Join(names, ", "))
 }
 
 // publishOne is the datasource and the dashboard for one store.
@@ -114,7 +213,9 @@ func (p *publishFlags) publishOne(ctx context.Context, g *dashboards.Grafana,
 ) error {
 	want, err := datasourceFor(store, s, p, out)
 	if err != nil {
-		return err
+		// Named here because publish reports every store's failure together,
+		// and --influx's or --sql's own message does not say which store.
+		return fmt.Errorf("the datasource for %s: %w", store, err)
 	}
 	switch {
 	case p.dsUID != "":
@@ -146,7 +247,7 @@ func (p *publishFlags) publishOne(ctx context.Context, g *dashboards.Grafana,
 	}
 	doc, err := dashboards.GenerateFor(store, present)
 	if err != nil {
-		return err
+		return fmt.Errorf("the dashboard for %s: %w", store, err)
 	}
 	if p.dryRun {
 		fmt.Fprintf(out, "%s: would write dashboard %q (%d bytes) into folder %q\n",
@@ -162,9 +263,10 @@ func (p *publishFlags) publishOne(ctx context.Context, g *dashboards.Grafana,
 }
 
 // storesToPublish is one store per metric sink configured, in a fixed order so
-// two runs of the same flags report the same way. Five of the eleven sinks have a
-// dashboard; --file, --loki, --otlp, --telegraf and --stdout do not, and a
-// collector writing only to those publishes nothing.
+// two runs of the same flags report the same way. Six of the eleven sinks feed
+// the five dashboards, --postgres and --sql sharing one; --file, --loki,
+// --otlp, --telegraf and --stdout have none, and a collector writing only to
+// those publishes nothing.
 func storesToPublish(s *sinkFlags) []dashboards.Store {
 	var out []dashboards.Store
 	for _, named := range []struct {
@@ -264,11 +366,22 @@ func datasourceFor(store dashboards.Store, s *sinkFlags, p *publishFlags, out io
 	case store == dashboards.Elasticsearch:
 		want.URL = firstNonEmpty(p.dsURL, strings.TrimRight(s.elastic, "/"))
 		want.JSON = map[string]any{
-			"index":     elasticIndexPattern(s.elIndex),
-			"timeField": "time",
+			"index": elasticIndexPattern(s.elIndex),
+			// @timestamp, THE FIELD THE SINK STAMPS every document with, and
+			// the one every panel's query, the annotations and the stores
+			// suite's hand-built datasource name. It was "time", a field no
+			// document has. What that did to the panels was not run: the
+			// stores suite checked the collector's datasource for query
+			// errors, and a range over a missing field is expected to answer
+			// with nothing rather than with an error.
+			"timeField": "@timestamp",
 		}
-		if s.elasticAuth != "" {
-			want.Secret = map[string]string{"httpHeaderValue1": s.elasticAuth}
+		// THE HEADER THE SINK SENDS, not the variable as written: `user:password`
+		// becomes basic auth and anything else an API key behind its scheme
+		// (sinks.ElasticAuthorization). Copied as written, neither form was a
+		// header Elasticsearch accepts.
+		if auth := sinks.ElasticAuthorization(s.elasticAuth); auth != "" {
+			want.Secret = map[string]string{"httpHeaderValue1": auth}
 			want.JSON["httpHeaderName1"] = "Authorization"
 		}
 	case store == dashboards.Postgres && s.postgres != "":

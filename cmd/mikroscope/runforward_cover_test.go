@@ -64,3 +64,42 @@ func TestRunForwardRefusesAnUnknownAPIMode(t *testing.T) {
 		t.Errorf("forward --api-mode sideways = %v", err)
 	}
 }
+
+// --grafana-dry-run previews the publish and stops before collecting. Without
+// a Grafana there is nothing to preview, and it used to fall through to the
+// collector, which wrote into every sink named; it is refused before the
+// agent or a sink is touched. With a Grafana it prints the plan and stops:
+// the file sink is never created.
+func TestRunForwardRefusesAGrafanaDryRunWithNoGrafana(t *testing.T) {
+	t.Setenv("MIKROSCOPE_GRAFANA_URL", "")
+	c := cli{opts: router.Defaults()}
+	if err := c.opts.Finish(); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(t.TempDir(), "x.jsonl")
+	err := runForward([]string{"--file", out, "--api-mode", "off", "--grafana-dry-run"}, c)
+	if err == nil || !strings.Contains(err.Error(), "--grafana-dry-run needs --grafana") {
+		t.Errorf("forward --grafana-dry-run with no Grafana = %v, want the refusal", err)
+	}
+	if _, statErr := os.Stat(out); !os.IsNotExist(statErr) {
+		t.Errorf("the file sink was created (%v); a refused dry run must not reach it", statErr)
+	}
+
+	// With a Grafana: the dry run contacts nothing, publishes nothing and
+	// stops before the collector starts.
+	printed := capture(t, func() {
+		err = runForward([]string{
+			"--influx", "http://influx.invalid:8181", "--influx-db", "mikroscope", "--file", out, "--api-mode", "off",
+			"--grafana", "http://127.0.0.1:1", "--grafana-dry-run",
+		}, c)
+	})
+	if err != nil {
+		t.Errorf("forward --grafana --grafana-dry-run = %v, want the plan and a clean stop", err)
+	}
+	if strings.Contains(printed, "forwarded") {
+		t.Errorf("the dry run collected:\n%s", printed)
+	}
+	if _, statErr := os.Stat(out); !os.IsNotExist(statErr) {
+		t.Errorf("the file sink was created (%v); a dry run stops before the sinks", statErr)
+	}
+}
