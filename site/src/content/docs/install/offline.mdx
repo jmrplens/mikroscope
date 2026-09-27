@@ -1,0 +1,164 @@
+---
+title: Offline install
+description: Install the agent on a router that cannot reach a registry — choose the image tar for its architecture, verify the download, and install from it with the CLI or a RouterOS script.
+docType: how-to
+head:
+  - tag: title
+    content: Install the agent offline from the image tar | mikroscope
+---
+
+import { Aside, Steps, Tabs, TabItem } from "@astrojs/starlight/components";
+import BoardTable from "../../../components/BoardTable.astro";
+import SeeAlso from "../../../components/SeeAlso.astro";
+
+For a router that cannot reach a registry, the release publishes the agent as one image tar per
+architecture. Download the one for the router, verify it, and install from it with the CLI, which
+uploads it, or with a RouterOS script after you upload it yourself.
+
+## Choose the image tar {#choose-the-image-tar}
+
+<BoardTable label="Which agent image tar a board takes, by what RouterOS reports as its architecture">
+
+| Your MikroTik                                   | `architecture-name` | Agent image tar                              |
+| ----------------------------------------------- | ------------------- | -------------------------------------------- |
+| RB5009, CCR2004, hAP ax³, other 64-bit ARM      | `arm64`             | `mikroscope-agent-arm64.tar`                 |
+| hEX Refresh / hEX S (2025), any EN7562CT board  | `arm`               | `mikroscope-agent-armv5.tar`                 |
+| Other 32-bit ARM (hAP ac², hAP ax², …)          | `arm`               | `mikroscope-agent-armv7.tar`, or the v5 one  |
+| CHR, x86 RouterOS                               | `x86_64`            | `mikroscope-agent-amd64.tar`                 |
+
+</BoardTable>
+
+`/system/resource/print` on the router shows `architecture-name`, and `mikroscope doctor` prints it
+on its `device:` line. **If you are not sure which 32-bit ARM board you have, take the v5 tar**:
+MikroTik's [container documentation](https://help.mikrotik.com/docs/spaces/ROS/pages/84901929/Container)
+says that devices with the EN7562CT CPU support only arm32v5 container images, and an ARMv5 image
+runs on every 32-bit ARM MikroTik ships, while an ARMv7 one does not run on those.
+
+<Aside type="tip" title="Two assets have similar names">
+	`mikroscope-agent-arm64.tar` is the container image, the one `--agent-tar` wants.
+	`mikroscope-agent_{{MIKROSCOPE_VERSION}}_linux_arm64.tar.gz` is an archive of the bare agent
+	binary, for running it outside a container; `--agent-tar` rejects it.
+</Aside>
+
+## Download and verify {#download-and-verify}
+
+<Steps>
+
+1. Download the image tar, `checksums.txt` and its signature bundle from the
+   [release](https://github.com/jmrplens/mikroscope/releases/latest):
+
+   ```sh
+   VERSION={{MIKROSCOPE_VERSION}}
+   BASE=https://github.com/jmrplens/mikroscope/releases/download/v$VERSION
+   curl -fsSLO $BASE/mikroscope-agent-arm64.tar
+   curl -fsSLO $BASE/checksums.txt
+   curl -fsSLO $BASE/checksums.txt.sigstore.json
+   ```
+
+2. Check that `checksums.txt` came from the release workflow:
+
+   ```sh
+   cosign verify-blob \
+     --certificate-identity-regexp 'https://github.com/jmrplens/mikroscope/.github/workflows/release.yml@refs/tags/.*' \
+     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+     --bundle checksums.txt.sigstore.json \
+     checksums.txt
+   ```
+
+   It prints `Verified OK`. The signature is keyless: the identity is the workflow run that made it,
+   recorded in a public transparency log, so there is no key to fetch.
+
+3. Check the tar against the list:
+
+   ```sh
+   sha256sum --ignore-missing -c checksums.txt
+   ```
+
+   It prints `mikroscope-agent-arm64.tar: OK`. `--ignore-missing` checks the files you downloaded
+   against a list that covers the whole release. On macOS, use `shasum -a 256 --ignore-missing -c`.
+
+</Steps>
+
+`checksums.txt` covers every archive and every image tar. Each CLI archive also ships an SPDX SBOM
+(`<archive>.spdx.json`) with a signature bundle of its own, verified the same way.
+
+## Install {#install}
+
+<Tabs syncKey="offline-route">
+
+<TabItem label="With the CLI">
+
+```sh
+mikroscope install --router admin@192.168.88.1 --agent-tar mikroscope-agent-arm64.tar
+```
+
+The CLI reads the tar before it uploads it:
+
+- It wants a one-image `manifest.json`, the config it names, one layer, and `/mikroscope-agent` as
+  the entrypoint. Anything else fails as `this is not a mikroscope agent image`.
+- The image's architecture has to be the router's. `doctor` prints
+  `architecture matches the --agent-tar image (router=x86_64, image linux/amd64)`, and a mismatch
+  fails naming the asset to download.
+- On a tar it accepts it prints `using mikroscope-agent-amd64.tar: linux/amd64, agent <size> KiB`,
+  and on the ARMv7 image it adds that an EN7562CT board needs the v5 one.
+
+Then it uploads the tar with `scp` as `mikroscope.tar` (`<name>.tar` with `--name`), waits for RouterOS to extract it, up to
+`--extract-timeout` (120 s by default), deletes the tar and starts the container.
+`--agent-tar` reads its default from `MIKROSCOPE_AGENT_TAR`.
+
+</TabItem>
+
+<TabItem label="With a script">
+
+<Steps>
+
+1. Generate the script without `--remote-image`:
+
+   ```sh
+   mikroscope plan --rsc --out install.rsc
+   ```
+
+   Its header says what it expects:
+   `BEFORE RUNNING: put the agent image tar on the device as mikroscope.tar`.
+
+2. Upload the tar to the router as `mikroscope.tar` (`<name>.tar` with `--name`), in Files (WebFig or Winbox) or with `scp`.
+
+3. Run the script at the `] >` prompt or with `/import file-name=install.rsc`
+   ([RouterOS script](/mikroscope/install/script/#run-on-the-router)).
+
+</Steps>
+
+The script waits up to 120 s for RouterOS to extract the image, then deletes the tar and starts the
+container. Without the tar it stops before writing anything:
+`mikroscope: upload mikroscope.tar first`.
+
+</TabItem>
+
+</Tabs>
+
+Verify as after any install: `mikroscope status --router …`, or on the router
+`/container/print where comment="mikroscope:mikroscope (managed by mikroscope)"`.
+
+## Upgrade {#upgrade}
+
+Download and verify the new release's tar as above, then:
+
+```sh
+mikroscope upgrade --router admin@192.168.88.1 --agent-tar mikroscope-agent-arm64.tar
+```
+
+`upgrade` keeps the veth, the address and the list memberships, uploads the new tar and re-creates
+the container. Without the CLI, run the removal and then the new script:
+[Upgrade and uninstall](/mikroscope/install/upgrade/).
+
+<SeeAlso>
+
+## See also
+
+- [Requirements](/mikroscope/install/prerequisites/): the architectures and what `doctor` checks.
+- [RouterOS script](/mikroscope/install/script/): running the script, its guards and its manifest.
+- [Storage and container settings](/mikroscope/install/layout/): where the tar and the root go, and
+  why the tar is deleted.
+- [Upgrade and uninstall](/mikroscope/install/upgrade/): a new release, and removing everything.
+
+</SeeAlso>

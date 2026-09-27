@@ -1,0 +1,199 @@
+---
+title: Upgrade and uninstall
+description: Upgrade the agent to a new release, what to do when coming from an older one, remove everything an install created from the router, and remove the dashboards and stored data.
+docType: how-to
+head:
+  - tag: title
+    content: Upgrade or uninstall the mikroscope agent | mikroscope
+---
+
+import { Aside, Steps } from "@astrojs/starlight/components";
+import RouterWrites from "../../../components/RouterWrites.astro";
+import ScrollTable from "../../../components/ScrollTable.astro";
+import SeeAlso from "../../../components/SeeAlso.astro";
+
+`upgrade` replaces the container with a new image and keeps the rest of the install. `uninstall`
+removes everything the install created, and checks that nothing is left. Both read how the install
+was made from its manifest on the router, whichever method made it.
+
+## Upgrade {#upgrade}
+
+```sh
+mikroscope upgrade --router admin@192.168.88.1 --remote-image jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}
+```
+
+`upgrade` takes the image from its own flags only: pass `--remote-image` with the new version,
+`--agent-tar` with the new tar, or run it from an updated checkout. Everything else about the
+install's shape comes from the router.
+
+<Steps>
+
+1. **Reads the install.** From its manifest, or, for an install made without one, from the objects
+   that carry its tag. `nothing to upgrade: run install first` when there is none. With
+   `--remote-image` the same connect reads the registry settings and prints `doctor`'s
+   registry-credential check; `upgrade` runs no other check, so run `doctor` first when you change
+   registries.
+2. **Prints its plan.** The line
+   `keeps:   veth interface veth-mikroscope, router address 172.30.10.1, interface-list membership LAN, address-list membership LANs: not touched`,
+   then the manifest, the container's removal and the new container, and any step of the install
+   the router no longer holds. `--dry-run` stops here and connects to nothing: it skips step 1, so
+   its plan comes from the flags alone, the architecture included (`arm64` unless `--arch` says
+   otherwise).
+3. **Asks**, unless `--yes`.
+4. **Writes the manifest, replaces the container and probes the agent:**
+
+   ```text
+     wrote install manifest mikroscope/mikroscope.manifest.txt
+     gone  container mikroscope
+     pull  the router pulls registry-1.docker.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}} itself
+     new   container mikroscope
+   probing http://172.30.10.2:9123/healthz from this host …
+     direct transport ok: agent {{MIKROSCOPE_VERSION}} (<commit>) built <time>, 10 Hz, seq 8, 0 slipped, 2ms round trip
+   ```
+
+</Steps>
+
+<RouterWrites command="upgrade" />
+
+The envlist belongs to the container step, so `upgrade` writes it again from its own flags. Pass
+the agent settings you installed with, or they return to their defaults: `--rate`, `--buffer`,
+`--mem-limit-mb`, `--capture-mb`, `--triggers`, `--floor-hz`, `--memory-max`, `--privileged`,
+`--restart-max-count` and `--restart-interval`. That is also how to change them without touching
+the network objects. The shape (`--veth`, `--subnet`, the lists, `--disk` or `--ephemeral`,
+`--port`, `--expose` with `--lan-address`, `--container-name`, `--start-on-boot`) comes from the
+manifest; a flag that contradicts it is refused. An install with a token needs `--token` (or
+`MIKROSCOPE_TOKEN`) again: `upgrade` refuses to rewrite its envlist without one.
+
+An install made by a RouterOS script, the generator or by hand upgrades the same way from a computer
+with the CLI. Without the CLI, remove it ([Uninstall](#uninstall)) and run the new release's script.
+
+## Upgrade notes {#upgrade-notes}
+
+When the install or your setup comes from an older release:
+
+- **An install made by 1.3.1 or earlier has no manifest.** `status`, `upgrade` and `uninstall` read
+  its shape from its tagged objects: `status` and `uninstall` print
+  `no manifest at mikroscope/<name>.manifest.txt`, and `upgrade` prints
+  `install on the router (its tagged objects, no manifest)`. The first `upgrade` writes one;
+  `uninstall` removes such an install completely, the `mikroscope/` directory those releases left
+  behind included.
+- **Shape variables in `.env`.** A `.env` copied from an older `.env.example` may set
+  `MIKROSCOPE_ARCH`, the lists or other shape variables. `status`, `upgrade` and `uninstall` refuse
+  a value that contradicts the install; comment those lines out and let the router's manifest
+  decide.
+- **An exposed agent upgraded without a token.** An older `upgrade` without `--token` re-created an
+  `--expose` agent with none while the LAN rules stayed. `doctor` warns
+  `the installed agent published on the LAN asks for a token`; run `upgrade` with `--token`.
+- **A registry mirror named in `registry-url`.** mikroscope 1.2.2 and earlier sent the image
+  reference without its registry host and left the registry to `registry-url`. Now the host travels
+  in the reference, and a reference with none goes to `registry-1.docker.io` directly. To keep
+  pulling through a mirror or a pull-through cache, name its host:
+  `--remote-image <mirror-host>/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}`.
+- **A Prometheus job that scrapes the agent.** The agent serves no `/metrics`: an agent of 1.0.4 or
+  earlier did. Point the job at the collector's `--prom` address
+  ([Prometheus](/mikroscope/sinks/prometheus/)).
+- **Dashboards imported from 1.3.0 or earlier.** Import them again: the "Not available on this
+  device" row shows `table … not found` badges on InfluxDB, the Elasticsearch dashboard opens with
+  an empty Host and six red badges, and one imported with a probe into Grafana 12.3.0 shows
+  `No SQL statements were provided in the query string` badges in that row.
+- **A PostgreSQL alert file provisioned from 1.2.0** carries a `mikroscope-bridge-port-dark` rule
+  that cannot run on the SQL schema: regenerate the rules and provision them again
+  ([Alert rules](/mikroscope/dashboards/alerts/)).
+- **A whole InfluxDB write URL in `MIKROSCOPE_INFLUX_URL`** from a 1.0.x deployment keeps working;
+  nothing to do.
+
+## Uninstall {#uninstall}
+
+```sh
+mikroscope uninstall --router admin@192.168.88.1          # lists what it would remove
+mikroscope uninstall --router admin@192.168.88.1 --yes    # removes it, then verifies
+```
+
+It needs no other flag: the shape comes from the manifest, and a flag that contradicts it is
+refused. Pass `--name` for an install with a name other than `mikroscope`. Without `--yes` it only
+lists:
+
+```text
+router objects (add --yes to remove them):
+  5 router object(s) tagged "mikroscope:mikroscope (managed by mikroscope)":
+    container mikroscope
+    address-list membership LANs
+    interface-list membership LAN
+    router address 172.30.10.1
+    veth interface veth-mikroscope
+  then any other object tagged "mikroscope:mikroscope (managed by mikroscope)", in /ip/firewall/address-list, /interface/list/member, /ip/firewall/nat, /ip/firewall/filter, /ip/firewall/raw, /ip/firewall/mangle, /ip/route, /container/mounts, /ip/address, /interface/veth, /interface/list, /disk
+  and last the install manifest mikroscope/mikroscope.manifest.txt with mikroscope/mikroscope, and mikroscope when nothing else is in it
+  (the manifest on the router, when there is one, says which objects the plan holds)
+```
+
+With `--yes` it removes, newest first, every object the manifest lists; stops the container and
+waits while it runs or stops, up to 30 s, before removing it and its root; removes any other object
+that carries the install's exact tag in those menus; and removes the manifest and the `mikroscope/`
+directory last, when nothing else is in it. A removal that fails or prints anything shows as `skip`
+with what RouterOS said, and the rest go on. Then it counts what is left:
+
+```text
+  0     install manifest mikroscope/mikroscope.manifest.txt
+  0     veth interface veth-mikroscope
+  0     router address 172.30.10.1
+  0     interface-list membership LAN
+  0     address-list membership LANs
+  0     container mikroscope
+verified: nothing mikroscope created remains on the router
+```
+
+When something remains it fails with `uninstall left objects behind`, naming the steps.
+
+<RouterWrites command="uninstall" />
+
+### Never removed {#never-removed}
+
+- device mode, the `container` package and `/container/config` (`registry-url`, the registry
+  username);
+- a list, a disk, a firewall rule, or a file under `mikroscope/`, that was there before the install;
+- a path the manifest lists beyond what its install creates: `uninstall` leaves it and reports it as
+  left behind (`uninstall left objects behind: … which the manifest lists`).
+
+The one exception is an empty `mikroscope/` directory: it goes even when it was there before, since
+nothing says whose it is.
+
+Without the CLI, run the removal commands by hand:
+[Manual install: terminal](/mikroscope/install/manual-cli/#remove).
+
+## Remove dashboards and data {#remove-dashboards-and-data}
+
+`--targets` widens `uninstall` past the router:
+
+<ScrollTable label="What each uninstall target removes">
+
+| Target      | What goes                                                                             |
+| ----------- | ------------------------------------------------------------------------------------- |
+| `router`    | everything the install created on the router, the default                             |
+| `dashboard` | the dashboard and the datasource `forward --grafana` published, per store              |
+| `data`      | the tables and indices the sinks wrote, and the files the file sinks wrote             |
+| `all`       | the three above                                                                       |
+
+</ScrollTable>
+
+```sh
+export GRAFANA_TOKEN=…
+mikroscope uninstall --targets all --influx "$MIKROSCOPE_INFLUX_URL" --influx-db mikroscope --grafana http://grafana:3000
+mikroscope uninstall --targets all --influx "$MIKROSCOPE_INFLUX_URL" --influx-db mikroscope --grafana http://grafana:3000 --yes
+```
+
+Pass the same sink flags as `forward`. Nothing goes without `--yes`. A datasource adopted with
+`--grafana-datasource-uid` is never removed, and `--prom`, `--graphite` and `--sql` store nothing
+this can remove, each saying why: [`uninstall --targets`](/mikroscope/reference/cli/#uninstall---targets).
+
+<SeeAlso>
+
+## See also
+
+- [Install with the CLI](/mikroscope/install/): what `install` writes, in order.
+- [Installer safeguards](/mikroscope/security/installer/#how-uninstall-proves-it-is-done): how
+  `uninstall` proves it is done.
+- [Offline install](/mikroscope/install/offline/): upgrading from a new image tar.
+- [CLI](/mikroscope/reference/cli/#pass-the-same-shape-to-status-upgrade-and-uninstall): which flags
+  the router's shape fills in.
+
+</SeeAlso>

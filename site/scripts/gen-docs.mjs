@@ -111,7 +111,11 @@ const MANIFEST = [
 			"install/prerequisites",
 			"install/cli",
 			"install",
+			"install/script",
+			"install/manual-cli",
 			"install/manual-gui",
+			"install/offline",
+			"install/upgrade",
 		],
 	},
 	// What to set once it is installed: how the host reaches the agent, the
@@ -184,6 +188,7 @@ const MANIFEST = [
 		file: "limits.md",
 		title: "How it works and its limits",
 		routes: [
+			"how-it-works",
 			"limits",
 			"limits/namespaces",
 			"limits/privileged",

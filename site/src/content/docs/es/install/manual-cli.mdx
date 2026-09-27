@@ -1,0 +1,302 @@
+---
+title: "Instalación manual: terminal"
+description: Instala el agente escribiendo cada orden de RouterOS en el terminal del router — el manifiesto, la veth, la dirección, las pertenencias a listas, la envlist y el contenedor —, y después verifícalo y retíralo.
+docType: how-to
+head:
+  - tag: title
+    content: Instalar el agente a mano desde el terminal de RouterOS | mikroscope
+---
+
+import { Aside, Tabs, TabItem } from "@astrojs/starlight/components";
+import ManualSteps from "../../../../components/ManualSteps.astro";
+import ScrollTable from "../../../../components/ScrollTable.astro";
+import SeeAlso from "../../../../components/SeeAlso.astro";
+
+Instala el agente orden a orden, en el terminal del router: para un router sin ningún ordenador que
+ejecute la CLI, o para ver y adaptar cada objeto. Las órdenes son las que ejecuta `install`, con
+marcadores en mayúsculas. Para las mismas órdenes con tus valores ya puestos, usa el
+[Generador de scripts](/mikroscope/es/install/generator/).
+
+## Antes de empezar {#before-you-start}
+
+Elige un valor para cada marcador. Los valores por defecto son los que usa `install`:
+
+<ScrollTable label="Los marcadores de las órdenes, con sus valores por defecto">
+
+| Marcador            | Por defecto                                    | Significado                                                                                          |
+| ------------------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `NAME`              | `mikroscope`                                   | el nombre de la instalación                                                                          |
+| `TAG`               | `mikroscope:NAME (managed by mikroscope)`      | el comentario de cada objeto; conserva esta forma para que la CLI reconozca la instalación           |
+| `VETH`              | `veth-mikroscope`                              | el nombre de la veth                                                                                 |
+| `NET/30`            | `172.30.10.0/30`                               | una /30 IPv4 en su dirección de red, sin usar en el router                                           |
+| `GW_IP`             | `172.30.10.1`                                  | el extremo del router en la /30: la dirección de red + 1                                             |
+| `AGENT_IP`          | `172.30.10.2`                                  | el extremo del agente en la /30: la dirección de red + 2                                             |
+| `PORT`              | `9123`                                         | el puerto HTTP del agente                                                                            |
+| `IFACE_LIST`        | `LAN`                                          | la lista de interfaces a la que se une la veth; `none` en el manifiesto si te saltas la pertenencia  |
+| `ADDR_LIST`         | `LANs`                                         | la lista de direcciones a la que se une la /30; `none` en el manifiesto si te saltas la pertenencia  |
+| `ENVLIST`           | `NAME-env`                                     | la envlist del contenedor                                                                            |
+| `DISK`              | vacío (flash interna)                          | un slot de disco, como `tmpfs` o `usb1`; precede a las tres rutas de abajo                           |
+| `MANIFEST_DIR`      | `mikroscope`                                   | `DISK/mikroscope` en un disco                                                                         |
+| `MANIFEST_FILE`     | `mikroscope/NAME.manifest.txt`                 | el manifiesto de la instalación                                                                      |
+| `ROOT_DIR`          | `mikroscope/NAME`                              | la raíz del contenedor                                                                               |
+| `IMAGE_REF`         | `registry-1.docker.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}` | la imagen que descarga el router (descarga del registro)                        |
+| `IMAGE_FILE`        | `NAME.tar`                                     | el tar de imagen subido (ruta del tar); `DISK/NAME.tar` en un disco                                 |
+| `RATE_HZ`           | `10`                                           | la tasa de muestreo, 1–100 Hz                                                                        |
+| `BUFFER_S`          | `60`                                           | el anillo, 10–3600 s                                                                                 |
+| `MEM_LIMIT_MB`      | `16`                                           | el límite de memoria de Go del agente, abajo                                                         |
+| `CAPTURE_MB`        | `4`                                            | el presupuesto de capturas por disparo, 0–256 MiB; `0` las desactiva                                 |
+| `MEMORY_MAX`        | `64M`                                          | el límite de memoria del contenedor                                                                  |
+| `START_ON_BOOT`     | `yes`                                          | `no` para una raíz en un disco en RAM, que un reinicio vacía                                         |
+| `PRIVILEGED`        | `yes`                                          | `no` pierde el log del kernel, las cuentas del slab, los contadores de la flash y la PMU             |
+| `RESTART_MAX_COUNT` | `5`                                            | reinicios tras un fallo                                                                              |
+| `RESTART_INTERVAL`  | `10s`                                          | la espera entre ellos                                                                                |
+| `EXTRACT_TIMEOUT_S` | `120`                                          | cuánto esperar a que RouterOS extraiga el tar (ruta del tar)                                         |
+| `FLOOR_HZ`          | ninguno                                        | opcional: una sola cadencia para todas las fuentes de nivel                                          |
+| `TRIGGERS`          | ninguno                                        | opcional: las condiciones de disparo ([Captura por disparo](/mikroscope/es/record/triggers/))        |
+| `TOKEN`             | ninguno                                        | opcional: el token que pide el agente; un secreto                                                    |
+| `CONTAINER_NAME`    | vacío (lo pone RouterOS)                       | opcional: el `name=` del contenedor                                                                  |
+| `LAN_IP`            | ninguno                                        | solo con `--expose`: la dirección LAN del router                                                     |
+
+</ScrollTable>
+
+Un valor por defecto vacío se queda vacío: en la flash interna la línea del manifiesto es `disk=`, y
+sin nombre de contenedor `container-name=`, sin nada tras el `=`.
+
+<Aside type="caution" title="Sustituye valores, no claves">
+	Algunos marcadores se llaman igual que una clave de la envlist: `key=RATE_HZ value="RATE_HZ"`.
+	Sustituye solo el valor entre comillas. Las claves (`MIKROSCOPE_TAG`, `RATE_HZ`, `BUFFER_S`,
+	`PORT`, `ADDR`, `MEM_LIMIT_MB`, `CAPTURE_MB`, `FLOOR_HZ`, `TRIGGERS`, `TOKEN`) se quedan como
+	están, así que un buscar y reemplazar a ciegas de `TAG` o de `PORT` rompe las órdenes.
+</Aside>
+
+`MEM_LIMIT_MB` es `RATE_HZ` × `BUFFER_S` × lo que ocupa una muestra en el anillo × 2,5, redondeado
+hacia arriba, como mínimo 16 y como máximo ¾ de `MEMORY_MAX` mientras eso deje sitio al anillo. Con
+un `MEMORY_MAX` de `64M` da 16 a 10 Hz y 60 s, 25 a 50 Hz y 60 s, y 48 a 100 Hz y 60 s. El generador
+lo calcula por ti.
+
+**Comprueba el router.** Lee la versión y la arquitectura, el paquete `container` y device mode:
+
+```text
+/system/resource/print
+/system/package/print where name="container"
+/system/device-mode/print
+```
+
+`version` tiene que ser 7.24 o posterior y `architecture-name` uno de `arm64`, `arm` o `x86_64`; el
+paquete tiene que aparecer y no estar deshabilitado; device mode tiene que mostrar
+`container: yes`. [Requisitos](/mikroscope/es/install/prerequisites/) tiene los arreglos: el paso de
+device mode necesita pulsar el botón reset o mode, o cortar la alimentación, en menos de 5 minutos;
+en CHR, apaga y enciende la máquina virtual.
+
+**Comprueba las colisiones.** Cada una de estas tiene que no imprimir nada, o una cuenta de 0:
+
+```text
+/interface/veth/print where name="VETH"
+/container/envs/print count-only where list="ENVLIST"
+/ip/address/print where address in NET/30
+/ip/route/print where dst-address in NET/30
+/file/print where name="MANIFEST_FILE"
+```
+
+Y estas tienen que encontrar lo que nombras: la lista de interfaces, y el disco si usas uno.
+
+```text
+/interface/list/print where name="IFACE_LIST"
+/disk/print
+```
+
+Para una raíz en un disco en RAM, crea uno antes: `/disk/add type=tmpfs tmpfs-max-size=64M slot=tmpfs`,
+y usa `DISK` `tmpfs` y `START_ON_BOOT` `no`. Si el firewall descarta las respuestas del agente está
+en [Listas del firewall](/mikroscope/es/install/firewall/).
+
+<Aside type="caution" title="Cómo pegar">
+	Pega en el prompt `] >`, una orden por línea, cada línea entera: una línea que empieza por
+	`:local` o que contiene un bucle solo funciona como una sola línea. En el primer inicio de sesión
+	RouterOS pregunta por la licencia del software, y las primeras líneas que pegues la responden:
+	responde antes. Nunca pegues en ninguna parte la salida de `/container/envs/print` ni de
+	`/container/print detail`: puede mostrar el token.
+</Aside>
+
+## Escribir el manifiesto {#write-the-manifest}
+
+El manifiesto enumera cada objeto que crean los pasos siguientes, para que
+`mikroscope uninstall` y la retirada de abajo los encuentren todos. Quita la línea `object=` de
+cualquier paso que te saltes; para una pertenencia a lista que te saltes, escribe además `none` tras
+su `iface-list=` o `addr-list=`.
+
+<Tabs syncKey="manual-image">
+
+<TabItem label="Descarga del registro">
+
+<ManualSteps step="manifest" />
+
+</TabItem>
+
+<TabItem label="Tar de la imagen">
+
+<ManualSteps step="manifest" source="tar" />
+
+El manifiesto del tar deja vacío `remote-image=` y nombra el tar en una línea `file=`, para que
+`uninstall` retire también un tar que una extracción dejó atrás.
+
+</TabItem>
+
+</Tabs>
+
+Léelo con `:put [/file/get [find name="MANIFEST_FILE"] contents]`.
+[Script de RouterOS](/mikroscope/es/install/script/#install-manifest) explica cada línea.
+
+## Crear la veth {#create-the-veth}
+
+<ManualSteps step="veth" />
+
+## Añadir la dirección {#add-the-address}
+
+<ManualSteps step="address" />
+
+## Añadir las pertenencias a listas {#add-list-memberships}
+
+Opcional. Dejan pasar las respuestas del agente por reglas raw del firewall que descartan según una
+lista de interfaces o de direcciones; sáltate cualquiera de las dos cuando ninguna regla tuya la
+necesite, y quita su línea `object=` del manifiesto y escribe `none` tras su `iface-list=` o
+`addr-list=`. Una pertenencia no se limita a mikroscope: cualquier otra
+regla que compare la lista afecta también a la veth o a la /30
+([Listas del firewall](/mikroscope/es/install/firewall/)).
+
+<ManualSteps step="iface-member" />
+
+<ManualSteps step="addr-member" />
+
+## Crear la envlist {#create-the-envlist}
+
+<ManualSteps step="env" />
+
+Añade las entradas opcionales que uses:
+
+<ManualSteps step="env-optional" with="floorHz triggers token" />
+
+El valor de `TOKEN` se guarda en claro: trátalo como legible por cualquier usuario de RouterOS con
+`read`, y deja las demás credenciales fuera de la envlist.
+
+## Crear el contenedor {#create-the-container}
+
+<Tabs syncKey="manual-image">
+
+<TabItem label="Descarga del registro">
+
+<ManualSteps step="container" />
+
+RouterOS descarga la imagen de su propia arquitectura. El router tiene que llegar al registro y
+tener sitio en RAM para las capas.
+
+</TabItem>
+
+<TabItem label="Tar de la imagen">
+
+1. Sube el tar de la arquitectura del router como `IMAGE_FILE`, en Files (WebFig o Winbox) o con
+   `scp` ([Instalación sin conexión](/mikroscope/es/install/offline/)).
+2. Crea el contenedor a partir de él:
+
+   <ManualSteps step="container" source="tar" />
+
+3. Espera a que RouterOS lo extraiga y borra el tar. La línea se detiene, y conserva el tar, si la
+   extracción no ha terminado en `EXTRACT_TIMEOUT_S`:
+
+   <ManualSteps step="extract-wait" source="tar" />
+
+</TabItem>
+
+</Tabs>
+
+## Exponer en la LAN {#expose-on-the-lan}
+
+Opcional: para llegar al agente en la dirección LAN del router, añade las dos reglas que escribe
+`--expose` ([Exponer en la LAN](/mikroscope/es/security/expose/)). Necesitan un `TOKEN` en la
+envlist.
+
+Escribe antes otra vez el manifiesto, para que las registre: `expose=LAN_IP`, `token=yes` y una línea
+`object=` por regla.
+
+<Tabs syncKey="manual-image">
+
+<TabItem label="Descarga del registro">
+
+<ManualSteps step="manifest" with="expose token" />
+
+</TabItem>
+
+<TabItem label="Tar de la imagen">
+
+<ManualSteps step="manifest" source="tar" with="expose token" />
+
+</TabItem>
+
+</Tabs>
+
+Después añade las dos reglas:
+
+<ManualSteps step="expose-nat" />
+
+<ManualSteps step="expose-accept" />
+
+## Arrancar y verificar {#start-and-verify}
+
+<ManualSteps step="start" />
+
+En el router:
+
+```text
+/container/print where comment="TAG"
+/log/print where topics~"container"
+:put ([/tool/fetch url="http://AGENT_IP:PORT/healthz" output=user as-value]->"data")
+```
+
+Tras una descarga del registro, RouterOS descarga y extrae la imagen antes de arrancar el
+contenedor. Hasta que el log muestra `*** download/extract done`, el contenedor muestra la marca `E`
+(`DOWNLOADING/EXTRACTING`) y la última orden imprime `failure: Invalid argument`: vuelve a ejecutar
+las tres.
+
+Después el contenedor muestra la marca `R` (en marcha). El log termina con `*** started /mikroscope-agent` y
+la línea del propio agente, `mikroscope-agent <version> …: kernel …, 10 Hz, ring 60 s, listening on
+AGENT_IP:PORT, …`. La última orden imprime `{"ok":true,…}`. Desde un ordenador de la LAN del router,
+`curl http://AGENT_IP:PORT/healthz` responde lo mismo, y `mikroscope status` reconoce la
+instalación.
+
+## Retirar {#remove}
+
+Ejecuta las retiradas, de la más nueva a la más antigua. La primera detiene y retira el contenedor,
+su raíz y su envlist; la última retira el manifiesto y el directorio `MANIFEST_DIR` cuando no queda
+nada más en él, y se detiene, conservando el manifiesto, si queda algún objeto con la etiqueta. Si
+expusiste el agente, retira antes sus dos reglas:
+
+<ManualSteps step="expose-accept" field="remove" />
+
+<ManualSteps step="expose-nat" field="remove" />
+
+Después el resto:
+
+<ManualSteps variant="remove" />
+
+Si todavía queda un tar porque la extracción agotó el tiempo, retíralo también:
+`/file/remove [find name="IMAGE_FILE"]`. Después comprueba que no queda nada; esto imprime `0`:
+
+```text
+:put ([:len [/interface/veth/find comment="TAG"]] + [:len [/ip/address/find comment="TAG"]] + [:len [/interface/list/member/find comment="TAG"]] + [:len [/ip/firewall/address-list/find comment="TAG"]] + [:len [/ip/firewall/nat/find comment="TAG"]] + [:len [/ip/firewall/filter/find comment="TAG"]] + [:len [/container/find comment="TAG"]] + [:len [/container/envs/find list="ENVLIST"]] + [:len [/file/find name="MANIFEST_FILE"]])
+```
+
+`mikroscope uninstall --router … --yes` hace lo mismo desde un ordenador con la CLI, y lo verifica:
+[Actualizar y desinstalar](/mikroscope/es/install/upgrade/#uninstall).
+
+<SeeAlso>
+
+## Véase también
+
+- [Generador de scripts](/mikroscope/es/install/generator/): estas órdenes con tus valores ya
+  puestos.
+- [Instalación manual: WebFig y Winbox](/mikroscope/es/install/manual-gui/): los mismos objetos
+  desde los menús.
+- [Almacenamiento y ajustes del contenedor](/mikroscope/es/install/layout/): qué hace cada ajuste del
+  contenedor.
+- [Métodos de instalación](/mikroscope/es/install/routes/): las otras formas de instalar.
+
+</SeeAlso>

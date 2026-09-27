@@ -28,10 +28,11 @@ are WebFig's (<TestedOn of="install-routes">Tested on</TestedOn>).
 - For the list memberships: the interface list and the address list your firewall drops by (`LAN`
   and `LANs` in MikroTik's default configuration): [Firewall lists](/mikroscope/install/firewall/).
 - For the image tar: the tar for the router's architecture, renamed `mikroscope.tar`
-  ([Install methods](/mikroscope/install/routes/#which-tar) names each one).
+  ([Offline install](/mikroscope/install/offline/#choose-the-image-tar) names each one).
 
 The steps use the defaults below. To change one, change it in every step it appears in, the
-manifest included. Manual install: terminal lists every value and how the others follow from it.
+manifest included. [Manual install: terminal](/mikroscope/install/manual-cli/#before-you-start)
+lists every value and how the others follow from it.
 
 <ScrollTable label="The values the steps use">
 
@@ -97,6 +98,7 @@ them all.
 
 If you skip a list membership, write `none` after its `iface-list=` or `addr-list=` and leave out
 its `object=` line. OK creates the `mikroscope` directory with the file.
+[RouterOS script](/mikroscope/install/script/#install-manifest) explains each line.
 
 <WebfigCapture name="manifest-new" />
 
@@ -179,7 +181,8 @@ matches the veth or the /30 too ([Firewall lists](/mikroscope/install/firewall/)
 
 `MIKROSCOPE_TAG` is how the CLI tells the envlist is the install's. The other keys are the agent's
 settings: [Environment variables](/mikroscope/reference/environment/#the-agents-envlist).
-`MEM_LIMIT_MB` follows from the rate and the ring.
+`MEM_LIMIT_MB` follows from the rate and the ring; the
+[Script generator](/mikroscope/install/generator/) computes it for other values.
 
 <WebfigCapture name="env-new" />
 
@@ -306,7 +309,7 @@ From a computer on the router's LAN, `curl http://172.30.10.2:9123/healthz` answ
 
 From a computer with the CLI, `mikroscope uninstall --router … --yes` reads the manifest, removes
 everything the steps above created, and checks that nothing is left
-([Uninstall](/mikroscope/install/#uninstall)). Through the menus, remove in this order:
+([Upgrade and uninstall](/mikroscope/install/upgrade/#uninstall)). Through the menus, remove in this order:
 
 1. **Container**: select the row, **Stop** in the Actions panel, wait until the `R` flag is gone,
    then **Remove**. RouterOS removes the root dir, `mikroscope/mikroscope`, with the container; if
@@ -334,6 +337,9 @@ A tar left behind by an extraction that did not finish goes too: **Files**, `mik
 
 ## See also
 
+- [Manual install: terminal](/mikroscope/install/manual-cli/): the same objects as commands.
+- [Script generator](/mikroscope/install/generator/): the commands with your values filled in, as
+  one script.
 - [Install methods](/mikroscope/install/routes/): the other ways to install, a script included.
 - [Storage and container settings](/mikroscope/install/layout/): what each container setting does.
 - [Firewall lists](/mikroscope/install/firewall/): when the list memberships are needed.

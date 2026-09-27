@@ -26,7 +26,7 @@ explanation lives.
 | RouterOS: `unknown parameter privileged`                              | [RouterOS older than 7.24](#unknown-parameter-privileged)              |
 | Container log: `exec format error`                                    | [The wrong image for the board](#exec-format-error)                    |
 | `no Go toolchain on PATH`                                             | Install with `--remote-image` or `--agent-tar` instead                 |
-| `--agent-tar …: this is not a mikroscope agent image`                 | The wrong asset — see [which tar](/mikroscope/install/routes/#which-tar) |
+| `--agent-tar …: this is not a mikroscope agent image`                 | The wrong asset — see [which tar](/mikroscope/install/offline/#choose-the-image-tar) |
 | A CLI of 1.2.2 or earlier: `registry-url is https://… registry-url=…` | [Registry host](#the-registry-host) |
 | `doctor`: `free flash ≥ …` fails                                      | `--disk tmpfs` or `--ephemeral`, or free space on the flash            |
 | `doctor`: `MISSING disk … has ≥ … free` or `MISSING disk tmpfs is RAM` | Free space on the disk or give the tmpfs disk a larger `tmpfs-max-size`; `--ephemeral` needs the disk in slot `tmpfs` to be a tmpfs disk |
@@ -100,7 +100,7 @@ not run on the first. So:
   32-bit ARM and you are not certain which kind it is.
 - Building from a checkout, `--goarm 5` is the default for the same reason.
 
-[Which tar](/mikroscope/install/routes/#which-tar) is the table.
+[Which tar](/mikroscope/install/offline/#choose-the-image-tar) is the table.
 
 ### RouterOS below 7.24 {#routeros-version}
 

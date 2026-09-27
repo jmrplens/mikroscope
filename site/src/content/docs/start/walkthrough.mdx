@@ -1,384 +1,161 @@
 ---
-title: Five minutes with a router
-description: A real RB5009 recording read line by line, and the five steps that make one — get the CLI, install the agent, record, add the router’s log, plot.
+title: First recording
+description: Record the router's kernel while you change something, mark the moments, add the router's own log and plot it as one chart.
+docType: tutorial
 head:
   - tag: title
-    content: Five minutes with a MikroTik router | mikroscope
+    content: First recording of a MikroTik router's kernel | mikroscope
 ---
 
 import { Aside, Steps } from "@astrojs/starlight/components";
 import Measured from "../../../components/Measured.astro";
-import NotClaimed from "../../../components/NotClaimed.astro";
-import Provenance from "../../../components/Provenance.astro";
-import RouterWrites from "../../../components/RouterWrites.astro";
 import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
 import Src from "../../../components/Src.astro";
-import Verified from "../../../components/Verified.astro";
-import walkthrough from "../../../assets/walkthrough/rb5009-walkthrough.svg";
 
-The question this tool exists for: _I am about to change something on the router — what does it
-actually do, at a resolution where I can see it?_ This page is the shortest path from a router
-that has never seen mikroscope to a chart that answers it: five steps to the chart and two optional
-ones to keep it running, with the commands as they are, and one real recording from the RB5009
-read line by line.
+Record the router's kernel while you change something on it, then read on one chart what the
+change did. This takes an agent that is already installed:
+[Quick install](/mikroscope/start/) puts one there.
 
 ## Before you start
 
-The router needs what the tool cannot give it: RouterOS 7.24 or later with the
-[`container` package](https://help.mikrotik.com/docs/spaces/ROS/pages/84901929/Container) and
-[`device-mode container=yes`](https://help.mikrotik.com/docs/spaces/ROS/pages/93749258/Device-mode),
-which MikroTik gates behind a reset-button press or a power cycle. 7.24 is the floor because the
-container step writes `privileged=`, an attribute MikroTik
-[added in that release](https://download.mikrotik.com/routeros/7.24/CHANGELOG);
-`--privileged=false` changes its value, not whether it is written, so an older 7.x
-is expected to reject the command either way (read from the code; not tried on a router). Everything on this page was measured on 7.24.2. `doctor` reports
-the router's version in its first line but does not gate on it.
-[What the router needs](/mikroscope/install/prerequisites/) has the whole list, and
-`mikroscope doctor` checks the rest read-only and names the fix for anything missing.
+- `mikroscope status --router admin@192.168.88.1` prints an `agent:` line. The commands below reach
+  the agent at its default address, `172.30.10.2:9123`; pass `--subnet` and `--port` if you
+  installed with others.
+- For step 3, a RouterOS API user with read access. [API user](/mikroscope/security/api-user/)
+  has the two commands that create one.
 
-The commands on this page need six environment variables:
+Step 3 reads three environment variables:
 
-<ScrollTable label="The six environment variables the commands on this page need">
+<ScrollTable label="The environment variables step 3 reads">
 
-| Variable                  | Flag         | Read in                            |
-| ------------------------- | ------------ | ---------------------------------- |
-| `MIKROSCOPE_ROUTER`       | `--router`   | step 2, and the removal at the end |
-| `MIKROSCOPE_API_ADDR`     | `--api`      | steps 4, 6 and 7                   |
-| `MIKROSCOPE_API_USER`     | `--api-user` | steps 4, 6 and 7                   |
-| `MIKROSCOPE_API_PASSWORD` | none         | steps 4, 6 and 7                   |
-| `MIKROSCOPE_INFLUX_URL`   | `--influx`   | step 6                             |
-| `GRAFANA_TOKEN`           | none         | step 7, and the removal at the end |
+| Variable                  | Flag         |
+| ------------------------- | ------------ |
+| `MIKROSCOPE_API_ADDR`     | `--api`      |
+| `MIKROSCOPE_API_USER`     | `--api-user` |
+| `MIKROSCOPE_API_PASSWORD` | none         |
 
 </ScrollTable>
 
-A variable with a flag only sets that flag's default, and the flag on the command line wins; the
-two with none are credentials, which the CLI reads from the environment only so they stay out of
-`ps` and your shell history. `GRAFANA_TOKEN` is read under that exact name, without the prefix.
-The CLI never reads `.env` itself: export the variables, or copy <Src path=".env.example" /> to
-`.env` and source it with `set -a; . ./.env; set +a`. The same commands also read other
-`MIKROSCOPE_*` variables whenever they are set, `MIKROSCOPE_TOKEN` and `MIKROSCOPE_SUBNET` among
-them. Most flags have no variable at all —
-`--ephemeral`, `--rate`, `--for`, `--topics` and `--prom` among them — and
-[environment variables](/mikroscope/reference/environment/) lists every one that does.
+The password has no flag, so it stays out of `ps` and your shell history. The CLI does not read
+`.env` itself: export the variables, or copy <Src path=".env.example" /> to `.env` and load it with
+`set -a; . ./.env; set +a`. [Environment variables](/mikroscope/reference/environment/) lists every
+variable.
 
-## The path
+## Steps {#the-path}
 
 <Steps>
 
-1. **Get mikroscope.**
+1. **Record while you make the change.**
 
-   ```sh wrap
-   curl -fsSL https://raw.githubusercontent.com/jmrplens/mikroscope/main/install.sh | bash
+   ```sh
+   mikroscope record --for 60s --out burst
    ```
 
-   That works out the platform, takes the newest release, and refuses to install anything whose
-   checksum is not the one the release published; `irm …/install.ps1 | iex` is the PowerShell
-   half. [Getting the CLI](/mikroscope/install/cli/) has the same path by hand, one platform at a
-   time, for a machine where `curl | bash` is not something to type:
+   On a terminal, type a line and press Enter at any moment worth remembering: it becomes a marker
+   in the agent's clock. The CLI says so when it starts:
+   `type a line and press Enter to add a marker; Ctrl-C stops`. Without `--for` it records until
+   Ctrl-C. At the end it prints what it wrote:
 
-   ```sh wrap
-   tar xzf mikroscope_{{MIKROSCOPE_VERSION}}_linux_x86_64.tar.gz   # a .zip on Windows
-   ./mikroscope version
+   ```text
+   recorded 600 samples (seq 11..610), 0 gap(s), 0 marker(s), via direct http://172.30.10.2:9123
+     burst.jsonl
+     burst.csv
+     burst.markers.csv
+     burst.meta.json
    ```
 
-   The release carries the CLI as an archive per platform — linux and FreeBSD on amd64, arm64 and
-   arm; macOS and Windows on amd64 and arm64 — with `checksums.txt`, cosign signatures and SBOMs
-   beside it. The agent
-   travels separately, as four image tars, one per architecture
-   (`mikroscope-agent-amd64.tar`, `-arm64`, `-armv5`, `-armv7` — 32-bit ARM was split in two in
-   1.0.2, and the wrong tar is an `exec format error`) and as a registry image, published both as
-   `jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}` on Docker Hub and as
-   `ghcr.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}` on GHCR; step 2 takes one of the two.
+   The summary counts the markers typed into `record` itself, and names any stretch of samples
+   that had already left the agent's ring.
 
-   From a checkout instead:
+2. **Mark from another terminal.**
 
-   ```sh wrap
-   git clone https://github.com/jmrplens/mikroscope && cd mikroscope && make build
+   ```sh
+   mikroscope mark --out burst "queue tree applied"
    ```
 
-   That needs Go 1.27 and leaves the CLI in `bin/mikroscope`, which is how the commands below are
-   written. It is also the only path that installs an agent built from your own tree, because
-   `install` cross-compiles the agent from the module root.
+   It prints `marker added to burst.markers.csv at <time>`. `mark` appends to the same file while
+   `record` runs, and works after the recording too.
 
-2. **Install, once.**
+3. **Add the router's own log.**
 
-   ```sh wrap
-   export MIKROSCOPE_ROUTER=admin@192.168.88.1
-   bin/mikroscope plan --ephemeral
-   bin/mikroscope doctor --ephemeral && bin/mikroscope install --ephemeral
-   ```
-
-   `plan` prints every RouterOS command and writes nothing. `install` puts the agent image on the
-   router, lists the objects, runs the same preflight again (`--no-doctor` skips it), asks
-   `write the objects above to the router? [y/N]` (`--yes` skips the question), writes, and then
-   probes the agent from your host.
-
-   Since 1.2.0 a standalone `doctor` also has a second half, after the preflight:
-   `health (what the running agent's ring shows now):`. On a router with no agent yet it waits up
-   to 3 s and prints `skipped: no agent answered at …`, which is expected before the first
-   install. Re-run once the agent is up, it reads its ring (the last 60 s at the default
-   `--buffer`) and reports a layer-2 loop signature, STP churn, a link flap or softnet drops. What
-   it finds never changes `doctor`'s exit status, so the `&&` above still reaches `install`.
-
-   Where the image comes from is your choice, and it is the only difference between the three
-   installs:
-
-   - **your Go toolchain**, as above: the CLI runs `go build ./cmd/mikroscope-agent` with
-     `CGO_ENABLED=0`, `GOOS=linux` and `GOARCH` from `--arch`, which is why it has to run from the
-     module root;
-   - **the published tar**, `--agent-tar mikroscope-agent-arm64.tar`: no Go toolchain and no
-     checkout. The CLI reads the tar before it uploads it — it has to be a mikroscope agent image
-     and its architecture has to match `--arch`, or the verb stops and names the asset to download
-     instead;
-   - **the registry**, `--remote-image jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}`: the router pulls the image
-     itself, nothing is uploaded, and `uninstall` has no file to account for. mikroscope hands
-     RouterOS the whole reference, `registry-1.docker.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}`,
-     so the global `/container/config registry-url`, which every container on the device shares,
-     does not decide the pull: nothing is set there first and mikroscope never writes it. No
-     registry login is needed either. On the reference router the host inside `remote-image=` overrode
-     `registry-url` (verified on <Verified of="remote-image-host" />), and Docker Hub served the
-     agent with the device's registry username and password cleared (verified
-     on <Verified of="docker-hub-anonymous" />); a router with `registry-url` at its factory
-     default has not been tried. The GHCR reference,
-     `ghcr.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}`, goes out with its own host the same way.
-     Since 1.2.0 `doctor` prints `WARN` when `/container/config` holds a registry username that may
-     not belong to the registry of the pull; since 1.3.0 it decides that by comparing the host
-     `registry-url` names with the one the image comes from. That one credential is for the whole
-     device, and a Docker Hub account sent to GHCR ended a pull in `auth error`. A `WARN` does not
-     stop `install`. The pull needs the router to reach the registry and the free RAM
-     for the layers.
-
-   `--arch` defaults to `arm64`, the RB5009's; it is not detected from the router, but `doctor`
-   compares it with the architecture the router reports and names the `--arch` value to re-run with
-   if they differ.
-
-   On a router you only reach through WinBox or WebFig, there is a fourth way with no CLI on your
-   side at all: `mikroscope plan --rsc --remote-image jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}} --out install.rsc`
-   writes the same commands, in the same order and with the same tags, as a RouterOS script to
-   paste into the terminal or `/import`. [Installing the agent](/mikroscope/install/) has that path
-   and its two caveats in full.
-
-   `--ephemeral` puts the image tar and the container's root on the router's tmpfs RAM disk and
-   creates the container with `start-on-boot=no`, so the agent does not come back after a reboot.
-   `install` deletes the tar once the container has extracted it. Nothing was written to flash: `write-sect-since-reboot` stayed at 58 279 across install, run and removal (verified on <Verified of="tmpfs-zero-writes" />). Drop it for a persistent install. The tmpfs disk has to exist;
-   the RB5009 has one, and `doctor --ephemeral` checks for it and prints the `/disk/add` that
-   creates it if it does not. Pass `--ephemeral` to `doctor` too: without it, `doctor` checks free
-   flash instead.
-
-   `install` ends by probing the agent from your host; the last of its lines is the probe's:
-
-   ```text wrap
-     direct transport ok: agent 1.0.0 (9ddd760) built 2026-09-16T08:38:27Z, 10 Hz, seq 29, 0 slipped, 7ms round trip
-   ```
-
-   The first field is the agent's build identity: the version, which a release stamps from the <Src path="VERSION" />
-   file, then the commit and the build date. An unstamped `go build` inside a checkout
-   reports that same version with the commit and time the Go toolchain records, so the field is
-   never `dev` and never a bare hash. An agent from the tar or the registry reports what the
-   release build stamped into it; an agent `install` built from your tree carries the CLI's own
-   stamp, so the two report the same string. The rest of the line is the probe itself: the sampler
-   rate, the sequence the agent had reached, the ticks it slipped and the round trip. On the RB5009
-   the probe answered after about three seconds with a 7 ms round trip, and 5 ms after an `upgrade`
-   the same day (2026-09-12).
-
-   The probe waits up to 30 s. If your host cannot reach the agent's /30, it first asks the router
-   whether the container is running and only then suggests alternatives; see
-   [reaching the agent](/mikroscope/install/reaching-the-agent/).
-
-3. **Record while you do the thing.**
-
-   ```sh wrap
-   bin/mikroscope record --for 70s --out burst
-   ```
-
-   Type a line and press Enter whenever you do something worth remembering; it becomes a marker
-   with the agent's timestamp. That works when standard input is a terminal, and the CLI says so:
-   `type a line and press Enter to add a marker; Ctrl-C stops`. From another shell,
-
-   ```sh wrap
-   bin/mikroscope mark --out burst "queue tree applied"
-   ```
-
-   does the same: `mark` appends to `<prefix>.markers.csv` while `record` holds the file open, so a
-   note from a second terminal and a note typed into the recorder's own end up in the same file.
-   `--for 0`, the default, records until Ctrl-C. At the end `record` prints the sample count, the
-   sequence range, the gaps, the markers and the transport it used, and names any stretch of
-   samples that was no longer in the agent's ring.
-
-4. **Add the router's own log.**
-
-   This step talks to the RouterOS API, not to the agent, so it needs an account on the router to
-   talk to. A read-only one is enough, and [the API user](/mikroscope/security/api-user/) has the
-   two commands that create the group and the user; the CLI never needs `admin` for this.
-
-   ```sh wrap
+   ```sh
    export MIKROSCOPE_API_ADDR=192.168.88.1:8728 MIKROSCOPE_API_USER=mikroscope MIKROSCOPE_API_PASSWORD=…
-   bin/mikroscope mark --out burst --log-markers --router-tz Europe/Madrid
+   mikroscope mark --out burst --log-markers --router-tz Europe/Madrid
    ```
 
-   (Or put those three in `.env` — `cp .env.example .env` — and source it, as above.)
+   Every log line inside the recording's window whose topic is `system`, `interface` or
+   `container` becomes a marker:
 
-   Every log line of the recording's window — from its start to its last sample, in the agent's
-   clock — whose topic is `system`, `interface` or `container` becomes a marker; add `firewall` or
-   `script` with `--topics` when their lines are the story. The router reports errors and scheduler
-   runs there, and the log often explains a transient you did not cause.
-
-   `MIKROSCOPE_API_ADDR` has the flag `--api` and `MIKROSCOPE_API_USER` the flag `--api-user`; the
-   password has no flag. `--router-tz` is the IANA zone the router's clock shows, because RouterOS
-   log times carry no zone; it defaults to your machine's. `record --log-markers` does the same at
-   the end of a recording, and `mark --log-markers` does it afterwards, as here
-   ([the router's own log as markers](/mikroscope/record/#the-routers-own-log-as-markers)).
-
-5. **Look.**
-
-   ```sh wrap
-   bin/mikroscope plot --in burst
+   ```text
+   7 log marker(s) added to burst.markers.csv (window <start> → <end>, topics system,interface,container)
    ```
 
-   This writes `burst.svg`: three panels on one time axis — busy ratio per core, softnet drops
-   and time squeezes per second, memory available — with every marker as a dashed vertical drawn
-   per panel, so no panel title is struck through. Log
-   markers that fall in the same second fold into one line whose label reads `N×` and the first
-   message; a gap in the samples is drawn as a red line; a label longer than 40 characters is cut to
-   37 and an ellipsis, and a chip with no room left shortens further until it fits rather than
-   being laid over its neighbour, keeping only its rule when nothing readable is left; a marker
-   outside the recording's span is not drawn. The same recording
-   always yields the same bytes. `--title` sets the heading and `--svg` another
-   output path.
+   Add `firewall` or `script` with `--topics`. `--router-tz` is the IANA zone the router's clock
+   shows, because RouterOS log times carry no zone; it defaults to your machine's.
+   `record --log-markers` does the same when the recording ends.
 
-6. **Keep it running (optional).**
+4. **Plot it.**
 
-   ```sh wrap
-   bin/mikroscope forward --prom :9124 --influx "$MIKROSCOPE_INFLUX_URL" --interfaces bridge,ether1
+   ```sh
+   mikroscope plot --in burst
    ```
 
-   This runs the collector: the kernel tier from the agent and, with the `MIKROSCOPE_API_*`
-   variables from step 4 in the environment, the RouterOS API tier beside it. With the default
-   `--api-mode full` that tier reads `/system/resource`, `/system/resource/cpu`, `/system/health`,
-   `monitor-traffic` every second for the interfaces named in `--interfaces`, every port's
-   cumulative counters every 10 s, and what each interface is — its comment, type, interface lists,
-   bridge and MTU — at start and every 5 min;
-   [the RouterOS API tier](/mikroscope/sinks/api-tier/) says which of those the agent can read
-   itself. Without those variables the API tier is disabled with a warning and the kernel tier still runs. Both go to a Prometheus
-   exposition on `:9124` and to InfluxDB 3. From there,
-   [import and check](/mikroscope/dashboards/import-and-check/) sets up the Grafana dashboards — five
-   of them, one per store — and the datasource field an InfluxDB 3 import needs. One scrape job is
-   enough: the collector's. The alert rules for InfluxDB 3, PostgreSQL and Prometheus ship beside
-   the dashboards and are imported separately; [alerts](/mikroscope/dashboards/alerts/) lists
-   them.
+   It writes `burst.svg` and prints `burst.svg: 600 samples, 10 markers`. `--title` sets the
+   heading and `--svg` another path. The same recording always gives the same bytes.
 
-7. **Let it set Grafana up for you (optional).**
-
-   ```sh wrap
-   export GRAFANA_TOKEN=…
-   bin/mikroscope forward --influx http://influx:8181 --influx-db mikroscope --grafana http://grafana:3000
-   ```
-
-   Since 1.1.0 the collector can do step 6's last sentence itself: point it at a Grafana and it
-   creates the datasource and publishes the dashboard, once, at start, before the first sample.
-   It does nothing unless `--grafana` is passed, a Grafana that will not take it is a warning
-   rather than a reason not to collect, and it never deletes anything. `--grafana-dry-run` prints
-   what it would write and stops before the router is touched, so you can read it first.
-   [Import and check](/mikroscope/dashboards/import-and-check/) says which sinks can describe
-   their own datasource and which have to be told the address.
+5. **Keep collecting (optional).** To keep the samples rather than a window,
+   [run the collector](/mikroscope/sinks/) into Prometheus, InfluxDB 3 or another sink, and
+   [import the dashboards](/mikroscope/dashboards/import-and-check/).
 
 </Steps>
 
-## What the chart shows
+## Read the chart {#what-the-chart-shows}
 
-<a class="ms-chart-link" href={walkthrough.src}>
-	<img
-		class="ms-chart"
-		src={walkthrough.src}
-		width={walkthrough.width}
-		height={walkthrough.height}
-		alt="RB5009UG+S+, 70 s at 10 Hz: 700 samples over 69.9 s on four cores, with three dashed markers — “baseline, router idle” at 12 s, “dashboards check started” at 30 s and “check finished” at 50 s. Per-core busy stays low with single-sample excursions to 100 %; the softnet panel shows time squeezes and a flat zero for dropped; memory available stays between 662 and 671 MiB."
-	/>
-</a>
+The chart has three panels on one time axis:
 
-<div class="ms-chart-open">
-	<a href={walkthrough.src}>Open the chart at full size</a> (SVG, 1200 × 754) to read its labels on
-	a phone.
-</div>
+- **Busy ratio per core.** The share of each 100 ms tick a core spent working. One sample of one
+  core at 100 % is 100 ms of work, and moves a four-core, one-second average by
+  only <Measured id="burst.100msOn4Cores" />: the short excursions an average hides are the point of
+  sampling at 10 Hz.
+- **softnet, per second.** `dropped` counts packets the kernel lost from its backlog, which no
+  interface counter shows; `time_squeeze` counts the times the kernel paced itself. A squeeze on
+  its own is not a fault.
+- **Memory available.** What the kernel could hand out without swapping.
 
-<Provenance of="record-2026-09-16" />
+Each marker is a dashed vertical line, drawn in every panel, with its label beside it. Log
+markers that fall in the same second fold into one line labelled `N×` and the first message. A gap in the
+samples is a red line. A label longer than 40 characters is cut to 37 and an ellipsis.
 
-This is a real recording of a router at rest, the shape everything else is read against. The three
-dashed lines are the notes typed into `record`'s terminal during it; the chips carry them in full
-because they fit, and a longer one is shortened rather than laid over the next.
+[Idle baseline](/mikroscope/playbooks/idle/) reads a real recording of a router at rest line by
+line, the shape other recordings are compared with, and
+[Diagnose faults](/mikroscope/playbooks/) has the signatures a fault leaves on these panels.
 
-- **t = 12 s, `baseline, router idle`.** Nothing is happening, and the panels say so: every core
-  averages under 10 % over the whole recording, and over the quiet stretch that follows this note
-  the four together average 3.9 %.
-- **t = 30 to 50 s, between `dashboards check started` and `check finished`.** A browser loading
-  the two Grafana dashboards against this router's own collector. The four cores together average
-  5.0 % over that stretch, and the work arrives in two short bursts right after the note: core 0
-  at or above 50 % for 0.6 s from 32.3 s, and again for 0.3 s at 33.2 s.
-- **The work is in short excursions.** 76 of the 700 samples have a core at or above 50 %, in 46
-  separate stretches; 38 of those are one sample long, and the longest is 1.4 s, at the start of
-  the recording and before the first note. The kernel's scheduler puts each excursion on whichever
-  core is free. One isolated sample — one core at 100 % for 100 ms — moves a four-core, one-second
-  average by <Measured id="burst.100msOn4Cores" />.
-- **softnet: `dropped` flat at zero, `time_squeeze` between 0 and about 20 per second.** Nothing
-  was lost in 70 s. The squeezes are this device's background rather than an event; what the
-  collector calls a microburst is a cluster of them — three flagged samples on one core inside
-  60 s — and never a single one.
-- **memory available, 662 to 671 MiB.** About 9 MiB of ordinary churn across the recording, with
-  no step at either end of the dashboards check.
+## Remove the agent {#what-step-2-wrote-and-taking-it-off}
 
-RouterOS's own `cpu-load`, at 1 s, reports this minute as a flat few per cent. The recording shows
-what the few per cent are made of: which core took each excursion, how long it lasted, and where
-the notes fall against it.
-
-<NotClaimed variant="device-specific">
-	One recording, on one router, at 10 Hz, with the router otherwise at rest. The per-panel figures
-	above are read off this chart, not re-measured. The three seconds before the probe answered and
-	the 7 ms round trip are what that install on that network showed, not a figure for yours.
-</NotClaimed>
-
-## What step 2 wrote, and taking it off
-
-<RouterWrites command="install" />
-
-```sh wrap
-bin/mikroscope uninstall --ephemeral          # lists what it would remove
-bin/mikroscope uninstall --ephemeral --yes    # and removes it
+```sh
+mikroscope uninstall --router admin@192.168.88.1 --yes
 ```
 
-Pass the same `--ephemeral`, `--disk` and `--name` you installed with: `uninstall` and `status`
-rebuild the plan from their own flags, and without `--ephemeral` they look for the image tar on
-flash instead of on tmpfs. `uninstall` removes every step of the plan in reverse order, by exact tag, then counts what is
-left owned by mikroscope on the router and fails, naming the objects, if anything remains.
-Without `--yes` it only lists what it would remove. `bin/mikroscope status --ephemeral` prints the same ownership
-counts at any time, plus the agent's `/healthz` line (version, rate, sequence, uptime, slipped
-ticks) when it is reachable; `doctor` is the verb that reads its ring for faults.
+It removes every object the install created, reading the list from the install manifest on the
+router, and ends with `verified: nothing mikroscope created remains on the router`. Without `--yes`
+it only lists them. [Upgrade and uninstall](/mikroscope/install/upgrade/) has what it never touches,
+and how to remove dashboards and stored data.
 
-If you ran step 7, `uninstall --targets dashboard --grafana <url>` with `GRAFANA_TOKEN` set and the
-same sink flags as `forward` removes the dashboard and the datasource it created, never one adopted
-with `--grafana-datasource-uid`. `--targets data` with those sink flags empties what step 6 wrote
-into each store it can empty, and names the ones it cannot. Nothing goes without `--yes`;
-[`uninstall --targets`](/mikroscope/reference/cli/#uninstall---targets) has the table.
-
-<Aside type="note" title="ssh is not free on the router">
-	Every ssh connect costs the RB5009 <Measured id="ssh.connectCpu" /> CPU for its duration. The CLI
-	therefore batches each read into one connect and never uses ssh as a data path; the samples
-	travel over HTTP to the veth, or over the RouterOS API relay.
+<Aside type="note" title="ssh is not a data path">
+	`record`, `mark` and `plot` never use ssh: the samples travel over HTTP to the veth address, or
+	through the RouterOS API relay. Only the install commands connect over ssh, one connect per
+	batch of reads.
 </Aside>
 
 <SeeAlso>
 
 ## See also
 
-- [Installing the agent](/mikroscope/install/): every install option, and where each object goes.
-- [Record, mark, plot](/mikroscope/record/): the recording files, the transports and the markers in
-  full.
-- [The API user](/mikroscope/security/api-user/): the read-only account step 4 and the API tier
-  need, and the two commands that create it.
-- [The collector](/mikroscope/sinks/): what `forward` merges and where it sends it.
-- [Import and check](/mikroscope/dashboards/import-and-check/): the Grafana dashboards, their
-  datasources and the scrape jobs.
-- [How to read what it shows](/mikroscope/playbooks/): the signatures a real fault and a provoked
-  one leave on these panels.
+- [Record, mark and plot](/mikroscope/record/): the files, the transports and the markers in full.
+- [Triggered capture](/mikroscope/record/triggers/): let the agent keep the seconds around a fault
+  for you.
+- [Run the collector](/mikroscope/sinks/): what `forward` merges and where it sends it.
+- [Diagnose faults](/mikroscope/playbooks/): the signatures a fault leaves on these panels.
 
 </SeeAlso>

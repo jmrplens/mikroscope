@@ -1,409 +1,153 @@
 ---
-title: Four ways to install
-description: Four routes for the agent image, each run on an RB5009 — a registry pull, a RouterOS script, a Go checkout, the tar — and how to verify a release.
+title: Install methods
+description: The ways to put the mikroscope agent on a MikroTik router — the CLI with a registry pull, the image tar or a checkout, a RouterOS script, the generator, or by hand — and what each needs.
+docType: how-to
 head:
   - tag: title
-    content: Four ways to install the agent on RouterOS | mikroscope
+    content: Ways to install the agent on RouterOS | mikroscope
 ---
 
-import { Aside, Steps } from "@astrojs/starlight/components";
-import NotClaimed from "../../../components/NotClaimed.astro";
+import { Aside } from "@astrojs/starlight/components";
+import Anchor from "../../../components/Anchor.astro";
 import ScrollTable from "../../../components/ScrollTable.astro";
 import SeeAlso from "../../../components/SeeAlso.astro";
-import Verified from "../../../components/Verified.astro";
+import TestedOn from "../../../components/TestedOn.astro";
 
-The agent is a container image, and the four routes below differ in one thing
-only: how that image reaches the router. Everything else `install` writes — the
-veth, the address, the two list memberships, the envlist, the container and its
-tag — is the same whichever route you take, and so are the prerequisites:
-[What the router needs](/mikroscope/install/prerequisites/) comes first in all
-four, because `device-mode container=yes` needs a hand on the device and no
-route works around it.
+Every method creates the same objects on the router: the veth, the router's address, the list
+memberships you keep, the envlist, the container and the install manifest, each carrying the same
+tag. So
+`mikroscope status` and `uninstall` recognise an install whichever method made it. They differ in
+where they run and in how the agent image reaches the router. Every method needs the
+[Requirements](/mikroscope/install/prerequisites/) first, device mode included.
 
-## Which one
+## Compare methods {#which-one}
 
-<ScrollTable label="The four install routes, with what each one needs">
+<ScrollTable label="The install methods, with what each one needs">
 
-| Route                                                | Needs                                                              | Prefer it when                                                                             |
-| ---------------------------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
-| **[A registry pull](#a-registry-pull)** — start here | the router can reach Docker Hub                                    | the router can reach the internet: one command, nothing uploaded, nothing set on the router |
-| [A RouterOS script](#a-routeros-script)              | a terminal on the router; `--remote-image`                         | you reach the router through WinBox or WebFig and not over ssh                             |
-| [A checkout, with Go](#a-checkout-with-go)           | Go 1.27 and the repository; ssh to the router                      | you are working on mikroscope and want the agent from your tree                            |
-| [The published tar](#the-published-tar)              | the release assets, the right one for the board; ssh to the router | the router cannot reach a registry                                                         |
+| Method                                                                   | Needs                                                              | Use it when                                                     |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------------ | --------------------------------------------------------------- |
+| **[Registry pull](#a-registry-pull)** with the CLI                       | ssh to the router; the router reaches Docker Hub or GHCR           | the default: one command, nothing uploaded                      |
+| [Offline install](/mikroscope/install/offline/)                          | ssh and `scp`; the image tar for the router's architecture         | the router cannot reach a registry                              |
+| [From source](#a-checkout-with-go)                                       | Go 1.27 and a checkout; ssh and `scp`                              | you are changing the agent and want it from your tree           |
+| [RouterOS script](/mikroscope/install/script/)                           | the CLI on any computer; a terminal on the router                  | you reach the router through Winbox or WebFig, not over ssh     |
+| [Script generator](/mikroscope/install/generator/)                       | a browser; a terminal on the router                                | you have no CLI at all                                          |
+| [Manual install: terminal](/mikroscope/install/manual-cli/)              | a terminal on the router                                           | you want to type or adapt every command                         |
+| [Manual install: WebFig and Winbox](/mikroscope/install/manual-gui/)     | WebFig or Winbox                                                   | you prefer menus to commands                                    |
 
 </ScrollTable>
 
-**Take the first one unless something stops you**, such as a router with no way out to the
-internet. A registry pull is a single command with nothing to pick and nothing to set on the
-router first: the published image index carries every platform
-a MikroTik container can be, so the router matches its own and no one has to
-know whether the board is 64-bit ARM or one of the two 32-bit kinds. Nothing
-lands on the flash, and `uninstall` has no file to account for.
+**Take the registry pull unless something stops you.** It is one command with nothing to pick and
+nothing to set on the router: the published image index carries every platform a MikroTik
+container can be, so the router matches its own. No tar lands on the flash.
 
-The tar is last on purpose. It is the right route for a router with no way out
-to a registry, and it is the only one where **you** pick the architecture — the
-way that goes wrong is an image that installs, starts and dies with
-`exec format error` in the container log. If you take it, read
-[which tar](#which-tar) before downloading.
+The image tar is the one route where **you** pick the architecture, and a wrong pick installs,
+starts and dies with `exec format error` in the container log.
+[Offline install](/mikroscope/install/offline/) has the table.
 
-## A registry pull
-
-The recommended route, and the shortest. One command, nothing to download,
-nothing uploaded:
+## Registry pull {#a-registry-pull}
 
 ```sh
-mikroscope install --router user@192.168.88.1 \
-  --remote-image jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}
+mikroscope install --router admin@192.168.88.1 --remote-image jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}
 ```
 
-Nothing is uploaded, no tar lands on the device, and `uninstall` has no file to
-account for: the container step becomes
-`/container/add remote-image="registry-1.docker.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}" …`
+The container step becomes
+`/container/add remote-image="registry-1.docker.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}" …`,
 and the plan prints
 `the router pulls registry-1.docker.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}} (nothing is uploaded)`
-where the upload line would be. The release publishes the image twice, as
+where an upload would be. Each release publishes the image twice, as
 `jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}` on Docker Hub and as
 `ghcr.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}` on GHCR. Both carry `linux/amd64`,
-`linux/arm64`, `linux/arm/v7` and `linux/arm/v5`, and RouterOS picks the one its
-architecture needs — which is why this route asks nothing about the board: the
-two kinds of 32-bit ARM MikroTik ships are both in the index.
+`linux/arm64`, `linux/arm/v7` and `linux/arm/v5`, and RouterOS picks the one its architecture needs.
 
-It needs two things the other routes do not: the router has to reach the
-registry, and it has to have room in RAM for the layers while it extracts them.
+The route needs two things the others do not: the router has to reach the registry, and it needs
+free RAM for the layers while it extracts them. `doctor` warns when free memory is short of
+`--memory-max` plus 16 MiB.
 
-### Nothing to set on the router
+`--remote-image` reads its default from `MIKROSCOPE_REMOTE_IMAGE`. `upgrade` takes it too, and
+takes its image from its own flags only, so pass it again with the new version. `image` refuses it,
+because there is no tar to write.
 
-mikroscope hands RouterOS the whole reference, registry host included. A
-reference with no host, as above, or one that starts with `docker.io/`,
-`index.docker.io/` or `registry.hub.docker.com/`, goes out as
+### Registry settings {#nothing-to-set-on-the-router}
+
+mikroscope hands RouterOS the whole reference, registry host included. A reference with no host,
+or one that starts with `docker.io/`, `index.docker.io/` or `registry.hub.docker.com/`, goes out as
 `registry-1.docker.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}`, the host Docker Hub's
-registry answers on; any other host is kept as given, so the GHCR reference goes
-out as `ghcr.io/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}`. RouterOS takes a registry host
-there since [7.18](https://download.mikrotik.com/routeros/7.18/CHANGELOG), whose
-changelog lists "container - allow specifying registry using remote-image
-property", and mikroscope needs 7.24. So `/container/config registry-url`, one
-value for the whole device and shared with every container on it, decides
-nothing about this pull: `install`, `upgrade` and the `.rsc` script never write
-it, and you set nothing there. The `doctor` that `install` runs first, and the
-check `upgrade` runs before it removes anything, only read it, for the
-registry-username warning below; the script does not read it at all. No
-registry login is needed either: Docker Hub serves the image to anyone.
+registry answers on; any other host is kept as given. RouterOS 7.18 and later take a registry host
+there ([7.18 changelog](https://download.mikrotik.com/routeros/7.18/CHANGELOG): "container - allow
+specifying registry using remote-image property"), and mikroscope needs 7.24.
 
-What was measured, on the reference router with `registry-url` set to
-`https://registry-1.docker.io` (<Verified of="remote-image-host" />):
+So you set nothing on the router:
 
-- `registry.invalid/jmrplens/mikroscope-agent:1.2.2` was logged as
-  `registry=registry.invalid` and failed with `resolving error`: the host inside
-  `remote-image=` overrides `registry-url`.
-- `docker.io/jmrplens/mikroscope-agent:1.2.2` was logged as
-  `registry=registry-1.docker.io` and pulled, so RouterOS translates that
-  spelling itself; mikroscope writes the translated one and does not rely on it.
-- `registry-1.docker.io/jmrplens/mikroscope-agent:1.2.2`, the form mikroscope
-  sends, pulled its arm64 layer of 2 799 648 bytes and ended in
-  `download/extract done`.
-- `/container/config` read the same afterwards as before.
+- `/container/config registry-url`, one value for the whole device, does not decide this pull.
+  `install`, `upgrade` and the RouterOS script never write it
+  (<TestedOn of="remote-image-host">verified</TestedOn>).
+- No registry login is needed: the published image is public on both registries
+  (<TestedOn of="install-routes">tested</TestedOn>).
+- `doctor`, and `upgrade` before it removes anything, read `registry-url` and whether a username is
+  set, for one warning.
 
-With the device's registry username and password cleared for a second run and
-restored after it, the same full reference ended in `download/extract done`
-5 s after the add, and so did the reference with no host, pulled through
-`registry-url`: Docker Hub served the agent to RouterOS anonymously
-(<Verified of="docker-hub-anonymous" />).
-
-Not measured: a whole `install` or `upgrade` that sends the full reference —
-the references above went to RouterOS in a `/container/add` written by hand, in
-containers created in a temporary veth, never started and removed again — a
-router whose `registry-url` is still at its factory default, any RouterOS but
-7.24.4 with the full reference, an anonymous pull from GHCR by RouterOS, and
-which credential RouterOS presents to a host named only in `remote-image=`.
-MikroTik's own sources do not settle that default: the 7.18 changelog adds
-`registry-url=https://lscr.io`, which does not carry the image, the
-[7.21.2](https://download.mikrotik.com/routeros/7.21.2/CHANGELOG) one says
-"changed default container registry to docker.io", no changelog from 7.21.3 to
-7.24.4 mentions the registry (all read on 2026-09-24), and MikroTik's
-[container documentation](https://help.mikrotik.com/docs/spaces/ROS/pages/84901929/Container)
-still gives `https://lscr.io/`. With the host in the reference, mikroscope no
-longer depends on it.
-
-mikroscope 1.2.2 and earlier sent the reference without its host and left the
-registry to `registry-url`. With one of those, a router whose `registry-url`
-does not name the registry needs it set first, which changes it for every
-container on the device, or the tar route instead.
-
-The other side of that change: a reference with no host no longer follows
-`registry-url`. A router that reached Docker Hub through a mirror or a
-pull-through cache named there now pulls from `registry-1.docker.io` directly,
-on `install` as on `upgrade`. To keep using it, name that host in the
-reference, `--remote-image <mirror-host>/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}`,
-which mikroscope sends as given; `upgrade` prints a `note` naming the
-`registry-url` host and that reference when the two hosts differ. A pull
-through a mirror named in the reference has not been tried on RouterOS.
-
-Docker Hub allows an anonymous client 100 pulls per 6 hours per IPv4 address or
-IPv6 `/64` ([Docker Hub pull limits](https://docs.docker.com/docker-hub/usage/pulls/),
-read on 2026-09-24), and the anonymous token it hands out carries the same
-6 h (`pull_limit_interval` 21600). The registry's own `ratelimit-limit` header,
-read the same day on a `HEAD` of the agent's manifest, which Docker says does
-not count, was `100;w=3600`: a one-hour window. Which of the two Docker enforces was
-not measured, so plan for the stricter one. Docker counts a multi-architecture
-image as one pull per architecture pulled, so an install or an upgrade, which
-pulls only the router's own, should cost about one. That figure comes from
-Docker's counting rule and from a pull made with `curl` from the operator host,
-not from a pull by RouterOS. The limit is per public address, so routers behind
-one NAT or CGNAT address share it, which matters for a fleet installing at once.
+<Anchor name="--remote-image-against-ghcr" />
 
 <Aside type="note" title="One registry username for the whole device">
-	`/container/config` also holds one registry username and password for every container on the
-	router. A Docker Hub login there does not stop this route: one was set during the first run
-	above. A login for one registry sent to another does: on 2026-09-21 a Docker Hub login sent to
-	GHCR ended the pull in `auth error` ([below](#--remote-image-against-ghcr)), and whether RouterOS
-	still presents it when the host is named only in `remote-image=` was not measured. `doctor` warns,
-	as `WARN no registry credential meant for another registry`, whenever a username is set and the
-	host `registry-url` names is not the one the image comes from, and `upgrade` prints the same check
-	before it removes anything: see
-	[What doctor checks](/mikroscope/install/prerequisites/#what-doctor-checks).
+	`/container/config` holds one registry username and password for every container on the router,
+	and a login meant for one registry and sent to another can end a pull of a public image in
+	`auth error`. `doctor` warns, as `WARN no registry credential meant for another registry`, when a
+	username is set and the host `registry-url` names is not the host the image is pulled from.
+	[Troubleshooting](/mikroscope/reference/troubleshooting/#one-credential-for-every-registry) has
+	the three ways out.
 </Aside>
 
-`--remote-image` reads its default from `MIKROSCOPE_REMOTE_IMAGE`, and `upgrade`
-takes it too; `image` refuses it, because there is no tar to write. `upgrade`
-runs no `doctor` and removes the old container before the router pulls the new
-image. With `--remote-image` it reads `registry-url` and whether a username is
-set in the same connect that checks the install is there, and prints the
-credential check, plus the `note` above when `registry-url` names another host,
-before it asks to confirm; nothing else of `doctor` runs, so run `doctor` with
-the same `--remote-image` first when you change registries.
+To pull through a mirror or a pull-through cache, name its host in the reference:
+`--remote-image <mirror-host>/jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}}`. mikroscope sends
+it as given, and `upgrade` prints a `note` when `registry-url` names a host other than the one the
+pull goes to.
 
-## A RouterOS script
+Docker Hub allows an anonymous client 100 pulls per 6 hours per IPv4 address or IPv6 `/64`
+([Docker Hub pull limits](https://docs.docker.com/docker-hub/usage/pulls/)). Docker counts a
+multi-architecture image as one pull per architecture pulled, and a router pulls only its own. The
+limit is per public address, so routers behind one NAT share it, which matters for a fleet
+installing at once.
 
-For a router you reach through WinBox or WebFig, or where you do not want ssh
-from another machine at all:
+<Anchor name="a-routeros-script" />
 
-```sh
-mikroscope plan --rsc \
-  --remote-image jmrplens/mikroscope-agent:{{MIKROSCOPE_VERSION}} \
-  --out install.rsc
-```
+A RouterOS script with the same install, for a router you reach without ssh, is on
+[RouterOS script](/mikroscope/install/script/).
 
-The file holds the same commands `install` runs, in the same order, each object
-tagged the same way, so `status` and `uninstall` from the CLI recognise them
-afterwards. Read it, then paste it into the router's terminal, or upload it and
-`/import` it. Without `--out` it goes to standard output. It carries its own
-header: the tag it writes, what to check before running it, and, at the end,
-`/container/print where name~"mikroscope"` and the `/healthz` URL the agent
-answers on.
-
-Two caveats, both stated in the script itself:
-
-- **It cannot upload anything.** A script running on the router has no way to
-  put the image there, so pair it with `--remote-image`. Without one, the
-  header says instead which filename to put on the device first — the name the
-  container step expects — and how to regenerate the script for a registry
-  pull.
-- **With `--token`, the file is a credential.** The envlist line carries the
-  token in clear, because the router needs it in clear. The CLI writes the file
-  `0600`; what you do with it afterwards is the exposure.
-
-Nothing in the script checks anything. There is no `doctor`, no question about
-what the objects it creates would collide with, and no confirmation prompt: it
-writes. Run `mikroscope doctor` from a machine that can, or read
-[What the router needs](/mikroscope/install/prerequisites/) and check the three
-prerequisites by hand, before you paste it.
-
-All four routes were run end to end against the reference RB5009UG+S+
-(RouterOS 7.24.2, arm64) on 2026-09-17, one after another, each installing
-under its own name, veth and `/30` so that nothing already on the device was
-touched, and each removed again before the next. In every one the agent
-answered `/healthz` from the collector host: the checkout build and the
-published `mikroscope-agent-arm64.tar` at a 2 ms round trip, the router's own
-pull of `jmrplens/mikroscope-agent:1.0.1` from Docker Hub at 2 ms — the tag of that date, which
-this sentence keeps rather than following the release, sent then without its host and pulled
-through the router's `registry-url` — and the
-`plan --rsc` script — uploaded and `/import`ed, with no CLI involved in the
-install itself — at 15 ms on its first samples. `uninstall` then verified by
-ownership count in each case, and the router's `/export` after all four was
-byte-identical to the one taken before them.
-
-### `--remote-image` against GHCR
-
-The fifth run happened on 2026-09-21, on the same RB5009 by then running
-RouterOS 7.24.4, as a second install beside the running one under its own
-`--name`, `--veth`, `--subnet` and `--port`. **It did not work, and the reason
-is worth knowing before you choose a registry.**
-
-The CLI of that date put only the rest of the reference into `remote-image=`,
-so the registry came from `/container/config registry-url`, a single global
-RouterOS setting; it was pointed at `https://ghcr.io` for the run and put back
-afterwards, which changed the registry for every container on the device in
-between. `doctor` read it first and refused with the exact mismatch,
-`MISSING registry-url is https://ghcr.io`, a check that is gone now that the
-host travels inside the reference. With the registry pointed at GHCR the router
-created the container and then failed the pull:
-
-```text
-download/extract error: fetch manifest failed:
-  getting https://ghcr.io/v2/jmrplens/mikroscope-agent/manifests/1.0.9 failed: auth error
-```
-
-`/container/config` carries **one** username and password for every registry,
-and the reference router's is a Docker Hub login. Measured from the operator
-host the same day, against the same public package: no credential at all
-returns `200` once the anonymous token is fetched, and a foreign credential
-returns `403` at the token endpoint. So the credential was sent to GHCR, GHCR
-rejected it, and RouterOS reported `auth error` — the image being public did
-not help, because with a username set the router presented it instead of asking
-anonymously.
-
-What follows for you: **a router whose `/container/config` holds a Docker Hub
-login and names GHCR in `registry-url` cannot pull from GHCR**, and the fix is
-either a GHCR token in that same field or Docker Hub as the registry. With the
-host now inside `remote-image=` and `registry-url` left on Docker Hub, whether
-RouterOS still presents that login to GHCR was not measured: the one run with a
-host that differed from `registry-url`'s, on 2026-09-24, named
-`registry.invalid`, which never resolved, so no connection was opened.
-
-Since 1.2.0 `doctor` warns before the install, as
-`WARN no registry credential meant for another registry`, when a registry
-username is set and the pull is not Docker Hub, and names two ways out: install
-from a tar with `--agent-tar`, where nothing is pulled, or clear the username if
-nothing else on the router needs it. Since 1.3.0 it compares the host
-`registry-url` names with the host of the pull instead, also warns beside an
-empty `registry-url`, and adds a third way out, a `--remote-image` on the
-registry the username belongs to
-([What doctor checks](/mikroscope/install/prerequisites/#what-doctor-checks)).
-The 1.2.x form of that warning was reproduced read-only on the same RB5009,
-RouterOS 7.24.4, on 2026-09-23; the host comparison has run only against fake
-router answers in the tests, not against the router. A pull with no credential
-set was measured against Docker Hub on 2026-09-24,
-[above](#nothing-to-set-on-the-router), and not against GHCR.
-
-The run also found a real bug, now fixed: a `--remote-image` install identified
-its container by the registry reference, which is the same string for every
-mikroscope install anywhere, so a second install on one router found the first
-and refused as though it were someone else's container. It is identified by its
-veth now.
-
-<NotClaimed variant="untested">
-	A pull from GHCR by a router with no registry credential set, and any GHCR pull with the host
-	inside `remote-image=`: the one GHCR run took the host from `registry-url`. A router whose
-	`registry-url` is at its factory default, and the full reference on any RouterOS but 7.24.4. No
-	route has been run on arm or on x86_64 hardware.
-</NotClaimed>
-
-## A checkout, with Go
+## From source {#a-checkout-with-go}
 
 ```sh
 git clone https://github.com/jmrplens/mikroscope
 cd mikroscope
 make build
-bin/mikroscope install --router user@192.168.88.1
+bin/mikroscope install --router admin@192.168.88.1
 ```
 
-`plan`, `install`, `upgrade` and `image` build the agent themselves:
-`go build ./cmd/mikroscope-agent` for `linux/<arch>` (`--arch`, default
-`arm64`) with `CGO_ENABLED=0`, packed into an image tar without Docker. The
-build path is relative, so run the CLI from the checkout. This is the only
-route that installs an agent built from your own tree, which is why it is the
-one to use while changing the agent.
+`plan`, `install`, `upgrade` and `image` build the agent themselves when given neither
+`--remote-image` nor `--agent-tar`: `go build ./cmd/mikroscope-agent` for `linux/<arch>` with
+`CGO_ENABLED=0`, packed into an image tar without Docker. `install` and `upgrade` build for the
+architecture they read from the router; `plan` and `image` connect to nothing and build `arm64`
+unless `--arch` says otherwise. The build path is relative, so run the CLI from the checkout. This
+is the only route that installs an agent built from your own tree.
 
-`make build` leaves the CLI in `bin/mikroscope`. With no Go toolchain on
-`PATH`, the verb stops before anything is written and names the other two
-routes and the Go version it wanted.
+`make build` leaves the CLI in `bin/mikroscope`. With no Go toolchain on `PATH`, the verb stops
+before anything is written and names the other two routes and the Go version it wants.
 
-## The published tar
+<Anchor name="the-published-tar" />
+<Anchor name="which-tar" />
+<Anchor name="verifying-the-download" />
 
-The route for a router that cannot reach a registry. Two assets: the CLI
-archive for the machine you run it from — which is
-[Getting the CLI](/mikroscope/install/cli/), and has nothing to do with the
-router — and one agent image tar, for the **router's** architecture. No Go
-toolchain, no checkout.
-
-### Which tar
-
-<ScrollTable label="Which agent image tar a board takes, by what RouterOS reports as its architecture">
-
-| Your MikroTik                                  | `architecture-name` | Agent image tar                 |
-| ----------------------------------------------- | ------------------- | ------------------------------- |
-| RB5009, CCR2004, hAP ax³, other 64-bit ARM      | `arm64`             | `mikroscope-agent-arm64.tar`    |
-| hEX Refresh / hEX S (2025), any EN7562CT board  | `arm`               | `mikroscope-agent-armv5.tar`    |
-| Other 32-bit ARM (hAP ac², hAP ax², …)          | `arm`               | `mikroscope-agent-armv7.tar`, or the v5 one |
-| CHR, x86 RouterOS                               | `x86_64`            | `mikroscope-agent-amd64.tar`    |
-
-</ScrollTable>
-
-`mikroscope doctor --router …` prints the architecture off the device, so run
-it first and let it tell you. **If you are not sure which 32-bit ARM board you
-have, take the v5 tar**: MikroTik's container documentation says "for devices
-with EN7562CT CPU like the hEX Refresh, only arm32v5 container images are
-supported", and an ARMv5 image runs on
-every 32-bit ARM MikroTik ships, while an ARMv7 one does not run on those.
-
-<Steps>
-
-1. Download `mikroscope_{{MIKROSCOPE_VERSION}}_<os>_<arch>.tar.gz` (`.zip` on Windows) and the
-   agent image tar from the table above, together with `checksums.txt` and
-   `checksums.txt.sigstore.json`.
-
-2. Verify them, below, before unpacking anything.
-
-3. Unpack the CLI and install:
-
-   ```sh
-   tar xzf mikroscope_{{MIKROSCOPE_VERSION}}_linux_x86_64.tar.gz
-   ./mikroscope install --router user@192.168.88.1 \
-     --arch arm64 --agent-tar mikroscope-agent-arm64.tar
-   ```
-
-</Steps>
-
-The CLI reads the tar before it uploads it, which is what catches the wrong
-download. It wants a one-image `manifest.json`, the config that manifest names,
-one layer, and `/mikroscope-agent` as the entrypoint; anything else fails as
-`this is not a mikroscope agent image`. Then the image's architecture has to be
-the one `--arch` says, or the verb fails naming the asset to download instead —
-an `amd64` image on an arm64 board would otherwise install, start, and die with
-`exec format error` in the container log. On a tar it accepts it prints what it
-read, as `using mikroscope-agent-arm64.tar: linux/arm64, agent <size> KiB`, and
-on the ARMv7 image it adds the note that an EN7562CT board needs the v5 one
-instead.
-
-`--agent-tar` reads its default from `MIKROSCOPE_AGENT_TAR`, and `upgrade` and
-`image` take it too. From here on the install is the upload route: the tar goes
-up with `scp`, RouterOS extracts it at add time, and `install` deletes it.
-
-<Aside type="tip" title="Two assets have similar names">
-	`mikroscope-agent-arm64.tar` is the side-loadable container image, the one `--agent-tar` wants.
-	`mikroscope-agent_{{MIKROSCOPE_VERSION}}_linux_arm64.tar.gz` is an archive of the bare agent binary, for reading or
-	running it outside a container; `--agent-tar` rejects it.
-</Aside>
-
-### Verifying the download
-
-`checksums.txt` covers every archive and every agent image tar, and it is the
-one file the signature vouches for. The signature is keyless: the identity is
-the workflow run that produced it, recorded in a public transparency log, so
-there is no key to fetch.
-
-```sh
-cosign verify-blob \
-  --certificate-identity-regexp 'https://github.com/jmrplens/mikroscope/.github/workflows/release.yml@refs/tags/.*' \
-  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  --bundle checksums.txt.sigstore.json \
-  checksums.txt
-sha256sum --ignore-missing -c checksums.txt
-```
-
-`--ignore-missing` is what lets you check the two files you downloaded against
-a list that covers the whole release. Each archive also ships an SPDX SBOM
-(`<archive>.spdx.json`) with a signature bundle of its own, verified the same
-way.
+The published image tar, which one a board takes, and how to verify the download are on
+[Offline install](/mikroscope/install/offline/).
 
 <SeeAlso>
+
 ## See also
 
-- [What the router needs](/mikroscope/install/prerequisites/): the three prerequisites every route
-  shares, and what `doctor` checks.
-- [Installing the agent](/mikroscope/install/): what `install` does once the image is decided.
-- [Where things go](/mikroscope/install/layout/): the disk the tar and the container root use, and
-  what `--remote-image` leaves off it.
-- [Reaching the agent](/mikroscope/install/reaching-the-agent/): the probe that runs afterwards.
+- [Requirements](/mikroscope/install/prerequisites/): what every method needs on the router.
+- [Install with the CLI](/mikroscope/install/): what `install` does once the image source is
+  decided.
+- [Upgrade and uninstall](/mikroscope/install/upgrade/): upgrading and removing an install, by any
+  method.
+- [Storage and container settings](/mikroscope/install/layout/): the disk the tar and the root use.
 
 </SeeAlso>

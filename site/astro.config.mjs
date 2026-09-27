@@ -478,7 +478,11 @@ export default defineConfig({
 							translations: { es: "Instalar con la CLI" },
 						},
 						{ slug: "install/generator" },
+						{ slug: "install/script" },
+						{ slug: "install/manual-cli" },
 						{ slug: "install/manual-gui" },
+						{ slug: "install/offline" },
+						{ slug: "install/upgrade" },
 					],
 				},
 				{
@@ -551,6 +555,7 @@ export default defineConfig({
 					label: "Explanation",
 					translations: { es: "Conceptos" },
 					items: [
+						{ slug: "how-it-works" },
 						{ slug: "limits" },
 						{ slug: "limits/namespaces" },
 						{ slug: "limits/privileged" },

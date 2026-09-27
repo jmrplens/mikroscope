@@ -455,6 +455,11 @@ export const en: HomeContent = {
 				note: "Install the CLI, check the router and run the agent in a RouterOS container",
 			},
 			{
+				text: "How it works",
+				href: "/mikroscope/how-it-works/",
+				note: "The agent, the collector and the data path between them, what each reads and adds, and what the tool does not do",
+			},
+			{
 				text: "Compared with alternatives",
 				href: "/mikroscope/start/compared/",
 				note: "The other ways to watch a RouterOS device, what each one reads, and when to use another tool",
@@ -582,6 +587,11 @@ export const es: HomeContent = {
 				text: "Instalación rápida",
 				href: "/mikroscope/es/start/",
 				note: "Instala la CLI, comprueba el router y pon en marcha el agente en un contenedor de RouterOS",
+			},
+			{
+				text: "Cómo funciona",
+				href: "/mikroscope/es/how-it-works/",
+				note: "El agente, el colector y el camino de los datos entre ellos, qué lee y qué añade cada uno, y lo que la herramienta no hace",
 			},
 			{
 				text: "Comparado con alternativas",

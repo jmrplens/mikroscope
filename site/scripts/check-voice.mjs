@@ -209,6 +209,8 @@ const EXEMPT = [
 		["limits/privileged", "What it enables"],
 		["limits/privileged", "What it does not enable"],
 		["security/api-user", "What read can see"],
+		["how-it-works", "How it works"],
+		["how-it-works", "Cómo funciona"],
 		["how-it-works", "What the agent reads"],
 		["how-it-works", "What the collector adds"],
 		["reference/port-names", "Why names differ"],

@@ -31,11 +31,12 @@ capturas, y la instalación de la que salen, son de WebFig
   descarta tu firewall (`LAN` y `LANs` en la configuración por defecto de MikroTik):
   [Listas del firewall](/mikroscope/es/install/firewall/).
 - Para el tar de la imagen: el tar de la arquitectura del router, renombrado `mikroscope.tar`
-  ([Métodos de instalación](/mikroscope/es/install/routes/#qué-tar) nombra cada uno).
+  ([Instalación sin conexión](/mikroscope/es/install/offline/#choose-the-image-tar) nombra cada uno).
 
 Los pasos usan los valores por defecto de abajo. Para cambiar uno, cámbialo en cada paso donde
-aparece, el manifiesto incluido. Instalación manual: terminal lista cada valor y cómo se derivan de
-él los demás.
+aparece, el manifiesto incluido.
+[Instalación manual: terminal](/mikroscope/es/install/manual-cli/#before-you-start) lista cada
+valor y cómo se derivan de él los demás.
 
 <ScrollTable label="Los valores que usan los pasos">
 
@@ -102,6 +103,7 @@ los encuentre todos.
 
 Si te saltas una pertenencia a lista, escribe `none` tras su `iface-list=` o `addr-list=` y quita su
 línea `object=`. OK crea el directorio `mikroscope` junto con el archivo.
+[Script de RouterOS](/mikroscope/es/install/script/#install-manifest) explica cada línea.
 
 <WebfigCapture name="manifest-new" />
 
@@ -185,7 +187,8 @@ cualquier otra regla que coincida con la lista coincide también con la veth o c
 
 `MIKROSCOPE_TAG` es como la CLI sabe que la envlist es de la instalación. Las demás claves son los
 ajustes del agente: [Variables de entorno](/mikroscope/es/reference/environment/#la-envlist-del-agente).
-`MEM_LIMIT_MB` se deriva de la frecuencia y del anillo.
+`MEM_LIMIT_MB` se deriva de la frecuencia y del anillo; el
+[Generador de scripts](/mikroscope/es/install/generator/) lo calcula para otros valores.
 
 <WebfigCapture name="env-new" />
 
@@ -313,7 +316,7 @@ y `mikroscope status --router …` lista cada objeto de la instalación
 
 Desde un ordenador con la CLI, `mikroscope uninstall --router … --yes` lee el manifiesto, retira
 todo lo que han creado los pasos de arriba y comprueba que no queda nada
-([Desinstalar](/mikroscope/es/install/#desinstalar)). Desde los menús, retira en este orden:
+([Actualizar y desinstalar](/mikroscope/es/install/upgrade/#uninstall)). Desde los menús, retira en este orden:
 
 1. **Container**: selecciona la fila, **Stop** en el panel Actions, espera a que desaparezca la
    marca `R` y después **Remove**. RouterOS borra el root dir, `mikroscope/mikroscope`, con el
@@ -341,6 +344,10 @@ Un tar que haya quedado de una extracción sin terminar también se va: **Files*
 
 ## Véase también
 
+- [Instalación manual: terminal](/mikroscope/es/install/manual-cli/): los mismos objetos como
+  órdenes.
+- [Generador de scripts](/mikroscope/es/install/generator/): las órdenes con tus valores, en un
+  solo script.
 - [Métodos de instalación](/mikroscope/es/install/routes/): las demás formas de instalar, con un
   script entre ellas.
 - [Almacenamiento y contenedor](/mikroscope/es/install/layout/): qué hace cada ajuste del contenedor.

@@ -26,7 +26,7 @@ explicación.
 | RouterOS: `unknown parameter privileged`                              | [RouterOS anterior a 7.24](#unknown-parameter-privileged)              |
 | Registro del contenedor: `exec format error`                          | [La imagen equivocada para la placa](#exec-format-error)               |
 | `no Go toolchain on PATH`                                             | Instala con `--remote-image` o `--agent-tar` en su lugar               |
-| `--agent-tar …: this is not a mikroscope agent image`                 | El artefacto equivocado — mira [qué tar](/mikroscope/es/install/routes/#qué-tar) |
+| `--agent-tar …: this is not a mikroscope agent image`                 | El artefacto equivocado — mira [qué tar](/mikroscope/es/install/offline/#choose-the-image-tar) |
 | Una CLI 1.2.2 o anterior: `registry-url is https://… registry-url=…` | [Host del registro](#el-host-del-registro) |
 | `doctor`: falla `free flash ≥ …`                                      | `--disk tmpfs` o `--ephemeral`, o libera espacio en la flash           |
 | `doctor`: `MISSING disk … has ≥ … free` o `MISSING disk tmpfs is RAM` | Libera espacio en el disco o da al disco tmpfs un `tmpfs-max-size` mayor; `--ephemeral` necesita que el disco del slot `tmpfs` sea tmpfs |
@@ -102,7 +102,7 @@ ARMv5 funciona en las dos, una ARMv7 no arranca en las primeras. Así que:
   de 32 bits y no tengas la certeza de cuál de las dos es.
 - Compilando desde un checkout, `--goarm 5` es el valor por defecto por lo mismo.
 
-[Qué tar](/mikroscope/es/install/routes/#qué-tar) es la tabla.
+[Qué tar](/mikroscope/es/install/offline/#choose-the-image-tar) es la tabla.
 
 ### RouterOS anterior a 7.24
 
