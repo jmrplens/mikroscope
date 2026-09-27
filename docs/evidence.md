@@ -12,8 +12,9 @@ Where each part of mikroscope was run, measured or checked: the device, the Rout
 date and the conditions, what each run found, and what has not been tested. The guides state what
 the tool does and link here for the proof. The feature verdicts were checked against the code at
 1.2.0 and 1.2.2 on 2026-09-24, the sections that came from the guides against the code of 1.3.1 on
-2026-09-26, and what this page says of the code after 1.3.1, which 1.4.0 ships, against that code on
-2026-09-27; the current release is [1.5.0](https://github.com/jmrplens/mikroscope/releases/tag/v1.5.0).
+2026-09-26, what this page says of the code after 1.3.1, which 1.4.0 ships, against that code on
+2026-09-27, and its sections on publishing to Grafana, `uninstall` and the test suites against 1.5.0's
+code on the same day; the current release is [1.5.0](https://github.com/jmrplens/mikroscope/releases/tag/v1.5.0).
 
 ### Reference hardware
 
@@ -190,7 +191,9 @@ On the machine above, from the clean snapshot. How each suite is run is on
   verb with `--ephemeral`, and the router's `/export` hashed before and after. 28 to 34 s on x86_64
   over three runs and 40 to 45 s on arm64 over four, the export byte-identical every time. With
   1.4.0's code, which makes one `uninstall` attempt, on 2026-09-27: 20 s on x86_64 and 35 s on
-  arm64, one run each with make's build steps included, the export byte-identical.
+  arm64, one run each with make's build steps included, the export byte-identical. With 1.5.0's code
+  on the same day: 21 s on x86_64 and 30 s on arm64, measured the same way, the export
+  byte-identical.
 - **`make test-lab` with the scenarios of 1.3.1**, 2026-09-26: 7 min 21 s to 9 min 49 s on x86_64
   over six runs and 12 min 12 s to 16 min 48 s on arm64 over three, the slowest of each with both
   suites running side by side on a busy host. No install failed.
@@ -318,8 +321,11 @@ endpoints `/captures` and `/capture`. It serves no `/metrics`; the exposition is
 #### Deployment commands
 
 **All six deployment commands have run on the RB5009 on RouterOS 7.24.4, all six by 2026-09-23,
-each with the CLI of its date. 1.4.0's have not run there: the code after 1.3.1, which
-1.4.0 ships, has run only in the virtual lab (2026-09-27).** `doctor`, `plan`, `install`, `status`,
+each with the CLI of its date. 1.4.0's and 1.5.0's have not run there: the code after 1.3.1, which
+1.4.0 ships, has run only in the virtual lab (2026-09-27). Read from the code, 1.5.0 changes none of
+the six commands' router steps; its `uninstall` refuses `--grafana-dry-run` and lists the Grafana
+and store targets before it touches the router, both checked only in unit tests
+([`uninstall --targets`](https://jmrp.io/docs/mikroscope/about/status/#uninstall---targets)).** `doctor`, `plan`, `install`, `status`,
 `upgrade` and `uninstall` install, upgrade and remove the agent, with every write listed before it
 happens and every removal verified by ownership counts.
 
@@ -606,21 +612,47 @@ and 10 for PostgreSQL.
 #### `forward --grafana`
 
 **`forward --grafana` has run against the maintainer's Grafana (2026-09-19, InfluxDB 3) and against
-the container suite's for all five stores (2026-09-20).** On 2026-09-20 the collector was pointed
-at a real Grafana and each of the five stores in turn, allowed to create the datasource, and then
-`dashboards check` ran every panel's query through Grafana's API against the datasource the
-collector had built. All five answered with no datasource error. The same run found a defect no
-unit test had: a collector writing to a live PostgreSQL through `--postgres` and nothing else
-published nothing and reported "there is nothing to publish", because the store list only knew
-`--sql`. Against a plain-HTTP InfluxDB store, a datasource without `insecureGrpc` answered every
-panel `tls: first record does not look like a TLS handshake` while the store was fine (measured
+the container suite's for all five stores (2026-09-20, and with 1.5.0's code on 2026-09-27).
+`dashboards publish` has run only there, on 2026-09-27, over what `forward --grafana` had just
+made.** On 2026-09-20 the collector was pointed at a real Grafana and each of the five stores in
+turn, allowed to create the datasource, and then `dashboards check` ran every panel's query through
+Grafana's API against the datasource the collector had built. All five answered with no datasource
+error as the test of that date read it: it looked for `flightsql: Unauthenticated`, for the TLS
+error named below and for `err` with a space on either side, which is no mark `check` prints, so an
+error worded any other way passed it. The same run found a defect no unit test had: a collector
+writing to a live PostgreSQL through `--postgres` and nothing else published nothing and reported
+"there is nothing to publish", because the store list only knew `--sql`. Against a plain-HTTP
+InfluxDB store, a datasource without `insecureGrpc` answered every panel
+`tls: first record does not look like a TLS handshake` while the store was fine (measured
 2026-09-19).
+
+On 2026-09-27 the test ran with 1.5.0's code (commit `ffb934e`, whose Go code is the release's;
+`e2e.yml` run 36344009521) against Grafana 13.2.1, InfluxDB 3.11.2 Core, Elasticsearch 9.5.3,
+PostgreSQL 18.6, Prometheus 3.14.0 and graphite-statsd 1.1.10-5, now failing on any `FAIL` line of
+`check` that carries an error. For each store in turn, `forward --grafana` created the datasource
+and published the dashboard, `check` ran every panel against that datasource over a 15-minute
+window, and `dashboards publish`, given the same store and Grafana flags, exited 0, reported the
+datasource `unchanged` and printed the dashboard's address. No panel that `check` counts as failing
+carried an error; a panel expected to be empty is marked `none` when it answers no rows or an
+error, and the test reads those lines only for the two InfluxDB errors above. The Elasticsearch
+datasource was the collector's, with `@timestamp` as its time field (1.4.0's named `time`, a field
+no document carries), and its `check` exited 0; on InfluxDB, PostgreSQL, Prometheus and Graphite 5,
+20, 33 and 4 panels returned no rows in the window, with no error. Not exercised in the suite: the
+`Authorization` header the Elasticsearch datasource sends, because its Elasticsearch runs without
+authentication; a datasource that carries a token or a password, which no store there has; and a
+run that publishes more than one store, since each run published one.
 
 #### `uninstall --targets`
 
-**`uninstall --targets` removed only what this project wrote in the container suite (2026-09-20),
-and has not been run against the maintainer's production store.** The suite asserts that a table
-this project did not write, in the same database and schema, is neither listed nor removed.
+**`uninstall --targets` removed only what this project wrote in the container suite (2026-09-20,
+and `--targets data` again with 1.5.0's code on 2026-09-27), and has not been run against the
+maintainer's production store.** The suite asserts that a table this project did not write, in the
+same database and schema, is neither listed nor removed. It runs the verb with `--targets data`
+alone, against PostgreSQL and InfluxDB 3, with no router and no Grafana. What 1.5.0 changed in the
+verb beyond that path has only unit tests: it refuses `--grafana-dry-run`, lists the Grafana and
+store targets before it touches the router, stops on a Grafana it could not read, which 1.4.0
+counted as holding nothing to remove, and reads Grafana's address from `GRAFANA_URL` when
+`MIKROSCOPE_GRAFANA_URL` is unset.
 
 #### Test suites
 
@@ -642,10 +674,12 @@ on 2026-09-16, and one runs the CLI and the agent against a virtual RouterOS, fi
   over HTTP, PostgreSQL 18 (through `--sql`, and through `--postgres` since that sink landed on
   2026-09-21), InfluxDB 3 and Prometheus, with the file sink as the oracle the others are compared
   against. Each store is read back through its own API, then all five dashboards are imported into
-  Grafana and every panel's query runs through Grafana's API; the suite publishes all five
-  datasources and checks their dashboards against them, and empties the stores again with
-  `uninstall --targets data`. It needs Docker and no router: the samples are canned, so the run is
-  reproducible anywhere. The first full run, on 2026-09-16, found a panel that named two columns the
+  Grafana and every panel's query runs through Grafana's API; the suite has `forward --grafana`
+  publish all five datasources and checks their dashboards against them, then, since 2026-09-27,
+  runs `dashboards publish` with the same store and Grafana flags, which has to exit 0 and name each
+  store's datasource and dashboard, and empties the stores again with `uninstall --targets data`.
+  It needs Docker and no router: the samples are canned, so the run is reproducible anywhere. The
+  first full run, on 2026-09-16, found a panel that named two columns the
   store has only when the API tier ran: the port-event table names `label` and `role`, which the sink
   writes onto a kernel-log row only from the API tier's inventory, and on InfluxDB 3 a column that is
   not in the table failed the query with `Schema error: No field named label`, so the panel could not
@@ -1365,6 +1399,13 @@ behaviour links this list.
   OTLP receiver, carbon, Elasticsearch, OpenSearch, Telegraf, PostgreSQL and TimescaleDB have had no
   router samples in a recorded run. OpenSearch, TimescaleDB's hypertables and standard output have
   never run against a real store; only the byte-contract tests cover them.
+- An Elasticsearch or OpenSearch that requires authentication. The container suite's Elasticsearch
+  runs with security off, so the `Authorization` header built from `MIKROSCOPE_ELASTIC_AUTH`, basic
+  auth for `user:password` and `ApiKey` otherwise, has no recorded run against one: neither from the
+  sink nor from the Elasticsearch datasource that `--grafana` and `dashboards publish` build, which
+  sends the same header from 1.5.0. Unit tests pin both forms, and the end-to-end suite the sink's
+  `ApiKey` against a fake receiver. Nor has that datasource run against an OpenSearch, with
+  authentication or without.
 - A live TimescaleDB: the `create_hypertable` calls follow TimescaleDB 2.x's documented signature
   and are not verified.
 - The SQL sink's size on a router. The fixture figures (1 375 B of SQL for a kernel event against
@@ -1410,6 +1451,13 @@ behaviour links this list.
 
 - Any Grafana but 12.3.0, 12.3.2, 13.2.1 and 13.2.2. On 12.3.0 the only renders are those of
   2026-09-25; the rest of the dashboard was checked there by query only.
+- `dashboards publish` against any Grafana but 13.2.1, and over anything but what
+  `forward --grafana` had just made there: in the container suite on 2026-09-27 it ran once per
+  store, after the collector, with no credential in any datasource, and found the folder and each
+  datasource as the collector had left them, reported `unchanged`. With `dashboards publish`, a run
+  of more than one store, a store that fails while the rest carry on, a datasource that carries a
+  token or a password (written again at every run and reported `updated`), and `--grafana-dry-run`
+  have run only in the unit tests, against fake Grafanas.
 - The height of the thirteen-panel Overview in a browser; the committed JSON makes it 31 grid units.
 - Byte-for-byte regeneration of the dashboard files added after 2026-09-15.
 - The Elasticsearch and Graphite annotations and detection layers in Grafana: only their generated
