@@ -245,7 +245,7 @@ func (l *Lab) BuildImage(ctx context.Context) error {
 	}
 	l.sayf("building %s", l.cfg.Image)
 	err = l.run(ctx, Command{
-		Args:  []string{"docker", "build", "-q", "--label", "mikroscope.lab.hash=" + ImageHash(df), "-t", l.cfg.Image, "-"},
+		Args:  []string{"docker", "build", "-q", dockerLabel, "mikroscope.lab.hash=" + ImageHash(df), "-t", l.cfg.Image, "-"},
 		Stdin: bytes.NewReader(df), Stderr: l.o.Stderr,
 	})
 	if err != nil {
@@ -326,9 +326,9 @@ func (l *Lab) kvmDevice() (bool, error) {
 func RunArgs(c *Config, disk, stage, installer string, kvm bool) []string {
 	args := []string{
 		"run", "-d", "--name", c.Name, "--hostname", c.Name,
-		"--label", "org.opencontainers.image.source=https://github.com/jmrplens/mikroscope",
-		"--label", "mikroscope.lab.arch=" + c.Arch, "--label", "mikroscope.lab.ros=" + c.ROS,
-		"--label", "mikroscope.lab.kind=" + c.Kind, "--label", "mikroscope.lab.instance=" + c.Instance,
+		dockerLabel, "org.opencontainers.image.source=https://github.com/jmrplens/mikroscope",
+		dockerLabel, "mikroscope.lab.arch=" + c.Arch, dockerLabel, "mikroscope.lab.ros=" + c.ROS,
+		dockerLabel, "mikroscope.lab.kind=" + c.Kind, dockerLabel, "mikroscope.lab.instance=" + c.Instance,
 		"--cap-add", "NET_ADMIN", "--device", "/dev/net/tun",
 	}
 	if kvm {
@@ -341,8 +341,8 @@ func RunArgs(c *Config, disk, stage, installer string, kvm bool) []string {
 		"-e", "LAB_DISK=/cache/"+c.VMRel+"/"+disk, "-e", "LAB_INSTALLER="+installer,
 		"-e", "LAB_CONSOLE_LOG=/cache/"+c.VMRel+"/console.log",
 		"-v", c.Cache+":/cache", "-v", stage+":"+vm.ToolPath+":ro", "-v", c.SSHDir+":"+vm.SSHSource+":ro",
-		"-p", "127.0.0.1:"+strconv.Itoa(c.PortSSH)+":22", "-p", "127.0.0.1:"+strconv.Itoa(c.PortHTTP)+":80",
-		"-p", "127.0.0.1:"+strconv.Itoa(c.PortAPI)+":8728", "-p", "127.0.0.1:"+strconv.Itoa(c.PortAgent)+":9123",
+		"-p", loopbackPrefix+strconv.Itoa(c.PortSSH)+":22", "-p", loopbackPrefix+strconv.Itoa(c.PortHTTP)+":80",
+		"-p", loopbackPrefix+strconv.Itoa(c.PortAPI)+":8728", "-p", loopbackPrefix+strconv.Itoa(c.PortAgent)+":9123",
 		"--entrypoint", vm.ToolPath, c.Image, "vm-boot",
 	)
 	return args

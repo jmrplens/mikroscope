@@ -28,13 +28,13 @@ func (l *Lab) Up(ctx context.Context) error {
 	if err := l.ensureKey(); err != nil {
 		return err
 	}
-	if !exists(filepath.Join(l.cfg.VM, "clean.qcow2")) {
+	if !exists(filepath.Join(l.cfg.VM, cleanDisk)) {
 		if err := l.Provision(ctx); err != nil {
 			return err
 		}
 	}
-	if !exists(filepath.Join(l.cfg.VM, "run.qcow2")) {
-		if err := l.overlay(ctx, "clean.qcow2", "run.qcow2"); err != nil {
+	if !exists(filepath.Join(l.cfg.VM, runDisk)) {
+		if err := l.overlay(ctx, cleanDisk, runDisk); err != nil {
 			return err
 		}
 	}
@@ -43,11 +43,11 @@ func (l *Lab) Up(ctx context.Context) error {
 		return err
 	}
 	if !up {
-		if err = CheckChain(l.cfg.VM, "run.qcow2"); err != nil {
+		if err = CheckChain(l.cfg.VM, runDisk); err != nil {
 			return die("%v: mikroscope-lab reset makes the live layer again", err)
 		}
 		l.sayf("starting %s", l.cfg.Name)
-		err = l.start(ctx, "run.qcow2", "")
+		err = l.start(ctx, runDisk, "")
 		if err != nil {
 			return err
 		}
@@ -114,13 +114,13 @@ func (l *Lab) powerOff(ctx context.Context) error {
 
 // Reset puts the live layer back to the clean snapshot and starts the lab.
 func (l *Lab) Reset(ctx context.Context) error {
-	if !exists(filepath.Join(l.cfg.VM, "clean.qcow2")) {
+	if !exists(filepath.Join(l.cfg.VM, cleanDisk)) {
 		return die("no clean snapshot yet: run mikroscope-lab up (or provision) first")
 	}
 	if err := l.removeContainer(ctx); err != nil {
 		return err
 	}
-	if err := l.overlay(ctx, "clean.qcow2", "run.qcow2"); err != nil {
+	if err := l.overlay(ctx, cleanDisk, runDisk); err != nil {
 		return err
 	}
 	l.sayf("run.qcow2 reset to the clean snapshot")

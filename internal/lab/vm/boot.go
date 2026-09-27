@@ -3,7 +3,7 @@
 package vm
 
 import (
-	_ "embed"
+	_ "embed" // for the //go:embed directive below
 	"errors"
 	"fmt"
 	"io"

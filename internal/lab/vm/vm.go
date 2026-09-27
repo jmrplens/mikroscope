@@ -46,6 +46,13 @@ import (
 	"strings"
 )
 
+// QEMU options used more than once below.
+const (
+	qemuMachine = "-machine"
+	qemuDevice  = "-device"
+	qemuDrive   = "-drive"
+)
+
 // Paths inside the lab container.
 const (
 	// RunDir holds the sockets QEMU serves: the serial console and the
@@ -158,15 +165,15 @@ func Accel(c Config, hostMachine string, kvmWritable bool) (accel string, machin
 		if accel == "kvm" {
 			cpu = "host"
 		}
-		return accel, []string{"-machine", "q35,accel=" + accel, "-cpu", cpu}, note, nil
+		return accel, []string{qemuMachine, "q35,accel=" + accel, "-cpu", cpu}, note, nil
 	case "arm64":
 		if hostMachine == "aarch64" && c.KVM != "off" && kvmWritable {
-			return "kvm", []string{"-machine", "virt,accel=kvm", "-cpu", "host"}, "", nil
+			return "kvm", []string{qemuMachine, "virt,accel=kvm", "-cpu", "host"}, "", nil
 		}
 		if c.KVM == "require" {
 			return "", nil, "", &ExitError{Code: ExitNoKVM, Msg: "LAB_KVM=require: arm64 gets KVM only on an arm64 host with /dev/kvm, and this is " + hostMachine}
 		}
-		return "tcg", []string{"-machine", "virt", "-cpu", c.CPU}, "", nil
+		return "tcg", []string{qemuMachine, "virt", "-cpu", c.CPU}, "", nil
 	default:
 		return "", nil, "", &ExitError{Code: ExitUsage, Msg: "LAB_ARCH must be x86_64 or arm64, got " + c.Arch}
 	}
@@ -188,9 +195,9 @@ func QEMUArgs(c Config, machine []string, installerKernel, installerAppend strin
 		"-chardev", console, "-serial", "chardev:con",
 		"-monitor", "unix:" + MonitorSock + ",server=on,wait=off",
 		"-netdev", "user,id=wan,hostfwd=tcp:127.0.0.1:10022-:22",
-		"-device", "virtio-net-pci,netdev=wan,mac=52:54:00:4d:53:01",
+		qemuDevice, "virtio-net-pci,netdev=wan,mac=52:54:00:4d:53:01",
 		"-netdev", "tap,id=lan,ifname=lan0,script=no,downscript=no",
-		"-device", "virtio-net-pci,netdev=lan,mac=52:54:00:4d:53:02",
+		qemuDevice, "virtio-net-pci,netdev=lan,mac=52:54:00:4d:53:02",
 	}
 	drive := "file=" + c.Disk + ",if=none,id=hd0,format=qcow2,cache=writeback"
 	switch c.Arch {
@@ -198,13 +205,13 @@ func QEMUArgs(c Config, machine []string, installerKernel, installerAppend strin
 		args := append([]string{"qemu-system-x86_64"}, machine...)
 		args = append(args, common...)
 		if c.Kind != "iso" {
-			return append(args, "-drive", "file="+c.Disk+",if=virtio,format=qcow2,cache=writeback"), nil
+			return append(args, qemuDrive, "file="+c.Disk+",if=virtio,format=qcow2,cache=writeback"), nil
 		}
 		// RouterOS x86 wants an ATA disk: on virtio-blk its installer found
 		// no disk it could take a Hardware-ID from (7.24.4, 2026-09-26). The
 		// serial number is fixed, so the software ID RouterOS derives stays
 		// the same from one install to the next.
-		args = append(args, "-drive", drive, "-device", "ide-hd,drive=hd0,bus=ide.0,serial=MIKROSCOPE-LAB")
+		args = append(args, qemuDrive, drive, qemuDevice, "ide-hd,drive=hd0,bus=ide.0,serial=MIKROSCOPE-LAB")
 		if c.Installer == "" {
 			return args, nil
 		}
@@ -213,8 +220,8 @@ func QEMUArgs(c Config, machine []string, installerKernel, installerAppend strin
 		// with its own command line plus a serial console, puts the
 		// installer on the console the host reads and types into.
 		return append(args,
-			"-drive", "file="+c.Installer+",if=none,id=cd0,media=cdrom,readonly=on",
-			"-device", "ide-cd,drive=cd0,bus=ide.1",
+			qemuDrive, "file="+c.Installer+",if=none,id=cd0,media=cdrom,readonly=on",
+			qemuDevice, "ide-cd,drive=cd0,bus=ide.1",
 			"-kernel", installerKernel, "-append", strings.TrimSpace(installerAppend+" console=ttyS0,115200")), nil
 	case "arm64":
 		// CHR arm64 boots through UEFI only (its image is GPT with an EFI
@@ -225,7 +232,7 @@ func QEMUArgs(c Config, machine []string, installerKernel, installerAppend strin
 		// (every boot logged Boot0001 from Pci(0x3,0x0), the disk).
 		args := append([]string{"qemu-system-aarch64"}, machine...)
 		args = append(args, common...)
-		return append(args, "-bios", EFIFirmware, "-drive", drive, "-device", "virtio-blk-pci,drive=hd0,bootindex=0"), nil
+		return append(args, "-bios", EFIFirmware, qemuDrive, drive, qemuDevice, "virtio-blk-pci,drive=hd0,bootindex=0"), nil
 	default:
 		return nil, &ExitError{Code: ExitUsage, Msg: "LAB_ARCH must be x86_64 or arm64, got " + c.Arch}
 	}

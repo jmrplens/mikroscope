@@ -23,7 +23,7 @@ import (
 // that has ended fails the command before it starts. before sees each
 // command first, and may end the context.
 type ctxExec struct {
-	inner  Exec
+	inner  Executor
 	before func(c Command)
 }
 
@@ -97,7 +97,7 @@ func TestACanceledResetNeverRemovesTheDiskOfARunningLab(t *testing.T) {
 
 // failingInspect is a docker whose inspect fails for another reason than a
 // missing container: a daemon that does not answer.
-type failingInspect struct{ inner Exec }
+type failingInspect struct{ inner Executor }
 
 func (e failingInspect) Run(ctx context.Context, c Command) error {
 	if len(c.Args) > 1 && c.Args[1] == "inspect" {
@@ -165,7 +165,7 @@ func TestProbesAreBounded(t *testing.T) {
 }
 
 type deadlineExec struct {
-	inner Exec
+	inner Executor
 	saw   func(time.Duration)
 }
 
@@ -220,7 +220,7 @@ func TestInteractiveVerbsOutliveTheRunsCancellation(t *testing.T) {
 // cancelOnInteractive cancels the run as the interactive program starts,
 // and records whether that program's own context ended with it.
 type cancelOnInteractive struct {
-	inner            Exec
+	inner            Executor
 	cancel           func()
 	started, sawDone bool
 }

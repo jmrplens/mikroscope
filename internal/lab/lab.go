@@ -15,7 +15,7 @@
 // which this package replaced. The container's side, what runs as the lab
 // container's PID 1, is package vm, run from the same binary.
 //
-// Every program the package runs on the host goes through an Exec, which is
+// Every program the package runs on the host goes through an Executor, which is
 // Docker nearly always; the tests hand it a fake that answers from a script,
 // so what the lab does to Docker and to the router is tested without either.
 // What only a real Docker and a real RouterOS can show is shown by `make
@@ -53,7 +53,7 @@ type Options struct {
 	// containers, as their PID 1 (vm-boot, vm-cli).
 	Tool string
 
-	Exec   Exec                                 // nil runs programs on this machine
+	Exec   Executor                             // nil runs programs on this machine
 	HTTP   *http.Client                         // nil is DownloadClient()
 	Now    func() time.Time                     // nil is time.Now
 	Sleep  func(context.Context, time.Duration) // nil sleeps, or returns early when ctx ends
@@ -67,7 +67,7 @@ type Options struct {
 type Lab struct {
 	cfg    *Config
 	o      Options
-	x      Exec
+	x      Executor
 	env    []string
 	verb   string
 	t0     time.Time
@@ -126,7 +126,7 @@ func Main(ctx context.Context, o Options) int {
 			arch = "x86_64"
 		}
 		l := &Lab{o: o, t0: now(o), cfg: &Config{ID: arch}}
-		l.sayf("error: %v", err)
+		l.sayf(errLine, err)
 		return 1
 	}
 	l := New(cfg, o)
@@ -148,10 +148,10 @@ func Main(ctx context.Context, o Options) int {
 		}
 		return exit.Code
 	case ctx.Err() != nil:
-		l.sayf("error: %v", ctx.Err())
+		l.sayf(errLine, ctx.Err())
 		return 130
 	default:
-		l.sayf("error: %v", err)
+		l.sayf(errLine, err)
 		return 1
 	}
 }

@@ -147,14 +147,14 @@ func LockState(path string) string {
 // there: nothing to drive, and nothing to lock). label is the holder's verb.
 func (l *Lab) Lock(ctx context.Context, label string) (func(), error) {
 	if l.holds() {
-		return func() {}, nil
+		return nothingToUnlock, nil
 	}
 	if !exists(l.cfg.Cache) {
-		return func() {}, nil
+		return nothingToUnlock, nil
 	}
 	l.verb = label
 	if err := l.takeLock(ctx, ""); err != nil {
-		return func() {}, err
+		return nothingToUnlock, err
 	}
 	return l.unlock, nil
 }

@@ -83,7 +83,7 @@ func (l *Lab) Fetch(ctx context.Context) error {
 			unpinned = append(unpinned, f)
 		}
 		dst := filepath.Join(l.cfg.DLDir, f)
-		if exists(dst) && exists(dst+".sha256") {
+		if exists(dst) && exists(dst+sumSuffix) {
 			continue
 		}
 		url := l.cfg.DL + "/" + l.cfg.ROS + "/" + f
@@ -91,7 +91,7 @@ func (l *Lab) Fetch(ctx context.Context) error {
 		if err = l.download(ctx, url, dst); err != nil {
 			return die("downloading %s: %v", url, err)
 		}
-		if err = l.download(ctx, url+".sha256", dst+".sha256"); err != nil {
+		if err = l.download(ctx, url+sumSuffix, dst+sumSuffix); err != nil {
 			return die("downloading %s.sha256: %v", url, err)
 		}
 	}
@@ -109,7 +109,7 @@ func (l *Lab) Fetch(ctx context.Context) error {
 	}
 	published := map[string]string{}
 	for _, f := range l.cfg.Downloads {
-		b, readErr := os.ReadFile(filepath.Join(l.cfg.DLDir, f+".sha256")) // #nosec G304 -- under the lab's cache
+		b, readErr := os.ReadFile(filepath.Join(l.cfg.DLDir, f+sumSuffix)) // #nosec G304 -- under the lab's cache
 		want, ok := ParseSums(b)[f]
 		if readErr != nil || !ok {
 			want = "" // checkSums reports it as unreadable

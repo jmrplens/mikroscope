@@ -254,7 +254,7 @@ func TestDownloadStopsWithItsContext(t *testing.T) {
 	cancel()
 	o := r.options("fetch")
 	o.Sleep = nil
-	if code := Main(ctx, o); code == 0 {
+	if Main(ctx, o) == 0 {
 		t.Error("a canceled fetch succeeded")
 	}
 }

@@ -32,7 +32,7 @@ var (
 // space selects it (without redrawing anything), `i` installs and `y` agrees
 // that the disk is erased.
 func (l *Lab) isoInstall(ctx context.Context) error {
-	if exists(filepath.Join(l.cfg.VM, "base.qcow2")) {
+	if exists(filepath.Join(l.cfg.VM, baseDisk)) {
 		return nil
 	}
 	if err := l.ensureImage(ctx); err != nil {
@@ -42,10 +42,10 @@ func (l *Lab) isoInstall(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if err := os.Remove(filepath.Join(l.cfg.VM, "install.qcow2")); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err := os.Remove(filepath.Join(l.cfg.VM, installDisk)); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	if err := l.qemuImg(ctx, l.cfg.VMRel, "create", "-q", "-f", "qcow2", "install.qcow2", l.cfg.DiskSize); err != nil {
+	if err := l.qemuImg(ctx, l.cfg.VMRel, "create", "-q", "-f", "qcow2", installDisk, l.cfg.DiskSize); err != nil {
 		return err
 	}
 	if err := l.removeContainer(ctx); err != nil {
@@ -54,7 +54,7 @@ func (l *Lab) isoInstall(ctx context.Context) error {
 	if err := l.resetConsole(); err != nil {
 		return err
 	}
-	if err := l.start(ctx, "install.qcow2", "/cache/downloads/"+l.cfg.ROS+"/"+l.cfg.Downloads[0]); err != nil {
+	if err := l.start(ctx, installDisk, "/cache/downloads/"+l.cfg.ROS+"/"+l.cfg.Downloads[0]); err != nil {
 		return err
 	}
 	if err := l.conWait(ctx, "to install locally", 120*time.Second); err != nil {
@@ -82,10 +82,10 @@ func (l *Lab) isoInstall(ctx context.Context) error {
 	if _, err := l.dockerQuiet(ctx, "rm", l.cfg.Name); err != nil {
 		return die("docker rm %s failed: %v", l.cfg.Name, err)
 	}
-	if err := os.Rename(filepath.Join(l.cfg.VM, "install.qcow2"), filepath.Join(l.cfg.VM, "base.qcow2")); err != nil {
+	if err := os.Rename(filepath.Join(l.cfg.VM, installDisk), filepath.Join(l.cfg.VM, baseDisk)); err != nil {
 		return err
 	}
-	return readOnly(filepath.Join(l.cfg.VM, "base.qcow2"))
+	return readOnly(filepath.Join(l.cfg.VM, baseDisk))
 }
 
 // isoPickContainer walks the installer's menu to `container`, selects it,

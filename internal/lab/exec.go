@@ -22,10 +22,10 @@ type Command struct {
 	Dir    string
 }
 
-// Exec runs Commands. The real one is exec(2); the tests' fake answers from
+// Executor runs Commands. The real one is exec(2); the tests' fake answers from
 // a script. A program that ran and exited non-zero returns an error with an
 // ExitCode() int method, as *exec.ExitError has.
-type Exec interface {
+type Executor interface {
 	// Run runs c to completion, or until ctx ends.
 	Run(ctx context.Context, c Command) error
 }
@@ -58,7 +58,9 @@ func detach(ctx context.Context) (context.Context, context.CancelFunc) {
 	if deadline, ok := ctx.Deadline(); ok {
 		return context.WithDeadline(free, deadline)
 	}
-	return free, func() {}
+	return free, func() {
+		// free has no deadline of its own, so there is no timer to stop.
+	}
 }
 
 // exitCode is the status a command's error carries: 0 for none, its exit

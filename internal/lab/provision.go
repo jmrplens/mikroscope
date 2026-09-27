@@ -25,7 +25,7 @@ import (
 // without the .env and the key that go with them: each lab gives the router
 // its own at every boot of the snapshot (grantAccess).
 func (l *Lab) Provision(ctx context.Context) error {
-	clean := filepath.Join(l.cfg.VM, "clean.qcow2")
+	clean := filepath.Join(l.cfg.VM, cleanDisk)
 	if exists(clean) && !l.cfg.Force {
 		l.sayf("clean snapshot exists (%s); FORCE=1 to rebuild it", clean)
 		return nil
@@ -45,7 +45,7 @@ func (l *Lab) Provision(ctx context.Context) error {
 	if err := l.removeContainer(ctx); err != nil {
 		return err
 	}
-	if err := l.overlay(ctx, "base.qcow2", "provision.qcow2"); err != nil {
+	if err := l.overlay(ctx, baseDisk, provisionDisk); err != nil {
 		return err
 	}
 	if err := l.resetConsole(); err != nil {
@@ -53,7 +53,7 @@ func (l *Lab) Provision(ctx context.Context) error {
 	}
 
 	l.sayf("first boot of RouterOS %s (%s %s)", l.cfg.ROS, l.cfg.Kind, l.cfg.Arch)
-	if err := l.start(ctx, "provision.qcow2", ""); err != nil {
+	if err := l.start(ctx, provisionDisk, ""); err != nil {
 		return err
 	}
 	if l.cfg.Kind == "iso" {
@@ -76,7 +76,7 @@ func (l *Lab) Provision(ctx context.Context) error {
 	first := "/system/identity/set name=mikroscope-lab-" + l.cfg.Short +
 		"; /ip/address/add address=192.168.88.1/24 interface=ether2 comment=\"lab LAN\"" +
 		"; /user/ssh-keys/add user=admin key=" + RouterOSString(strings.TrimSpace(string(pub)))
-	_, err = l.inlab(ctx, "sshpass", "-p", "", "ssh", "-o", "PubkeyAuthentication=no", "lab-wan", first)
+	_, err = l.inlab(ctx, "sshpass", "-p", "", "ssh", "-o", noPubkeyAuth, wanHost, first)
 	if err != nil {
 		return die("setting up the router's identity, LAN address and the lab's key failed: %v", err)
 	}
@@ -102,7 +102,7 @@ func (l *Lab) Provision(ctx context.Context) error {
 // empty password CHR ships with.
 func (l *Lab) waitEmptyPassword(ctx context.Context) error {
 	began := l.now()
-	probe := append(append([]string{"sshpass", "-p", "", "ssh", "-o", "ConnectTimeout=3"}, keepAlive...), "-o", "PubkeyAuthentication=no", "lab-wan", ":put ok")
+	probe := append(append([]string{"sshpass", "-p", "", "ssh", "-o", "ConnectTimeout=3"}, keepAlive...), "-o", noPubkeyAuth, wanHost, ":put ok")
 	for {
 		if _, err := l.inlabQuiet(ctx, probe...); err == nil {
 			return nil
@@ -164,7 +164,7 @@ func (l *Lab) snapshot(ctx context.Context) error {
 		return die("the router still has %s ssh key(s) after removing the lab's", strings.TrimSpace(keys))
 	}
 	l.sayf("the lab's key removed; shutting the router down for the snapshot (empty password, over ether1)")
-	_, _ = l.inlabQuiet(ctx, "sshpass", "-p", "", "ssh", "-o", "PubkeyAuthentication=no", "lab-wan", "/system/shutdown")
+	_, _ = l.inlabQuiet(ctx, "sshpass", "-p", "", "ssh", "-o", noPubkeyAuth, wanHost, "/system/shutdown")
 	down, err := l.waitDown(ctx, 120*time.Second)
 	if err != nil {
 		return err
@@ -178,8 +178,8 @@ func (l *Lab) snapshot(ctx context.Context) error {
 	}
 	// rename(2) replaces a clean.qcow2 FORCE=1 provisions over, read-only
 	// as it is: the directory is what has to be writable.
-	clean := filepath.Join(l.cfg.VM, "clean.qcow2")
-	err = os.Rename(filepath.Join(l.cfg.VM, "provision.qcow2"), clean)
+	clean := filepath.Join(l.cfg.VM, cleanDisk)
+	err = os.Rename(filepath.Join(l.cfg.VM, provisionDisk), clean)
 	if err != nil {
 		return err
 	}
@@ -187,7 +187,7 @@ func (l *Lab) snapshot(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	err = l.overlay(ctx, "clean.qcow2", "run.qcow2")
+	err = l.overlay(ctx, cleanDisk, runDisk)
 	if err != nil {
 		return err
 	}
