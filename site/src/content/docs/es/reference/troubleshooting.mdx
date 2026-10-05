@@ -48,10 +48,12 @@ detiene) o `WARN` (la instalación sigue), seguida de una línea `fix:`.
 | `MISSING interface list <list> exists`                                         | la lista a la que se uniría la veth no existe                                                                       | `--iface-list none` cuando la solución lo ofrece primero; si no, `/interface/list/add name=<list>`, o la `--iface-list` que usa tu regla de descarte    |
 | `MISSING no firewall rule drops the agent's replies`                           | una regla del cortafuegos descarta las respuestas del agente con las pertenencias a listas del plan                | las `--iface-list` y `--addr-list` que nombra la solución, o una regla de aceptación antes de esa regla ([detalles](#trampa-del-cortafuegos))          |
 | `WARN no firewall rule drops the agent's replies`, `… may drop them`           | una regla filtra por algo que `doctor` no evalúa: un destino, una marca, un límite de tasa                          | si el agente no responde tras `install`, mira primero esa regla                                                                                          |
+| `WARN no firewall rule doctor reads is invalid or names a deleted list`        | una regla que RouterOS salta, o una que nombra una lista de interfaces que se quitó y coincide como una lista vacía | corrige o quita lo que nombra la regla, o vuelve a poner su lista por nombre ([detalles](#referencias-del-cortafuegos))                                   |
 | `MISSING --lan-address <address> is the router's`                              | con `--expose`, ninguna interfaz del router tiene esa dirección                                                     | la dirección que el router tiene en su LAN, tal como la lista `/ip/address/print`                                                                        |
 | `WARN --lan-address is not on the uplink`                                      | la interfaz de esa dirección lleva la ruta por defecto o está en la lista `WAN`                                    | la dirección LAN del router; si no, el dst-nat publicaría el agente del lado de Internet                                                                 |
 | `WARN no registry credential meant for another registry`                       | en `/container/config` hay un usuario puesto para un registro distinto del de la imagen                             | [Credenciales de registro](#una-credencial-para-todos-los-registros)                                                                                     |
 | `WARN the installed agent published on the LAN asks for a token`               | una instalación con este `--name` tiene un dst-nat etiquetado y ningún `TOKEN`                                      | `mikroscope upgrade --name <name> --token <secret>`, o `mikroscope uninstall --name <name> --yes`, que retira el agente y sus reglas de LAN               |
+| `WARN the router does not answer DNS from its uplink`                          | `allow-remote-requests=yes`, y ninguna regla de raw prerouting ni de filter input descarta una consulta en el enlace de subida | una regla de descarte del puerto 53 en el enlace de subida, o `allow-remote-requests=no` ([detalles](#resolvedor-abierto))                          |
 | `WARN nothing tagged for <name> that these flags do not select`                | una instalación anterior con otras opciones dejó objetos etiquetados que este plan no nombra                        | `mikroscope status` y `mikroscope uninstall` sin opciones de forma: leen cómo se hizo la instalación                                                     |
 | una solución que dice `doctor could not read …`                                | el router imprimió otra cosa en vez de la respuesta, como hace un RouterOS anterior con un menú que no tiene        | ejecuta esa lectura a mano en el router para ver por qué                                                                                                 |
 
@@ -188,6 +190,52 @@ con las pertenencias a listas que escribiría la instalación.
 
 [Listas del firewall](/mikroscope/es/install/firewall/) explica las reglas de descarte y la
 comprobación de trampas.
+
+### Referencias del cortafuegos {#referencias-del-cortafuegos}
+
+`WARN no firewall rule doctor reads is invalid or names a deleted list`, seguido de cada regla así.
+
+- `… is invalid (vprobe not ready)`: la regla nombra una interfaz que se quitó o no está lista, y
+  RouterOS la salta, así que una regla de descarte inválida no descarta nada.
+  `/ip/firewall/filter/print` (o `raw`) la marca con una `I`. Corrige lo que nombra, o quita la
+  regla.
+- `… is invalid, and RouterOS gives no reason`: una regla cambiada un momento antes se lee así hasta
+  que RouterOS la aplica. Ejecuta `doctor` otra vez.
+- `… (in-interface-list=!*2000010) … names a deleted interface list`: la lista se quitó después de
+  escribir la regla. RouterOS conserva la regla, válida, con el id de la lista en lugar de su nombre,
+  y la aplica como si la lista estuviera vacía. Un `!` de ella coincide con todo paquete: el
+  descarte `in-interface-list=!LAN` de la configuración por defecto, si se queda así, descarta todo
+  el input, incluidos el SSH y el Winbox del propio router desde la LAN. Crear una lista con el mismo
+  nombre no la repara; vuelve a poner por nombre la lista de la regla, desde la consola,
+  `/ip/firewall/filter/print` y después `set <número> in-interface-list=!LAN`, o desde WebFig o
+  Winbox.
+
+### Resolvedor abierto {#resolvedor-abierto}
+
+`WARN the router does not answer DNS from its uplink (allow-remote-requests=yes, uplink ether1: no
+rule drops a query that comes in on it)`. El router responde DNS a cualquiera desde el que su
+cortafuegos deje entrar una consulta, y si nada descarta las consultas en el enlace de subida, eso es
+Internet: los ataques de reflexión encuentran esos resolvedores y les mandan una avalancha que llena
+la tabla de conexiones y la CPU, y entonces todos los paneles miden la avalancha. O bien:
+
+- descarta las consultas en el enlace de subida, antes de cualquier regla que las acepte. La
+  solución de `doctor` nombra las dos reglas para tu enlace de subida, al principio de la cadena
+  input:
+
+  ```routeros
+  /ip/firewall/filter/add chain=input in-interface=ether1 protocol=udp dst-port=53 action=drop place-before=[:pick [/ip/firewall/filter/find where chain=input] 0]
+  /ip/firewall/filter/add chain=input in-interface=ether1 protocol=tcp dst-port=53 action=drop place-before=[:pick [/ip/firewall/filter/find where chain=input] 0]
+  ```
+
+  En un router cuya cadena input no tiene ninguna regla, quita `place-before`: nombra la primera
+  regla de la cadena, y no hay ninguna.
+
+- o deja de responder consultas remotas, si ningún equipo de la LAN usa el router como resolvedor:
+  `/ip/dns/set allow-remote-requests=no`.
+
+`… may drop the queries` significa que una regla filtra por algo que `doctor` no evalúa, una lista de
+direcciones de origen por ejemplo, y las consultas pasan salvo que esa regla las coja. `doctor` solo
+lee IPv4: un enlace de subida IPv6 necesita la misma regla en `/ipv6/firewall/filter`.
 
 ### Host del registro {#el-host-del-registro}
 

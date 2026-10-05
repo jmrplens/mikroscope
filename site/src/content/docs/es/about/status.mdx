@@ -279,6 +279,35 @@ laboratorio, y un colector lanzado antes con `mikroscope-lab cli` conserva el es
 contenedor viejo y no alcanzó nada tras el corte (`no route to host` hasta que terminó, el mismo
 día). El reinicio desde dentro conserva la red del laboratorio.
 
+### Avisos de exposición de doctor {#doctor-exposure}
+
+El 2026-10-05, en el laboratorio x86_64 (CHR, RouterOS 7.24.4, KVM), el `doctor` del código
+posterior a la 1.5.0 que añade los dos avisos se ejecutó contra el router del laboratorio preparado
+de tres maneras. Con `allow-remote-requests=yes` y ninguna regla de cortafuegos, avisó `the router
+does not answer DNS from its uplink (…, uplink ether1: no rule drops a query that comes in on it)`.
+Con las dos reglas de input de la configuración por defecto (aceptar
+`established,related,untracked`, descartar `in-interface-list=!LAN`) añadidas diez segundos antes,
+pasó, nombrando el descarte `!LAN`; con solo `in-interface=ether1 protocol=udp dst-port=53
+action=drop` también pasó. Con una regla de filter cuya lista de interfaces se había quitado y una
+regla de raw cuya veth se había quitado, nombró las dos bajo `no firewall rule doctor reads is
+invalid or names a deleted list`.
+
+Lo que hace RouterOS con una regla cuya referencia desaparece se leyó por SSH el mismo día. Una lista
+de interfaces quitada bajo una regla dejó la regla válida, con `in-interface-list=!*2000010`; crear
+una lista con el mismo nombre no la cambió, y la regla contó paquetes como una regla que lo coge
+todo puesta al lado. Un descarte `!LAN` que se quedó así en la cadena input cortó el SSH del propio
+laboratorio desde la LAN hasta que se reinició el laboratorio. Una veth quitada bajo una regla dejó
+la regla inválida (`in-interface=*4`, `about=vprobe not ready`), y no contó ningún paquete. Una
+regla leída justo después de añadirla era inválida sin `about`, y válida cinco segundos después.
+RouterOS no deja añadir una regla que nombra una lista que no existe (`input does not match any
+value of interface-list`).
+
+Para la colocación de la solución: `place-before=0` falló desde una sesión SSH de una sola orden
+(`no such item`), y un place-before de la primera regla de la cadena input falló con la cadena vacía
+y funcionó con una regla en ella. Sin probar: IPv6, y una consulta DNS enviada desde fuera del
+laboratorio, cuyo enlace de subida es la red de usuario de QEMU; `doctor` lee las reglas y no envía
+ningún paquete.
+
 ### RouterOS x86 desde la ISO {#routeros-x86-from-the-iso}
 
 El laboratorio opcional que instala RouterOS x86 desde la ISO de MikroTik se ejecutó el 2026-09-26

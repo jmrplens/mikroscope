@@ -15,7 +15,9 @@
  * container-name row only with `--container-name`; the two `--lan-address`
  * rows only with `--expose`; the registry-credential row only with
  * `--remote-image`; and the exposed-token row only when an install of that
- * `--name` is published on the LAN.
+ * `--name` is published on the LAN. The firewall-references and open-resolver
+ * rows are about the router, not the install: a router whose firewall does
+ * not do what it reads as doing carries traffic every panel then measures.
  *
  * `passes` starts with "a warning" for the rows doctor prints as `WARN`: they
  * change neither its exit status nor whether `install` goes ahead. A check
@@ -313,6 +315,18 @@ export const doctorChecks: readonly DoctorCheck[] = [
 		},
 	},
 	{
+		id: "firewall-refs",
+		printed: "no firewall rule doctor reads is invalid or names a deleted list",
+		passes: {
+			en: "a warning: no rule of raw prerouting or filter forward and input is marked invalid, which RouterOS passes over as if it were not there (it names an interface that was removed or is not ready, and `about` says which), and none names an interface list that was removed, which RouterOS keeps as the list's id (`in-interface-list=!*2000010`) and matches as an empty list. A rule changed a moment before reads invalid with no reason until RouterOS has applied it",
+			es: "un aviso: ninguna regla de raw prerouting ni de filter forward e input está marcada como inválida, que RouterOS salta como si no existiera (nombra una interfaz que se quitó o no está lista, y `about` dice cuál), y ninguna nombra una lista de interfaces que se quitó, que RouterOS guarda como el id de la lista (`in-interface-list=!*2000010`) y aplica como una lista vacía. Una regla cambiada un momento antes se lee inválida, sin motivo, hasta que RouterOS la aplica",
+		},
+		fix: {
+			en: "fix or remove what an invalid rule names; set a deleted list again by name, since creating a list of the same name does not repair the rule. With no reason given, run `doctor` again",
+			es: "corrige o quita lo que nombra una regla inválida; vuelve a poner por nombre una lista borrada, porque crear una lista con el mismo nombre no repara la regla. Sin motivo, ejecuta `doctor` otra vez",
+		},
+	},
+	{
 		id: "lan-address",
 		printed: "--lan-address <address> is the router's",
 		passes: {
@@ -358,6 +372,18 @@ export const doctorChecks: readonly DoctorCheck[] = [
 		fix: {
 			en: "`upgrade` with the same `--name` and `--token <secret>`; or remove the agent, the LAN rules and the container together with `uninstall --name <name> --yes`",
 			es: "`upgrade` con el mismo `--name` y `--token <secreto>`; o retira el agente, las reglas de LAN y el contenedor juntos con `uninstall --name <nombre> --yes`",
+		},
+	},
+	{
+		id: "dns-uplink",
+		printed: "the router does not answer DNS from its uplink",
+		passes: {
+			en: "a warning: `/ip/dns` `allow-remote-requests` is off, or a rule of raw prerouting or filter input drops a UDP query to port 53 that comes in on the interface of the active default route, walked as for the trap check, first match wins. A warning that the queries may pass when a rule matches on something doctor does not judge, a source address list say. IPv6 is not read",
+			es: "un aviso: `allow-remote-requests` de `/ip/dns` está apagado, o una regla de raw prerouting o de filter input descarta una consulta UDP al puerto 53 que entra por la interfaz de la ruta por defecto activa, recorrida como en la comprobación de trampas, gana la primera que coincide. Un aviso de que las consultas podrían pasar cuando una regla filtra por algo que doctor no evalúa, una lista de direcciones de origen por ejemplo. IPv6 no se lee",
+		},
+		fix: {
+			en: "a drop rule for UDP and TCP port 53 on the uplink before any accept that takes it, or `/ip/dns/set allow-remote-requests=no` if no LAN host uses the router as its resolver",
+			es: "una regla de descarte para el puerto 53 UDP y TCP en el enlace de subida antes de cualquier aceptación que lo coja, o `/ip/dns/set allow-remote-requests=no` si ningún equipo de la LAN usa el router como resolvedor",
 		},
 	},
 	{
