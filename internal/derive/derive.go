@@ -197,6 +197,12 @@ type Stage struct {
 	bootID    string
 	bootFresh bool
 	bootFrom  string
+	// bootLog is the clause on what RouterOS's own log said about the boot,
+	// bootLogWait whether the reboot detection waits for it, and bootHeldAt
+	// the wall time of the first sample it waited on.
+	bootLog     string
+	bootLogWait bool
+	bootHeldAt  int64
 }
 
 // leadUpNS is how far back the agent-restart and reboot detections look. A
@@ -213,6 +219,12 @@ const leadUpNS = 30 * binNS
 // with the first samples after it; a reboot rule firing later than this is
 // about something else.
 const frozenKeepNS = 5 * 60 * binNS
+
+// bootLogHoldNS bounds how long a reboot detection waits for RouterOS's boot
+// log, in sample time. The collector gives up on the read sooner (two
+// minutes); this is the stage's own bound, so a read that never reports back
+// cannot hold the detection for good.
+const bootLogHoldNS = 3 * 60 * binNS
 
 // vitals is what one sample contributes to the lead-up summary.
 type vitals struct {
@@ -324,13 +336,9 @@ func (st *Stage) Kernel(s *sample.Sample) (Derived, []Detection) {
 		st.recent = nil
 		fire("agent-restart", "", float64(s.Seq), float64(st.prevSeq), fmt.Sprintf("sequence went from %d to %d: the agent restarted%s%s", st.prevSeq, s.Seq, st.bootClause(), st.frozen))
 	}
-	if st.bootFrom != "" {
-		fire("reboot", "", 0, 0, fmt.Sprintf("the kernel's boot id went from %s to %s: the device rebooted%s", st.bootFrom, st.bootID, st.leadUpForReboot(s.WallNS)))
-		st.bootFrom = ""
-		// The kernel log of the new boot is a new clock. Without this the
-		// first record of it, below the last record of the old boot, would
-		// fire reboot a second time for the same reboot.
-		st.prevKmsgUS = 0
+	if st.bootFrom != "" && !st.heldForBootLog(s.WallNS) {
+		fire("reboot", "", 0, 0, fmt.Sprintf("the kernel's boot id went from %s to %s: the device rebooted%s%s", st.bootFrom, st.bootID, st.bootLog, st.leadUpForReboot(s.WallNS)))
+		st.bootFrom, st.bootLog, st.bootHeldAt = "", "", 0
 	}
 	st.prevSeq = s.Seq
 	st.remember(s)
@@ -724,7 +732,53 @@ func (st *Stage) NoteBoot(id string) (prev string, changed bool) {
 		return "", false
 	}
 	st.bootFrom = prev
+	// The kernel log of the new boot is a new clock. Without this the first
+	// record of it, below the last record of the old boot, would fire reboot
+	// a second time for the same reboot.
+	st.prevKmsgUS = 0
 	return prev, true
+}
+
+// AwaitBootLog makes the reboot detection for the boot change just noted wait
+// for NoteBootLog, so it carries what RouterOS logged about the boot. The
+// collector calls it when it has an API tier to read that log with.
+func (st *Stage) AwaitBootLog() {
+	if st.bootFrom != "" {
+		st.bootLogWait = true
+	}
+}
+
+// NoteBootLog hands over what RouterOS's memory log said about the boot: the
+// lines, none, or why they could not be read. The reboot detection fires on
+// the next sample.
+func (st *Stage) NoteBootLog(lines []string, readErr error) {
+	switch {
+	case readErr != nil:
+		st.bootLog = fmt.Sprintf("; RouterOS's log could not be read (%v)", readErr)
+	case len(lines) == 0:
+		st.bootLog = "; RouterOS's memory log holds no line about the boot"
+	default:
+		st.bootLog = `; RouterOS logged at boot: "` + strings.Join(lines, `", "`) + `"`
+	}
+	st.bootLogWait = false
+}
+
+// heldForBootLog is whether the reboot detection still waits for RouterOS's
+// boot log at this sample, within bootLogHoldNS of the first sample it
+// waited on.
+func (st *Stage) heldForBootLog(nowNS int64) bool {
+	if !st.bootLogWait {
+		return false
+	}
+	if st.bootHeldAt == 0 {
+		st.bootHeldAt = nowNS
+	}
+	if nowNS >= st.bootHeldAt && nowNS-st.bootHeldAt < bootLogHoldNS {
+		return true
+	}
+	st.bootLogWait = false
+	st.bootLog = "; RouterOS's log was not read in time"
+	return false
 }
 
 // bootClause says, in an agent-restart message, whether the kernel booted

@@ -389,13 +389,74 @@ func TestBootIDChangeIsLoggedOnce(t *testing.T) {
 	t.Parallel()
 	var logs []string
 	f := &Forwarder{Log: func(l string) { logs = append(logs, l) }}
-	f.noteBoot("a") // no derive stage yet: nothing to tell, nothing to panic on
+	f.noteBoot(t.Context(), "a") // no derive stage yet: nothing to tell, nothing to panic on
 	f.Derive = derive.New(derive.Options{})
 	for _, id := range []string{"a", "a", "", "b", "b"} {
-		f.noteBoot(id)
+		f.noteBoot(t.Context(), id)
 	}
 	if len(logs) != 1 || logs[0] != "router rebooted: the kernel's boot id went from a to b" {
 		t.Fatalf("logs = %q", logs)
+	}
+}
+
+// bootLogAPI answers /log/print from rows, or fails with err; every other
+// command gets an empty reply.
+type bootLogAPI struct {
+	rows  []map[string]string
+	err   error
+	reads int
+}
+
+func (c *bootLogAPI) RunArgsContext(_ context.Context, words []string) (*rosapi.Reply, error) {
+	r := &rosapi.Reply{Done: &proto.Sentence{Word: "!done", Map: map[string]string{}}}
+	if words[0] != "/log/print" {
+		return r, nil
+	}
+	c.reads++
+	if c.err != nil {
+		return nil, c.err
+	}
+	for _, m := range c.rows {
+		r.Re = append(r.Re, &proto.Sentence{Word: "!re", Map: m})
+	}
+	return r, nil
+}
+
+// TestRebootWaitsForRouterOSsBootLog: with an API tier, the boot change is
+// followed by one read of RouterOS's memory log, and the reboot detection
+// carries its line; a connection that is not back yet is tried again on the
+// next round, and a router that answers with an error is not asked twice.
+func TestRebootWaitsForRouterOSsBootLog(t *testing.T) {
+	t.Parallel()
+	var logs []string
+	api := &bootLogAPI{err: errors.New("EOF")}
+	f := &Forwarder{API: &apitier.Reader{Client: api}, Derive: derive.New(derive.Options{}), Log: func(l string) { logs = append(logs, l) }}
+	f.noteBoot(t.Context(), "a")
+	f.noteBoot(t.Context(), "b")
+	if api.reads != 1 || f.bootLogDue.IsZero() {
+		t.Fatalf("a dead connection: %d read(s), due %v; want one read and the next round to try again", api.reads, f.bootLogDue)
+	}
+	api.err = nil
+	api.rows = []map[string]string{{"topics": "system,error,critical", "message": "router was rebooted without proper shutdown"}}
+	f.readBootLog(t.Context())
+	if api.reads != 2 || !f.bootLogDue.IsZero() {
+		t.Fatalf("the second round: %d read(s), due %v", api.reads, f.bootLogDue)
+	}
+	f.readBootLog(t.Context())
+	if api.reads != 2 {
+		t.Errorf("read again after it succeeded: %d reads", api.reads)
+	}
+	want := []string{"router rebooted: the kernel's boot id went from a to b", `router's boot log: "router was rebooted without proper shutdown"`}
+	if strings.Join(logs, "|") != strings.Join(want, "|") {
+		t.Errorf("logs = %q, want %q", logs, want)
+	}
+
+	// A router that answered with a !trap: once, and the error goes to the
+	// detection rather than another read.
+	api.err = &rosapi.DeviceError{Sentence: &proto.Sentence{Word: "!trap", Map: map[string]string{"message": "not enough permissions (9)"}}}
+	f.noteBoot(t.Context(), "c")
+	if api.reads != 3 || !f.bootLogDue.IsZero() {
+		t.Errorf("a refusal: %d read(s), due %v; want one read and no retry", api.reads, f.bootLogDue)
 	}
 }
 

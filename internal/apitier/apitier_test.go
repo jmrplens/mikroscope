@@ -466,3 +466,54 @@ func TestNoClientConnectsOnFirstRound(t *testing.T) {
 		t.Fatalf("still no system read after a Redial became available: %v", s.Errors)
 	}
 }
+
+// TestBootLogReadsTheMemoryBufferForTheBootLines: one command, the memory
+// buffer only, and only the lines that say why the router came up — the
+// forms the lab's reboots, script and power cut produced — once each. A
+// configuration change that quotes a reboot script is not one of them.
+func TestBootLogReadsTheMemoryBufferForTheBootLines(t *testing.T) {
+	t.Parallel()
+	c := &bootLogClient{rows: []map[string]string{
+		{"topics": "interface,info", "message": "lo link up"},
+		{"topics": "system,info", "message": "router rebooted by ssh-cmd:admin@192.168.88.10/script:rb/reboot"},
+		{"topics": "system,error,critical", "message": "router was rebooted without proper shutdown"},
+		{"topics": "system,info", "message": "router rebooted by ssh-cmd:admin@192.168.88.10/script:rb/reboot"},
+		{"topics": "system,info", "message": "script rb added by ssh-cmd:admin@192.168.88.10 (source=/system/reboot)"},
+		{"topics": "system,error,critical", "message": "login failure for user x from 198.51.100.7 via ssh"},
+		{"topics": "dhcp,info", "message": "router rebooted is not a dhcp line"},
+	}}
+	r := &Reader{Client: c}
+	got, err := r.BootLog(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"router rebooted by ssh-cmd:admin@192.168.88.10/script:rb/reboot", "router was rebooted without proper shutdown"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("BootLog = %q, want %q", got, want)
+	}
+	if len(c.calls) != 1 || c.calls[0] != "/log/print =.proplist=topics,message ?buffer=memory" {
+		t.Errorf("calls = %q, want the one memory-buffer read", c.calls)
+	}
+	c.rows = nil
+	if got, err = r.BootLog(context.Background()); err != nil || len(got) != 0 {
+		t.Errorf("an empty buffer is an answer, not an error: %q %v", got, err)
+	}
+	c.fail = true
+	if _, err = r.BootLog(context.Background()); err == nil {
+		t.Error("a failed read returned no error")
+	}
+}
+
+type bootLogClient struct {
+	rows  []map[string]string
+	calls []string
+	fail  bool
+}
+
+func (c *bootLogClient) RunArgsContext(_ context.Context, words []string) (*rosapi.Reply, error) {
+	c.calls = append(c.calls, strings.Join(words, " "))
+	if c.fail {
+		return nil, errors.New("not enough permissions (9)")
+	}
+	return re(c.rows...), nil
+}
