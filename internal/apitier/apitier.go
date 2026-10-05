@@ -382,6 +382,57 @@ func (r *Reader) redial(ctx context.Context) bool {
 	return true
 }
 
+// BootLog reads what RouterOS wrote about the boot it is in: the lines of
+// its memory log that say why the router came up. The collector calls it
+// once, when the agent's kernel boot id changed, so it is one command per
+// reboot and never a poll.
+//
+// The memory buffer is the one to read because RouterOS empties it at every
+// boot: on a router that also logs to disk, `/log/print` returns the earlier
+// boots' lines as well, and `?buffer=memory` keeps this boot's alone.
+// Measured in the virtual lab (CHR x86_64, RouterOS 7.24.4, 2026-10-05): the
+// line is `router rebooted by ssh-cmd:admin@192.168.88.10/reboot` (topics
+// system,info) after a /system/reboot, `router rebooted by
+// ssh-cmd:…/script:rb/reboot` when a script ran it, `router rebooted by
+// ssh-cmd:…/shutdown` after a shutdown and a power-on, and `router was
+// rebooted without proper shutdown` (system,error,critical) after the power
+// was pulled; with a disk action on the system topic, the plain read also
+// returned the previous boot's lines and the memory read did not.
+//
+// An empty result with a nil error is an answer: the memory log holds no
+// such line, because the buffer wrapped or no logging rule sends the system
+// topic to memory.
+func (r *Reader) BootLog(ctx context.Context) ([]string, error) {
+	reply, err := r.exec(ctx, []string{"/log/print", "=.proplist=topics,message", "?buffer=memory"})
+	if err != nil {
+		return nil, err
+	}
+	return bootLines(reply), nil
+}
+
+// bootLines keeps the system-topic lines that say why the router came up:
+// the two forms the lab produced, `router rebooted …` and `router was
+// rebooted …`, and any line about the previous boot. Nothing else in the
+// buffer is matched on a word alone, because a configuration change can
+// quote a script whose source says reboot.
+func bootLines(reply *rosapi.Reply) []string {
+	var out []string
+	for _, sen := range reply.Re {
+		msg := strings.TrimSpace(sen.Map["message"])
+		if !hasSystemTopic(sen.Map["topics"]) || slices.Contains(out, msg) {
+			continue
+		}
+		if strings.HasPrefix(msg, "router rebooted") || strings.HasPrefix(msg, "router was rebooted") || strings.Contains(msg, "previous boot") {
+			out = append(out, msg)
+		}
+	}
+	return out
+}
+
+func hasSystemTopic(topics string) bool {
+	return slices.Contains(strings.Split(topics, ","), "system")
+}
+
 // Redials is how many times the connection has been reopened. The collector
 // reports it, because a tier that silently reconnects every minute is a
 // different fault from one that has reconnected once after a reboot.

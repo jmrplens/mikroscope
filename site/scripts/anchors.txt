@@ -985,6 +985,7 @@
 /es/sinks/api-tier/#_top
 /es/sinks/api-tier/#cuando-la-conexión-muere
 /es/sinks/api-tier/#cuántos-segundos-promedia-el-cpu-load-de-routeros
+/es/sinks/api-tier/#el-log-de-arranque
 /es/sinks/api-tier/#el-número-de-conexiones
 /es/sinks/api-tier/#el-usuario-que-necesita
 /es/sinks/api-tier/#elegir-cuánto-preguntar
@@ -1635,6 +1636,7 @@
 /sinks/api-tier/#how-many-seconds-does-routeros-cpu-load-average-over
 /sinks/api-tier/#see-also
 /sinks/api-tier/#starlight__on-this-page
+/sinks/api-tier/#the-boot-log
 /sinks/api-tier/#the-conntrack-count
 /sinks/api-tier/#the-user-it-needs
 /sinks/api-tier/#what-each-interface-is

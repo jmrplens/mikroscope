@@ -182,6 +182,13 @@ segundos. Un reinicio del que ya informó el identificador de arranque no la hac
 segunda vez. En ambos casos el mensaje lleva el mismo resumen de los 30 s anteriores que el
 [`agent-restart`](#agent-restart) que llegó con él.
 
+**Dice**, cuando el colector tiene capa de API, lo que RouterOS escribió sobre el arranque, entre
+comillas tras el motivo: quién o qué lo reinició (`RouterOS logged at boot: "router rebooted by
+ssh-cmd:admin@192.168.88.10/reboot"`), o que cayó sin apagarse (`"router was rebooted without
+proper shutdown"`). La detección espera esa lectura, dos minutos como mucho, porque la conexión de
+la API vuelve después que el router ([Log de arranque](/mikroscope/es/sinks/api-tier/#el-log-de-arranque)).
+Sin capa de API salta con la primera muestra del agente, sin esa parte.
+
 **Necesita** un colector que siga en marcha durante el reinicio mientras el agente vuelve, y
 ninguna credencial de la API de RouterOS. El agente que vuelve es un proceso nuevo; el
 colector lee su identificador de arranque en la misma lectura de salud que retrocede el cursor
@@ -190,7 +197,9 @@ log del kernel necesita `privileged=yes`, que exige el log del kernel. En el lab
 `/system/reboot` la hizo saltar por el identificador de arranque, y una parada y un arranque del
 contenedor del agente no (<TestedOn of="reboot-detections">Probado en</TestedOn>).
 
-**No puede afirmar** que se vea cada reinicio, ni por qué se reinició el router. Un colector
+**No puede afirmar** que se vea cada reinicio, ni por qué se reinició el router: la línea de
+RouterOS nombra quién lo reinició o dice que cayó sin apagarse, no por qué se fue la corriente o
+se colgó el router. Un colector
 arrancado después del reinicio no tiene un identificador anterior con el que comparar, y dos
 reinicios entre dos lecturas de salud, separadas un minuto, son un solo cambio de
 identificador. La vía del log del kernel solo ve lo que el agente lee desde el final del log

@@ -1324,6 +1324,7 @@ slower cadences are checked on each round, so none of them runs more often than
 | `/interface/bridge/port/print` with `.proplist=interface,bridge`              | which bridge each port belongs to                                                                    | with the read above                                                         | the tier is off                    |
 | `/interface/ethernet/print stats` and `/interface/print stats-detail`         | every numeric counter of **every** interface                                                         | every `--counters-every` (10 s)                                             | `--counters-every 0`               |
 | `/ip/firewall/connection/print count-only`                                    | the connection count                                                                                 | every `--conntrack-every`                                                   | `--conntrack-every 0`, the default |
+| `/log/print` with `.proplist=topics,message` and `?buffer=memory`             | the lines RouterOS wrote about the boot it is in ([Boot log](https://jmrp.io/docs/mikroscope/sinks/api-tier/#the-boot-log))                         | once per reboot, when the agent's kernel boot id changed                    | the tier is off                    |
 
 - A command that fails leaves its part of the sample empty and records why; the
   rest of the round still stands. The failures are logged on standard error as
@@ -1505,6 +1506,36 @@ and the minute report carries `api: N failed round(s), N reconnect(s)` while
 either is nonzero. `api` counts rounds _attempted_, so those two counts are what
 shows a tier in which every command fails. [Troubleshooting](https://jmrp.io/docs/mikroscope/reference/troubleshooting/#the-api-panels-are-blank-and-the-kernel-panels-are-fine)
 covers what that looks like on the dashboards.
+
+### Boot log
+
+When the agent's kernel boot id changes, the router rebooted, and the collector asks RouterOS once
+what it logged about the boot it is in. It reads the memory buffer alone, which RouterOS empties at
+every boot: on a router that also logs to disk, `/log/print` returns the earlier boots' lines too.
+It keeps the `system` lines that begin `router rebooted` or `router was rebooted`, and any line
+that mentions the previous boot.
+
+| How it went down                    | The line                                                 | Topics                   |
+| ----------------------------------- | -------------------------------------------------------- | ------------------------ |
+| `/system/reboot` from a session     | `router rebooted by ssh-cmd:admin@192.168.88.10/reboot`  | `system,info`            |
+| `/system/reboot` from a script      | `router rebooted by ssh-cmd:admin@…/script:rb/reboot`    | `system,info`            |
+| `/system/shutdown`, then power on   | `router rebooted by ssh-cmd:admin@…/shutdown`            | `system,info`            |
+| the power pulled, or a reset button | `router was rebooted without proper shutdown`            | `system,error,critical`  |
+
+The line names the session and the user, or the script, that rebooted the router, or says that it
+went down without a shutdown ([Tested on](https://jmrp.io/docs/mikroscope/about/status/#reboot-detections)). The
+[`reboot`](https://jmrp.io/docs/mikroscope/sinks/detections/#reboot) detection carries it, and the collector logs it:
+
+```text
+router's boot log: "router was rebooted without proper shutdown"
+```
+
+The connection died with the router, so the read is tried when the reboot is noticed and again
+after each round until the tier is back, for up to two minutes; the `reboot` detection waits for it
+that long. A router that answers with an error is not asked again: the detection then says
+`RouterOS's log could not be read (…)`. When the memory buffer holds no such line, because it wrapped
+or no logging rule sends the `system` topic to memory, it says
+`RouterOS's memory log holds no line about the boot`.
 
 ### Conntrack count
 

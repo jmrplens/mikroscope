@@ -159,6 +159,25 @@ func TestCLIHandsTheTokenOnlyThroughTheEnvironment(t *testing.T) {
 	assertNoSecretOnACommandLine(t, r)
 }
 
+func TestCLIHandsTheAPICredentialsOnlyThroughTheEnvironment(t *testing.T) {
+	r := newRig(t)
+	r.mustMain("up")
+	r.setenv("LAB_CLI_API=lab")
+	r.mustMain("cli", "forward", "--for", "1s")
+	c := cliRun(t, r)
+	creds := readCreds(t, r)
+	for _, kv := range []string{"MIKROSCOPE_API_ADDR=192.168.88.1:8728", "MIKROSCOPE_API_USER=" + creds.User, "MIKROSCOPE_API_PASSWORD=" + creds.Password} {
+		if !slices.Contains(c.env, kv) {
+			t.Errorf("the CLI's docker has no %s in its environment", strings.SplitN(kv, "=", 2)[0])
+		}
+		name, _, _ := strings.Cut(kv, "=")
+		if i := slices.Index(c.args, name); i < 1 || c.args[i-1] != "-e" {
+			t.Errorf("no `-e %s` in the docker command line", name)
+		}
+	}
+	assertNoSecretOnACommandLine(t, r)
+}
+
 func TestCLIRefuses(t *testing.T) {
 	r := newRig(t)
 	if code := r.main("cli", "doctor"); code != 1 || !strings.Contains(r.stderr.String(), "mikroscope-lab-x86 is not running: mikroscope-lab up") {

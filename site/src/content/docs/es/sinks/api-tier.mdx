@@ -88,6 +88,7 @@ más a menudo que `--api-every`.
 | `/interface/bridge/port/print` con `.proplist=interface,bridge`              | a qué bridge pertenece cada puerto                                                                        | con la lectura de arriba                                                                      | la capa está apagada                        |
 | `/interface/ethernet/print stats` y `/interface/print stats-detail`          | cada contador numérico de **todas** las interfaces                                                        | cada `--counters-every` (10 s)                                                                | `--counters-every 0`                        |
 | `/ip/firewall/connection/print count-only`                                   | el número de conexiones                                                                                   | cada `--conntrack-every`                                                                      | `--conntrack-every 0`, el valor por defecto |
+| `/log/print` con `.proplist=topics,message` y `?buffer=memory`               | las líneas que RouterOS escribió sobre el arranque en el que está ([Log de arranque](#el-log-de-arranque)) | una vez por reinicio, cuando cambió el identificador de arranque del kernel que da el agente | la capa está apagada                        |
 
 </ScrollTable>
 
@@ -291,6 +292,41 @@ no sea cero. `api` cuenta rondas _intentadas_, así que esas dos cuentas son lo 
 muestra una capa en la que fallan todos los comandos. [Resolución de
 problemas](/mikroscope/es/reference/troubleshooting/#los-paneles-de-api-están-vacíos-y-los-de-kernel-bien)
 cuenta cómo se ve eso en los dashboards.
+
+## Log de arranque {#el-log-de-arranque}
+
+Cuando cambia el identificador de arranque del kernel que da el agente, el router se reinició, y el
+colector pregunta una vez a RouterOS qué escribió sobre el arranque en el que está. Lee solo el
+buffer de memoria, que RouterOS vacía en cada arranque: en un router que también escribe el log a
+disco, `/log/print` devuelve además las líneas de arranques anteriores. Se queda con las líneas de
+`system` que empiezan por `router rebooted` o `router was rebooted`, y con cualquier línea que
+mencione el arranque anterior.
+
+<ScrollTable label="Lo que RouterOS escribió al arrancar, según cómo cayó el router">
+
+| Cómo cayó                                      | La línea                                                 | Topics                   |
+| ---------------------------------------------- | -------------------------------------------------------- | ------------------------ |
+| `/system/reboot` desde una sesión              | `router rebooted by ssh-cmd:admin@192.168.88.10/reboot`  | `system,info`            |
+| `/system/reboot` desde un script               | `router rebooted by ssh-cmd:admin@…/script:rb/reboot`    | `system,info`            |
+| `/system/shutdown` y después encendido         | `router rebooted by ssh-cmd:admin@…/shutdown`            | `system,info`            |
+| un corte de corriente, o un botón de reset     | `router was rebooted without proper shutdown`            | `system,error,critical`  |
+
+</ScrollTable>
+
+La línea nombra la sesión y el usuario, o el script, que reinició el router, o dice que cayó sin
+apagarse (<TestedOn of="reboot-detections">Probado en</TestedOn>). La detección
+[`reboot`](/mikroscope/es/sinks/detections/#reboot) la lleva, y el colector la registra:
+
+```text
+router's boot log: "router was rebooted without proper shutdown"
+```
+
+La conexión murió con el router, así que la lectura se intenta al notar el reinicio y otra vez
+después de cada ronda hasta que la capa vuelve, durante un máximo de dos minutos; la detección
+`reboot` la espera ese tiempo. A un router que responde con un error no se le vuelve a preguntar:
+la detección dice entonces `RouterOS's log could not be read (…)`. Cuando el buffer de memoria no
+tiene ninguna línea así, porque dio la vuelta o ninguna regla de logging manda el topic `system` a
+memoria, dice `RouterOS's memory log holds no line about the boot`.
 
 ## Cuenta de conntrack {#el-número-de-conexiones}
 

@@ -7,6 +7,7 @@ package forward
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"github.com/jmrplens/mikroscope/internal/apitier"
 	"github.com/jmrplens/mikroscope/internal/derive"
 	"github.com/jmrplens/mikroscope/internal/procfs"
+	rosapi "github.com/jmrplens/mikroscope/internal/rosapi"
 	"github.com/jmrplens/mikroscope/internal/sample"
 	"github.com/jmrplens/mikroscope/internal/sinks"
 	"github.com/jmrplens/mikroscope/internal/transport"
@@ -93,6 +95,9 @@ type Forwarder struct {
 	// count, and the rounds between are silent.
 	apiFailing   bool
 	apiFailedRun uint64
+	// bootLogDue is when the collector stops trying to read RouterOS's boot
+	// log after a reboot; zero when no read is due.
+	bootLogDue time.Time
 }
 
 // Run forwards until ctx is done or Opts.For elapses.
@@ -143,7 +148,7 @@ func (f *Forwarder) Run(ctx context.Context) (Stats, error) {
 	if f.Derive == nil {
 		f.Derive = derive.New(derive.Options{RateHz: h.RateHz})
 	}
-	f.noteBoot(h.BootID)
+	f.noteBoot(ctx, h.BootID)
 	f.tellSinksTheRate(h.RateHz)
 	f.Log(fmt.Sprintf("agent %s, %d Hz, seq %d, skew %s, via %s, pulling up to %d samples every %s", h.Version, h.RateHz, h.Seq, time.Duration(f.stats.SkewNS).Round(time.Millisecond), f.Puller.Name(), transport.EffectiveBatch(f.Puller, f.Opts.Batch), f.Opts.Poll))
 	if warn := pullWarning(f.Puller, f.Opts.Batch, f.Opts.Poll, h.RateHz); warn != "" {
@@ -192,6 +197,7 @@ func (f *Forwarder) Run(ctx context.Context) (Stats, error) {
 			f.noteAPI(&s)
 			f.stats.API++
 			f.emit(sinks.Event{API: &s, Shares: f.Derive.API(&s)})
+			f.readBootLog(ctx)
 		case <-skewTick.C:
 			f.remeasure(ctx, &since)
 		case <-report.C:
@@ -396,13 +402,51 @@ func (f *Forwarder) resync(h transport.Health, since *uint64) {
 // which fires reboot on the next sample when it changed, and says the change
 // in the log. It runs beside resync and before the rewound pull, so the
 // samples of the agent that came back are judged knowing whether the router
-// booted again under it.
-func (f *Forwarder) noteBoot(id string) {
+// booted again under it. With an API tier, the reboot detection waits for
+// RouterOS's own lines about the boot, read once (readBootLog).
+func (f *Forwarder) noteBoot(ctx context.Context, id string) {
 	if f.Derive == nil {
 		return
 	}
-	if prev, changed := f.Derive.NoteBoot(id); changed {
-		f.Log(fmt.Sprintf("router rebooted: the kernel's boot id went from %s to %s", prev, id))
+	prev, changed := f.Derive.NoteBoot(id)
+	if !changed {
+		return
+	}
+	f.Log(fmt.Sprintf("router rebooted: the kernel's boot id went from %s to %s", prev, id))
+	if f.API != nil {
+		f.Derive.AwaitBootLog()
+		f.bootLogDue = time.Now().Add(bootLogWait)
+		f.readBootLog(ctx)
+	}
+}
+
+// bootLogWait is how long the collector keeps trying to read RouterOS's boot
+// log after a reboot: the API tier's connection died with the router and is
+// reopened at most every five seconds, on its own rounds.
+const bootLogWait = 2 * time.Minute
+
+// readBootLog is the one read of what RouterOS logged about the boot it is in
+// (apitier.BootLog). It runs when the reboot is noticed and again after each
+// API round while the connection is not back, and it hands the derive stage
+// the lines, or the error once the router answered with one or bootLogWait
+// has passed. It does nothing when no read is due.
+func (f *Forwarder) readBootLog(ctx context.Context) {
+	if f.bootLogDue.IsZero() {
+		return
+	}
+	lines, err := f.API.BootLog(ctx)
+	if _, answered := errors.AsType[*rosapi.DeviceError](err); err != nil && !answered && time.Now().Before(f.bootLogDue) {
+		return
+	}
+	f.bootLogDue = time.Time{}
+	f.Derive.NoteBootLog(lines, err)
+	switch {
+	case err != nil:
+		f.Log("router's boot log: " + err.Error())
+	case len(lines) == 0:
+		f.Log("router's boot log: no line about the boot in RouterOS's memory log")
+	default:
+		f.Log(`router's boot log: "` + strings.Join(lines, `", "`) + `"`)
 	}
 }
 
@@ -434,7 +478,7 @@ func (f *Forwarder) remeasure(ctx context.Context, since *uint64) {
 		return
 	}
 	f.resync(h, since)
-	f.noteBoot(h.BootID)
+	f.noteBoot(ctx, h.BootID)
 	f.deviceInfo(ctx, h.CapabilitiesHash)
 	f.samplerStats(ctx)
 	skew := h.WallNS - time.Now().UnixNano()

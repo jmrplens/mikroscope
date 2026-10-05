@@ -2395,6 +2395,13 @@ and `threshold` are the new and previous timestamps in seconds. A reboot the boo
 already reported does not fire it a second time. Either way the message carries the same
 summary of the 30 s before as the [`agent-restart`](https://jmrp.io/docs/mikroscope/sinks/detections/#agent-restart) that came with it.
 
+**Says**, when the collector has an API tier, what RouterOS logged about the boot, quoted after
+the reason: who or what rebooted it (`RouterOS logged at boot: "router rebooted by
+ssh-cmd:admin@192.168.88.10/reboot"`), or that it went down without a shutdown (`"router was
+rebooted without proper shutdown"`). The detection waits for that read, two minutes at most, since
+the API connection comes back after the router ([Boot log](https://jmrp.io/docs/mikroscope/sinks/api-tier/#the-boot-log)).
+Without an API tier it fires on the agent's first sample, with no such clause.
+
 **Needs** a collector that keeps running across the reboot while the agent comes back, and no
 RouterOS API credentials. The agent that comes back is a new process; the collector reads its
 boot id in the same health read that rewinds the cursor to the new ring, within a minute (see
@@ -2403,7 +2410,9 @@ kernel log requires. In the lab, a `/system/reboot` fired it through the boot id
 and a start of the agent's container did not
 ([Tested on](https://jmrp.io/docs/mikroscope/about/status/#reboot-detections)).
 
-**May not claim** that every reboot is seen, or why the router rebooted. A collector started
+**May not claim** that every reboot is seen, or why the router rebooted: RouterOS's line names
+who rebooted it or says it went down without a shutdown, not why the power went or the router
+hung. A collector started
 after the reboot has no earlier id to compare, and two reboots between two health reads, a
 minute apart, are one change of id. The kernel-log path sees only what the agent reads from
 the end of the log after it starts: when the first record after a reboot has a since-boot time
@@ -3193,6 +3202,13 @@ agent's container, the next line says so, from the kernel's boot id the agent re
 
 ```text
 router rebooted: the kernel's boot id went from 6f1c3d2a-… to 0c9e6b1f-…
+```
+
+and, with an API tier, what RouterOS logged about the boot, read once
+([Boot log](https://jmrp.io/docs/mikroscope/sinks/api-tier/#the-boot-log)):
+
+```text
+router's boot log: "router rebooted by ssh-cmd:admin@192.168.88.10/reboot"
 ```
 
 A collector that has not noticed keeps its cursor where it was, the agent's ring answers an empty

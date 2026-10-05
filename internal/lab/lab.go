@@ -227,26 +227,27 @@ func (l *Lab) dispatch(ctx context.Context) error {
 		return err
 	}
 	verbs := map[string]func() error{
-		"up":          func() error { return l.Up(ctx) },
-		"down":        func() error { return l.Down(ctx) },
-		"reset":       func() error { return l.Reset(ctx) },
-		"status":      func() error { return l.Status(ctx) },
-		"residue":     func() error { return l.Residue(ctx) },
-		"export":      func() error { return l.Export(ctx, args) },
-		"provision":   func() error { return l.Provision(ctx) },
-		"device-mode": func() error { return l.DeviceMode(ctx) },
-		"fetch":       func() error { return l.Fetch(ctx) },
-		"disk":        func() error { return l.Disk(ctx) },
-		"image":       func() error { return l.BuildImage(ctx) },
-		"ssh":         func() error { return l.SSH(ctx, args) },
-		"cli":         func() error { return l.CLI(ctx, args) },
-		"put":         func() error { return l.Put(ctx, args) },
-		"import":      func() error { return l.Import(ctx, args) },
-		"profile":     func() error { return l.Profile(ctx, args) },
-		"lock":        func() error { return l.RunLocked(ctx, args) },
-		"console":     func() error { return l.Console(ctx) },
-		"power-cycle": func() error { return l.PowerCycle(ctx) },
-		"env":         func() error { return l.Env() },
+		"up":           func() error { return l.Up(ctx) },
+		"down":         func() error { return l.Down(ctx) },
+		"reset":        func() error { return l.Reset(ctx) },
+		"status":       func() error { return l.Status(ctx) },
+		"residue":      func() error { return l.Residue(ctx) },
+		"export":       func() error { return l.Export(ctx, args) },
+		"provision":    func() error { return l.Provision(ctx) },
+		"device-mode":  func() error { return l.DeviceMode(ctx) },
+		"fetch":        func() error { return l.Fetch(ctx) },
+		"disk":         func() error { return l.Disk(ctx) },
+		"image":        func() error { return l.BuildImage(ctx) },
+		"ssh":          func() error { return l.SSH(ctx, args) },
+		"cli":          func() error { return l.CLI(ctx, args) },
+		"put":          func() error { return l.Put(ctx, args) },
+		"import":       func() error { return l.Import(ctx, args) },
+		"profile":      func() error { return l.Profile(ctx, args) },
+		"lock":         func() error { return l.RunLocked(ctx, args) },
+		"console":      func() error { return l.Console(ctx) },
+		"power-cycle":  func() error { return l.PowerCycle(ctx) },
+		"reset-button": func() error { return l.ResetButton(ctx) },
+		"env":          func() error { return l.Env() },
 	}
 	run, ok := verbs[l.verb]
 	if !ok {
@@ -302,6 +303,7 @@ under QEMU in a Docker container (test/lab/README.md); test/lab/lab.sh execs it.
   mikroscope-lab lock <command ...>   run a command while holding this lab's lock
   mikroscope-lab console              the serial console (Ctrl-] to leave)
   mikroscope-lab power-cycle          pull the power and put it back
+  mikroscope-lab reset-button         reset the router with no shutdown; the network stays
   mikroscope-lab env                  where the lab's credentials and key are
 
 Settings, from the environment (the Makefile passes them through):
@@ -326,6 +328,9 @@ Settings, from the environment (the Makefile passes them through):
              (make build), else the one on PATH
   LAB_CLI_TOKEN   ` + "`lab`" + ` hands ` + "`cli`" + ` the lab's agent token as
              MIKROSCOPE_TOKEN, for --expose without --token on a command line
+  LAB_CLI_API   ` + "`lab`" + ` hands ` + "`cli`" + ` the lab router's API address and admin
+             credentials as MIKROSCOPE_API_ADDR, _USER and _PASSWORD, for the
+             API tier of forward and record --log-markers
   LAB_REGISTRY_USER, LAB_REGISTRY_TOKEN   a registry account and a token
              the router pulls with (read-only is enough), given to /container/config at every
              up and reset, in a file; unset, it pulls anonymously. Export

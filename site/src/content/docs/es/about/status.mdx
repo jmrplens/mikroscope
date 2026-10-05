@@ -274,6 +274,25 @@ nf_conntrack 24 de 843 776, ninguna caída en softnet). El log del kernel del ar
 saltar un segundo `reboot`. Una ejecución de cada caso, en un router en reposo; el laboratorio arm64
 no se ejecutó.
 
+Lo que RouterOS escribe sobre un arranque se leyó esa misma tarde por la API, de `/log/print`, tras
+cada forma de tumbar el laboratorio x86_64. Tras `/system/reboot` desde una sesión SSH su buffer de
+memoria tenía `router rebooted by ssh-cmd:admin@192.168.88.10/reboot` (topics `system,info`); desde
+un script, `…/script:rb/reboot`; tras `/system/shutdown` y un arranque, `…/shutdown`; tras quitar la
+corriente (`power-cycle`), `router was rebooted without proper shutdown` (`system,error,critical`), y
+lo mismo tras el `system_reset` de QEMU (`reset-button`). Con una acción de logging que mandaba
+también el topic `system` a disco, un `/log/print` sin más devolvió además las líneas del arranque
+anterior, y `/log/print ?buffer=memory` solo las de este.
+
+Después el colector del código que lo lee (`forward --api-mode slow --stdout json`, con la capa de
+API recibiendo las credenciales del laboratorio mediante `LAB_CLI_API=lab`) funcionó ocho minutos a
+través de un `/system/reboot` y un `reset-button`. Las dos veces la lectura salió bien en la lectura
+de salud que notó el identificador de arranque nuevo, antes de que la ronda propia de la capa de API
+reconectara (la lectura reabrió la conexión), así que `reboot` saltó con la primera muestra del
+agente, con `RouterOS logged at boot: "router rebooted by ssh-cmd:admin@192.168.88.10/reboot"` la
+primera vez y `"router was rebooted without proper shutdown"` la segunda, 19,4 s y 22,1 s sin
+muestras. Una ejecución de cada caso; la espera de dos minutos a una API que no ha vuelto no se
+ejercitó en un router, solo en las pruebas unitarias.
+
 Un `power-cycle` del laboratorio no sirve para probar el colector: reinicia el contenedor del
 laboratorio, y un colector lanzado antes con `mikroscope-lab cli` conserva el espacio de red del
 contenedor viejo y no alcanzó nada tras el corte (`no route to host` hasta que terminó, el mismo

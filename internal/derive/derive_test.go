@@ -1,6 +1,7 @@
 package derive
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"strings"
@@ -446,5 +447,53 @@ func TestNoBootIDClaimsNothing(t *testing.T) {
 	}
 	if _, changed := st.NoteBoot(bootB); changed {
 		t.Error("the last known id coming back after an agent without one was taken for a change")
+	}
+}
+
+// With an API tier the reboot detection waits for RouterOS's boot log: the
+// restart fires at once, the reboot on the first sample after the log is
+// handed over, with its line between the reason and the summary; and a log
+// that never comes stops holding it after bootLogHoldNS of samples.
+func TestRebootWaitsForTheBootLogAndNotForever(t *testing.T) {
+	t.Parallel()
+	st := New(Options{})
+	st.NoteBoot(bootA)
+	bootFeed(st, 1, 50, 0, false)
+	st.NoteBoot(bootB)
+	st.AwaitBootLog()
+	first := messagesByRule(bootFeed(st, 1, 5, 30_000_000_000, false))
+	if len(first) != 1 || first["agent-restart"] == "" {
+		t.Fatalf("held: %q, want agent-restart alone", first)
+	}
+	st.NoteBootLog([]string{"router rebooted by ssh-cmd:admin@192.168.88.10/reboot"}, nil)
+	got := messagesByRule(bootFeed(st, 6, 1, 30_000_000_000, false))["reboot"]
+	want := `the kernel's boot id went from ` + bootA + ` to ` + bootB + `: the device rebooted; RouterOS logged at boot: "router rebooted by ssh-cmd:admin@192.168.88.10/reboot"; in the`
+	if !strings.HasPrefix(got, want) {
+		t.Fatalf("reboot message:\n got %q\nwant it to begin %q", got, want)
+	}
+
+	st.NoteBoot(bootA)
+	st.AwaitBootLog()
+	held := bootFeed(st, 7, 1, 100_000_000_000, false)
+	late := messagesByRule(bootFeed(st, 8, 1, 100_000_000_000+bootLogHoldNS, false))
+	if len(held) != 0 || !strings.Contains(late["reboot"], "; RouterOS's log was not read in time") {
+		t.Fatalf("a log that never came: held %+v, then %q", held, late)
+	}
+}
+
+func TestBootLogClauses(t *testing.T) {
+	t.Parallel()
+	st := New(Options{})
+	st.NoteBootLog(nil, nil)
+	if st.bootLog != "; RouterOS's memory log holds no line about the boot" {
+		t.Errorf("no line: %q", st.bootLog)
+	}
+	st.NoteBootLog(nil, errors.New("not enough permissions (9)"))
+	if st.bootLog != "; RouterOS's log could not be read (not enough permissions (9))" {
+		t.Errorf("an error: %q", st.bootLog)
+	}
+	st.NoteBootLog([]string{"router was rebooted without proper shutdown", "kernel failure in previous boot"}, nil)
+	if st.bootLog != `; RouterOS logged at boot: "router was rebooted without proper shutdown", "kernel failure in previous boot"` {
+		t.Errorf("two lines: %q", st.bootLog)
 	}
 }
