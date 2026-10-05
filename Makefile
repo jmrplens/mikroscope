@@ -112,7 +112,7 @@ MDLINT_GLOBS := "**/*.{md,mdx}" "\#plan" "\#node_modules"
 # source (slower, and results can vary with the compiling Go). gosec and
 # staticcheck run inside it (.golangci.yml enables both), so neither has a
 # binary or a target of its own.
-GOLANGCI_LINT_VERSION := v2.13.1
+GOLANGCI_LINT_VERSION := v2.14.0
 
 # actionlint is installed with `go install` at this exact version, by
 # `make install-tools` and by CI's actionlint job, which reads the pin from here.
