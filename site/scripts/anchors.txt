@@ -72,6 +72,7 @@
 /about/status/#cost-and-rate
 /about/status/#cost-at-10-hz-by-configuration
 /about/status/#dashboards-and-alerts
+/about/status/#doctor-exposure
 /about/status/#forward
 /about/status/#forward---grafana
 /about/status/#found-and-not-fixed
@@ -305,6 +306,7 @@
 /es/about/status/#coste-a-10-hz-por-configuración
 /es/about/status/#coste-y-cadencia
 /es/about/status/#dashboards-y-alertas
+/es/about/status/#doctor-exposure
 /es/about/status/#el-agente
 /es/about/status/#encontrado-en-el-equipo-y-sin-recoger
 /es/about/status/#encontrado-en-el-laboratorio-virtual
@@ -497,6 +499,7 @@
 /es/install/firewall/#cuando-la-pertenencia-ya-existe
 /es/install/firewall/#cuando-tus-listas-tienen-otros-nombres
 /es/install/firewall/#dos-reglas-que-descartan-todo-lo-que-envía-un-contenedor
+/es/install/firewall/#exposición-del-router
 /es/install/firewall/#las-reglas-que-añade---expose
 /es/install/firewall/#lo-que-añade-install
 /es/install/firewall/#sin-pertenencia
@@ -908,6 +911,8 @@
 /es/reference/troubleshooting/#llegan-datos-y-algo-está-vacío
 /es/reference/troubleshooting/#los-paneles-de-api-están-vacíos-y-los-de-kernel-bien
 /es/reference/troubleshooting/#los-paneles-están-vacíos-y-el-sql-funciona-en-psql
+/es/reference/troubleshooting/#referencias-del-cortafuegos
+/es/reference/troubleshooting/#resolvedor-abierto
 /es/reference/troubleshooting/#routeros-anterior-a-724
 /es/reference/troubleshooting/#sin-paquete-container
 /es/reference/troubleshooting/#solapamiento-de-subred
@@ -1137,6 +1142,7 @@
 /install/cli/#which-archive
 /install/firewall/#_top
 /install/firewall/#no-membership
+/install/firewall/#router-exposure
 /install/firewall/#see-also
 /install/firewall/#starlight__on-this-page
 /install/firewall/#the-rules---expose-adds
@@ -1543,6 +1549,7 @@
 /reference/troubleshooting/#database--does-not-exist
 /reference/troubleshooting/#device-mode-containeryes
 /reference/troubleshooting/#exec-format-error
+/reference/troubleshooting/#firewall-references
 /reference/troubleshooting/#firewall-traps
 /reference/troubleshooting/#flightsql-unauthenticated-from-an-influxdb-datasource
 /reference/troubleshooting/#foreign-veth
@@ -1550,6 +1557,7 @@
 /reference/troubleshooting/#no-container-package
 /reference/troubleshooting/#one-credential-for-every-registry
 /reference/troubleshooting/#one-store-per-run
+/reference/troubleshooting/#open-resolver
 /reference/troubleshooting/#reading-what-it-shows
 /reference/troubleshooting/#routeros-version
 /reference/troubleshooting/#see-also

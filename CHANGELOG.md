@@ -8,6 +8,24 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`doctor` warns of a firewall that does not do what it reads as doing,
+  and of an open resolver.** Two warnings about the router, not the
+  install, which change neither the exit status nor whether `install` goes
+  ahead. `no firewall rule doctor reads is invalid or names a deleted list`
+  names each rule of raw prerouting and filter forward and input that
+  RouterOS marks invalid (it passes over it) or that still names an
+  interface list that was removed (`in-interface-list=!*2000010`, which
+  matches as an empty list: a `!LAN` drop left that way drops all input).
+  `the router does not answer DNS from its uplink` walks a UDP query to
+  port 53 on the default route's interface through raw prerouting and
+  filter input when `allow-remote-requests=yes`, and names the two drop
+  rules that close it. The forum case behind #78 was a router like that.
+  The trap check and the new walk pass over invalid rules, as RouterOS
+  does, and no longer read RouterOS's `about` as a matcher. Checked on the
+  x86_64 lab (CHR, RouterOS 7.24.4, 2026-10-05): the open resolver, the
+  default configuration's input rules, a removed list and a removed veth,
+  and the placement of the fix's rules. IPv6 is not read.
+
 - **A restart or a reboot says what came before it.** The `agent-restart`
   and `reboot` detections end with what the collector held from the 30 s
   before: the CPU's busy share over every core and the busiest core's,

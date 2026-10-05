@@ -235,6 +235,7 @@ export const TESTED_ON_SECTIONS = {
 	},
 	"virtual-lab": { en: "virtual-lab", es: "virtual-lab" },
 	"reboot-detections": { en: "reboot-detections", es: "reboot-detections" },
+	"doctor-exposure": { en: "doctor-exposure", es: "doctor-exposure" },
 	"install-routes": {
 		en: "install-routes-tested",
 		es: "install-routes-tested",

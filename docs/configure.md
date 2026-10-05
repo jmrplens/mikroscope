@@ -274,6 +274,39 @@ come in on the veth, from the agent's address and port, in the lists the plan jo
 router's uplink is in, and it takes an address list other than the plan's to hold no entry for the
 /30.
 
+It walks a rule the way RouterOS applies it, which is not always the way it reads. RouterOS passes
+over a rule it marks invalid, and a rule that names an interface list that was removed stays valid
+with the list's id in place of its name and matches as if the list were empty
+([Router exposure](https://jmrp.io/docs/mikroscope/install/firewall/#router-exposure)).
+
+### Router exposure
+
+Two warnings are about the router rather than the install. They change neither `doctor`'s exit
+status nor whether `install` goes ahead, but a router whose firewall does not do what it reads as
+doing carries traffic it was never meant to, and every panel then measures that traffic:
+
+The checks doctor runs:
+
+| Check, as printed | Passes when | The fix it names |
+| --- | --- | --- |
+| no firewall rule doctor reads is invalid or names a deleted list | a warning: no rule of raw prerouting or filter forward and input is marked invalid, which RouterOS passes over as if it were not there (it names an interface that was removed or is not ready, and `about` says which), and none names an interface list that was removed, which RouterOS keeps as the list's id (`in-interface-list=!*2000010`) and matches as an empty list. A rule changed a moment before reads invalid with no reason until RouterOS has applied it | fix or remove what an invalid rule names; set a deleted list again by name, since creating a list of the same name does not repair the rule. With no reason given, run `doctor` again |
+| the router does not answer DNS from its uplink | a warning: `/ip/dns` `allow-remote-requests` is off, or a rule of raw prerouting or filter input drops a UDP query to port 53 that comes in on the interface of the active default route, walked as for the trap check, first match wins. A warning that the queries may pass when a rule matches on something doctor does not judge, a source address list say. IPv6 is not read | a drop rule for UDP and TCP port 53 on the uplink before any accept that takes it, or `/ip/dns/set allow-remote-requests=no` if no LAN host uses the router as its resolver |
+
+- **A rule that does nothing, or does too much.** An invalid rule, one that names an interface that
+  was removed or is not ready, is passed over: an invalid drop drops nothing. A rule whose interface
+  list was removed reads `in-interface-list=!*2000010` and matches as if the list were empty, so a
+  `!LAN` drop left that way drops every packet that reaches the input chain, the router's own SSH
+  and Winbox from the LAN included. Creating a list of the same name does not repair it: set the
+  rule's list again by name.
+- **An open resolver.** With `/ip/dns allow-remote-requests=yes`, the router answers DNS on every
+  interface its firewall lets queries in on. `doctor` follows a UDP query to port 53 that comes in
+  on the interface of the active default route through raw prerouting and filter input; when no
+  rule drops it, the router answers DNS for the Internet, and reflection attacks that find it fill
+  its connection table and its CPU. The default configuration's `in-interface-list=!LAN` drop on
+  the input chain stops them.
+
+Both were checked against RouterOS in the lab ([Tested on](https://jmrp.io/docs/mikroscope/about/status/#doctor-exposure)).
+
 ### Existing memberships
 
 If the veth is already in the interface list, or the /30 already in the address list, and that

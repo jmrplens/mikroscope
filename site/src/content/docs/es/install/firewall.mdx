@@ -142,6 +142,34 @@ del agente, en las listas a las que se une el plan.
 esté el enlace de subida del router, y da por hecho que una address-list distinta de la del plan no
 tiene ninguna entrada para la /30.
 
+Recorre una regla tal como la aplica RouterOS, que no siempre es como se lee. RouterOS salta una
+regla que marca como inválida, y una regla que nombra una lista de interfaces que se quitó sigue
+siendo válida, con el id de la lista en lugar de su nombre, y coincide como si la lista estuviera
+vacía ([Exposición del router](#exposición-del-router)).
+
+## Exposición del router
+
+Dos avisos son sobre el router y no sobre la instalación. No cambian el estado de salida de
+`doctor` ni si `install` sigue adelante, pero un router cuyo cortafuegos no hace lo que parece hacer
+lleva tráfico que nunca debió llevar, y entonces todos los paneles miden ese tráfico:
+
+<DoctorChecks only={["firewall-refs", "dns-uplink"]} />
+
+- **Una regla que no hace nada, o que hace demasiado.** Una regla inválida, que nombra una interfaz
+  que se quitó o no está lista, se salta: una regla de descarte inválida no descarta nada. Una regla
+  cuya lista de interfaces se quitó se lee `in-interface-list=!*2000010` y coincide como si la
+  lista estuviera vacía, así que un descarte `!LAN` que se quede así descarta todo paquete que llega
+  a la cadena input, incluidos el SSH y el Winbox del propio router desde la LAN. Crear una lista
+  con el mismo nombre no la repara: vuelve a poner por nombre la lista de la regla.
+- **Un resolvedor abierto.** Con `allow-remote-requests=yes` en `/ip/dns`, el router responde DNS
+  en cualquier interfaz por la que su cortafuegos deje entrar consultas. `doctor` sigue una consulta
+  UDP al puerto 53 que entra por la interfaz de la ruta por defecto activa a través de raw
+  prerouting y filter input; cuando ninguna regla la descarta, el router responde DNS para
+  Internet, y los ataques de reflexión que lo encuentran llenan su tabla de conexiones y su CPU. El
+  descarte `in-interface-list=!LAN` de la cadena input de la configuración por defecto los para.
+
+Los dos se comprobaron contra RouterOS en el laboratorio (<TestedOn of="doctor-exposure">Probado en</TestedOn>).
+
 ## Pertenencias existentes {#cuando-la-pertenencia-ya-existe}
 
 Si la veth ya está en la lista de interfaces, o la /30 ya está en la address-list, y esa entrada no

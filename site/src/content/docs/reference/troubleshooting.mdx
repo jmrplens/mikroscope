@@ -48,10 +48,12 @@ followed by a `fix:` line.
 | `MISSING interface list <list> exists`                                         | the list the veth would join does not exist                                                                    | `--iface-list none` when the fix offers it first; otherwise `/interface/list/add name=<list>`, or the `--iface-list` your drop rule uses            |
 | `MISSING no firewall rule drops the agent's replies`                           | a firewall rule drops the agent's replies with the plan's list memberships                                     | the `--iface-list` and `--addr-list` the fix names, or an accept rule before that rule ([details](#firewall-traps))                                 |
 | `WARN no firewall rule drops the agent's replies`, `… may drop them`           | a rule matches on something `doctor` does not judge: a destination, a mark, a rate                             | if the agent does not answer after `install`, look at that rule first                                                                               |
+| `WARN no firewall rule doctor reads is invalid or names a deleted list`        | a rule RouterOS passes over, or one that names an interface list that was removed and matches as an empty list | fix or remove what the rule names, or set its list again by name ([details](#firewall-references))                                                  |
 | `MISSING --lan-address <address> is the router's`                              | with `--expose`, no interface of the router holds that address                                                 | the address the router has on its LAN, as `/ip/address/print` lists it                                                                              |
 | `WARN --lan-address is not on the uplink`                                      | that address's interface carries the default route or is in the `WAN` list                                     | the router's LAN address; the dst-nat would otherwise publish the agent on the Internet side                                                        |
 | `WARN no registry credential meant for another registry`                       | a `/container/config` username is set for another registry than the image's                                    | [Registry credentials](#one-credential-for-every-registry)                                                                                          |
 | `WARN the installed agent published on the LAN asks for a token`               | an install of this `--name` has a tagged dst-nat and no `TOKEN`                                                | `mikroscope upgrade --name <name> --token <secret>`, or `mikroscope uninstall --name <name> --yes`, which removes the agent and its LAN rules        |
+| `WARN the router does not answer DNS from its uplink`                          | `allow-remote-requests=yes`, and no rule of raw prerouting or filter input drops a query on the uplink         | a drop rule for port 53 on the uplink, or `allow-remote-requests=no` ([details](#open-resolver))                                                    |
 | `WARN nothing tagged for <name> that these flags do not select`                | an earlier install with other flags left tagged objects this plan does not name                                | `mikroscope status` and `mikroscope uninstall` with no shape flag: they read how the install was made                                               |
 | a fix that reads `doctor could not read …`                                     | the router printed something other than the answer, as an older RouterOS does for a menu it lacks              | run that read by hand on the router to see why                                                                                                      |
 
@@ -184,6 +186,49 @@ list memberships the install would write.
   does not judge: if the agent does not answer after install, that rule is the first to look at.
 
 [Firewall lists](/mikroscope/install/firewall/) explains the drop rules and the trap check.
+
+### Firewall references {#firewall-references}
+
+`WARN no firewall rule doctor reads is invalid or names a deleted list`, followed by each such rule.
+
+- `… is invalid (vprobe not ready)`: the rule names an interface that was removed or is not ready,
+  and RouterOS passes over it, so an invalid drop drops nothing. `/ip/firewall/filter/print` (or
+  `raw`) marks it with an `I`. Fix what it names, or remove the rule.
+- `… is invalid, and RouterOS gives no reason`: a rule changed a moment before reads so until
+  RouterOS has applied it. Run `doctor` again.
+- `… (in-interface-list=!*2000010) … names a deleted interface list`: the list was removed after
+  the rule was written. RouterOS keeps the rule, valid, with the list's id in place of its name,
+  and matches it as if the list were empty. A `!` of it matches every packet: the default
+  configuration's `in-interface-list=!LAN` drop left that way drops all input, the router's own
+  SSH and Winbox from the LAN included. Creating a list of the same name does not repair it; set
+  the rule's list again by name, from the console, `/ip/firewall/filter/print` and then
+  `set <number> in-interface-list=!LAN`, or from WebFig or Winbox.
+
+### Open resolver {#open-resolver}
+
+`WARN the router does not answer DNS from its uplink (allow-remote-requests=yes, uplink ether1: no
+rule drops a query that comes in on it)`. The router answers DNS for anyone its firewall lets a
+query in from, and with nothing dropping queries on the uplink that is the Internet: reflection
+attacks find such resolvers and send them a flood that fills the connection table and the CPU, and
+every panel then measures the flood. Either:
+
+- drop the queries on the uplink, before any rule that accepts them. `doctor`'s fix names the two
+  rules for your uplink, at the head of the input chain:
+
+  ```routeros
+  /ip/firewall/filter/add chain=input in-interface=ether1 protocol=udp dst-port=53 action=drop place-before=[:pick [/ip/firewall/filter/find where chain=input] 0]
+  /ip/firewall/filter/add chain=input in-interface=ether1 protocol=tcp dst-port=53 action=drop place-before=[:pick [/ip/firewall/filter/find where chain=input] 0]
+  ```
+
+  On a router whose input chain has no rule, leave `place-before` out: it names the chain's first
+  rule, and there is none.
+
+- or stop answering remote queries, if no host on the LAN uses the router as its resolver:
+  `/ip/dns/set allow-remote-requests=no`.
+
+`… may drop the queries` means a rule matches on something `doctor` does not judge, a source address
+list say, and the queries pass unless it takes them. `doctor` reads IPv4 only: an IPv6 uplink needs
+the same rule in `/ipv6/firewall/filter`.
 
 ### Registry host {#the-registry-host}
 

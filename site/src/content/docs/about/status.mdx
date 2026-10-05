@@ -263,6 +263,31 @@ collector started before it with `mikroscope-lab cli` keeps the old container's 
 reached nothing after the cut (`no route to host` until it stopped, the same day). The reboot from
 inside keeps the lab's network.
 
+### Doctor exposure advisories {#doctor-exposure}
+
+On 2026-10-05, on the x86_64 lab (CHR, RouterOS 7.24.4, KVM), `doctor` of the code after 1.5.0 that
+adds the two advisories ran against the lab router set up three ways. With `allow-remote-requests=yes`
+and no firewall rule, it warned `the router does not answer DNS from its uplink (…, uplink ether1: no
+rule drops a query that comes in on it)`. With the default configuration's two input rules (accept
+`established,related,untracked`, drop `in-interface-list=!LAN`) added ten seconds before, it passed,
+naming the `!LAN` drop; with `in-interface=ether1 protocol=udp dst-port=53 action=drop` alone it
+passed too. With a filter rule whose interface list had been removed and a raw rule whose veth had
+been removed, it named both under `no firewall rule doctor reads is invalid or names a deleted list`.
+
+What RouterOS does with a rule whose reference goes away was read over SSH the same day. An
+interface list removed under a rule left the rule valid, reading `in-interface-list=!*2000010`;
+creating a list of the same name did not change it, and the rule counted packets as a catch-all
+beside it did. A `!LAN` drop left that way on the input chain cut the lab's own SSH from the LAN
+until the lab was reset. A veth removed under a rule made the rule invalid (`in-interface=*4`,
+`about=vprobe not ready`), and it counted no packet. A rule read right after it was added was
+invalid with no `about`, and valid five seconds later. RouterOS refuses to add a rule that names a
+list that does not exist (`input does not match any value of interface-list`).
+
+For the fix's placement: `place-before=0` failed from a one-command SSH session (`no such item`),
+and a place-before of the input chain's first rule failed on an empty chain and worked with a rule
+there. Not tested: IPv6, and a DNS query sent from outside the lab, whose uplink is QEMU's user
+network; `doctor` reads the rules and sends no packet.
+
 ### RouterOS x86 from the ISO {#routeros-x86-from-the-iso}
 
 The opt-in lab that installs RouterOS x86 from MikroTik's ISO ran on 2026-09-26 with RouterOS
