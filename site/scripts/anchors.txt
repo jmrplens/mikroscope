@@ -90,6 +90,7 @@
 /about/status/#other-tools
 /about/status/#ports-and-interfaces
 /about/status/#power-cut-after-install
+/about/status/#reboot-detections
 /about/status/#record-mark-and-plot
 /about/status/#recording-and-capture
 /about/status/#recording-and-transport
@@ -330,6 +331,7 @@
 /es/about/status/#puertos-e-interfaces
 /es/about/status/#qué-funciona-de-extremo-a-extremo
 /es/about/status/#qué-publica-la-versión
+/es/about/status/#reboot-detections
 /es/about/status/#record-mark-y-plot
 /es/about/status/#red-y-fallos
 /es/about/status/#reference-hardware

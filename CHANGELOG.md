@@ -6,6 +6,25 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **A restart or a reboot says what came before it.** The `agent-restart`
+  and `reboot` detections end with what the collector held from the 30 s
+  before: the CPU's busy share over every core and the busiest core's,
+  MemAvailable (last and lowest) against MemTotal, `nf_conntrack` against
+  its limit, softnet drops and squeezes, OOM kills and allocation stalls,
+  and how long no sample came. A reboot takes the agent's ring and
+  RouterOS's own log with it, not what the collector had already pulled;
+  the case behind it is a router on the MikroTik forum (2026-09-29) whose
+  conntrack table filled under a DNS reflection flood and kept rebooting.
+  The summary states readings, not a cause. Unit tests for the summary,
+  the clock jump after a reboot and an empty window; and on the x86_64 lab
+  (CHR, RouterOS 7.24.4, 2026-10-05) across a `/system/reboot` of an idle
+  router: `agent-restart` fired with it (300 samples, then 16.2 s without
+  a sample). `reboot` did not fire there, which is the limit its page
+  already stated: the agent reads the kernel log from the end, and no
+  record after it came back had an earlier since-boot time.
+
 ### Changed
 
 - **Dependencies, all to their latest.** The site builds on Node 24.21.0

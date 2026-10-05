@@ -282,3 +282,75 @@ func TestBaselinesAreSizedInTimeNotSamples(t *testing.T) {
 		}
 	}
 }
+
+// The half minute before a restart, the state valsirob's client router was
+// in (forum, 2026-09-29): one core saturated, memory falling, the conntrack
+// table full, softnet dropping, then 41.3 s with no sample and a router
+// that comes back from a reboot. Both detections carry the same summary.
+func TestRestartAndRebootCarryTheLeadUp(t *testing.T) {
+	t.Parallel()
+	st := New(Options{})
+	const total = 1024 * 1024 // kB
+	for seq := uint64(1); seq <= 300; seq++ {
+		s := base(seq)
+		s.CPU = []sample.CPUDelta{{User: 4, Idle: 6}, {User: 4, Idle: 6}, {SoftIRQ: 10}, {User: 4, Idle: 6}}
+		s.Mem = procfs.Meminfo{MemTotal: total, MemAvailable: 12*1024 + (300-seq)*640}
+		if seq%10 == 0 {
+			s.Slab = map[string]uint64{"nf_conntrack": 966_656 * seq / 300}
+			s.SlabLimit = map[string]uint64{"nf_conntrack": 966_656}
+		}
+		if seq > 250 {
+			s.Softnet = []sample.SoftnetDelta{{Processed: 10, Dropped: 2, TimeSqueeze: 3}}
+		}
+		if seq == 300 {
+			s.VM = sample.VMDelta{OOMKill: 1}
+		}
+		if seq == 1 {
+			s.Events = []procfs.KmsgRecord{{TimeUsec: 172_800_000_000, Message: "two days up"}}
+		}
+		st.Kernel(s)
+	}
+	back := base(1)
+	back.WallNS = base(300).WallNS + 41_300_000_000
+	back.Events = []procfs.KmsgRecord{{TimeUsec: 12_000_000, Message: "Booting Linux"}}
+	_, dets := st.Kernel(back)
+	want := "; in the 30 s before it (300 samples): CPU 55% busy on average, cpu2 100%, MemAvailable 12.0 MiB of 1024.0 MiB (lowest 12.0 MiB), nf_conntrack 966656 of 966656 (100%), softnet dropped 100 packet(s) and ran out of budget 150 time(s), the kernel OOM-killed 1 process(es); then no sample for 41.3 s"
+	var restart, reboot string
+	for _, d := range dets {
+		switch d.Rule {
+		case "agent-restart":
+			restart = d.Message
+		case "reboot":
+			reboot = d.Message
+		}
+	}
+	if restart != "sequence went from 300 to 1: the agent restarted"+want {
+		t.Errorf("agent-restart message:\n got %q\nwant %q", restart, "sequence went from 300 to 1: the agent restarted"+want)
+	}
+	if !strings.HasSuffix(reboot, "the device rebooted"+want) {
+		t.Errorf("reboot message:\n got %q\nwant it to end in %q", reboot, "the device rebooted"+want)
+	}
+}
+
+// A router without a battery-backed clock comes back with the wrong time,
+// so a restart sample earlier than the last one before it gives no gap; and
+// a restart the collector saw nothing before says so.
+func TestLeadUpOmitsAGapAcrossAClockJumpAndSaysWhenItHasNothing(t *testing.T) {
+	t.Parallel()
+	st := New(Options{})
+	for seq := uint64(1); seq <= 20; seq++ {
+		st.Kernel(base(seq))
+	}
+	early := base(1)
+	early.WallNS = base(20).WallNS - 3_600_000_000_000
+	_, dets := st.Kernel(early)
+	if len(dets) != 1 || dets[0].Rule != "agent-restart" || strings.Contains(dets[0].Message, "no sample for") || !strings.Contains(dets[0].Message, "(20 samples)") {
+		t.Fatalf("restart across a clock jump: %+v", dets)
+	}
+	empty := New(Options{})
+	empty.prevSeq = 50
+	_, dets = empty.Kernel(base(1))
+	if len(dets) != 1 || !strings.HasSuffix(dets[0].Message, "; the collector holds no sample from the 30 s before it") {
+		t.Fatalf("restart with an empty window: %+v", dets)
+	}
+}
