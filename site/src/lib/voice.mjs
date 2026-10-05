@@ -234,6 +234,7 @@ export const TESTED_ON_SECTIONS = {
 		es: "reference-hardware",
 	},
 	"virtual-lab": { en: "virtual-lab", es: "virtual-lab" },
+	"reboot-detections": { en: "reboot-detections", es: "reboot-detections" },
 	"install-routes": {
 		en: "install-routes-tested",
 		es: "install-routes-tested",

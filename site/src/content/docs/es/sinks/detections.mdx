@@ -104,6 +104,15 @@ cota inferior.
 **Salta cuando** el número de secuencia de una muestra es menor que el de la muestra
 anterior. `value` es el nuevo número de secuencia, `threshold` el anterior.
 
+**Dice** lo que el colector tenía de los 30 s anteriores al reinicio, al final del mensaje:
+la parte ocupada de la CPU en todos los núcleos y la del núcleo más cargado, MemAvailable (la
+última y la más baja) frente a MemTotal, `nf_conntrack` frente a su límite, las caídas y los
+`time_squeeze` de softnet, cualquier muerte por OOM o espera de asignación, y cuánto tiempo no
+llegó ninguna muestra después de la última. Un reinicio se lleva el anillo del agente y el
+log del propio RouterOS, pero no lo que el colector ya había leído. El tiempo sin muestras se
+omite cuando el reloj del router tras el reinicio es anterior al de antes, como en un router
+cuyo reloj aún no ha puesto en hora NTP.
+
 **Necesita** que el colector haya visto al menos una muestra antes del reinicio. La
 secuencia del agente vuelve a empezar desde 1 en cada arranque, así que así es como se ve un
 reinicio desde fuera. En su siguiente lectura de salud, como mucho un minuto, el colector
@@ -112,7 +121,7 @@ restarted: its newest sample is N and the cursor was M; resuming from K`; la sec
 del agente nuevo frente a la anterior es lo que casa esta regla
 (`TestResyncAfterAgentRestart` cubre el lado del colector).
 
-**No puede afirmar** por qué se reinició el agente. Un colector reiniciado a la vez no tiene
+**No puede afirmar** por qué se reinició el agente. El resumen da lecturas, no una causa. Un colector reiniciado a la vez no tiene
 número de secuencia anterior y no ve nada.
 
 ### `agent-oom`
@@ -156,16 +165,17 @@ de lo habitual — prueba de algo más corto que el intervalo de muestreo.
 
 **Salta cuando** la marca de tiempo de un registro del log del kernel, en microsegundos
 desde el arranque, es menor que la del registro anterior. `value` y `threshold` son las
-marcas nueva y anterior en segundos.
+marcas nueva y anterior en segundos. El mensaje lleva el mismo resumen de los 30 s anteriores
+que el [`agent-restart`](#agent-restart) que llegó con él.
 
 **Necesita** `privileged=yes`, que exige el log del kernel, y un colector que siga en marcha
 durante el reinicio mientras el agente vuelve. No necesita credenciales de la API de
 RouterOS. El agente que vuelve tras el reinicio es un proceso nuevo; el colector retrocede
 su cursor al anillo nuevo en menos de un minuto (ver [`agent-restart`](#agent-restart)), así
 que sus muestras sí llegan a `forward`. La regla salta entonces con un registro del log del
-kernel cuyo tiempo desde el arranque esté por debajo del último visto antes del reinicio. No
-está comprobado si salta en un reinicio real
-(<TestedOn of="not-tested">Probado en</TestedOn>).
+kernel cuyo tiempo desde el arranque esté por debajo del último visto antes del reinicio. En
+el laboratorio, un reinicio desde `/system/reboot` no la hizo saltar, y solo saltó
+`agent-restart` (<TestedOn of="reboot-detections">Probado en</TestedOn>).
 
 **No puede afirmar** que se vea cada reinicio. El agente lee el log del kernel desde el
 final al arrancar, así que el primer registro tras un reinicio es uno escrito después de que

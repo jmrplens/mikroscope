@@ -234,6 +234,23 @@ is configured and stopped, its root, its image and the manifest are gone with th
 the disk is there and empty, and nothing answers; `uninstall --ephemeral` then leaves nothing at
 all. It passed on both architectures in the runs of 2026-09-27.
 
+### Reboot detections {#reboot-detections}
+
+On 2026-10-05, on the x86_64 lab (CHR, RouterOS 7.24.4, KVM), the collector of the code after 1.5.0
+ran `forward --api-mode off --stdout json` across a reboot made with RouterOS's own
+`/system/reboot`, the 1.5.0 agent installed by the Docker Hub pull with start-on-boot. The agent
+answered again about 20 s after the reboot; the collector logged `agent restarted: its newest
+sample is 439 and the cursor was 1057; resuming from 1`, and `agent-restart` fired with its summary
+of the 30 s before: 300 samples, CPU 0 % busy, MemAvailable 767.5 MiB of 863.0 MiB, nf_conntrack 24
+of 843 776, no softnet drop, then no sample for 16.2 s. `reboot` did not fire: no kernel-log record
+after the agent came back had a since-boot time below the last one before the reboot. One run, on an
+idle router.
+
+A `power-cycle` of the lab is no test of the collector: it restarts the lab's container, and a
+collector started before it with `mikroscope-lab cli` keeps the old container's network namespace and
+reached nothing after the cut (`no route to host` until it stopped, the same day). The reboot from
+inside keeps the lab's network.
+
 ### RouterOS x86 from the ISO {#routeros-x86-from-the-iso}
 
 The opt-in lab that installs RouterOS x86 from MikroTik's ISO ran on 2026-09-26 with RouterOS

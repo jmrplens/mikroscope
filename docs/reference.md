@@ -2315,6 +2315,14 @@ per-packet derived values are withheld for it.
 **Fires when** a sample's sequence number is lower than the previous sample's. `value` is
 the new sequence number, `threshold` the previous one.
 
+**Says** what the collector held from the 30 s before the restart, at the end of the
+message: the CPU's busy share over every core and the busiest core's, MemAvailable (the last
+and the lowest) against MemTotal, `nf_conntrack` against its limit, the softnet drops and
+squeezes, any OOM kill or allocation stall, and how long no sample came after the last of
+them. A reboot takes the agent's ring and RouterOS's own log with it, but not what the
+collector had already pulled. The time without samples is left out when the router's clock
+after the restart is earlier than before it, as on a router whose clock NTP has not set yet.
+
 **Needs** the collector to have seen at least one sample before the restart. The agent's
 sequence starts again from 1 on every launch, so this is what a restart looks like from the
 outside. On its next health read, one minute at most, the collector rewinds its pull cursor
@@ -2322,7 +2330,7 @@ to the new ring's oldest sample and logs `agent restarted: its newest sample is 
 cursor was M; resuming from K`; the new agent's low sequence against the previous one is what
 this rule matches (`TestResyncAfterAgentRestart` covers the collector side).
 
-**May not claim** why the agent restarted. A collector restarted at the same time has no
+**May not claim** why the agent restarted. The summary states readings, not a cause. A collector restarted at the same time has no
 previous sequence number and sees nothing.
 
 #### `agent-oom`
@@ -2366,14 +2374,17 @@ usual — evidence of something shorter than the sample interval.
 
 **Fires when** a kernel-log record's timestamp, microseconds since boot, is lower than the
 previous record's. `value` and `threshold` are the new and previous timestamps in seconds.
+The message carries the same summary of the 30 s before as the
+[`agent-restart`](https://jmrp.io/docs/mikroscope/sinks/detections/#agent-restart) that came with it.
 
 **Needs** `privileged=yes`, which the kernel log requires, and a collector that keeps
 running across the reboot while the agent comes back. It needs no RouterOS API
 credentials. The agent that comes back after the reboot is a new process; the collector
 rewinds its cursor to the new ring within a minute (see [`agent-restart`](https://jmrp.io/docs/mikroscope/sinks/detections/#agent-restart)),
 so its samples do reach `forward`. The rule then fires on a kernel-log record whose
-since-boot time is below the last one seen before the reboot. Whether it fires on a real
-reboot is not checked ([Tested on](https://jmrp.io/docs/mikroscope/about/status/#not-tested)).
+since-boot time is below the last one seen before the reboot. In the lab, a reboot from
+`/system/reboot` did not fire it, and only `agent-restart` did
+([Tested on](https://jmrp.io/docs/mikroscope/about/status/#reboot-detections)).
 
 **May not claim** that every reboot is seen. The agent reads the kernel log from the end at
 start, so the first record after a reboot is one logged after the agent came up; if that

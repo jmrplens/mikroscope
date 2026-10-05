@@ -247,6 +247,24 @@ detenido, su raíz, su imagen y el manifiesto se han ido con el contenido del di
 y vacío, y nada responde; `uninstall --ephemeral` no deja después nada en absoluto. Pasó en las dos
 arquitecturas en las ejecuciones del 2026-09-27.
 
+### Detecciones de reinicio {#reboot-detections}
+
+El 2026-10-05, en el laboratorio x86_64 (CHR, RouterOS 7.24.4, KVM), el colector del código
+posterior a la 1.5.0 ejecutó `forward --api-mode off --stdout json` a través de un reinicio hecho
+con el propio `/system/reboot` de RouterOS, con el agente 1.5.0 instalado por la descarga de Docker
+Hub y arranque con el sistema. El agente volvió a responder unos 20 s después del reinicio; el
+colector registró `agent restarted: its newest sample is 439 and the cursor was 1057; resuming from
+1`, y `agent-restart` saltó con su resumen de los 30 s anteriores: 300 muestras, CPU ocupada al 0 %,
+MemAvailable 767,5 MiB de 863,0 MiB, nf_conntrack 24 de 843 776, ninguna caída en softnet y después
+16,2 s sin muestras. `reboot` no saltó: ningún registro del log del kernel tras volver el agente
+tenía un tiempo desde el arranque menor que el último de antes del reinicio. Una sola ejecución, en
+un router en reposo.
+
+Un `power-cycle` del laboratorio no sirve para probar el colector: reinicia el contenedor del
+laboratorio, y un colector lanzado antes con `mikroscope-lab cli` conserva el espacio de red del
+contenedor viejo y no alcanzó nada tras el corte (`no route to host` hasta que terminó, el mismo
+día). El reinicio desde dentro conserva la red del laboratorio.
+
 ### RouterOS x86 desde la ISO {#routeros-x86-from-the-iso}
 
 El laboratorio opcional que instala RouterOS x86 desde la ISO de MikroTik se ejecutó el 2026-09-26

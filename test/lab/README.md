@@ -693,7 +693,13 @@ host                      lab container (its own network namespace)
   with QEMU's status: the guest powering off ends the container,
   `mikroscope-lab power-cycle` quits QEMU and starts the
   container again, and there is no restart policy, so the lab does not come
-  back by itself after the host reboots (`make lab-up` does).
+  back by itself after the host reboots (`make lab-up` does). Starting the
+  container again makes a new network namespace: a process started before
+  the cut with `mikroscope-lab cli`, a `forward` say, keeps the old one and
+  reaches nothing afterwards (`no route to host`). To keep such a process
+  through a reboot, reboot RouterOS from inside instead
+  (`bin/mikroscope-lab ssh /system/reboot`), which leaves the lab's network as
+  it was.
 - **One version per arch at a time.** A container runs the `LAB_ROS` it was
   created with (label `mikroscope.lab.ros`). A verb asked for another version
   stops with "mikroscope-lab down first" rather than drive a router of a
