@@ -514,7 +514,16 @@ func TestConfigFromEnv(t *testing.T) {
 
 func TestRunWithServesAndStopsOnContext(t *testing.T) {
 	src := newFakeSource(t, nil)
-	cfg := Config{RateHz: 10, BufferS: 10, Addr: "127.0.0.1", Port: 0, IRQTopK: 8}
+	// The boot id is read from the proc root at start and served as is.
+	procRoot := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(procRoot, "sys", "kernel", "random"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	const bootID = "0c9e6b1f-4d2a-4f8e-b7c3-5a1d9e2f6b40"
+	if err := os.WriteFile(filepath.Join(procRoot, "sys", "kernel", "random", "boot_id"), []byte(bootID+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := Config{RateHz: 10, BufferS: 10, Addr: "127.0.0.1", Port: 0, IRQTopK: 8, ProcRoot: procRoot}
 	// Port 0 is not allowed by FromEnv but fine here: pick a free port.
 	ln, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	if err != nil {
@@ -528,17 +537,22 @@ func TestRunWithServesAndStopsOnContext(t *testing.T) {
 	go func() { done <- RunWith(ctx, cfg, src, "t", func(s string) { logs = append(logs, s) }) }()
 	url := fmt.Sprintf("http://127.0.0.1:%d/healthz", cfg.Port)
 	var code int
+	var h Health
 	for range 50 {
 		time.Sleep(20 * time.Millisecond)
 		req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
 		if resp, getErr := http.DefaultClient.Do(req); getErr == nil {
 			code = resp.StatusCode
+			_ = json.NewDecoder(resp.Body).Decode(&h)
 			resp.Body.Close()
 			break
 		}
 	}
 	if code != 200 {
 		t.Fatalf("healthz: %d", code)
+	}
+	if h.BootID != bootID {
+		t.Errorf("healthz boot_id = %q, want %q", h.BootID, bootID)
 	}
 	cancel()
 	select {

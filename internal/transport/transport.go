@@ -41,6 +41,7 @@ type Health struct {
 	Slipped          uint64  `json:"slipped"`
 	CapabilitiesHash string  `json:"capabilities_hash"`
 	Version          string  `json:"version"`
+	BootID           string  `json:"boot_id,omitempty"` // the kernel's; empty from an agent that does not report it
 }
 
 // Gap is the agent's gap line: samples From..To are gone from the ring.

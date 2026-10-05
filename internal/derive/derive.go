@@ -190,6 +190,13 @@ type Stage struct {
 	recent   []vitals
 	frozen   string
 	frozenAt int64
+
+	// bootID is the kernel's boot id as the agent last reported it, bootFresh
+	// whether the last health read reported one at all, and bootFrom the id
+	// it replaced, set until the next sample fires reboot for the change.
+	bootID    string
+	bootFresh bool
+	bootFrom  string
 }
 
 // leadUpNS is how far back the agent-restart and reboot detections look. A
@@ -315,7 +322,15 @@ func (st *Stage) Kernel(s *sample.Sample) (Derived, []Detection) {
 		// router as the old agent last saw it, and the window starts again.
 		st.frozen, st.frozenAt = st.leadUp(s.WallNS), s.WallNS
 		st.recent = nil
-		fire("agent-restart", "", float64(s.Seq), float64(st.prevSeq), fmt.Sprintf("sequence went from %d to %d: the agent restarted%s", st.prevSeq, s.Seq, st.frozen))
+		fire("agent-restart", "", float64(s.Seq), float64(st.prevSeq), fmt.Sprintf("sequence went from %d to %d: the agent restarted%s%s", st.prevSeq, s.Seq, st.bootClause(), st.frozen))
+	}
+	if st.bootFrom != "" {
+		fire("reboot", "", 0, 0, fmt.Sprintf("the kernel's boot id went from %s to %s: the device rebooted%s", st.bootFrom, st.bootID, st.leadUpForReboot(s.WallNS)))
+		st.bootFrom = ""
+		// The kernel log of the new boot is a new clock. Without this the
+		// first record of it, below the last record of the old boot, would
+		// fire reboot a second time for the same reboot.
+		st.prevKmsgUS = 0
 	}
 	st.prevSeq = s.Seq
 	st.remember(s)
@@ -691,6 +706,41 @@ func (st *Stage) API(a *apitier.Sample) []IfaceShare {
 		out = append(out, sh)
 	}
 	return out
+}
+
+// NoteBoot records the kernel's boot id as the agent's /healthz reports it,
+// and returns the id it replaced and whether it changed. A change means the
+// kernel booted again between two health reads, so the router rebooted, and
+// the next kernel sample fires reboot for it. An empty id, from an agent that
+// does not report one, is "unknown": it is never a change, and it leaves the
+// last known id in place for the next agent that reports one.
+func (st *Stage) NoteBoot(id string) (prev string, changed bool) {
+	st.bootFresh = id != ""
+	if id == "" || id == st.bootID {
+		return st.bootID, false
+	}
+	prev, st.bootID = st.bootID, id
+	if prev == "" {
+		return "", false
+	}
+	st.bootFrom = prev
+	return prev, true
+}
+
+// bootClause says, in an agent-restart message, whether the kernel booted
+// again under the restart. The collector reads the agent's health in the
+// same step that rewinds its cursor to the new agent's ring, so the id is the
+// new agent's by the time its first sample arrives here. It says nothing when
+// that agent did not report one.
+func (st *Stage) bootClause() string {
+	switch {
+	case !st.bootFresh:
+		return ""
+	case st.bootFrom != "":
+		return ", and the kernel's boot id changed with it"
+	default:
+		return "; the kernel's boot id did not change, so the router did not reboot"
+	}
 }
 
 // remember adds s to the trailing lead-up window and drops what is older

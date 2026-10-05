@@ -143,6 +143,7 @@ func (f *Forwarder) Run(ctx context.Context) (Stats, error) {
 	if f.Derive == nil {
 		f.Derive = derive.New(derive.Options{RateHz: h.RateHz})
 	}
+	f.noteBoot(h.BootID)
 	f.tellSinksTheRate(h.RateHz)
 	f.Log(fmt.Sprintf("agent %s, %d Hz, seq %d, skew %s, via %s, pulling up to %d samples every %s", h.Version, h.RateHz, h.Seq, time.Duration(f.stats.SkewNS).Round(time.Millisecond), f.Puller.Name(), transport.EffectiveBatch(f.Puller, f.Opts.Batch), f.Opts.Poll))
 	if warn := pullWarning(f.Puller, f.Opts.Batch, f.Opts.Poll, h.RateHz); warn != "" {
@@ -391,6 +392,20 @@ func (f *Forwarder) resync(h transport.Health, since *uint64) {
 	f.Log(fmt.Sprintf("agent restarted: its newest sample is %d and the cursor was %d; resuming from %d", h.Seq, was, *since+1))
 }
 
+// noteBoot hands the kernel's boot id from a health read to the derive stage,
+// which fires reboot on the next sample when it changed, and says the change
+// in the log. It runs beside resync and before the rewound pull, so the
+// samples of the agent that came back are judged knowing whether the router
+// booted again under it.
+func (f *Forwarder) noteBoot(id string) {
+	if f.Derive == nil {
+		return
+	}
+	if prev, changed := f.Derive.NoteBoot(id); changed {
+		f.Log(fmt.Sprintf("router rebooted: the kernel's boot id went from %s to %s", prev, id))
+	}
+}
+
 // samplerStats reads the agent's own counters and hands them to every sink.
 // They are read on the health cadence rather than per sample because they are
 // what the agent has counted since it started, not something a tick produces:
@@ -419,6 +434,7 @@ func (f *Forwarder) remeasure(ctx context.Context, since *uint64) {
 		return
 	}
 	f.resync(h, since)
+	f.noteBoot(h.BootID)
 	f.deviceInfo(ctx, h.CapabilitiesHash)
 	f.samplerStats(ctx)
 	skew := h.WallNS - time.Now().UnixNano()

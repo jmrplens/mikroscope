@@ -381,6 +381,24 @@ func TestResyncAfterAgentRestart(t *testing.T) {
 	}
 }
 
+// TestBootIDChangeIsLoggedOnce: the health read hands the kernel's boot id to
+// the derive stage, and a change is the one line the collector's log gets
+// about it; the first id, the same id again and an agent without one are
+// silent.
+func TestBootIDChangeIsLoggedOnce(t *testing.T) {
+	t.Parallel()
+	var logs []string
+	f := &Forwarder{Log: func(l string) { logs = append(logs, l) }}
+	f.noteBoot("a") // no derive stage yet: nothing to tell, nothing to panic on
+	f.Derive = derive.New(derive.Options{})
+	for _, id := range []string{"a", "a", "", "b", "b"} {
+		f.noteBoot(id)
+	}
+	if len(logs) != 1 || logs[0] != "router rebooted: the kernel's boot id went from a to b" {
+		t.Fatalf("logs = %q", logs)
+	}
+}
+
 // TestAPIFailuresAreLoggedOnceAndRecoveryIsSaid is the journal side of the
 // 2026-09-19 outage: the tier wrote one line per failed command per second,
 // 44 257 of them in three hours, all identical. The first failure is worth a
