@@ -246,6 +246,18 @@ of 843 776, no softnet drop, then no sample for 16.2 s. `reboot` did not fire: n
 after the agent came back had a since-boot time below the last one before the reboot. One run, on an
 idle router.
 
+Later the same day, on the same lab, the agent and the collector of the code after 1.5.0 that reads
+the kernel's boot id (the agent from the branch's tar, with start-on-boot) ran seven minutes of
+`forward --api-mode off --stdout json` across a stop and a start of the agent's container and then a
+`/system/reboot`. The agent inside the RouterOS container read the id and served it in `/healthz`.
+After `/container/stop` and `/container/start` (20.6 s without a sample) the id was the same, and
+`agent-restart` said so: `the kernel's boot id did not change, so the router did not reboot`; no
+`reboot`. After `/system/reboot` (16.5 s without a sample) the id was new: the collector logged
+`router rebooted: the kernel's boot id went from 30b9831d-… to 8d4e19f2-…`, and `agent-restart` and
+`reboot` fired on the agent's first sample with the same summary (300 samples, CPU 0 % busy,
+nf_conntrack 24 of 843 776, no softnet drop). The new boot's kernel log fired no second `reboot`.
+One run of each, on an idle router; the arm64 lab was not run.
+
 A `power-cycle` of the lab is no test of the collector: it restarts the lab's container, and a
 collector started before it with `mikroscope-lab cli` keeps the old container's network namespace and
 reached nothing after the cut (`no route to host` until it stopped, the same day). The reboot from

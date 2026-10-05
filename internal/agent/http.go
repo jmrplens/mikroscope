@@ -23,6 +23,7 @@ type Server struct {
 	RateHz   int
 	Version  string
 	Start    time.Time
+	BootID   string // the kernel's boot id, read once at start; empty when unreadable
 }
 
 // Health is the /healthz body; the CLI uses wall_ns and mono_ns to measure
@@ -43,6 +44,11 @@ type Health struct {
 	// when their board has no kernel-to-RouterOS port map yet — and asking
 	// them to mint a token first would be asking too much for one string.
 	Board string `json:"board,omitempty"`
+	// BootID is the kernel's boot id (procfs.BootID), read once at start. A
+	// collector that sees it change between two health reads knows the
+	// router rebooted, not only the agent's container, which no clock the
+	// agent has can tell it.
+	BootID string `json:"boot_id,omitempty"`
 }
 
 // Handler is the mux: /healthz is open, everything else needs the token
@@ -82,7 +88,7 @@ func (s *Server) healthz(w http.ResponseWriter, _ *http.Request) {
 		WallNS: time.Now().UnixNano(), MonoNS: monoNow(),
 		UptimeS: time.Since(s.Start).Seconds(), RateHz: s.RateHz,
 		Slipped: s.Sampler.Slipped(), CapabilitiesHash: s.Caps.Hash, Version: s.Version,
-		Board: s.Caps.Board,
+		Board: s.Caps.Board, BootID: s.BootID,
 	}
 	if err := json.NewEncoder(w).Encode(h); err != nil {
 		return

@@ -990,6 +990,7 @@ router with `405`.
 | `capabilities_hash` | string  | eight hex digits over the kernel, the core count and the enabled sources       |
 | `version`           | string  | the agent's build identity                                                     |
 | `board`             | string  | the device tree's model string; omitted when the board has none                |
+| `boot_id`           | string  | the kernel's boot id, read at start; omitted when the kernel does not publish it |
 
 What the CLI reads from it:
 
@@ -999,7 +1000,10 @@ What the CLI reads from it:
   changed;
 - in `doctor`, `board` to classify kernel-log records, and `seq` with
   `oldest_seq` to read the whole ring, or its newest 10 000 samples when it
-  holds more.
+  holds more;
+- in `forward`, `boot_id`, to tell a router that rebooted from an agent whose
+  container alone restarted: the container shares the router's kernel, so only a
+  reboot gives it a new id ([`reboot`](https://jmrp.io/docs/mikroscope/sinks/detections/#reboot)).
 
 No CLI code reads `mono_ns`. The probe after `install` prints this reply as:
 
@@ -2290,7 +2294,7 @@ stored but do not page.
 | `agent-restart`   | —         | the sequence number went backwards                                                                  | any deployment                      |
 | `agent-oom`       | —         | the container's own cgroup recorded an OOM kill                                                     | cgroup2 in the container            |
 | `microburst`      | `cpu<N>`  | three `burst` samples on one CPU within 60 s                                                        | softnet                             |
-| `reboot`          | —         | a kernel-log record's since-boot clock is lower than the previous record's                          | [needs `privileged=yes`](https://jmrp.io/docs/mikroscope/limits/privileged/)                  |
+| `reboot`          | —         | the kernel's boot id changed, or a kernel-log record's since-boot clock is lower than the previous record's | any deployment; the kernel-log path [needs `privileged=yes`](https://jmrp.io/docs/mikroscope/limits/privileged/) |
 | `link-flap`       | port      | two or more link up/down records on one port within 60 s                                            | [needs `privileged=yes`](https://jmrp.io/docs/mikroscope/limits/privileged/)                  |
 | `conntrack-cliff` | —         | `nf_conntrack` fell below half its previous stored value                                            | [needs `privileged=yes`](https://jmrp.io/docs/mikroscope/limits/privileged/)                  |
 | `conntrack-high`  | —         | occupancy above 80 % of `nf_conntrack_max` **and** rising over the last 60 s                        | [needs `privileged=yes`](https://jmrp.io/docs/mikroscope/limits/privileged/)                  |
@@ -2322,6 +2326,9 @@ squeezes, any OOM kill or allocation stall, and how long no sample came after th
 them. A reboot takes the agent's ring and RouterOS's own log with it, but not what the
 collector had already pulled. The time without samples is left out when the router's clock
 after the restart is earlier than before it, as on a router whose clock NTP has not set yet.
+When the agent reports the kernel's boot id, the message also says whether it changed: the
+same id means the router did not reboot, and the agent's container alone restarted (an
+upgrade, a stop and a start, its restart policy).
 
 **Needs** the collector to have seen at least one sample before the restart. The agent's
 sequence starts again from 1 on every launch, so this is what a restart looks like from the
@@ -2372,24 +2379,33 @@ usual — evidence of something shorter than the sample interval.
 
 #### `reboot`
 
-**Fires when** a kernel-log record's timestamp, microseconds since boot, is lower than the
-previous record's. `value` and `threshold` are the new and previous timestamps in seconds.
-The message carries the same summary of the 30 s before as the
-[`agent-restart`](https://jmrp.io/docs/mikroscope/sinks/detections/#agent-restart) that came with it.
+**Fires when** the kernel's boot id differs from the one the collector read before. The
+agent reads it once at start and publishes it in
+[`/healthz`](https://jmrp.io/docs/mikroscope/reference/http/#get-healthz); the kernel draws a new one at every
+boot and keeps it until the next, and a container shares the router's kernel, so a new id
+means the router rebooted, not only the agent's container. The collector logs `router
+rebooted: the kernel's boot id went from … to …` on the health read that sees it, and the
+rule fires on the first sample of the agent that came back. `value` and `threshold` are 0.
 
-**Needs** `privileged=yes`, which the kernel log requires, and a collector that keeps
-running across the reboot while the agent comes back. It needs no RouterOS API
-credentials. The agent that comes back after the reboot is a new process; the collector
-rewinds its cursor to the new ring within a minute (see [`agent-restart`](https://jmrp.io/docs/mikroscope/sinks/detections/#agent-restart)),
-so its samples do reach `forward`. The rule then fires on a kernel-log record whose
-since-boot time is below the last one seen before the reboot. In the lab, a reboot from
-`/system/reboot` did not fire it, and only `agent-restart` did
+It also fires when a kernel-log record's timestamp, microseconds since boot, is lower than
+the previous record's, the one path for an agent that does not report the id; then `value`
+and `threshold` are the new and previous timestamps in seconds. A reboot the boot id has
+already reported does not fire it a second time. Either way the message carries the same
+summary of the 30 s before as the [`agent-restart`](https://jmrp.io/docs/mikroscope/sinks/detections/#agent-restart) that came with it.
+
+**Needs** a collector that keeps running across the reboot while the agent comes back, and no
+RouterOS API credentials. The agent that comes back is a new process; the collector reads its
+boot id in the same health read that rewinds the cursor to the new ring, within a minute (see
+[`agent-restart`](https://jmrp.io/docs/mikroscope/sinks/detections/#agent-restart)). The kernel-log path needs `privileged=yes`, which the
+kernel log requires. In the lab, a `/system/reboot` fired it through the boot id, and a stop
+and a start of the agent's container did not
 ([Tested on](https://jmrp.io/docs/mikroscope/about/status/#reboot-detections)).
 
-**May not claim** that every reboot is seen. The agent reads the kernel log from the end at
-start, so the first record after a reboot is one logged after the agent came up; if that
-record's since-boot time is later than the last record before the reboot, the clock did
-not go backwards and nothing fires.
+**May not claim** that every reboot is seen, or why the router rebooted. A collector started
+after the reboot has no earlier id to compare, and two reboots between two health reads, a
+minute apart, are one change of id. The kernel-log path sees only what the agent reads from
+the end of the log after it starts: when the first record after a reboot has a since-boot time
+later than the last one before it, nothing fires that way.
 
 #### `link-flap`
 
@@ -3125,7 +3141,12 @@ agent restarted: its newest sample is 571 and the cursor was 1737212; resuming f
 
 and resumes from the new ring's oldest sample, so what the agent took while nobody was collecting is
 picked up rather than skipped. The minute's worth of samples between the restart and the health
-read is lost with the container, not by the collector.
+read is lost with the container, not by the collector. When the router rebooted, and not only the
+agent's container, the next line says so, from the kernel's boot id the agent reports:
+
+```text
+router rebooted: the kernel's boot id went from 6f1c3d2a-… to 0c9e6b1f-…
+```
 
 A collector that has not noticed keeps its cursor where it was, the agent's ring answers an empty
 batch to every pull, and the kernel tier stops while the API tier keeps counting, so the run looks

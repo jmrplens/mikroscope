@@ -292,7 +292,13 @@ agent restarted: its newest sample is 571 and the cursor was 1737212; resuming f
 
 y sigue desde la muestra más antigua del anillo nuevo, así que lo que el agente tomó mientras nadie
 recogía se recupera en vez de saltárselo. El minuto de muestras que va del reinicio a la lectura de
-estado se pierde con el contenedor, no por culpa del colector.
+estado se pierde con el contenedor, no por culpa del colector. Cuando se reinició el router, y no solo
+el contenedor del agente, la línea siguiente lo dice, a partir del identificador de arranque del
+kernel del que informa el agente:
+
+```text
+router rebooted: the kernel's boot id went from 6f1c3d2a-… to 0c9e6b1f-…
+```
 
 Un colector que no se ha enterado deja su cursor donde estaba, el anillo del agente responde un lote
 vacío a cada petición, y el tier de kernel se para mientras el de API sigue contando, así que la

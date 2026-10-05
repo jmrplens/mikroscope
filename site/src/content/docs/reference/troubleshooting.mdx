@@ -286,7 +286,12 @@ agent restarted: its newest sample is 571 and the cursor was 1737212; resuming f
 
 and resumes from the new ring's oldest sample, so what the agent took while nobody was collecting is
 picked up rather than skipped. The minute's worth of samples between the restart and the health
-read is lost with the container, not by the collector.
+read is lost with the container, not by the collector. When the router rebooted, and not only the
+agent's container, the next line says so, from the kernel's boot id the agent reports:
+
+```text
+router rebooted: the kernel's boot id went from 6f1c3d2a-… to 0c9e6b1f-…
+```
 
 A collector that has not noticed keeps its cursor where it was, the agent's ring answers an empty
 batch to every pull, and the kernel tier stops while the API tier keeps counting, so the run looks

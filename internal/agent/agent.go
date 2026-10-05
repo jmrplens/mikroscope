@@ -9,6 +9,8 @@ import (
 	"runtime/debug"
 	"strconv"
 	"time"
+
+	"github.com/jmrplens/mikroscope/internal/procfs"
 )
 
 // Run wires config → source → sampler → HTTP and blocks until ctx is done,
@@ -108,7 +110,7 @@ func RunWith(ctx context.Context, cfg Config, src Source, version string, log fu
 		Budget: int64(cfg.CaptureMB) << 20, Policy: cfg.CapturePolicy, Refractory: cfg.RefractoryS,
 	})
 	sampler.SetCaptures(captures)
-	srv := &Server{Ring: ring, Sampler: sampler, Caps: caps, Captures: captures, Token: cfg.Token, RateHz: cfg.RateHz, Version: version, Start: time.Now()}
+	srv := &Server{Ring: ring, Sampler: sampler, Caps: caps, Captures: captures, Token: cfg.Token, RateHz: cfg.RateHz, Version: version, Start: time.Now(), BootID: procfs.BootID(cfg.ProcRoot)}
 	addr := net.JoinHostPort(cfg.Addr, strconv.Itoa(cfg.Port))
 	// WriteTimeout bounds a scraper that stops reading. Render no longer
 	// holds the totals mutex while writing, so a stalled client can no longer

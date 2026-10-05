@@ -24,6 +24,21 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   a sample). `reboot` did not fire there, which is the limit its page
   already stated: the agent reads the kernel log from the end, and no
   record after it came back had an earlier since-boot time.
+- **A reboot is told from a container restart.** The agent reads the
+  kernel's boot id (`/proc/sys/kernel/random/boot_id`) once at start and
+  serves it in `/healthz` as `boot_id`; the container shares the router's
+  kernel, so only a reboot changes it. The collector reads it on the health
+  read that rewinds its cursor, logs `router rebooted: the kernel's boot id
+  went from … to …` when it changed, and `reboot` fires on the new agent's
+  first sample with the same summary as `agent-restart`, which now says
+  whether the id changed. It needs no `privileged=yes`; the kernel-log path
+  stays for an agent that does not report the id and no longer fires a
+  second time for the same reboot. Unit tests for the read, the health body,
+  the collector's log line and the three cases (same id, new id, no id);
+  and on the x86_64 lab (CHR, RouterOS 7.24.4, 2026-10-05), one run each:
+  a container stop and start kept the id and fired `agent-restart` alone,
+  saying the router did not reboot; a `/system/reboot` changed it and fired
+  `agent-restart` and `reboot`. The arm64 lab was not run.
 
 ### Changed
 

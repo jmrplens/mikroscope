@@ -91,6 +91,7 @@ router with `405`.
 | `capabilities_hash` | string  | eight hex digits over the kernel, the core count and the enabled sources       |
 | `version`           | string  | the agent's build identity                                                     |
 | `board`             | string  | the device tree's model string; omitted when the board has none                |
+| `boot_id`           | string  | the kernel's boot id, read at start; omitted when the kernel does not publish it |
 
 </ScrollTable>
 
@@ -102,7 +103,10 @@ What the CLI reads from it:
   changed;
 - in `doctor`, `board` to classify kernel-log records, and `seq` with
   `oldest_seq` to read the whole ring, or its newest 10 000 samples when it
-  holds more.
+  holds more;
+- in `forward`, `boot_id`, to tell a router that rebooted from an agent whose
+  container alone restarted: the container shares the router's kernel, so only a
+  reboot gives it a new id ([`reboot`](/mikroscope/sinks/detections/#reboot)).
 
 No CLI code reads `mono_ns`. The probe after `install` prints this reply as:
 

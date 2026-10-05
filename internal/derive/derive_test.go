@@ -354,3 +354,97 @@ func TestLeadUpOmitsAGapAcrossAClockJumpAndSaysWhenItHasNothing(t *testing.T) {
 		t.Fatalf("restart with an empty window: %+v", dets)
 	}
 }
+
+// bootFeed runs n samples from sequence number from through st, shifted by
+// shift on the wall clock, the first with a kernel-log record when events is
+// set, and returns every detection they fired.
+func bootFeed(st *Stage, from uint64, n int, shift int64, events bool) []Detection {
+	var all []Detection
+	for i := range n {
+		s := base(from + uint64(i)) // #nosec G115 -- a test's small count
+		s.WallNS += shift
+		if events && i == 0 {
+			s.Events = []procfs.KmsgRecord{{TimeUsec: 172_800_000_000, Message: "up"}}
+		}
+		_, dets := st.Kernel(s)
+		all = append(all, dets...)
+	}
+	return all
+}
+
+// messagesByRule maps each fired rule to its message.
+func messagesByRule(dets []Detection) map[string]string {
+	out := map[string]string{}
+	for _, d := range dets {
+		out[d.Rule] = d.Message
+	}
+	return out
+}
+
+const bootA, bootB = "6f1c3d2a-8b4e-4c7f-9a15-2e0d7b9c4f31", "0c9e6b1f-4d2a-4f8e-b7c3-5a1d9e2f6b40"
+
+// The kernel log read from its end saw nothing go backwards in the lab's
+// reboot, so the boot id the agent reports is what tells a reboot from a
+// container restart. The same id: the container alone restarted, and the
+// restart says the router did not reboot.
+func TestBootIDSaysAContainerRestartIsNotAReboot(t *testing.T) {
+	t.Parallel()
+	st := New(Options{})
+	if prev, changed := st.NoteBoot(bootA); changed || prev != "" {
+		t.Fatalf("the first id is a baseline, not a change: %q %v", prev, changed)
+	}
+	bootFeed(st, 1, 50, 0, true)
+	if _, changed := st.NoteBoot(bootA); changed {
+		t.Fatal("the same id was taken for a change")
+	}
+	got := messagesByRule(bootFeed(st, 1, 1, 60_000_000_000, false))
+	if len(got) != 1 || !strings.Contains(got["agent-restart"], "the agent restarted; the kernel's boot id did not change, so the router did not reboot; in the") {
+		t.Fatalf("container restart: %q", got)
+	}
+}
+
+// A new id: the router rebooted. reboot fires once, on the restart's sample
+// and with the restart's summary, and the new boot's first kernel-log record,
+// below the last one of the old boot, does not fire it again.
+func TestBootIDChangeFiresRebootOnceWithTheLeadUp(t *testing.T) {
+	t.Parallel()
+	st := New(Options{})
+	st.NoteBoot(bootA)
+	bootFeed(st, 1, 50, 0, true)
+	if prev, changed := st.NoteBoot(bootB); !changed || prev != bootA {
+		t.Fatalf("NoteBoot(new id) = %q %v, want %q true", prev, changed, bootA)
+	}
+	back := base(1)
+	back.WallNS = base(50).WallNS + 30_000_000_000
+	back.Events = []procfs.KmsgRecord{{TimeUsec: 9_000_000, Message: "Booting Linux"}}
+	_, dets := st.Kernel(back)
+	got := messagesByRule(dets)
+	restart, reboot := got["agent-restart"], got["reboot"]
+	if len(dets) != 2 || !strings.Contains(restart, "the agent restarted, and the kernel's boot id changed with it; in the 5 s before it (50 samples)") {
+		t.Fatalf("restart across a reboot: %+v", dets)
+	}
+	want := "the kernel's boot id went from " + bootA + " to " + bootB + ": the device rebooted" + restart[strings.Index(restart, "; in the"):]
+	if reboot != want {
+		t.Errorf("reboot message:\n got %q\nwant %q", reboot, want)
+	}
+	if again := messagesByRule(bootFeed(st, 2, 20, 31_000_000_000, true)); len(again) != 0 {
+		t.Errorf("the new boot's kernel log fired %q after the boot id already had", again)
+	}
+}
+
+// An agent that reports no id: the restart claims nothing about the kernel,
+// and the last known id coming back afterwards is no change.
+func TestNoBootIDClaimsNothing(t *testing.T) {
+	t.Parallel()
+	st := New(Options{})
+	st.NoteBoot(bootB)
+	bootFeed(st, 1, 50, 0, false)
+	st.NoteBoot("")
+	got := messagesByRule(bootFeed(st, 1, 1, 60_000_000_000, false))
+	if len(got) != 1 || got["agent-restart"] == "" || strings.Contains(got["agent-restart"], "boot id") {
+		t.Fatalf("restart of an agent without a boot id: %q", got)
+	}
+	if _, changed := st.NoteBoot(bootB); changed {
+		t.Error("the last known id coming back after an agent without one was taken for a change")
+	}
+}
