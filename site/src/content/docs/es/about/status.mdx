@@ -260,6 +260,20 @@ MemAvailable 767,5 MiB de 863,0 MiB, nf_conntrack 24 de 843 776, ninguna caída 
 tenía un tiempo desde el arranque menor que el último de antes del reinicio. Una sola ejecución, en
 un router en reposo.
 
+Más tarde ese mismo día, en el mismo laboratorio, el agente y el colector del código posterior a la
+1.5.0 que lee el identificador de arranque del kernel (el agente del tar de la rama, con arranque con
+el sistema) ejecutaron siete minutos de `forward --api-mode off --stdout json` a través de una parada
+y un arranque del contenedor del agente y después un `/system/reboot`. El agente dentro del
+contenedor de RouterOS leyó el identificador y lo sirvió en `/healthz`. Tras `/container/stop` y
+`/container/start` (20,6 s sin muestras) el identificador era el mismo, y `agent-restart` lo dijo:
+`the kernel's boot id did not change, so the router did not reboot`; ningún `reboot`. Tras
+`/system/reboot` (16,5 s sin muestras) el identificador era nuevo: el colector registró `router
+rebooted: the kernel's boot id went from 30b9831d-… to 8d4e19f2-…`, y `agent-restart` y `reboot`
+saltaron con la primera muestra del agente con el mismo resumen (300 muestras, CPU ocupada al 0 %,
+nf_conntrack 24 de 843 776, ninguna caída en softnet). El log del kernel del arranque nuevo no hizo
+saltar un segundo `reboot`. Una ejecución de cada caso, en un router en reposo; el laboratorio arm64
+no se ejecutó.
+
 Un `power-cycle` del laboratorio no sirve para probar el colector: reinicia el contenedor del
 laboratorio, y un colector lanzado antes con `mikroscope-lab cli` conserva el espacio de red del
 contenedor viejo y no alcanzó nada tras el corte (`no route to host` hasta que terminó, el mismo
