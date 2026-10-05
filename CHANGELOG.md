@@ -22,6 +22,14 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   modules were already the newest. golangci-lint 2.14.0, whose new gosec
   G703 is excluded for `cmd/gen_brand` alone (a build-time tool writing
   where its operator says).
+- **The site's build prints no Rolldown directive warnings.** Rolldown 1.2.9
+  and later warn about the `"use astro:head-inject"` directive Astro 7.3.5
+  still writes into every MDX page's propagated-assets module, a directive
+  nothing reads any more (withastro/astro#18087): 130 warnings per build.
+  `astro.config.mjs` drops that one warning and no other, until Astro ships
+  withastro/astro#18088, which deletes the directive. The only warning left
+  is Starlight's `/404` route taking precedence over the content page of the
+  same name, which it renders anyway.
 - **The runs table's headers render as before.** Astro 7.3.5 keeps the
   indentation of a multi-line fragment as text, so `RunsTable` rendered
   "µs /sample" with trailing whitespace on six pages, which is what turned
