@@ -8,6 +8,26 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **A reboot says what RouterOS logged about it.** With an API tier, when
+  the kernel's boot id changes the collector reads RouterOS's memory log
+  once (`/log/print ?buffer=memory`, which holds this boot alone even on a
+  router that also logs to disk) and the `reboot` detection quotes its
+  `router rebooted by …` or `router was rebooted without proper shutdown`
+  line: who or what rebooted the router, or that it went down without a
+  shutdown. The read is tried when the reboot is noticed and after each API
+  round until the connection is back, for two minutes, and the detection
+  waits for it that long; the collector logs `router's boot log: …`. One
+  command per reboot, `read,api` as before. The lines were read on the
+  x86_64 lab (CHR, RouterOS 7.24.4, 2026-10-05) after `/system/reboot` from
+  a session and from a script, a shutdown, a power pull and a reset; and
+  the collector carried them across a `/system/reboot` and a reset. The
+  two-minute wait was exercised in unit tests only.
+- **Lab: the API from `cli`, and a reset button.** `LAB_CLI_API=lab` hands
+  `mikroscope-lab cli` the lab router's API address and admin credentials
+  through the environment, for the API tier of `forward`;
+  `mikroscope-lab reset-button` (`make lab-reset-button`) resets the router
+  with no shutdown and, unlike `power-cycle`, keeps the lab's network, so a
+  collector started with `cli` survives it.
 - **`doctor` warns of a firewall that does not do what it reads as doing,
   and of an open resolver.** Two warnings about the router, not the
   install, which change neither the exit status nor whether `install` goes

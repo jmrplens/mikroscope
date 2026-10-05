@@ -338,6 +338,13 @@ agent's container, the next line says so, from the kernel's boot id the agent re
 router rebooted: the kernel's boot id went from 6f1c3d2a-… to 0c9e6b1f-…
 ```
 
+and, with an API tier, what RouterOS logged about the boot, read once
+([Boot log](/mikroscope/sinks/api-tier/#the-boot-log)):
+
+```text
+router's boot log: "router rebooted by ssh-cmd:admin@192.168.88.10/reboot"
+```
+
 A collector that has not noticed keeps its cursor where it was, the agent's ring answers an empty
 batch to every pull, and the kernel tier stops while the API tier keeps counting, so the run looks
 healthy. Restarting the collector resets its cursor from the health read at start.

@@ -258,6 +258,24 @@ After `/container/stop` and `/container/start` (20.6 s without a sample) the id 
 nf_conntrack 24 of 843 776, no softnet drop). The new boot's kernel log fired no second `reboot`.
 One run of each, on an idle router; the arm64 lab was not run.
 
+What RouterOS logs about a boot was read the same evening over the API, from `/log/print`, after
+each way of taking the x86_64 lab down. After `/system/reboot` from an SSH session its memory buffer
+held `router rebooted by ssh-cmd:admin@192.168.88.10/reboot` (topics `system,info`); from a script,
+`…/script:rb/reboot`; after `/system/shutdown` and a start, `…/shutdown`; after the power was pulled
+(`power-cycle`), `router was rebooted without proper shutdown` (`system,error,critical`), and the
+same after QEMU's `system_reset` (`reset-button`). With a logging action that also sent the `system`
+topic to disk, a plain `/log/print` returned the previous boot's lines as well, and `/log/print
+?buffer=memory` returned this boot's alone.
+
+Then the collector of the code that reads it (`forward --api-mode slow --stdout json`, the API
+tier given the lab's credentials through `LAB_CLI_API=lab`) ran eight minutes across a
+`/system/reboot` and a `reset-button`. Both times the read succeeded at the health read that noticed
+the new boot id, before the API tier's own round had reconnected (the read reopened the
+connection), so `reboot` fired on the agent's first sample, with `RouterOS logged at boot: "router
+rebooted by ssh-cmd:admin@192.168.88.10/reboot"` the first time and `"router was rebooted without
+proper shutdown"` the second, 19.4 s and 22.1 s without a sample. One run of each; the two-minute
+wait for an API that is not back was not exercised on a router, only in the unit tests.
+
 A `power-cycle` of the lab is no test of the collector: it restarts the lab's container, and a
 collector started before it with `mikroscope-lab cli` keeps the old container's network namespace and
 reached nothing after the cut (`no route to host` until it stopped, the same day). The reboot from

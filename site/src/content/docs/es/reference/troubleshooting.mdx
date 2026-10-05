@@ -348,6 +348,13 @@ kernel del que informa el agente:
 router rebooted: the kernel's boot id went from 6f1c3d2a-… to 0c9e6b1f-…
 ```
 
+y, con capa de API, lo que RouterOS escribió sobre el arranque, leído una vez
+([Log de arranque](/mikroscope/es/sinks/api-tier/#el-log-de-arranque)):
+
+```text
+router's boot log: "router rebooted by ssh-cmd:admin@192.168.88.10/reboot"
+```
+
 Un colector que no se ha enterado deja su cursor donde estaba, el anillo del agente responde un lote
 vacío a cada petición, y el tier de kernel se para mientras el de API sigue contando, así que la
 ejecución parece sana. Reiniciar el colector pone su cursor a partir de la lectura de estado del
