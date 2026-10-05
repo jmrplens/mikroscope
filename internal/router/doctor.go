@@ -83,6 +83,7 @@ const (
 	qUplinkLists  = "uplink-lists"
 	qRegistryURL  = "registry-url"
 	qRegistryUser = "registry-user"
+	qDNSRemote    = "dns-remote"
 
 	foundPrefix = "found="
 )
@@ -172,6 +173,7 @@ func doctorQueries(o Options) []query {
 		{key: qUplinkIf, text: uplinkQuery, raw: true},
 		{key: "fw.raw", text: fwDumpQuery("raw"), raw: true},
 		{key: "fw.filter", text: fwDumpQuery("filter"), raw: true},
+		{key: qDNSRemote, text: `:put [/ip/dns/get allow-remote-requests]`},
 	}
 	if o.JoinsIfaceList() {
 		qs = append(qs, query{key: qIfaceList, text: `:put [:len [/interface/list/find name="` + o.IfaceList + `"]]`})
@@ -487,8 +489,9 @@ func (d *doctorRun) collisionChecks() {
 		o.Subnet+" overlaps "+overlap+" on the router: pick another /30 with --subnet")
 }
 
-// listChecks are checks 11 to 13: the lists the plan joins, and whether the
-// firewall lets the agent's replies through with those memberships.
+// listChecks are checks 11 to 14: the lists the plan joins, whether the
+// firewall lets the agent's replies through with those memberships, and
+// whether every rule it read is one RouterOS applies.
 func (d *doctorRun) listChecks() {
 	o := d.o
 	t := trapInput{o: o, rules: parseFwRules(d.a), uplinkLists: splitList(d.a.get(qUplinkLists))}
@@ -515,7 +518,7 @@ func (d *doctorRun) listChecks() {
 		d.warn("no firewall rule drops the agent's replies", false, "?", d.unread("/ip/firewall"))
 		return
 	}
-	d.rep.Items = append(d.rep.Items, trapItem(t))
+	d.rep.Items = append(d.rep.Items, trapItem(t), fwRefsItem(t.rules))
 }
 
 // splitList reads a comma-separated list the router printed.
@@ -529,8 +532,9 @@ func splitList(s string) []string {
 	return out
 }
 
-// advisories are checks 14 to 18: the --expose address, the registry
-// credential, an exposed agent without a token, and tagged leftovers.
+// advisories are checks 15 to 20: the --expose address, the registry
+// credential, an exposed agent without a token, a resolver open to the
+// uplink, and tagged leftovers.
 func (d *doctorRun) advisories() {
 	o := d.o
 	if o.Expose {
@@ -550,10 +554,24 @@ func (d *doctorRun) advisories() {
 				"(without --yes it only lists)",
 		})
 	}
+	d.dnsCheck()
 	d.leftoverCheck()
 }
 
-// exposeChecks is check 14: the LAN address --expose publishes the agent on
+// dnsCheck is check 19: a router that answers DNS on its uplink.
+func (d *doctorRun) dnsCheck() {
+	const name = "the router does not answer DNS from its uplink"
+	switch {
+	case !d.a.has(qDNSRemote):
+		d.warn(name, false, "?", d.unread("/ip/dns allow-remote-requests"))
+	case !d.a.has(qUplinkIf):
+		d.warn(name, false, "allow-remote-requests="+d.a.get(qDNSRemote), d.unread("/ip/firewall"))
+	default:
+		d.rep.Items = append(d.rep.Items, dnsExposureItem(d.a.get(qDNSRemote), d.a.get(qUplinkIf), splitList(d.a.get(qUplinkLists)), parseFwRules(d.a)))
+	}
+}
+
+// exposeChecks is check 15: the LAN address --expose publishes the agent on
 // is one of the router's, and not on its uplink.
 func (d *doctorRun) exposeChecks() {
 	o := d.o
@@ -577,7 +595,7 @@ func (d *doctorRun) exposeChecks() {
 		iface+" carries the default route or is in the WAN list: the dst-nat would publish the agent on the Internet side. Pass the router's LAN address")
 }
 
-// leftoverCheck is check 18: objects carrying this install's tag that the
+// leftoverCheck is check 20: objects carrying this install's tag that the
 // current plan does not select — an install made with other flags (an
 // --expose, other lists) left them. status and uninstall read the install's
 // shape and sweep the tag, so they find them; an install with these flags

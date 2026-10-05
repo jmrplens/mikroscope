@@ -102,7 +102,7 @@ func (r fwRule) String() string {
 // fwNotMatchers are the properties of a rule that say what it does or count
 // what it did, not which packets it takes.
 var fwNotMatchers = map[string]bool{
-	".id": true, ".nextid": true, ".about": true, "action": true, "chain": true, "comment": true, "bytes": true, "packets": true,
+	".id": true, ".nextid": true, ".about": true, "about": true, "action": true, "chain": true, "comment": true, "bytes": true, "packets": true,
 	"dynamic": true, "invalid": true, "disabled": true, "log": true, "log-prefix": true, "jump-target": true, "reject-with": true,
 	"address-list": true, "address-list-timeout": true, "to-addresses": true, "to-ports": true, "hw-offload": true,
 }
@@ -177,9 +177,16 @@ type reply struct {
 	natted     bool            // --expose: the connection may be dst-natted
 }
 
-// matches is whether r takes the reply: no if any matcher says no, maybe if
+// packet is what a chain walk judges: the agent's reply (reply), or a packet
+// that comes in on the uplink for the router itself (inbound). It answers one
+// matcher at a time; what it cannot judge is a maybe.
+type packet interface {
+	matcher(key, value string) tri
+}
+
+// matches is whether r takes the packet: no if any matcher says no, maybe if
 // any matcher cannot tell, yes otherwise.
-func (r fwRule) matches(p reply) tri {
+func (r fwRule) matches(p packet) tri {
 	out := triYes
 	for k, v := range r.props {
 		if fwNotMatchers[k] {
@@ -322,12 +329,13 @@ type fate struct {
 	rule    *fwRule
 }
 
-// walk takes the reply through one chain, first match first.
-func walk(rules []fwRule, table, chain string, p reply) fate {
+// walk takes the packet through one chain, first match first. An invalid
+// rule is passed over, as RouterOS passes over it.
+func walk(rules []fwRule, table, chain string, p packet) fate {
 	var w walker
 	for i := range rules {
 		r := &rules[i]
-		if r.table != table || r.chain != chain {
+		if r.table != table || r.chain != chain || r.invalid() {
 			continue
 		}
 		if f, done := w.meet(r, r.matches(p)); done {
@@ -378,11 +386,17 @@ func (w *walker) meet(r *fwRule, m tri) (f fate, done bool) {
 // path walks raw prerouting and then the filter chain: forward for a LAN
 // host, input for the router.
 func path(rules []fwRule, p reply) fate {
-	raw := walk(rules, "raw", "prerouting", p)
 	chain := "forward"
 	if p.toRouter {
 		chain = "input"
 	}
+	return through(rules, chain, p)
+}
+
+// through walks raw prerouting and then the filter chain named, and keeps
+// the surer of the two drops.
+func through(rules []fwRule, chain string, p packet) fate {
+	raw := walk(rules, "raw", "prerouting", p)
 	filter := walk(rules, "filter", chain, p)
 	if raw.verdict >= filter.verdict {
 		return raw
