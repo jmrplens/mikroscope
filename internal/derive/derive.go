@@ -16,6 +16,7 @@ package derive
 import (
 	"fmt"
 	"math"
+	"slices"
 	"sort"
 	"strings"
 
@@ -174,12 +175,47 @@ type Stage struct {
 	squeezes   []*window          // per CPU: trailing squeeze counts
 	burstAt    [][]int64          // per CPU: wall ns of recent burst samples, for the episode rule
 	prevCT     uint64
+	ctLimit    uint64  // nf_conntrack_max as last stored beside the population
 	ctHistory  []point // stored nf_conntrack samples in the last 60 s
 	thermal    map[string]*thermalState
 	ipc        []*ipcState
 	prevCtrs   map[string]map[string]uint64 // API counters at the previous poll
 	lastFire   map[string]int64             // rule+key → wall ns
 	Suppressed uint64                       // detections withheld by the refractory window
+
+	// recent is the trailing leadUpNS of the router's vitals, and frozen the
+	// summary of it taken when the agent's sequence went backwards, kept for
+	// the reboot rule, which fires on a kernel-log record that can arrive in
+	// a later sample than the restart.
+	recent   []vitals
+	frozen   string
+	frozenAt int64
+}
+
+// leadUpNS is how far back the agent-restart and reboot detections look. A
+// reboot takes the agent's ring and RouterOS's own log with it, but not what
+// the collector had already pulled, so the half minute before it is in the
+// store; the detection a reader lands on first says what that half minute
+// held. Thirty seconds is 300 samples at the default 10 Hz: enough for an
+// average to mean something, short enough to describe the moment rather than
+// the hour.
+const leadUpNS = 30 * binNS
+
+// frozenKeepNS bounds how long the summary taken at a restart stays attached
+// to a reboot detection. The kernel-log record that reveals the reboot comes
+// with the first samples after it; a reboot rule firing later than this is
+// about something else.
+const frozenKeepNS = 5 * 60 * binNS
+
+// vitals is what one sample contributes to the lead-up summary.
+type vitals struct {
+	wallNS, dtNS          int64
+	coreBusy              []uint64 // busy ticks per core
+	memAvailKB, memTotal  uint64   // kB, as /proc/meminfo has them
+	ct, ctLimit           uint64
+	hasCT                 bool
+	dropped, squeezed     uint64
+	oomKills, allocStalls uint64
 }
 
 type point struct {
@@ -275,9 +311,14 @@ func (st *Stage) Kernel(s *sample.Sample) (Derived, []Detection) {
 		fire("counter-reset", "", float64(s.Resets), 0, fmt.Sprintf("%d counter(s) went backwards without a 32-bit wrap; this sample's deltas are lower bounds", s.Resets))
 	}
 	if st.prevSeq > 0 && s.Seq < st.prevSeq {
-		fire("agent-restart", "", float64(s.Seq), float64(st.prevSeq), fmt.Sprintf("sequence went from %d to %d: the agent restarted", st.prevSeq, s.Seq))
+		// Frozen before this sample joins the window: the summary is of the
+		// router as the old agent last saw it, and the window starts again.
+		st.frozen, st.frozenAt = st.leadUp(s.WallNS), s.WallNS
+		st.recent = nil
+		fire("agent-restart", "", float64(s.Seq), float64(st.prevSeq), fmt.Sprintf("sequence went from %d to %d: the agent restarted%s", st.prevSeq, s.Seq, st.frozen))
 	}
 	st.prevSeq = s.Seq
+	st.remember(s)
 	if !d.Suspect {
 		st.perPacket(s, &d)
 	}
@@ -455,7 +496,7 @@ func (st *Stage) kmsgRules(s *sample.Sample, fire func(rule, key string, value, 
 	for _, ev := range s.Events {
 		if st.prevKmsgUS > 0 && ev.TimeUsec < st.prevKmsgUS {
 			fire("reboot", "", float64(ev.TimeUsec)/1e6, float64(st.prevKmsgUS)/1e6,
-				fmt.Sprintf("the kernel log's monotonic clock went from %.3f s to %.3f s: the device rebooted", float64(st.prevKmsgUS)/1e6, float64(ev.TimeUsec)/1e6))
+				fmt.Sprintf("the kernel log's monotonic clock went from %.3f s to %.3f s: the device rebooted%s", float64(st.prevKmsgUS)/1e6, float64(ev.TimeUsec)/1e6, st.leadUpForReboot(s.WallNS)))
 		}
 		st.prevKmsgUS = ev.TimeUsec
 		if ev.Iface == "" {
@@ -503,6 +544,9 @@ func (st *Stage) conntrackRules(s *sample.Sample, fire func(rule, key string, va
 	}
 	st.ctHistory = st.ctHistory[cut:]
 	limit := s.SlabLimit["nf_conntrack"]
+	if limit > 0 {
+		st.ctLimit = limit
+	}
 	if limit == 0 || len(st.ctHistory) < 2 {
 		return
 	}
@@ -648,3 +692,149 @@ func (st *Stage) API(a *apitier.Sample) []IfaceShare {
 	}
 	return out
 }
+
+// remember adds s to the trailing lead-up window and drops what is older
+// than leadUpNS.
+func (st *Stage) remember(s *sample.Sample) {
+	v := vitals{
+		wallNS: s.WallNS, dtNS: s.DtNS,
+		memAvailKB: s.Mem.MemAvailable, memTotal: s.Mem.MemTotal,
+		oomKills: s.VM.OOMKill, allocStalls: s.VM.AllocStall,
+	}
+	v.coreBusy = make([]uint64, len(s.CPU))
+	for i, c := range s.CPU {
+		v.coreBusy[i] = c.Busy()
+	}
+	if ct, ok := s.Slab["nf_conntrack"]; ok {
+		v.ct, v.ctLimit, v.hasCT = ct, s.SlabLimit["nf_conntrack"], true
+	}
+	for _, n := range s.Softnet {
+		v.dropped += n.Dropped
+		v.squeezed += n.TimeSqueeze
+	}
+	st.recent = append(st.recent, v)
+	cut := 0
+	for cut < len(st.recent) && s.WallNS-st.recent[cut].wallNS > leadUpNS {
+		cut++
+	}
+	st.recent = st.recent[cut:]
+}
+
+// leadUpForReboot is the summary a reboot detection carries: the one frozen
+// at the restart that came with it, when there was one and it is recent, or
+// else the window as it stands.
+func (st *Stage) leadUpForReboot(nowNS int64) string {
+	if st.frozen != "" && nowNS >= st.frozenAt && nowNS-st.frozenAt <= frozenKeepNS {
+		lu := st.frozen
+		st.frozen = ""
+		return lu
+	}
+	return st.leadUp(nowNS)
+}
+
+// leadUp summarizes the window as a clause appended to a detection's
+// message: the CPU, the memory, the conntrack table, the softnet queues and
+// the OOM killer over the samples the collector holds from before nowNS,
+// and how long no sample came after the last of them. It states readings,
+// not a cause: a reboot that follows a full conntrack table and a saturated
+// core is not proved to be caused by them.
+func (st *Stage) leadUp(nowNS int64) string {
+	if len(st.recent) == 0 {
+		return "; the collector holds no sample from the 30 s before it"
+	}
+	first, last := st.recent[0], st.recent[len(st.recent)-1]
+	var parts []string
+	if p := cpuPart(st.recent); p != "" {
+		parts = append(parts, p)
+	}
+	if last.memTotal > 0 {
+		low := last.memAvailKB
+		for _, v := range st.recent {
+			if v.memTotal > 0 && v.memAvailKB < low {
+				low = v.memAvailKB
+			}
+		}
+		parts = append(parts, fmt.Sprintf("MemAvailable %s of %s (lowest %s)", mib(last.memAvailKB), mib(last.memTotal), mib(low)))
+	}
+	if p := st.conntrackPart(); p != "" {
+		parts = append(parts, p)
+	}
+	var dropped, squeezed, ooms, stalls uint64
+	for _, v := range st.recent {
+		dropped += v.dropped
+		squeezed += v.squeezed
+		ooms += v.oomKills
+		stalls += v.allocStalls
+	}
+	parts = append(parts, fmt.Sprintf("softnet dropped %d packet(s) and ran out of budget %d time(s)", dropped, squeezed))
+	if ooms > 0 {
+		parts = append(parts, fmt.Sprintf("the kernel OOM-killed %d process(es)", ooms))
+	}
+	if stalls > 0 {
+		parts = append(parts, fmt.Sprintf("an allocation stalled %d time(s)", stalls))
+	}
+	out := fmt.Sprintf("; in the %.0f s before it (%d samples): %s", float64(last.wallNS-first.wallNS)/1e9, len(st.recent), strings.Join(parts, ", "))
+	// THE GAP IS ONLY REPORTED WHEN THE CLOCKS AGREE. A router without a
+	// battery-backed clock comes back from a reboot with a wrong time until
+	// NTP corrects it, and a gap computed across that is a fiction.
+	if gap := nowNS - last.wallNS; gap >= 0 && gap <= 3600*binNS {
+		out += fmt.Sprintf("; then no sample for %.1f s", float64(gap)/1e9)
+	}
+	return out
+}
+
+// cpuPart is the busy share over the window: the average over every core,
+// and the busiest core's own average, both from the raw tick deltas.
+func cpuPart(win []vitals) string {
+	var dt int64
+	var perCore []uint64
+	for _, v := range win {
+		dt += v.dtNS
+		for len(perCore) < len(v.coreBusy) {
+			perCore = append(perCore, 0)
+		}
+		for i, b := range v.coreBusy {
+			perCore[i] += b
+		}
+	}
+	capacity := float64(dt) / 1e9 * procfs.UserHZ // ticks one core could hold
+	if capacity <= 0 || len(perCore) == 0 {
+		return ""
+	}
+	var total, hot uint64
+	hotCore := 0
+	for i, b := range perCore {
+		total += b
+		if b > hot {
+			hot, hotCore = b, i
+		}
+	}
+	all := min(1, float64(total)/(capacity*float64(len(perCore))))
+	return fmt.Sprintf("CPU %.0f%% busy on average, cpu%d %.0f%%", all*100, hotCore, min(1, float64(hot)/capacity)*100)
+}
+
+// conntrackPart is the table's last stored population against its limit.
+// The slab is stored on change, so the window may hold none; the last value
+// stored before it still says how full the table was.
+func (st *Stage) conntrackPart() string {
+	ct, limit, ok := uint64(0), uint64(0), false
+	for _, v := range slices.Backward(st.recent) {
+		if v.hasCT {
+			ct, limit, ok = v.ct, v.ctLimit, true
+			break
+		}
+	}
+	if !ok {
+		if st.prevCT == 0 {
+			return ""
+		}
+		ct, limit = st.prevCT, st.ctLimit
+	}
+	if limit == 0 {
+		return fmt.Sprintf("nf_conntrack %d", ct)
+	}
+	return fmt.Sprintf("nf_conntrack %d of %d (%.0f%%)", ct, limit, 100*float64(ct)/float64(limit))
+}
+
+// mib renders kB as MiB with one decimal.
+func mib(kb uint64) string { return fmt.Sprintf("%.1f MiB", float64(kb)/1024) }
