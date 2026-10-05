@@ -20,8 +20,10 @@ import (
 // in the lab's network namespace, so `--router lab` is the lab router and
 // the agent's veth address is routed to it. Nothing from the host's
 // environment reaches it — no MIKROSCOPE_* variable set for a real router
-// can leak in — except MIKROSCOPE_ROUTER=lab and, with LAB_CLI_TOKEN=lab,
-// the lab's own agent token as MIKROSCOPE_TOKEN. The current directory is
+// can leak in — except MIKROSCOPE_ROUTER=lab; with LAB_CLI_TOKEN=lab, the
+// lab's own agent token as MIKROSCOPE_TOKEN; and with LAB_CLI_API=lab, the
+// lab router's API address and admin credentials as MIKROSCOPE_API_ADDR,
+// MIKROSCOPE_API_USER and MIKROSCOPE_API_PASSWORD. The current directory is
 // mounted read-write at its own path and is the working directory, and the
 // repository read-only at its own path, so relative paths, and absolute
 // paths inside either, mean in the container what they mean on the host
@@ -93,6 +95,16 @@ func (l *Lab) CLI(ctx context.Context, args []string) error {
 		}
 		env = append(env, "MIKROSCOPE_TOKEN="+creds.Token)
 		run = append(run, "-e", "MIKROSCOPE_TOKEN")
+	}
+	// The API tier of `forward`, and `record --log-markers`, reach the
+	// router's API on its LAN address; the password travels like the token.
+	if l.cfg.CLIAPI == "lab" {
+		creds, credErr := l.loadEnv()
+		if credErr != nil {
+			return credErr
+		}
+		env = append(env, "MIKROSCOPE_API_ADDR="+vm.DefaultLANRouter+":8728", "MIKROSCOPE_API_USER="+creds.User, "MIKROSCOPE_API_PASSWORD="+creds.Password)
+		run = append(run, "-e", "MIKROSCOPE_API_ADDR", "-e", "MIKROSCOPE_API_USER", "-e", "MIKROSCOPE_API_PASSWORD")
 	}
 	run = append(run, "--entrypoint", vm.ToolPath, l.cfg.Image, "vm-cli", "mikroscope")
 	run = append(run, args...)

@@ -23,7 +23,7 @@ SHELL := /bin/bash
 	gen-dashboards check-dashboards gen-brand check-brand gen-rsc check-rsc check-generated \
 	install-tools tools-versions release-check roundtrip roundtrip-device \
 	lab-tool lab-up lab-down lab-reset lab-status lab-ssh lab-cli lab-console lab-provision \
-	lab-profile lab-export lab-residue lab-power-cycle test-lab e2e-lab-build
+	lab-profile lab-export lab-residue lab-power-cycle lab-reset-button test-lab e2e-lab-build
 
 # ─── Variables ──────────────────────────────────────────────────────────────
 
@@ -611,6 +611,9 @@ lab-residue: lab-tool ## Count what an install could have left on the lab router
 
 lab-power-cycle: lab-tool ## Pull the lab router's power and put it back (a cold reboot)
 	@$(LAB) power-cycle
+
+lab-reset-button: lab-tool ## Reset the lab router with no shutdown, keeping the lab's network (a cli process survives it)
+	@$(LAB) reset-button
 
 lab-console: lab-tool ## Attach to the lab router's serial console
 	@$(LAB) console

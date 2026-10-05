@@ -146,6 +146,26 @@ func assertLabRun(t *testing.T, r *rig, staged string) {
 	}
 }
 
+// TestResetButtonKeepsTheContainer: the reset button resets the guest
+// through QEMU's monitor and leaves the container, and so its network, as it
+// was; with no lab it refuses.
+func TestResetButtonKeepsTheContainer(t *testing.T) {
+	r := newRig(t)
+	if code := r.main("reset-button"); code != 1 || !strings.Contains(r.stderr.String(), "mikroscope-lab-x86 is not running") {
+		t.Errorf("reset-button of nothing: %d", code)
+	}
+	r.mustMain("up")
+	boots := r.fd.containers["mikroscope-lab-x86"].boots
+	r.mustMain("reset-button")
+	reset := false
+	for _, c := range r.fd.calls {
+		reset = reset || (strings.Contains(c.line(), "socat - UNIX-CONNECT:/run/lab/monitor.sock") && c.stdin == "system_reset\n")
+	}
+	if !reset || r.fd.containers["mikroscope-lab-x86"].boots != boots || !strings.Contains(r.stderr.String(), "reset by its button") {
+		t.Errorf("reset-button: system_reset sent %v, boots %d → %d\n%s", reset, boots, r.fd.containers["mikroscope-lab-x86"].boots, r.stderr.String())
+	}
+}
+
 func TestDownResetPowerCycle(t *testing.T) {
 	r := newRig(t)
 	r.mustMain("up")

@@ -156,6 +156,27 @@ func (l *Lab) PowerCycle(ctx context.Context) error {
 	return nil
 }
 
+// ResetButton resets the router the way a reset button does, QEMU's
+// system_reset: RouterOS gets no chance to shut down, so it boots as after a
+// power cut, but the lab's container stays, and with it the network namespace
+// a process started with `cli` runs in, which a power-cycle replaces.
+func (l *Lab) ResetButton(ctx context.Context) error {
+	up, err := l.running(ctx)
+	if err != nil {
+		return err
+	}
+	if !up {
+		return die("%s is not running", l.cfg.Name)
+	}
+	l.monitor(ctx, "system_reset")
+	err = l.waitSSH(ctx, 300*time.Second)
+	if err != nil {
+		return err
+	}
+	l.sayf("reset by its button")
+	return nil
+}
+
 var accelWord = regexp.MustCompile(`accel=[a-z]*`)
 
 // statusReading is every reading of `status` in one connect, as on a real

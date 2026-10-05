@@ -621,7 +621,12 @@ host                      lab container (its own network namespace)
   other `MIKROSCOPE_*` variable from the host reaches it; `LAB_CLI_TOKEN=lab`
   adds the lab's agent token as `MIKROSCOPE_TOKEN`, through the container's
   environment, so an `--expose` test needs no `--token` on a command line the
-  host's process table would show. This matters beyond convenience: the agent's
+  host's process table would show. `LAB_CLI_API=lab` adds the router's API
+  address on that LAN (192.168.88.1:8728) and the lab's admin credentials as
+  `MIKROSCOPE_API_ADDR`, `MIKROSCOPE_API_USER` and `MIKROSCOPE_API_PASSWORD`,
+  the same way, for the API tier of `forward` and `record --log-markers`:
+  `LAB_CLI_API=lab bin/mikroscope-lab cli forward --api-mode slow --stdout json`.
+  This matters beyond convenience: the agent's
   default address is 172.30.10.2, and on a host whose network already has an
   agent on 172.30.10.2, a CLI run in the host's namespace would send its doctor
   and install probes to that agent. In the lab's namespace the route above
@@ -699,7 +704,10 @@ host                      lab container (its own network namespace)
   reaches nothing afterwards (`no route to host`). To keep such a process
   through a reboot, reboot RouterOS from inside instead
   (`bin/mikroscope-lab ssh /system/reboot`), which leaves the lab's network as
-  it was.
+  it was, or press the reset button (`make lab-reset-button`, QEMU's
+  `system_reset`): RouterOS gets no shutdown, so it boots as after a power cut
+  and logs `router was rebooted without proper shutdown`, and the container
+  and its network stay.
 - **One version per arch at a time.** A container runs the `LAB_ROS` it was
   created with (label `mikroscope.lab.ros`). A verb asked for another version
   stops with "mikroscope-lab down first" rather than drive a router of a

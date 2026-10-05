@@ -47,6 +47,7 @@ type Config struct {
 	Installer     string // LAB_INSTALLER, which only iso_install sets
 	MikroscopeBin string // MIKROSCOPE_BIN
 	CLIToken      string // LAB_CLI_TOKEN: "lab" hands cli the lab's agent token
+	CLIAPI        string // LAB_CLI_API: "lab" hands cli the lab router's API address and admin credentials
 
 	// Registry is the credential the router's /container/config gets at
 	// every up and reset: LAB_REGISTRY_URL, LAB_REGISTRY_USER and
@@ -125,6 +126,7 @@ func Load(getenv func(string) string, labDir, repo, wd string) (*Config, error) 
 		Installer:     getenv("LAB_INSTALLER"),
 		MikroscopeBin: getenv("MIKROSCOPE_BIN"),
 		CLIToken:      getenv("LAB_CLI_TOKEN"),
+		CLIAPI:        getenv("LAB_CLI_API"),
 		Registry: Registry{
 			URL:   or("LAB_REGISTRY_URL", DefaultRegistryURL),
 			User:  getenv("LAB_REGISTRY_USER"),

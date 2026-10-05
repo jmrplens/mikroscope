@@ -71,6 +71,10 @@ const (
 	EFIFirmware = "/usr/share/qemu-efi-aarch64/QEMU_EFI.fd"
 )
 
+// DefaultLANRouter is the router's address on the lab's LAN (ether2), where
+// the CLI's container reaches its SSH and its API.
+const DefaultLANRouter = "192.168.88.1"
+
 // Exit statuses of vm-boot besides QEMU's own: a setting the container was
 // created with cannot work (2, as a usage error), or KVM was required and is
 // not there (3). entrypoint.sh used the same two.
@@ -116,7 +120,7 @@ func Load(getenv func(string) string) (Config, error) {
 		Mem:         or("LAB_MEM", "1024"),
 		CPUs:        or("LAB_CPUS", "2"),
 		CPU:         or("LAB_CPU", "cortex-a72"),
-		LANRouter:   or("LAB_LAN_ROUTER", "192.168.88.1"),
+		LANRouter:   or("LAB_LAN_ROUTER", DefaultLANRouter),
 		LANHost:     or("LAB_LAN_HOST", "192.168.88.10/24"),
 		AgentRoutes: strings.Fields(or("LAB_AGENT_ROUTES", "172.30.0.0/16")),
 		AgentTarget: or("LAB_AGENT_TARGET", "172.30.10.2:9123"),
