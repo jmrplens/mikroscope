@@ -4,6 +4,42 @@ Notable changes per release. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the versions
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Dependencies, all to their latest.** The site builds on Node 24.21.0
+  (`site/.node-version`, was 24.18.0, the newest LTS) with pnpm 12.9.1 (was
+  12.5.1); Astro 7.3.5, Starlight 0.42.5, ESLint 10.12, typescript-eslint
+  8.71, html-validate, prettier and sharp move up, and a fresh resolution
+  takes 81 transitive packages to their newest in-range versions (Shiki
+  4.5.0, Vite 8.3.2 among them), which clears the eight advisories
+  `pnpm audit` reported (`devalue` and `http-cache-semantics` through Astro,
+  `fast-uri` through Astro's language server). TypeScript stays on 6:
+  `@astrojs/check` 0.9.10 accepts `^5.0.0 || ^6.0.0` only. In Go, the
+  indirect `jackc/puddle` 2.2.3 (the pool under pgx, so the CLI's PostgreSQL
+  sink), `x/tools` 0.51.0 and `x/telemetry`; Go 1.27.1 and the direct
+  modules were already the newest. golangci-lint 2.14.0, whose new gosec
+  G703 is excluded for `cmd/gen_brand` alone (a build-time tool writing
+  where its operator says).
+- **The site's build prints no Rolldown directive warnings.** Rolldown 1.2.9
+  and later warn about the `"use astro:head-inject"` directive Astro 7.3.5
+  still writes into every MDX page's propagated-assets module, a directive
+  nothing reads any more (withastro/astro#18087): 130 warnings per build.
+  `astro.config.mjs` drops that one warning and no other, until Astro ships
+  withastro/astro#18088, which deletes the directive. The only warning left
+  is Starlight's `/404` route taking precedence over the content page of the
+  same name, which it renders anyway.
+- **The runs table's headers render as before.** Astro 7.3.5 keeps the
+  indentation of a multi-line fragment as text, so `RunsTable` rendered
+  "µs /sample" with trailing whitespace on six pages, which is what turned
+  Dependabot's pull request red; the break after the slash is now built
+  from array items. Checked on 2026-10-05: the visible text of all 132 built
+  pages equals the build before the update, their head stylesheets and
+  scripts are the same, and site lint, the generator's 174 browser checks,
+  the layout check (258 renders), pa11y (30 URLs), `make analyze` and
+  `go test ./...` pass.
+
 ## [1.5.0] - 2026-09-27
 
 ### Added

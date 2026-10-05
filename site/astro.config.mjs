@@ -617,5 +617,27 @@ export default defineConfig({
 		// after every other integration has written to them.
 		...(META_CSP ? [metaCsp({ skip: isRedirectStub })] : []),
 	],
-	vite: { plugins: [pageDatesModule(), rscReleaseData()] },
+	vite: {
+		plugins: [pageDatesModule(), rscReleaseData()],
+		build: {
+			rolldownOptions: {
+				// Astro 7.3.5 still writes `"use astro:head-inject"` at the top of
+				// every MDX page's ?astroPropagatedAssets module, a directive
+				// nothing has read since head propagation moved to module ids,
+				// and Rolldown 1.2.9 and later warn about any non-standard
+				// directive: 130 identical warnings per build, with output
+				// identical to a build without them. Only that warning is
+				// dropped; any other directive still warns. Remove this once
+				// Astro ships withastro/astro#18088, which deletes the directive.
+				onLog(level, log, handler) {
+					if (
+						log.code === "MODULE_LEVEL_DIRECTIVE" &&
+						log.message.includes('"use astro:head-inject"')
+					)
+						return;
+					handler(level, log);
+				},
+			},
+		},
+	},
 });

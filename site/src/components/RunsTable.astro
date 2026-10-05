@@ -62,22 +62,16 @@ const captionId = nextId(Astro.locals, "ms-runs");
 			<tr>
 				{/* A header such as "µs/muestra" is one word to the browser, and its
 				 * width set the column's; a break opportunity after the slash lets it
-				 * wrap there instead. */}
+				 * wrap there instead. The slash and the <wbr> are array items, not
+				 * JSX text: Astro 7.3.5 keeps the indentation of a multi-line
+				 * fragment as text, which rendered "µs /muestra" and left trailing
+				 * whitespace that html-validate refuses. */}
 				{
 					columns.map((c) => (
 						<th scope="col" class={c.num ? "ms-num" : undefined}>
 							{t(c.key)
 								.split("/")
-								.map((part, i) => (
-									<Fragment>
-										{i > 0 && (
-											<Fragment>
-												/<wbr />
-											</Fragment>
-										)}
-										{part}
-									</Fragment>
-								))}
+								.map((part, i) => (i === 0 ? part : ["/", <wbr />, part]))}
 						</th>
 					))
 				}
