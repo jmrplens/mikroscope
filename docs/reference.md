@@ -129,7 +129,7 @@ exit status.
 
 ```sh
 mikroscope plan
-mikroscope plan --rsc --remote-image jmrplens/mikroscope-agent:1.5.0 --out mikroscope.rsc
+mikroscope plan --rsc --remote-image jmrplens/mikroscope-agent:1.6.0 --out mikroscope.rsc
 ```
 
 - Without `--rsc` it prints the listing `install` would print, the same as `install --dry-run`,
@@ -144,7 +144,7 @@ mikroscope plan --rsc --remote-image jmrplens/mikroscope-agent:1.5.0 --out mikro
 #### `install`
 
 ```sh
-mikroscope install --remote-image jmrplens/mikroscope-agent:1.5.0
+mikroscope install --remote-image jmrplens/mikroscope-agent:1.6.0
 ```
 
 1. `doctor`, in one connect, unless `--no-doctor`. A missing prerequisite stops it with nothing
@@ -162,7 +162,7 @@ mikroscope install --remote-image jmrplens/mikroscope-agent:1.5.0
 #### `upgrade`
 
 ```sh
-mikroscope upgrade --remote-image jmrplens/mikroscope-agent:1.5.0
+mikroscope upgrade --remote-image jmrplens/mikroscope-agent:1.6.0
 ```
 
 - One connect reads how the install was made, whether each step is there, the router's architecture
@@ -253,7 +253,7 @@ install on the router (manifest mikroscope/mikroscope.manifest.txt): veth veth-m
   1     install manifest mikroscope/mikroscope.manifest.txt
   1     veth interface veth-mikroscope
   …
-agent: 1.5.0 (<commit>) built <time>, 10 Hz, seq 19 (oldest 1), up 2s, 0 slipped, 1ms round trip
+agent: 1.6.0 (<commit>) built <time>, 10 Hz, seq 19 (oldest 1), up 2s, 0 slipped, 1ms round trip
 ```
 
 #### `image`
