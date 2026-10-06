@@ -63,7 +63,7 @@ release published. [Install the CLI](https://jmrp.io/docs/mikroscope/install/cli
 ### Check the router
 
 ```sh
-mikroscope doctor --router admin@192.168.88.1 --remote-image jmrplens/mikroscope-agent:1.6.0
+mikroscope doctor --router admin@192.168.88.1 --remote-image jmrplens/mikroscope-agent:1.6.1
 ```
 
 `doctor` reads the router and writes nothing. It prints one line per check, marked `ok`, `MISSING`
@@ -95,7 +95,7 @@ again until nothing is `MISSING`. A `WARN` line does not stop the install.
 ### Install the agent
 
 ```sh
-mikroscope install --router admin@192.168.88.1 --remote-image jmrplens/mikroscope-agent:1.6.0
+mikroscope install --router admin@192.168.88.1 --remote-image jmrplens/mikroscope-agent:1.6.1
 ```
 
 `install` runs the same checks, reads the router's architecture, and prints every RouterOS command
@@ -106,7 +106,7 @@ computer:
 ```text
 install done: 6 step(s) created
 probing http://172.30.10.2:9123/healthz from this host …
-  direct transport ok: agent 1.6.0 (<commit>) built <time>, 10 Hz, seq 7, 0 slipped, 2ms round trip
+  direct transport ok: agent 1.6.1 (<commit>) built <time>, 10 Hz, seq 7, 0 slipped, 2ms round trip
 ```
 
 The router pulls the image from Docker Hub itself: nothing is uploaded, and nothing is set in
@@ -123,7 +123,7 @@ mikroscope status --router admin@192.168.88.1
 probes the agent:
 
 ```text
-agent: 1.6.0 (<commit>) built <time>, 10 Hz, seq 14 (oldest 1), up 1s, 0 slipped, 1ms round trip
+agent: 1.6.1 (<commit>) built <time>, 10 Hz, seq 14 (oldest 1), up 1s, 0 slipped, 1ms round trip
 ```
 
 From a host on the router's LAN, `curl http://172.30.10.2:9123/healthz` answers `{"ok":true,…}`.
