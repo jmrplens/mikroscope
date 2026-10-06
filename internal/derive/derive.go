@@ -191,12 +191,13 @@ type Stage struct {
 	frozen   string
 	frozenAt int64
 
-	// bootID is the kernel's boot id as the agent last reported it, bootFresh
-	// whether the last health read reported one at all, and bootFrom the id
-	// it replaced, set until the next sample fires reboot for the change.
-	bootID    string
-	bootFresh bool
-	bootFrom  string
+	// bootID is the kernel's boot id as an agent last reported it, bootSame
+	// whether the last health read reported that same id again, and bootFrom
+	// the id it replaced, set until the next sample fires reboot for the
+	// change.
+	bootID   string
+	bootSame bool
+	bootFrom string
 	// bootLog is the clause on what RouterOS's own log said about the boot,
 	// bootLogWait whether the reboot detection waits for it, and bootHeldAt
 	// the wall time of the first sample it waited on.
@@ -723,7 +724,7 @@ func (st *Stage) API(a *apitier.Sample) []IfaceShare {
 // does not report one, is "unknown": it is never a change, and it leaves the
 // last known id in place for the next agent that reports one.
 func (st *Stage) NoteBoot(id string) (prev string, changed bool) {
-	st.bootFresh = id != ""
+	st.bootSame = id != "" && id == st.bootID
 	if id == "" || id == st.bootID {
 		return st.bootID, false
 	}
@@ -785,16 +786,16 @@ func (st *Stage) heldForBootLog(nowNS int64) bool {
 // again under the restart. The collector reads the agent's health in the
 // same step that rewinds its cursor to the new agent's ring, so the id is the
 // new agent's by the time its first sample arrives here. It says nothing when
-// that agent did not report one.
+// there were not two ids to compare: the new agent reported none, or it is
+// the first to report one, as after an upgrade from an agent that did not.
 func (st *Stage) bootClause() string {
 	switch {
-	case !st.bootFresh:
-		return ""
 	case st.bootFrom != "":
 		return ", and the kernel's boot id changed with it"
-	default:
+	case st.bootSame:
 		return "; the kernel's boot id did not change, so the router did not reboot"
 	}
+	return ""
 }
 
 // remember adds s to the trailing lead-up window and drops what is older

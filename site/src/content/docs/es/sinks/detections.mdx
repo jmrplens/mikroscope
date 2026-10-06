@@ -114,7 +114,8 @@ omite cuando el reloj del router tras el reinicio es anterior al de antes, como 
 cuyo reloj aún no ha puesto en hora NTP. Cuando el agente informa del identificador de
 arranque del kernel, el mensaje dice también si cambió: el mismo identificador significa que
 el router no se reinició, y que se reinició solo el contenedor del agente (una actualización,
-una parada y un arranque, su política de reinicio).
+una parada y un arranque, su política de reinicio). Solo lo dice con dos identificadores que
+comparar: el primer agente que da uno, después de uno que no lo daba, no dice nada de ello.
 
 **Necesita** que el colector haya visto al menos una muestra antes del reinicio. La
 secuencia del agente vuelve a empezar desde 1 en cada arranque, así que así es como se ve un

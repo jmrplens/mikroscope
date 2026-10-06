@@ -293,6 +293,13 @@ primera vez y `"router was rebooted without proper shutdown"` la segunda, 19,4 s
 muestras. Una ejecución de cada caso; la espera de dos minutos a una API que no ha vuelto no se
 ejercitó en un router, solo en las pruebas unitarias.
 
+En el RB5009 (RouterOS 7.24.4), el agente 1.6.0 instalado el 2026-10-06 sirvió el identificador de
+arranque del kernel en `/healthz` desde dentro de su contenedor. El `agent-restart` de esa
+actualización dijo `the kernel's boot id did not change, so the router did not reboot`, que era
+cierto pero no se sabía: el agente 1.5.0 anterior no daba ningún identificador. En el código
+posterior a la 1.6.0 el primer agente que da un identificador después de uno que no lo daba no
+afirma nada sobre el kernel.
+
 Un `power-cycle` del laboratorio no sirve para probar el colector: reinicia el contenedor del
 laboratorio, y un colector lanzado antes con `mikroscope-lab cli` conserva el espacio de red del
 contenedor viejo y no alcanzó nada tras el corte (`no route to host` hasta que terminó, el mismo
@@ -326,6 +333,18 @@ Para la colocación de la solución: `place-before=0` falló desde una sesión S
 y funcionó con una regla en ella. Sin probar: IPv6, y una consulta DNS enviada desde fuera del
 laboratorio, cuyo enlace de subida es la red de usuario de QEMU; `doctor` lee las reglas y no envía
 ningún paquete.
+
+En el RB5009 (RouterOS 7.24.4, 2026-10-06), el `doctor` de la 1.6.0 leyó 80 reglas activas en raw
+prerouting y en filter forward e input, ninguna inválida ni que nombrara una lista borrada, y dijo
+que la comprobación de DNS no tenía enlace de subida que evaluar: la ruta por defecto activa del
+router va por PPPoE, y su `immediate-gw` es la interfaz sola (`PPPoE_DIGI`), que la lectura del
+enlace de subida no contemplaba; el enlace DHCP del laboratorio se lee `10.0.2.2%ether1`. Con esa
+lectura corregida, el código posterior a la 1.6.0 encontró `PPPoE_DIGI` en la lista `WAN` y evaluó
+las consultas como un quizá, porque la regla `accept to local loopback (for CAPsMAN)` de la
+configuración por defecto, `dst-address=127.0.0.1`, va antes de su `drop all not coming from LAN` y
+se leía como una aceptación posible. Tomando un destino de loopback como no coincidente para un
+paquete que llega de Internet, nombró `defconf: drop all not coming from LAN` como la regla que
+descarta las consultas. Cada una de las tres ejecuciones fue una sola conexión de lectura.
 
 ### RouterOS x86 desde la ISO {#routeros-x86-from-the-iso}
 
@@ -384,7 +403,7 @@ estaba publicada, como registró S5.
 | ------------------------------ | ------------------------------- | -------- | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
 | RB5009UG+S+                    | hardware, arm64                 | 7.24.1   | hasta la actualización del 2026-09-10                | el coste de una conexión SSH, 2026-08-26                                                                                                       |
 | RB5009UG+S+                    | hardware, arm64                 | 7.24.2   | del 2026-09-10 a más o menos el 2026-09-18 22:43 UTC | la mayoría de las campañas, del 2026-09-11 al 2026-09-18                                                                                       |
-| RB5009UG+S+                    | hardware, arm64                 | 7.24.4   | desde más o menos el 2026-09-18 22:43 UTC           | la campaña de errores de puerto, los tiempos de `/stream`, las gráficas del almacén de referencia y las órdenes de despliegue desde el 2026-09-21, ninguna de la 1.4.0 |
+| RB5009UG+S+                    | hardware, arm64                 | 7.24.4   | desde más o menos el 2026-09-18 22:43 UTC           | la campaña de errores de puerto, los tiempos de `/stream`, las gráficas del almacén de referencia y las órdenes de despliegue desde el 2026-09-21; `upgrade` con la 1.5.0 y la 1.6.0, `doctor` con la 1.6.0 |
 | CHR x86_64, laboratorio virtual | virtual (KVM), amd64            | 7.24.4   | 2026-09-26 y 2026-09-27                              | `doctor`, `plan`, tres rutas de instalación, `--expose`, `uninstall` con la 1.3.1; la batería entera del laboratorio con el código posterior y en el commit de la 1.4.0     |
 | CHR arm64, laboratorio virtual  | emulado (TCG), arm64            | 7.24.4   | 2026-09-26 y 2026-09-27                              | `doctor`, `plan`, tres rutas de instalación, `uninstall` con la 1.3.1; la batería entera del laboratorio con el código posterior y en el commit de la 1.4.0                |
 | CHR x86_64, laboratorio virtual | virtual (KVM), amd64            | 7.23.7   | 2026-09-27                                           | `doctor`, que rechaza un RouterOS anterior a 7.24 (S17)                                                                                         |
@@ -416,8 +435,10 @@ interfaces del 2026-09-19, tras la actualización de ese día, sin la versión a
 **Los ajustes del contenedor** que escribe `install` se verificaron en el RB5009 con RouterOS 7.24.2
 y se volvieron a ejercitar sobre 7.24.4; no se probó ninguna otra placa.
 
-**El agente del RB5009** se actualizó a 1.0.9 el 2026-09-19 y a 1.2.0 a las 08:08:54 UTC del
-2026-09-24. Los tiempos de `/stream` del 2026-09-21 son del agente 1.0.9.
+**El agente del RB5009** se actualizó a 1.0.9 el 2026-09-19, a 1.2.0 a las 08:08:54 UTC del
+2026-09-24 y a 1.2.1 y 1.2.2 ese mismo día, a 1.5.0 el 2026-09-27 y a 1.6.0 a las 07:15 UTC del
+2026-10-06, cada vez con `upgrade --remote-image`; la última tardó 11,8 s desde la orden hasta la
+respuesta de la sonda. Los tiempos de `/stream` del 2026-09-21 son del agente 1.0.9.
 
 ### Plataformas {#qué-publica-la-versión}
 
@@ -449,9 +470,11 @@ colector.
 ### Órdenes de despliegue {#la-cli-de-despliegue}
 
 **Las seis órdenes de despliegue se han ejecutado en el RB5009 con RouterOS 7.24.4, las seis a más
-tardar el 2026-09-23, cada una con la CLI de su fecha. Las de la 1.4.0 y la 1.5.0 no se han
-ejecutado allí: el código posterior a la 1.3.1, que es el que publica la 1.4.0, solo se ha ejecutado
-en el laboratorio virtual (2026-09-27). Según su código, la 1.5.0 no cambia ningún paso de las seis
+tardar el 2026-09-23, cada una con la CLI de su fecha. De la 1.4.0 en adelante solo se han
+ejecutado allí `upgrade` (la 1.5.0 el 2026-09-27 y la 1.6.0 el 2026-10-06, la segunda leyendo el
+manifiesto de instalación que escribió la primera) y `doctor` (1.6.0, 2026-10-06); el resto del
+código posterior a la 1.3.1, que es el que publica la 1.4.0, solo se ha ejecutado en el laboratorio
+virtual (2026-09-27). Según su código, la 1.5.0 no cambia ningún paso de las seis
 órdenes en el router; su `uninstall` rechaza `--grafana-dry-run` y lista los objetivos de Grafana y
 de los almacenes antes de tocar el router, ambas cosas comprobadas solo en pruebas unitarias
 ([`uninstall --targets`](#uninstall---targets)).** `doctor`, `plan`, `install`, `status`, `upgrade`
@@ -1309,9 +1332,10 @@ como comportamiento esperado enlaza esta lista.
   `registry-url` con su valor de fábrica y la referencia completa en cualquier RouterOS que no sea
   7.24.4. El CHR del laboratorio ejecutó las dos cosas con la 1.3.1 sobre 7.24.4.
 - Una descarga a través de un espejo o una caché intermedia nombrados en la referencia.
-- Las órdenes de despliegue de la 1.4.0 en cualquier hardware: el manifiesto de instalación, la forma
-  guardada en el router, `--arch auto`, las comprobaciones nuevas de doctor y el script con sus
-  guardas solo se han ejecutado en los CHR del laboratorio, con el código posterior a la 1.3.1.
+- `install`, `status` y `uninstall` de la 1.4.0 en adelante en cualquier hardware, y el script con
+  sus guardas: solo se han ejecutado en los CHR del laboratorio. En el RB5009, el `upgrade` de la
+  1.6.0 leyó del router el manifiesto de instalación y la arquitectura (`--arch auto`), y su
+  `doctor` ejecutó todas las comprobaciones.
 - `--ssh-option` y `MIKROSCOPE_SSH_OPTIONS` contra cualquier router: la CLI del laboratorio se conecta
   con el `ssh_config` propio del laboratorio, y solo las pruebas unitarias pasan la opción.
 - Que `--extract-timeout` se agote, lo que conserva el tar, en cualquier router.

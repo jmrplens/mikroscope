@@ -1,6 +1,7 @@
 package router
 
 import (
+	"net"
 	"slices"
 	"strconv"
 	"strings"
@@ -117,6 +118,8 @@ func (p inbound) matcher(key, value string) tri {
 		return triNo
 	case "dst-address-type":
 		return triOf(value == "local")
+	case "dst-address":
+		return notLoopback(value)
 	case "src-address-type":
 		return triOf(value == "unicast")
 	case "ipsec-policy":
@@ -144,6 +147,30 @@ func dnsDropRules(uplinkIf string, rules []fwRule) string {
 		cmds = append(cmds, "`/ip/firewall/filter/add chain=input in-interface="+uplinkIf+" protocol="+proto+" dst-port=53 action=drop"+place+"`")
 	}
 	return strings.Join(cmds, " and ")
+}
+
+// notLoopback judges a dst-address against a packet from the Internet, whose
+// destination is the router's address on the uplink, which doctor does not
+// read: an address or network inside 127.0.0.0/8 certainly does not match,
+// since such a packet is never addressed to loopback, and anything else is a
+// maybe. It matters for the default configuration's input chain, whose
+// `accept to local loopback (for CAPsMAN)` rule, `dst-address=127.0.0.1`,
+// stands before its `drop all not coming from LAN`: read as a maybe, that
+// accept made the drop a maybe too, on the reference RB5009 (2026-10-06)
+// and on any router with that configuration.
+func notLoopback(value string) tri {
+	_, loopback, _ := net.ParseCIDR("127.0.0.0/8")
+	if !strings.Contains(value, "/") {
+		value += "/32"
+	}
+	ip, n, err := net.ParseCIDR(value)
+	if err != nil || !loopback.Contains(ip) {
+		return triMaybe
+	}
+	if ones, _ := n.Mask.Size(); ones < 8 {
+		return triMaybe
+	}
+	return triNo
 }
 
 // protocolNumber is the number RouterOS accepts in place of a protocol name.

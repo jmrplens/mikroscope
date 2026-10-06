@@ -276,6 +276,12 @@ rebooted by ssh-cmd:admin@192.168.88.10/reboot"` the first time and `"router was
 proper shutdown"` the second, 19.4 s and 22.1 s without a sample. One run of each; the two-minute
 wait for an API that is not back was not exercised on a router, only in the unit tests.
 
+On the RB5009 (RouterOS 7.24.4), the 1.6.0 agent installed on 2026-10-06 served the kernel's boot
+id in `/healthz` from inside its container. The `agent-restart` of that upgrade said `the kernel's
+boot id did not change, so the router did not reboot`, which was true but not known: the 1.5.0 agent
+before it reported no id. In the code after 1.6.0 the first agent to report an id after one that
+did not makes no claim about the kernel.
+
 A `power-cycle` of the lab is no test of the collector: it restarts the lab's container, and a
 collector started before it with `mikroscope-lab cli` keeps the old container's network namespace and
 reached nothing after the cut (`no route to host` until it stopped, the same day). The reboot from
@@ -305,6 +311,17 @@ For the fix's placement: `place-before=0` failed from a one-command SSH session 
 and a place-before of the input chain's first rule failed on an empty chain and worked with a rule
 there. Not tested: IPv6, and a DNS query sent from outside the lab, whose uplink is QEMU's user
 network; `doctor` reads the rules and sends no packet.
+
+On the RB5009 (RouterOS 7.24.4, 2026-10-06), 1.6.0's `doctor` read 80 enabled rules in raw
+prerouting and filter forward and input, none invalid and none naming a deleted list, and said the
+DNS check had no uplink to judge: the router's active default route is over PPPoE, and its
+`immediate-gw` is the interface alone (`PPPoE_DIGI`), which the uplink read did not handle; the
+lab's DHCP uplink reads `10.0.2.2%ether1`. With that read fixed, the code after 1.6.0 found
+`PPPoE_DIGI` in the `WAN` list and judged the queries a maybe, because the default configuration's
+`accept to local loopback (for CAPsMAN)` rule, `dst-address=127.0.0.1`, stands before its `drop all
+not coming from LAN` and read as a maybe accept. With a loopback destination taken as no match for a
+packet from the Internet, it named `defconf: drop all not coming from LAN` as dropping the queries.
+Each of the three runs was one read-only connection.
 
 ### RouterOS x86 from the ISO {#routeros-x86-from-the-iso}
 
@@ -358,7 +375,7 @@ arm64, emulated, in a job of 54 min 55 s. The thirteen golden cases that pull th
 | ------------------------- | ------------------------------- | -------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
 | RB5009UG+S+               | hardware, arm64                 | 7.24.1   | until the upgrade of 2026-09-10             | the SSH connect cost, 2026-08-26                                                                                                                |
 | RB5009UG+S+               | hardware, arm64                 | 7.24.2   | 2026-09-10 to about 2026-09-18 22:43 UTC    | most campaigns, 2026-09-11 to 2026-09-18                                                                                                        |
-| RB5009UG+S+               | hardware, arm64                 | 7.24.4   | from about 2026-09-18 22:43 UTC             | the port-errors campaign, the `/stream` timings, the charts from the reference store, and the deployment commands from 2026-09-21, none of them 1.4.0's |
+| RB5009UG+S+               | hardware, arm64                 | 7.24.4   | from about 2026-09-18 22:43 UTC             | the port-errors campaign, the `/stream` timings, the charts from the reference store, and the deployment commands from 2026-09-21; `upgrade` with 1.5.0 and 1.6.0, `doctor` with 1.6.0 |
 | CHR x86_64, virtual lab   | virtual (KVM), amd64            | 7.24.4   | 2026-09-26 and 2026-09-27                   | `doctor`, `plan`, three install routes, `--expose`, `uninstall` with 1.3.1; the whole lab suite with the code after it and on 1.4.0's commit                         |
 | CHR arm64, virtual lab    | emulated (TCG), arm64           | 7.24.4   | 2026-09-26 and 2026-09-27                   | `doctor`, `plan`, three install routes, `uninstall` with 1.3.1; the whole lab suite with the code after it and on 1.4.0's commit                                     |
 | CHR x86_64, virtual lab   | virtual (KVM), amd64            | 7.23.7   | 2026-09-27                                  | `doctor`, which refuses a RouterOS below 7.24 (S17)                                                                                             |
@@ -389,8 +406,10 @@ with the version not recorded beside them.
 **The container settings** `install` writes were verified on the RB5009 on RouterOS 7.24.2 and
 re-exercised on 7.24.4; no other board was tried.
 
-**The agent on the RB5009** was upgraded to 1.0.9 on 2026-09-19 and to 1.2.0 at 08:08:54 UTC on
-2026-09-24. The `/stream` timings of 2026-09-21 are from agent 1.0.9.
+**The agent on the RB5009** was upgraded to 1.0.9 on 2026-09-19, to 1.2.0 at 08:08:54 UTC on
+2026-09-24 and to 1.2.1 and 1.2.2 later that day, to 1.5.0 on 2026-09-27 and to 1.6.0 at 07:15 UTC
+on 2026-10-06, each with `upgrade --remote-image`; the last took 11.8 s from the command to the
+probe's answer. The `/stream` timings of 2026-09-21 are from agent 1.0.9.
 
 ### Platforms {#what-the-release-publishes}
 
@@ -421,8 +440,10 @@ endpoints `/captures` and `/capture`. It serves no `/metrics`; the exposition is
 ### Deployment commands {#the-deployment-cli}
 
 **All six deployment commands have run on the RB5009 on RouterOS 7.24.4, all six by 2026-09-23,
-each with the CLI of its date. 1.4.0's and 1.5.0's have not run there: the code after 1.3.1, which
-1.4.0 ships, has run only in the virtual lab (2026-09-27). Read from the code, 1.5.0 changes none of
+each with the CLI of its date. Of 1.4.0 and later, only `upgrade` (1.5.0 on 2026-09-27, 1.6.0 on
+2026-10-06, the second reading the install manifest the first wrote) and `doctor` (1.6.0, 2026-10-06)
+have run there; the rest of the code after 1.3.1, which 1.4.0 ships, has run only in the virtual lab
+(2026-09-27). Read from the code, 1.5.0 changes none of
 the six commands' router steps; its `uninstall` refuses `--grafana-dry-run` and lists the Grafana
 and store targets before it touches the router, both checked only in unit tests
 ([`uninstall --targets`](#uninstall---targets)).** `doctor`, `plan`, `install`, `status`,
@@ -1219,9 +1240,9 @@ behaviour links this list.
   its factory default, and the full reference on any RouterOS but 7.24.4. The lab's CHR ran both
   with 1.3.1 on 7.24.4.
 - A pull through a mirror or pull-through cache named in the reference.
-- 1.4.0's deployment commands on any hardware: the install manifest, the stored shape,
-  `--arch auto`, doctor's new checks and the guarded script have run only on the lab's CHRs, with
-  the code after 1.3.1.
+- `install`, `status` and `uninstall` of 1.4.0 and later on any hardware, and the guarded script:
+  they have run only on the lab's CHRs. On the RB5009, 1.6.0's `upgrade` read the install manifest
+  and the architecture (`--arch auto`) from the router, and its `doctor` ran every check.
 - `--ssh-option` and `MIKROSCOPE_SSH_OPTIONS` against any router: the lab's CLI connects through the
   lab's own `ssh_config`, and only unit tests pass the option.
 - `--extract-timeout` running out, which keeps the tar, on any router.

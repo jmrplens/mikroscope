@@ -63,8 +63,16 @@ func fwDumpQuery(table string) string {
 // the interface lists it is in: `@@uplink-if=` and `@@uplink-lists=`. A
 // trap's fix never proposes one of those lists; joining the uplink's list
 // would put the agent on the WAN side of every rule that has one.
+//
+// `immediate-gw` is `<address>%<interface>` for a route through a gateway
+// address, and the interface alone for a route through an interface: on the
+// reference RB5009 (RouterOS 7.24.4, 2026-10-06) the active default route
+// over PPPoE read `immediate-gw=PPPoE_DIGI`, and the lab's DHCP uplink
+// `10.0.2.2%ether1`. Until then only the first form was read, so a PPPoE
+// router had no uplink here.
 const uplinkQuery = `:local u ""; :local ul ""; :foreach rt in=[/ip/route/find where dst-address=0.0.0.0/0 active] do={ ` +
-	`:local g [:tostr [/ip/route/get $rt immediate-gw]]; :local p [:find $g "%"]; :if ([:typeof $p] = "num") do={ :set u [:pick $g ($p + 1) [:len $g]] } }; ` +
+	`:local g [:tostr [/ip/route/get $rt immediate-gw]]; :local p [:find $g "%"]; :if ([:typeof $p] = "num") do={ :set u [:pick $g ($p + 1) [:len $g]] } ` +
+	`else={ :if ($g != "" && [:typeof [:toip $g]] != "ip") do={ :set u $g } } }; ` +
 	`:if ($u != "") do={ :foreach m in=[/interface/list/member/find where interface=$u] do={ :set ul ($ul . [/interface/list/member/get $m list] . ",") } }; ` +
 	`:put ("` + keyPrefix + `uplink-if=" . $u); :put ("` + keyPrefix + `uplink-lists=" . $ul)`
 

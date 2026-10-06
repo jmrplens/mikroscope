@@ -497,3 +497,28 @@ func TestBootLogClauses(t *testing.T) {
 		t.Errorf("two lines: %q", st.bootLog)
 	}
 }
+
+// The first agent to report a boot id, after one that reported none, as
+// after an upgrade from an agent that predates it: there is nothing to
+// compare, so the restart claims nothing about the kernel. On the reference
+// RB5009 on 2026-10-06 the upgrade from 1.5.0 said the router did not
+// reboot, which was true but not known.
+func TestTheFirstBootIDClaimsNothing(t *testing.T) {
+	t.Parallel()
+	st := New(Options{})
+	st.NoteBoot("")
+	bootFeed(st, 1, 50, 0, false)
+	if _, changed := st.NoteBoot(bootA); changed {
+		t.Fatal("the first id was taken for a change")
+	}
+	got := messagesByRule(bootFeed(st, 1, 1, 60_000_000_000, false))
+	if len(got) != 1 || got["agent-restart"] == "" || strings.Contains(got["agent-restart"], "boot id") {
+		t.Fatalf("restart onto the first agent with a boot id: %q", got)
+	}
+	bootFeed(st, 2, 20, 60_000_000_000, false)
+	st.NoteBoot(bootA)
+	got = messagesByRule(bootFeed(st, 1, 1, 120_000_000_000, false))
+	if !strings.Contains(got["agent-restart"], "the kernel's boot id did not change") {
+		t.Fatalf("the next restart, with two ids to compare: %q", got)
+	}
+}

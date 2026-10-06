@@ -4,6 +4,29 @@ Notable changes per release. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the versions
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **`doctor` finds a PPPoE uplink.** The uplink read took the interface
+  after the `%` of the active default route's `immediate-gw`, and a route
+  over PPPoE has the interface alone there (`immediate-gw=PPPoE_DIGI` on
+  the reference RB5009, RouterOS 7.24.4, 2026-10-06), so such a router had
+  no uplink: the trap check could propose the uplink's interface list, the
+  `--expose` uplink warning could not fire, and the DNS check passed
+  without judging. Both forms are read now; checked on that router and on
+  the lab's DHCP uplink.
+- **The DNS check reads the default configuration's input chain right.**
+  Its `accept to local loopback (for CAPsMAN)` rule, `dst-address=127.0.0.1`,
+  read as a maybe accept for a query from the Internet, so the `drop all
+  not coming from LAN` after it read as a maybe drop, on any router with
+  that configuration. A loopback destination is no match for a packet that
+  comes in on the uplink; on the RB5009 the check now names that drop.
+- **`agent-restart` claims the router did not reboot only when it compared
+  two boot ids.** The first agent to report one, after an agent that did
+  not, said `the kernel's boot id did not change`, as the upgrade from
+  1.5.0 to 1.6.0 did on the RB5009: true there, but not known.
+
 ## [1.6.0] - 2026-10-06
 
 ### Added
