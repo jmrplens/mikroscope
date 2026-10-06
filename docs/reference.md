@@ -2330,7 +2330,8 @@ collector had already pulled. The time without samples is left out when the rout
 after the restart is earlier than before it, as on a router whose clock NTP has not set yet.
 When the agent reports the kernel's boot id, the message also says whether it changed: the
 same id means the router did not reboot, and the agent's container alone restarted (an
-upgrade, a stop and a start, its restart policy).
+upgrade, a stop and a start, its restart policy). It says so only with two ids to compare: the
+first agent to report one, after an agent that did not, says nothing about it.
 
 **Needs** the collector to have seen at least one sample before the restart. The agent's
 sequence starts again from 1 on every launch, so this is what a restart looks like from the
