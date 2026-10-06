@@ -141,3 +141,27 @@ func TestDNSUnread(t *testing.T) {
 		t.Errorf("unread: %+v", it)
 	}
 }
+
+// RouterOS's default configuration's input chain, in its order: the
+// loopback accept before the !LAN drop must not make the drop a maybe for a
+// query from the Internet, which is never addressed to 127.0.0.1. The
+// reference RB5009 has this chain, and doctor said "may drop" before.
+func TestTheDefaultInputChainDropsQueriesOnTheUplink(t *testing.T) {
+	t.Parallel()
+	const defconf = "@@fw.filter.0=\tchain=input\taction=accept\tconnection-state=established,related,untracked\n" +
+		"@@fw.filter.1=\tchain=input\taction=drop\tconnection-state=invalid\n" +
+		"@@fw.filter.2=\tchain=input\taction=accept\tprotocol=icmp\n" +
+		"@@fw.filter.3=\tchain=input\taction=accept\tdst-address=127.0.0.1\n" +
+		"@@fw.filter.4=\tchain=input\taction=drop\tin-interface-list=!LAN"
+	rep := doctorWith(t, nil, DoctorImage{}, [2]string{"allow-remote-requests", "true"},
+		[2]string{"@@uplink-if=", "@@uplink-if=PPPoE_DIGI\n@@uplink-lists=WAN,"},
+		[2]string{"/ip/firewall/filter/find]", defconf})
+	if it := item(rep, dnsCheck); verdict(rep, dnsCheck) != "ok" || !strings.Contains(it.Got, "uplink PPPoE_DIGI: /ip/firewall/filter rule 4 (chain=input action=drop, in-interface-list=!LAN) drops the queries") {
+		t.Errorf("default input chain: %+v", it)
+	}
+	for value, want := range map[string]tri{"127.0.0.1": triNo, "127.0.0.0/8": triNo, "127.5.0.0/16": triNo, "0.0.0.0/0": triMaybe, "203.0.113.7": triMaybe, "x": triMaybe} {
+		if got := notLoopback(value); got != want {
+			t.Errorf("notLoopback(%q) = %v, want %v", value, got, want)
+		}
+	}
+}
