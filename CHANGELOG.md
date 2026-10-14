@@ -4,6 +4,22 @@ Notable changes per release. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the versions
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Security
+
+- **Go 1.27.2.** `go.mod` moves from `go 1.27.1` to `go 1.27.2`, the patch
+  release that fixes nine standard-library advisories govulncheck reports
+  as reachable from this code: GO-2026-6617, an HPACK encoder race that
+  crashes an HTTP/2 server; GO-2026-6603, GO-2026-6610, GO-2026-6611 and
+  GO-2026-6612 in `net/http`'s HTTP/2; GO-2026-6605 and GO-2026-6613, HTTP/1
+  connection desynchronization around CONNECT; GO-2026-6608 in
+  `mime/multipart`; and GO-2026-6607 in `crypto/tls`. The release builds
+  with the toolchain `go.mod` names, so the binaries and images of 1.6.1,
+  built with Go 1.27.1, carry them and the next release will not.
+  `golang.org/x/net`, which ships the same HPACK fix as v0.60.0, stays out
+  of `go.mod`: only `x/tools` requires it, and no package of it is built.
+
 ## [1.6.1] - 2026-10-06
 
 ### Fixed
