@@ -13,7 +13,7 @@ release tag (`:1.2.0`, say) for a deployment you want to be able to reproduce,
 as for the agent.
 
 Both need an agent already installed on a router —
-[Install with the CLI](https://jmrp.io/docs/mikroscope/install/) — and a `.env`
+[Install with the CLI](https://docs.jmrp.io/mikroscope/install/) — and a `.env`
 beside the compose file naming the `/30` that install was given:
 
 ```sh
@@ -73,7 +73,7 @@ included. Add to the collector service:
 It costs round trips: `/tool fetch output=user` returns at most 64 512 bytes,
 so a pull is capped at 13 samples where the direct transport takes hundreds.
 At 10 Hz that is a fetch every 1.3 s, and a fetch is the expensive part — see
-[the relay](https://jmrp.io/docs/mikroscope/install/reaching-the-agent/).
+[the relay](https://docs.jmrp.io/mikroscope/install/reaching-the-agent/).
 
 There is **no third way at present**: the collector derives the agent's
 address from `--subnet` and cannot be pointed at an arbitrary one, so an

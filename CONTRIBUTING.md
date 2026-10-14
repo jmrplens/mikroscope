@@ -5,7 +5,7 @@ know before opening one: where things live, what has to pass, the virtual
 RouterOS lab the deployment is tested in, the rules for touching a real
 router, and what a change owes the documentation.
 
-The full documentation is at <https://jmrp.io/docs/mikroscope/>. This is the
+The full documentation is at <https://docs.jmrp.io/mikroscope/>. This is the
 shorter, repository-side version of it.
 
 ## What this is, in one paragraph
@@ -381,7 +381,7 @@ the same way:
   decision you make for that run, not one a script makes for you.
 - **One ssh connection, many commands.** Each ssh connect costs a small
   RouterOS device a large share of a core for its duration
-  ([SSH cost](https://jmrp.io/docs/mikroscope/cost/#ssh-cost)). Batch commands
+  ([SSH cost](https://docs.jmrp.io/mikroscope/cost/#ssh-cost)). Batch commands
   into one connection; never loop over connects, and never use ssh as a data
   path.
 - **Exact tags only.** Everything `install` creates carries the comment

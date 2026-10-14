@@ -82,7 +82,7 @@ and the collector on both of its platforms.
       the lab (`site/scripts/gen-webfig-captures.mjs`): they are pictures, and
       the pull route's form shows the agent image this release published.
 - [ ] The repository's `homepage` field points at
-      <https://jmrp.io/docs/mikroscope/>, and the topics are set.
+      <https://docs.jmrp.io/mikroscope/>, and the topics are set.
 
 ## When something goes wrong
 

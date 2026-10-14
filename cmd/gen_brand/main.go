@@ -513,12 +513,13 @@ type webApp struct {
 // Every URL in it is relative, and resolves against the manifest's own URL, so
 // this generator never has to know that the site is served under /mikroscope/.
 // It carries no "id" on purpose: an id resolves against the ORIGIN of
-// start_url, not against the manifest, so "./" would claim jmrplens.github.io/
+// start_url, not against the manifest, so "./" would claim docs.jmrp.io/
 // itself, which the host's own hub already does with a manifest of its own
-// (jmrplens.github.io/site.webmanifest, "jmrp docs", start_url "/", read
-// 2026-09-25), and an id that stays inside this site would have to spell out
-// /mikroscope/, the base path this generator otherwise never needs. Left out,
-// it defaults to start_url, which is this site's own directory.
+// (site.webmanifest at the root of the host, "jmrp docs", start_url "/", read
+// 2026-09-25 at the host's former name, jmrplens.github.io), and an id that
+// stays inside this site would have to spell out /mikroscope/, the base path
+// this generator otherwise never needs. Left out, it defaults to start_url,
+// which is this site's own directory.
 //
 // favicon.svg is not in it either: it is the one icon with no ground of its
 // own, and whatever lands on a home screen brings its own.

@@ -6,6 +6,22 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **The documentation is at <https://docs.jmrp.io/mikroscope/>.** GitHub
+  Pages serves the site under docs.jmrp.io, and the canonical links, the
+  sitemap, the hreflang pairs, the Open Graph image, the structured data
+  and the llms indexes name that address, as do the README, the generated
+  `docs/`, the issue and discussion forms, the installer's pointer to the
+  prerequisites page and, from the next release on, the agent image's
+  `org.opencontainers.image.documentation` label. The addresses used
+  before, `https://jmrplens.github.io/mikroscope/` and
+  `https://jmrp.io/docs/mikroscope/`, redirect to it. Checked on
+  2026-10-14 against a build of this tree: all 132 built HTML documents
+  carry a canonical link on the new address, the 128 sitemap URLs and their
+  384 hreflang alternates are on it, and no built file names either older
+  address.
+
 ### Security
 
 - **Go 1.27.2.** `go.mod` moves from `go 1.27.1` to `go 1.27.2`, the patch

@@ -1,9 +1,10 @@
 # The documentation site
 
 Astro + Starlight, bilingual, built from `site/` and served from GitHub Pages at
-<https://jmrplens.github.io/mikroscope/>. It is advertised as
-<https://jmrp.io/docs/mikroscope>, which 301s to the Pages URL — that split is
-explained where it is configured, at the top of `astro.config.mjs`.
+<https://docs.jmrp.io/mikroscope/>, the address every link to it carries. The
+older addresses, <https://jmrplens.github.io/mikroscope/> and
+<https://jmrp.io/docs/mikroscope>, redirect there; `publicDocs`, at the top of
+`astro.config.mjs`, is where the address is set.
 
 ```sh
 pnpm install
