@@ -9,7 +9,7 @@ body:
         [Where it has been verified](https://github.com/jmrplens/mikroscope#where-it-has-been-verified)
         lists the boards mikroscope has run on. Everything else it builds for
         is cross-compiled and checked in CI, and nothing more
-        ([Tested on](https://jmrp.io/docs/mikroscope/about/status/)).
+        ([Tested on](https://docs.jmrp.io/mikroscope/about/status/)).
         A report from your board is what changes that, and a partial one
         counts: an `exec format error` on a named board is a result.
 
@@ -113,7 +113,7 @@ body:
       label: What the agent found on the board
       description: >
         The JSON body of the agent's `/capabilities`
-        ([how to fetch it](https://jmrp.io/docs/mikroscope/reference/http/#get-capabilities)):
+        ([how to fetch it](https://docs.jmrp.io/mikroscope/reference/http/#get-capabilities)):
         kernel, board, core count, which sources opened, whether it is
         privileged, the device's own ceilings. It carries no credential, but
         the request does: paste the body only, not a command line that holds
@@ -128,7 +128,7 @@ body:
         Optional, and the number most worth having. Two reads of
         `self_cpu_usec_total` 60 s apart at steady state with the ring full;
         the difference divided by 60 000 000 is the share of one core
-        ([the procedure](https://jmrp.io/docs/mikroscope/cost/#measuring-it-on-your-own-device)).
+        ([the procedure](https://docs.jmrp.io/mikroscope/cost/#measuring-it-on-your-own-device)).
         Give the rate, `self_rss_bytes`, the date, and what else the router
         was doing.
       placeholder: "<rate> Hz, <share> of one core over 60 s, RSS <MiB>, <date>, <what the router was doing>"
@@ -141,7 +141,7 @@ body:
         line, each marked measured or inferred, with the date. A pair is read
         from the kernel log, which the agent sees only in a privileged
         container (the default). How to measure one on a dead port:
-        [port names](https://jmrp.io/docs/mikroscope/reference/port-names/#measure-it-on-a-dead-port).
+        [port names](https://docs.jmrp.io/mikroscope/reference/port-names/#measure-it-on-a-dead-port).
       placeholder: |
         ether6 = eth5, measured <date> (flapped a dead port)
         ether3 = eth2, inferred from the MAC order

@@ -59,10 +59,11 @@ const REPO = path.dirname(SITE);
 const CONTENT = path.join(SITE, "src/content/docs");
 const DOCS = path.join(REPO, "docs");
 
-// The base path and the advertised origin as astro.config.mjs states them,
-// read out of it rather than restated here. The site's own links are rooted at
-// the base; every absolute link written OUTSIDE the site uses `publicDocs`,
-// and the comment beside that declaration says why the two differ.
+// The base path and the public address as astro.config.mjs states them, read
+// out of it rather than restated here. The site's own links are rooted at the
+// base; every absolute link written OUTSIDE the site uses `publicDocs`, the
+// address the site is served at, and the comment beside that declaration says
+// where it points.
 const config = readFileSync(path.join(SITE, "astro.config.mjs"), "utf8");
 /** @param {RegExp} pattern @param {string} what @returns {string} */
 function fromConfig(pattern, what) {

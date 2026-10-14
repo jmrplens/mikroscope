@@ -51,7 +51,7 @@ layer-2 loop, link-down and port-error rules. No threshold is a compiled
 number about the device: each is zero, fewer than one sample in two minutes
 (agent silent), a share of a ceiling the device declares (80 % of the connection
 table, 85 % of a zone's critical trip), or, for the wake-up storm, four times
-the device's own rate over its previous day. [Alert rules](https://jmrp.io/docs/mikroscope/dashboards/alerts/)
+the device's own rate over its previous day. [Alert rules](https://docs.jmrp.io/mikroscope/dashboards/alerts/)
 gives each rule, what it fires on, and the backtests behind the newer ones.
 
 ## Importing

@@ -177,8 +177,8 @@ dockers_v2:
     # two say the same thing on purpose. Reword them together.
     #
     # `documentation` is the site, at the address the README and the generated
-    # docs/ hand out (`publicDocs` in site/astro.config.mjs; jmrp.io 301s it to
-    # the GitHub Pages copy). It named the docs/ tree before, which is Markdown
+    # docs/ hand out and GitHub Pages serves it at (`publicDocs` in
+    # site/astro.config.mjs). It named the docs/ tree before, which is Markdown
     # generated from the English pages for a reader of a checkout, and has no
     # Spanish.
     labels:
@@ -186,7 +186,7 @@ dockers_v2:
       "org.opencontainers.image.description": "Sub-second kernel telemetry agent for container-capable RouterOS devices"
       "org.opencontainers.image.source": "https://github.com/jmrplens/mikroscope"
       "org.opencontainers.image.url": "https://github.com/jmrplens/mikroscope"
-      "org.opencontainers.image.documentation": "https://jmrp.io/docs/mikroscope/"
+      "org.opencontainers.image.documentation": "https://docs.jmrp.io/mikroscope/"
       "org.opencontainers.image.licenses": "MIT"
       "org.opencontainers.image.vendor": "jmrplens"
       "org.opencontainers.image.version": "{{ .Version }}"
@@ -197,7 +197,7 @@ dockers_v2:
       "index:org.opencontainers.image.description": "Sub-second kernel telemetry agent for container-capable RouterOS devices"
       "index:org.opencontainers.image.source": "https://github.com/jmrplens/mikroscope"
       "index:org.opencontainers.image.url": "https://github.com/jmrplens/mikroscope"
-      "index:org.opencontainers.image.documentation": "https://jmrp.io/docs/mikroscope/"
+      "index:org.opencontainers.image.documentation": "https://docs.jmrp.io/mikroscope/"
       "index:org.opencontainers.image.licenses": "MIT"
       "index:org.opencontainers.image.vendor": "jmrplens"
       "index:org.opencontainers.image.version": "{{ .Version }}"
@@ -228,7 +228,7 @@ dockers_v2:
       "org.opencontainers.image.description": "Collector for mikroscope: pulls the agent's ring and forwards it to eleven sinks"
       "org.opencontainers.image.source": "https://github.com/jmrplens/mikroscope"
       "org.opencontainers.image.url": "https://github.com/jmrplens/mikroscope"
-      "org.opencontainers.image.documentation": "https://jmrp.io/docs/mikroscope/"
+      "org.opencontainers.image.documentation": "https://docs.jmrp.io/mikroscope/"
       "org.opencontainers.image.licenses": "MIT"
       "org.opencontainers.image.vendor": "jmrplens"
       "org.opencontainers.image.version": "{{ .Version }}"
@@ -239,7 +239,7 @@ dockers_v2:
       "index:org.opencontainers.image.description": "Collector for mikroscope: pulls the agent's ring and forwards it to eleven sinks"
       "index:org.opencontainers.image.source": "https://github.com/jmrplens/mikroscope"
       "index:org.opencontainers.image.url": "https://github.com/jmrplens/mikroscope"
-      "index:org.opencontainers.image.documentation": "https://jmrp.io/docs/mikroscope/"
+      "index:org.opencontainers.image.documentation": "https://docs.jmrp.io/mikroscope/"
       "index:org.opencontainers.image.licenses": "MIT"
       "index:org.opencontainers.image.vendor": "jmrplens"
       "index:org.opencontainers.image.version": "{{ .Version }}"
@@ -264,10 +264,10 @@ release:
   # hands out, where a reader of the release page meets it before the tables.
   footer: |
     ---
-    **Documentation:** https://jmrp.io/docs/mikroscope/, in English and
-    Spanish: [installing it](https://jmrp.io/docs/mikroscope/install/),
-    [what it costs the router](https://jmrp.io/docs/mikroscope/cost/), and
-    [where it stands](https://jmrp.io/docs/mikroscope/about/status/): what has
+    **Documentation:** https://docs.jmrp.io/mikroscope/, in English and
+    Spanish: [installing it](https://docs.jmrp.io/mikroscope/install/),
+    [what it costs the router](https://docs.jmrp.io/mikroscope/cost/), and
+    [where it stands](https://docs.jmrp.io/mikroscope/about/status/): what has
     run on hardware and what has not.
 
     ## Which file do I need?

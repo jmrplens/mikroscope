@@ -24,17 +24,20 @@ const siteBase = "/mikroscope";
 // a VERSION with no dated heading fails the build here, first.
 const release = readRelease(fileURLToPath(new URL("..", import.meta.url)));
 
-// Where the documentation is advertised, which is not where it is served.
+// Where the documentation lives: the address it is served at and the one a
+// reader is handed, which are now the same.
 //
-// `site` below has to name GitHub Pages, because that is where the bytes are
-// and it is what the canonical link, the sitemap and the hreflang pairs must
-// agree with. What a reader is handed is the other one: jmrp.io 301s
-// /docs/mikroscope and everything under it to the Pages URL, so a link that
-// carries it reaches the same page and puts the canonical domain in the places
-// a mention counts. Every absolute link written OUTSIDE the site — the README,
-// the generated docs/, the dashboards — uses this one; the site's own internal
-// links stay relative and never see it.
-export const publicDocs = "https://jmrp.io/docs/mikroscope";
+// GitHub Pages serves this site under docs.jmrp.io, the custom domain of the
+// jmrplens/jmrplens.github.io user site, and 301s the jmrplens.github.io
+// addresses it was first served at to the same path there. The address
+// handed out before, jmrp.io/docs/mikroscope, keeps redirecting for the
+// links that carry it. `site` below is this value, so the canonical link, the
+// sitemap, the hreflang pairs and the structured data name the address that
+// every absolute link written OUTSIDE the site carries: the README, the
+// generated docs/, the dashboards' README. The site's own internal links stay
+// relative and never see it. scripts/gen-docs.mjs reads the string out of this
+// file as text, so it stays a literal.
+export const publicDocs = "https://docs.jmrp.io/mikroscope";
 
 /**
  * When each page last changed, counting the data it renders: the newest
@@ -248,7 +251,7 @@ const movedPages = {
 };
 
 export default defineConfig({
-	site: "https://jmrplens.github.io/mikroscope",
+	site: publicDocs,
 	base: siteBase,
 	trailingSlash: "always",
 	redirects: movedPages,
@@ -296,7 +299,7 @@ export default defineConfig({
 					tag: "meta",
 					attrs: {
 						property: "og:image",
-						content: "https://jmrplens.github.io/mikroscope/og.png",
+						content: `${publicDocs}/og.png`,
 					},
 				},
 				{ tag: "meta", attrs: { property: "og:image:width", content: "1200" } },
@@ -309,13 +312,14 @@ export default defineConfig({
 					tag: "meta",
 					attrs: {
 						name: "twitter:image",
-						content: "https://jmrplens.github.io/mikroscope/og.png",
+						content: `${publicDocs}/og.png`,
 					},
 				},
 				// Ownership proofs for Google Search Console and Bing Webmaster
-				// Tools, for the https://jmrplens.github.io/mikroscope/ property.
-				// Both read them from the property's home page and re-check them
-				// later, so they stay. Public by design: neither is a credential.
+				// Tools, issued for the property at the site's first address,
+				// https://jmrplens.github.io/mikroscope/. Both read them from the
+				// property's home page and re-check them later, so they stay.
+				// Public by design: neither is a credential.
 				{
 					tag: "meta",
 					attrs: {

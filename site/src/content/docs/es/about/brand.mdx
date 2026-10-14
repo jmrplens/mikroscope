@@ -181,7 +181,7 @@ SVG: Chromium 153 sin interfaz pidió únicamente `favicon.svg`. El manifiesto n
 `icon-192.png`, `icon-512.png` e `icon-maskable-512.png` con URL relativas a él mismo, y deja fuera
 `favicon.svg`, el único icono sin fondo propio, porque lo que acaba en una pantalla de inicio lleva
 el suyo. No lleva `id`, que se resuelve contra el origen de `start_url` y no contra el manifiesto:
-Chromium 153 resolvió `./` a la raíz del origen, aquí `https://jmrplens.github.io/`, la dirección
+Chromium 153 resolvió `./` a la raíz del origen, aquí `https://docs.jmrp.io/`, la dirección
 que ya reclama el sitio central del dominio con un manifiesto propio, y un `id` que se quede dentro
 de este sitio tiene que escribir `/mikroscope/`, la ruta base que nada más en el manifiesto nombra.
 Sin él, toma el valor de `start_url`, que Chromium resuelve a `/mikroscope/`, el `id` que

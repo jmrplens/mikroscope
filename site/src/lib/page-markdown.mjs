@@ -1333,7 +1333,7 @@ export function reduceBody({ body: page, file, locale }) {
  * description, the absolute URL it doubles, then the same reduction docs/ is
  * generated from, with every link target made absolute (see absoluteTargets).
  * gen-docs.mjs retargets the same reduction for a file read in a checkout, to
- * the advertised jmrp.io address, and otherwise the two say the same thing.
+ * the address `publicDocs` names, and otherwise the two say the same thing.
  *
  * @param {object} page
  * @param {string} page.route the page route, "" for the English home

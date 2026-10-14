@@ -488,7 +488,7 @@ func readManifest(t *testing.T) manifestJSON {
 // TestTheManifestResolvesUnderAnyBasePath: every URL in it is relative, so it
 // works under whatever path the site is served from, and it carries no "id".
 // An id is resolved against the ORIGIN of start_url, not against the manifest,
-// so "./" names jmrplens.github.io/, which the host's own hub already claims
+// so "./" names docs.jmrp.io/, which the host's own hub already claims
 // with a manifest of its own, and an id that stays inside this site has to
 // spell out /mikroscope/, the base path nothing else here names.
 func TestTheManifestResolvesUnderAnyBasePath(t *testing.T) {

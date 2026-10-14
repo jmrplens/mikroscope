@@ -167,7 +167,7 @@ requested only `favicon.svg`. The manifest names `icon-192.png`, `icon-512.png` 
 `icon-maskable-512.png` by URLs relative to itself, and leaves out `favicon.svg`, the one icon with
 no ground of its own, since whatever lands on a home screen brings its own. It carries no `id`,
 which is resolved against the origin of `start_url` rather than against the manifest: Chromium 153
-resolved `./` to the root of the origin, here `https://jmrplens.github.io/`, the address the host's
+resolved `./` to the root of the origin, here `https://docs.jmrp.io/`, the address the host's
 own hub already claims with a manifest of its own, and an `id` that stays inside this site has to
 spell out `/mikroscope/`, the base path nothing else in the manifest names. Left out, it defaults to
 `start_url`, which Chromium resolves to `/mikroscope/`, the `id` it recommends.

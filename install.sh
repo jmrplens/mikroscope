@@ -317,7 +317,7 @@ offer_router() {
     say ""
     say "The router is not ready yet. ${BINARY} doctor names the fix for each line above;"
     say "the prerequisites page has the one nobody can do remotely:"
-    say "https://jmrp.io/docs/mikroscope/install/prerequisites/"
+    say "https://docs.jmrp.io/mikroscope/install/prerequisites/"
     return
   fi
   say ""

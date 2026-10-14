@@ -33,7 +33,7 @@ body:
     attributes:
       label: Page
       description: The address on the documentation site, with the section's anchor if you have it.
-      placeholder: https://jmrp.io/docs/mikroscope/install/routes/#a-registry-pull
+      placeholder: https://docs.jmrp.io/mikroscope/install/routes/#a-registry-pull
     validations:
       required: true
   - type: dropdown
