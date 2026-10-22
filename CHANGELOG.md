@@ -35,6 +35,23 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   built with Go 1.27.1, carry them and the next release will not.
   `golang.org/x/net`, which ships the same HPACK fix as v0.60.0, stays out
   of `go.mod`: only `x/tools` requires it, and no package of it is built.
+- **Go 1.27.3.** `go.mod` moves from `go 1.27.2` to `go 1.27.3`, the patch
+  release that fixes GO-2026-6809, which govulncheck reports as reachable
+  from this code: `crypto/x509`'s `Certificate.Verify` now refuses a list of
+  intermediate certificates that are no longer trusted, for the systems
+  whose trust store has not dropped them. The binaries and images of 1.6.1
+  carry it too, and the next release will not.
+- **The documentation site builds with Vite 8.3.5.** Vite, which the site
+  takes through Astro, moves from 8.3.2 to 8.3.5 in `site/pnpm-lock.yaml`
+  (Rolldown from 1.2.12 to 1.2.15 with it), and `pnpm audit` no longer
+  reports the six advisories Vite 8.3.3 fixed: GHSA-587h-7wmj-h5pm (high),
+  GHSA-698v-4r3x-3vcv and GHSA-r825-w8mm-5pxw in the `launch-editor` code
+  behind the dev server's open-in-editor request, GHSA-rq7h-c2jc-7f22 and
+  GHSA-vfpm-58rq-9qcg, which let the dev server return parts of files
+  outside `server.fs.allow`, and GHSA-9jrq-w75r-8gcw, a cross-origin script
+  load from a running dev server. All six concern `astro dev`; the
+  published site is the static output of the build, and no binary or image
+  contains it.
 
 ## [1.6.1] - 2026-10-06
 
