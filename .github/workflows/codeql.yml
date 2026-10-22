@@ -3,7 +3,7 @@
 # Written by hand rather than switched on as GitHub's default setup so the Go
 # leg can install the toolchain the module asks for. Default setup pins
 # GOTOOLCHAIN=local to whatever Go the CodeQL runtime shipped with, which
-# breaks every time go.mod moves ahead of it, and go.mod here names go 1.27.2.
+# breaks every time go.mod moves ahead of it, and go.mod here names go 1.27.3.
 #
 # The three languages are what default setup would have analyzed anyway: the
 # workflows themselves, the Go CLI, collector and agent, and the TypeScript the
