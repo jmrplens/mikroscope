@@ -4,7 +4,7 @@ packages:
 # The only packages allowed to run an install script. pnpm blocks them all by
 # default, which is the right default: an install script is arbitrary code from
 # a transitive dependency. esbuild and sharp are named because the site does not
-# build without them — both ship a native binary, and Astro's image pipeline is
+# build without them: both ship a native binary, and Astro's image pipeline is
 # sharp. puppeteer is named because pa11y-ci drives a browser through it and its
 # install script is what fetches that browser. scripts/run-pa11y.mjs hands it
 # Playwright's Chromium instead, so the Chrome the script downloads goes unused,
@@ -26,8 +26,25 @@ allowBuilds:
 # depends on 3.x on its own.
 overrides:
   "@puppeteer/browsers": "^3.2.2"
+  # High advisories in the audit tools and Astro's font loader, each lifted
+  # within its own major (2026-11-02): undici before 6.29.1 under cheerio
+  # (pa11y-ci) and before 8.12.2 under unifont (astro); zod 4 before 4.6.6.
+  "cheerio>undici": "^6.29.1"
+  "unifont>undici": "^8.12.2"
+  "zod@>=4.0.0 <4.6.6": "^4.6.6"
 
 # Resolve to the latest published versions; pnpm 11.8 applies a non-zero
 # release-age gate otherwise, which turns a fresh install into a different
 # dependency tree from the one the lockfile was written against.
 minimumReleaseAge: 0
+
+auditConfig:
+  ignoreGhsas:
+    # zod: oversized constrained collections exhaust memory while validating.
+    # Fixed only in 4.6.6, and the override above lifts every zod 4 copy. What
+    # is left is zod 3.25.76 under chromium-bidi, through puppeteer in
+    # pa11y-ci, the accessibility audit tool: it validates its own protocol
+    # messages, and nothing the site runs or ships depends on it. No 3.x
+    # release is patched. Remove when chromium-bidi moves to zod 4.6.6 or
+    # later. Reviewed 2026-11-02.
+    - GHSA-mrhx-c7xc-m3w5
