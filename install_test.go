@@ -337,12 +337,13 @@ source install.sh --dir "$1" --version "$2"`
 	return string(out), cmd.ProcessState.ExitCode()
 }
 
-// TestTheInstallerTakesTheArchiveEveryPlatformShips. This suite runs on
-// Linux, macOS and Windows runners, so the other platforms are reached by
-// replacing uname: the naming, download, digest and install then run exactly
-// as they do anywhere else. What this cannot cover is a tooling difference: a
-// Mac has shasum and no sha256sum, which the script handles by looking for
-// both (TestTheInstallerVerifiesWithShasumWhenThereIsNoSha256sum).
+// TestTheInstallerTakesTheArchiveEveryPlatformShips. CI runs this package on
+// Linux alone (race.yml, through make test-race; the cross-platform job leaves
+// it out), so the other platforms are reached by replacing uname: the naming,
+// download, digest and install then run exactly as they do anywhere else.
+// What this cannot cover is a tooling difference: a Mac has shasum and no
+// sha256sum, which the script handles by looking for both
+// (TestTheInstallerVerifiesWithShasumWhenThereIsNoSha256sum).
 func TestTheInstallerTakesTheArchiveEveryPlatformShips(t *testing.T) {
 	t.Parallel()
 	for _, tc := range shippedMachines {
