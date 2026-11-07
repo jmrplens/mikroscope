@@ -376,7 +376,7 @@ under [Not tested](https://docs.jmrp.io/mikroscope/about/status/#not-tested).
 
 ## Install the CLI
 
-Install the `mikroscope` CLI on Linux, macOS or Windows, pick the archive for your computer rather than the router, and verify it.
+Install the `mikroscope` CLI on Linux, macOS, Windows or FreeBSD, pick the archive for your computer rather than the router, and verify it.
 
 Source: <https://docs.jmrp.io/mikroscope/install/cli/>
 
@@ -403,6 +403,8 @@ or, in PowerShell on Windows:
 ```powershell
 irm https://raw.githubusercontent.com/jmrplens/mikroscope/main/install.ps1 | iex
 ```
+
+FreeBSD's base system has neither `curl` nor `bash`, so there `pkg install curl bash` comes first.
 
 Either script, [`install.sh`](https://github.com/jmrplens/mikroscope/blob/main/install.sh) or [`install.ps1`](https://github.com/jmrplens/mikroscope/blob/main/install.ps1), does by itself everything
 the rest of this page does by hand: work out your platform, resolve the newest version, download
@@ -441,26 +443,38 @@ machine where `curl | bash` is not something to type.
 
 ### Choose an archive
 
-| Your machine                          | Download                                       |
-| ------------------------------------- | ---------------------------------------------- |
-| Linux, ordinary PC or server          | `mikroscope_<version>_linux_x86_64.tar.gz`     |
-| Linux on ARM (Raspberry Pi 4/5, …)    | `mikroscope_<version>_linux_arm64.tar.gz`      |
-| macOS, Apple silicon (M1 and later)   | `mikroscope_<version>_darwin_arm64.tar.gz`     |
-| macOS, Intel                          | `mikroscope_<version>_darwin_x86_64.tar.gz`    |
-| Windows                               | `mikroscope_<version>_windows_x86_64.zip`      |
+| Your machine                              | Download                                       |
+| ----------------------------------------- | ---------------------------------------------- |
+| Linux, ordinary PC or server              | `mikroscope_<version>_linux_x86_64.tar.gz`     |
+| Linux on 64-bit ARM (Raspberry Pi 4/5, …) | `mikroscope_<version>_linux_arm64.tar.gz`      |
+| Linux on 32-bit ARM, ARMv7 or later       | `mikroscope_<version>_linux_armv7.tar.gz`      |
+| macOS, Apple silicon (M1 and later)       | `mikroscope_<version>_darwin_arm64.tar.gz`     |
+| macOS, Intel                              | `mikroscope_<version>_darwin_x86_64.tar.gz`    |
+| FreeBSD on amd64                          | `mikroscope_<version>_freebsd_x86_64.tar.gz`   |
+| FreeBSD on arm64                          | `mikroscope_<version>_freebsd_arm64.tar.gz`    |
+| FreeBSD on 32-bit ARM, ARMv7              | `mikroscope_<version>_freebsd_armv7.tar.gz`    |
+| Windows on x64                            | `mikroscope_<version>_windows_x86_64.zip`      |
+| Windows on Arm                            | `mikroscope_<version>_windows_arm64.zip`       |
 
 They are on the [latest release](https://github.com/jmrplens/mikroscope/releases/latest).
 Anything whose name starts with `mikroscope-agent` is the other program.
+
+`uname -m` names the CPU of a Linux machine or a Mac: `x86_64`, `aarch64` or `arm64`, or
+`armv7l` for the ARMv7 archive (`armv8l` too, a 32-bit system on a 64-bit CPU). On FreeBSD
+`uname -p` names it (`amd64`, `aarch64` or `armv7`), and on Windows
+`$env:PROCESSOR_ARCHITECTURE` does (`AMD64` or `ARM64`). The install scripts read the same
+values. Nothing else has an archive: not 32-bit x86, and not ARM older than ARMv7.
 
 ### Manual install
 
 - **Linux**
 
-  1. Download the archive and the checksums:
+  1. Download the archive for your CPU, `x86_64`, `arm64` or `armv7`, and the checksums:
 
      ```sh
      VERSION=1.6.1
-     curl -fsSLO https://github.com/jmrplens/mikroscope/releases/download/v$VERSION/mikroscope_${VERSION}_linux_x86_64.tar.gz
+     ARCH=x86_64        # arm64 or armv7 on ARM: the table above
+     curl -fsSLO https://github.com/jmrplens/mikroscope/releases/download/v$VERSION/mikroscope_${VERSION}_linux_${ARCH}.tar.gz
      curl -fsSLO https://github.com/jmrplens/mikroscope/releases/download/v$VERSION/checksums.txt
      ```
 
@@ -473,7 +487,7 @@ Anything whose name starts with `mikroscope-agent` is the other program.
   3. Unpack and put it where the shell looks:
 
      ```sh
-     tar xzf mikroscope_${VERSION}_linux_x86_64.tar.gz mikroscope
+     tar xzf mikroscope_${VERSION}_linux_${ARCH}.tar.gz mikroscope
      sudo install -m 0755 mikroscope /usr/local/bin/mikroscope
      ```
 
@@ -509,10 +523,36 @@ Anything whose name starts with `mikroscope-agent` is the other program.
      refuses to run it and says it "cannot be opened because the developer
      cannot be verified".
 
+- **FreeBSD**
+
+  1. Download the archive for your CPU, `x86_64`, `arm64` or `armv7`, and the checksums, with the
+     `fetch` the base system ships:
+
+     ```sh
+     VERSION=1.6.1
+     ARCH=x86_64        # arm64 or armv7 on ARM: the table above
+     fetch https://github.com/jmrplens/mikroscope/releases/download/v$VERSION/mikroscope_${VERSION}_freebsd_${ARCH}.tar.gz
+     fetch https://github.com/jmrplens/mikroscope/releases/download/v$VERSION/checksums.txt
+     ```
+
+  2. Check it against the list before unpacking it:
+
+     ```sh
+     sha256sum --ignore-missing -c checksums.txt
+     ```
+
+  3. Unpack it, and install it as root:
+
+     ```sh
+     tar xzf mikroscope_${VERSION}_freebsd_${ARCH}.tar.gz mikroscope
+     install -m 0755 mikroscope /usr/local/bin/mikroscope
+     ```
+
 - **Windows**
 
-  1. Download `mikroscope_<version>_windows_x86_64.zip` and `checksums.txt` from
-     the release page.
+  1. Download `mikroscope_<version>_windows_x86_64.zip`, or `mikroscope_<version>_windows_arm64.zip`
+     on an Arm PC, and `checksums.txt` from the release page. The commands below name the x86_64
+     one.
 
   2. Check it in PowerShell, against the line for your file in `checksums.txt`:
 

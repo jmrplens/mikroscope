@@ -41,6 +41,12 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   with the base system's `sha256sum` and installs a binary that reports
   `mikroscope 1.6.1`; in a Debian armhf container (`armv7l`, QEMU user
   mode) it does the same with `linux_armv7`.
+- **Install the CLI names every archive a release publishes.** The page,
+  in English and Spanish and in `docs/install.md`, said Linux, macOS or
+  Windows and listed five archives. It now says FreeBSD too, lists all
+  ten, says which `uname` value picks which, has a FreeBSD tab in the
+  manual install (`fetch`, and the base system's `sha256sum`), and names
+  `linux_armv7` and `windows_arm64` in the Linux and Windows tabs.
 
 ### Security
 
