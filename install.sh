@@ -36,6 +36,15 @@ COSIGN_ISSUER="https://token.actions.githubusercontent.com"
 # gives, rather than a second spelling of it that can drift.
 SELF_URL="https://raw.githubusercontent.com/${REPO}/main/install.sh"
 
+# The CLI archives a release publishes for this script to install, as the
+# "<os>_<arch>" in their names: the goos and goarch of the mikroscope build in
+# .goreleaser.yaml, less the pairs it ignores, with amd64 named x86_64 and arm
+# at GOARM 7 named armv7, as its name_template writes them. The Windows pair
+# is a .zip that install.ps1 installs. install_test.go derives the same list
+# from .goreleaser.yaml and fails when the two disagree.
+CLI_ARCHIVES="linux_x86_64 linux_arm64 linux_armv7 darwin_x86_64 darwin_arm64 freebsd_x86_64 freebsd_arm64 freebsd_armv7"
+WINDOWS_ARCHIVES="windows_x86_64 windows_arm64"
+
 say() { printf '%s\n' "$*"; }
 die() { printf 'install: %s\n' "$*" >&2; exit 1; }
 
@@ -59,24 +68,43 @@ USAGE
 # as "command not found" from somewhere in the middle of the run.
 need() { command -v "$1" >/dev/null 2>&1 || die "this needs $1, which is not on PATH"; }
 
+# no_release names what does exist, because a refusal piped out of curl is the
+# only thing the reader sees: "not this one" without the list sends them to
+# the releases page to find out whether anything would have worked.
+no_release() {
+  die "no release is built for $1. Each release publishes the CLI as a .tar.gz for ${CLI_ARCHIVES// /, }, and as a .zip for ${WINDOWS_ARCHIVES// /, }: https://github.com/${REPO}/releases"
+}
+
 # platform prints "os arch" in the spelling the release archives use, and
 # refuses rather than guessing: a wrong archive is a confusing failure later.
 platform() {
   local os arch
   os=$(uname -s | tr '[:upper:]' '[:lower:]')
-  arch=$(uname -m)
   case "$os" in
-    linux | darwin) ;;
     mingw* | msys* | cygwin*)
-      die "on Windows take the .zip from https://github.com/${REPO}/releases and see the Windows install page" ;;
-    *) die "no release is built for $os" ;;
+      die "on Windows run install.ps1 in PowerShell, or take the .zip for ${WINDOWS_ARCHIVES// / or } from https://github.com/${REPO}/releases" ;;
   esac
+  # FreeBSD's uname -m is the platform, and it says "arm" for every 32-bit ARM
+  # board, ARMv6 or ARMv7; uname -p is the processor architecture, which tells
+  # them apart (amd64, aarch64, armv7). Nowhere else: on a Mac uname -p says
+  # "arm" or "i386", and on Linux it is often "unknown".
+  if [ "$os" = freebsd ]; then
+    arch=$(uname -p)
+  else
+    arch=$(uname -m)
+  fi
   # x86_64 rather than amd64: the release archives are named the way uname
-  # spells it, not the way Go does (.goreleaser.yaml rewrites it).
+  # spells it, not the way Go does (.goreleaser.yaml rewrites it). armv8l is
+  # a 32-bit ARM system on a 64-bit core, which runs the ARMv7 build. ARMv6
+  # and older have no archive: the build is GOARM 7.
   case "$arch" in
     x86_64 | amd64) arch=x86_64 ;;
     aarch64 | arm64) arch=arm64 ;;
-    *) die "no release is built for $arch" ;;
+    armv7 | armv7l | armv8l) arch=armv7 ;;
+  esac
+  case " $CLI_ARCHIVES " in
+    *" ${os}_${arch} "*) ;;
+    *) no_release "${os}/${arch}" ;;
   esac
   printf '%s %s\n' "$os" "$arch"
 }
