@@ -13,9 +13,13 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"text/template"
+
+	"go.yaml.in/yaml/v3"
 )
 
 // install.sh is read off the network and piped into a shell, which is the
@@ -30,10 +34,13 @@ import (
 const fakeVersion = "9.9.9"
 
 // releaseArch is how the release names an architecture, which is uname's
-// spelling rather than Go's.
+// spelling rather than Go's, and for arm the GOARM level the CLI is built at.
 func releaseArch(goarch string) string {
-	if goarch == "amd64" {
+	switch goarch {
+	case "amd64":
 		return "x86_64"
+	case "arm":
+		return "armv7"
 	}
 	return goarch
 }
@@ -53,13 +60,19 @@ func buildFakeRelease(t *testing.T, corrupt bool) fakeRelease {
 }
 
 // buildFakeReleaseFor is buildFakeRelease for a platform this machine is not,
-// which is how the macOS path is covered without a Mac.
-func buildFakeReleaseFor(t *testing.T, goos, goarch string) fakeRelease {
+// named the way the archive is ("freebsd_armv7"), which is how every platform
+// the release ships is covered from one Linux runner.
+func buildFakeReleaseFor(t *testing.T, platform string) fakeRelease {
 	t.Helper()
-	return buildFakeReleaseWith(t, goos, goarch, false)
+	return buildFakeArchive(t, platform, false)
 }
 
 func buildFakeReleaseWith(t *testing.T, goos, goarch string, corrupt bool) fakeRelease {
+	t.Helper()
+	return buildFakeArchive(t, goos+"_"+releaseArch(goarch), corrupt)
+}
+
+func buildFakeArchive(t *testing.T, platform string, corrupt bool) fakeRelease {
 	t.Helper()
 	var body bytes.Buffer
 	zw := gzip.NewWriter(&body)
@@ -84,7 +97,7 @@ func buildFakeReleaseWith(t *testing.T, goos, goarch string, corrupt bool) fakeR
 	// x86_64 rather than amd64: the release archives are named the way uname
 	// spells it (.goreleaser.yaml rewrites it), and a fixture that used Go's
 	// spelling would serve an archive the script never asks for.
-	name := fmt.Sprintf("mikroscope_%s_%s_%s.tar.gz", fakeVersion, goos, releaseArch(goarch))
+	name := fmt.Sprintf("mikroscope_%s_%s.tar.gz", fakeVersion, platform)
 	sum := sha256.Sum256(archive)
 	digest := hex.EncodeToString(sum[:])
 	if corrupt {
@@ -257,50 +270,416 @@ func TestTheInstallerNeedsNoArgumentsToKnowWhatItCannotDo(t *testing.T) {
 	}
 }
 
-// TestTheInstallerStopsAtAPlatformWithNoRelease pins a bash rule that cost a
-// wrong message: a command substitution inside a here-string is not the
-// command `set -e` is watching, so `read os arch <<<"$(platform)"` printed the
-// refusal and then carried on with both empty, spending a request to be told
-// 404 for "mikroscope_2.0.0__.tar.gz".
-//
-// uname is replaced with a shell function and the script is sourced, rather
-// than a stub binary being put on PATH: a function needs no file and no
-// executable bit, and the script runs exactly as it does otherwise.
-func TestTheInstallerStopsAtAPlatformWithNoRelease(t *testing.T) {
-	t.Parallel()
-	requireBash(t)
-	var asked atomic.Int32
-	base := serveCounted(t, buildFakeRelease(t, false), &asked)
-	dir := t.TempDir()
+// machine is what uname prints on one kind of computer: -s, -m and -p, the
+// three the installer may ask. -p is given a value on every row, including the
+// ones where the script must not read it: a Mac prints "arm" or "i386" there,
+// which names no archive, so a script that asked -p on a Mac would refuse it.
+type machine struct {
+	name    string
+	s, m, p string
+}
 
-	const shim = `uname() { case "$1" in -s) echo Linux ;; -m) echo mips64 ;; esac; }
+// shippedMachines are the computers a release has a CLI archive for, each with
+// the archive the installer must take there, as "<os>_<arch>".
+var shippedMachines = []struct {
+	machine
+	archive string
+}{
+	{machine{"Linux on a PC", "Linux", "x86_64", "unknown"}, "linux_x86_64"},
+	{machine{"Linux on 64-bit ARM", "Linux", "aarch64", "unknown"}, "linux_arm64"},
+	{machine{"Linux on ARMv7", "Linux", "armv7l", "unknown"}, "linux_armv7"},
+	// A 32-bit ARM kernel on an ARMv8 core, or a 32-bit personality on a
+	// 64-bit one. AArch32 runs ARMv7 code.
+	{machine{"32-bit Linux on an ARMv8 core", "Linux", "armv8l", "unknown"}, "linux_armv7"},
+	{machine{"an Intel Mac", "Darwin", "x86_64", "i386"}, "darwin_x86_64"},
+	{machine{"an Apple-silicon Mac", "Darwin", "arm64", "arm"}, "darwin_arm64"},
+	// FreeBSD's uname -m is the platform (sys/<arch>/include/param.h, MACHINE)
+	// and -p the processor architecture (MACHINE_ARCH). For 32-bit ARM, -m is
+	// "arm" whichever level the system was built for, and only -p says armv7.
+	{machine{"FreeBSD on amd64", "FreeBSD", "amd64", "amd64"}, "freebsd_x86_64"},
+	{machine{"FreeBSD on arm64", "FreeBSD", "arm64", "aarch64"}, "freebsd_arm64"},
+	{machine{"FreeBSD on ARMv7", "FreeBSD", "arm", "armv7"}, "freebsd_armv7"},
+}
+
+// refusedMachines are computers no release has an archive for, with the
+// platform the refusal must name.
+var refusedMachines = []struct {
+	machine
+	named string
+}{
+	{machine{"Linux on MIPS", "Linux", "mips64", "mips64"}, "linux/mips64"},
+	// The 32-bit ARM build is GOARM 7, which an ARMv6 core cannot run.
+	{machine{"Linux on ARMv6", "Linux", "armv6l", "unknown"}, "linux/armv6l"},
+	{machine{"32-bit x86 Linux", "Linux", "i686", "unknown"}, "linux/i686"},
+	{machine{"FreeBSD on ARMv6", "FreeBSD", "arm", "armv6"}, "freebsd/armv6"},
+	{machine{"32-bit x86 FreeBSD", "FreeBSD", "i386", "i386"}, "freebsd/i386"},
+	{machine{"OpenBSD", "OpenBSD", "amd64", "amd64"}, "openbsd/x86_64"},
+}
+
+// asMachine runs install.sh as it runs on m, with uname replaced by a shell
+// function and the script sourced, rather than a stub binary put on PATH: a
+// function needs no file and no executable bit, and the script runs exactly
+// as it does otherwise.
+func asMachine(t *testing.T, m machine, base, dir string) (string, int) {
+	t.Helper()
+	requireBash(t)
+	const shim = `uname_s=$1 uname_m=$2 uname_p=$3
+shift 3
+uname() { case "$1" in -s) echo "$uname_s" ;; -m) echo "$uname_m" ;; -p) echo "$uname_p" ;; *) return 1 ;; esac; }
 source install.sh --dir "$1" --version "$2"`
-	cmd := exec.CommandContext(t.Context(), "bash", "-c", shim, "bash", dir, fakeVersion)
+	// Built up rather than spread into the call, as runInstaller does.
+	cmd := exec.CommandContext(t.Context(), "bash", "-c", shim, "bash")
+	cmd.Args = append(cmd.Args, m.s, m.m, m.p, dir, fakeVersion)
 	cmd.Env = append(os.Environ(),
 		"MIKROSCOPE_DOWNLOAD_BASE="+base,
 		"MIKROSCOPE_LATEST_URL="+base+"/no-such-api")
 	out, _ := cmd.CombinedOutput()
+	return string(out), cmd.ProcessState.ExitCode()
+}
 
-	if cmd.ProcessState.ExitCode() == 0 {
-		t.Fatalf("a platform with no release installed something:\n%s", out)
+// TestTheInstallerTakesTheArchiveEveryPlatformShips. CI runs this package on
+// Linux alone (race.yml, through make test-race; the cross-platform job leaves
+// it out), so the other platforms are reached by replacing uname: the naming,
+// download, digest and install then run exactly as they do anywhere else.
+// What this cannot cover is a tooling difference: a Mac has shasum and no
+// sha256sum, which the script handles by looking for both
+// (TestTheInstallerVerifiesWithShasumWhenThereIsNoSha256sum).
+func TestTheInstallerTakesTheArchiveEveryPlatformShips(t *testing.T) {
+	t.Parallel()
+	for _, tc := range shippedMachines {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			rel := buildFakeReleaseFor(t, tc.archive)
+			dir := t.TempDir()
+			out, code := asMachine(t, tc.machine, serveRelease(t, rel), dir)
+			if code != 0 {
+				t.Fatalf("exit %d, want 0: %s has %s:\n%s", code, tc.name, rel.archiveName, out)
+			}
+			want := "for " + strings.Replace(tc.archive, "_", "/", 1)
+			if !strings.Contains(out, want) {
+				t.Errorf("it did not go looking for %s (no %q):\n%s", rel.archiveName, want, out)
+			}
+			if _, err := os.Stat(filepath.Join(dir, "mikroscope")); err != nil {
+				t.Fatalf("no binary was installed: %v\n%s", err, out)
+			}
+		})
 	}
-	if !strings.Contains(string(out), "no release is built for mips64") {
-		t.Errorf("the refusal does not name the platform:\n%s", out)
+}
+
+// TestTheInstallerStopsAtAPlatformWithNoRelease pins a bash rule that cost a
+// wrong message: a command substitution inside a here-string is not the
+// command `set -e` is watching, so `read os arch <<<"$(platform)"` printed the
+// refusal and then carried on with both empty, spending a request to be told
+// 404 for "mikroscope_2.0.0__.tar.gz". And a refusal piped out of curl is all
+// the reader gets, so it names what does exist: every archive the release
+// configuration builds, Windows included.
+func TestTheInstallerStopsAtAPlatformWithNoRelease(t *testing.T) {
+	t.Parallel()
+	shipped := goreleaserCLIArchives(t)
+	for _, tc := range refusedMachines {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var asked atomic.Int32
+			base := serveCounted(t, buildFakeRelease(t, false), &asked)
+			out, code := asMachine(t, tc.machine, base, t.TempDir())
+			if code == 0 {
+				t.Fatalf("a platform with no release installed something:\n%s", out)
+			}
+			if !strings.Contains(out, "no release is built for "+tc.named) {
+				t.Errorf("the refusal does not name %s:\n%s", tc.named, out)
+			}
+			for _, a := range shipped {
+				if !strings.Contains(out, a.platform) {
+					t.Errorf("the refusal does not name %s, which the release ships:\n%s", a.platform, out)
+				}
+			}
+			if n := asked.Load(); n != 0 {
+				t.Errorf("it made %d request(s) after deciding it could not install anything:\n%s", n, out)
+			}
+		})
+	}
+}
+
+// TestTheInstallerSendsWindowsToTheZip. Git Bash, MSYS2 and Cygwin all have a
+// bash that can run this, and the archive there is a .zip that install.ps1
+// installs, for either Windows architecture the release builds.
+func TestTheInstallerSendsWindowsToTheZip(t *testing.T) {
+	t.Parallel()
+	var asked atomic.Int32
+	base := serveCounted(t, buildFakeRelease(t, false), &asked)
+	m := machine{"Git Bash", "MINGW64_NT-10.0-26100", "x86_64", "unknown"}
+	out, code := asMachine(t, m, base, t.TempDir())
+	if code == 0 {
+		t.Fatalf("it installed something on Windows:\n%s", out)
+	}
+	for _, want := range []string{"install.ps1", "windows_x86_64", "windows_arm64"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the refusal does not name %s:\n%s", want, out)
+		}
 	}
 	if n := asked.Load(); n != 0 {
-		t.Errorf("it made %d request(s) after deciding it could not install anything:\n%s", n, out)
+		t.Errorf("it made %d request(s) on a platform it sends elsewhere:\n%s", n, out)
+	}
+}
+
+// goreleaserFile is the part of .goreleaser.yaml that decides which CLI
+// archives a release publishes and what they are called.
+type goreleaserFile struct {
+	ProjectName string              `yaml:"project_name"`
+	Builds      []goreleaserBuild   `yaml:"builds"`
+	Archives    []goreleaserArchive `yaml:"archives"`
+}
+
+type goreleaserBuild struct {
+	ID     string   `yaml:"id"`
+	Goos   []string `yaml:"goos"`
+	Goarch []string `yaml:"goarch"`
+	Goarm  []string `yaml:"goarm"`
+	Ignore []struct {
+		Goos   string `yaml:"goos"`
+		Goarch string `yaml:"goarch"`
+		Goarm  string `yaml:"goarm"`
+	} `yaml:"ignore"`
+}
+
+type goreleaserArchive struct {
+	IDs             []string `yaml:"ids"`
+	Formats         []string `yaml:"formats"`
+	NameTemplate    string   `yaml:"name_template"`
+	FormatOverrides []struct {
+		Goos    string   `yaml:"goos"`
+		Formats []string `yaml:"formats"`
+	} `yaml:"format_overrides"`
+}
+
+// goreleaserTarget is one binary a build compiles, in GoReleaser's terms.
+type goreleaserTarget struct {
+	Os, Arch, Arm string
+}
+
+// targets is every goos, goarch and, for arm, goarm the build compiles, less
+// the ignored ones. GoReleaser's defaults are not guessed: a build that
+// leaves goos, goarch or (with arm) goarm to them fails the test.
+func (b goreleaserBuild) targets(t *testing.T) []goreleaserTarget {
+	t.Helper()
+	if len(b.Goos) == 0 || len(b.Goarch) == 0 {
+		t.Fatalf("the %s build names no goos or no goarch, and GoReleaser's defaults are not guessed here", b.ID)
+	}
+	var all []goreleaserTarget
+	for _, goos := range b.Goos {
+		for _, goarch := range b.Goarch {
+			levels := []string{""}
+			if goarch == "arm" {
+				if len(b.Goarm) == 0 {
+					t.Fatalf("the %s build has arm and no goarm, and GoReleaser's default is not guessed here", b.ID)
+				}
+				levels = b.Goarm
+			}
+			for _, goarm := range levels {
+				if !b.ignores(goos, goarch, goarm) {
+					all = append(all, goreleaserTarget{Os: goos, Arch: goarch, Arm: goarm})
+				}
+			}
+		}
+	}
+	return all
+}
+
+func (b goreleaserBuild) ignores(goos, goarch, goarm string) bool {
+	for _, ig := range b.Ignore {
+		if ig.Goos == goos && ig.Goarch == goarch && (ig.Goarm == "" || ig.Goarm == goarm) {
+			return true
+		}
+	}
+	return false
+}
+
+// formatFor is the archive format a goos gets: the override for it, or the
+// archive's one format.
+func (a goreleaserArchive) formatFor(goos string) string {
+	for _, o := range a.FormatOverrides {
+		if o.Goos == goos && len(o.Formats) == 1 {
+			return o.Formats[0]
+		}
+	}
+	return a.Formats[0]
+}
+
+// shippedArchive is one CLI archive a release publishes: its platform as the
+// name spells it ("freebsd_armv7") and its format ("tar.gz", "zip").
+type shippedArchive struct {
+	platform, format string
+}
+
+// goreleaserCLIArchives is every CLI archive the release configuration
+// builds, worked out the way GoReleaser works it out: each target of the
+// mikroscope build, named by executing the archive's own name_template, in
+// the format its overrides give that goos. Anything this does not know how to
+// read fails the test rather than being guessed.
+func goreleaserCLIArchives(t *testing.T) []shippedArchive {
+	t.Helper()
+	cfg := readGoreleaser(t)
+	build, archive := cliBuildAndArchive(t, cfg)
+	name, err := template.New("name_template").Parse(archive.NameTemplate)
+	if err != nil {
+		t.Fatalf("the CLI archive's name_template is not one this test can execute: %v", err)
+	}
+	prefix := cfg.ProjectName + "_" + fakeVersion + "_"
+	var shipped []shippedArchive
+	for _, target := range build.targets(t) {
+		var full strings.Builder
+		if err = name.Execute(&full, map[string]string{
+			"ProjectName": cfg.ProjectName, "Version": fakeVersion,
+			"Os": target.Os, "Arch": target.Arch, "Arm": target.Arm,
+		}); err != nil {
+			t.Fatalf("executing the CLI archive's name_template: %v", err)
+		}
+		platform, ok := strings.CutPrefix(full.String(), prefix)
+		if !ok {
+			t.Fatalf("the CLI archive for %+v is named %q, not %s<platform>", target, full.String(), prefix)
+		}
+		shipped = append(shipped, shippedArchive{platform: platform, format: archive.formatFor(target.Os)})
+	}
+	return shipped
+}
+
+func readGoreleaser(t *testing.T) goreleaserFile {
+	t.Helper()
+	body, err := os.ReadFile(".goreleaser.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg goreleaserFile
+	if err = yaml.Unmarshal(body, &cfg); err != nil {
+		t.Fatalf(".goreleaser.yaml: %v", err)
+	}
+	return cfg
+}
+
+// cliBuildAndArchive is the mikroscope build and the archive that packs it.
+func cliBuildAndArchive(t *testing.T, cfg goreleaserFile) (goreleaserBuild, goreleaserArchive) {
+	t.Helper()
+	i := slices.IndexFunc(cfg.Builds, func(b goreleaserBuild) bool { return b.ID == "mikroscope" })
+	if i < 0 {
+		t.Fatal(".goreleaser.yaml has no build with id mikroscope")
+	}
+	j := slices.IndexFunc(cfg.Archives, func(a goreleaserArchive) bool { return slices.Contains(a.IDs, "mikroscope") })
+	if j < 0 {
+		t.Fatal(".goreleaser.yaml has no archive of the mikroscope build")
+	}
+	a := cfg.Archives[j]
+	if len(a.Formats) != 1 || a.NameTemplate == "" {
+		t.Fatalf("the CLI archive has formats %v and name_template %q; this reads exactly one format and a template",
+			a.Formats, a.NameTemplate)
+	}
+	return cfg.Builds[i], a
+}
+
+// sourceableInstaller is install.sh with its last line, the call to main, left
+// out, written to a file of its own so that a probe can source it and then
+// call one function or read one variable. A file, and not source <(...): bash
+// 3.2, the /bin/bash of every Mac, reads a process substitution given to
+// source as empty, so the probe would find none of the script there.
+//
+// The call has to be the last line, which is how the script is written so a
+// truncated download runs nothing. If it ever is not, this stops rather than
+// leaving it in, since sourcing the script would then run an install.
+func sourceableInstaller(t *testing.T) string {
+	t.Helper()
+	script, err := os.ReadFile("install.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const call = "\nmain \"$@\"\n"
+	body, found := strings.CutSuffix(string(script), call)
+	if !found {
+		t.Fatalf("install.sh does not end with the line %s, so sourcing it would run an install", strings.TrimSpace(call))
+	}
+	path := filepath.Join(t.TempDir(), "install.sh")
+	if err = os.WriteFile(path, []byte(body+"\n"), 0o600); err != nil { // #nosec G703 -- the test's own temp dir
+		t.Fatal(err)
+	}
+	return path
+}
+
+// installerLists is install.sh's two archive lists, CLI_ARCHIVES and
+// WINDOWS_ARCHIVES, read by sourcing the script without its call to main.
+func installerLists(t *testing.T) (cli, windows []string) {
+	t.Helper()
+	requireBash(t)
+	const probe = `source "$1"; printf '%s\n' "$CLI_ARCHIVES" "$WINDOWS_ARCHIVES"`
+	// Built up rather than spread into the call, as runInstaller does.
+	cmd := exec.CommandContext(t.Context(), "bash", "-c", probe, "bash")
+	cmd.Args = append(cmd.Args, sourceableInstaller(t))
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("sourcing install.sh: %v", err)
+	}
+	lines := strings.Split(strings.TrimRight(string(out), "\n"), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("install.sh's two archive lists printed %d lines:\n%s", len(lines), out)
+	}
+	cli, windows = strings.Fields(lines[0]), strings.Fields(lines[1])
+	slices.Sort(cli)
+	slices.Sort(windows)
+	return cli, windows
+}
+
+// TestTheInstallerKnowsEveryArchiveTheReleaseShips holds install.sh to
+// .goreleaser.yaml, which is what decides the archives. The script once
+// accepted Linux and macOS alone and told a FreeBSD machine, or a 32-bit ARM
+// Linux one, that no release was built for it, beside a release that had
+// published both since 1.0.0. A platform added to the build fails here until
+// the script takes it and a row above shows which uname reaches it.
+func TestTheInstallerKnowsEveryArchiveTheReleaseShips(t *testing.T) {
+	t.Parallel()
+	var tarballs, zips []string
+	for _, a := range goreleaserCLIArchives(t) {
+		switch a.format {
+		case "tar.gz":
+			tarballs = append(tarballs, a.platform)
+		case "zip":
+			zips = append(zips, a.platform)
+		default:
+			t.Errorf("the CLI archive for %s is a %s, which neither installer unpacks", a.platform, a.format)
+		}
+	}
+	slices.Sort(tarballs)
+	slices.Sort(zips)
+	cli, windows := installerLists(t)
+	if !slices.Equal(cli, tarballs) {
+		t.Errorf("install.sh's CLI_ARCHIVES is %v; the release builds these .tar.gz archives: %v", cli, tarballs)
+	}
+	if !slices.Equal(windows, zips) {
+		t.Errorf("install.sh's WINDOWS_ARCHIVES is %v; the release builds these .zip archives: %v", windows, zips)
+	}
+
+	// Every archive the script may take is reached from at least one machine
+	// in the table, and every machine in it takes an archive that exists.
+	reached := map[string]bool{}
+	for _, m := range shippedMachines {
+		if !slices.Contains(tarballs, m.archive) {
+			t.Errorf("%s is expected to take %s, which the release does not build", m.name, m.archive)
+		}
+		reached[m.archive] = true
+	}
+	for _, a := range tarballs {
+		if !reached[a] {
+			t.Errorf("no machine in shippedMachines takes %s: add the uname that reaches it", a)
+		}
 	}
 }
 
 // sourceTargetDir runs the script's target_dir with the environment a test
-// sets up, by sourcing it with the final call to main stripped out. Calling the
-// function is the point: the alternative is asserting on a whole install, which
-// says nothing about which directory was chosen and why.
+// sets up, by sourcing it without its call to main (sourceableInstaller).
+// Calling the function is the point: the alternative is asserting on a whole
+// install, which says nothing about which directory was chosen and why.
 func sourceTargetDir(t *testing.T, env ...string) string {
 	t.Helper()
 	requireBash(t)
-	const probe = `source <(grep -v '^main "$@"$' install.sh); target_dir`
-	cmd := exec.CommandContext(t.Context(), "bash", "-c", probe)
+	const probe = `source "$1"; target_dir`
+	cmd := exec.CommandContext(t.Context(), "bash", "-c", probe, "bash")
+	cmd.Args = append(cmd.Args, sourceableInstaller(t))
 	cmd.Env = append(os.Environ(), env...)
 	out, err := cmd.Output()
 	if err != nil {
@@ -356,36 +735,6 @@ func TestTheInstallerSaysHowToFinishWhenItLandsOffPath(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("the closing advice does not carry %q:\n%s", want, out)
 		}
-	}
-}
-
-// TestTheInstallerTakesTheDarwinArchiveOnAMac. There is no macOS in this
-// suite, so uname is replaced and the naming, download, digest and install run
-// exactly as they do anywhere else. What this cannot cover is the tooling
-// difference: a Mac has shasum and no sha256sum, which the script handles by
-// looking for both.
-func TestTheInstallerTakesTheDarwinArchiveOnAMac(t *testing.T) {
-	t.Parallel()
-	requireBash(t)
-	rel := buildFakeReleaseFor(t, "darwin", "arm64")
-	dir := t.TempDir()
-
-	const shim = `uname() { case "$1" in -s) echo Darwin ;; -m) echo arm64 ;; esac; }
-source install.sh --dir "$1" --version "$2"`
-	cmd := exec.CommandContext(t.Context(), "bash", "-c", shim, "bash", dir, fakeVersion)
-	cmd.Env = append(os.Environ(),
-		"MIKROSCOPE_DOWNLOAD_BASE="+serveRelease(t, rel),
-		"MIKROSCOPE_LATEST_URL=http://127.0.0.1:1/no-such-api")
-	out, _ := cmd.CombinedOutput()
-
-	if cmd.ProcessState.ExitCode() != 0 {
-		t.Fatalf("exit %d, want 0:\n%s", cmd.ProcessState.ExitCode(), out)
-	}
-	if !strings.Contains(string(out), "for darwin/arm64") {
-		t.Errorf("it did not go looking for the macOS archive:\n%s", out)
-	}
-	if _, err := os.Stat(filepath.Join(dir, "mikroscope")); err != nil {
-		t.Fatalf("no binary was installed: %v\n%s", err, out)
 	}
 }
 

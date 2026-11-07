@@ -22,6 +22,32 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   384 hreflang alternates are on it, and no built file names either older
   address.
 
+### Fixed
+
+- **`install.sh` installs on FreeBSD and on 32-bit ARM Linux.** It took
+  Linux and macOS alone, and told a FreeBSD machine, or a Linux one on
+  ARMv7 (`uname -m` says `armv7l`, or `armv8l` for a 32-bit system on a
+  64-bit CPU), that no release was built for it, while every release since
+  1.0.0 has published `freebsd_x86_64`, `freebsd_arm64`, `freebsd_armv7`
+  and `linux_armv7` CLI archives. It now takes every `.tar.gz` a release
+  publishes. On FreeBSD it reads the processor architecture from
+  `uname -p`, which tells ARMv7 from ARMv6 where `uname -m` says `arm` for
+  both. A platform with no archive is refused with the list of those that
+  have one, and Windows is sent to `install.ps1` and its two `.zip`
+  archives. `install_test.go` works the archive list out of
+  `.goreleaser.yaml` and fails when the script disagrees with it. Checked
+  on 2026-11-07 against the published 1.6.1: on FreeBSD 15.1-RELEASE
+  (amd64, under KVM) the script downloads `freebsd_x86_64`, verifies it
+  with the base system's `sha256sum` and installs a binary that reports
+  `mikroscope 1.6.1`; in a Debian armhf container (`armv7l`, QEMU user
+  mode) it does the same with `linux_armv7`.
+- **Install the CLI names every archive a release publishes.** The page,
+  in English and Spanish and in `docs/install.md`, said Linux, macOS or
+  Windows and listed five archives. It now says FreeBSD too, lists all
+  ten, says which `uname` value picks which, has a FreeBSD tab in the
+  manual install (`fetch`, and the base system's `sha256sum`), and names
+  `linux_armv7` and `windows_arm64` in the Linux and Windows tabs.
+
 ### Security
 
 - **Go 1.27.2.** `go.mod` moves from `go 1.27.1` to `go 1.27.2`, the patch

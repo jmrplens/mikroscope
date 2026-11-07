@@ -1,10 +1,10 @@
 ---
 title: Instalar la CLI
-description: Instala la CLI `mikroscope` en Linux, macOS o Windows, elige el archivo de tu ordenador y no el del router, y verifícalo.
+description: Instala la CLI `mikroscope` en Linux, macOS, Windows o FreeBSD, elige el archivo de tu ordenador y no el del router, y verifícalo.
 docType: how-to
 head:
   - tag: title
-    content: Instalar la CLI de mikroscope en Linux, macOS o Windows | mikroscope
+    content: Instalar la CLI de mikroscope en Linux, macOS, Windows o FreeBSD
 ---
 
 import { Aside, Steps, Tabs, TabItem } from "@astrojs/starlight/components";
@@ -35,6 +35,8 @@ o, en PowerShell en Windows:
 ```powershell
 irm https://raw.githubusercontent.com/jmrplens/mikroscope/main/install.ps1 | iex
 ```
+
+El sistema base de FreeBSD no trae ni `curl` ni `bash`, así que allí va primero `pkg install curl bash`.
 
 Cualquiera de los dos, <Src path="install.sh" /> o <Src path="install.ps1" />, hace por su cuenta
 todo lo que el resto de esta página hace a mano: averigua tu plataforma, resuelve la versión más
@@ -76,18 +78,29 @@ en una máquina donde `curl | bash` no es algo que se teclee.
 
 <ScrollTable label="Qué archivo de la CLI descargar para tu propia máquina">
 
-| Tu máquina                            | Descarga                                       |
-| ------------------------------------- | ---------------------------------------------- |
-| Linux, PC o servidor normal           | `mikroscope_<versión>_linux_x86_64.tar.gz`     |
-| Linux sobre ARM (Raspberry Pi 4/5, …) | `mikroscope_<versión>_linux_arm64.tar.gz`      |
-| macOS, Apple silicon (M1 y posteriores) | `mikroscope_<versión>_darwin_arm64.tar.gz`   |
-| macOS, Intel                          | `mikroscope_<versión>_darwin_x86_64.tar.gz`    |
-| Windows                               | `mikroscope_<versión>_windows_x86_64.zip`      |
+| Tu máquina                                       | Descarga                                       |
+| ------------------------------------------------ | ---------------------------------------------- |
+| Linux, PC o servidor normal                      | `mikroscope_<versión>_linux_x86_64.tar.gz`     |
+| Linux sobre ARM de 64 bits (Raspberry Pi 4/5, …) | `mikroscope_<versión>_linux_arm64.tar.gz`      |
+| Linux sobre ARM de 32 bits, ARMv7 o posterior    | `mikroscope_<versión>_linux_armv7.tar.gz`      |
+| macOS, Apple silicon (M1 y posteriores)          | `mikroscope_<versión>_darwin_arm64.tar.gz`     |
+| macOS, Intel                                     | `mikroscope_<versión>_darwin_x86_64.tar.gz`    |
+| FreeBSD sobre amd64                              | `mikroscope_<versión>_freebsd_x86_64.tar.gz`   |
+| FreeBSD sobre arm64                              | `mikroscope_<versión>_freebsd_arm64.tar.gz`    |
+| FreeBSD sobre ARM de 32 bits, ARMv7              | `mikroscope_<versión>_freebsd_armv7.tar.gz`    |
+| Windows sobre x64                                | `mikroscope_<versión>_windows_x86_64.zip`      |
+| Windows sobre Arm                                | `mikroscope_<versión>_windows_arm64.zip`       |
 
 </ScrollTable>
 
 Están en la [última publicación](https://github.com/jmrplens/mikroscope/releases/latest).
 Todo lo que empiece por `mikroscope-agent` es el otro programa.
+
+`uname -m` dice qué CPU tiene un Linux o un Mac: `x86_64`, `aarch64` o `arm64`, o `armv7l`
+para el archivo ARMv7 (también `armv8l`, un sistema de 32 bits sobre una CPU de 64). En FreeBSD
+lo dice `uname -p` (`amd64`, `aarch64` o `armv7`), y en Windows `$env:PROCESSOR_ARCHITECTURE`
+(`AMD64` o `ARM64`). Los scripts de instalación leen esos mismos valores. Nada más tiene
+archivo: ni x86 de 32 bits ni ARM anterior a ARMv7.
 
 ## Instalación manual {#instalarla}
 
@@ -97,11 +110,12 @@ Todo lo que empiece por `mikroscope-agent` es el otro programa.
 
 <Steps>
 
-1. Descarga el archivo y las sumas de verificación:
+1. Descarga el archivo de tu CPU, `x86_64`, `arm64` o `armv7`, y las sumas de verificación:
 
    ```sh
    VERSION={{MIKROSCOPE_VERSION}}
-   curl -fsSLO https://github.com/jmrplens/mikroscope/releases/download/v$VERSION/mikroscope_${VERSION}_linux_x86_64.tar.gz
+   ARCH=x86_64        # arm64 o armv7 en ARM: la tabla de arriba
+   curl -fsSLO https://github.com/jmrplens/mikroscope/releases/download/v$VERSION/mikroscope_${VERSION}_linux_${ARCH}.tar.gz
    curl -fsSLO https://github.com/jmrplens/mikroscope/releases/download/v$VERSION/checksums.txt
    ```
 
@@ -114,7 +128,7 @@ Todo lo que empiece por `mikroscope-agent` es el otro programa.
 3. Descomprime y ponlo donde el intérprete mira:
 
    ```sh
-   tar xzf mikroscope_${VERSION}_linux_x86_64.tar.gz mikroscope
+   tar xzf mikroscope_${VERSION}_linux_${ARCH}.tar.gz mikroscope
    sudo install -m 0755 mikroscope /usr/local/bin/mikroscope
    ```
 
@@ -161,12 +175,44 @@ Todo lo que empiece por `mikroscope-agent` es el otro programa.
 
 </TabItem>
 
+<TabItem label="FreeBSD">
+
+<Steps>
+
+1. Descarga el archivo de tu CPU, `x86_64`, `arm64` o `armv7`, y las sumas de verificación, con
+   el `fetch` que trae el sistema base:
+
+   ```sh
+   VERSION={{MIKROSCOPE_VERSION}}
+   ARCH=x86_64        # arm64 o armv7 en ARM: la tabla de arriba
+   fetch https://github.com/jmrplens/mikroscope/releases/download/v$VERSION/mikroscope_${VERSION}_freebsd_${ARCH}.tar.gz
+   fetch https://github.com/jmrplens/mikroscope/releases/download/v$VERSION/checksums.txt
+   ```
+
+2. Compruébalo contra la lista antes de descomprimirlo:
+
+   ```sh
+   sha256sum --ignore-missing -c checksums.txt
+   ```
+
+3. Descomprímelo e instálalo como root:
+
+   ```sh
+   tar xzf mikroscope_${VERSION}_freebsd_${ARCH}.tar.gz mikroscope
+   install -m 0755 mikroscope /usr/local/bin/mikroscope
+   ```
+
+</Steps>
+
+</TabItem>
+
 <TabItem label="Windows">
 
 <Steps>
 
-1. Descarga `mikroscope_<versión>_windows_x86_64.zip` y `checksums.txt` de la
-   página de la publicación.
+1. Descarga `mikroscope_<versión>_windows_x86_64.zip`, o `mikroscope_<versión>_windows_arm64.zip`
+   en un PC Arm, y `checksums.txt` de la página de la publicación. Las órdenes de abajo nombran
+   el de x86_64.
 
 2. Compruébalo en PowerShell, contra la línea de tu archivo en `checksums.txt`:
 
