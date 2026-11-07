@@ -575,14 +575,42 @@ func cliBuildAndArchive(t *testing.T, cfg goreleaserFile) (goreleaserBuild, gore
 	return cfg.Builds[i], a
 }
 
+// sourceableInstaller is install.sh with its last line, the call to main, left
+// out, written to a file of its own so that a probe can source it and then
+// call one function or read one variable. A file, and not source <(...): bash
+// 3.2, the /bin/bash of every Mac, reads a process substitution given to
+// source as empty, so the probe would find none of the script there.
+//
+// The call has to be the last line, which is how the script is written so a
+// truncated download runs nothing. If it ever is not, this stops rather than
+// leaving it in, since sourcing the script would then run an install.
+func sourceableInstaller(t *testing.T) string {
+	t.Helper()
+	script, err := os.ReadFile("install.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const call = "\nmain \"$@\"\n"
+	body, found := strings.CutSuffix(string(script), call)
+	if !found {
+		t.Fatalf("install.sh does not end with the line %s, so sourcing it would run an install", strings.TrimSpace(call))
+	}
+	path := filepath.Join(t.TempDir(), "install.sh")
+	if err = os.WriteFile(path, []byte(body+"\n"), 0o600); err != nil { // #nosec G703 -- the test's own temp dir
+		t.Fatal(err)
+	}
+	return path
+}
+
 // installerLists is install.sh's two archive lists, CLI_ARCHIVES and
-// WINDOWS_ARCHIVES, read by sourcing the script with its last line, the call
-// to main, left out.
+// WINDOWS_ARCHIVES, read by sourcing the script without its call to main.
 func installerLists(t *testing.T) (cli, windows []string) {
 	t.Helper()
 	requireBash(t)
-	const probe = `source <(grep -v '^main "$@"$' install.sh); printf '%s\n' "$CLI_ARCHIVES" "$WINDOWS_ARCHIVES"`
-	cmd := exec.CommandContext(t.Context(), "bash", "-c", probe)
+	const probe = `source "$1"; printf '%s\n' "$CLI_ARCHIVES" "$WINDOWS_ARCHIVES"`
+	// Built up rather than spread into the call, as runInstaller does.
+	cmd := exec.CommandContext(t.Context(), "bash", "-c", probe, "bash")
+	cmd.Args = append(cmd.Args, sourceableInstaller(t))
 	out, err := cmd.Output()
 	if err != nil {
 		t.Fatalf("sourcing install.sh: %v", err)
@@ -643,14 +671,15 @@ func TestTheInstallerKnowsEveryArchiveTheReleaseShips(t *testing.T) {
 }
 
 // sourceTargetDir runs the script's target_dir with the environment a test
-// sets up, by sourcing it with the final call to main stripped out. Calling the
-// function is the point: the alternative is asserting on a whole install, which
-// says nothing about which directory was chosen and why.
+// sets up, by sourcing it without its call to main (sourceableInstaller).
+// Calling the function is the point: the alternative is asserting on a whole
+// install, which says nothing about which directory was chosen and why.
 func sourceTargetDir(t *testing.T, env ...string) string {
 	t.Helper()
 	requireBash(t)
-	const probe = `source <(grep -v '^main "$@"$' install.sh); target_dir`
-	cmd := exec.CommandContext(t.Context(), "bash", "-c", probe)
+	const probe = `source "$1"; target_dir`
+	cmd := exec.CommandContext(t.Context(), "bash", "-c", probe, "bash")
+	cmd.Args = append(cmd.Args, sourceableInstaller(t))
 	cmd.Env = append(os.Environ(), env...)
 	out, err := cmd.Output()
 	if err != nil {
