@@ -228,8 +228,12 @@ const software = {
 	// What .goreleaser.yaml builds: the CLI for Linux, macOS, Windows and
 	// FreeBSD; the agent for Linux only, and it is meant to run in a container
 	// on RouterOS 7 (arm64, arm, x86_64), where it reads the router's kernel.
-	operatingSystem:
-		"CLI: Linux, macOS, Windows, FreeBSD. Agent: Linux, in a RouterOS 7 container (arm64, arm, x86_64).",
+	// That container is Linux, so the union of the two is the CLI's four
+	// systems. schema.org takes this as plain text and readers split it at its
+	// commas, so it names the systems and nothing else: which program runs
+	// where, and on which CPUs, is the comment above and softwareRequirements
+	// below. The check holds it to the goos lists of .goreleaser.yaml.
+	operatingSystem: "Linux, macOS, Windows, FreeBSD",
 	// What install/prerequisites says a router needs before `install` can write
 	// anything, and what the host running the CLI needs. The check holds the
 	// RouterOS floor here to the one that page states, in both languages.
