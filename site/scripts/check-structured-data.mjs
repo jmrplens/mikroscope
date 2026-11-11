@@ -14,7 +14,8 @@
 // emitter's defects. So the version comes from VERSION and CHANGELOG.md, a
 // page's first publication from git, its section from the sidebar the build
 // rendered, its translation from the source tree, the RouterOS floor from
-// install/prerequisites, and the lineage from about/lineage.
+// install/prerequisites, the operating systems from .goreleaser.yaml, and the
+// lineage from about/lineage.
 //
 // It needs the repository's full history: a page's datePublished is the date
 // git first saw its file, and a shallow clone cannot say. docs.yml checks out
@@ -26,6 +27,8 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+
+import { parse as parseYaml } from "yaml";
 
 import { readRelease } from "../src/lib/release.mjs";
 import { isRedirectStub } from "./redirect-stub.mjs";
@@ -274,6 +277,22 @@ const FLOOR_WORDING = {
 	en: (floor) => `RouterOS ${floor} or later`,
 	es: (floor) => `RouterOS ${floor} o posterior`,
 };
+
+// The systems .goreleaser.yaml builds a program for: the `goos` of every build,
+// in the order they first appear, under the names operatingSystem uses. That
+// property is plain text that readers split at its commas, so it is these
+// names joined by ", " and nothing else; a release that starts or stops
+// building for a system fails here until the software says so. A build with no
+// `goos` would take GoReleaser's default, which this check does not guess.
+const GOOS_NAMES = {
+	linux: "Linux",
+	darwin: "macOS",
+	windows: "Windows",
+	freebsd: "FreeBSD",
+};
+const BUILDS =
+	parseYaml(readFileSync(join(REPO_ROOT, ".goreleaser.yaml"), "utf8"))
+		?.builds ?? [];
 const LINEAGE = readFileSync(join(DOCS, "about", "lineage.mdx"), "utf8");
 
 /**
@@ -336,6 +355,25 @@ function checkSharedNodes(nodes, report) {
 		}
 		if (!software.applicationSubCategory) {
 			report("the software has no applicationSubCategory");
+		}
+		const unlisted = BUILDS.filter((build) => !Array.isArray(build?.goos));
+		const goos = [...new Set(BUILDS.flatMap((build) => build?.goos ?? []))];
+		const unnamed = goos.filter((name) => !Object.hasOwn(GOOS_NAMES, name));
+		if (BUILDS.length === 0 || unlisted.length > 0) {
+			report(
+				".goreleaser.yaml has a build without a goos list, or no builds, so the systems operatingSystem must name cannot be read",
+			);
+		} else if (unnamed.length > 0) {
+			report(
+				`.goreleaser.yaml builds for ${unnamed.join(", ")}, which has no operatingSystem name in this check`,
+			);
+		} else {
+			const systems = goos.map((name) => GOOS_NAMES[name]).join(", ");
+			if (software.operatingSystem !== systems) {
+				report(
+					`operatingSystem is ${JSON.stringify(software.operatingSystem)}, but .goreleaser.yaml builds for ${JSON.stringify(systems)}`,
+				);
+			}
 		}
 		bilingual(software.description, "the software's description", report);
 		bilingual(
