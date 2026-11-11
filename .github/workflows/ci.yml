@@ -346,8 +346,8 @@ jobs:
     needs: [compile]
     uses: ./.github/workflows/e2e.yml
     # The stores too, since 2026-09-18. They used to run weekly, on dispatch
-    # and on the release gate only — nine containers seemed too much for a
-    # pull request — and that is how 1.0.5 reached main with two tests in that
+    # and on the release gate only (nine containers seemed too much for a
+    # pull request), and that is how 1.0.5 reached main with two tests in that
     # suite still reading an endpoint the release had removed: every
     # pull-request check was green and the tag was what found it. MEASURED on
     # the release run that failed: 2 min 37 s from job start to result,
@@ -428,7 +428,7 @@ jobs:
         with:
           persist-credentials: false
 
-      # go.mod names an exact release, `go 1.27.3`, and setup-go installs
+      # go.mod names an exact release, `go 1.27.4`, and setup-go installs
       # exactly that one. Most of what govulncheck reports here is the standard
       # library, so its answer is a property of the commit: when a later patch
       # fixes a standard-library advisory, this job fails until go.mod moves to
@@ -616,9 +616,9 @@ jobs:
         run: pnpm install --frozen-lockfile
         working-directory: site
 
-      # `pnpm run lint` includes the gates that read the built output —
-      # html-validate, htmlhint, a11y:check, schema:check, directives:check,
-      # both twins checks and version:check all walk dist/ — so the site has to
+      # `pnpm run lint` includes the gates that read the built output
+      # (html-validate, htmlhint, a11y:check, schema:check, directives:check,
+      # both twins checks and version:check all walk dist/), so the site has to
       # be built first.
       # Without this the job fails on the first of them with "Run pnpm build
       # first", which is what it did until 2026-09-16: the job only runs on a
@@ -666,7 +666,7 @@ jobs:
   # gitlab-mcp-server once shipped an arm64 image that could not exec at all,
   # past every gate that only built it. The two 32-bit ARM rows are the ones
   # that matter most: a wrong GOARM or a bad variant shows there and nowhere
-  # else, and MikroTik ships both — linux/arm/v5 for the EN7562CT boards (hEX
+  # else, and MikroTik ships both: linux/arm/v5 for the EN7562CT boards (hEX
   # Refresh), which its container documentation says take arm32v5 images only,
   # and linux/arm/v7 for the rest.
   #

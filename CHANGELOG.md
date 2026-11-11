@@ -41,6 +41,17 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   intermediate certificates that are no longer trusted, for the systems
   whose trust store has not dropped them. The binaries and images of 1.6.1
   carry it too, and the next release will not.
+- **Go 1.27.4.** `go.mod` moves from `go 1.27.3` to `go 1.27.4`, the patch
+  release that fixes GO-2026-6859 (CVE-2026-97054), which govulncheck
+  reports as reachable from this code: an HTTP/1 server that uses
+  `MaxBytesReader` or `MaxBytesHandler` can crash, because `net/http` sets
+  `Connection: close` without synchronization when the limit is exceeded,
+  racing a header the handler sets while it reads the request body.
+  govulncheck reaches `net/http` through, among other paths, the two HTTP
+  servers mikroscope runs: the agent's (`agent.RunWith`) and the
+  collector's Prometheus sink (`sinks.NewPrometheus`). Neither wraps a
+  request body in `MaxBytesReader`. The binaries and images of 1.6.1 carry
+  it too, and the next release will not.
 - **The documentation site builds with Vite 8.3.5.** Vite, which the site
   takes through Astro, moves from 8.3.2 to 8.3.5 in `site/pnpm-lock.yaml`
   (Rolldown from 1.2.12 to 1.2.15 with it), and `pnpm audit` no longer
