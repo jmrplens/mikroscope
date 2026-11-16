@@ -38,6 +38,7 @@ env:
   # that actually runs unpinned. The Makefile's GORELEASER_VERSION is the same
   # number, for `make release-check`.
   GORELEASER_VERSION: "v2.20.2"
+  # The Install Syft step pins this release's tarball by SHA256: bump both.
   SYFT_VERSION: "v1.57.1"
 
 jobs:
@@ -157,11 +158,17 @@ jobs:
       # exactly where nothing may be resolved at run time. The bytes are pinned
       # by SHA256 here; cosign additionally proves they came from anchore's
       # release workflow. Its certificate identity ends in refs/heads/main
-      # because syft releases from main rather than from the tag, and the
-      # certificate asset is base64-wrapped.
+      # because syft releases from main rather than from the tag. Since 1.54.0
+      # syft signs its checksums with a Sigstore bundle
+      # (`checksums.txt.sigstore.json`) instead of a separate certificate and
+      # signature, so the step verifies that bundle.
+      #
+      # SYFT_SHA256 is the linux_amd64 tarball of SYFT_VERSION (top of this
+      # file): bump the two together. The 1.6.2 tag's release run failed here
+      # because only the version had moved.
       - name: Install Syft
         env:
-          SYFT_SHA256: "8fcb33017a0dc1058298c923c436d19dfa68ae93968e0b423248542e3afb9fc3"
+          SYFT_SHA256: "bf52519eb57f675d47c07d43213cb6dff6449f3d6d1147ff6701ed91f44eef0c"
         run: |
           set -euo pipefail
           TARBALL="syft_${SYFT_VERSION#v}_linux_amd64.tar.gz"
@@ -169,19 +176,16 @@ jobs:
           curl -fsSL --proto '=https' --tlsv1.2 --retry 3 --retry-connrefused -o "${TARBALL}" "${BASE}/${TARBALL}"
           echo "${SYFT_SHA256}  ${TARBALL}" | sha256sum -c -
           curl -fsSL --proto '=https' --tlsv1.2 --retry 3 --retry-connrefused -o checksums.txt "${BASE}/syft_${SYFT_VERSION#v}_checksums.txt"
-          curl -fsSL --proto '=https' --tlsv1.2 --retry 3 --retry-connrefused -o checksums.pem "${BASE}/syft_${SYFT_VERSION#v}_checksums.txt.pem"
-          curl -fsSL --proto '=https' --tlsv1.2 --retry 3 --retry-connrefused -o checksums.sig "${BASE}/syft_${SYFT_VERSION#v}_checksums.txt.sig"
-          base64 -d checksums.pem > checksums.decoded.pem
+          curl -fsSL --proto '=https' --tlsv1.2 --retry 3 --retry-connrefused -o checksums.sigstore.json "${BASE}/syft_${SYFT_VERSION#v}_checksums.txt.sigstore.json"
           cosign verify-blob \
-            --certificate checksums.decoded.pem \
-            --signature checksums.sig \
+            --bundle checksums.sigstore.json \
             --certificate-identity "https://github.com/anchore/syft/.github/workflows/release.yaml@refs/heads/main" \
             --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
             checksums.txt
           grep " ${TARBALL}\$" checksums.txt | sha256sum -c -
           tar xzf "${TARBALL}" syft
           install -m 0755 syft /usr/local/bin/syft
-          rm -f "${TARBALL}" checksums.txt checksums.pem checksums.decoded.pem checksums.sig syft
+          rm -f "${TARBALL}" checksums.txt checksums.sigstore.json syft
           syft --version
 
       # Buildx replaces the default docker driver with a container one: only
