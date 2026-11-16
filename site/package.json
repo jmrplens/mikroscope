@@ -48,26 +48,26 @@
     "astro": "astro"
   },
   "dependencies": {
-    "@astrojs/sitemap": "^3.7.4",
-    "@astrojs/starlight": "^0.42.5",
-    "astro": "^7.3.5",
+    "@astrojs/sitemap": "^3.7.5",
+    "@astrojs/starlight": "^0.43.1",
+    "astro": "^7.4.12",
     "sharp": "^0.35.5"
   },
   "devDependencies": {
-    "@astrojs/check": "^0.9.10",
-    "@typescript-eslint/eslint-plugin": "^8.71.0",
-    "@typescript-eslint/parser": "^8.71.0",
-    "eslint": "^10.12.0",
+    "@astrojs/check": "^0.9.12",
+    "@typescript-eslint/eslint-plugin": "^8.73.0",
+    "@typescript-eslint/parser": "^8.73.0",
+    "eslint": "^10.15.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-astro": "^3.2.1",
-    "html-validate": "^11.16.2",
+    "html-validate": "^11.21.1",
     "htmlhint": "^1.9.2",
-    "pa11y-ci": "^4.1.1",
-    "playwright": "^1.63.0",
-    "prettier": "^3.9.9",
-    "starlight-links-validator": "^0.26.0",
+    "pa11y-ci": "^5.0.0",
+    "playwright": "^1.65.1",
+    "prettier": "^3.10.1",
+    "starlight-links-validator": "^0.27.0",
     "typescript": "^6.0.3",
     "yaml": "2.9.1"
   },
-  "packageManager": "pnpm@12.9.1+sha512.06b055fff5cd20dc12781de173ced3310ce0951bf2ec620211a16045d5444d5c93a663210764ef29a653a610459ba0368f0e74f84d80c54723cf95aae7bc0d6d"
+  "packageManager": "pnpm@12.21.0+sha512.66fd8278ee28935ce951792d34367ff3af5c432a2756445823029533835b8da529bbe0be5130afd56ed0713fb8789e47bad82d93bd5ae2fe54b15562d6276ef0"
 }

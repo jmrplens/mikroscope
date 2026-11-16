@@ -14,37 +14,16 @@ allowBuilds:
   puppeteer: true
   sharp: true
 
-# @puppeteer/browsers 2.x unpacks the browser archive with extract-zip, whose
-# last release is 2.0.1 from 2023-03-04 and which carries two open high
-# advisories with nowhere to go: the fix would have to be published by a
-# package nobody has published in three years. 3.x dropped it for modern-tar,
-# so the override takes the dependency out of the tree instead of accepting it.
-#
-# It is a major bump of a package puppeteer-core 24 calls directly, so it is
-# pinned here rather than left to a range, and `pnpm run a11y` is the test that
-# it still works. Remove it when pa11y-ci's puppeteer range reaches 25, which
-# depends on 3.x on its own.
 overrides:
-  "@puppeteer/browsers": "^3.2.2"
-  # High advisories in the audit tools and Astro's font loader, each lifted
-  # within its own major (2026-11-02): undici before 6.29.1 under cheerio
-  # (pa11y-ci) and before 8.12.2 under unifont (astro); zod 4 before 4.6.6.
-  "cheerio>undici": "^6.29.1"
-  "unifont>undici": "^8.12.2"
-  "zod@>=4.0.0 <4.6.6": "^4.6.6"
+  # htmlhint 1.9.2, its latest, asks for glob ^13.0.6, and every glob before
+  # 14.0.2 carries GHSA-3g3m-2fjr-6pw4 (an AbortSignal that does not stop the
+  # walk) and, through minimatch before 11.0.1, GHSA-g3hv-75wg-m249 (moderate,
+  # 2026-11-16). htmlhint calls only globSync and Glob, which glob 14 keeps;
+  # `pnpm run htmlhint` over the built site is the test. Remove when htmlhint
+  # asks for glob 14.
+  "htmlhint>glob": "^14.0.6"
 
 # Resolve to the latest published versions; pnpm 11.8 applies a non-zero
 # release-age gate otherwise, which turns a fresh install into a different
 # dependency tree from the one the lockfile was written against.
 minimumReleaseAge: 0
-
-auditConfig:
-  ignoreGhsas:
-    # zod: oversized constrained collections exhaust memory while validating.
-    # Fixed only in 4.6.6, and the override above lifts every zod 4 copy. What
-    # is left is zod 3.25.76 under chromium-bidi, through puppeteer in
-    # pa11y-ci, the accessibility audit tool: it validates its own protocol
-    # messages, and nothing the site runs or ships depends on it. No 3.x
-    # release is patched. Remove when chromium-bidi moves to zod 4.6.6 or
-    # later. Reviewed 2026-11-02.
-    - GHSA-mrhx-c7xc-m3w5

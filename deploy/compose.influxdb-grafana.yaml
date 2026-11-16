@@ -57,7 +57,7 @@ services:
     restart: unless-stopped
 
   grafana:
-    image: grafana/grafana:13.2.1
+    image: grafana/grafana:13.3.1
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
       # The collector creates the datasource and the dashboard over the API,

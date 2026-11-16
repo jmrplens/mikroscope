@@ -25,7 +25,7 @@
 # There is no LABEL block here. GoReleaser passes the OCI labels on the build
 # command line from .goreleaser.yaml, where the version, the commit and the
 # date are known.
-FROM gcr.io/distroless/static-debian12:nonroot
+FROM gcr.io/distroless/static-debian13:nonroot
 ARG TARGETPLATFORM
 COPY ${TARGETPLATFORM}/mikroscope /mikroscope
 ENTRYPOINT ["/mikroscope"]

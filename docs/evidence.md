@@ -740,6 +740,13 @@ no document carries), and its `check` exited 0; on InfluxDB, PostgreSQL, Prometh
 authentication; a datasource that carries a token or a password, which no store there has; and a
 run that publishes more than one store, since each run published one.
 
+On 2026-11-16 the same suite ran locally with the code of 1.6.2 against Grafana 13.3.1, InfluxDB
+3.12.2 Core, Elasticsearch 9.5.6, PostgreSQL 18.7, Prometheus 3.16.0, Loki 3.7.10, the
+OpenTelemetry Collector contrib 0.165.0, Telegraf 1.40.3 and graphite-statsd 1.1.10-5, and passed:
+the five dashboards were imported and every panel's query was run (421 panels returned data, none
+could not be answered), and `forward --grafana` followed by `dashboards publish` found each store's
+folder and datasource `unchanged`. Grafana 13.3.1 was checked by query only, with no browser render.
+
 #### `uninstall --targets`
 
 **`uninstall --targets` removed only what this project wrote in the container suite (2026-09-20,
@@ -1547,9 +1554,9 @@ behaviour links this list.
 
 #### Dashboards and alerts
 
-- Any Grafana but 12.3.0, 12.3.2, 13.2.1 and 13.2.2. On 12.3.0 the only renders are those of
-  2026-09-25; the rest of the dashboard was checked there by query only.
-- `dashboards publish` against any Grafana but 13.2.1, and over anything but what
+- Any Grafana but 12.3.0, 12.3.2, 13.2.1, 13.2.2 and 13.3.1. On 12.3.0 the only renders are those of
+  2026-09-25; the rest of the dashboard was checked there by query only, and 13.3.1 by query only.
+- `dashboards publish` against any Grafana but 13.2.1 and 13.3.1, and over anything but what
   `forward --grafana` had just made there: in the container suite on 2026-09-27 it ran once per
   store, after the collector, with no credential in any datasource, and found the folder and each
   datasource as the collector had left them, reported `unchanged`. With `dashboards publish`, a run

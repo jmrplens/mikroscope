@@ -100,10 +100,10 @@ COVERAGE_COVERPKG := ./cmd/...,./internal/...
 # `make test-race`, so the bound is the same there.
 RACE_TIMEOUT ?= 60m
 
-# markdownlint-cli2 is the release DavidAnson/markdownlint-cli2-action v24.2.0
+# markdownlint-cli2 is the release DavidAnson/markdownlint-cli2-action v25.0.0
 # bundles, so `make mdlint` and the Markdown job in CI are the same linter.
 # Bump the two together.
-MARKDOWNLINT_CLI2_VERSION := 0.23.2
+MARKDOWNLINT_CLI2_VERSION := 0.24.0
 MDLINT_GLOBS := "**/*.{md,mdx}" "\#plan" "\#node_modules"
 
 # GOLANGCI_LINT_VERSION is the release CI installs, read back from here by
@@ -112,7 +112,7 @@ MDLINT_GLOBS := "**/*.{md,mdx}" "\#plan" "\#node_modules"
 # source (slower, and results can vary with the compiling Go). gosec and
 # staticcheck run inside it (.golangci.yml enables both), so neither has a
 # binary or a target of its own.
-GOLANGCI_LINT_VERSION := v2.14.0
+GOLANGCI_LINT_VERSION := v2.15.0
 
 # actionlint is installed with `go install` at this exact version, by
 # `make install-tools` and by CI's actionlint job, which reads the pin from here.
@@ -131,7 +131,7 @@ GOTESTSUM_VERSION   = $(shell awk '$$1 == "gotest.tools/gotestsum" {print $$2; e
 
 # GoReleaser as release.yml pins it. Installed by `make install-tools` for
 # `make release-check`; the release itself downloads the same version.
-GORELEASER_VERSION := v2.18.1
+GORELEASER_VERSION := v2.20.2
 
 ##@ General
 

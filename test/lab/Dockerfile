@@ -15,9 +15,9 @@
 # the image changes only when this file does; mikroscope-lab labels it with
 # this file's hash and builds it with no context.
 #
-# The base is a dated tag, as the compose files pin theirs: trixie-slim was
-# trixie-20260918-slim when the lab's timings were measured.
-FROM debian:trixie-20260918-slim
+# The base is a dated tag, as the compose files pin theirs. The lab's timings
+# were measured on trixie-20260918-slim.
+FROM debian:trixie-20261104-slim
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \

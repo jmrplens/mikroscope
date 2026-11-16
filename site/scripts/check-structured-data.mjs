@@ -227,7 +227,7 @@ function sidebarSection(html) {
 	for (const [token, label] of html
 		.slice(start, end)
 		.matchAll(
-			/<details\b|<\/details>|<span class="large[^"]*">([^<]*)<\/span>|<a\s[^>]*aria-current="page"/g,
+			/<details\b|<\/details>|<span class="large[^"]*"[^>]*>([^<]*)<\/span>|<a\s[^>]*aria-current="page"/g,
 		)) {
 		if (token.startsWith("<details")) groups.push(undefined);
 		else if (token === "</details>") groups.pop();

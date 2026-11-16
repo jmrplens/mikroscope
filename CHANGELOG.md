@@ -8,6 +8,63 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **The collector image is built on Debian 13.** `Dockerfile.collector`
+  moves from `gcr.io/distroless/static-debian12:nonroot` to
+  `static-debian13:nonroot`, which carries the same thing for the
+  collector: a CA bundle, the `nonroot` user (65532) and nothing
+  executable. It is published for linux/amd64 and linux/arm64, both of
+  which the new base covers. Checked on 2026-11-16: the image built from it
+  runs `mikroscope version`, runs as 65532 and holds 148 certificates in
+  `/etc/ssl/certs/ca-certificates.crt`. The agent image is `FROM scratch`
+  and does not change.
+- **The compose files under `deploy/` start Grafana 13.3.1 and Prometheus
+  3.16.0** (were 13.2.1 and 3.7.3). The InfluxDB one keeps the floating
+  `influxdb:3-core` tag.
+- **Dependencies, all to their latest.** The container suite's stores:
+  InfluxDB 3.12.2 Core, PostgreSQL 18.7, Elasticsearch 9.5.6, Loki 3.7.10,
+  the OpenTelemetry Collector contrib 0.165.0, Telegraf 1.40.3, Prometheus
+  3.16.0 and Grafana 13.3.1 (graphite-statsd 1.1.10-5 is already the
+  newest), and the lab's base image `debian:trixie-20261104-slim`. In Go,
+  pgx 5.13.0 (the CLI's PostgreSQL sink), `x/term` 0.48.0, the indirect
+  `x/sys`, `x/text`, `x/sync`, `x/mod`, `x/tools`, `x/telemetry`,
+  `jackc/puddle`, `go-colorable` and `yaml/v3`, and the tools govulncheck
+  1.9.0, golangci-lint 2.15.0, GoReleaser 2.20.2, Syft 1.57.1 and cosign
+  3.1.4; Go 1.27.4 is already the newest. markdownlint-cli2 0.24.0, the
+  release `markdownlint-cli2-action` 25.0.0 bundles, and every GitHub
+  Action to its newest release, pinned by commit. The site builds on Node
+  26.13.1 (`site/.node-version`, the newest LTS; was 24.21.0) with pnpm
+  12.21.0, Astro 7.4.12, Starlight 0.43.1, pa11y-ci 5.0.0, Playwright
+  1.65.1, ESLint 10.15, typescript-eslint 8.73, html-validate 11.21,
+  prettier 3.10 and a fresh lockfile resolution (Vite 8.3.8, Rolldown
+  1.2.19). TypeScript stays on 6: neither `@astrojs/check` 0.9.12 nor
+  typescript-eslint 8.73 accepts 7.
+- **Fewer exceptions in the site's dependency tree.** pa11y-ci 5 depends on
+  puppeteer 25, which brings `@puppeteer/browsers` 3 on its own, so the
+  override that forced it is gone; the fresh resolution already takes undici
+  and zod past the versions the other three overrides lifted them to, so
+  they are gone too; and zod 3 has left the tree with chromium-bidi's move
+  to zod 4, so `pnpm audit` no longer needs to ignore GHSA-mrhx-c7xc-m3w5.
+  One override is new: htmlhint 1.9.2, its latest, asks for glob 13, and
+  every glob before 14.0.2 carries GHSA-3g3m-2fjr-6pw4 and, through
+  minimatch, GHSA-g3hv-75wg-m249 (both moderate); `htmlhint>glob` takes it
+  to glob 14, whose `globSync` and `Glob` htmlhint still calls. `pnpm audit`
+  reports nothing.
+- **The site's checks follow Astro 7.4 and html-validate 11.21.** Astro 7.4
+  marks scoped styles with `data-astro-cid-*` attributes instead of
+  `astro-*` classes, so the structured-data check reads a sidebar group's
+  label from a `<span class="large">` with any attributes after the class.
+  html-validate 11.21's new `presentation-role-style` rule, which prefers
+  `role="none"` to its synonym `role="presentation"`, is off: the 50 places
+  it flags are Starlight's tabs. Astro 7.4 no longer writes the
+  `"use astro:head-inject"` directive (withastro/astro#18088), so
+  `astro.config.mjs` stops filtering Rolldown's warning about it, and the
+  build prints none. Checked on 2026-11-16: the visible text of all 132
+  built pages equals the build of 1.6.1's tree, and site lint, the
+  generator's browser checks, the layout check (258 renders), pa11y,
+  `make analyze`, `go test ./...` and the container suite (nine stores,
+  every panel of the five dashboards answered through Grafana 13.3.1)
+  pass.
+
 - **The documentation is at <https://docs.jmrp.io/mikroscope/>.** GitHub
   Pages serves the site under docs.jmrp.io, and the canonical links, the
   sitemap, the hreflang pairs, the Open Graph image, the structured data
@@ -63,6 +120,12 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   load from a running dev server. All six concern `astro dev`; the
   published site is the static output of the build, and no binary or image
   contains it.
+- **pgx 5.13.0.** The PostgreSQL driver under the CLI's PostgreSQL sink
+  moves from 5.11.0, past GHSA-w9rp-vfrh-q8vv: `Rows.Values` could panic on
+  a server response with fewer values than fields. mikroscope does not call
+  `Rows.Values`, and the agent does not link pgx. 5.13.0 also stops marking
+  a connection closed mid-response as safe to retry, so `database/sql` no
+  longer repeats a statement that may already have run.
 
 ## [1.6.1] - 2026-10-06
 
