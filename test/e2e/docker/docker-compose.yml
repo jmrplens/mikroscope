@@ -17,7 +17,7 @@ name: mikroscope-e2e
 
 services:
   influxdb:
-    image: influxdb:3.11.2-core
+    image: influxdb:3.12.2-core
     command:
       - influxdb3
       - serve
@@ -34,7 +34,7 @@ services:
       retries: 40
 
   postgres:
-    image: postgres:18.6-alpine
+    image: postgres:18.7-alpine
     environment:
       # No password at all rather than a literal one: this database listens on
       # loopback, holds one run of test data and is deleted with the stack.
@@ -57,7 +57,7 @@ services:
       retries: 30
 
   elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:9.5.3
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.5.6
     environment:
       discovery.type: single-node
       xpack.security.enabled: "false"
@@ -90,7 +90,7 @@ services:
     # it.
 
   loki:
-    image: grafana/loki:3.7.7
+    image: grafana/loki:3.7.10
     command: ["-config.file=/etc/loki/loki.yaml"]
     ports: ["127.0.0.1:49400-49499:3100"]
     volumes:
@@ -105,7 +105,7 @@ services:
   # to a non-root user of their own, so the harness creates ./out/* world
   # writable rather than running either container as root.
   otelcol:
-    image: otel/opentelemetry-collector-contrib:0.160.0
+    image: otel/opentelemetry-collector-contrib:0.165.0
     command: ["--config=/etc/otelcol/config.yaml"]
     ports:
       - "127.0.0.1:49400-49499:4318"
@@ -121,7 +121,7 @@ services:
       retries: 20
 
   telegraf:
-    image: telegraf:1.39.3
+    image: telegraf:1.40.3
     ports: ["127.0.0.1:49400-49499:8186"]
     volumes:
       - ./config/telegraf.conf:/etc/telegraf/telegraf.conf:ro
@@ -148,7 +148,7 @@ services:
   # Desktop's host networking is not the host's stack. Both ports are outside
   # 49400-49499 so they cannot collide with a port compose handed out.
   prometheus:
-    image: prom/prometheus:v3.14.0
+    image: prom/prometheus:v3.16.0
     network_mode: host
     command:
       - --config.file=/etc/prometheus/prometheus.yml
@@ -166,7 +166,7 @@ services:
       retries: 40
 
   grafana:
-    image: grafana/grafana:13.2.1
+    image: grafana/grafana:13.3.1
     environment:
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Admin

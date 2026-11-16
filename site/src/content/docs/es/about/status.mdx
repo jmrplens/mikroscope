@@ -822,6 +822,14 @@ Elasticsearch, porque su Elasticsearch funciona sin autenticación; una fuente d
 token o una contraseña, que ningún almacén de allí tiene; ni una ejecución que publique más de un
 almacén, porque cada ejecución publicó uno.
 
+El 2026-11-16 la misma batería se ejecutó en local con el código de la 1.6.2 contra Grafana 13.3.1,
+InfluxDB 3.12.2 Core, Elasticsearch 9.5.6, PostgreSQL 18.7, Prometheus 3.16.0, Loki 3.7.10, el
+OpenTelemetry Collector contrib 0.165.0, Telegraf 1.40.3 y graphite-statsd 1.1.10-5, y pasó: se
+importaron los cinco dashboards y se ejecutó la consulta de cada panel (421 paneles devolvieron
+datos, ninguno quedó sin respuesta), y `forward --grafana` seguido de `dashboards publish` encontró
+la carpeta y la fuente de datos de cada almacén como `unchanged`. Grafana 13.3.1 se comprobó solo
+por consulta, sin renderizar en un navegador.
+
 ### `uninstall --targets`
 
 **`uninstall --targets` retiró solo lo que escribió este proyecto en la batería de contenedores
@@ -1447,9 +1455,10 @@ como comportamiento esperado enlaza esta lista.
 
 ### Dashboards y alertas
 
-- Cualquier Grafana que no sea 12.3.0, 12.3.2, 13.2.1 o 13.2.2. En 12.3.0 los únicos renderizados son
-  los del 2026-09-25; el resto del dashboard se comprobó allí solo por consulta.
-- `dashboards publish` contra cualquier Grafana que no sea 13.2.1, y sobre algo que no sea lo que
+- Cualquier Grafana que no sea 12.3.0, 12.3.2, 13.2.1, 13.2.2 o 13.3.1. En 12.3.0 los únicos
+  renderizados son los del 2026-09-25; el resto del dashboard se comprobó allí solo por consulta, y
+  13.3.1 solo por consulta.
+- `dashboards publish` contra cualquier Grafana que no sea 13.2.1 o 13.3.1, y sobre algo que no sea lo que
   `forward --grafana` acababa de crear allí: en la batería de contenedores, el 2026-09-27, se ejecutó
   una vez por almacén, después del colector, sin credenciales en ninguna fuente de datos, y encontró
   la carpeta y cada fuente de datos tal como las había dejado el colector, y las dio como
