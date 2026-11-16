@@ -4,7 +4,33 @@ Notable changes per release. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the versions
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.6.2] - 2026-11-16
+## [1.6.3] - 2026-11-16
+
+The release 1.6.2 should have been. **There is no 1.6.2 release**: the tag
+exists and points at a commit whose code is this one's, but its release run
+failed before GoReleaser started and published nothing, and a tag is not
+moved, so the artefacts come out under this number instead. Everything listed
+under 1.6.2 ships here.
+
+### Fixed
+
+- **The release installs Syft again.** 1.6.2 moved `SYFT_VERSION` from
+  1.51.1 to 1.57.1 in `release.yml` but left the step's `SYFT_SHA256` on
+  1.51.1's tarball, so the 1.6.2 run stopped at the checksum. The step also
+  fetched a certificate and a signature that Syft has not published since
+  1.54.0, which signs its checksums with a Sigstore bundle instead; it now
+  verifies `checksums.txt.sigstore.json` with `cosign verify-blob --bundle`
+  against the same identity, anchore's release workflow on `main`. Checked on
+  2026-11-16: the step's script, run locally with cosign 3.1.4, verifies
+  1.57.1 and installs it, and a `checksums.txt` with one line appended fails
+  the verification. A comment beside each pin says to bump the two together.
+  A GoReleaser 2.20.2 snapshot build (no publishing, no signing) writes every
+  archive and its SBOM with Syft 1.57.1; its image step stops on
+  `index annotations not supported for single platform export`, as the
+  snapshot of 2.18.1, the GoReleaser that published 1.6.1, does too: a
+  snapshot loads each platform separately, and the release pushes one index.
+
+## [1.6.2]
 
 ### Changed
 
